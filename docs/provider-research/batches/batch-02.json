@@ -1,0 +1,353 @@
+{
+  "batch": 2,
+  "count": 14,
+  "providers": [
+    {
+      "id": "dataforseo",
+      "display_name": "Dataforseo",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "dataforseo/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "duckduckgo",
+      "display_name": "Duckduckgo",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "duckduckgo/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "exa_ai",
+      "display_name": "EXA AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "exa_ai/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "firecrawl",
+      "display_name": "Firecrawl",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "firecrawl/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "google_pse",
+      "display_name": "Google PSE",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "google_pse/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "jina_ai",
+      "display_name": "Jina AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "rerank"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "jina-reranker-v2-base-multilingual"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "linkup",
+      "display_name": "Linkup",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "linkup/search",
+        "linkup/search-deep"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "parallel_ai",
+      "display_name": "Parallel AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "parallel_ai/search",
+        "parallel_ai/search-pro"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "recraft",
+      "display_name": "Recraft",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "image_generation"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "recraft/recraftv2",
+        "recraft/recraftv3"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "reducto",
+      "display_name": "Reducto",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "other"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "reducto/parse-legacy",
+        "reducto/parse-v3"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "runwayml",
+      "display_name": "Runwayml",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "audio_speech",
+        "image_generation",
+        "video_generation"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 6,
+      "model_sample": [
+        "runwayml/eleven_multilingual_v2",
+        "runwayml/gen3a_turbo",
+        "runwayml/gen4_aleph",
+        "runwayml/gen4_image",
+        "runwayml/gen4_image_turbo"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "searxng",
+      "display_name": "Searxng",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "searxng/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "serper",
+      "display_name": "Serper",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "serper/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "soniox",
+      "display_name": "Soniox",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "audio_transcription"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "soniox/stt-async-v4",
+        "soniox/stt-async-v5"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    }
+  ]
+}

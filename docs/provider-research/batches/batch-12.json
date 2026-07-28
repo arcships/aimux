@@ -1,0 +1,404 @@
+{
+  "batch": 12,
+  "count": 14,
+  "providers": [
+    {
+      "id": "umans_ai",
+      "display_name": "Umans AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.code.umans.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://app.umans.ai/offers/code/docs/orgs"
+      ],
+      "api_key_env_vars": [
+        "UMANS_AI_API_KEY"
+      ],
+      "model_count": 6,
+      "model_sample": [
+        "umans-coder",
+        "umans-flash",
+        "umans-glm-5.1",
+        "umans-glm-5.2",
+        "umans-kimi-k2.6"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "umans_ai_coding_plan",
+      "display_name": "Umans AI Coding Plan",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.code.umans.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://app.umans.ai/offers/code/docs"
+      ],
+      "api_key_env_vars": [
+        "UMANS_AI_CODING_PLAN_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "umans-coder",
+        "umans-flash",
+        "umans-glm-5.1",
+        "umans-glm-5.2",
+        "umans-kimi-k2.6"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "unorouter",
+      "display_name": "UnoRouter",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.unorouter.com/v1"
+      ],
+      "documentation_urls": [
+        "https://unorouter.com/models"
+      ],
+      "api_key_env_vars": [
+        "UNOROUTER_API_KEY"
+      ],
+      "model_count": 23,
+      "model_sample": [
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash:free"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "venice",
+      "display_name": "Venice AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://docs.venice.ai"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 75,
+      "model_sample": [
+        "aion-labs-aion-2-0",
+        "arcee-trinity-large-thinking",
+        "claude-fable-5",
+        "claude-opus-4-5",
+        "claude-opus-4-6"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "vertex_ai_ai21_models",
+      "display_name": "Vertex AI Ai21 Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 5,
+      "model_sample": [
+        "vertex_ai/jamba-1.5",
+        "vertex_ai/jamba-1.5-large",
+        "vertex_ai/jamba-1.5-large@001",
+        "vertex_ai/jamba-1.5-mini",
+        "vertex_ai/jamba-1.5-mini@001"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_anthropic_models",
+      "display_name": "Vertex AI Anthropic Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 37,
+      "model_sample": [
+        "vertex_ai/claude-3-5-haiku",
+        "vertex_ai/claude-3-5-haiku@20241022",
+        "vertex_ai/claude-3-5-sonnet",
+        "vertex_ai/claude-3-5-sonnet@20240620",
+        "vertex_ai/claude-3-7-sonnet@20250219"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_deepseek_models",
+      "display_name": "Vertex AI Deepseek Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 3,
+      "model_sample": [
+        "vertex_ai/deepseek-ai/deepseek-r1-0528-maas",
+        "vertex_ai/deepseek-ai/deepseek-v3.1-maas",
+        "vertex_ai/deepseek-ai/deepseek-v3.2-maas"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_llama_models",
+      "display_name": "Vertex AI Llama Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 11,
+      "model_sample": [
+        "vertex_ai/meta/llama-3.1-405b-instruct-maas",
+        "vertex_ai/meta/llama-3.1-70b-instruct-maas",
+        "vertex_ai/meta/llama-3.1-8b-instruct-maas",
+        "vertex_ai/meta/llama-3.2-90b-vision-instruct-maas",
+        "vertex_ai/meta/llama-4-maverick-17b-128e-instruct-maas"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_minimax_models",
+      "display_name": "Vertex AI Minimax Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "vertex_ai/minimaxai/minimax-m2-maas"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_mistral_models",
+      "display_name": "Vertex AI Mistral Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 19,
+      "model_sample": [
+        "vertex_ai/codestral-2",
+        "vertex_ai/codestral-2501",
+        "vertex_ai/codestral-2@001",
+        "vertex_ai/codestral@2405",
+        "vertex_ai/codestral@latest"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_moonshot_models",
+      "display_name": "Vertex AI Moonshot Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "vertex_ai/moonshotai/kimi-k2-thinking-maas"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_openai_models",
+      "display_name": "Vertex AI Openai Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 3,
+      "model_sample": [
+        "vertex_ai/google/gemma-4-26b-a4b-it-maas",
+        "vertex_ai/openai/gpt-oss-120b-maas",
+        "vertex_ai/openai/gpt-oss-20b-maas"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_qwen_models",
+      "display_name": "Vertex AI Qwen Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 4,
+      "model_sample": [
+        "vertex_ai/qwen/qwen3-235b-a22b-instruct-2507-maas",
+        "vertex_ai/qwen/qwen3-coder-480b-a35b-instruct-maas",
+        "vertex_ai/qwen/qwen3-next-80b-a3b-instruct-maas",
+        "vertex_ai/qwen/qwen3-next-80b-a3b-thinking-maas"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_zai_models",
+      "display_name": "Vertex AI ZAI Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "vertex_ai/zai-org/glm-4.7-maas",
+        "vertex_ai/zai-org/glm-5-maas"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    }
+  ]
+}

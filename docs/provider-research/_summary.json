@@ -1,0 +1,1674 @@
+[
+  {
+    "id": "apertis",
+    "name": "Apertis",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "aws_polly",
+    "name": "AWS Polly",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "chutes",
+    "name": "Chutes",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "darkbloom",
+    "name": "Darkbloom",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "empower",
+    "name": "Empower",
+    "evidence": "弱",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "libertai",
+    "name": "Libertai",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "meta",
+    "name": "Meta",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "pinstripes",
+    "name": "Pinstripes",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "poe",
+    "name": "Poe",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "publicai",
+    "name": "Publicai",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "ragflow",
+    "name": "Ragflow",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "搁置",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "synthetic",
+    "name": "Synthetic",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "tensormesh",
+    "name": "Tensormesh",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "wandb",
+    "name": "Weights & Biases",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "dataforseo",
+    "name": "Dataforseo",
+    "evidence": "中",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "duckduckgo",
+    "name": "Duckduckgo",
+    "evidence": "弱",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "exa_ai",
+    "name": "EXA AI",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P1",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "firecrawl",
+    "name": "Firecrawl",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P1",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "google_pse",
+    "name": "Google PSE",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "jina_ai",
+    "name": "Jina AI",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P1",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "linkup",
+    "name": "Linkup",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "parallel_ai",
+    "name": "Parallel AI",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "recraft",
+    "name": "Recraft",
+    "evidence": "强",
+    "path": "共享层扩展",
+    "priority": "P1",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "reducto",
+    "name": "Reducto",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "runwayml",
+    "name": "Runwayml",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P1",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "searxng",
+    "name": "Searxng",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "serper",
+    "name": "Serper",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P1",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "soniox",
+    "name": "Soniox",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-02.md"
+  },
+  {
+    "id": "abacus",
+    "name": "Abacus",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P0",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "abliteration_ai",
+    "name": "abliteration.ai",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P0",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "advanced_custom",
+    "name": "Advanced Custom",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "ai_router",
+    "name": "AI-ROUTER",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "aiand",
+    "name": "ai&",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P0",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "aiproxy",
+    "name": "AIProxy",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "aiproxy_library",
+    "name": "AIProxyLibrary",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "aki_io",
+    "name": "AKI.IO",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "ali",
+    "name": "Ali",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "alibaba_cn",
+    "name": "Alibaba (China)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "stability",
+    "name": "Stability",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P1",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "tavily",
+    "name": "Tavily",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "tinyfish",
+    "name": "Tinyfish",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "you_com",
+    "name": "YOU COM",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "alibaba_coding_plan",
+    "name": "Alibaba Coding Plan",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "alibaba_coding_plan_cn",
+    "name": "Alibaba Coding Plan (China)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "ambient",
+    "name": "Ambient",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P0",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "anthropic_text",
+    "name": "Anthropic Text",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "搁置",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "anyapi",
+    "name": "AnyAPI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "atomic_chat",
+    "name": "Atomic Chat",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "auriko",
+    "name": "Auriko",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "aws",
+    "name": "AWS",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "baidu_v2",
+    "name": "BaiduV2",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "bailing",
+    "name": "Bailing",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "berget",
+    "name": "Berget.AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "blueclaw",
+    "name": "Blue Claw",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "chat_gpt_subscription_codex",
+    "name": "ChatGPT Subscription (Codex)",
+    "evidence": "弱",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "claudinio",
+    "name": "Claudinio",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "cloudferro_sherlock",
+    "name": "CloudFerro Sherlock",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "cloudflare",
+    "name": "Cloudflare",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "cloudflare_workers_ai",
+    "name": "Cloudflare Workers AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "cohere_chat",
+    "name": "Cohere Chat",
+    "evidence": "强",
+    "path": "原生",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "cortecs",
+    "name": "Cortecs",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "crof",
+    "name": "CrofAI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "crossmodel",
+    "name": "CrossModel",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "crusoe",
+    "name": "Crusoe",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "custom_provider",
+    "name": "custom provider",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "daoxe",
+    "name": "DaoXE",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "dify",
+    "name": "Dify",
+    "evidence": "强",
+    "path": "原生",
+    "priority": "搁置",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "dinference",
+    "name": "DInference",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "doubao_video",
+    "name": "DoubaoVideo",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "drun",
+    "name": "D.Run (China)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "ebcloud",
+    "name": "EBCloud",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "empiriolabs",
+    "name": "EmpirioLabs AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "firepass",
+    "name": "Fireworks (Firepass)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "freemodel",
+    "name": "FreeModel",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "frogbot",
+    "name": "FrogBot",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "gitlab",
+    "name": "GitLab Duo",
+    "evidence": "强",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "gmi",
+    "name": "GMI",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "gmicloud",
+    "name": "GMI Cloud",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "google_vertex_anthropic",
+    "name": "Vertex (Anthropic)",
+    "evidence": "强",
+    "path": "原生",
+    "priority": "P1",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "hetzner",
+    "name": "Hetzner",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "hpc_ai",
+    "name": "HPC-AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "hyper",
+    "name": "Charm Hyper",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "搁置",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "iflowcn",
+    "name": "iFlow",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "inceptron",
+    "name": "Inceptron",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "inferx",
+    "name": "InferX",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "io_net",
+    "name": "IO.NET",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "jiekou",
+    "name": "Jiekou.AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "jimeng",
+    "name": "Jimeng",
+    "evidence": "中",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "jina",
+    "name": "Jina",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kenari",
+    "name": "Kenari",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kimi",
+    "name": "Kimi",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kimi_for_coding",
+    "name": "Kimi For Coding",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kling",
+    "name": "Kling",
+    "evidence": "中",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kuae_cloud_coding_plan",
+    "name": "KUAE Cloud Coding Plan",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "lemonade",
+    "name": "Lemonade",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "lilac",
+    "name": "Lilac",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "llama",
+    "name": "Llama",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "llmgateway",
+    "name": "LLM Gateway",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "llmtr",
+    "name": "LLMTR",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "lucidquery",
+    "name": "LucidQuery",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "lynkr",
+    "name": "Lynkr",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "maritalk",
+    "name": "Maritalk",
+    "evidence": "中",
+    "path": "待定",
+    "priority": "P2",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "meganova",
+    "name": "Meganova",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "merge_gateway",
+    "name": "Merge Gateway",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "midjourney",
+    "name": "Midjourney",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "midjourney_plus",
+    "name": "MidjourneyPlus",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "mimo",
+    "name": "Mimo",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "minimax_cn",
+    "name": "MiniMax (minimaxi.com)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "minimax_cn_coding_plan",
+    "name": "MiniMax Token Plan (minimaxi.com)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "minimax_coding_plan",
+    "name": "MiniMax Token Plan (minimax.io)",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "mixlayer",
+    "name": "Mixlayer",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "moark",
+    "name": "Moark",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "model_oracle_ai",
+    "name": "Model Oracle AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "moka_ai",
+    "name": "MokaAI",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "moonshotai_cn",
+    "name": "Moonshot AI (China)",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "neon",
+    "name": "Neon",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "netlify",
+    "name": "Netlify",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "neuralwatt",
+    "name": "Neuralwatt",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "new_api",
+    "name": "New API",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "搁置",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "nova",
+    "name": "Nova",
+    "evidence": "无",
+    "path": "搁置",
+    "priority": "搁置",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "ofox",
+    "name": "OfoxAI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "ollama_chat",
+    "name": "Ollama Chat",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "搁置",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "oobabooga",
+    "name": "Oobabooga",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "搁置",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "opencode",
+    "name": "OpenCode Zen",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "pa_lm",
+    "name": "PaLM",
+    "evidence": "强",
+    "path": "原生",
+    "priority": "搁置",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "perplexity_agent",
+    "name": "Perplexity Agent",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "poolside",
+    "name": "Poolside",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "ppinfra",
+    "name": "PPInfra（PPIO 派欧云）",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "qihang_ai",
+    "name": "QiHang（启航 AI）",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "routing_run",
+    "name": "routing.run",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "sagemaker_chat",
+    "name": "Sagemaker Chat",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "sagemaker_nova",
+    "name": "Sagemaker Nova",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "sap_ai_core",
+    "name": "SAP AI Core",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "snowflake_cortex",
+    "name": "Snowflake Cortex",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "sora",
+    "name": "Sora",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "stackit",
+    "name": "STACKIT",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "stepfun_ai_step_plan",
+    "name": "StepFun Step Plan (Global)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "stepfun_step_plan",
+    "name": "StepFun Step Plan (China)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "sub2_api",
+    "name": "Sub2API",
+    "evidence": "无",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "subconscious",
+    "name": "Subconscious",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "suno_api",
+    "name": "SunoAPI",
+    "evidence": "中",
+    "path": "模态专用",
+    "priority": "搁置",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tencent_coding_plan",
+    "name": "Tencent Coding Plan (China)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tencent_token_plan",
+    "name": "Tencent Token Plan",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tencent_token_plan_enterprise_auto",
+    "name": "腾讯云 Token Plan / Token Plan 企业版轻享套餐",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tencent_token_plan_enterprise_pro",
+    "name": "腾讯云 Token Plan / Token Plan 企业版专业套餐",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tencent_token_plan_general_personal",
+    "name": "腾讯云 Token Plan / 通用 Token Plan（个人版）",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tencent_token_plan_hy_personal",
+    "name": "腾讯云 Token Plan / Hy Token Plan（个人版）",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tencent_tokenhub",
+    "name": "Tencent TokenHub",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "the_grid_ai",
+    "name": "The Grid AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "thinkingmachines",
+    "name": "Thinking Machines",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tinfoil",
+    "name": "Tinfoil",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tokenflux",
+    "name": "Tokenflux",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "triton",
+    "name": "Triton",
+    "evidence": "中",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "trustedrouter",
+    "name": "TrustedRouter",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "umans_ai",
+    "name": "Umans AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P0",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "umans_ai_coding_plan",
+    "name": "Umans AI Coding Plan",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "搁置",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "unorouter",
+    "name": "UnoRouter",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "venice",
+    "name": "Venice AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P0",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_ai21_models",
+    "name": "Vertex AI Ai21 Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_anthropic_models",
+    "name": "Vertex AI Anthropic Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P1",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_deepseek_models",
+    "name": "Vertex AI Deepseek Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_llama_models",
+    "name": "Vertex AI Llama Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_minimax_models",
+    "name": "Vertex AI Minimax Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_mistral_models",
+    "name": "Vertex AI Mistral Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_moonshot_models",
+    "name": "Vertex AI Moonshot Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_openai_models",
+    "name": "Vertex AI Openai Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_qwen_models",
+    "name": "Vertex AI Qwen Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vertex_ai_zai_models",
+    "name": "Vertex AI ZAI Models",
+    "evidence": "强",
+    "path": "共享层扩展 / 原生",
+    "priority": "P2",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vidu",
+    "name": "Vidu",
+    "evidence": "中",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "vivgrid",
+    "name": "Vivgrid",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "volc_engine",
+    "name": "VolcEngine",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "vultr",
+    "name": "Vultr",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "watsonx_text",
+    "name": "Watsonx Text",
+    "evidence": "强",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "xiaomi_token_plan_ams",
+    "name": "Xiaomi Token Plan (Europe)",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "xiaomi_token_plan_cn",
+    "name": "Xiaomi Token Plan (China)",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "xiaomi_token_plan_sgp",
+    "name": "Xiaomi Token Plan (Singapore)",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "xpersona",
+    "name": "Xpersona",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "xunfei",
+    "name": "Xunfei",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "zai_coding_plan",
+    "name": "Z.AI Coding Plan",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "zeldoc",
+    "name": "Zeldoc",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "zenifra",
+    "name": "Zenifra",
+    "evidence": "弱",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "zhipu_v4",
+    "name": "ZhipuV4",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "alibaba_token_plan",
+    "name": "Alibaba Token Plan",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "alibaba_token_plan_cn",
+    "name": "Alibaba Token Plan (China)",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "azure_cognitive_services",
+    "name": "Azure Cognitive Services",
+    "evidence": "弱",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "azure_text",
+    "name": "Azure Text",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "bedrock_mantle",
+    "name": "Bedrock Mantle",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "burncloud",
+    "name": "burncloud",
+    "evidence": "弱",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "cherryin",
+    "name": "cherryin",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "cloudflare_ai_gateway",
+    "name": "Cloudflare AI Gateway",
+    "evidence": "强",
+    "path": "待定",
+    "priority": "搁置",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "digitalocean",
+    "name": "DigitalOcean",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "doubao",
+    "name": "Doubao",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "evroc",
+    "name": "evroc",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "google_vertex",
+    "name": "Vertex",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "llamagate",
+    "name": "Llamagate",
+    "evidence": "中",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "zhipuai_coding_plan",
+    "name": "Zhipu AI Coding Plan",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "nearai",
+    "name": "NEAR AI Cloud",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "oci",
+    "name": "OCI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "palm",
+    "name": "Palm",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "搁置",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "privatemode_ai",
+    "name": "Privatemode AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "regolo_ai",
+    "name": "Regolo AI",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "sagemaker",
+    "name": "Sagemaker",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "snowflake",
+    "name": "Snowflake",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P2",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "text_completion_codestral",
+    "name": "Text Completion Codestral",
+    "evidence": "强",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "text_completion_inception",
+    "name": "Text Completion Inception",
+    "evidence": "中",
+    "path": "模态专用",
+    "priority": "P2",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "vertex_ai_language_models",
+    "name": "Vertex AI Language Models",
+    "evidence": "强",
+    "path": "原生",
+    "priority": "P1",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "vertex_ai_text_models",
+    "name": "Vertex AI Text Models",
+    "evidence": "中",
+    "path": "原生",
+    "priority": "搁置",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "watsonx",
+    "name": "Watsonx",
+    "evidence": "强",
+    "path": "原生",
+    "priority": "P2",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "zenmux",
+    "name": "ZenMux",
+    "evidence": "强",
+    "path": "薄封装",
+    "priority": "P1",
+    "file": "batch-15.md"
+  }
+]

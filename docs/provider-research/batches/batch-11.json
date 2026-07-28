@@ -1,0 +1,430 @@
+{
+  "batch": 11,
+  "count": 14,
+  "providers": [
+    {
+      "id": "suno_api",
+      "display_name": "SunoAPI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "tencent_coding_plan",
+      "display_name": "Tencent Coding Plan (China)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.lkeap.cloud.tencent.com/coding/v3"
+      ],
+      "documentation_urls": [
+        "https://cloud.tencent.com/document/product/1772/128947"
+      ],
+      "api_key_env_vars": [
+        "TENCENT_CODING_PLAN_API_KEY"
+      ],
+      "model_count": 8,
+      "model_sample": [
+        "glm-5",
+        "hunyuan-2.0-instruct",
+        "hunyuan-2.0-thinking",
+        "hunyuan-t1",
+        "hunyuan-turbos"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "tencent_token_plan",
+      "display_name": "Tencent Token Plan",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.lkeap.cloud.tencent.com/plan/v3"
+      ],
+      "documentation_urls": [
+        "https://cloud.tencent.com/document/product/1823/130060"
+      ],
+      "api_key_env_vars": [
+        "TENCENT_TOKEN_PLAN_API_KEY"
+      ],
+      "model_count": 1,
+      "model_sample": [
+        "hy3"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "tencent_token_plan_enterprise_auto",
+      "display_name": "腾讯云 Token Plan / Token Plan 企业版轻享套餐",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://tokenhub.tencentmaas.com/plan/v3"
+      ],
+      "documentation_urls": [
+        "https://cloud.tencent.com/document/product/1823/130660"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "auto"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "tencent_token_plan_enterprise_pro",
+      "display_name": "腾讯云 Token Plan / Token Plan 企业版专业套餐",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://tokenhub.tencentmaas.com/plan/v3"
+      ],
+      "documentation_urls": [
+        "https://cloud.tencent.com/document/product/1823/130660"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 16,
+      "model_sample": [
+        "auto",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-202605",
+        "deepseek-v4-pro",
+        "deepseek-v4-pro-202606"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "tencent_token_plan_general_personal",
+      "display_name": "腾讯云 Token Plan / 通用 Token Plan（个人版）",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.lkeap.cloud.tencent.com/plan/v3"
+      ],
+      "documentation_urls": [
+        "https://cloud.tencent.com/document/product/1823/130060"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 8,
+      "model_sample": [
+        "deepseek-v4-flash-202605",
+        "deepseek-v4-pro-202606",
+        "glm-5",
+        "glm-5.1",
+        "kimi-k2.5"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "tencent_token_plan_hy_personal",
+      "display_name": "腾讯云 Token Plan / Hy Token Plan（个人版）",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.lkeap.cloud.tencent.com/plan/v3"
+      ],
+      "documentation_urls": [
+        "https://cloud.tencent.com/document/product/1823/130060"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "hy3",
+        "hy3-preview"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "tencent_tokenhub",
+      "display_name": "Tencent TokenHub",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://tokenhub.tencentmaas.com/v1"
+      ],
+      "documentation_urls": [
+        "https://cloud.tencent.com/document/product/1823/130050"
+      ],
+      "api_key_env_vars": [
+        "TENCENT_TOKENHUB_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "hy3",
+        "hy3-preview"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "the_grid_ai",
+      "display_name": "The Grid AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.thegrid.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://thegrid.ai/docs"
+      ],
+      "api_key_env_vars": [
+        "THEGRIDAI_API_KEY"
+      ],
+      "model_count": 9,
+      "model_sample": [
+        "agent-max",
+        "agent-prime",
+        "agent-standard",
+        "code-max",
+        "code-prime"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "thinkingmachines",
+      "display_name": "Thinking Machines",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://tinker.thinkingmachines.dev/services/tinker-prod/anthropic/api/v1"
+      ],
+      "documentation_urls": [
+        "https://tinker-docs.thinkingmachines.ai/tinker/compatible-apis/anthropic"
+      ],
+      "api_key_env_vars": [
+        "TINKER_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "thinkingmachines/Inkling",
+        "thinkingmachines/Inkling:peft:262144"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "tinfoil",
+      "display_name": "Tinfoil",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://inference.tinfoil.sh/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.tinfoil.sh"
+      ],
+      "api_key_env_vars": [
+        "TINFOIL_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "gemma4-31b",
+        "glm-5-2",
+        "gpt-oss-120b",
+        "gpt-oss-safeguard-120b",
+        "kimi-k2-6"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "tokenflux",
+      "display_name": "Tokenflux",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 164,
+      "model_sample": [
+        "anthropic/claude-3-haiku",
+        "anthropic/claude-3.5-haiku",
+        "anthropic/claude-3.5-sonnet",
+        "anthropic/claude-3.7-sonnet",
+        "anthropic/claude-haiku-4.5"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "triton",
+      "display_name": "Triton",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "trustedrouter",
+      "display_name": "TrustedRouter",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.trustedrouter.com/v1"
+      ],
+      "documentation_urls": [
+        "https://trustedrouter.com/docs"
+      ],
+      "api_key_env_vars": [
+        "TRUSTEDROUTER_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "auto",
+        "cheap",
+        "e2e",
+        "fast",
+        "synth"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    }
+  ]
+}

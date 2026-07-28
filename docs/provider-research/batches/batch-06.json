@@ -1,0 +1,463 @@
+{
+  "batch": 6,
+  "count": 14,
+  "providers": [
+    {
+      "id": "ebcloud",
+      "display_name": "EBCloud",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://maas-api.ebcloud.com/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.ebtech.com/ai/model-api.html"
+      ],
+      "api_key_env_vars": [
+        "EBCLOUD_API_KEY"
+      ],
+      "model_count": 4,
+      "model_sample": [
+        "DeepSeek-V4-Flash",
+        "DeepSeek-V4-Pro",
+        "GLM-5.1",
+        "Kimi-K2.6"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "empiriolabs",
+      "display_name": "EmpirioLabs AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.empiriolabs.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.empiriolabs.ai"
+      ],
+      "api_key_env_vars": [
+        "EMPIRIOLABS_API_KEY"
+      ],
+      "model_count": 36,
+      "model_sample": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemma-4-26b-a4b",
+        "glm-4-5-flash",
+        "glm-4-7-flash"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "firepass",
+      "display_name": "Fireworks (Firepass)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.fireworks.ai/inference/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.fireworks.ai/firepass"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "accounts/fireworks/routers/kimi-k2p6-turbo"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "freemodel",
+      "display_name": "FreeModel",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://cc.freemodel.dev/v1"
+      ],
+      "documentation_urls": [
+        "https://freemodel.dev"
+      ],
+      "api_key_env_vars": [
+        "FREEMODEL_API_KEY"
+      ],
+      "model_count": 10,
+      "model_sample": [
+        "claude-fable-5",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "frogbot",
+      "display_name": "FrogBot",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://app.frogbot.ai/api/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.frogbot.ai"
+      ],
+      "api_key_env_vars": [
+        "FROGBOT_API_KEY"
+      ],
+      "model_count": 26,
+      "model_sample": [
+        "claude-haiku-4-5",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "deepseek-v4-pro"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "gitlab",
+      "display_name": "GitLab Duo",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://docs.gitlab.com/user/duo_agent_platform"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 18,
+      "model_sample": [
+        "duo-chat-fable-5",
+        "duo-chat-gpt-5-1",
+        "duo-chat-gpt-5-2",
+        "duo-chat-gpt-5-2-codex",
+        "duo-chat-gpt-5-3-codex"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "gmi",
+      "display_name": "GMI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 17,
+      "model_sample": [
+        "gmi/MiniMaxAI/MiniMax-M2.1",
+        "gmi/Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
+        "gmi/anthropic/claude-opus-4",
+        "gmi/anthropic/claude-opus-4.5",
+        "gmi/anthropic/claude-sonnet-4"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "gmicloud",
+      "display_name": "GMI Cloud",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.gmi-serving.com/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.gmicloud.ai/inference-engine/api-reference/llm-api-reference"
+      ],
+      "api_key_env_vars": [
+        "GMICLOUD_API_KEY"
+      ],
+      "model_count": 13,
+      "model_sample": [
+        "Qwen/Qwen3.7-Max",
+        "anthropic/claude-opus-4.6",
+        "anthropic/claude-opus-4.7",
+        "anthropic/claude-opus-4.8",
+        "anthropic/claude-sonnet-4.6"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "google_vertex_anthropic",
+      "display_name": "Vertex (Anthropic)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 11,
+      "model_sample": [
+        "claude-3-5-haiku@20241022",
+        "claude-haiku-4-5@20251001",
+        "claude-opus-4-1@20250805",
+        "claude-opus-4-5@20251101",
+        "claude-opus-4-6@default"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "hetzner",
+      "display_name": "Hetzner",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://inference.hetzner.com/api/v1"
+      ],
+      "documentation_urls": [
+        "https://experiments.hetzner.com/docs/inference"
+      ],
+      "api_key_env_vars": [
+        "HETZNER_API_KEY"
+      ],
+      "model_count": 1,
+      "model_sample": [
+        "Qwen/Qwen3.6-35B-A3B-FP8"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "hpc_ai",
+      "display_name": "HPC-AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.hpc-ai.com/inference/v1"
+      ],
+      "documentation_urls": [
+        "https://www.hpc-ai.com/doc/docs/quickstart"
+      ],
+      "api_key_env_vars": [
+        "HPC_AI_API_KEY"
+      ],
+      "model_count": 9,
+      "model_sample": [
+        "anthropic/claude-opus-4.7",
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-pro",
+        "minimax/minimax-m2.5",
+        "moonshotai/kimi-k2.5"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "hyper",
+      "display_name": "Charm Hyper",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://hyper.charm.land/v1"
+      ],
+      "documentation_urls": [
+        "https://hyper.charm.land"
+      ],
+      "api_key_env_vars": [
+        "HYPER_API_KEY"
+      ],
+      "model_count": 20,
+      "model_sample": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "gemma-4-26b-a4b-it",
+        "glm-5",
+        "glm-5.1"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "iflowcn",
+      "display_name": "iFlow",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://apis.iflow.cn/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.iflow.cn/en/docs"
+      ],
+      "api_key_env_vars": [
+        "IFLOW_API_KEY"
+      ],
+      "model_count": 14,
+      "model_sample": [
+        "deepseek-r1",
+        "deepseek-v3",
+        "deepseek-v3.2",
+        "glm-4.6",
+        "kimi-k2"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "inceptron",
+      "display_name": "Inceptron",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.inceptron.io/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.inceptron.io"
+      ],
+      "api_key_env_vars": [
+        "INCEPTRON_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "MiniMaxAI/MiniMax-M2.5",
+        "moonshotai/Kimi-K2.6",
+        "moonshotai/Kimi-K2.6-Fast",
+        "moonshotai/Kimi-K2.7-Code",
+        "nvidia/llama-3.3-70b-instruct-fp8"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    }
+  ]
+}

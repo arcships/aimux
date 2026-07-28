@@ -112,6 +112,7 @@ cargo test -p aimux-providers --tests
 | [rfc/0003-test-cassette.md](rfc/0003-test-cassette.md) | 录播测试方案 |
 | [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md) | 全网厂商清单与实现现状 |
 | [rfc/0005-protocol-conversion.md](rfc/0005-protocol-conversion.md) | 协议转换与适配层设计 |
+| [rfc/0006-provider-development.md](rfc/0006-provider-development.md) | Provider 最小准入、实现路径、核心契约、按需测试与验收规范 |
 
 ## License
 

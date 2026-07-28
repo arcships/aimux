@@ -1,0 +1,406 @@
+{
+  "batch": 3,
+  "count": 14,
+  "providers": [
+    {
+      "id": "stability",
+      "display_name": "Stability",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "image_edit",
+        "image_generation"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 23,
+      "model_sample": [
+        "stability/conservative",
+        "stability/creative",
+        "stability/erase",
+        "stability/fast",
+        "stability/inpaint"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "tavily",
+      "display_name": "Tavily",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "tavily/search",
+        "tavily/search-advanced"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "tinyfish",
+      "display_name": "Tinyfish",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "tinyfish/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "you_com",
+      "display_name": "YOU COM",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "search"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "you_com/search"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "abacus",
+      "display_name": "Abacus",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://routellm.abacus.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://abacus.ai/help/api"
+      ],
+      "api_key_env_vars": [
+        "ABACUS_API_KEY"
+      ],
+      "model_count": 100,
+      "model_sample": [
+        "MiniMaxAI/MiniMax-M2.7",
+        "MiniMaxAI/MiniMax-M3",
+        "Qwen/QwQ-32B",
+        "Qwen/Qwen2.5-72B-Instruct",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "abliteration_ai",
+      "display_name": "abliteration.ai",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.abliteration.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.abliteration.ai/models"
+      ],
+      "api_key_env_vars": [
+        "ABLIT_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "abliterated-model",
+        "abliterated-model-large"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "advanced_custom",
+      "display_name": "Advanced Custom",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "ai_router",
+      "display_name": "AI-ROUTER",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.ai-router.dev/v1"
+      ],
+      "documentation_urls": [
+        "https://ai-router.dev/openai-compatible-api-gateway"
+      ],
+      "api_key_env_vars": [
+        "AI_ROUTER_API_KEY"
+      ],
+      "model_count": 5,
+      "model_sample": [
+        "gpt-5.4",
+        "gpt-5.5",
+        "gpt-5.6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "aiand",
+      "display_name": "ai&",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.aiand.com/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.aiand.com"
+      ],
+      "api_key_env_vars": [
+        "AIAND_API_KEY"
+      ],
+      "model_count": 10,
+      "model_sample": [
+        "deepseek-ai/deepseek-v4-flash",
+        "deepseek-ai/deepseek-v4-pro",
+        "google/gemma-4-31b-it",
+        "moonshotai/kimi-k2.6",
+        "moonshotai/kimi-k2.7-code"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "aiproxy",
+      "display_name": "AIProxy",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.aiproxy.io"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "aiproxy_library",
+      "display_name": "AIProxyLibrary",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.aiproxy.io"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "aki_io",
+      "display_name": "AKI.IO",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://aki.io/v1"
+      ],
+      "documentation_urls": [
+        "https://aki.io/docs"
+      ],
+      "api_key_env_vars": [
+        "AKI_IO_API_KEY"
+      ],
+      "model_count": 6,
+      "model_sample": [
+        "gemma4-26b",
+        "gpt-oss-120b",
+        "kimi-k2.7-code-1100b",
+        "minimax-m2.5-230b",
+        "mistral4-119b"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "ali",
+      "display_name": "Ali",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://dashscope.aliyuncs.com"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "alibaba_cn",
+      "display_name": "Alibaba (China)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      ],
+      "documentation_urls": [
+        "https://www.alibabacloud.com/help/en/model-studio/models"
+      ],
+      "api_key_env_vars": [
+        "DASHSCOPE_API_KEY"
+      ],
+      "model_count": 112,
+      "model_sample": [
+        "MiniMax-M2.5",
+        "MiniMax/MiniMax-M2.7",
+        "deepseek-r1",
+        "deepseek-r1-0528",
+        "deepseek-r1-distill-llama-70b"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,420 @@
+{
+  "batch": 9,
+  "count": 14,
+  "providers": [
+    {
+      "id": "model_oracle_ai",
+      "display_name": "Model Oracle AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.modeloracle.com/api/v1"
+      ],
+      "documentation_urls": [
+        "https://modeloracle.com/setup"
+      ],
+      "api_key_env_vars": [
+        "MODEL_ORACLE_API_KEY"
+      ],
+      "model_count": 15,
+      "model_sample": [
+        "auto",
+        "claude-fable-5",
+        "claude-haiku-4.5",
+        "claude-opus-4.8",
+        "claude-sonnet-5"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "moka_ai",
+      "display_name": "MokaAI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.moka.ai"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "moonshotai_cn",
+      "display_name": "Moonshot AI (China)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.moonshot.cn/anthropic/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.moonshot.cn/docs/api/chat"
+      ],
+      "api_key_env_vars": [
+        "MOONSHOT_API_KEY"
+      ],
+      "model_count": 10,
+      "model_sample": [
+        "kimi-k2-0711-preview",
+        "kimi-k2-0905-preview",
+        "kimi-k2-thinking",
+        "kimi-k2-thinking-turbo",
+        "kimi-k2-turbo-preview"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "neon",
+      "display_name": "Neon",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://neon.com/docs"
+      ],
+      "api_key_env_vars": [
+        "NEON_AI_GATEWAY_TOKEN"
+      ],
+      "model_count": 37,
+      "model_sample": [
+        "claude-haiku-4-5",
+        "claude-opus-4-1",
+        "claude-opus-4-5",
+        "claude-opus-4-6",
+        "claude-opus-4-7"
+      ],
+      "trust_score": 59,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "netlify",
+      "display_name": "Netlify",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://docs.netlify.com/build/ai-gateway/overview"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 68,
+      "model_sample": [
+        "anthropic/claude-fable-5",
+        "anthropic/claude-haiku-4-5",
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-opus-4-1-20250805",
+        "anthropic/claude-opus-4-5"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "neuralwatt",
+      "display_name": "Neuralwatt",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.neuralwatt.com/v1"
+      ],
+      "documentation_urls": [
+        "https://portal.neuralwatt.com/docs"
+      ],
+      "api_key_env_vars": [
+        "NEURALWATT_API_KEY"
+      ],
+      "model_count": 24,
+      "model_sample": [
+        "MiniMaxAI/MiniMax-M2.5",
+        "Qwen/Qwen3.5-397B-A17B-FP8",
+        "Qwen/Qwen3.6-35B-A3B",
+        "glm-5-fast",
+        "glm-5.1-fast"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "new_api",
+      "display_name": "New API",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "nova",
+      "display_name": "Nova",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.nova.amazon.com/v1"
+      ],
+      "documentation_urls": [
+        "https://nova.amazon.com/dev/documentation"
+      ],
+      "api_key_env_vars": [
+        "NOVA_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "nova-2-lite-v1",
+        "nova-2-pro-v1"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "ofox",
+      "display_name": "Ofox",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.ofox.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://ofox.ai/docs"
+      ],
+      "api_key_env_vars": [
+        "OFOX_API_KEY"
+      ],
+      "model_count": 13,
+      "model_sample": [
+        "anthropic/claude-fable-5",
+        "anthropic/claude-opus-4.8",
+        "anthropic/claude-sonnet-5",
+        "bailian/qwen3.7-max",
+        "deepseek/deepseek-v4-pro"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "ollama_chat",
+      "display_name": "Ollama Chat",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "oobabooga",
+      "display_name": "Oobabooga",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "opencode",
+      "display_name": "OpenCode Zen",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://opencode.ai/zen/v1"
+      ],
+      "documentation_urls": [
+        "https://opencode.ai/docs/zen"
+      ],
+      "api_key_env_vars": [
+        "OPENCODE_API_KEY"
+      ],
+      "model_count": 85,
+      "model_sample": [
+        "big-pickle",
+        "claude-3-5-haiku",
+        "claude-fable-5",
+        "claude-haiku-4-5",
+        "claude-opus-4-1"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "pa_lm",
+      "display_name": "PaLM",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "perplexity_agent",
+      "display_name": "Perplexity Agent",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.perplexity.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.perplexity.ai/docs/agent-api/models"
+      ],
+      "api_key_env_vars": [
+        "PERPLEXITY_API_KEY"
+      ],
+      "model_count": 18,
+      "model_sample": [
+        "anthropic/claude-haiku-4-5",
+        "anthropic/claude-opus-4-5",
+        "anthropic/claude-opus-4-6",
+        "anthropic/claude-opus-4-7",
+        "anthropic/claude-sonnet-4-5"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    }
+  ]
+}

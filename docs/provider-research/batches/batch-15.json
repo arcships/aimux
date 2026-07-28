@@ -1,0 +1,411 @@
+{
+  "batch": 15,
+  "count": 13,
+  "providers": [
+    {
+      "id": "nearai",
+      "display_name": "NEAR AI Cloud",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "embedding",
+        "rerank"
+      ],
+      "base_urls": [
+        "https://cloud-api.near.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.near.ai"
+      ],
+      "api_key_env_vars": [
+        "NEARAI_API_KEY"
+      ],
+      "model_count": 37,
+      "model_sample": [
+        "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        "Qwen/Qwen3-Embedding-0.6B",
+        "Qwen/Qwen3-Reranker-0.6B",
+        "Qwen/Qwen3-VL-30B-A3B-Instruct",
+        "Qwen/Qwen3.5-122B-A10B"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "oci",
+      "display_name": "OCI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 44,
+      "model_sample": [
+        "oci/cohere.command-a-03-2025",
+        "oci/cohere.command-a-reasoning",
+        "oci/cohere.command-a-reasoning-08-2025",
+        "oci/cohere.command-a-translate-08-2025",
+        "oci/cohere.command-a-vision"
+      ],
+      "trust_score": 49,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "palm",
+      "display_name": "Palm",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "completion"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 6,
+      "model_sample": [
+        "palm/chat-bison",
+        "palm/chat-bison-001",
+        "palm/text-bison",
+        "palm/text-bison-001",
+        "palm/text-bison-safety-off"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "privatemode_ai",
+      "display_name": "Privatemode AI",
+      "aliases": [],
+      "provider_kind": "local_runtime",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [
+        "http://localhost:8080/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.privatemode.ai/api/overview"
+      ],
+      "api_key_env_vars": [
+        "PRIVATEMODE_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "gemma-3-27b",
+        "gpt-oss-120b",
+        "kimi-k2.6",
+        "qwen3-coder-30b-a3b",
+        "qwen3-embedding-4b"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "regolo_ai",
+      "display_name": "Regolo AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "embedding",
+        "image_generation",
+        "rerank"
+      ],
+      "base_urls": [
+        "https://api.regolo.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.regolo.ai"
+      ],
+      "api_key_env_vars": [
+        "REGOLO_API_KEY"
+      ],
+      "model_count": 13,
+      "model_sample": [
+        "gpt-oss-120b",
+        "gpt-oss-20b",
+        "llama-3.1-8b-instruct",
+        "llama-3.3-70b-instruct",
+        "minimax-m2.5"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "sagemaker",
+      "display_name": "Sagemaker",
+      "aliases": [],
+      "provider_kind": "cloud_platform",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "chat",
+        "completion"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 6,
+      "model_sample": [
+        "sagemaker/meta-textgeneration-llama-2-13b",
+        "sagemaker/meta-textgeneration-llama-2-13b-f",
+        "sagemaker/meta-textgeneration-llama-2-70b",
+        "sagemaker/meta-textgeneration-llama-2-70b-b-f",
+        "sagemaker/meta-textgeneration-llama-2-7b"
+      ],
+      "trust_score": 49,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "snowflake",
+      "display_name": "Snowflake",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 37,
+      "model_sample": [
+        "snowflake/claude-3-5-sonnet",
+        "snowflake/claude-3-7-sonnet",
+        "snowflake/claude-4-opus",
+        "snowflake/claude-4-sonnet",
+        "snowflake/claude-haiku-4-5"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "text_completion_codestral",
+      "display_name": "Text Completion Codestral",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "chat",
+        "completion"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "text-completion-codestral/codestral-2405",
+        "text-completion-codestral/codestral-latest"
+      ],
+      "trust_score": 49,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "text_completion_inception",
+      "display_name": "Text Completion Inception",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "chat",
+        "completion"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 1,
+      "model_sample": [
+        "text-completion-inception/mercury-edit-2"
+      ],
+      "trust_score": 49,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_language_models",
+      "display_name": "Vertex AI Language Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "embedding",
+        "image_generation",
+        "realtime"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 42,
+      "model_sample": [
+        "deep-research-pro-preview-12-2025",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-001",
+        "gemini-2.0-flash-lite",
+        "gemini-2.0-flash-lite-001"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "vertex_ai_text_models",
+      "display_name": "Vertex AI Text Models",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "completion"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "text-unicorn",
+        "text-unicorn@001"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "watsonx",
+      "display_name": "Watsonx",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "audio_transcription",
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 29,
+      "model_sample": [
+        "watsonx/bigscience/mt0-xxl-13b",
+        "watsonx/core42/jais-13b-chat",
+        "watsonx/google/flan-t5-xl-3b",
+        "watsonx/ibm/granite-13b-chat-v2",
+        "watsonx/ibm/granite-13b-instruct-v2"
+      ],
+      "trust_score": 49,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "zenmux",
+      "display_name": "ZenMux",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "embedding",
+        "image_generation"
+      ],
+      "base_urls": [
+        "https://zenmux.ai/api/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.zenmux.ai"
+      ],
+      "api_key_env_vars": [
+        "ZENMUX_API_KEY"
+      ],
+      "model_count": 164,
+      "model_sample": [
+        "anthropic/claude-3.5-haiku",
+        "anthropic/claude-3.7-sonnet",
+        "anthropic/claude-fable-5",
+        "anthropic/claude-haiku-4.5",
+        "anthropic/claude-opus-4"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    }
+  ]
+}

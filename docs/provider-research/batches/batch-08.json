@@ -1,0 +1,436 @@
+{
+  "batch": 8,
+  "count": 14,
+  "providers": [
+    {
+      "id": "llmtr",
+      "display_name": "LLMTR",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://llmtr.com/v1"
+      ],
+      "documentation_urls": [
+        "https://llmtr.com/docs"
+      ],
+      "api_key_env_vars": [
+        "LLMTR_API_KEY"
+      ],
+      "model_count": 6,
+      "model_sample": [
+        "gemma-4",
+        "magibu-11b-v8",
+        "medgemma-4b",
+        "qwen3-6-35b",
+        "sincap"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "lucidquery",
+      "display_name": "LucidQuery",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.lucidquery.com/v1",
+        "https://lucidquery.com/api/v1"
+      ],
+      "documentation_urls": [
+        "https://lucidquery.com/api/docs",
+        "https://lucidquery.com/docs"
+      ],
+      "api_key_env_vars": [
+        "LUCIDQUERY_API_KEY"
+      ],
+      "model_count": 4,
+      "model_sample": [
+        "lucidnova-rf1-100b",
+        "lucidquery-agi-01-frontier",
+        "lucidquery-agi-01-swift",
+        "lucidquery-nexus-coder"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "lynkr",
+      "display_name": "Lynkr",
+      "aliases": [],
+      "provider_kind": "local_runtime",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "http://127.0.0.1:8081/v1"
+      ],
+      "documentation_urls": [
+        "https://github.com/Fast-Editor/Lynkr"
+      ],
+      "api_key_env_vars": [
+        "LYNKR_API_KEY"
+      ],
+      "model_count": 1,
+      "model_sample": [
+        "lynkr-auto"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "maritalk",
+      "display_name": "Maritalk",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "meganova",
+      "display_name": "Meganova",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.meganova.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.meganova.ai"
+      ],
+      "api_key_env_vars": [
+        "MEGANOVA_API_KEY"
+      ],
+      "model_count": 19,
+      "model_sample": [
+        "MiniMaxAI/MiniMax-M2.1",
+        "MiniMaxAI/MiniMax-M2.5",
+        "Qwen/Qwen2.5-VL-32B-Instruct",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "Qwen/Qwen3.5-Plus"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "merge_gateway",
+      "display_name": "Merge Gateway",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://docs.merge.dev/merge-gateway"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 83,
+      "model_sample": [
+        "anthropic/claude-haiku-4-5-20251001",
+        "anthropic/claude-opus-4-1-20250805",
+        "anthropic/claude-opus-4-20250514",
+        "anthropic/claude-opus-4-5-20251101",
+        "anthropic/claude-opus-4-6"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "midjourney",
+      "display_name": "Midjourney",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://oa.api2d.net"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "midjourney_plus",
+      "display_name": "MidjourneyPlus",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.openai-sb.com"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "mimo",
+      "display_name": "Mimo",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "rust_genai"
+      ]
+    },
+    {
+      "id": "minimax_cn",
+      "display_name": "MiniMax (minimaxi.com)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.minimaxi.com/anthropic/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.minimaxi.com/docs/guides/quickstart"
+      ],
+      "api_key_env_vars": [
+        "MINIMAX_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "MiniMax-M2",
+        "MiniMax-M2.1",
+        "MiniMax-M2.5",
+        "MiniMax-M2.5-highspeed",
+        "MiniMax-M2.7"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "minimax_cn_coding_plan",
+      "display_name": "MiniMax Token Plan (minimaxi.com)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.minimaxi.com/anthropic/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.minimaxi.com/docs/token-plan/intro"
+      ],
+      "api_key_env_vars": [
+        "MINIMAX_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "MiniMax-M2",
+        "MiniMax-M2.1",
+        "MiniMax-M2.5",
+        "MiniMax-M2.5-highspeed",
+        "MiniMax-M2.7"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "minimax_coding_plan",
+      "display_name": "MiniMax Token Plan (minimax.io)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.minimax.io/anthropic/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.minimax.io/docs/token-plan/intro"
+      ],
+      "api_key_env_vars": [
+        "MINIMAX_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "MiniMax-M2",
+        "MiniMax-M2.1",
+        "MiniMax-M2.5",
+        "MiniMax-M2.5-highspeed",
+        "MiniMax-M2.7"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "mixlayer",
+      "display_name": "Mixlayer",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://models.mixlayer.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.mixlayer.com"
+      ],
+      "api_key_env_vars": [
+        "MIXLAYER_API_KEY"
+      ],
+      "model_count": 5,
+      "model_sample": [
+        "qwen/qwen3.5-122b-a10b",
+        "qwen/qwen3.5-27b",
+        "qwen/qwen3.5-35b-a3b",
+        "qwen/qwen3.5-397b-a17b",
+        "qwen/qwen3.5-9b"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "moark",
+      "display_name": "Moark",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://moark.com/v1"
+      ],
+      "documentation_urls": [
+        "https://moark.com/docs/openapi/v1"
+      ],
+      "api_key_env_vars": [
+        "MOARK_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "GLM-4.7",
+        "MiniMax-M2.1"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    }
+  ]
+}

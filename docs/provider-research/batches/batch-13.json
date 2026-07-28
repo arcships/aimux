@@ -1,0 +1,426 @@
+{
+  "batch": 13,
+  "count": 14,
+  "providers": [
+    {
+      "id": "vidu",
+      "display_name": "Vidu",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.vidu.cn"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "vivgrid",
+      "display_name": "Vivgrid",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.vivgrid.com/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.vivgrid.com/models"
+      ],
+      "api_key_env_vars": [
+        "VIVGRID_API_KEY"
+      ],
+      "model_count": 17,
+      "model_sample": [
+        "deepseek-v3.2",
+        "deepseek-v4-pro",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-pro-preview",
+        "glm-5.2"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "volc_engine",
+      "display_name": "VolcEngine",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://ark.cn-beijing.volces.com"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "vultr",
+      "display_name": "Vultr",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.vultrinference.com/v1"
+      ],
+      "documentation_urls": [
+        "https://api.vultrinference.com"
+      ],
+      "api_key_env_vars": [
+        "VULTR_API_KEY"
+      ],
+      "model_count": 12,
+      "model_sample": [
+        "MiniMaxAI/MiniMax-M2.7",
+        "Qwen/Qwen3.5-397B-A17B",
+        "Qwen/Qwen3.6-27B",
+        "XiaomiMiMo/MiMo-V2.5-Pro",
+        "deepseek-ai/DeepSeek-V4-Flash"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "watsonx_text",
+      "display_name": "Watsonx Text",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "xiaomi_token_plan_ams",
+      "display_name": "Xiaomi Token Plan (Europe)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://token-plan-ams.xiaomimimo.com/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.xiaomimimo.com"
+      ],
+      "api_key_env_vars": [
+        "XIAOMI_API_KEY"
+      ],
+      "model_count": 8,
+      "model_sample": [
+        "mimo-v2-omni",
+        "mimo-v2-pro",
+        "mimo-v2-tts",
+        "mimo-v2.5",
+        "mimo-v2.5-pro"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "xiaomi_token_plan_cn",
+      "display_name": "Xiaomi Token Plan (China)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://token-plan-cn.xiaomimimo.com/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.xiaomimimo.com"
+      ],
+      "api_key_env_vars": [
+        "XIAOMI_API_KEY"
+      ],
+      "model_count": 8,
+      "model_sample": [
+        "mimo-v2-omni",
+        "mimo-v2-pro",
+        "mimo-v2-tts",
+        "mimo-v2.5",
+        "mimo-v2.5-pro"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "xiaomi_token_plan_sgp",
+      "display_name": "Xiaomi Token Plan (Singapore)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://token-plan-sgp.xiaomimimo.com/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.xiaomimimo.com"
+      ],
+      "api_key_env_vars": [
+        "XIAOMI_API_KEY"
+      ],
+      "model_count": 8,
+      "model_sample": [
+        "mimo-v2-omni",
+        "mimo-v2-pro",
+        "mimo-v2-tts",
+        "mimo-v2.5",
+        "mimo-v2.5-pro"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "xpersona",
+      "display_name": "Xpersona",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://www.xpersona.co/v1"
+      ],
+      "documentation_urls": [
+        "https://www.xpersona.co/docs"
+      ],
+      "api_key_env_vars": [
+        "XPERSONA_API_KEY"
+      ],
+      "model_count": 3,
+      "model_sample": [
+        "claude-fable-5",
+        "xpersona-frieren-coder",
+        "xpersona-gpt-5.5"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "xunfei",
+      "display_name": "Xunfei",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "zai_coding_plan",
+      "display_name": "Z.AI Coding Plan",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.z.ai/api/coding/paas/v4"
+      ],
+      "documentation_urls": [
+        "https://docs.z.ai/devpack/overview"
+      ],
+      "api_key_env_vars": [
+        "ZHIPU_API_KEY"
+      ],
+      "model_count": 6,
+      "model_sample": [
+        "glm-4.5-air",
+        "glm-4.7",
+        "glm-5-turbo",
+        "glm-5.1",
+        "glm-5.2"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "zeldoc",
+      "display_name": "Zeldoc",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.zeldoc.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.zeldoc.ai"
+      ],
+      "api_key_env_vars": [
+        "ZELDOC_API_KEY"
+      ],
+      "model_count": 1,
+      "model_sample": [
+        "z-code"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "zenifra",
+      "display_name": "Zenifra",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://ai.zenifra.com/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.zenifra.com"
+      ],
+      "api_key_env_vars": [
+        "ZENIFRA_AI_KEY"
+      ],
+      "model_count": 1,
+      "model_sample": [
+        "alibaba/qwen3.6-35b-a3b"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "zhipu_v4",
+      "display_name": "ZhipuV4",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://open.bigmodel.cn"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    }
+  ]
+}

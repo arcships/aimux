@@ -1,0 +1,438 @@
+{
+  "batch": 4,
+  "count": 14,
+  "providers": [
+    {
+      "id": "alibaba_coding_plan",
+      "display_name": "Alibaba Coding Plan",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://coding-intl.dashscope.aliyuncs.com/v1"
+      ],
+      "documentation_urls": [
+        "https://www.alibabacloud.com/help/en/model-studio/coding-plan"
+      ],
+      "api_key_env_vars": [
+        "ALIBABA_CODING_PLAN_API_KEY"
+      ],
+      "model_count": 12,
+      "model_sample": [
+        "MiniMax-M2.5",
+        "glm-4.7",
+        "glm-5",
+        "kimi-k2.5",
+        "qwen3-coder-next"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "alibaba_coding_plan_cn",
+      "display_name": "Alibaba Coding Plan (China)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://coding.dashscope.aliyuncs.com/v1"
+      ],
+      "documentation_urls": [
+        "https://help.aliyun.com/zh/model-studio/coding-plan"
+      ],
+      "api_key_env_vars": [
+        "ALIBABA_CODING_PLAN_API_KEY"
+      ],
+      "model_count": 12,
+      "model_sample": [
+        "MiniMax-M2.5",
+        "glm-4.7",
+        "glm-5",
+        "kimi-k2.5",
+        "qwen3-coder-next"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "ambient",
+      "display_name": "Ambient",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.ambient.xyz/v1"
+      ],
+      "documentation_urls": [
+        "https://ambient.xyz"
+      ],
+      "api_key_env_vars": [
+        "AMBIENT_API_KEY"
+      ],
+      "model_count": 9,
+      "model_sample": [
+        "ambient/large",
+        "deepseek/deepseek-v4-flash",
+        "moonshotai/kimi-k2.6",
+        "moonshotai/kimi-k2.7-code",
+        "stepfun/step-3.7-flash"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "anthropic_text",
+      "display_name": "Anthropic Text",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "anyapi",
+      "display_name": "AnyAPI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.anyapi.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.anyapi.ai"
+      ],
+      "api_key_env_vars": [
+        "ANYAPI_API_KEY"
+      ],
+      "model_count": 30,
+      "model_sample": [
+        "anthropic/claude-haiku-4-5",
+        "anthropic/claude-opus-4-6",
+        "anthropic/claude-opus-4-7",
+        "anthropic/claude-sonnet-4-5",
+        "anthropic/claude-sonnet-4-6"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "atomic_chat",
+      "display_name": "Atomic Chat",
+      "aliases": [],
+      "provider_kind": "local_runtime",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "http://127.0.0.1:1337/v1"
+      ],
+      "documentation_urls": [
+        "https://atomic.chat"
+      ],
+      "api_key_env_vars": [
+        "ATOMIC_CHAT_API_KEY"
+      ],
+      "model_count": 5,
+      "model_sample": [
+        "Meta-Llama-3_1-8B-Instruct-GGUF",
+        "Qwen3_5-9B-MLX-4bit",
+        "Qwen3_5-9B-Q4_K_M",
+        "gemma-4-E4B-it-IQ4_XS",
+        "gemma-4-E4B-it-MLX-4bit"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "auriko",
+      "display_name": "Auriko",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.auriko.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.auriko.ai"
+      ],
+      "api_key_env_vars": [
+        "AURIKO_API_KEY"
+      ],
+      "model_count": 15,
+      "model_sample": [
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "aws",
+      "display_name": "AWS",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "baidu_v2",
+      "display_name": "BaiduV2",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://qianfan.baidubce.com"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "bailing",
+      "display_name": "Bailing",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.tbox.cn/api/llm/v1/chat/completions"
+      ],
+      "documentation_urls": [
+        "https://alipaytbox.yuque.com/sxs0ba/ling/intro"
+      ],
+      "api_key_env_vars": [
+        "BAILING_API_TOKEN"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "Ling-1T",
+        "Ring-1T"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "berget",
+      "display_name": "Berget.AI",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.berget.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://api.berget.ai"
+      ],
+      "api_key_env_vars": [
+        "BERGET_API_KEY"
+      ],
+      "model_count": 8,
+      "model_sample": [
+        "google/gemma-4-31B-it",
+        "meta-llama/Llama-3.3-70B-Instruct",
+        "mistralai/Mistral-Medium-3.5-128B",
+        "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+        "moonshotai/Kimi-K2.6"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "blueclaw",
+      "display_name": "Blue Claw",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://openai.blueclaw.network/v1"
+      ],
+      "documentation_urls": [
+        "https://blueclaw.network"
+      ],
+      "api_key_env_vars": [
+        "BLUECLAW_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "Qwen/Qwen3.6-35B-A3B-FP8",
+        "Qwen3.6-27B"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "chat_gpt_subscription_codex",
+      "display_name": "ChatGPT Subscription (Codex)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://chatgpt.com"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 0,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "claudinio",
+      "display_name": "Claudinio",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.claudin.io/v1"
+      ],
+      "documentation_urls": [
+        "https://claudin.io"
+      ],
+      "api_key_env_vars": [
+        "CLAUDINIO_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "claudinio",
+        "claudius"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    }
+  ]
+}

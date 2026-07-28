@@ -1,0 +1,417 @@
+{
+  "batch": 1,
+  "count": 14,
+  "providers": [
+    {
+      "id": "chutes",
+      "display_name": "Chutes",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 1.0,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://llm.chutes.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://llm.chutes.ai/v1/models"
+      ],
+      "api_key_env_vars": [
+        "CHUTES_API_KEY"
+      ],
+      "model_count": 43,
+      "model_sample": [
+        "MiniMaxAI/MiniMax-M2.5-TEE",
+        "Nemotron-3-Nano-Omni-30B-TEE",
+        "NousResearch/DeepHermes-3-Mistral-24B-Preview",
+        "NousResearch/Hermes-4-14B",
+        "Qwen/Qwen2.5-72B-Instruct"
+      ],
+      "trust_score": 86,
+      "source_ids": [
+        "litellm_constants",
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "darkbloom",
+      "display_name": "Darkbloom",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.85,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 2,
+      "model_sample": [
+        "darkbloom/gemma-4-26b",
+        "darkbloom/gpt-oss-20b"
+      ],
+      "trust_score": 59,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "empower",
+      "display_name": "Empower",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "meta",
+      "display_name": "Meta",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 1.0,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.meta.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://dev.meta.ai/docs"
+      ],
+      "api_key_env_vars": [
+        "META_MODEL_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "meta/muse-spark-1.1",
+        "muse-spark-1.1"
+      ],
+      "trust_score": 86,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices",
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "pinstripes",
+      "display_name": "Pinstripes",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.85,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 6,
+      "model_sample": [
+        "pinstripes/ps/deepseek-v4-flash",
+        "pinstripes/ps/glm-4.5-air",
+        "pinstripes/ps/minimax-m2.7",
+        "pinstripes/ps/qwen3-30b-a3b",
+        "pinstripes/ps/qwen3-coder-30b-a3b"
+      ],
+      "trust_score": 59,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "publicai",
+      "display_name": "Publicai",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.85,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 9,
+      "model_sample": [
+        "publicai/BSC-LT/ALIA-40b-instruct_Q8_0",
+        "publicai/BSC-LT/salamandra-7b-instruct-tools-16k",
+        "publicai/aisingapore/Gemma-SEA-LION-v4-27B-IT",
+        "publicai/aisingapore/Qwen-SEA-LION-v4-32B-IT",
+        "publicai/allenai/Olmo-3-32B-Think"
+      ],
+      "trust_score": 59,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "synthetic",
+      "display_name": "Synthetic",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 1.0,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.synthetic.new/openai/v1"
+      ],
+      "documentation_urls": [
+        "https://synthetic.new/pricing"
+      ],
+      "api_key_env_vars": [
+        "SYNTHETIC_API_KEY"
+      ],
+      "model_count": 38,
+      "model_sample": [
+        "hf:MiniMaxAI/MiniMax-M2",
+        "hf:MiniMaxAI/MiniMax-M2.1",
+        "hf:MiniMaxAI/MiniMax-M2.5",
+        "hf:MiniMaxAI/MiniMax-M3",
+        "hf:Qwen/Qwen2.5-Coder-32B-Instruct"
+      ],
+      "trust_score": 86,
+      "source_ids": [
+        "litellm_constants",
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "tensormesh",
+      "display_name": "Tensormesh",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.85,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 10,
+      "model_sample": [
+        "tensormesh/MiniMaxAI/MiniMax-M2.5",
+        "tensormesh/Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+        "tensormesh/Qwen/Qwen3.5-397B-A17B-FP8",
+        "tensormesh/Qwen/Qwen3.6-27B-FP8",
+        "tensormesh/deepseek-ai/DeepSeek-V4-Flash"
+      ],
+      "trust_score": 59,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "wandb",
+      "display_name": "Weights & Biases",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 1.0,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.inference.wandb.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.wandb.ai/guides/integrations/inference"
+      ],
+      "api_key_env_vars": [
+        "WANDB_API_KEY"
+      ],
+      "model_count": 48,
+      "model_sample": [
+        "JetBrains/Mellum2-12B-A2.5B-Instruct",
+        "MiniMaxAI/MiniMax-M2.5",
+        "MiniMaxAI/MiniMax-M3",
+        "OpenPipe/Qwen3-14B-Instruct",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507"
+      ],
+      "trust_score": 98,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices",
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "apertis",
+      "display_name": "Apertis",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.65,
+      "capabilities": [],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "libertai",
+      "display_name": "Libertai",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.85,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 12,
+      "model_sample": [
+        "libertai/bge-m3",
+        "libertai/deepseek-v4-flash",
+        "libertai/deepseek-v4-flash-thinking",
+        "libertai/gemma-4-31b-it",
+        "libertai/gemma-4-31b-it-thinking"
+      ],
+      "trust_score": 59,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "poe",
+      "display_name": "Poe",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 1.0,
+      "capabilities": [
+        "chat",
+        "image_generation"
+      ],
+      "base_urls": [
+        "https://api.poe.com/v1"
+      ],
+      "documentation_urls": [
+        "https://creator.poe.com/docs/external-applications/openai-compatible-api"
+      ],
+      "api_key_env_vars": [
+        "POE_API_KEY"
+      ],
+      "model_count": 137,
+      "model_sample": [
+        "anthropic/claude-haiku-3",
+        "anthropic/claude-haiku-3.5",
+        "anthropic/claude-haiku-4.5",
+        "anthropic/claude-opus-4",
+        "anthropic/claude-opus-4.1"
+      ],
+      "trust_score": 86,
+      "source_ids": [
+        "litellm_constants",
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "ragflow",
+      "display_name": "Ragflow",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L2",
+      "protocol": "openai",
+      "openai_compatible": true,
+      "confidence": 0.65,
+      "capabilities": [],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "aws_polly",
+      "display_name": "AWS Polly",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "L3",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "audio_speech"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 4,
+      "model_sample": [
+        "aws_polly/generative",
+        "aws_polly/long-form",
+        "aws_polly/neural",
+        "aws_polly/standard"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    }
+  ]
+}

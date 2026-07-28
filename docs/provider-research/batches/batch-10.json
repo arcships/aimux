@@ -1,0 +1,425 @@
+{
+  "batch": 10,
+  "count": 14,
+  "providers": [
+    {
+      "id": "poolside",
+      "display_name": "Poolside",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://inference.poolside.ai/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.poolside.ai"
+      ],
+      "api_key_env_vars": [
+        "POOLSIDE_API_KEY"
+      ],
+      "model_count": 4,
+      "model_sample": [
+        "poolside/laguna-m.1",
+        "poolside/laguna-s-2.1",
+        "poolside/laguna-xs-2.1",
+        "poolside/laguna-xs.2"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "ppinfra",
+      "display_name": "PPInfra",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 101,
+      "model_sample": [
+        "ai_infer_test_2",
+        "ai_infer_test_3",
+        "baidu/ernie-4.5-0.3b",
+        "baidu/ernie-4.5-21B-a3b",
+        "baidu/ernie-4.5-21b-a3b-thinking"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "qihang_ai",
+      "display_name": "QiHang",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.qhaigc.net/v1"
+      ],
+      "documentation_urls": [
+        "https://www.qhaigc.net/docs"
+      ],
+      "api_key_env_vars": [
+        "QIHANG_API_KEY"
+      ],
+      "model_count": 9,
+      "model_sample": [
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "routing_run",
+      "display_name": "routing.run",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://ai.routing.sh/v1",
+        "https://api.routing.run/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.routing.run/api-reference/models"
+      ],
+      "api_key_env_vars": [
+        "ROUTING_RUN_API_KEY"
+      ],
+      "model_count": 41,
+      "model_sample": [
+        "claude-opus-4-8",
+        "claude-sonnet-4-6",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "glm-5.2"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "sagemaker_chat",
+      "display_name": "Sagemaker Chat",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "sagemaker_nova",
+      "display_name": "Sagemaker Nova",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "litellm_constants"
+      ]
+    },
+    {
+      "id": "sap_ai_core",
+      "display_name": "SAP AI Core",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://help.sap.com/docs/sap-ai-core"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 26,
+      "model_sample": [
+        "anthropic--claude-3-haiku",
+        "anthropic--claude-3-opus",
+        "anthropic--claude-3-sonnet",
+        "anthropic--claude-3.5-sonnet",
+        "anthropic--claude-3.7-sonnet"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "snowflake_cortex",
+      "display_name": "Snowflake Cortex",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://${snowflake_account}.snowflakecomputing.com/api/v2/cortex/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api"
+      ],
+      "api_key_env_vars": [
+        "SNOWFLAKE_CORTEX_PAT"
+      ],
+      "model_count": 21,
+      "model_sample": [
+        "claude-fable-5",
+        "claude-haiku-4-5",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-sonnet-4-5"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "sora",
+      "display_name": "Sora",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.openai.com"
+      ],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 32,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "stackit",
+      "display_name": "STACKIT",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.stackit.cloud/products/data-and-ai/ai-model-serving/basics/available-shared-models"
+      ],
+      "api_key_env_vars": [
+        "STACKIT_API_KEY"
+      ],
+      "model_count": 10,
+      "model_sample": [
+        "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
+        "Qwen/Qwen3-VL-Embedding-8B",
+        "Qwen/Qwen3.6-27B",
+        "cortecs/Llama-3.3-70B-Instruct-FP8-Dynamic",
+        "google/gemma-3-27b-it"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "stepfun_ai_step_plan",
+      "display_name": "StepFun Step Plan (Global)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.stepfun.ai/step_plan/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.stepfun.ai/docs/en/step-plan/integrations/reasoning-api"
+      ],
+      "api_key_env_vars": [
+        "STEPFUN_API_KEY"
+      ],
+      "model_count": 3,
+      "model_sample": [
+        "step-3.5-flash",
+        "step-3.5-flash-2603",
+        "step-3.7-flash"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "stepfun_step_plan",
+      "display_name": "StepFun Step Plan (China)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.stepfun.com/step_plan/v1"
+      ],
+      "documentation_urls": [
+        "https://platform.stepfun.com/docs/zh/step-plan/integrations/reasoning-api"
+      ],
+      "api_key_env_vars": [
+        "STEPFUN_API_KEY"
+      ],
+      "model_count": 4,
+      "model_sample": [
+        "step-3.5-flash",
+        "step-3.5-flash-2603",
+        "step-3.7-flash",
+        "step-router-v1"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    },
+    {
+      "id": "sub2_api",
+      "display_name": "Sub2API",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 0,
+      "model_sample": [],
+      "trust_score": 27,
+      "source_ids": [
+        "new_api"
+      ]
+    },
+    {
+      "id": "subconscious",
+      "display_name": "Subconscious",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.45,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://api.subconscious.dev/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.subconscious.dev"
+      ],
+      "api_key_env_vars": [
+        "SUBCONSCIOUS_API_KEY"
+      ],
+      "model_count": 2,
+      "model_sample": [
+        "subconscious/glm-5.2",
+        "subconscious/tim-qwen3.6-27b"
+      ],
+      "trust_score": 52,
+      "source_ids": [
+        "mastra_registry"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,463 @@
+{
+  "batch": 14,
+  "count": 14,
+  "providers": [
+    {
+      "id": "zhipuai_coding_plan",
+      "display_name": "Zhipu AI Coding Plan",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat"
+      ],
+      "base_urls": [
+        "https://open.bigmodel.cn/api/coding/paas/v4"
+      ],
+      "documentation_urls": [
+        "https://docs.bigmodel.cn/cn/coding-plan/overview"
+      ],
+      "api_key_env_vars": [
+        "ZHIPU_API_KEY"
+      ],
+      "model_count": 7,
+      "model_sample": [
+        "glm-4.5-air",
+        "glm-4.6v",
+        "glm-4.7",
+        "glm-5-turbo",
+        "glm-5.1"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "alibaba_token_plan",
+      "display_name": "Alibaba Token Plan",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "image_generation"
+      ],
+      "base_urls": [
+        "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+      ],
+      "documentation_urls": [
+        "https://www.alibabacloud.com/help/en/model-studio/token-plan-overview"
+      ],
+      "api_key_env_vars": [
+        "ALIBABA_TOKEN_PLAN_API_KEY"
+      ],
+      "model_count": 22,
+      "model_sample": [
+        "MiniMax-M2.5",
+        "deepseek-v3.2",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "glm-5"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "alibaba_token_plan_cn",
+      "display_name": "Alibaba Token Plan (China)",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "image_generation"
+      ],
+      "base_urls": [
+        "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+      ],
+      "documentation_urls": [
+        "https://www.alibabacloud.com/help/zh/model-studio/token-plan-overview"
+      ],
+      "api_key_env_vars": [
+        "ALIBABA_TOKEN_PLAN_API_KEY"
+      ],
+      "model_count": 22,
+      "model_sample": [
+        "MiniMax-M2.5",
+        "deepseek-v3.2",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "glm-5"
+      ],
+      "trust_score": 0,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "azure_cognitive_services",
+      "display_name": "Azure Cognitive Services",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 94,
+      "model_sample": [
+        "claude-haiku-4-5",
+        "claude-opus-4-1",
+        "claude-opus-4-5",
+        "claude-opus-4-6",
+        "claude-sonnet-4-5"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "azure_text",
+      "display_name": "Azure Text",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "chat",
+        "completion"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 3,
+      "model_sample": [
+        "azure/gpt-3.5-turbo-instruct-0914",
+        "azure/gpt-35-turbo-instruct",
+        "azure/gpt-35-turbo-instruct-0914"
+      ],
+      "trust_score": 49,
+      "source_ids": [
+        "litellm_constants",
+        "litellm_prices"
+      ]
+    },
+    {
+      "id": "bedrock_mantle",
+      "display_name": "Bedrock Mantle",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.5,
+      "capabilities": [
+        "chat",
+        "responses"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 24,
+      "model_sample": [
+        "bedrock_mantle/google.gemma-4-26b-a4b",
+        "bedrock_mantle/google.gemma-4-31b",
+        "bedrock_mantle/google.gemma-4-e2b",
+        "bedrock_mantle/openai.gpt-5.4",
+        "bedrock_mantle/openai.gpt-5.5"
+      ],
+      "trust_score": 49,
+      "source_ids": [
+        "litellm_prices",
+        "pydantic_ai"
+      ]
+    },
+    {
+      "id": "burncloud",
+      "display_name": "burncloud",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "audio_speech",
+        "chat",
+        "image_generation",
+        "video_generation"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 34,
+      "model_sample": [
+        "anthropic/claude-3.5-haiku",
+        "anthropic/claude-3.7-sonnet",
+        "anthropic/claude-opus-4",
+        "anthropic/claude-sonnet-4",
+        "deepseek/deepseek-chat"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "cherryin",
+      "display_name": "cherryin",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "completion",
+        "embedding",
+        "image_generation",
+        "rerank"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 125,
+      "model_sample": [
+        "BAAI/bge-reranker-v2-m3(free)",
+        "agent/deepseek-v3.1-terminus(free)",
+        "agent/deepseek-v3.2-exp(free)",
+        "agent/glm-4.6(free)",
+        "agent/kimi-k2-0905(free)"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "cloudflare_ai_gateway",
+      "display_name": "Cloudflare AI Gateway",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "embedding",
+        "rerank"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://developers.cloudflare.com/ai-gateway"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 77,
+      "model_sample": [
+        "anthropic/claude-3-5-haiku",
+        "anthropic/claude-3-haiku",
+        "anthropic/claude-3-opus",
+        "anthropic/claude-3-sonnet",
+        "anthropic/claude-3.5-haiku"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "digitalocean",
+      "display_name": "DigitalOcean",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "embedding",
+        "rerank"
+      ],
+      "base_urls": [
+        "https://inference.do-ai.run/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.digitalocean.com/products/gradient-ai-platform/details/models"
+      ],
+      "api_key_env_vars": [
+        "DIGITALOCEAN_ACCESS_TOKEN"
+      ],
+      "model_count": 82,
+      "model_sample": [
+        "alibaba-qwen3-32b",
+        "all-mini-lm-l6-v2",
+        "anthropic-claude-3-opus",
+        "anthropic-claude-3.5-haiku",
+        "anthropic-claude-3.5-sonnet"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "doubao",
+      "display_name": "Doubao",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "embedding",
+        "image_generation",
+        "video_generation"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://www.volcengine.com/docs/82379/1330310"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 33,
+      "model_sample": [
+        "deepseek-v3-2-251201",
+        "deepseek-v4-flash-260425",
+        "deepseek-v4-pro-260425",
+        "doubao-1-5-lite-32k-250115",
+        "doubao-1-5-pro-32k-250115"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "evroc",
+      "display_name": "evroc",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.65,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [
+        "https://models.think.evroc.com/v1"
+      ],
+      "documentation_urls": [
+        "https://docs.evroc.com/products/think/overview.html"
+      ],
+      "api_key_env_vars": [
+        "EVROC_API_KEY"
+      ],
+      "model_count": 21,
+      "model_sample": [
+        "KBLab/kb-whisper-large",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+        "Qwen/Qwen3-Embedding-8B",
+        "Qwen/Qwen3-Reranker-4B",
+        "Qwen/Qwen3-VL-30B-A3B-Instruct"
+      ],
+      "trust_score": 64,
+      "source_ids": [
+        "mastra_registry",
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "google_vertex",
+      "display_name": "Vertex",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [],
+      "documentation_urls": [
+        "https://cloud.google.com/vertex-ai/generative-ai/docs/models"
+      ],
+      "api_key_env_vars": [],
+      "model_count": 35,
+      "model_sample": [
+        "claude-3-5-haiku@20241022",
+        "claude-haiku-4-5@20251001",
+        "claude-opus-4-1@20250805",
+        "claude-opus-4-5@20251101",
+        "claude-opus-4-6@default"
+      ],
+      "trust_score": 47,
+      "source_ids": [
+        "tokenhub"
+      ]
+    },
+    {
+      "id": "llamagate",
+      "display_name": "Llamagate",
+      "aliases": [],
+      "provider_kind": "model_vendor",
+      "tier": "unknown",
+      "protocol": "unknown",
+      "openai_compatible": null,
+      "confidence": 0.3,
+      "capabilities": [
+        "chat",
+        "embedding"
+      ],
+      "base_urls": [],
+      "documentation_urls": [],
+      "api_key_env_vars": [],
+      "model_count": 16,
+      "model_sample": [
+        "llamagate/codellama-7b",
+        "llamagate/deepseek-coder-6.7b",
+        "llamagate/deepseek-r1-7b-qwen",
+        "llamagate/deepseek-r1-8b",
+        "llamagate/dolphin3-8b"
+      ],
+      "trust_score": 37,
+      "source_ids": [
+        "litellm_prices"
+      ]
+    }
+  ]
+}
