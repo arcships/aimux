@@ -599,6 +599,31 @@ pub use zenmux::{ZenmuxConfig, ZenmuxProvider};
 pub use zhipu_v4::{ZhipuV4Config, ZhipuV4Provider};
 pub use zhipuai_coding_plan::{ZhipuaiCodingPlanConfig, ZhipuaiCodingPlanProvider};
 
+// Search-only providers (web search modality).
+pub mod dataforseo;
+pub mod exa_ai;
+pub mod firecrawl;
+pub mod google_pse;
+pub mod linkup;
+pub mod parallel_ai;
+pub mod searxng;
+pub mod serper;
+pub mod tavily;
+pub mod tinyfish;
+pub mod you_com;
+
+pub use dataforseo::{DataforseoConfig, DataforseoProvider, DataforseoSearchModel};
+pub use exa_ai::{ExaAiConfig, ExaAiProvider, ExaAiSearchModel};
+pub use firecrawl::{FirecrawlConfig, FirecrawlProvider, FirecrawlSearchModel};
+pub use google_pse::{GooglePseConfig, GooglePseProvider, GooglePseSearchModel};
+pub use linkup::{LinkupConfig, LinkupProvider, LinkupSearchModel};
+pub use parallel_ai::{ParallelAiConfig, ParallelAiProvider, ParallelAiSearchModel};
+pub use searxng::{SearxngConfig, SearxngProvider, SearxngSearchModel};
+pub use serper::{SerperConfig, SerperProvider, SerperSearchModel};
+pub use tavily::{TavilyConfig, TavilyProvider, TavilySearchModel};
+pub use tinyfish::{TinyfishConfig, TinyfishProvider, TinyfishSearchModel};
+pub use you_com::{YouComConfig, YouComProvider, YouComSearchModel};
+
 // P2 thin-wrapper providers (provider-research batch).
 pub mod apertis;
 pub mod atomic_chat;

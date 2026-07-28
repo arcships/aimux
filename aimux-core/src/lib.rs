@@ -31,6 +31,7 @@ pub mod options;
 pub mod provider;
 pub mod reranking_model;
 pub mod result;
+pub mod search_model;
 pub mod shared;
 pub mod speech_model;
 pub mod stream_part;
@@ -58,6 +59,9 @@ pub mod prelude {
     pub use crate::provider::Provider;
     pub use crate::reranking_model::{RerankingCallOptions, RerankingModel, RerankingResult};
     pub use crate::result::{GenerateResult, StreamResult};
+    pub use crate::search_model::{
+        SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
+    };
     pub use crate::shared::{
         AbortSignal, AspectRatio, FileBytes, FileData, SharedHeaders, SharedProviderMetadata,
         SharedProviderOptions, SharedProviderReference, Size,
@@ -80,6 +84,7 @@ pub use image_model::ImageModel;
 pub use language_model::LanguageModel;
 pub use provider::Provider;
 pub use reranking_model::RerankingModel;
+pub use search_model::SearchModel;
 pub use speech_model::SpeechModel;
 pub use transcription_model::TranscriptionModel;
 pub use video_model::VideoModel;

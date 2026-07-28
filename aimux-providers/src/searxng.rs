@@ -1,0 +1,222 @@
+//! SearXNG provider — search modality only.
+//!
+//! Implements the `SearchModel` trait against a self-hosted SearXNG instance
+//! (`GET {SEARXNG_URL}/search?q=...&format=json`).
+//!
+//! SearXNG is a modality-specific, unauthenticated provider: there is no API
+//! key. The instance URL is supplied via the `SEARXNG_URL` environment
+//! variable (required — there is no default). A `403` response typically
+//! indicates that the `json` output format is not enabled on the instance.
+
+use std::collections::HashMap;
+
+use async_trait::async_trait;
+use reqwest::Client;
+use serde::Deserialize;
+use serde_json::Value;
+
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model::LanguageModel;
+use aimux_core::provider::Provider;
+use aimux_core::search_model::{
+    SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
+};
+use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::without_trailing_slash;
+
+/// Fixed model ID for the SearXNG search model.
+const MODEL_ID: &str = "searxng-search";
+
+/// Configuration for the SearXNG provider.
+///
+/// SearXNG is unauthenticated, so there is no API key — only the instance
+/// base URL.
+#[derive(Debug, Clone)]
+pub struct SearxngConfig {
+    pub base_url: String,
+}
+
+impl SearxngConfig {
+    /// Create from an explicit instance base URL.
+    pub fn new(base_url: impl Into<String>) -> Self {
+        Self {
+            base_url: without_trailing_slash(&base_url.into()),
+        }
+    }
+
+    /// Use a custom base URL.
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = without_trailing_slash(&url.into());
+        self
+    }
+
+    /// Create from the `SEARXNG_URL` environment variable (required).
+    pub fn from_env() -> Result<Self, AiMuxError> {
+        let base_url = std::env::var("SEARXNG_URL").map_err(|_| {
+            AiMuxError::InvalidArgument(
+                "SEARXNG_URL environment variable is required for SearXNG".to_string(),
+            )
+        })?;
+        Ok(Self::new(base_url))
+    }
+}
+
+/// SearXNG provider — creates `SearxngSearchModel` instances.
+///
+/// SearXNG is a search-only provider; it does not support language models.
+pub struct SearxngProvider {
+    config: SearxngConfig,
+    client: Client,
+}
+
+impl SearxngProvider {
+    pub fn new(config: SearxngConfig) -> Self {
+        Self {
+            config,
+            client: Client::new(),
+        }
+    }
+
+    /// Create a search model instance.
+    pub fn search_model(&self) -> SearxngSearchModel {
+        SearxngSearchModel::new(self.config.clone(), self.client.clone())
+    }
+}
+
+impl Provider for SearxngProvider {
+    fn name(&self) -> &str {
+        "searxng"
+    }
+
+    fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
+        Err(AiMuxError::Unsupported(
+            "searxng does not support language models. Use search_model() instead.".to_string(),
+        ))
+    }
+}
+
+/// A single SearXNG result entry. All fields are optional so unknown-but-legal
+/// values degrade safely.
+#[derive(Debug, Deserialize)]
+struct SearxngResult {
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+    // `engine` and other extra fields returned by SearXNG are ignored.
+    #[serde(default)]
+    score: Option<f64>,
+}
+
+/// The response from the SearXNG `/search` endpoint.
+#[derive(Debug, Deserialize)]
+struct SearxngResponse {
+    #[serde(default)]
+    results: Vec<SearxngResult>,
+}
+
+fn map_results(entries: Vec<SearxngResult>) -> Vec<SearchResultItem> {
+    entries
+        .into_iter()
+        .map(|r| SearchResultItem {
+            title: r.title,
+            url: r.url,
+            content: r.content,
+            raw_content: None,
+            score: r.score,
+            provider_metadata: None,
+        })
+        .collect()
+}
+
+/// A SearXNG search model.
+pub struct SearxngSearchModel {
+    config: SearxngConfig,
+    client: Client,
+}
+
+impl SearxngSearchModel {
+    pub fn new(config: SearxngConfig, client: Client) -> Self {
+        Self { config, client }
+    }
+
+    fn endpoint(&self) -> String {
+        format!("{}/search", self.config.base_url)
+    }
+}
+
+#[async_trait]
+impl SearchModel for SearxngSearchModel {
+    fn provider(&self) -> &str {
+        "searxng"
+    }
+
+    fn model_id(&self) -> &str {
+        MODEL_ID
+    }
+
+    async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
+        // SearXNG is unauthenticated; only forward user-supplied extra headers.
+        let header_map: reqwest::header::HeaderMap = options
+            .headers
+            .as_ref()
+            .map(|extra: &HashMap<String, String>| {
+                extra
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        reqwest::header::HeaderName::try_from(k)
+                            .ok()
+                            .zip(reqwest::header::HeaderValue::try_from(v).ok())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let resp = self
+            .client
+            .get(self.endpoint())
+            .headers(header_map)
+            .query(&[("q", options.query.as_str()), ("format", "json")])
+            .send()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(parse_provider_error(
+                status.as_u16(),
+                &text,
+                &DEFAULT_ERROR_STRUCTURE,
+            ));
+        }
+
+        let response_headers: HashMap<String, String> = resp
+            .headers()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+            .collect();
+
+        let raw_body: Value = resp
+            .json()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+        let data: SearxngResponse = serde_json::from_value(raw_body.clone()).map_err(|e| {
+            AiMuxError::Provider(format!("failed to parse searxng search response: {e}"))
+        })?;
+
+        Ok(SearchResult {
+            results: map_results(data.results),
+            answer: None,
+            provider_metadata: None,
+            warnings: Vec::new(),
+            response: Some(SearchResponse {
+                headers: Some(response_headers),
+                body: Some(raw_body),
+            }),
+        })
+    }
+}
