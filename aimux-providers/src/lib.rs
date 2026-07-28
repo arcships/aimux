@@ -393,6 +393,10 @@ pub use wafer::{WaferConfig, WaferProvider};
 pub use xiaomimimo::{XiaomimimoConfig, XiaomimimoProvider};
 pub use xinference::{XinferenceConfig, XinferenceProvider};
 
+// Modality-specific providers (non-language, e.g. rerank-only).
+pub mod jina_ai;
+pub use jina_ai::{JinaAiConfig, JinaAiProvider, JinaAiRerankingModel};
+
 // P0 thin-wrapper providers (provider-research batch).
 pub mod abacus;
 pub mod abliteration_ai;
@@ -407,6 +411,18 @@ pub use aiand::{AiandConfig, AiandProvider};
 pub use ambient::{AmbientConfig, AmbientProvider};
 pub use umans_ai::{UmansAiConfig, UmansAiProvider};
 pub use venice::{VeniceConfig, VeniceProvider};
+
+// Recraft image provider (OpenAI Images-compatible + Recraft extension fields).
+pub mod recraft;
+pub use recraft::{RecraftConfig, RecraftImageModel, RecraftProvider};
+
+// Stability image provider (image modality only).
+pub mod stability;
+pub use stability::{StabilityConfig, StabilityImageModel, StabilityProvider};
+
+// Video-only provider (runwayml).
+pub mod runwayml;
+pub use runwayml::{RunwaymlConfig, RunwaymlProvider, RunwaymlVideoModel};
 
 // P1 thin-wrapper providers (provider-research batch).
 pub mod ai_router;
