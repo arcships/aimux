@@ -397,6 +397,10 @@ pub use xinference::{XinferenceConfig, XinferenceProvider};
 pub mod jina_ai;
 pub use jina_ai::{JinaAiConfig, JinaAiProvider, JinaAiRerankingModel};
 
+// AWS Polly speech (TTS) provider — SigV4 authenticated, speech modality only.
+pub mod aws_polly;
+pub use aws_polly::{AwsPollyConfig, AwsPollyProvider, AwsPollySpeechModel};
+
 // P0 thin-wrapper providers (provider-research batch).
 pub mod abacus;
 pub mod abliteration_ai;

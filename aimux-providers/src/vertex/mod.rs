@@ -20,12 +20,14 @@ use aimux_core::provider::Provider;
 use aimux_provider_utils::without_trailing_slash;
 use reqwest::Client;
 
+mod anthropic_model;
 mod embedding;
 pub mod image;
 mod model;
 mod transcription;
 mod video;
 
+pub use anthropic_model::{VertexAnthropicConfig, VertexAnthropicModel};
 pub use embedding::VertexEmbeddingModel;
 pub use image::VertexImageModel;
 pub use model::{VertexConfig, VertexModel};
@@ -172,6 +174,31 @@ impl VertexProvider {
             model_id.to_string(),
             VertexConfig {
                 base_url: self.config.base_url.clone(),
+                auth: self.config.auth.clone(),
+            },
+            self.client.clone(),
+        ))
+    }
+
+    /// Create an Anthropic partner model instance served via Vertex AI
+    /// `rawPredict` (e.g. `"claude-sonnet-4-20250514"`).
+    ///
+    /// The model identity is carried by the request URL
+    /// (`publishers/anthropic/models/{model}`); the configured base URL's
+    /// `/publishers/google` suffix (if present) is stripped so the
+    /// `/publishers/anthropic` suffix can be appended by the model. Auth is
+    /// reused from this provider (Bearer token or API key).
+    pub fn anthropic_model(&self, model_id: &str) -> Result<VertexAnthropicModel, AiMuxError> {
+        let base_url = self
+            .config
+            .base_url
+            .strip_suffix("/publishers/google")
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| self.config.base_url.clone());
+        Ok(VertexAnthropicModel::new(
+            model_id.to_string(),
+            VertexAnthropicConfig {
+                base_url,
                 auth: self.config.auth.clone(),
             },
             self.client.clone(),

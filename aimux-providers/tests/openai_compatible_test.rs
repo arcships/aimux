@@ -1079,7 +1079,7 @@ openai_compatible_tests!(
     bedrock_mantle,
     BedrockMantleConfig,
     BedrockMantleProvider,
-    "us-east-1"
+    "bedrock_mantle/openai.gpt-oss-120b"
 );
 openai_compatible_tests!(
     cherryin,
