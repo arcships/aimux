@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-document-google_2_5]",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "373",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a document file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=918",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_file\"}, \"thoughtSignature\": \"CpECAb4+9vt3VjnEeYpaSXzIQ/oP1fD/Ph6Y4/YcN9ON3HC1fXiZmAzzzk2wKdyhmTrcO0gyjjwK1eMzWBq51xVqoi+WDETfG0Dh6D8pJX4+peRyXGwDXo0TLkPGU3clcqrbq+2dfTg7BdIsxClQJEmeu64oqblvHnwMxDoD6ucgyDhzfhq1lSpZvcA5yeZBLWYaXDOWnlCQ/S/1qKOva7d/ZjXWUSJb9BMqxr76atfhm6FneTrCjj19eijkKs4JAyCym+IhXb9tIy1XdRB1SlFjfuf8YTOHel+1xOA+QIm4b4CLzWx5nqIbS+SXErUo4vzX02z0hAIp+udTqPVIu18axpplqozyQaCA2p4G1GuD3L2K\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"0-qTadX1N8-GmtkP3OaY2A0\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 41, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 41}], \"thoughtsTokenCount\": 57, \"totalTokenCount\": 108}}"
+  }
+}

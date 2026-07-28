@@ -1,0 +1,44 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_gemini_3_5_flash",
+  "request": {
+    "path": "/v1beta/models/gemini-3.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "153",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is 2 + 2? Reply with just the number."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1005",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"4\", \"thoughtSignature\": \"EpwCCpkCAQw51sdPTqr6sgqYCryTFmqePNh0HIORLnRkhtUCaX99hlZyhH/oCOFML7ChgT98uJz/ZjACEEeo1bak5scTiTKlMGEjvTdA+BAYwrxZZAPr/xM5w/p4VmQNJn3wGu19qBRhTni3maA98KzulRVpC0UChD3ZZlE+GHByq+t7OglYV+XUDainlhaxn/d3RIfbVd6TLLZBZCUhNra8CDYjFXOqqnXIyhOh9I7eXIy7XfqchPo29h5P1aBX53Vtro1IbONin6LSrVKIVvt3W3pFcn/6iSjsFvyZnKztv23i6aHpfEFjnBDRT4XNjx6Y9T/8bqtzlRZscbTcw4h/EkjDoiYy82Mvsn3GiyEBDJh+ijKMGJLwlCpET8g=\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3.5-flash\", \"responseId\": \"4q8MarKdCf2Fz7IP2PffmQk\", \"usageMetadata\": {\"candidatesTokenCount\": 1, \"promptTokenCount\": 15, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 15}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 72, \"totalTokenCount\": 88}}"
+  }
+}

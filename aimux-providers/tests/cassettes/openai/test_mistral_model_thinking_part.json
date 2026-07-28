@@ -1,0 +1,48 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_mistral_model_thinking_part",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "192",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "How do I cross the street?",
+          "role": "user"
+        }
+      ],
+      "model": "o3-mini",
+      "reasoning": {
+        "effort": "high",
+        "summary": "detailed"
+      },
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "20961",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"created_at\": 1757111378, \"error\": null, \"id\": \"resp_68bb6452990081968f5aff503a55e3b903498c8aa840cf12\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"o3-mini-2025-01-31\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABou2RnAKfaWZBKGF2xXNQ506FNpa2FqR_wjI7tgUgfSzuLUciBWpygV2g1N0vRc1zDcMdftle-jyiTqZukyl1vfHVvm-N2z1h8h_4NEP2hML2avtzWBKsHBL76mwMAfELmPwDxmDNBVRW6xt3abZ6LrktbJuK94nygR5jNXCNMtc88VKTllk-Z1X8zUaKcGez6b_sM6JnaEf8_geW5RZ5FggugZCVkQysieguOrjyej55CDCoSqXPahmOxn2CHaCPUxACxV7gOlYOVQg5YdqWS9vO-YjuyaKvGyf5WWcpivYceH2q7tNwYhLE1BmphTMQJBb3U2pigOsTZ1sXMl1xb5_pYZ9c8-oMd3ESV3UWfFysK4ZsvoPiQ4C0votO8E1z4llA1O_kyUX3M0UgsAHCMWQ7w6jFdnC-gvSAyig77o-foVQs=\", \"id\": \"rs_68bb645d50f48196a0c49fd603b87f4503498c8aa840cf12\", \"summary\": [{\"text\": \"**Providing crossing guidelines**\\n\\nWhen guiding someone on how to cross the street, it typically involves following pedestrian safety rules. I assume the user is asking this generally, so I think important steps include checking for pedestrian signals, standing at the curb, and waiting for the green walk sign.  \\n\\nI\\u2019d also suggest looking both ways multiple times to confirm it's safe and using the crosswalk if available. I want to ensure these instructions are clear and helpful for the user\\u2019s understanding.\", \"type\": \"summary_text\"}, {\"text\": \"**Sharing safe crossing tips**\\n\\nWhen crossing a busy street without marked crosswalks, I think it\\u2019s crucial to be extra alert. I should check the user\\u2019s location and remind them that I'm not a traffic expert and to always follow local traffic laws. \\n\\nSo, I\\u2019ll provide general safe crossing instructions: \\n\\n1. Stop at the curb or crosswalk and check for traffic signals.  \\n2. Look left, right, and left again.  \\n3. If possible, make eye contact with drivers.  \\n4. Cross quickly or use the pedestrian signal if it\\u2019s available.\", \"type\": \"summary_text\"}, {\"text\": \"**Providing street crossing guidelines**\\n\\nI want to offer safe instructions for crossing the street. First, I\\u2019ll emphasize the importance of being visible and not making assumptions. I should clarify if the user is asking about crossing a busy street or their status as a pedestrian. I'll include a disclaimer that I\\u2019m not a traffic expert but here are some general safety guidelines:\\n\\n- Use designated crosswalks or crossing signals when available.\\n- Look left, right, and then left again.\\n- Stay alert, even with a walk signal.\\n- Avoid distractions and ensure vehicles have stopped completely.\\n\\nI\\u2019ll also remind them to consult local pedestrian safety laws.\", \"type\": \"summary_text\"}], \"type\": \"reasoning\"}, {\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"I\\u2019m not a certified traffic safety expert, but here are some general guidelines to help you cross the street safely. Remember that local laws and conditions may vary, so always stay alert and follow any posted signs or signals.\\n\\n1. Use a designated crossing point if one is available. Look for a crosswalk or pedestrian crossing signal.  \\n2. If there\\u2019s a signal or button for pedestrians, press it and wait for the \\u201cwalk\\u201d signal. Even if you have the signal, remain alert and don\\u2019t assume all drivers will stop.  \\n3. Before stepping off the curb, stop at the edge and look left, then right, then left again. Check for any vehicles or bicycles that might be turning.  \\n4. Make eye contact with drivers if you can; this can help ensure they see you before you cross.  \\n5. Once you\\u2019re sure it\\u2019s safe, cross at a steady pace. Keep looking both ways as you cross, since situations can change quickly.  \\n6. Avoid distractions like texting or listening to loud music while crossing so that you can stay aware of your surroundings.\\n\\nThese steps are meant to serve as a guideline for safe pedestrian behavior. If you\\u2019re in an unfamiliar area or unsure about any local safety rules or traffic patterns, consider reviewing local pedestrian safety resources or asking local authorities for more specific advice. Stay safe!\", \"type\": \"output_text\"}], \"id\": \"msg_68bb64663d1c8196b9c7e78e7018cc4103498c8aa840cf12\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"prompt_cache_key\": null, \"reasoning\": {\"effort\": \"high\", \"summary\": \"detailed\"}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 13, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 1616, \"output_tokens_details\": {\"reasoning_tokens\": 1344}, \"total_tokens\": 1629}, \"user\": null}"
+  }
+}

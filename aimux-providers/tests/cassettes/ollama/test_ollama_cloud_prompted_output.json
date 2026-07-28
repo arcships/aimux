@@ -1,0 +1,43 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "ollama",
+  "scenario": "test_ollama_cloud_prompted_output",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "600",
+      "content-type": "application/json",
+      "host": "ollama.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "\nAlways respond with a JSON object that's compatible with this schema:\n\n{\"properties\": {\"name\": {\"type\": \"string\"}, \"animal\": {\"type\": \"string\"}, \"age\": {\"type\": \"integer\"}}, \"required\": [\"name\", \"animal\", \"age\"], \"type\": \"object\", \"additionalProperties\": false, \"title\": \"Pet\"}\n\nDon't include any text or Markdown fencing before or after.\n",
+          "role": "system"
+        },
+        {
+          "content": "Generate a pet: a 3 year old black cat named Loki",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-oss:20b",
+      "response_format": {
+        "type": "json_object"
+      },
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json",
+      "traceparent": "00-3496f10d17471220aae9191e3c318f0f-e649a19fa4785e94-00"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"{\\\"name\\\":\\\"Loki\\\",\\\"animal\\\":\\\"cat\\\",\\\"age\\\":3}\", \"reasoning\": \"We need to output JSON with name, animal, age. It's a 3 year old black cat named Loki. So name: \\\"Loki\\\". animal: \\\"cat\\\" or \\\"black cat\\\"? Schema: animal is string. Use \\\"cat\\\". age: 3. Output JSON. No markdown.\", \"role\": \"assistant\"}}], \"created\": 1776298282, \"id\": \"chatcmpl-887\", \"model\": \"gpt-oss:20b\", \"object\": \"chat.completion\", \"system_fingerprint\": \"fp_ollama\", \"usage\": {\"completion_tokens\": 88, \"prompt_tokens\": 172, \"total_tokens\": 260}}"
+  }
+}

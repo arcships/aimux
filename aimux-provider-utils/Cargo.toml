@@ -1,0 +1,28 @@
+﻿[package]
+name = "aimux-provider-utils"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared utilities for aimux provider implementations"
+
+[dependencies]
+aimux-core = { workspace = true }
+aimux-stream = { workspace = true }
+
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+url = { workspace = true }
+httpdate = { workspace = true }
+chrono = "0.4"
+
+[dev-dependencies]
+aimux-core = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros", "rt", "time"] }
+serial_test = { workspace = true }
+httpdate = { workspace = true }

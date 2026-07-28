@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_max_tokens",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'633eba34-061d-4778-8e38-7f635a42ef48'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "178",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 249}, \"output\": {\"message\": {\"content\": [{\"text\": \"The capital of France is\"}], \"role\": \"assistant\"}}, \"stopReason\": \"max_tokens\", \"usage\": {\"inputTokens\": 13, \"outputTokens\": 5, \"serverToolUsage\": {}, \"totalTokens\": 18}}"
+  }
+}

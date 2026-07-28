@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_mixed_strict_tool_run_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'15788ecb-911e-49ca-aef0-1d9417656fc9'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1333",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4372}, \"output\": {\"message\": {\"content\": [{\"text\": \"Capital: Tokyo\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 757, \"outputTokens\": 6, \"serverToolUsage\": {}, \"totalTokens\": 763}}"
+  }
+}

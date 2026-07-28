@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_performance_config",
+  "request": {
+    "path": "/model/us.amazon.nova-pro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'37bd9966-e879-4147-9803-66cf812c44a4'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "211",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 624}, \"output\": {\"message\": {\"content\": [{\"text\": \"The capital of France is Paris. It is one of the most visited cities in the world and is known for its rich history, culture, and iconic landmarks such as the Eiffel Tower, the Louvre Museum, and Notre-Dame Cathedral. Paris is also a major center for finance, diplomacy, commerce, fashion, science, and arts.\"}], \"role\": \"assistant\"}}, \"performanceConfig\": {\"latency\": \"optimized\"}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 13, \"outputTokens\": 67, \"serverToolUsage\": {}, \"totalTokens\": 80}}"
+  }
+}

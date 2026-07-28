@@ -1,0 +1,57 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_web_fetch_tool_stream",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "361",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is the first sentence on the page https://ai.pydantic.dev? Reply with only the sentence.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-0",
+      "stream": true,
+      "thinking": {
+        "budget_tokens": 3000,
+        "type": "enabled"
+      },
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "name": "web_fetch",
+          "type": "web_fetch_20250910"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "retry-after": "15",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

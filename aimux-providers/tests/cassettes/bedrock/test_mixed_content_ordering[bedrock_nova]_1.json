@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_mixed_content_ordering[bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'9e66fd38-9ffe-4f13-a481-4bfff8b02c88'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "132193",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1573}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a high-resolution image of a **cross-section of a kiwi fruit**. The image shows:\\n\\n- A **perfectly sliced kiwi**, revealing its vibrant green interior\\n- Distinct **radial patterns** of the fruit's flesh, emanating from the center\\n- Numerous **small, dark black seeds** clustered around the central core\\n- The **core itself** appears pale and slightly translucent\\n- The **outer skin** is visible along the edge of the slice, showing the characteristic fuzzy texture\\n- The background is clean and white, making the kiwi the clear focal point\\n\\nThe image captures the kiwi's fresh, juicy appearance with excellent detail, highlighting both the structural beauty and textural contrast between the smooth flesh and the tiny seeds.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1398, \"outputTokens\": 148, \"serverToolUsage\": {}, \"totalTokens\": 1546}}"
+  }
+}

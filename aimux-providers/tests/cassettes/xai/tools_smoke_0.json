@@ -1,0 +1,81 @@
+{
+  "source": "rig (MIT)",
+  "provider": "xai",
+  "scenario": "tools_smoke_0",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "You are a calculator here to help the user perform arithmetic operations. Use the tools provided to answer the user's question.",
+          "role": "system",
+          "type": "message"
+        },
+        {
+          "content": "Calculate 2 - 5.",
+          "role": "user",
+          "type": "message"
+        }
+      ],
+      "model": "grok-3-mini",
+      "tools": [
+        {
+          "description": "Add x and y together",
+          "name": "add",
+          "parameters": {
+            "properties": {
+              "x": {
+                "description": "The first number to add",
+                "type": "number"
+              },
+              "y": {
+                "description": "The second number to add",
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "Subtract y from x (that is, x - y)",
+          "name": "subtract",
+          "parameters": {
+            "properties": {
+              "x": {
+                "description": "The number to subtract from",
+                "type": "number"
+              },
+              "y": {
+                "description": "The number to subtract",
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"background\":false,\"completed_at\":0,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_1\",\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{\"system_fingerprint\":\"fp_REDACTED_1\"},\"model\":\"grok-4.3\",\"object\":\"response\",\"output\":[{\"id\":\"rs_REDACTED_1\",\"status\":\"completed\",\"summary\":[{\"text\":\"The task is to calculate 2 - 5. I have tools: add and subtract.\\n\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"},{\"arguments\":\"{\\\"x\\\":2.0,\\\"y\\\":5.0}\",\"call_id\":\"call_REDACTED_1\",\"id\":\"fc_REDACTED_1\",\"name\":\"subtract\",\"status\":\"completed\",\"type\":\"function_call\"}],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":{\"effort\":\"low\",\"summary\":\"detailed\"},\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"completed\",\"store\":true,\"temperature\":0.7,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Add x and y together\",\"name\":\"add\",\"parameters\":{\"properties\":{\"x\":{\"description\":\"The first number to add\",\"type\":\"number\"},\"y\":{\"description\":\"The second number to add\",\"type\":\"number\"}},\"required\":[\"x\",\"y\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"},{\"description\":\"Subtract y from x (that is, x - y)\",\"name\":\"subtract\",\"parameters\":{\"properties\":{\"x\":{\"description\":\"The number to subtract from\",\"type\":\"number\"},\"y\":{\"description\":\"The number to subtract\",\"type\":\"number\"}},\"required\":[\"x\",\"y\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.95,\"truncation\":\"disabled\",\"usage\":{\"context_details\":{\"input_tokens\":366,\"output_tokens\":81},\"cost_in_usd_ticks\":5256000,\"input_tokens\":366,\"input_tokens_details\":{\"cached_tokens\":128},\"num_server_side_tools_used\":0,\"num_sources_used\":0,\"output_tokens\":81,\"output_tokens_details\":{\"reasoning_tokens\":67},\"total_tokens\":447},\"user\":null}"
+  }
+}

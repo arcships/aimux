@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_native_output_qwen",
+  "request": {
+    "path": "/model/qwen.qwen3-32b-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'fa2d4ea0-eff6-4f04-b3f3-8936415ddbf7'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "580",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 339}, \"output\": {\"message\": {\"content\": [{\"text\": \"{\\n  \\\"city\\\": \\\"Paris\\\",\\n  \\\"country\\\": \\\"France\\\",\\n  \\\"population\\\": 2148000\\n}\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 30, \"outputTokens\": 30, \"serverToolUsage\": {}, \"totalTokens\": 60}}"
+  }
+}

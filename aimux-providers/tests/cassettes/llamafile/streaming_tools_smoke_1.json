@@ -1,0 +1,110 @@
+{
+  "source": "rig (MIT)",
+  "provider": "llamafile",
+  "scenario": "streaming_tools_smoke_1",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are a calculator. Use the provided tools before answering arithmetic questions.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "Calculate 2 - 5.",
+          "role": "user"
+        },
+        {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"x\":\"2\",\"y\":\"5\"}",
+                "name": "subtract"
+              },
+              "id": "call_REDACTED_1",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "failed to parse tool arguments: invalid type: string \"2\", expected i32 at line 1 column 8",
+          "role": "tool",
+          "tool_call_id": "call_REDACTED_1"
+        }
+      ],
+      "model": "llama3.2:latest",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tools": [
+        {
+          "function": {
+            "description": "Add x and y together",
+            "name": "add",
+            "parameters": {
+              "properties": {
+                "x": {
+                  "description": "The first number to add",
+                  "type": "number"
+                },
+                "y": {
+                  "description": "The second number to add",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Subtract y from x (i.e.: x - y)",
+            "name": "subtract",
+            "parameters": {
+              "properties": {
+                "x": {
+                  "description": "The number to subtract from",
+                  "type": "number"
+                },
+                "y": {
+                  "description": "The number to subtract",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"{\",\"name\":\"subtract\"},\"id\":\"call_REDACTED_2\",\"index\":0,\"type\":\"function\"}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"\\\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"x\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"\\\":\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\" 2\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\",\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\" \\\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"y\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"\\\":\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\" 5\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"}\"},\"index\":0}]},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\",\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\"}\n\ndata: {\"choices\":[],\"created\":0,\"id\":\"chatcmpl-REDACTED_2\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"b9890-74976e1ae\",\"timings\":{\"cache_n\":379,\"predicted_ms\":181.49,\"predicted_n\":22,\"predicted_per_second\":121.21879993388065,\"predicted_per_token_ms\":8.249545454545455,\"prompt_ms\":57.479,\"prompt_n\":36,\"prompt_per_second\":626.3156979070617,\"prompt_per_token_ms\":1.596638888888889},\"usage\":{\"completion_tokens\":22,\"prompt_tokens\":415,\"prompt_tokens_details\":{\"cached_tokens\":379},\"total_tokens\":437}}\n\ndata: [DONE]\n\n"
+  }
+}

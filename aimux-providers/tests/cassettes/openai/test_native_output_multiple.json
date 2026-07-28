@@ -1,0 +1,136 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_native_output_multiple",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "1143",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the largest city in the user country?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o",
+      "stream": false,
+      "text": {
+        "format": {
+          "name": "final_result",
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "result": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "description": "CityLocation",
+                    "properties": {
+                      "data": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "city": {
+                            "type": "string"
+                          },
+                          "country": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "city",
+                          "country"
+                        ],
+                        "type": "object"
+                      },
+                      "kind": {
+                        "const": "CityLocation",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "data"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "CountryLanguage",
+                    "properties": {
+                      "data": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "country": {
+                            "type": "string"
+                          },
+                          "language": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "country",
+                          "language"
+                        ],
+                        "type": "object"
+                      },
+                      "kind": {
+                        "const": "CountryLanguage",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "data"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "",
+          "name": "get_user_country",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "562",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"created_at\": 1749516048, \"error\": null, \"id\": \"resp_68477f10f2d081a39b3438f413b3bafc0dd57d732903c563\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"metadata\": {}, \"model\": \"gpt-4o-2024-08-06\", \"object\": \"response\", \"output\": [{\"arguments\": \"{}\", \"call_id\": \"call_UaLahjOtaM2tTyYZLxTCbOaP\", \"id\": \"fc_68477f1168a081a3981e847cd94275080dd57d732903c563\", \"name\": \"get_user_country\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"description\": null, \"name\": \"final_result\", \"schema\": {\"additionalProperties\": false, \"properties\": {\"result\": {\"anyOf\": [{\"additionalProperties\": false, \"description\": \"CityLocation\", \"properties\": {\"data\": {\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}}, \"required\": [\"city\", \"country\"], \"type\": \"object\"}, \"kind\": {\"const\": \"CityLocation\", \"type\": \"string\"}}, \"required\": [\"kind\", \"data\"], \"type\": \"object\"}, {\"additionalProperties\": false, \"description\": \"CountryLanguage\", \"properties\": {\"data\": {\"additionalProperties\": false, \"properties\": {\"country\": {\"type\": \"string\"}, \"language\": {\"type\": \"string\"}}, \"required\": [\"country\", \"language\"], \"type\": \"object\"}, \"kind\": {\"const\": \"CountryLanguage\", \"type\": \"string\"}}, \"required\": [\"kind\", \"data\"], \"type\": \"object\"}]}}, \"required\": [\"result\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"json_schema\"}}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_user_country\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 153, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 12, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 165}, \"user\": null}"
+  }
+}

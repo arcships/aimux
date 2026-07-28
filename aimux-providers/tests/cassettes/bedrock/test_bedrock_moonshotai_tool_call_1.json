@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_moonshotai_tool_call_1",
+  "request": {
+    "path": "/model/moonshot.kimi-k2-thinking/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'c7f96968-a634-4f95-a75f-b900743fd2a5'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1115",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 534}, \"output\": {\"message\": {\"content\": [{\"text\": \" <think> The temperature in London is 30\\u00b0C.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 188, \"outputTokens\": 11, \"serverToolUsage\": {}, \"totalTokens\": 199}}"
+  }
+}

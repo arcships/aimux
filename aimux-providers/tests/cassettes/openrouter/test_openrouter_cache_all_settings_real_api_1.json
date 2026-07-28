@@ -1,0 +1,113 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openrouter",
+  "scenario": "test_openrouter_cache_all_settings_real_api_1",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "11780",
+      "content-type": "application/json",
+      "host": "openrouter.ai"
+    },
+    "body": {
+      "max_completion_tokens": 100,
+      "messages": [
+        {
+          "content": [
+            {
+              "cache_control": {
+                "ttl": "5m",
+                "type": "ephemeral"
+              },
+              "text": "You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step. You are an assistant that specializes in mathematics and calculations. Always show your work step by step.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "What is 123 * 456?",
+          "role": "user"
+        },
+        {
+          "content": "Let me calculate that for you!",
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"expression\": \"123 * 456\"}",
+                "name": "calculator"
+              },
+              "id": "toolu_01QXVkPZYABFNhTASu9uBdEM",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": [
+            {
+              "cache_control": {
+                "ttl": "5m",
+                "type": "ephemeral"
+              },
+              "text": "56088",
+              "type": "text"
+            }
+          ],
+          "role": "tool",
+          "tool_call_id": "toolu_01QXVkPZYABFNhTASu9uBdEM"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.6",
+      "provider": {
+        "allow_fallbacks": false,
+        "order": [
+          "anthropic"
+        ]
+      },
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "cache_control": {
+            "ttl": "5m",
+            "type": "ephemeral"
+          },
+          "function": {
+            "description": "Evaluate a math expression.",
+            "name": "calculator",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "expression": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "expression"
+              ],
+              "type": "object"
+            },
+            "strict": true
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"length\", \"index\": 0, \"logprobs\": null, \"message\": {\"content\": \"**Step-by-step breakdown:**\\n\\nHere's how the multiplication works:\\n\\n- 123 \\u00d7 6 = 738\\n- 123 \\u00d7 50 = 6,150\\n- 123 \\u00d7 400 = 49,200\\n\\n**Adding them together:**\\n- 738 + 6,150 + 49,200 = **56,088**\\n\\nSo, **123 \\u00d7 456 = 56,088\", \"reasoning\": null, \"refusal\": null, \"role\": \"assistant\"}, \"native_finish_reason\": \"length\"}], \"created\": 1773012773, \"id\": \"gen-1773012773-jWAciV9Nta3B9i18b2ED\", \"model\": \"anthropic/claude-4.6-sonnet-20260217\", \"object\": \"chat.completion\", \"provider\": \"Anthropic\", \"system_fingerprint\": null, \"usage\": {\"completion_tokens\": 100, \"completion_tokens_details\": {\"audio_tokens\": 0, \"image_tokens\": 0, \"reasoning_tokens\": 0}, \"cost\": 0.00256995, \"cost_details\": {\"upstream_inference_completions_cost\": 0.0015, \"upstream_inference_cost\": 0.00256995, \"upstream_inference_prompt_cost\": 0.00106995}, \"is_byok\": false, \"prompt_tokens\": 2649, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cache_write_tokens\": 79, \"cached_tokens\": 2569, \"video_tokens\": 0}, \"total_tokens\": 2749}}"
+  }
+}

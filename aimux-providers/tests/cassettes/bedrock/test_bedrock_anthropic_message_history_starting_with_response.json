@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_anthropic_message_history_starting_with_response",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'3aa73dd3-3fc0-4134-b281-6ce83760ec00'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "174",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1187}, \"output\": {\"message\": {\"content\": [{\"text\": \"Goodbye!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 29, \"outputTokens\": 6, \"serverToolUsage\": {}, \"totalTokens\": 35}}"
+  }
+}

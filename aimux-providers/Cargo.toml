@@ -1,0 +1,38 @@
+﻿[package]
+name = "aimux-providers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LLM provider implementations for aimux (OpenAI, Anthropic, Mistral, Cohere, and more)"
+
+[dependencies]
+aimux-core = { workspace = true }
+aimux-stream = { workspace = true }
+aimux-provider-utils = { workspace = true }
+
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+async-stream = { workspace = true }
+base64 = "0.22"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+chrono = "0.4"
+url = { workspace = true }
+percent-encoding = "2"
+
+[dev-dependencies]
+aimux-core = { workspace = true }
+serde_json = { workspace = true }
+base64 = "0.22"
+tokio = { workspace = true }
+wiremock = "0.6"
+futures = { workspace = true }
+serial_test = { workspace = true }

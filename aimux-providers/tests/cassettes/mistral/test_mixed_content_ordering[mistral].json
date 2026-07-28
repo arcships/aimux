@@ -1,0 +1,55 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_mixed_content_ordering[mistral]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "364",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Call the get_mixed_content tool and describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-medium-latest",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_mixed_content",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019c6985-6b8f-7e01-aa69-3bf6ef839bc7",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"message\": {\"content\": \"\", \"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{}\", \"name\": \"get_mixed_content\"}, \"id\": \"ot1MIoEMA\", \"index\": 0}]}}], \"created\": 1771296877, \"id\": \"6861cd5f567847cf9eb40a96f1a141ea\", \"model\": \"mistral-medium-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 8, \"prompt_tokens\": 61, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 69}}"
+  }
+}

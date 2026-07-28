@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_native_output_mistral",
+  "request": {
+    "path": "/model/mistral.mistral-large-3-675b-instruct/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'9e0b4b71-3500-47de-854f-c7b770e86cb9'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "580",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 391}, \"output\": {\"message\": {\"content\": [{\"text\": \"{ \\\"city\\\": \\\"Paris\\\", \\\"country\\\": \\\"France\\\", \\\"population\\\": 2102650 }\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 21, \"outputTokens\": 26, \"serverToolUsage\": {}, \"totalTokens\": 47}}"
+  }
+}

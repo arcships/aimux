@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_stream_cancel",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse-stream",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f656a3fe-b8b5-426b-bae2-94cebb00a5be'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "182",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/vnd.amazon.eventstream"
+    },
+    "body": ""
+  }
+}

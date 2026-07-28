@@ -1,0 +1,77 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_file_search_tool_4",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "565",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "The capital of France is Paris. Paris is also known for its famous landmarks, such as the Eiffel Tower."
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "Tell me about the Eiffel Tower."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful assistant."
+          }
+        ],
+        "role": "user"
+      },
+      "tools": [
+        {
+          "fileSearch": {
+            "file_search_store_names": [
+              "fileSearchStores/testfilesearchstore-q7prdj5dqu8p"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=16011",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The Eiffel Tower is a world-renowned landmark located in Paris, the capital of France. It is a wrought-iron lattice tower situated on the Champ de Mars.\\n\\nHere are some key facts about the Eiffel Tower:\\n*   **Creator:** The tower was designed and built by the company of French civil engineer Gustave Eiffel, and it is named after him.\\n*   **Construction:** It was constructed from 1887 to 1889 to serve as the entrance arch for the 1889 World's Fair.\\n*   **Height:** The tower is 330 meters (1,083 feet) tall, which is about the same height as an 81-story building. It was the tallest man-made structure in the world for 41 years until the Chrysler Building in New York City was completed in 1930.\\n*   **Tourism:** It is one of the most visited paid monuments in the world, attracting millions of visitors each year. The tower has three levels for visitors, with restaurants on the first and second levels. The top level's upper platform is 276 meters (906 feet) above the ground, making it the highest observation deck accessible to the public in the European Union.\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"groundingMetadata\": {\"groundingChunks\": [{\"retrievedContext\": {\"fileSearchStore\": \"fileSearchStores/testfilesearchstore-q7prdj5dqu8p\", \"text\": \"Paris is the capital of France. The Eiffel Tower is a famous landmark in Paris.\"}}, {\"retrievedContext\": {\"fileSearchStore\": \"fileSearchStores/testfilesearchstore-q7prdj5dqu8p\", \"text\": \"Paris is the capital of France. The Eiffel Tower is a famous landmark in Paris.\"}}], \"groundingSupports\": [{\"groundingChunkIndices\": [1], \"segment\": {\"endIndex\": 85, \"text\": \"The Eiffel Tower is a world-renowned landmark located in Paris, the capital of France\"}}]}, \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"4xkqadHBDZ7nz7IP0q3F2Qk\", \"usageMetadata\": {\"candidatesTokenCount\": 293, \"promptTokenCount\": 46, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 46}], \"thoughtsTokenCount\": 980, \"toolUsePromptTokenCount\": 1436, \"toolUsePromptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 1436}], \"totalTokenCount\": 2755}}"
+  }
+}

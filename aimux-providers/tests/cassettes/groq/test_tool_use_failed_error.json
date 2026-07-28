@@ -1,0 +1,66 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_tool_use_failed_error",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "594",
+      "content-type": "application/json",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Be concise. Never use pretty double quotes, just regular ones.",
+          "role": "system"
+        },
+        {
+          "content": "Please call the \"get_something_by_name\" tool with non-existent parameters to test error handling; on the second try you can use valid args",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-oss-120b",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_something_by_name",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": "{\"error\": {\"code\": \"tool_use_failed\", \"failed_generation\": \"{\\\"name\\\": \\\"get_something_by_name\\\", \\\"arguments\\\": {\\n  \\\"foo\\\": \\\"bar\\\"\\n}}\", \"message\": \"Tool call validation failed: tool call validation failed: parameters for tool get_something_by_name did not match schema: errors: [missing properties: 'name', additionalProperties 'foo' not allowed]\", \"type\": \"invalid_request_error\"}}"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_compact_stateful_mode",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "233",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "context_management": [
+        {
+          "compact_threshold": 1000,
+          "type": "compaction"
+        }
+      ],
+      "input": [
+        {
+          "content": "Tell me a 300-word story about a fox exploring a forest. Be very descriptive.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4.1",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "12109",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1776297304, \"created_at\": 1776297292, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0c1d85ffb99ec1d00069e0254c7cac81909bc7eacb2c4c565f\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-4.1-2025-04-14\", \"object\": \"response\", \"output\": [{\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"Beneath a canopy of emerald leaves, the early morning sun painted the forest floor in delicate dappled gold. Rustling quietly through undergrowth beaded with dew, a red fox named Lira slipped between bramble and fern, her russet fur glowing against the shadowy world.\\n\\nThe air was thick with the scent of moss and wild garlic. Every step quickened Lira's heart--younger foxes might shy away from the unknown, but curiosity lit her amber eyes. Birds warbled high overhead, while a squirrel chattered in indignation from a low-hanging branch, its tail flickering like a candle flame. Lira paused, nose twitching, savoring the earthy perfume of leaf litter as she contemplated her path.\\n\\nSlipping through a patch of bluebells, their soft petals brushing her sides, she startled a family of rabbits who disappeared into a tangle of roots. Not far away, a chorus of frogs sang by a crystal brook. Lira padded closer, watching their comical leaps with tilted head, her own reflection rippling on the water's surface.\\n\\nContinuing on, she found a fallen oak, its ancient trunk sprawled across her path--a bridge blanketed in moss and lichen. With a light leap, she climbed atop it, where the world seemed to slow. Up here, she watched shafts of sunlight pierce the gloom, catching motes of pollen swirling in the air like gold dust. The forest buzzed around her, insect wings humming and leaves murmuring old secrets.\\n\\nLira cocked her head, listening to the heartbeat of the forest--the distant hoot of an owl, the thump of a distant deer. Each sound was familiar, comforting, and a little thrilling. With one last glance at the waking world, she bounded off the log, disappearing into the green shadows, eager for whatever wonders lay hidden in the heart of the ancient wood.\", \"type\": \"output_text\"}], \"id\": \"msg_0c1d85ffb99ec1d00069e0254d60dc8190b4536ee2c1c3f002\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 25, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 386, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 411}, \"user\": null}"
+  }
+}

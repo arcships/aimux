@@ -1,0 +1,23 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_anthropic_adaptive_effort",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-6/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'4a948675-8c8e-4fcd-b9ea-9f17ee63f21b'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "227",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 6282}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"signature\": \"EpMCCl0IDRABGAIqQKKoiSM9th3pXQzQrsz0ZcQjlrg2iabjpumhEdQX0w2TEb0V+F5mJE0+z7yU5gpGPCuMEAKzDSdxZWM3dvpsYjsyEWNsYXVkZS1zb25uZXQtNC02OAASDMqUC2tc3W6jYZaRhxoMygiYBcpNFdjol7a3IjB4IABwRD9H4OqMd71/AlvJ/4zSuO6Z0U3VAdn6Uzi6LyMLMUwqxYMZ+q21up84FvAqZBnxiHmy6DM7fau1C8rxOS3WSfPDzbyBWPeFs6p7Rh7wYeestzSlsiPS7ouzYJ2frFwVPMI/6ZjNUWpH7IBV2PKb9JzVX8Nv+ul930qY+WW+kDItbErLIyoZv3to0yfW46r0ib0YAQ==\", \"text\": \"The user is asking a simple, everyday question about how to cross the street safely.\"}}}, {\"text\": \"Here are the basic steps for safely crossing the street:\\n\\n1. **Find a safe place to cross**, such as:\\n   - A marked crosswalk\\n   - An intersection with traffic signals\\n   - A pedestrian crossing\\n\\n2. **Stop at the curb** before stepping into the street\\n\\n3. **Look both ways:**\\n   - Look left\\n   - Look right\\n   - Look left again\\n\\n4. **Wait for traffic to clear** or for the walk signal if at a traffic light\\n\\n5. **Make eye contact** with any drivers to be sure they see you\\n\\n6. **Walk, don't run** across the street\\n\\n7. **Stay alert** - avoid looking at your phone while crossing\\n\\n8. **Cross in a straight line** and keep watching for traffic as you go\\n\\n**Additional tips:**\\n- Use crosswalks and signals whenever possible\\n- Be extra cautious at night or in bad weather\\n- Watch for turning vehicles, even when you have the right of way\\n- Be aware of cyclists as well as cars\\n\\nWould you like more detail on any specific situation, like crossing with children or crossing without a crosswalk?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 14, \"outputTokens\": 280, \"serverToolUsage\": {}, \"totalTokens\": 294}}"
+  }
+}

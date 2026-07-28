@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_text_document_url_input_1",
+  "request": {
+    "path": "/model/anthropic.claude-v2/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f96706ce-8ecd-415d-b556-dbf08ccc4d61'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "3688",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5791}, \"output\": {\"message\": {\"content\": [{\"text\": \"Based on the text in the <document_content> tag, the main content of this document appears to be:\\n\\nAn example text describing the use of \\\"John Doe\\\" as a placeholder name in legal cases, hospitals, and other contexts where a party's real identity is unknown or needs to be withheld. It provides background on how \\\"John Doe\\\" and \\\"Jane Doe\\\" are commonly used in the United States and Canada for this purpose, in contrast to other English speaking countries that use names like \\\"Joe Bloggs\\\". The text gives examples of using John/Jane Doe for legal cases, unidentified corpses, and as generic names on forms. It also mentions how \\\"Baby Doe\\\" and \\\"Precious Doe\\\" are used for unidentified children.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 681, \"outputTokens\": 157, \"totalTokens\": 838}}"
+  }
+}

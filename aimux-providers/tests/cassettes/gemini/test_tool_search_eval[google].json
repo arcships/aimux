@@ -1,0 +1,91 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_tool_search_eval[google]",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1312",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the current exchange rate from USD to EUR?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "AUTO"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city.",
+              "name": "get_weather",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
+              "name": "search_tools",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "queries": {
+                    "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "queries"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=968",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"queries\": [\"exchange rate\", \"currency conversion\"]}, \"id\": \"yot5i3fn\", \"name\": \"search_tools\"}, \"thoughtSignature\": \"Ev0BCvoBAQw51sfd5MI/wdoCp3+LbECLCuznjBItxHJtcEnpXhIuvxa2xoBJ1bC6I1jT9hr8pcfiRJZu3VZeHc7Ha15UaH3nEvPVVH5O9xpt/7ppGkyPzfb/ilFaaimM9kMqWBemP1sn1c7z0QDSc3icHM1exaVy5P7prDAdQVzKXXN+MDUUghQN6jpGTeTlb1t+tJ0cOVH2pylmfwBfeXlmPqn035wPh//kG9KvMqeLf9z6SBSVtA5TwtPhpEucsMpBs6EjzpsnmF/ryYGCNAgvS4gVLeotnKSx9bKGTiJRtO5AoTqm7iau0i1O/tOMg9ympsYzNitLJT3KjkD//A==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"mr0Dap30Jbm6mtkPw5mKiAM\", \"usageMetadata\": {\"candidatesTokenCount\": 22, \"promptTokenCount\": 220, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 220}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 44, \"totalTokenCount\": 286}}"
+  }
+}

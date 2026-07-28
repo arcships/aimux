@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_stream_empty_text_delta",
+  "request": {
+    "path": "/model/openai.gpt-oss-120b-1%3A0/converse-stream",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f87461c1-d43e-4a8d-9043-47093c1fe0c6'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "98",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/vnd.amazon.eventstream"
+    },
+    "body": ""
+  }
+}

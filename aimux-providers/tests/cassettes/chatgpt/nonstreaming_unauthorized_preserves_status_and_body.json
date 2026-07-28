@@ -1,0 +1,41 @@
+{
+  "source": "rig (MIT)",
+  "provider": "chatgpt",
+  "scenario": "nonstreaming_unauthorized_preserves_status_and_body",
+  "request": {
+    "path": "/backend-api/codex/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": [
+            {
+              "text": "hello",
+              "type": "input_text"
+            }
+          ],
+          "role": "user",
+          "type": "message"
+        }
+      ],
+      "instructions": "",
+      "model": "gpt-5.4",
+      "store": false,
+      "stream": true
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"detail\":\"Could not parse your authentication token. Please try signing in again.\"}"
+  }
+}

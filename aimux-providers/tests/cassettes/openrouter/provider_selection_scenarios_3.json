@@ -1,0 +1,41 @@
+{
+  "source": "rig (MIT)",
+  "provider": "openrouter",
+  "scenario": "provider_selection_scenarios_3",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are a helpful assistant.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "sky color",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek/deepseek-v3.2",
+      "provider": {
+        "require_parameters": true
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"The color of the sky can vary depending on the time of day, weather conditions, and location. Here’s a breakdown:\\n\\n1. **Blue Sky** – During the day, the sky usually appears blue due to **Rayleigh scattering**, where sunlight interacts with atmospheric molecules and scatters shorter blue wavelengths more than longer red wavelengths.\\n\\n2. **Red/Orange/Yellow at Sunrise or Sunset** – At these times, sunlight passes through more of the atmosphere, scattering shorter blue light away and leaving longer red, orange, and yellow wavelengths visible.\\n\\n3. **Gray or White** – On overcast days, clouds scatter all wavelengths of light equally, making the sky appear gray or white.\\n\\n4. **Black at Night** – With no sunlight to scatter, the sky appears black, revealing stars and celestial objects.\\n\\n5. **Other colors** – Rare atmospheric phenomena (like auroras, certain clouds, or pollution) can create green, pink, violet, or other colors in the sky.\\n\\nSo, in short:  \\n- **Daytime, clear weather**: Blue  \\n- **Sunrise/Sunset**: Red, orange, pink, yellow  \\n- **Cloudy**: Gray or white  \\n- **Night**: Black  \\n\\nIf you’re thinking of a specific sky scene, feel free to describe it!\",\"reasoning\":null,\"refusal\":null,\"role\":\"assistant\"},\"native_finish_reason\":\"stop\"}],\"created\":0,\"id\":\"chatcmpl-REDACTED_4\",\"model\":\"deepseek/deepseek-v3.2-20251201\",\"object\":\"chat.completion\",\"provider\":\"AtlasCloud\",\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"completion_tokens\":265,\"completion_tokens_details\":{\"audio_tokens\":0,\"image_tokens\":0,\"reasoning_tokens\":0},\"cost\":0.00010382,\"cost_details\":{\"upstream_inference_completions_cost\":0.0001007,\"upstream_inference_cost\":0.00010382,\"upstream_inference_prompt_cost\":3.12e-6},\"is_byok\":false,\"prompt_tokens\":12,\"prompt_tokens_details\":{\"audio_tokens\":0,\"cache_write_tokens\":0,\"cached_tokens\":0,\"video_tokens\":0},\"total_tokens\":277}}"
+  }
+}

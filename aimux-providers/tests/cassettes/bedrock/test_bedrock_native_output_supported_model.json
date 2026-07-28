@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_native_output_supported_model",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-6/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1abcea68-0103-4d98-a0ba-51e00b1e89c0'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "580",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2780}, \"output\": {\"message\": {\"content\": [{\"text\": \"{\\\"city\\\":\\\"Paris\\\",\\\"country\\\":\\\"France\\\",\\\"population\\\":2161000}\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 211, \"outputTokens\": 18, \"serverToolUsage\": {}, \"totalTokens\": 229}}"
+  }
+}

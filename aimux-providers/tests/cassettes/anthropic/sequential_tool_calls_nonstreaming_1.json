@@ -1,0 +1,119 @@
+{
+  "source": "rig (MIT)",
+  "provider": "anthropic",
+  "scenario": "sequential_tool_calls_nonstreaming_1",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json",
+      "anthropic-version": "2023-06-01"
+    },
+    "body": {
+      "max_tokens": 2048,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "First use the add tool to compute 3 + 4. After you receive that result, use the subtract tool to subtract 5 from it. Then state the final number in one short sentence.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "I'll start by adding 3 + 4 right away!",
+              "type": "text"
+            },
+            {
+              "id": "toolu_REDACTED_1",
+              "input": {
+                "x": 3,
+                "y": 4
+              },
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "7",
+                  "type": "text"
+                }
+              ],
+              "tool_use_id": "toolu_REDACTED_1",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-6",
+      "system": [
+        {
+          "text": "You are a calculator. Use the provided tools instead of doing arithmetic yourself. Call exactly one tool at a time and wait for its result before deciding the next step.",
+          "type": "text"
+        }
+      ],
+      "tools": [
+        {
+          "description": "Add x and y together",
+          "input_schema": {
+            "properties": {
+              "x": {
+                "description": "The first number to add",
+                "type": "number"
+              },
+              "y": {
+                "description": "The second number to add",
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "name": "add"
+        },
+        {
+          "description": "Subtract y from x (i.e.: x - y)",
+          "input_schema": {
+            "properties": {
+              "x": {
+                "description": "The number to subtract from",
+                "type": "number"
+              },
+              "y": {
+                "description": "The number to subtract",
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "name": "subtract"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"content\":[{\"text\":\"3 + 4 = 7. Now I'll subtract 5 from that result!\",\"type\":\"text\"},{\"caller\":{\"type\":\"direct\"},\"id\":\"toolu_REDACTED_2\",\"input\":{\"x\":7,\"y\":5},\"name\":\"subtract\",\"type\":\"tool_use\"}],\"id\":\"msg_REDACTED_2\",\"model\":\"claude-sonnet-4-6\",\"role\":\"assistant\",\"stop_details\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"inference_geo\":\"global\",\"input_tokens\":852,\"output_tokens\":90,\"service_tier\":\"standard\"}}"
+  }
+}

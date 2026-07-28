@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-audio-bedrock_claude]",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'0c2818ad-fdc5-426d-bd2c-b7a1ff7fa55f'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "365",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1736}, \"output\": {\"message\": {\"content\": [{\"text\": \"I'll retrieve the file for you now.\"}, {\"toolUse\": {\"input\": {}, \"name\": \"get_file\", \"toolUseId\": \"tooluse_trRGgIU6b5WwZr5fsnvJHA\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 558, \"outputTokens\": 46, \"serverToolUsage\": {}, \"totalTokens\": 604}}"
+  }
+}

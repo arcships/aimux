@@ -1,0 +1,50 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_text_document_as_binary_content_input",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "255",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What does this text file say?",
+              "type": "text"
+            },
+            {
+              "source": {
+                "data": "Dummy TXT file\n",
+                "media_type": "text/plain",
+                "type": "text"
+              },
+              "type": "document"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"text\": \"The text file says \\\"Dummy TXT file\\\".\", \"type\": \"text\"}], \"id\": \"msg_01KanQBT3kkADVzF2uCY9XPR\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 57, \"output_tokens\": 14, \"service_tier\": \"standard\"}}"
+  }
+}

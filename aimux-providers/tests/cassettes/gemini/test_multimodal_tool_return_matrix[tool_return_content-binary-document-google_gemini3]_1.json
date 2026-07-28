@@ -1,0 +1,88 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-document-google_gemini3]_1",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "5066",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a document file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "parameters": {}
+                },
+                "id": "pyd_ai_c2b38b38a3104fc48cd9097c9186e0a1",
+                "name": "get_file"
+              },
+              "thoughtSignature": "EpwYCpkYAb4-9vt8IuU9adxjx-i00edB_5364XWTO8nivwBlZQDmUngjLL4mqa1FLQgY00kYi87i4J95BFN16JbgfkQSCxgUNyqjm1m_GWQ-7OpofAIxTjVI2HPWvU5fXz1Si93S-0_uby1tN9GIsvfxqeXX8i6xbnA9TQZvs6X0nOhxhMeFd8n-U9xsMcB1Tm8zQZ5ZaDxGSqmPGzLrgtOvLJV9f8ULQe9jFRZW0pKYNvUKbfaBNVpL4aSiFTw1ClHfLurUUTarUwKd49qZsCbuYTzoMhWiD1wg93R73Oh-B9wjy_5oJTtJsDSrNQ8zu1b_1c_sIq8niB35Ueq-4TWs9yXgkMak9v5X-bvxMi6bjqHJCOARk_SeLJKSscRSVEQ4zQAUQZGkKXWuM83yih0p0MgyGWoZMBoKQykA5b-wYgW3XqWF_A7TB_-LpwKH_JeYq2friHC8iY5ot2x3QdKhpN90HUGvl8nwJpc7bbxsU6umLCaerJALD9WPm1cbabbmk69_88BI3JLpDFyX0fG0DaKwqcm6DJuyF-IHgBY_zmHocCt6hNp8dYclDvdYTY29VW6KNVRivJPLFmfw7_7MHprsPvBRR1v86NOwfIjVVqXyfI_SWuKgHTBC_vJU8p4AVO97tm6seT9biColUpjHRrs-b-9j0BnG22KTCvMfnVNWh_GBC7sdRy7ZyHOsGasSYs5OtZYdMboulnYlwVfUsSPH1wrTZz6_2onW1JM0gn06LJL0QFCXABenmcQuoLruVFqmlGyTRjeflHjXmf7eHZW-p0NdA98E_rl-zD2wbeLPkUSAE2KazJtW_5UURlnQHLWxfNfic6q27tw09xiOS_s-8OXi9zcp-nDJEMNutHj6S6aMljR24CJfHSf832AMM3lLd4wQCO5tsFh7Q7TnaJiEBEVhLuuPWfM2VIMyNXN0mXtoYd2UwdVsf0ct3cGVvvRwnZdhR1FUfWGZkPo47ze2t5xFjuxT_68NXWTF-lYKJ_r_ROq6TgslULBQ5Hi2Z41DUoOP32RQoQ2uOl47mnVd5nD4BNHhF-LgExIxhRi3v8vhtWgQQTSTLJUbaQdtgB4phVT9Rp-Z2yVXKc2VXG4wJ0Sq5ha7rqC9HWheF_ifNq6rAthSLU-9BwcDJqSDQLl3FkG7H8zMC1_ZUkPb1EgLI1z7axAo9SWdbciL-qXqpl9uh2SRcJIgauNY6MoOn-Z0Hi24JFvP2NWExetzReBt46wJg2E0TwiJTXPGs4c6lqMfU53pYmksWOZN5Z1Yq1wfNJRaalY4g5dE1XhRsixXN1ce40u9uV5w7GpZULLyfL1gukDAkORPQw76j8KkMBmFLQ8JZ81P7Rme2MpRLleT1LSqGKwl9E3QsX0Tvp0HePWjYF9pGTbhxs4cO-2W4-e7houMXVMl0_EPWZrqe0CNGTOG4L-A9WJ1zaz-DhPyibyV0ghNC0pctnQA8hFQp8lVQFiivou8wmqhHkMUebyMn_GVbghyD9wP1mPXnkJPIb1J3BwP49PfdNxqnImDAwWFNlfbJyLS3yDRZOF5iprGSBSS1NH7whMfJTxzAQdMIF8hNO_Sfcz_S1MCsQrCFDAM4-s433oBI3MgWjqezitnpTKSxsARt0_rbyu1-Ylp0J8MU391x84kU-v5bTiZ7JwrFIclZRJ1M1GBD8ygbH9xatISyHN9Z5mUYiRr0ll2DGK44vb2oaDlpnQIDqXwOevXi5XTV8EvVxb_r2iDGK1UfaOEaZN2oJPk3Oz-UXbo4UZ7z6jwvbMcHTofhHzS888-OfFC9PPELMV3MbPghwcZ-zvvWyk7l9fkprzQ1et-YeCCWjCTf69tjbkVr0E0BNYYsbPLGKr2GmP61ETWJNuumWy-vWoJXqbugwtxlXdvyavQN5I-rLw5KKtXGKI9CQZZgxGbSyXX3a560fBSAokO5OBayurlbkXriAzkVC5xsBnkdv7VSzqEWlTJTlLQyg15L4vNbh0yDa_zeWqD65nSGVlFlZz5WRG0qZ6DWZbwePeDMlglW5GF-yDmqcYl8bhpXNzFQ8nmj0YOyIhXvoVdIiYKaZqQp5N4WOxX59UbYmVkO5oOx0VNAJ8BjZgJI0j8XZ92H62niwfGxPBllz5wLE_K4LeOfa-szV9lSI2HSaZQfk4IznQyKrauJME2pM5KXhP9IDcikwaMHv6CmGaB6I3EJLTfrXv9WfNukpbBQi_3EFyZuTlxiCv2nJRx5CyEHSicpNGK7hnIbS_Mk5_ABP3UdPqCzTUIFycMW8eRhfHBfom_aHsZ2S54eoXr03cLXrUUx6CtpqmJRfFaH72IXTSOND_HjWW1uItjJyQ1SjNojSLdH_MsrsgsDUIfj0m5-B3BeQwdjgtNTRHEVOt2HwFvHTOzyYVVUiaYPYGhZNRVv2tZTdSmAtzbapS_SWFL6Vs8I5XUsEPnNMaD79tgPfxt3pSywk8zd8GDyROKSBFVa8tPaUL67C2Pe_6f-rtdlc220d3hSaEcfyFpwI5uzq1PhFeNPN-IwYI1i4aR2faDtxL17opNYn6PMg7YAhcSbY7T2wS4IDRBdLc2NXN_iSTqSOdNnxzsmc7KDU65SmnzamS7ABYFRXPX9m-zHiZ_0WMjcgxAkND4JUiBRAgOdr5qGaSyzh2CNA2HGKvuPhnEnbD60d0XdQZZkr8BKLK6TlpWj9ANGsSML4NrFzNL7HhC0F-9YoOaQI0HRu8wVq8E8PWAidXMC8AB3ENr0JNIL5W2e5eaN9tGRd-tOMiI-ifOiwnsPPTowQ7uQS0pJhqiIDzwDdsfh0LTfVyKWtKaKMMRDNr6OCbT_6Jg_jUC0VobsvA-35-L4GHAfDah-97bUDa3R7-4p59urTgpoGJ1mVPREqGtuP5foSsjLL8n9jXxuPznGrVdVLLR3vjSy_MjcQ4MIiQb3EhkQHNtkiLuT3ENAvg8SElSzpChNTnDgiw4CQR_vKGadLBy5G0CNoxJN4EhDFarOVJPloMkltBkwXxzjp8Ioe3DmUcY6Xtq5w96E2RIhReKG5TWmt1AHzsR7Vw3owWVUJfAgziNQ-0SLxq23UWtCgZ0pRETQ_kttx1Aw9mekqDYnSzAkg0rw7BrhS2YHrURxytQtIgeyYLNHjT0X6-Q-OMt3rtxnLTu-eulAuDkECPBzNbIzTYs2XwkLOKVVnPFAfDan5bi0RCl-04AkxEQIhmYhP-M773IUqx1vORfy7nwy-r-bj13RS9Yzm32kVFd_Z1cZ6UW9GjOWANHlVfIfLmwFEoIiRGyE8y1A5_ikui9GvAPhj6zL4rHVFO9U963vHcNUZFiuZyTEtRH9MBcozKHjklkbV7zBbIcZe639mknPD-n15pZUMbILnObuMul4FIE9tl-IOlEiQGrEYU-oWac5TB4tk3nM9rkl3m8nr2TKJ_csOueuoBVu4Ez3W_N4zLBe0h-r5MgNVLoh-aNkx2Osk1tRdMAl6j-lL62CsoV3RHEG3av24T5-9v2FpfaSP9x7LOcQ7ErvNR4LEdebplY9JCl2RQiQkNFQhkEv99wOQlrTTzIih58wU0qONQ_gsYG4txr7TOvkpNrpKnX20W4c2wb8uex-X9d71PJtu4aFZGYlCyUYPhzT9ysAQHtymU6boGd6Mr-zgtpDJzPz-inkJCiv_TbeDjNqdmfIe2EcNTmWB2MYqQ0Of0rwfUCw0c08V6W8kg5hNcJ-m9Q8g28kx553n716IS0TU0_H50BBf3hbTc9PVArYkV3te9pZfJyxBu6CXGohT-RpRs-teSbAk9SZl2HhfZ_P1nXnUvgs1X8tvIIoRNFTphkDkMpm5tenrckhkyBCFrzama4_U8w-urgEptPb4k46fkXg_jjmZyNtFzRZNoUcvRKt6O5pt8kAACF-7oQthk0lql1M_iC6YHSgUN5GKxqqcMjQmcCkbroxjlF2oRENhGClzfsmhO-sGjVALJK91w0Q3wZFkvk6wW6UU9AkwR7OzdEuWErmm_tYqgnLIHDxzlqc5MQv7IqbrAaMKeHFEFxt3kQJhHyLVzJRXas8I8t3mcdPTYChg0e1CwD4NR2mof4Q8Mr3ca-gWNEEofBA-nWqOqsr3_1i0rkvW6Y6zyYMHxNYUC6rQ=="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_c2b38b38a3104fc48cd9097c9186e0a1",
+                "name": "get_file",
+                "response": {
+                  "error": "1 validation error:\n```json\n[\n  {\n    \"type\": \"extra_forbidden\",\n    \"loc\": [\n      \"parameters\"\n    ],\n    \"msg\": \"Extra inputs are not permitted\",\n    \"input\": {}\n  }\n]\n```\n\nFix the errors and try again."
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2422",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_file\"}, \"thoughtSignature\": \"EugFCuUFAb4+9vu2pFTxACJGdgVrgVf0Iv7y7nLNli7HgQl3AHEjpburAT1KSctHEHyS9K2WssPfH/SjUV+rRi+RuxQzOc4lC701/iAfpG1sqCNEp3KsqR5GzA6iqGLUmUEdjlbSDqyCr5TLRdccMFEMfnWQvp0/wvgmih6BEwMU3zGWK0j1Rg10as6nNEASwrw0DLzE1w70L2JOpzz4Y3TpbQkMNuaX+ILU9+r/8wF7+kiPqBrwO+XB7iznWHddGyYg0uBAOHZTz6NbdjNg+5pmCtZ4cqtwL0x/zL2/LR3fPXXVW9GmfFJ+9mmi7Sd6pnvd93hqF1poiYbt+iCxqsosLnGCUoYN0Jtypac6GpF1PbsiSODPi0VxVoiQXzAUqj/us+1ai3Hq0jDVkIDzHdR/cRWPaHZqbf7KQhSKzayfwSZyy/k8GYtn3Ch8xaWN2gqVFYpIet37oUcxsCB4Z4vpd5KlsmMvYp6FOZeULkvpWOCpUXbOyIUWdmnrotMwm8Vkka5FmEiMuk2AHfwL8sXIwcdshaZSlP61MdoPAnDRL0iLvDVH955qRRur+iL+3UWeBc+t+/TAHz5uopR310G7uB0GKKqRPvslOvKfWPz1hGsGNn/fQ1hV9G9j99a1dE55gl7UTV55ECaY2kXcrAkzvi5zV5ZzWRhetfAkn6p97CYfOc+BULXVNiJiXwHhBrRwyfsrzJjLaPcDKxHQeYrODU/f5iFr9PYDZvyaEI+7+0E4DYeb7VcC4oohP6aEItGm99M9ia04fuSFCaYu1DWRi5ghrtEbLZfiVlx3YDHJUAEy9PmIw6qKfjSzJFd8PKQa5tszVBXrZ7QnIe7/RLY+SwwujvnhW6LniG+2NBIQDuE7CcNWAc8mbhHZ1HxpF9CMkgJnX/4oFB8tGg7LyNzSz1xam4Bpwj7IqcboAlB2Tem2otQWRi3/Y3FTZ7wWLJ0m5VmwFZ1KNOfGNj304lZlvwOFLSZvlc4T\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"M-KTafbzB_msqtsP6qSAmAk\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 932, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 932}], \"thoughtsTokenCount\": 170, \"totalTokenCount\": 1112}}"
+  }
+}

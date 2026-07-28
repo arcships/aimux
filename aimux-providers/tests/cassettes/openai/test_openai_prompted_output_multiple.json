@@ -1,0 +1,63 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_prompted_output_multiple",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "1412",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Always respond with a JSON object that's compatible with this schema:\n\n{\"type\": \"object\", \"properties\": {\"result\": {\"anyOf\": [{\"type\": \"object\", \"properties\": {\"kind\": {\"const\": \"CityLocation\"}, \"data\": {\"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}}, \"required\": [\"city\", \"country\"], \"title\": \"CityLocation\", \"type\": \"object\"}}, \"description\": \"CityLocation\", \"required\": [\"kind\", \"data\"], \"additionalProperties\": false}, {\"type\": \"object\", \"properties\": {\"kind\": {\"const\": \"CountryLanguage\"}, \"data\": {\"properties\": {\"country\": {\"type\": \"string\"}, \"language\": {\"type\": \"string\"}}, \"required\": [\"country\", \"language\"], \"title\": \"CountryLanguage\", \"type\": \"object\"}}, \"description\": \"CountryLanguage\", \"required\": [\"kind\", \"data\"], \"additionalProperties\": false}]}}, \"required\": [\"result\"], \"additionalProperties\": false}\n\nDon't include any text or Markdown fencing before or after.",
+          "role": "system"
+        },
+        {
+          "content": "What is the largest city in the user country?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o",
+      "response_format": {
+        "type": "json_object"
+      },
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_user_country",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "428",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"logprobs\": null, \"message\": {\"annotations\": [], \"content\": null, \"refusal\": null, \"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{}\", \"name\": \"get_user_country\"}, \"id\": \"call_wJD14IyJ4KKVtjCrGyNCHO09\", \"type\": \"function\"}]}}], \"created\": 1749514898, \"id\": \"chatcmpl-Bgh2AW2NXGgMc7iS639MJXNRgtatR\", \"model\": \"gpt-4o-2024-08-06\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": \"fp_9bddfca6e2\", \"usage\": {\"completion_tokens\": 11, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 273, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 284}}"
+  }
+}

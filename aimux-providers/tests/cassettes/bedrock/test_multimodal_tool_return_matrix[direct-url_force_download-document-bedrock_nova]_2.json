@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url_force_download-document-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f2f148cb-3651-4e6c-bffe-a985dbd3a5e1'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "25853",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4271}, \"output\": {\"message\": {\"content\": [{\"text\": \"I retrieved the document file **99631f**, which appears to be a **simple PDF file**. Here's what it contains:\\n\\n---\\n\\n### **Title and Description**\\n- **Title:** `Sample PDF`\\n- **Subtitle:** `This is a simple PDF file. Fun fun fun.`\\n\\n### **Content Overview**\\nThe document consists of **placeholder text** (commonly known as *Lorem Ipsum*), which is typically used for design mockups or testing purposes. The text is structured into multiple paragraphs and appears to be purely decorative, with no specific subject matter or meaningful content.\\n\\n#### **Key Observations:**\\n1. **Formatting:**\\n   - Uses standard PDF layout.\\n   - No images, tables, or special formatting beyond plain text.\\n   - Font appears to be a standard serif typeface.\\n\\n2. **Text Structure:**\\n   - Paragraphs are short and flow naturally, mimicking readable prose.\\n   - Includes typical *Lorem Ipsum* phrases such as:\\n     - *\\\"Lorem ipsum dolor sit amet...\\\"*\\n     - *\\\"Nullam vel nisi...\\\"*\\n     - *\\\"Vivamus sollicitudin...\\\"*\\n\\n3. **Purpose:**\\n   - Clearly intended as a **sample or demonstration PDF**, likely for testing, showcasing, or instructional purposes.\\n   - Contains no identifiable data, personal information, or actionable content.\\n\\n---\\n\\n### **Conclusion**\\nThe file is a **generic placeholder PDF**--perfect for testing document handling, rendering, or layout systems. It does **not contain any substantive or sensitive information**.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 3521, \"outputTokens\": 296, \"serverToolUsage\": {}, \"totalTokens\": 3817}}"
+  }
+}

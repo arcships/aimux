@@ -1,0 +1,55 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_model_file_search_tool_with_results_3",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "300",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=Tqb2s5eBKTjzQxBYlSHfE0R1Q1fmOnoUTanlqzxTMmo-1765387621-1.0.1.1-QOKl2b_.wLbLeSYFom054M9g9fi8nAv1ZoMs0HM_umYrRXosZoAZ6TIm8Ev8ENNd98hGYvomRSyqoLus0dz1LKWcRbjrdKRJsGUlLCi5jtk; _cfuvid=UWE0JBmmBkntYIIqrzcv0A.ujekcA1j_p2tuBXvrdEs-1765387621709-0.0.1.1-604800000",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "file_search_call.results"
+      ],
+      "input": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        }
+      ],
+      "instructions": "You are a helpful assistant.",
+      "model": "gpt-4o",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "type": "file_search",
+          "vector_store_ids": [
+            "vs_6939ad669c648191821c3a46f90cf33d"
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "test-org",
+      "openai-processing-ms": "2936",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"created_at\": 1765387627, \"error\": null, \"id\": \"resp_08aa886305ae5628006939ad6b52b4819a9854a8383e4ef8f7\", \"incomplete_details\": null, \"instructions\": \"You are a helpful assistant.\", \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-4o-2024-08-06\", \"object\": \"response\", \"output\": [{\"id\": \"fs_08aa886305ae5628006939ad6cfa30819a85b07d52d61eb121\", \"queries\": [\"What is the capital of France?\"], \"results\": [{\"attributes\": {}, \"file_id\": \"file-2b6dRdmXnzSrqiEbhVJZRU\", \"filename\": \"tmpd_9a5dki.txt\", \"score\": 0.9716, \"text\": \"Paris is the capital of France. It is known for the Eiffel Tower.\", \"vector_store_id\": \"vs_6939ad669c648191821c3a46f90cf33d\"}], \"status\": \"completed\", \"type\": \"file_search_call\"}, {\"content\": [{\"annotations\": [{\"file_id\": \"file-2b6dRdmXnzSrqiEbhVJZRU\", \"filename\": \"tmpd_9a5dki.txt\", \"index\": 30, \"type\": \"file_citation\"}], \"logprobs\": [], \"text\": \"The capital of France is Paris.\", \"type\": \"output_text\"}], \"id\": \"msg_08aa886305ae5628006939ad6df868819a8b9a43fbf56f93da\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"filters\": null, \"max_num_results\": 20, \"ranking_options\": {\"ranker\": \"auto\", \"score_threshold\": 0.0}, \"type\": \"file_search\", \"vector_store_ids\": [\"vs_6939ad669c648191821c3a46f90cf33d\"]}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 1178, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 45, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 1223}, \"user\": null}"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_model_sees_multiple_images[google_2_5]",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "378",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Call the get_images tool. One image shows a fruit - what fruit is it? Just name the fruit."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_images",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=824",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_images\"}, \"thoughtSignature\": \"CrQCAb4+9vv8NS2yyQ6h5fk1wUwwF9UIqOiO740jpx1AS+iKTaAPOfKTtHOScIPHS8OeWHwguo7gSx8RsnFUr21p6dS9qrhdLpjRveyR4DXDWQqkadoZ3Xy3ByLyxiy8OUh056AoTEzzCvop53LfWrTb1/be5RA9lHj7Tin92APSBWiFZh48zHwarxUUHeDveTkFbx2PGt9ArNEVubLhLfEreE0CJJI1WI1XY4O2Thtdd0GwyO6nQoSZz2QlpjMjrRMLbZXDyiBTvMJuuR2NXL9vKRv1ZwKs4SFDV3BzmSR5TY6hCTlY77WilrYVIZZZ5JLn2ZXztYs74ulXHpWpw/V6XhWDgYra2GH42xx1/2HKNBrgowG8wwBteH2qgLqOrdwzp5RVhXghwpSWBODKCaEm5Dm3JpA=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"MeuTacDGJvWIqtsPmIvh-A0\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 45, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 45}], \"thoughtsTokenCount\": 71, \"totalTokenCount\": 126}}"
+  }
+}

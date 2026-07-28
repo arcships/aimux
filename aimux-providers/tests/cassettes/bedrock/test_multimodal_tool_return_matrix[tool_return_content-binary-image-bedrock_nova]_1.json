@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-image-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'40fd6505-fecc-4f4f-bc0f-d11a96592ff6'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "132141",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1213}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a high-resolution image of a **slice of kiwi fruit**. The image shows a cross-section of the kiwi, displaying its bright green flesh with distinctive radial patterns and numerous small black seeds arranged in a circular pattern around the central core. The outer skin appears slightly fuzzy and is visible along the edge of the slice. The background is plain white, which makes the vibrant green color and intricate seed arrangement stand out clearly. The image captures the fresh, juicy texture of the fruit in detail.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1384, \"outputTokens\": 101, \"serverToolUsage\": {}, \"totalTokens\": 1485}}"
+  }
+}

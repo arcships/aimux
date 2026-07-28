@@ -1,0 +1,51 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_memory_tool",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "228",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Where do I live?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "name": "memory",
+          "type": "memory_20250818"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"text\": \"I'll check my memory to see if I have information about where you live.\", \"type\": \"text\"}, {\"id\": \"toolu_01YC8RhZeDTZRbb8n1gUFTmb\", \"input\": {\"command\": \"view\", \"path\": \"/memories\"}, \"name\": \"memory\", \"type\": \"tool_use\"}], \"context_management\": {\"applied_edits\": []}, \"id\": \"msg_01QAHQ47smZ47jGdCgd1rjE1\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 1577, \"output_tokens\": 86, \"service_tier\": \"standard\"}}"
+  }
+}

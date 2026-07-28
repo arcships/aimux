@@ -1,0 +1,45 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "streaming_text_only_emits_text_deltas_and_stream_finish",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "In one short sentence, describe the color of a clear daytime sky.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a concise assistant. Answer directly in plain text.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"The color of a clear daytime sky is blue.\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":10,\"promptTokenCount\":28,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":28}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":38,\"totalTokenCount\":76}}\r\n\r\n"
+  }
+}

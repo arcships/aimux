@@ -1,0 +1,44 @@
+{
+  "source": "rig (MIT)",
+  "provider": "mistral",
+  "scenario": "tool_choice_auto_any_specific_and_none_0",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Call lookup_harbor_label exactly once with an empty object.",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-small-latest",
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "Return the alpha signal marker.",
+            "name": "lookup_harbor_label",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{}\",\"name\":\"lookup_harbor_label\"},\"id\":\"call_REDACTED_1\",\"index\":0,\"type\":\"function\"}]}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"mistral-small-latest\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":9,\"prompt_tokens\":79,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":88}}"
+  }
+}

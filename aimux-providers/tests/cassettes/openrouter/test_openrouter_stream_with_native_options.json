@@ -1,0 +1,54 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openrouter",
+  "scenario": "test_openrouter_stream_with_native_options",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "232",
+      "content-type": "application/json",
+      "host": "openrouter.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Who are you",
+          "role": "user"
+        }
+      ],
+      "model": "google/gemini-2.0-flash-exp:free",
+      "models": [
+        "x-ai/grok-4"
+      ],
+      "provider": {
+        "only": [
+          "xai"
+        ]
+      },
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "transforms": [
+        "middle-out"
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "vary": "Accept-Encoding"
+    },
+    "body": ""
+  }
+}

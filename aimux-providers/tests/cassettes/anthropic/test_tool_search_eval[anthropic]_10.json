@@ -1,0 +1,124 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_tool_search_eval[anthropic]_10",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1904",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Book a flight from New York to London for next week.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "I don't currently have access to a flight booking tool. Let me search for one that can help you book flights.",
+              "type": "text"
+            },
+            {
+              "id": "toolu_01N1Pb6Br63jCppZdWpq4v8p",
+              "input": {
+                "queries": [
+                  "book flight",
+                  "flight booking",
+                  "airline reservation",
+                  "travel booking"
+                ]
+              },
+              "name": "search_tools",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "{\"discovered_tools\":[],\"message\":\"No matching tools found. The tools you need may not be available.\"}",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "toolu_01N1Pb6Br63jCppZdWpq4v8p",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "Get the current weather for a city.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "name": "get_weather"
+        },
+        {
+          "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "queries": {
+                "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "queries"
+            ],
+            "type": "object"
+          },
+          "name": "search_tools"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-338707f2ac6d4823f051c311374c5ffd-bf8f535c7f7156c0-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"content\": [{\"text\": \"I apologize, but I don't have access to a flight booking tool. I'm unable to book flights from New York to London for you.\\n\\nTo book your flight, you would need to:\\n1. Use an airline's website directly (like British Airways, Delta, American Airlines, Virgin Atlantic, etc.)\\n2. Use a travel booking platform (like Expedia, Kayak, Google Flights, Skyscanner, etc.)\\n3. Contact a travel agent\\n\\nIs there anything else I can help you with?\", \"type\": \"text\"}], \"id\": \"msg_014bYWLzp8XqjndRHkzQkZ5p\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 890, \"output_tokens\": 115, \"service_tier\": \"standard\"}}"
+  }
+}

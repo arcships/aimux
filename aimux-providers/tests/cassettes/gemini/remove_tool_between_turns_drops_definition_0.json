@@ -1,0 +1,94 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "remove_tool_between_turns_drops_definition_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is 19 + 23?",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a calculator assistant. You MUST use the provided tools for every arithmetic operation instead of computing results yourself. Once you have all the tool results you need, reply with the final numeric answer in plain text.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y together",
+              "name": "add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Subtract y from x (i.e. x - y)",
+              "name": "subtract",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"x\":19,\"y\":23},\"name\":\"add\"},\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":20,\"promptTokenCount\":162,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":162}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":80,\"totalTokenCount\":262}}"
+  }
+}

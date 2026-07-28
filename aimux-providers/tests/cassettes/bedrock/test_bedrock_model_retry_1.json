@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_retry_1",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'28d990d7-373d-4d73-88d1-7a411f40d369'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1119",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 567}, \"output\": {\"message\": {\"content\": [{\"text\": \"<thinking> It appears that there was an error in retrieving the capital of France as the tool indicated that the country is not supported. Since the tool is not able to provide the requested information, I will respond to the User with the information I have access to. </thinking> \\n\\nThe capital of France is Paris. If you need any further information, feel free to ask!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 531, \"outputTokens\": 76, \"serverToolUsage\": {}, \"totalTokens\": 607}}"
+  }
+}

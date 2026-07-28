@@ -1,0 +1,113 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_structured_output",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "1182",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What was the temperature in London 1st January 2022?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful chatbot."
+          }
+        ],
+        "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "allowedFunctionNames": [
+            "temperature",
+            "final_result"
+          ],
+          "mode": "ANY"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "<summary>Get the temperature in a city on a specific date.</summary>\n<returns>\n<description>The temperature in degrees Celsius.</description>\n</returns>",
+              "name": "temperature",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "description": "The city name.",
+                    "type": "string"
+                  },
+                  "date": {
+                    "description": "The date. (format: date)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city",
+                  "date"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "The final response which ends this conversation",
+              "name": "final_result",
+              "parameters_json_schema": {
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "description": "Format: date",
+                    "type": "string"
+                  },
+                  "temperature": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "temperature",
+                  "date",
+                  "city"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=795",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -8.833004228238548e-06, \"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"city\": \"London\", \"date\": \"2022-01-01\"}, \"name\": \"temperature\"}}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"cDlXacOkMODnqtsPz8P96Ao\", \"usageMetadata\": {\"candidatesTokenCount\": 14, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 14}], \"promptTokenCount\": 69, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 69}], \"totalTokenCount\": 83}}"
+  }
+}

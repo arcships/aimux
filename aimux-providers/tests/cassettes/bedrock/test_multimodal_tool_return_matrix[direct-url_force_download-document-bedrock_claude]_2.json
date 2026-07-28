@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url_force_download-document-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1d28167c-917e-4750-97c6-994c61fec68d'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "25847",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5237}, \"output\": {\"message\": {\"content\": [{\"text\": \"The function executed successfully but returned no output or errors. This means that the `get_file` tool ran without returning any visible document content or providing any file data that I could display or describe to you.\\n\\nThis could happen for several reasons:\\n- The tool may have a side effect that's not visible in the output\\n- There may be no file currently available to retrieve\\n- The function might need additional parameters (like a file path or ID) that weren't provided\\n- The function might return data in a format that wasn't captured in the output\\n\\nUnfortunately, I cannot describe a document since no content was returned from the function call. If you have a specific file you'd like me to retrieve, you may need to provide additional information such as a file name, path, or identifier.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 631, \"outputTokens\": 166, \"serverToolUsage\": {}, \"totalTokens\": 797}}"
+  }
+}

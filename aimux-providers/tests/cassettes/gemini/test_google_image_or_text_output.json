@@ -1,0 +1,40 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_image_or_text_output",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash-image:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "144",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Tell me a two-sentence story about an axolotl, no image please."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {}
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1565",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"In a hidden cave, a shy axolotl named Pip spent its days dreaming of the world beyond its murky pond. One evening, a glimmering portal appeared, offering Pip a chance to explore the vibrant, unknown depths of the ocean.\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash-image\", \"responseId\": \"tofdaKSRBMSgz7IPx5eRyAU\", \"usageMetadata\": {\"candidatesTokenCount\": 48, \"promptTokenCount\": 18, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 18}], \"totalTokenCount\": 66}}"
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "source": "rig (MIT)",
+  "provider": "llamafile",
+  "scenario": "tools_roundtrip_0",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are a calculator. Use the provided tools before answering arithmetic questions.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "Calculate 2 - 5.",
+          "role": "user"
+        }
+      ],
+      "model": "llama3.2:latest",
+      "tools": [
+        {
+          "function": {
+            "description": "Add x and y together",
+            "name": "add",
+            "parameters": {
+              "properties": {
+                "x": {
+                  "description": "The first number to add",
+                  "type": "number"
+                },
+                "y": {
+                  "description": "The second number to add",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Subtract y from x (i.e.: x - y)",
+            "name": "subtract",
+            "parameters": {
+              "properties": {
+                "x": {
+                  "description": "The number to subtract from",
+                  "type": "number"
+                },
+                "y": {
+                  "description": "The number to subtract",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"x\\\": \\\"2\\\", \\\"y\\\": \\\"5\\\"}\",\"name\":\"subtract\"},\"id\":\"call_REDACTED_1\",\"type\":\"function\"}]}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"llama3.2:latest\",\"object\":\"chat.completion\",\"system_fingerprint\":\"b9890-74976e1ae\",\"timings\":{\"cache_n\":357,\"predicted_ms\":179.616,\"predicted_n\":22,\"predicted_per_second\":122.48352039907357,\"predicted_per_token_ms\":8.164363636363637,\"prompt_ms\":13.241,\"prompt_n\":1,\"prompt_per_second\":75.52299675251115,\"prompt_per_token_ms\":13.241},\"usage\":{\"completion_tokens\":22,\"prompt_tokens\":358,\"prompt_tokens_details\":{\"cached_tokens\":357},\"total_tokens\":380}}"
+  }
+}

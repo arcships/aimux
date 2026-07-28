@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-image-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'17325aa7-dd92-4a29-92b6-d5533e092fce'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "151846",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5439}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a beautiful image of a rose! Here's what I can see:\\n\\n**Description:**\\n- The image shows a single rose bloom on a stem with a branch\\n- The rose is a warm, peachy-orange color with yellow undertones\\n- The petals appear soft and delicate, with the classic layered spiral pattern of a rose\\n- There's a pink or reddish rosebud visible at the top of the stem\\n- A small green leaf can be seen on the brown stem/branch\\n- The background is completely white, giving it a clean, isolated look\\n- The rose appears to have water droplets on its petals, giving it a fresh, dewy appearance\\n- The overall composition is elegant and would be suitable for botanical art or floral photography\\n\\nThe image has a high-quality, professional look with good detail and natural coloring.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 794, \"outputTokens\": 186, \"serverToolUsage\": {}, \"totalTokens\": 980}}"
+  }
+}

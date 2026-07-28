@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_model_sees_multiple_images[google_gemini3]",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "378",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Call the get_images tool. One image shows a fruit - what fruit is it? Just name the fruit."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_images",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1509",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_images\"}, \"thoughtSignature\": \"EqIDCp8DAb4+9vucAg0vDjC+omUaNr5MuT1YFD5Nb4pTJl8d0R0iKvBLtSy/Wkt3szuVZX1QTD54HvlAoAgF/wm3XjoVvVgzk9Ohmjvdx8nvQm1fm/rlOTLJIPeGIOAoYvLrdsE5EKoyT2J3ogRk8N8Qnqwrda+fECEbXGbj9fiQXdfw+bXW5MEho1vzXkSS4Z9TJvhUs6d/Wrd89ewnuHLUpIp+YcD9w5b2HVCQTS7gN0zipZXFd3LanzIc6cQuRN4Q7vIPwco/2FfXOVAzUCGXhyZStGE1BHaf+USQEai/HPuG0K9xUZAa8sackuCLUxQdqQTiv5IcSQHb3iaVXq42Y1v2n8kPvlo0lM3Ax7dy1B9mVvysauSjkFMBnh9J1jtTgSLyqIpKRJTAcmk1xAoSp6I0jCTwgvFhuDEZPTe9KGsju/bNLOmi1sC8r9h9WXQtahM0rwi9os6UI8ZyN/BoNcciQ7R1Cq5B+aWzA/OYj9tk4ZI+PJNse52ip4Lx7Bb7jkKp9DkZ7Sv/rsmiccpMBg9yvueBsHsT7r/wdUbP9YBsAw==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"iuCTaZa9A8mjqtsPxs282A0\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 40, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 40}], \"thoughtsTokenCount\": 101, \"totalTokenCount\": 151}}"
+  }
+}

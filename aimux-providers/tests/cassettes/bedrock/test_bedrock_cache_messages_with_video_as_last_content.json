@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_cache_messages_with_video_as_last_content",
+  "request": {
+    "path": "/model/us.amazon.nova-pro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'75a4f4f2-258e-4527-837c-cdca5dae2720'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "840744",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2145}, \"output\": {\"message\": {\"content\": [{\"text\": \"The video depicts a camera mounted on a tripod, capturing a scenic view of a landscape featuring mountains and a road. The camera remains stationary throughout the video, focusing on the picturesque scenery.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 1505, \"cacheWriteInputTokens\": 1505, \"inputTokens\": 2326, \"outputTokens\": 37, \"serverToolUsage\": {}, \"totalTokens\": 3868}}"
+  }
+}

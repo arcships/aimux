@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_media_kind_delivered_in_tool_result[meta_document]",
+  "request": {
+    "path": "/model/us.meta.llama4-maverick-17b-instruct-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1bd13d88-1811-4a3c-8b3b-689ef7d900c1'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "319",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 549}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {}, \"name\": \"get_file\", \"toolUseId\": \"tooluse_TdmpoyAAhACnMgSAh4lOVF\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"inputTokens\": 149, \"outputTokens\": 19, \"serverToolUsage\": {}, \"totalTokens\": 168}}"
+  }
+}

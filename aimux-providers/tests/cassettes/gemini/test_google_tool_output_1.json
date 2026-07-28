@@ -1,0 +1,108 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_tool_output_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "929",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the largest city in the user country?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "id": "pyd_ai_3fa5644dae1d4aad997ae39c70006fbd",
+                "name": "get_user_country"
+              }
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_3fa5644dae1d4aad997ae39c70006fbd",
+                "name": "get_user_country",
+                "response": {
+                  "return_value": "Mexico"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {},
+      "toolConfig": {
+        "functionCallingConfig": {
+          "allowedFunctionNames": [
+            "get_user_country",
+            "final_result"
+          ],
+          "mode": "ANY"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_user_country",
+              "parameters": {
+                "properties": {},
+                "type": "OBJECT"
+              }
+            },
+            {
+              "description": "The final response which ends this conversation",
+              "name": "final_result",
+              "parameters": {
+                "properties": {
+                  "city": {
+                    "type": "STRING"
+                  },
+                  "country": {
+                    "type": "STRING"
+                  }
+                },
+                "required": [
+                  "city",
+                  "country"
+                ],
+                "type": "OBJECT"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=605",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -9.877141565084457e-06, \"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"city\": \"Mexico City\", \"country\": \"Mexico\"}, \"name\": \"final_result\"}}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"LlteaOzCOPOdnvgPrJbnoQg\", \"usageMetadata\": {\"candidatesTokenCount\": 8, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 8}], \"promptTokenCount\": 47, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 47}], \"totalTokenCount\": 55}}"
+  }
+}

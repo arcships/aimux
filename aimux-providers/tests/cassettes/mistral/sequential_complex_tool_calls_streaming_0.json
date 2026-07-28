@@ -1,0 +1,177 @@
+{
+  "source": "rig (MIT)",
+  "provider": "mistral",
+  "scenario": "sequential_complex_tool_calls_streaming_0",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "You are a deterministic Mistral tool orchestration test harness. Use the tools instead of inventing values. For the production-readiness scenario, call exactly one tool at a time in this order: 1. ping_empty with an empty JSON object. 2. inspect_manifest with project rig-mistral, flags critical=true and retries=2, steps plan weight=1 and verify weight=2, and the exact note from the user. 3. join_labels with labels [north, beta gamma, quote:\"delta\", slash\\path] and separator |. 4. optional_nullable_probe with required name sentinel, optional note omitted if possible, and nullable_code null. 5. escape_echo with the exact escaped text from the user. After all tool results are available, answer in one short sentence that includes EMPTY-OK, MANIFEST-OK, LABELS-OK, OPTIONAL-OK, and ESCAPE-OK.",
+          "role": "system"
+        },
+        {
+          "content": "Run the production-readiness scenario. The manifest note is `line one; line two says \"hello\" and path C:\\rig\\mistral`. The escaped text is `Line 1\nLine \"2\" with backslash \\ and unicode snowman ☃`.",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-small-latest",
+      "parallel_tool_calls": false,
+      "stream": true,
+      "tools": [
+        {
+          "function": {
+            "description": "Return EMPTY-OK. This tool takes no arguments.",
+            "name": "ping_empty",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Validate a nested deployment manifest.",
+            "name": "inspect_manifest",
+            "parameters": {
+              "properties": {
+                "flags": {
+                  "properties": {
+                    "critical": {
+                      "type": "boolean"
+                    },
+                    "retries": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "critical",
+                    "retries"
+                  ],
+                  "type": "object"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "project": {
+                  "type": "string"
+                },
+                "steps": {
+                  "items": {
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "weight": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "weight"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "project",
+                "flags",
+                "steps",
+                "note"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Join label strings with the requested separator.",
+            "name": "join_labels",
+            "parameters": {
+              "properties": {
+                "labels": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "separator": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "labels",
+                "separator"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Validate optional and nullable argument serialization.",
+            "name": "optional_nullable_probe",
+            "parameters": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "nullable_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "nullable_code"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Echo a string containing escaping-sensitive characters.",
+            "name": "escape_echo",
+            "parameters": {
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "body": "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"mistral-small-latest\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"{}\",\"name\":\"ping_empty\"},\"id\":\"call_REDACTED_1\",\"index\":0,\"type\":\"function\"}]},\"finish_reason\":\"tool_calls\",\"index\":0}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"mistral-small-latest\",\"object\":\"chat.completion.chunk\",\"p\":\"abcdefghijklmnopqrstuvwxyz01\",\"usage\":{\"completion_tokens\":6,\"prompt_tokens\":722,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":728}}\n\ndata: [DONE]\n\n"
+  }
+}

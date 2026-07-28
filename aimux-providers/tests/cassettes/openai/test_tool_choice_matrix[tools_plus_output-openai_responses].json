@@ -1,0 +1,118 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_tool_choice_matrix[tools_plus_output-openai_responses]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1136",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Get weather for Paris and summarize",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": {
+        "mode": "required",
+        "tools": [
+          {
+            "name": "final_result",
+            "type": "function"
+          },
+          {
+            "name": "get_weather",
+            "type": "function"
+          }
+        ],
+        "type": "allowed_tools"
+      },
+      "tools": [
+        {
+          "description": "Get the current weather for a city.",
+          "name": "get_weather",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        },
+        {
+          "description": "Get the current time in a timezone.",
+          "name": "get_time",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "timezone": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "timezone"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        },
+        {
+          "description": "The final response which ends this conversation",
+          "name": "final_result",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city",
+              "summary"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "5648",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1769721371, \"created_at\": 1769721366, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0cf3aa21510b301d00697bce160510819f8612b527dffdca02\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABpe84b3RjZDuSNlGsAVmi04PUedyEtrcCA9dxPU2EMPxrOo5oqewMKb0YyoSAvezCYwFd-xFNUJTPOpBkS25VXNy_h1T_9oxVjFR-Ud-LEF-yOY-pqtxb2JDddfvdqZJRQ5qWzBq6vNYHvTKFRDc3wAwxSmn4U8qCKtXWhhv_UBDokNT1ajy8zJIgJMpmQkXcnfzbqDQWWtWLsugwOUKpGO6XfNu16ZlJH2lRxNxetdLbBPtyxOCPC1hsu4XgnsuUcQU7WHvF0HXiMj_0B3mGah1CTmYEuI14uE52pW_qIkqvrIPxnsea3378oCKbS4yFB0ZtUxmNRGFSKJDwh9TgcOQQ5LKGj1146nynXt6rFHbShX3IpTFZtfjFQEOeA0vMIBSrT6_e7Ic1LkfELgtcBvFnaSqKRyI_-EO2s8Vu-9yygIzQSXNoj2UCabF7HqAC9Kw2IHNbzcCVN1wkzNeeFFxiqMEm23Do_-MoxEybIzBlg1jdwf7-OXyhAA_evWTedC96CgIROhQyYgOvdapk8TuTjhDt6H8dkVdc6RMzeVB_etMU795Ds-0nB8b6emyr1DfHrDU5dIbPUTy2A-gUZHSQ71aEw9o525Mi6k_T9I1gRSPCUPfconaDde3VRCkTc4pZavvih6xZ5Ps_Y129KMRG6JGThqHLeBTxHLU9ZXUQmjcSxCMHZlM46E7BgN4sMGFOPK8g1DmHFwT9TehpbRBVGSV9Kp9bvuglIFTPOOS3wmOzE_cyXvVorjvTMng1xJAZ3FnGDd7aOseG3yZajf1Us_1UszV7Ir76YR-oRdYUiDJ0ZfcaFC4JuHv0FFKPpCxuZG2fVE1l9IHNuuJvCQpJ-rXXAdhoFqirk1sOot8Tj7EHvJfR-FfdVPY2yhCrR4v9PgqLxISOjb62Xf1L1jrHOdGnFz_TXskBegpC-f7BeOPeKjmoxD5dDSn7hnBs3ZA02WG0YViIfAhoGSpwDoAP4FrbwCTnT_sGJZa_0VZeWoslt1tIQSZi3fd4xTAcnAH7ToO60p6wOLb5r3SBBscGIHqAT2j5RzygNIS50nsQPfrFXcNFLb34hjIkzNv2xE_xFTVNvggdB2sypVmdMP6JMKgMxYJ6WCSTMd-7Dz44aL0vnk_bN8BUzEo_RMzp4RljFtI8ddkYtf3Q0pbTNuYErWuWOoMcvJfOZAJA-B8m3xtX_IYjzqFwiZi-zHaz78OhKDbRknnKJ9zflUb_D_ajgKXdcBU059wllMyxIdG9H8VsGKACs6PMrymZWSOEbiwCicD4knD6XGKqdN9w220LKNa9SkgTgFIjhRrsef60BwwvdQszNKj2fLh8Uz-bvvUkK73mlSjLDeig4-LAfRl55jyWCGG-aJxjyA83ufc3ZEXG9wd0cR69nUAeW7sfK-J-qFoYrm1PS3wkoiKpU7oEswSWHmULUg__4dI32r-lsAQozxZ2YG_kojZKQvMoPIrI20XbX_Xwr0XW8AGwWnLKQD4k2njKmoYHkUDCOLTSWni-7Tw_Y4aM-s-QPWvokLSCGpQLbWBb-Rikfi3NOvnenY16OJuYsKwZYKRiFoWvEhSU5OLX4WL4o6w0aMqbKGQ6xxmhZL1Pk9kCe8Z3NM91jlSQIvabh0BQgBvGxFOBa7YW-1mOuuTT9h1x6WgOR26ex_gbUVTVErA-wfxTAPCiZjH7Tz6jXIFWZM9-c1beKjR8vCqR6dzMvPjXiI_EtOMwB4uyp0LMOpmV4o56_z3X3VRGoGe3t23vMXA19CSCDr61BFOuPmlkyNpi33QW81Xvg_RwmN0UJ-2J1czQFLen0kBDnIvquLPTzEO1pn-Itcyb9Yi-zVWITHcPmKuQCmz80PUs1OMScAzla4PTFsen9z5S1r_ELP7R748YZEPx6ctOath8GGucEMT8IrKLYWE8wl3sub3Ve6G8deXE7XeiI2TMdilqY00vCpiTOPZWRgcvyEMcuEafTnNgyknRdS8A_juMB2Gyo9k4pxWmTzXipTmkBtF4_v1hS86aNwDU_zJV9MY-GYwVrgxMneG_xbvNSiP9b4CgF3E7OsOeo-SO4_Amkjs83yvNd-FvwNljz4nSaE5N0jmwPVL1IHGDKStAfkLnb8aIiPOJ84_Z6iHFQ1mKVQKjU9ke84PqrC-y-BZUPGs12WMJBdCbxmwhW4MN2YeG5IucE5LxKGJmunILopCEkHe1ki-amkswqo58ffRaIAcWzm2ZDc-8YgnjddeTFpFK4NuYolsZT_PBPnrsEW2xJezKkW9LSzVXWIVZuakWXiwRKP1lqbktPsdxmM2y_3nVM6ExuQMrLopUtKxx8wcmvwCf8ok9R470PeSdpJFjwIylxakEQZZFz9QBdTMGQSq2wH5Ei13Ptx2AjSqNOllT07zAYnnnXAuAWKAZ1-RCnYhG3oM1CILoiyVMy5rZYYVkMGYCLJODFROtnlVFuT1Lj41_A7_4JCyJ-qe4PmcFIb8U1VS0UtHUCBc8Bxzt5AjrRvGNJKz80c_k3lA0LRK94roYm0Ym8KwxomX77_ak0VbUohE0IeDlLTso8uuNPF71ZaZJR-oTTbRrQD-dYypygYqJ8OUETIk1nnFWxCuovQR6KhTOQ-sMkRl3yxoWXJELuW4aQ8ZorhpwBKVswzlkRYa4pQ2uNmblYwv0eFrxu8zmcwnuNyXjTKdpXhxlBkj-c2eTzC3erxribFhxJhsemzQvkQiJme75u7-fBQkSup7Brgp1tzGmPK0PUWAmGW3tVpqs9s8PGt5qZZIQucXNcKJHiO1rYkaA58M0J0Y0=\", \"id\": \"rs_0cf3aa21510b301d00697bce166304819f8ef31bb76106cd84\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\"}\", \"call_id\": \"call_CV6BaAADlqML8HxE2Y7aSYVR\", \"id\": \"fc_0cf3aa21510b301d00697bce1b5204819fad12a990426bc974\", \"name\": \"get_weather\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": {\"mode\": \"required\", \"tools\": [{\"name\": \"final_result\", \"type\": \"function\"}, {\"name\": \"get_weather\", \"type\": \"function\"}], \"type\": \"allowed_tools\"}, \"tools\": [{\"description\": \"Get the current weather for a city.\", \"name\": \"get_weather\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}, {\"description\": \"Get the current time in a timezone.\", \"name\": \"get_time\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"timezone\": {\"type\": \"string\"}}, \"required\": [\"timezone\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}, {\"description\": \"The final response which ends this conversation\", \"name\": \"final_result\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}, \"summary\": {\"type\": \"string\"}}, \"required\": [\"city\", \"summary\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 98, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 299, \"output_tokens_details\": {\"reasoning_tokens\": 256}, \"total_tokens\": 397}, \"user\": null}"
+  }
+}

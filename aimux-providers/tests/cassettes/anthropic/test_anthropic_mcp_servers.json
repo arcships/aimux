@@ -1,0 +1,53 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_mcp_servers",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "346",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "mcp_servers": [
+        {
+          "name": "deepwiki",
+          "type": "url",
+          "url": "https://mcp.deepwiki.com/mcp"
+        }
+      ],
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Can you tell me more about the pydantic/pydantic-ai repo? Keep your answer short",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-0",
+      "stream": false,
+      "thinking": {
+        "budget_tokens": 3000,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"signature\": \"EqUDCkYICBgCKkCTiLjx5Rzw9zXo4pFDhFAc9Ci1R+d2fpkiqw7IPt1PgxBankr7bhRfh2iQOFEUy7sYVtsBxvnHW8zfBRxH1j6lEgySvdOyObrcFdJX3qkaDMAMCdLHIevZ/mSx/SIwi917U34N5jLQH1yMoCx/k72klLG5v42vcwUTG4ngKDI69Ddaf0eeDpgg3tL5FHfvKowCnslWg3Pd3ITe+TLlzu+OVZhRKU9SEwDJbjV7ZF954Ls6XExAfjdXhrhvXDB+hz6fZFPGFEfXV7jwElFT5HcGPWy84xvlwzbklZ2zH3XViik0B5dMErMAKs6IVwqXo3s+0p9xtX5gCBuvLkalET2upNsmdKGJv7WQWoaLch5N07uvSgWkO8AkGuVtBgqZH+uRGlPfYlnAgifNHu00GSAVK3beeyZfpnSQ6LQKcH+wVmrOi/3UvzA5f1LvsXG32gQKUCxztATnlBaI+7GMs1IAloaRHBndyRoe8Lwv79zZe9u9gnF9WCgK3yQsAR5hGZXlBKiIWfnRrXQ7QmA2hVO+mhEOCnz7OQkMIEUlfxgB\", \"thinking\": \"The user is asking about the pydantic/pydantic-ai repository and wants me to keep the answer short. I should use the deepwiki tools to get information about this repository. Let me start by asking a general question about what this repository is about.\", \"type\": \"thinking\"}, {\"id\": \"mcptoolu_01SAss3KEwASziHZoMR6HcZU\", \"input\": {\"question\": \"What is pydantic-ai and what does this repository do?\", \"repoName\": \"pydantic/pydantic-ai\"}, \"name\": \"ask_question\", \"server_name\": \"deepwiki\", \"type\": \"mcp_tool_use\"}, {\"content\": [{\"text\": \"Pydantic AI is a Python agent framework designed to simplify the development of production-grade applications using Generative AI . The repository contains this framework, which emphasizes an ergonomic developer experience and type-safety, similar to Pydantic and FastAPI .\\n\\n## Core Functionality\\n\\nThe `pydantic-ai` repository provides a comprehensive set of tools and abstractions for building AI agents . Its core components include:\\n\\n*   **Type-safe agents**: Agents are defined using `Agent[Deps, Output]` for compile-time validation .\\n*   **Model-agnostic design**: It supports over 15 LLM providers through a unified `Model` interface .\\n*   **Structured outputs**: Automatic Pydantic validation and self-correction ensure structured outputs .\\n*   **Observability**: Integration with OpenTelemetry and Logfire provides comprehensive observability .\\n*   **Production-ready tooling**: This includes an evaluation framework, durable execution, and protocol integrations .\\n\\n## Repository Structure\\n\\nThe `pydantic-ai` repository is organized as a UV workspace monorepo, containing several packages :\\n\\n*   `pydantic-ai-slim`: This is the core framework, containing modules for `Agent`, `Model`, and tools .\\n*   `pydantic-graph`: Provides the graph execution engine .\\n*   `pydantic-evals`: Offers an evaluation framework for datasets and evaluators .\\n*   `examples`: Contains example applications .\\n*   `clai`: A CLI interface for the framework .\\n*   `pydantic-ai`: A meta-package that includes all optional extras .\\n\\n## Agent Execution\\n\\nThe `Agent` class is the primary interface for orchestrating AI tasks . It coordinates the model abstraction, message protocol, tool system, and graph execution . Agent execution uses a graph-based state machine from `pydantic_graph.Graph` . The execution flow involves three core node types :\\n\\n*   `UserPromptNode`: Processes user input and creates initial `ModelRequest` .\\n*   `ModelRequestNode`: Calls `model.request()` or `model.request_stream()` and handles retries .\\n*   `CallToolsNode`: Executes tool functions via `RunContext[Deps]` .\\n\\nThe `Agent` class provides methods like `run()`, `run_sync()`, and `run_stream()` for different execution needs .\\n\\n## Key Features\\n\\n### Model Provider Support\\nPydantic AI offers a unified `Model` abstract base class for various LLM providers, including OpenAI, Anthropic, Google, and more . All models implement `request(messages)` and `request_stream(messages)` methods .\\n\\n### Tool System\\nThe framework includes a tool system for registering and executing functions via decorators like `@agent.tool` . It automatically generates JSON schemas from function signatures and docstrings, validates tool call arguments, and injects `RunContext[Deps]` for dependencies .\\n\\n### Observability\\nPydantic AI integrates with OpenTelemetry, providing instrumentation for agent runs, model requests, and tool executions . It also has native integration with Pydantic Logfire for real-time debugging and performance monitoring .\\n\\n### Evaluation Framework\\nThe `pydantic-evals` package provides a framework for systematically testing and evaluating agent performance . It supports datasets with `Case` objects, various evaluators, and generates `EvaluationReport` with aggregated metrics .\\n\\n## Integrations\\nPydantic AI supports various integrations for development and production, including :\\n*   **Model Context Protocol (MCP)**: For external tool server access .\\n*   **AG-UI Protocol**: For interactive application frontends .\\n*   **Agent2Agent (A2A)**: For multi-agent communication .\\n*   **Temporal**: For durable workflow execution .\\n*   **DBOS**: For database-backed execution .\\n\\nNotes:\\nThe `pydantic-ai-slim` package  is a core version of the framework, allowing users to install only necessary dependencies for specific models or features . The `pydantic-ai` package  is a meta-package that includes all optional extras .\\n\\nWiki pages you might want to explore:\\n- [Overview (pydantic/pydantic-ai)](/wiki/pydantic/pydantic-ai#1)\\n\\nView this search on DeepWiki: https://deepwiki.com/search/what-is-pydanticai-and-what-do_2dc46d92-288e-470b-b52e-24bb13f839c7\\n\", \"type\": \"text\"}], \"is_error\": false, \"tool_use_id\": \"mcptoolu_01SAss3KEwASziHZoMR6HcZU\", \"type\": \"mcp_tool_result\"}, {\"text\": \"**Pydantic AI** is a Python agent framework for building production-grade applications with Generative AI. It provides:\\n\\n- **Type-safe agents** with compile-time validation using `Agent[Deps, Output]`\\n- **Model-agnostic design** supporting 15+ LLM providers (OpenAI, Anthropic, Google, etc.)\\n- **Structured outputs** with automatic Pydantic validation and self-correction\\n- **Built-in observability** via OpenTelemetry and Logfire integration\\n- **Production tooling** including evaluation framework, durable execution, and tool system\\n\\nThe repo is organized as a monorepo with core packages like `pydantic-ai-slim` (core framework), `pydantic-graph` (execution engine), and `pydantic-evals` (evaluation tools). It emphasizes developer ergonomics and type safety, similar to Pydantic and FastAPI.\", \"type\": \"text\"}], \"id\": \"msg_01MYDjkvBDRaKsY6PDwQz3n6\", \"model\": \"claude-sonnet-4-20250514\", \"role\": \"assistant\", \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 2674, \"output_tokens\": 373, \"server_tool_use\": {\"web_search_requests\": 0}, \"service_tier\": \"standard\"}}"
+  }
+}

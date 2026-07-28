@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-video-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1aa8f25f-6b09-411e-8c5f-fcaf01a32204'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "836112",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5197}, \"output\": {\"message\": {\"content\": [{\"text\": \"Thanks for sharing the image! I can see a camera mounted on a tripod, displaying a stunning desert landscape on its screen. The scene features rugged red rock formations and a winding path leading into the distance. This looks like a fantastic location for landscape photography or videography.\\n\\nWould you like me to help you with anything specific about this image? For example:\\n- Analyzing the composition\\n- Suggesting camera settings for capturing similar shots\\n- Discussing lighting conditions\\n- Providing tips for stabilizing shots in such environments\\n- Or something else entirely?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2736, \"outputTokens\": 108, \"serverToolUsage\": {}, \"totalTokens\": 2844}}"
+  }
+}

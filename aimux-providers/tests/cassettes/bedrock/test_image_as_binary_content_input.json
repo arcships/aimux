@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_image_as_binary_content_input",
+  "request": {
+    "path": "/model/us.amazon.nova-pro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'8f84fc36-f1ca-4f8d-8b32-fd1e882524a6'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "2779696",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4054}, \"output\": {\"message\": {\"content\": [{\"text\": \"The image features a fruit that is round and has a green skin with brown dots. The fruit is cut in half, revealing its interior, which is also green. Based on the appearance and characteristics, the fruit in the image is a kiwi.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1839, \"outputTokens\": 49, \"totalTokens\": 1888}}"
+  }
+}

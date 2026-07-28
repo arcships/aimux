@@ -1,0 +1,20 @@
+{
+  "source": "hand-written fixture",
+  "provider": "anthropic",
+  "scenario": "opus_completion",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": { "content-type": "application/json" },
+    "body": {
+      "model": "claude-3-opus-20240229",
+      "max_tokens": 64,
+      "messages": [{ "role": "user", "content": "Hello" }]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": "{\"id\":\"msg_opus\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"From Opus\"}],\"model\":\"claude-3-opus-20240229\",\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":4,\"output_tokens\":3}}"
+  }
+}

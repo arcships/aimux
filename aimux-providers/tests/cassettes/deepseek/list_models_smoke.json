@@ -1,0 +1,21 @@
+{
+  "source": "rig (MIT)",
+  "provider": "deepseek",
+  "scenario": "list_models_smoke",
+  "request": {
+    "path": "/models",
+    "method": "GET",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"data\":[{\"id\":\"deepseek-v4-flash\",\"object\":\"model\",\"owned_by\":\"deepseek\"},{\"id\":\"deepseek-v4-pro\",\"object\":\"model\",\"owned_by\":\"deepseek\"}],\"object\":\"list\"}"
+  }
+}

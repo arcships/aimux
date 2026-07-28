@@ -1,0 +1,81 @@
+{
+  "source": "rig (MIT)",
+  "provider": "ollama",
+  "scenario": "structured_output_with_tools_0",
+  "request": {
+    "path": "/api/chat",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "You are a weather assistant. Use the get_weather tool to look up weather, then answer.\n\nWhen you have gathered enough information to answer, call the `final_result` tool exactly once with your final answer. Its arguments are the structured result and must satisfy the required schema. Do not return the final answer as plain text.",
+          "role": "system"
+        },
+        {
+          "content": "What is the current weather in Tokyo? Use the get_weather tool, then return the city and a one-sentence summary of the conditions.",
+          "role": "user"
+        }
+      ],
+      "model": "qwen3:4b",
+      "options": {
+        "temperature": null
+      },
+      "stream": false,
+      "think": true,
+      "tools": [
+        {
+          "function": {
+            "description": "Get the current weather for a city. Must be called for weather questions.",
+            "name": "get_weather",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "description": "City name to get weather for",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Call this tool exactly once with your final answer when you are done. Its arguments are the structured result and must satisfy the output schema.",
+            "name": "final_result",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city",
+                "summary"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": "{\"created_at\":\"1970-01-01T00:00:00Z\",\"done\":true,\"done_reason\":\"stop\",\"eval_count\":547,\"eval_duration\":9761417371,\"load_duration\":69931250,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"thinking\":\"Okay, let's see. The user is asking for the current weather in Tokyo. I need to use the get_weather tool first. The tool requires the city name as a parameter. So I should call get_weather with city set to \\\"Tokyo\\\".\\n\\nWait, the function signature says the get_weather function takes a city parameter. So I'll structure the tool call as {\\\"name\\\": \\\"get_weather\\\", \\\"arguments\\\": {\\\"city\\\": \\\"Tokyo\\\"}}.\\n\\nOnce I get the weather data from that tool, I need to then use the final_result tool to return the city and a one-sentence summary. But the user wants me to do this step by step. Since the user said \\\"Use the get_weather tool, then return...\\\", I first have to make the get_weather call.\\n\\nSo the next step is to output the tool_call for get_weather with Tokyo. Then, after getting the response, I can structure the final_result. But since this is a single step response, I think the assistant is supposed to first call get_weather.\\n\\nWait, the instructions say: \\\"When you have gathered enough information to answer, call the final_result tool exactly once...\\\" So first, I need to get the weather data via get_weather, then use that data to create the final_result.\\n\\nBut in this case, the user is asking for the current weather in Tokyo, so I need to first call get_weather for Tokyo. Let me check the tools again.\\n\\nThe get_weather function's arguments require a city. So I'll generate the tool_call for get_weather with city Tokyo. Then, once that's done (in a real scenario, the tool would return data), I can then call final_result with the city and summary.\\n\\nBut since this is a simulation, the assistant is supposed to output the tool_call first. So the first response should be the tool_call for get_weather.\\n\\nSo the answer here is to create a tool_call with name get_weather and arguments {\\\"city\\\": \\\"Tok as a string? Wait, the city is \\\"Tokyo\\\".\\n\\nSo the tool_call JSON should be {\\\"name\\\": \\\"get_weather\\\", \\\"arguments\\\": {\\\"city\\\": \\\"Tokyo\\\"}}.\\n\\nYes, that's correct. Then, after that tool returns, the next step would be to use the final_result. But since the user says \\\"Use the get_weather tool, then return...\\\", the assistant needs to first call get_weather, then when it has the data, call final_result.\\n\\nBut in this context, the assistant is supposed to output the tool_call here. So the answer is the tool_call for get_weather with city Tokyo.\\n\",\"tool_calls\":[{\"function\":{\"arguments\":{\"city\":\"Tokyo\"},\"index\":0,\"name\":\"get_weather\"},\"id\":\"call_REDACTED_1\"}]},\"model\":\"qwen3:4b\",\"prompt_eval_count\":307,\"prompt_eval_duration\":480281000,\"total_duration\":10943404375}"
+  }
+}

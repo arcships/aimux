@@ -1,0 +1,103 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[direct-uploaded_file-audio-google_2_5]_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1520",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a audio file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "id": "pyd_ai_af80d54deeac4d2eb4f95956222fdb05",
+                "name": "get_file"
+              },
+              "thoughtSignature": "CtgDAb4-9vs_45N33CuLEwHgVMyvDWA4oKalaPyv_Au6M6i8TivdEqbqovIoTuAM0_QTLvduVxrlGldmjXthePnZBGWjLGoNOyNdb6nUzSOpbmO-bgYO4SDPoSBu494CigBOe9-55Nz6f7YqCTrxPME7FCWP61aEdC0y5fiWDnFmlK2zNTUJ1Sdp1PWNwBxP8AGk0DrRK_jbLHQRGIU4ATt2yNKA8R1safzyIp0Lk8K2kvV3WI2cNrrqP7O49KR9UuGNRccAZxs6WRJ_B35vjqFGzpjpuZU-Iu955RIL8de9E1ODYyUN_b5KSvfzlMCr5tMZ5aPzt_ZnwIOyONSKi3F-gLGB7z6RQd7WZiSQwU647t4QMoVJ4V6v573ibAiX7F_5bkGPkI-zZu77zD6PuE3J00zNldNFEweHIFCErwItLCwDidqvJTCo6QTddvqq_JE51uLZQzvbhNxDun6ZLbfits9GqgSqmuT8Anq_FMSNR8BRt7zTQ7cNCrSQ6nfDKuRSciFtmuhr-Ww0nzZ5qmw7QvSbH0g9usfG2kouDuJhssI5JY49JLvlLUem5eqfTA-knvCoBoxB6EKr3drgLQXeXtFr5prJoyIekjLPCYgp0EQe0CycHvcoDg=="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_af80d54deeac4d2eb4f95956222fdb05",
+                "name": "get_file",
+                "response": {
+                  "output": [
+                    {},
+                    "See file dbe602."
+                  ]
+                }
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "This is file dbe602:"
+            },
+            {
+              "fileData": {
+                "fileUri": "https://generativelanguage.googleapis.com/v1beta/files/8b2bhnsluaai",
+                "mimeType": "audio/mpeg"
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1362",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The audio file contains a male voice saying, \\\"Hello, my name is Marcelo.\\\"\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"_Jioaa-LI6Xhz7IP6d3C-Qo\", \"usageMetadata\": {\"candidatesTokenCount\": 17, \"promptTokenCount\": 229, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 85}, {\"modality\": \"AUDIO\", \"tokenCount\": 144}], \"totalTokenCount\": 246}}"
+  }
+}

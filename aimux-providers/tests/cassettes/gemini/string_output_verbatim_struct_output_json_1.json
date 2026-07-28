@@ -1,0 +1,116 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "string_output_verbatim_struct_output_json_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Call fetch_motto and fetch_config, then summarize both outputs in one sentence.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "name": "fetch_motto"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_1"
+            },
+            {
+              "functionCall": {
+                "args": {},
+                "name": "fetch_config"
+              },
+              "thought": false
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "fetch_motto",
+                "response": {
+                  "result": "steady hands\ncalm waters"
+                }
+              },
+              "thought": false
+            },
+            {
+              "functionResponse": {
+                "name": "fetch_config",
+                "response": {
+                  "result": {
+                    "max_retries": 3,
+                    "service": "cassette-lab"
+                  }
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You must use the provided tools before answering.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Fetch the two-line workshop motto.",
+              "name": "fetch_motto",
+              "parameters": {
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Fetch the service configuration object.",
+              "name": "fetch_config",
+              "parameters": {
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"The workshop motto is \\\"steady hands, calm waters,\\\" and the service configuration for \\\"cassette-lab\\\" is set with a maximum of 3 retries.\",\"thoughtSignature\":\"signature_REDACTED_2\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":33,\"promptTokenCount\":158,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":158}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":118,\"totalTokenCount\":309}}"
+  }
+}

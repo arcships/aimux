@@ -1,0 +1,41 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "cerebras",
+  "scenario": "test_reasoning_wire_contract[cerebras-zai-clear-thinking]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "181",
+      "content-type": "application/json",
+      "host": "api.cerebras.ai"
+    },
+    "body": {
+      "clear_thinking": false,
+      "messages": [
+        {
+          "content": "What is 2+2? Reply with just the number.",
+          "role": "user"
+        }
+      ],
+      "model": "zai-glm-4.7",
+      "reasoning_effort": "none",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "inference-id": "chatcmpl-2b6530f0-104d-4cc7-8f2c-5ca936432c28",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"4\", \"role\": \"assistant\"}}], \"created\": 1781227199, \"id\": \"chatcmpl-2b6530f0-104d-4cc7-8f2c-5ca936432c28\", \"model\": \"zai-glm-4.7\", \"object\": \"chat.completion\", \"system_fingerprint\": \"fp_ba34ecf90156e4888692\", \"time_info\": {\"completion_time\": 0.016731148, \"created\": 1781227199.6819508, \"prompt_time\": 0.00102251, \"queue_time\": 8.772e-05, \"total_time\": 0.01939249038696289}, \"usage\": {\"completion_tokens\": 2, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 18, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 20}}"
+  }
+}

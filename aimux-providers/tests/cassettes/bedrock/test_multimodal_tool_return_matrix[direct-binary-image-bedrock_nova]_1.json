@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-binary-image-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'68d01f94-00c4-4a79-94f2-f38c9263e495'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "132114",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2683}, \"output\": {\"message\": {\"content\": [{\"text\": \"### Image Description\\n\\nThe image shows a **cross-section of a kiwi fruit**, sliced cleanly to reveal its internal structure. Here are the key details:\\n\\n1. **Coloration**:\\n   - The **flesh** is a bright, vivid **green**, indicating a fresh, ripe kiwi.\\n   - The **skin** is a thin, light brown outer layer visible at the edge of the slice.\\n\\n2. **Texture and Structure**:\\n   - The **center** of the kiwi displays a **light yellowish core**, which is typical for this fruit.\\n   - Surrounding the core are **numerous small, dark black seeds** embedded in the flesh. These seeds are evenly distributed in a radial pattern, creating a visually striking contrast against the green background.\\n\\n3. **Shape and Presentation**:\\n   - The slice is **circular**, with a clean, smooth cut that highlights the internal layers.\\n   - The image is taken from a **top-down perspective**, allowing a clear view of the cross-section.\\n\\n4. **Background**:\\n   - The kiwi slice is placed on a **plain white background**, which emphasizes the fruit's natural colors and textures without any distractions.\\n\\nOverall, this image beautifully captures the vibrant, juicy interior of a kiwi, showcasing its characteristic green flesh, black seeds, and bright core.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1382, \"outputTokens\": 262, \"serverToolUsage\": {}, \"totalTokens\": 1644}}"
+  }
+}

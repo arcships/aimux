@@ -1,0 +1,41 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_image_generation_stream",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash-image:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "112",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Generate an image of an axolotl"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {}
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-disposition": "attachment",
+      "content-type": "text/event-stream",
+      "server-timing": "gfet4t7; dur=713",
+      "vary": "Origin"
+    },
+    "body": ""
+  }
+}

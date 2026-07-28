@@ -1,0 +1,206 @@
+{
+  "source": "rig (MIT)",
+  "provider": "xai",
+  "scenario": "sequential_complex_tool_calls_streaming_3",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "You are a deterministic xAI tool orchestration test harness. Use the tools instead of inventing values. For the production-readiness scenario, call exactly one tool at a time in this order: 1. ping_empty with an empty JSON object. 2. inspect_manifest with project rig-xai, flags critical=true and retries=2, steps plan weight=1 and verify weight=2, and the exact note from the user. 3. join_labels with labels [north, beta gamma, quote:\"delta\", slash\\path] and separator |. 4. escape_echo with the exact escaped text from the user. After all tool results are available, answer in one short sentence that includes EMPTY-OK, MANIFEST-OK, LABELS-OK, and ESCAPE-OK.",
+          "role": "system",
+          "type": "message"
+        },
+        {
+          "content": "Run the production-readiness scenario. The manifest note is `line one; line two says \"hello\" and path C:\\rig\\xai`. The escaped text is `Line 1\nLine \"2\" with backslash \\ and unicode snowman ☃`.",
+          "role": "user",
+          "type": "message"
+        },
+        {
+          "id": "rs_REDACTED_1",
+          "summary": [
+            {
+              "text": "The task is: \"Run the production-readiness scenario. The manifest note is `line one; line two says \"hello\" and path C:\\rig\\xai`. The escaped text is `Line 1",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{}",
+          "call_id": "call_REDACTED_1",
+          "name": "ping_empty",
+          "type": "function_call"
+        },
+        {
+          "call_id": "call_REDACTED_1",
+          "output": "EMPTY-OK",
+          "type": "function_call_output"
+        },
+        {
+          "id": "rs_REDACTED_2",
+          "summary": [
+            {
+              "text": "The instructions say: For the production-readiness scenario, call exactly one tool at a time in this order: 1. ping_empty with an empty JSON object. 2. inspect_manifest with project rig-xai, flags cri...",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{\"project\":\"rig-xai\",\"flags\":{\"critical\":true,\"retries\":2},\"steps\":[{\"name\":\"plan\",\"weight\":1},{\"name\":\"verify\",\"weight\":2}],\"note\":\"line one; line two says \\\"hello\\\" and path C:\\\\rig\\\\xai\"}",
+          "call_id": "call_REDACTED_2",
+          "name": "inspect_manifest",
+          "type": "function_call"
+        },
+        {
+          "call_id": "call_REDACTED_2",
+          "output": "MANIFEST-OK project=rig-xai steps=2 retries=2",
+          "type": "function_call_output"
+        },
+        {
+          "id": "rs_REDACTED_3",
+          "summary": [
+            {
+              "text": "The next tool is join_labels with labels [north, beta gamma, quote:\"delta\", slash\\path] and separator |.",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{\"labels\":[\"north\",\"beta gamma\",\"quote:\\\"delta\\\"\",\"slash\\\\path\"],\"separator\":\"|\"}",
+          "call_id": "call_REDACTED_3",
+          "name": "join_labels",
+          "type": "function_call"
+        },
+        {
+          "call_id": "call_REDACTED_3",
+          "output": "LABELS-OK north|beta gamma|quote:\"delta\"|slash\\path",
+          "type": "function_call_output"
+        }
+      ],
+      "model": "grok-4.3",
+      "parallel_tool_calls": false,
+      "stream": true,
+      "tools": [
+        {
+          "description": "Return EMPTY-OK. This tool takes no arguments.",
+          "name": "ping_empty",
+          "parameters": {
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "Validate a nested deployment manifest.",
+          "name": "inspect_manifest",
+          "parameters": {
+            "properties": {
+              "flags": {
+                "properties": {
+                  "critical": {
+                    "type": "boolean"
+                  },
+                  "retries": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "critical",
+                  "retries"
+                ],
+                "type": "object"
+              },
+              "note": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              },
+              "steps": {
+                "items": {
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "weight": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "weight"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "project",
+              "flags",
+              "steps",
+              "note"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "Join label strings with the requested separator.",
+          "name": "join_labels",
+          "parameters": {
+            "properties": {
+              "labels": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "separator": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "labels",
+              "separator"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "Echo a string containing escaping-sensitive characters.",
+          "name": "escape_echo",
+          "parameters": {
+            "properties": {
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "event: response.created\ndata: {\"response\":{\"background\":false,\"completed_at\":null,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_4\",\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{\"system_fingerprint\":\"fp_REDACTED_1\"},\"model\":\"grok-4.3\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":false,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"in_progress\",\"store\":true,\"temperature\":0.699999988079071,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Return EMPTY-OK. This tool takes no arguments.\",\"name\":\"ping_empty\",\"parameters\":{\"properties\":{},\"required\":[],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Validate a nested deployment manifest.\",\"name\":\"inspect_manifest\",\"parameters\":{\"properties\":{\"flags\":{\"properties\":{\"critical\":{\"type\":\"boolean\"},\"retries\":{\"type\":\"integer\"}},\"required\":[\"critical\",\"retries\"],\"type\":\"object\"},\"note\":{\"type\":\"string\"},\"project\":{\"type\":\"string\"},\"steps\":{\"items\":{\"properties\":{\"name\":{\"type\":\"string\"},\"weight\":{\"type\":\"integer\"}},\"required\":[\"name\",\"weight\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"project\",\"flags\",\"steps\",\"note\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Join label strings with the requested separator.\",\"name\":\"join_labels\",\"parameters\":{\"properties\":{\"labels\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"separator\":{\"type\":\"string\"}},\"required\":[\"labels\",\"separator\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Echo a string containing escaping-sensitive characters.\",\"name\":\"escape_echo\",\"parameters\":{\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.949999988079071,\"truncation\":\"disabled\",\"usage\":null,\"user\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.in_progress\ndata: {\"response\":{\"background\":false,\"completed_at\":null,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_4\",\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{\"system_fingerprint\":\"fp_REDACTED_1\"},\"model\":\"grok-4.3\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":false,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"in_progress\",\"store\":true,\"temperature\":0.699999988079071,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Return EMPTY-OK. This tool takes no arguments.\",\"name\":\"ping_empty\",\"parameters\":{\"properties\":{},\"required\":[],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Validate a nested deployment manifest.\",\"name\":\"inspect_manifest\",\"parameters\":{\"properties\":{\"flags\":{\"properties\":{\"critical\":{\"type\":\"boolean\"},\"retries\":{\"type\":\"integer\"}},\"required\":[\"critical\",\"retries\"],\"type\":\"object\"},\"note\":{\"type\":\"string\"},\"project\":{\"type\":\"string\"},\"steps\":{\"items\":{\"properties\":{\"name\":{\"type\":\"string\"},\"weight\":{\"type\":\"integer\"}},\"required\":[\"name\",\"weight\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"project\",\"flags\",\"steps\",\"note\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Join label strings with the requested separator.\",\"name\":\"join_labels\",\"parameters\":{\"properties\":{\"labels\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"separator\":{\"type\":\"string\"}},\"required\":[\"labels\",\"separator\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Echo a string containing escaping-sensitive characters.\",\"name\":\"escape_echo\",\"parameters\":{\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.949999988079071,\"truncation\":\"disabled\",\"usage\":null,\"user\":null},\"sequence_number\":1,\"type\":\"response.in_progress\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"id\":\"rs_REDACTED_4\",\"status\":\"in_progress\",\"summary\":[],\"type\":\"reasoning\"},\"output_index\":0,\"sequence_number\":2,\"type\":\"response.output_item.added\"}\n\nevent: response.reasoning_summary_part.added\ndata: {\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"part\":{\"text\":\"\",\"type\":\"summary_text\"},\"sequence_number\":3,\"summary_index\":0,\"type\":\"response.reasoning_summary_part.added\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\"The\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":4,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" final\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":5,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" tool\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":6,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" call\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":7,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" needed\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":8,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" is\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":9,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" escape\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":10,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\"_echo\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":11,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" with\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":12,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" the\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":13,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" exact\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":14,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" escaped\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":15,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\" text\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":16,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.delta\ndata: {\"delta\":\".\",\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":17,\"summary_index\":0,\"type\":\"response.reasoning_summary_text.delta\"}\n\nevent: response.reasoning_summary_text.done\ndata: {\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"sequence_number\":18,\"summary_index\":0,\"text\":\"The final tool call needed is escape_echo with the exact escaped text.\",\"type\":\"response.reasoning_summary_text.done\"}\n\nevent: response.reasoning_summary_part.done\ndata: {\"item_id\":\"rs_REDACTED_4\",\"output_index\":0,\"part\":{\"text\":\"The final tool call needed is escape_echo with the exact escaped text.\",\"type\":\"summary_text\"},\"sequence_number\":19,\"summary_index\":0,\"type\":\"response.reasoning_summary_part.done\"}\n\nevent: response.output_item.done\ndata: {\"item\":{\"id\":\"rs_REDACTED_4\",\"status\":\"completed\",\"summary\":[{\"text\":\"The final tool call needed is escape_echo with the exact escaped text.\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"},\"output_index\":0,\"sequence_number\":20,\"type\":\"response.output_item.done\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"arguments\":\"\",\"call_id\":\"call_REDACTED_4\",\"id\":\"fc_REDACTED_4\",\"name\":\"escape_echo\",\"status\":\"in_progress\",\"type\":\"function_call\"},\"output_index\":1,\"sequence_number\":21,\"type\":\"response.output_item.added\"}\n\nevent: response.function_call_arguments.delta\ndata: {\"delta\":\"{\\\"text\\\":\\\"Line 1\\\\nLine \\\\\\\"2\\\\\\\" with backslash \\\\\\\\ and unicode snowman ☃\\\"}\",\"item_id\":\"fc_REDACTED_4\",\"output_index\":1,\"sequence_number\":22,\"type\":\"response.function_call_arguments.delta\"}\n\nevent: response.function_call_arguments.done\ndata: {\"arguments\":\"{\\\"text\\\":\\\"Line 1\\\\nLine \\\\\\\"2\\\\\\\" with backslash \\\\\\\\ and unicode snowman ☃\\\"}\",\"item_id\":\"fc_REDACTED_4\",\"output_index\":1,\"sequence_number\":23,\"type\":\"response.function_call_arguments.done\"}\n\nevent: response.output_item.done\ndata: {\"item\":{\"arguments\":\"{\\\"text\\\":\\\"Line 1\\\\nLine \\\\\\\"2\\\\\\\" with backslash \\\\\\\\ and unicode snowman ☃\\\"}\",\"call_id\":\"call_REDACTED_4\",\"id\":\"fc_REDACTED_4\",\"name\":\"escape_echo\",\"status\":\"completed\",\"type\":\"function_call\"},\"output_index\":1,\"sequence_number\":24,\"type\":\"response.output_item.done\"}\n\nevent: response.completed\ndata: {\"response\":{\"background\":false,\"completed_at\":0,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_4\",\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{\"system_fingerprint\":\"fp_REDACTED_1\"},\"model\":\"grok-4.3\",\"object\":\"response\",\"output\":[{\"id\":\"rs_REDACTED_4\",\"status\":\"completed\",\"summary\":[{\"text\":\"The final tool call needed is escape_echo with the exact escaped text.\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"},{\"arguments\":\"{\\\"text\\\":\\\"Line 1\\\\nLine \\\\\\\"2\\\\\\\" with backslash \\\\\\\\ and unicode snowman ☃\\\"}\",\"call_id\":\"call_REDACTED_4\",\"id\":\"fc_REDACTED_4\",\"name\":\"escape_echo\",\"status\":\"completed\",\"type\":\"function_call\"}],\"parallel_tool_calls\":false,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":{\"effort\":null,\"summary\":null},\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"completed\",\"store\":true,\"temperature\":0.699999988079071,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Return EMPTY-OK. This tool takes no arguments.\",\"name\":\"ping_empty\",\"parameters\":{\"properties\":{},\"required\":[],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Validate a nested deployment manifest.\",\"name\":\"inspect_manifest\",\"parameters\":{\"properties\":{\"flags\":{\"properties\":{\"critical\":{\"type\":\"boolean\"},\"retries\":{\"type\":\"integer\"}},\"required\":[\"critical\",\"retries\"],\"type\":\"object\"},\"note\":{\"type\":\"string\"},\"project\":{\"type\":\"string\"},\"steps\":{\"items\":{\"properties\":{\"name\":{\"type\":\"string\"},\"weight\":{\"type\":\"integer\"}},\"required\":[\"name\",\"weight\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"project\",\"flags\",\"steps\",\"note\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Join label strings with the requested separator.\",\"name\":\"join_labels\",\"parameters\":{\"properties\":{\"labels\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"separator\":{\"type\":\"string\"}},\"required\":[\"labels\",\"separator\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"},{\"description\":\"Echo a string containing escaping-sensitive characters.\",\"name\":\"escape_echo\",\"parameters\":{\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"type\":\"object\"},\"strict\":null,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.949999988079071,\"truncation\":\"disabled\",\"usage\":{\"context_details\":{\"input_tokens\":845,\"output_tokens\":42},\"cost_in_usd_ticks\":2876500,\"input_tokens\":845,\"input_tokens_details\":{\"cached_tokens\":832},\"num_server_side_tools_used\":0,\"num_sources_used\":0,\"output_tokens\":42,\"output_tokens_details\":{\"reasoning_tokens\":14},\"total_tokens\":887},\"user\":null},\"sequence_number\":25,\"type\":\"response.completed\"}\n\n"
+  }
+}

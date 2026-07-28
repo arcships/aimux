@@ -1,0 +1,44 @@
+{
+  "source": "rig (MIT)",
+  "provider": "mistral",
+  "scenario": "tool_choice_auto_any_specific_and_none_3",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Do not call tools. Reply with exactly this phrase: no-tool-answer",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-small-latest",
+      "tool_choice": "none",
+      "tools": [
+        {
+          "function": {
+            "description": "Return the alpha signal marker.",
+            "name": "lookup_harbor_label",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"no-tool-answer\",\"role\":\"assistant\",\"tool_calls\":null}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_4\",\"model\":\"mistral-small-latest\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":5,\"prompt_tokens\":30,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":35}}"
+  }
+}

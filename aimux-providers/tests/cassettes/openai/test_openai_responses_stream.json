@@ -1,0 +1,62 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_stream",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "348",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        }
+      ],
+      "instructions": "",
+      "model": "gpt-4o",
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "",
+          "name": "get_capital",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "country"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "100",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-binary-document-bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'0b335a48-aa4d-4b88-80a5-cefd3512cc31'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "18455",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4437}, \"output\": {\"message\": {\"content\": [{\"text\": \"The function executed successfully but returned no visible output or content. This suggests that either:\\n1. The file is empty\\n2. The function returned data in a format that wasn't displayed\\n3. There was no file available to retrieve\\n4. The function operates silently without returning content directly\\n\\nSince the tool ran without errors, it completed its execution, but I didn't receive any document content to describe. The system shows it ran successfully, just without any output being returned or displayed.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 631, \"outputTokens\": 103, \"serverToolUsage\": {}, \"totalTokens\": 734}}"
+  }
+}

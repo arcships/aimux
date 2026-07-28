@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url_force_download-image-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'b7539329-d3db-44da-b6a8-5042a2a421ec'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "151879",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5765}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a beautiful image of a rose. Here's what I can see:\\n\\n**Description:**\\n- **Main subject**: A single rose bloom with delicate, layered petals\\n- **Color**: The rose displays warm, peachy-orange tones with hints of yellow, creating a soft gradient effect throughout the petals\\n- **Condition**: The petals appear slightly translucent and have a natural, organic quality with visible water droplets or dew on them\\n- **Stem and leaves**: There's a brown stem attached with what appears to be a small green leaf or bud\\n- **Background**: The image has a clean white background, making the rose stand out prominently\\n- **Overall appearance**: The flower has a romantic, elegant quality with its soft colors and natural form. The petals show some age with slightly dried or curled edges, giving it a vintage or preserved flower aesthetic\\n\\nThe image appears to be a high-quality photograph with good detail and lighting that emphasizes the delicate textures and warm colors of the rose.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 800, \"outputTokens\": 223, \"serverToolUsage\": {}, \"totalTokens\": 1023}}"
+  }
+}

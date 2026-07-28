@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_deepseek",
+  "request": {
+    "path": "/model/us.deepseek.r1-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'8da83d46-3819-4c9e-a778-aadc98b4acd8'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "122",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5517}, \"output\": {\"message\": {\"content\": [{\"text\": \"\\n\\nCrossing the street safely involves careful observation and following basic guidelines. Here's a step-by-step guide:\\n\\n1. **Find a Safe Spot**:  \\n   - Use a **crosswalk** or pedestrian crossing if available. Look for traffic lights, zebra stripes, or \\\"Walk\\\" signals.  \\n   - If no crosswalk is nearby, choose a spot with clear visibility in both directions. Avoid curves, hills, or obstructions.\\n\\n2. **Stop and Look**:  \\n   - **Pause at the curb** and check **left, right, and left again** (or right-left-right in countries where traffic drives on the left).  \\n   - Look for cars, bikes, scooters, or other vehicles. Don\\u2019t rely solely on traffic signals\\u2014drivers might not stop.\\n\\n3. **Listen**:  \\n   - Turn off headphones or lower music volume to hear approaching traffic.\\n\\n4. **Wait for a Safe Gap**:  \\n   - Ensure all lanes are clear or that vehicles have fully stopped before stepping into the road.  \\n   - At signals, wait for the \\\"Walk\\\" symbol or green light. Never start crossing if the signal is flashing \\\"Don\\u2019t Walk\\\" or is red.\\n\\n5. **Make Eye Contact**:  \\n   - If a driver is approaching, try to catch their eye to confirm they see you.\\n\\n6. **Cross Carefully**:  \\n   - Walk **straight across**, not diagonally. Stay alert\\u2014keep looking and listening as you go.  \\n   - Avoid distractions like phones or texting.  \\n\\n7. **Children and Vulnerable Pedestrians**:  \\n   - Hold hands with young children. Those with mobility aids (e.g., wheelchairs, canes) should ensure drivers yield before crossing.\\n\\n8. **Uncontrolled Crossings**:  \\n   - If there\\u2019s no signal or crosswalk, cross only when traffic is fully clear. Be extra cautious at night or in poor weather.\\n\\n**Remember**: Jaywalking (crossing illegally) can be dangerous and may result in fines. Prioritize safety over convenience! \\ud83d\\udeb8\"}, {\"reasoningContent\": {\"reasoningText\": {\"text\": \"Okay, the user is asking how to cross the street. Let me think about the best way to explain this. First, I should start by mentioning the importance of safety. Maybe start with finding a safe place to cross, like a crosswalk or pedestrian crossing. I should remind them to look for traffic signals if available. Then, checking both ways for traffic is crucial, even if there's a signal. Wait, but in some countries, traffic drives on the left, so the direction to look first might vary. Should I mention that? Maybe keep it general but note that they should check all directions.\\n\\nAlso, making eye contact with drivers if possible, to ensure they're seen. Then, when it's safe, walk straight across, not diagonally, and stay alert while crossing. Oh, and maybe mention not to use phones or distractions while crossing. What about children or people with disabilities? Maybe add a note about holding hands with children or using assistive devices. Also, if there's no crosswalk, explain to find the safest spot with good visibility. Avoid jaywalking if possible. Maybe list the steps in order: find a safe spot, look both ways, listen, wait for signals, cross when safe, stay alert. Keep it simple and clear. Let me structure that step by step.\\n\"}}}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 12, \"outputTokens\": 693, \"totalTokens\": 705}}"
+  }
+}

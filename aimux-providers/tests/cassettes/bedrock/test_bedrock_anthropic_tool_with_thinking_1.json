@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_anthropic_tool_with_thinking_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-3-7-sonnet-20250219-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'ec970d36-e6ab-427e-af32-10a576f0b1ce'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1399",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4529}, \"output\": {\"message\": {\"content\": [{\"text\": \"Based on your location in Mexico, the largest city is Mexico City (Ciudad de M\\u00e9xico). It's not only the capital but also the most populous city in Mexico with a metropolitan area population of over 21 million people, making it one of the largest urban agglomerations in the world.\\n\\nMexico City is an important cultural, financial, and political center for the country and has a rich history dating back to the Aztec empire when it was known as Tenochtitl\\u00e1n.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 539, \"outputTokens\": 106, \"totalTokens\": 645}}"
+  }
+}

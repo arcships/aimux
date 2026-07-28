@@ -1,0 +1,32 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_anthropic_bedrock_count_tokens_real_api",
+  "request": {
+    "path": "/model/anthropic.claude-sonnet-4-20250514-v1:0/count-tokens",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "420",
+      "content-type": "application/json",
+      "host": "bedrock-runtime.us-east-1.amazonaws.com"
+    },
+    "body": {
+      "input": {
+        "invokeModel": {
+          "body": "eyJhbnRocm9waWNfdmVyc2lvbiI6ImJlZHJvY2stMjAyMy0wNS0zMSIsIm1heF90b2tlbnMiOjQwOTYsIm1lc3NhZ2VzIjpbeyJyb2xlIjoidXNlciIsImNvbnRlbnQiOlt7InRleHQiOiJIb3cgbWFueSB0b2tlbnMgaXMgdGhpcyBzZW50ZW5jZT8iLCJ0eXBlIjoidGV4dCJ9XX1dLCJzeXN0ZW0iOiJZb3UgYXJlIGhlbHBmdWwuIiwiYW50aHJvcGljX2JldGEiOlsidG9rZW4tZWZmaWNpZW50LXRvb2xzLTIwMjUtMDItMTkiXSwibWV0YWRhdGEiOnsidXNlcl9pZCI6InB5ZGFudGljLWFpLXRlc3QifX0="
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"inputTokens\": 18}"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_image_as_binary_content_tool_response",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "438",
+      "content-type": "application/json",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What fruit is in the image you can get from the get_image tool (without any arguments)?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_image",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"logprobs\": null, \"message\": {\"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{}\", \"name\": \"get_image\"}, \"id\": \"911ra51k8\", \"type\": \"function\"}]}}], \"created\": 1771451266, \"id\": \"chatcmpl-43b495df-97b8-47cd-8785-7b0c4afee40b\", \"model\": \"meta-llama/llama-4-maverick-17b-128e-instruct\", \"object\": \"chat.completion\", \"service_tier\": \"on_demand\", \"system_fingerprint\": \"fp_992318f10a\", \"usage\": {\"completion_time\": 0.106176858, \"completion_tokens\": 20, \"prompt_time\": 0.020503713, \"prompt_tokens\": 712, \"queue_time\": 0.112876816, \"total_time\": 0.126680571, \"total_tokens\": 732}, \"usage_breakdown\": null, \"x_groq\": {\"id\": \"req_01khsbjd7rf0c8mr6kbynjhq5c\", \"seed\": 1608772041}}"
+  }
+}

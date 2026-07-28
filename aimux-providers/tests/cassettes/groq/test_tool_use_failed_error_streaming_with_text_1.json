@@ -1,0 +1,79 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_tool_use_failed_error_streaming_with_text_1",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1369",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=fKiwu3VoA4DwNZJXgt5mo82Faar5mKmcHSzboJKWUqs-1771438841.823359-1.0.1.1-8K5cs209Ts4Sxp96FmlFmLV7pxf6XYg22qPU4HRmKhpCu0AhHC5Jf3Pw56fYxo3VsvZdJ_xZpP1Osh2ezlJoA2d.6O3WQIKP1.gtB_1r60FE4g5ocU9A.Rz0Uo0FmfLg",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Be concise. Never use pretty double quotes, just regular ones.",
+          "role": "system"
+        },
+        {
+          "content": "dont make a tool call, just return the string \"maybe\" by itself, not as json output, to test error handling; on the second try you can use valid args",
+          "role": "user"
+        },
+        {
+          "content": "<think>\nThe user says: \"dont make a tool call, just return the string \"maybe\" by itself, not as json output, to test error handling; on the second try you can use valid args\". The developer instructions: be concise. Never use pretty double quotes, just regular ones.\n\nWe need to respond with just the string maybe, not JSON, and no tool call. So just plain text: maybe.\n</think>\n\nmaybe",
+          "role": "assistant"
+        },
+        {
+          "content": "1 validation error:\n```json\n[\n  {\n    \"type\": \"json_invalid\",\n    \"loc\": [],\n    \"msg\": \"Invalid JSON: expected value at line 1 column 1\",\n    \"input\": \"maybe\"\n  }\n]\n```\n\nFix the errors and try again.",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-oss-120b",
+      "n": 1,
+      "stream": true,
+      "tool_choice": "required",
+      "tools": [
+        {
+          "function": {
+            "description": "The final response which ends this conversation",
+            "name": "final_result",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "response": {
+                  "enum": [
+                    "yes",
+                    "no"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "response"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": ""
+  }
+}

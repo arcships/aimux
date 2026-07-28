@@ -1,0 +1,85 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multiple_agent_tool_calls_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash-exp:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "519",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "country": "France"
+                },
+                "name": "get_capital"
+              }
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "get_capital",
+                "response": {
+                  "return_value": "Paris"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "tools": {
+        "function_declarations": [
+          {
+            "description": "Get the capital of a country.",
+            "name": "get_capital",
+            "parameters": {
+              "properties": {
+                "country": {
+                  "description": "The country name.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "country"
+              ],
+              "type": "object"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=381",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": 5.035180947743356e-07, \"content\": {\"parts\": [{\"text\": \"The capital of France is Paris.\\n\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash-exp\", \"usageMetadata\": {\"candidatesTokenCount\": 8, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 8}], \"promptTokenCount\": 35, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 35}], \"totalTokenCount\": 43}}"
+  }
+}

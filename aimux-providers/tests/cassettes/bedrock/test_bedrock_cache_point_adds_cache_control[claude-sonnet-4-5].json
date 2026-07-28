@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_cache_point_adds_cache_control[claude-sonnet-4-5]",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'cdfabb8f-b340-4768-80e1-02976bd7bf5f'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "5580",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2015}, \"output\": {\"message\": {\"content\": [{\"text\": \"5\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 1503, \"cacheWriteInputTokens\": 1503, \"inputTokens\": 14, \"outputTokens\": 5, \"serverToolUsage\": {}, \"totalTokens\": 1522}}"
+  }
+}

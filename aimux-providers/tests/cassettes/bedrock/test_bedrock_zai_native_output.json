@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_zai_native_output",
+  "request": {
+    "path": "/model/zai.glm-4.7-flash/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'd1fcb3a9-e4f1-4c8d-a1e7-86218a38e7ee'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "448",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 407}, \"output\": {\"message\": {\"content\": [{\"text\": \"{ \\\"city\\\": \\\"Paris\\\", \\\"country\\\": \\\"France\\\" }\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 21, \"outputTokens\": 15, \"serverToolUsage\": {}, \"totalTokens\": 36}}"
+  }
+}

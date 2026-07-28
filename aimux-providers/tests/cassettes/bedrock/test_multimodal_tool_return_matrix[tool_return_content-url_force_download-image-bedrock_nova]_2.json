@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url_force_download-image-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'89301f30-d778-46b7-8337-270d2c3bbf75'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "151828",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1454}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received an image file showing a beautiful orange rose. The rose has vibrant orange petals with subtle gradients and soft yellow accents. There's a small pink petal on top that appears to be freshly wet, with water droplets glistening on its surface. The background is plain white, which makes the rose stand out clearly and beautifully. The overall composition is clean and visually appealing, highlighting the delicate texture and natural beauty of the flower.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1109, \"outputTokens\": 87, \"serverToolUsage\": {}, \"totalTokens\": 1196}}"
+  }
+}

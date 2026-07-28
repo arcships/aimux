@@ -1,0 +1,55 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-image-groq]",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "406",
+      "content-type": "application/json",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Use the get_file tool now to retrieve a image file, then describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_file",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"logprobs\": null, \"message\": {\"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{}\", \"name\": \"get_file\"}, \"id\": \"j0n95wytd\", \"type\": \"function\"}]}}], \"created\": 1770662447, \"id\": \"chatcmpl-2dba0e74-cd9f-4366-81a4-c4a8bddd1923\", \"model\": \"meta-llama/llama-4-maverick-17b-128e-instruct\", \"object\": \"chat.completion\", \"service_tier\": \"on_demand\", \"system_fingerprint\": \"fp_992318f10a\", \"usage\": {\"completion_time\": 0.145275281, \"completion_tokens\": 79, \"prompt_time\": 0.019904567, \"prompt_tokens\": 711, \"queue_time\": 0.115278015, \"total_time\": 0.165179848, \"total_tokens\": 790}, \"usage_breakdown\": null, \"x_groq\": {\"id\": \"req_01kh1v9j7qemsa51qkq960q94g\", \"seed\": 1360520820}}"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_strict_false_tool_with_nested_objects",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'e5bfb56a-6388-4d28-b188-017f8250cf1b'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "749",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3833}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"address\": {\"city\": \"Springfield\", \"street\": \"123 Main St\"}, \"name\": \"John\"}, \"name\": \"lookup_person\", \"toolUseId\": \"tooluse_Lb2NdegZQWXSFZHioMGjkd\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 675, \"outputTokens\": 84, \"serverToolUsage\": {}, \"totalTokens\": 759}}"
+  }
+}

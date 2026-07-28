@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-binary-image-bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'0602a38c-6f19-4dbc-862c-63e33578bb34'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "132114",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5823}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a beautiful image of a kiwi fruit cross-section! Here's what I can see:\\n\\n**Description:**\\n- The image shows a kiwi fruit that has been cut in half horizontally\\n- The vibrant green flesh is clearly visible with its characteristic radial pattern\\n- In the center, there's a pale, almost white core with a starburst pattern\\n- Radiating outward from the center are numerous small, black seeds arranged in a circular pattern\\n- The flesh transitions from a lighter yellowish-green near the center to a brighter, more vivid green toward the outer edge\\n- The fuzzy brown skin is visible around the perimeter of the slice\\n- The image is shot against a white background with good lighting that shows the texture and moisture of the fruit\\n- You can see tiny fuzzy hairs on the outer skin of the kiwi\\n\\nIt's a very clean, appetizing shot that showcases the distinctive and beautiful internal structure of a kiwi fruit perfectly!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 1083, \"outputTokens\": 216, \"serverToolUsage\": {}, \"totalTokens\": 1299}}"
+  }
+}

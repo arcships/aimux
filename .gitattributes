@@ -1,0 +1,5 @@
+# Git attributes
+# hook 脚本必须用 LF 换行，否则 git for windows 的 sh 会报 bad interpreter
+.githooks/* text eol=lf
+*.toml text eol=lf
+*.rs text eol=lf

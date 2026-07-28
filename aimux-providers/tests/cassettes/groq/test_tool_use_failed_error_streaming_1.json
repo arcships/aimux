@@ -1,0 +1,86 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_tool_use_failed_error_streaming_1",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1760",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=4bJ1CVE2y5z7iolQc.k0qgMfDmxbGVUlZB77F9J.JG8-1771434740.4691696-1.0.1.1-Oa7kcLOgLJFUipTvsIQIYlYe5vgZ4cZ3VekDd7r0Tb4Z1CFMUUV2YYbVxO.lRer99iqDSVs8cSwth.X1c8f_VBIJI3nNj4nIaGX3m_W8ucwFtAOT6Wsk72SUwhpT4544",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Be concise. Never use pretty double quotes, just regular ones.",
+          "role": "system"
+        },
+        {
+          "content": "Please call the \"get_something_by_name\" tool with non-existent parameters to test error handling; on the second try you can use valid args",
+          "role": "user"
+        },
+        {
+          "content": "<think>\nWe need to call the tool with invalid parameters first, then second call with valid args. The user wants us to test error handling. So first call should have wrong parameters (e.g., missing required \"name\" or extra param). The tool expects only \"name\". If we send extra property, that might cause error. Or missing \"name\". We'll do a call with missing name: {}. Then second call with name: \"test\". Let's do that.\n</think>",
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"invalid_param\":\"value\"}",
+                "name": "get_something_by_name"
+              },
+              "id": "pyd_ai_53c381537e5a4ce2852509adfb88b3d5",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "2 validation errors:\n```json\n[\n  {\n    \"type\": \"missing\",\n    \"loc\": [\n      \"name\"\n    ],\n    \"msg\": \"Field required\",\n    \"input\": {\n      \"invalid_param\": \"value\"\n    }\n  },\n  {\n    \"type\": \"extra_forbidden\",\n    \"loc\": [\n      \"invalid_param\"\n    ],\n    \"msg\": \"Extra inputs are not permitted\",\n    \"input\": \"value\"\n  }\n]\n```\n\nFix the errors and try again.",
+          "role": "tool",
+          "tool_call_id": "pyd_ai_53c381537e5a4ce2852509adfb88b3d5"
+        }
+      ],
+      "model": "openai/gpt-oss-120b",
+      "n": 1,
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_something_by_name",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": ""
+  }
+}

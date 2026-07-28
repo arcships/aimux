@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-document-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'06b903ae-ca70-4012-943e-c9a9fbdd0d3b'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "18463",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2692}, \"output\": {\"message\": {\"content\": [{\"text\": \"I retrieved the file you referenced. Based on the content I received, it appears to be a **dummy PDF file** with minimal content. The visible text in the document simply states:\\n\\n**\\\"Dummy PDF file\\\"**\\n\\nThis indicates that the file is likely a placeholder or test document rather than a substantive or detailed file. It contains no additional text, images, or structured content beyond this single line of text centered on a blank page.\\n\\nIf you expected a different document or more detailed content, please verify the file source or provide additional context.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 3529, \"outputTokens\": 111, \"serverToolUsage\": {}, \"totalTokens\": 3640}}"
+  }
+}

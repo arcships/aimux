@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-document-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'2dd2350e-35c6-46c0-a361-b2732c475a60'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "837",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3630}, \"output\": {\"message\": {\"content\": [{\"text\": \"I've retrieved the file you referenced. Based on what I can see, this appears to be a **dummy PDF file** - essentially a blank or placeholder PDF document. The content shows only the text \\\"Dummy PDF file\\\" centered on a white background, with no additional content, images, or structure.\\n\\nThis type of file is typically used as a placeholder when actual document content isn't available yet, or for testing purposes. It doesn't contain any meaningful information or data that can be analyzed.\\n\\nIf you were expecting to see specific content in this document, it might be that:\\n- The file was intentionally left blank as a placeholder\\n- There might be an issue with the file attachment or retrieval\\n- The file may have been corrupted or incomplete\\n\\nWould you like me to attempt retrieving the file again, or perhaps you could share additional context about what content you expected to see in this document?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 3529, \"outputTokens\": 177, \"serverToolUsage\": {}, \"totalTokens\": 3706}}"
+  }
+}

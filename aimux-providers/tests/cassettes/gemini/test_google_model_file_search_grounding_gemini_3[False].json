@@ -1,0 +1,30 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_file_search_grounding_gemini_3[False]",
+  "request": {
+    "path": "/v1beta/fileSearchStores",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "45",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "displayName": "test-file-search-grounding"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=511",
+      "vary": "Origin"
+    },
+    "body": "{\"createTime\": \"2026-07-03T08:46:58.430145Z\", \"displayName\": \"test-file-search-grounding\", \"embeddingModel\": \"models/gemini-embedding-001\", \"name\": \"fileSearchStores/testfilesearchgrounding-su9hjfq28i0f\", \"updateTime\": \"2026-07-03T08:46:58.430145Z\"}"
+  }
+}

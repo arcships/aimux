@@ -1,0 +1,89 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_model_thinking_part_from_other_model_1",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "6159",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "How do I cross the street?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "<thinking>\n**Providing street crossing advice**\n\nI need to answer the question, \"How do I cross the street?\" Safety is the priority here! I’ll outline practical steps like using crosswalks and signals, looking both ways, and stopping at the curb. It’s wise to consider the user’s location, as traffic direction varies by country. Universal advice can include checking for vehicles turning and being aware of bikes. Also, at night, visibility is crucial. If there’s a pedestrian bridge or tunnel, that’s the way to go!\n</thinking>",
+              "type": "text"
+            },
+            {
+              "text": "<thinking>\n**Addressing street crossing complexities**\n\nI want to consider the environmental context when crossing the street: multi-lane roads, parked cars, buses, and hidden driveways. It’s important to cross straight, not diagonally unless permitted, and be cautious of slippery surfaces. If I'm with children, I should hold their hand. For those with mobility concerns, pressing the button for more time can help. For visually impaired people, accessible crossings with audible cues are key. I'll provide concise bullet points, including tips for both urban and rural roads, and remind everyone to obey local traffic laws.\n</thinking>",
+              "type": "text"
+            },
+            {
+              "text": "<thinking>\n**Considering edge cases for crossing**\n\nI should consider edge cases like one-way streets and multiple-phase signals with protected turn arrows. It's crucial to cross only when there’s a walk sign and to ensure that turning vehicles yield. For roundabouts, I'll recommend crossing at designated crosswalks one leg at a time. I want to address both signalized and unsignalized crossing steps. If the user feels unsafe, they should choose a different crossing point and wait longer. I'll keep things concise with bullet points for clarity.\n</thinking>",
+              "type": "text"
+            },
+            {
+              "text": "<thinking>\n**Creating crossing guidelines**\n\nLet’s establish some clear steps for crossing safely. \n\n- Begin by choosing the safest place, such as a marked crosswalk, intersection, or pedestrian signal. Bridges or tunnels are great options too.\n\n- At signalized crosswalks, press the button if available and wait for the WALK signal. Avoid starting to cross on a flashing DON'T WALK or steady light. Before stepping off the curb, stop at the edge, look for turning vehicles and bicycles from both directions, and make eye contact with drivers. Keep scanning while crossing—cross straight, avoid distractions like phones and headphones. \n\n- For unsignalized crossings, stop at the curb and look left-right-left, or check both directions based on which side traffic comes from.\n</thinking>",
+              "type": "text"
+            },
+            {
+              "text": "<thinking>\n**Crafting safe crossing steps**\n\nLet’s create some concise steps for crossing the street safely:\n\n- Always use marked crosswalks or intersections, and press the button if available.\n\n- At signalized crossings, wait for the WALK signal. Before stepping out, look both ways for turning cars and bikes, making eye contact with drivers.\n\n- If the signal starts flashing DON'T WALK while you're crossing, keep going to the far curb.\n\n- At unsignalized spots, stop at the curb where you're visible. Look and listen for traffic and bikes, waiting for a large enough gap to cross safely. If there’s a median, treat it as two separate crossings, ensuring all lanes have stopped before proceeding.\n\n- General tips include putting your phone away, removing earbuds, being extra visible at night, and avoiding crossing from behind parked cars. Also, remember to follow local laws! \n\nFor a simplified version, I can suggest a catchy mnemonic: \"Stop, Look, Listen, Think\" to make it even easier to remember!\n</thinking>",
+              "type": "text"
+            },
+            {
+              "text": "<thinking>\n**Crafting safe crossing instructions**\n\nI’m thinking about how to summarize crossing the street safely. Here’s a short version: \"Use a marked crosswalk with a signal, wait for the 'Walk' signal, look for cars and bikes, make eye contact, and cross straight while scanning.\"\n\nFor the details, I suggest: Stop at the curb, look and listen for traffic from all directions, and wait for a safe gap or the Walk signal. Make eye contact with drivers and continue to scan while crossing. \n\nI'll also ask: \"Is there a signalized crosswalk where you are, or is it an unsignalized street?\" This keeps it simple and relevant!\n</thinking>",
+              "type": "text"
+            },
+            {
+              "text": "Short version: Stop at the curb, look and listen for traffic from all directions, wait for a safe gap or the WALK signal, make eye contact with drivers, then cross straight while continuing to scan.\n\nIf there’s a pedestrian signal:\n- Press the button if there is one. Wait for the WALK symbol.\n- Before stepping out, look left, right, and for turning cars and bikes in all directions (including from behind you).\n- Make eye contact with drivers. Keep scanning as you cross; don’t use your phone.\n- If the signal starts flashing “Don’t Walk” after you’ve started, keep going to the far curb.\n\nIf there’s no signal:\n- Cross at a marked crosswalk or intersection if possible. Avoid crossing between parked cars.\n- Stand where drivers can see you. Look and listen for traffic in every lane and for bikes/scooters.\n- Wait for a big enough gap so you can cross without rushing. If one driver stops, make sure all lanes have stopped before you go.\n- If there’s a median, treat it as two separate crossings.\n\nExtra tips:\n- Be visible at night (light clothing/reflective, small light). \n- Keep earbuds out and phone away.\n- Follow local laws; in left-driving countries, traffic comes first from the right.\n\nDo you have a signalized crosswalk where you are, or is it an unsignalized street?",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "text": "Considering the way to cross the street, analogously, how do I cross the river?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-0",
+      "stream": false,
+      "system": "You are a helpful assistant.",
+      "thinking": {
+        "budget_tokens": 1024,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"signature\": \"ErcHCkYIBxgCKkBZJZKmgqTGMrerntNOcgoakLxACdlqZhs9ARPkSHfxpKy8WFQJGmTqM8F5gcZ4poD5uHULbNVyCKQ5iyQToITuEgyMSMFkX8rWNC+QsFQaDKf0KnH66FeMiSl4ZyIwxyuh2BSP4OfaA90p4t4Wd5H1BzuugU8JlLRnlDyMKkTzlGBOpROR0YfLgVGRJ5nXKp4GFVoHGIvHEivxrnLmvJVesc2Py+d2YSMEgCyegtAyeXaLCH9bhpqe+Nj+CQjBP1EObqinccTYysoHJPZ2iPWr2EnoV9sXqWL7FoAC48ehLXqUiS9uthPu8jqEETsay9CacSdZEQAd7QQQ22ors4bcGCmaxydaWoVYXG+NiOEILtclRpyM8amsfZb17tGvsY50tkK62uYylAvw7sIZqq74kKgMTcdps0kPmPILtvEekVlNsnJgy6HEvF4XKDMno3qcvLuemOF+tdaVx0f2Xz2NE6w/R6PRwk/eW5Gt9u5wtB0E7p2axGptfZwIErF+JhvnhYj5ILIlzg2P+6v3zpdn0dbkQPJJbUGqTSScm6AS0hFV0EqFzSf+GmPuKHGO6lWPAHUORzZMud5VdDMkPAPuStwwL3+cJPUHGAuYGciClLrFX7gtHCbVTXUXScPfNpPosWSm5/Zcxyz6UpAZRxqeIFmNZ2bJFLKHt7yJRCbD1KyPPridIXb4h7ArvKheM35tpJUQndedmys8Ekwgwtz1OYxDAuv/1gtFuR7PoF/xOR0wyJOkEFENi1dxjHSzNhMgWxJm1nh2mrbVdNge1jpNhQpYdeKZNx4Le4CROJTam3spHcNL8HTr5uV0T8UxbfJjsKEDj4uk4z9tSQIA0ASlMiIvnCXewbLZkSMB8E6ivZdaY5boHBV3q2lJnd9X96avYnzF1rYRw2RYgLRvbE/bsqKFtVC21sUaW/KTnb7KDSkdUIdzjiRU/fgyms1/KAvlnsS09GOk7XzSZooplPAQSCZlRNhnIilCZF/kBHvnZlpN53a+eXAcsMD0HH1ajpwSTAZV5YGuRce2wD5MTrDNiX6eq0QAXFbq0cZv6b4banO7YTgQUIjcDH7ZTfBNSMmNgg9z2B683T4XootQK7/B7d/Lau7AsU24soCThSxfzR/O6knvkRyjVEDdqMATBG5938qQQ/98Z8+POR7SUPX5B4sV7abUwpl7LorpwXur2LcdJC6todfTw2AyDpbsQxb3z58LuwrSM6BzLGTODl+95w+Ja8b+czLcAkINUWgdGAE=\", \"thinking\": \"The user is asking for an analogous approach to crossing a river, based on my street crossing advice. This is an interesting question that requires me to think about the similarities and differences between crossing streets and rivers.\\n\\nKey similarities:\\n- Safety assessment before crossing\\n- Looking for designated/safer crossing points\\n- Being aware of hazards (traffic vs. water conditions)\\n- Having a plan and being prepared\\n\\nKey differences:\\n- Rivers involve water hazards (drowning, currents, temperature)\\n- Different infrastructure (bridges, ferries, fords vs. crosswalks)\\n- Different skills needed (swimming vs. walking)\\n- Environmental factors (weather, water levels, seasons)\\n\\nI should structure this similarly to my street crossing advice but adapted for water crossings.\", \"type\": \"thinking\"}, {\"text\": \"Great analogy! Here's how to \\\"cross the river\\\" safely, following similar principles:\\n\\n**Short version:** Look for established crossing points (bridges, ferries), assess water conditions, have a backup plan, and never cross alone in challenging conditions.\\n\\n**If there's infrastructure:**\\n- Use bridges, ferries, or designated boat crossings when available\\n- Check if services are running and safe (weather conditions, maintenance)\\n- Follow posted rules and weight limits\\n- Wait for proper signals/clearance before boarding ferries\\n\\n**If crossing naturally (ford, shallow areas):**\\n- Scout the crossing point first - look for established fords or naturally shallow, slow-moving areas\\n- Check water depth, current speed, and bottom conditions (rocks, mud, drop-offs)\\n- Test with a stick first; if it's deeper than your knees or the current is strong, don't attempt it\\n- Cross at an angle upstream to compensate for current\\n- Use a walking stick for balance and to probe ahead\\n\\n**Safety essentials:**\\n- Never cross alone in challenging conditions\\n- Wear appropriate gear (life jacket if deep water is possible)\\n- Have dry clothes waiting on the other side or in a waterproof bag\\n- Know your swimming ability and have an exit strategy\\n- Check weather - avoid crossing during floods, storms, or when water levels are high\\n- Tell someone your crossing plan and expected return time\\n\\n**When NOT to cross:**\\n- Fast-moving or flood-stage water\\n- Unknown depth or underwater obstacles\\n- Extreme weather conditions\\n- If you can't swim and water might be over your head\\n\\nJust like with streets - when in doubt, find a safer route or wait for better conditions!\", \"type\": \"text\"}], \"id\": \"msg_016e2w8nkCuArd5HFSfEwke7\", \"model\": \"claude-sonnet-4-20250514\", \"role\": \"assistant\", \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 1343, \"output_tokens\": 538, \"service_tier\": \"standard\"}}"
+  }
+}

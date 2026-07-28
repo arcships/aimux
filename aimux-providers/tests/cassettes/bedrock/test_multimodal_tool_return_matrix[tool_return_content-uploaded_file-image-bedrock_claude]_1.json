@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-image-bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'48c36732-7eee-4801-b3f4-ca07db514a31'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "819",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"message\": \"This model doesn't support the s3Uri field. Remove s3Uri and try again.\"}"
+  }
+}

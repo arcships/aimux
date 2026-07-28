@@ -1,0 +1,97 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "duplicate_tool_name_uses_last_registration_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Echo the word 'lantern'.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "text": "lantern"
+                },
+                "name": "echo"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_1"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "echo",
+                "response": {
+                  "result": "modern:lantern"
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You must use the echo tool, then report its output exactly.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Echo the provided text back to the caller.",
+              "name": "echo",
+              "parameters": {
+                "properties": {
+                  "text": {
+                    "description": "Text to echo",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"modern:lantern\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":3,\"promptTokenCount\":90,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":90}],\"serviceTier\":\"standard\",\"totalTokenCount\":93}}"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_llama_tool_result_followed_by_text_accepted",
+  "request": {
+    "path": "/model/us.meta.llama4-maverick-17b-instruct-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1eccc20a-ed50-4629-a3ae-4c9d85e6eb4d'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "632",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 414}, \"output\": {\"message\": {\"content\": [{\"text\": \"DONE\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 186, \"outputTokens\": 2, \"serverToolUsage\": {}, \"totalTokens\": 188}}"
+  }
+}

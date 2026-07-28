@@ -1,0 +1,39 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "cerebras",
+  "scenario": "test_cerebras_zai_reasoning_replayed_as_think_tags",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "124",
+      "content-type": "application/json",
+      "host": "api.cerebras.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 25 * 4? Think briefly first.",
+          "role": "user"
+        }
+      ],
+      "model": "zai-glm-4.7",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "inference-id": "chatcmpl-7a8879bf-5eca-4694-8673-441d7b669f8c",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"25 * 4 = 100.\", \"reasoning\": \"The user wants me to solve the multiplication problem: \\\"25 * 4\\\".\\n\\n1.  **Analyze the request:**\\n    *   Operation: Multiplication.\\n    *   Operands: 25 and 4.\\n    *   Constraint: \\\"Think briefly first.\\\" (This suggests I should perform the calculation mentally or break it down simply before providing the final answer).\\n\\n2.  **Mental Calculation:**\\n    *   Method 1: Standard multiplication.\\n        *   $5 * 4 = 20$ (write down 0, carry over 2).\\n        *   $2 * 4 = 8$.\\n        *   Add the carried over 2: $8 + 2 = 10$.\\n        *   Result: 100.\\n    *   Method 2: Distributive property.\\n        *   $25 = 20 + 5$.\\n        *   $20 * 4 = 80$.\\n        *   $5 * 4 = 20$.\\n        *   $80 + 20 = 100$.\\n    *   Method 3: Recognizing the quarter relationship.\\n        *   25 is one-quarter of 100.\\n        *   There are four quarters in a whole.\\n        *   So, $4 * 25$ equals 100.\\n\\n3.  **Formulate the output:**\\n    *   State the final answer clearly.\\n    *   (Optional based on \\\"Think briefly\\\") Should I show the work? The prompt asks *me* to think briefly, not necessarily to show all my thinking, but usually, a simple confirmation or a short breakdown is helpful. However, for such a simple calculation, just the answer is often best. I will provide the answer directly.\\n\\n4.  **Final Check:**\\n    *   $25 * 4 = 100$. Correct.\\n\\n5.  **Construct Response:**\\n    *   \\\"25 multiplied by 4 is 100.\\\"\", \"role\": \"assistant\"}}], \"created\": 1781208276, \"id\": \"chatcmpl-7a8879bf-5eca-4694-8673-441d7b669f8c\", \"model\": \"zai-glm-4.7\", \"object\": \"chat.completion\", \"system_fingerprint\": \"fp_ba34ecf90156e4888692\", \"time_info\": {\"completion_time\": 0.80132127, \"created\": 1781208276.514359, \"prompt_time\": 0.004226939, \"queue_time\": 0.000162202, \"total_time\": 0.8083178997039795}, \"usage\": {\"completion_tokens\": 415, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"reasoning_tokens\": 406, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 17, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 432}}"
+  }
+}

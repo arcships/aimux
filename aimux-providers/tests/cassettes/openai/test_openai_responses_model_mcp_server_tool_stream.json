@@ -1,0 +1,58 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_model_mcp_server_tool_stream",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "438",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Can you tell me more about the pydantic/pydantic-ai repo? Keep your answer short",
+          "role": "user"
+        }
+      ],
+      "instructions": "You are a helpful assistant.",
+      "model": "o4-mini",
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "allowed_tools": [
+            "ask_question",
+            "read_wiki_structure"
+          ],
+          "require_approval": "never",
+          "server_label": "deepwiki",
+          "server_url": "https://mcp.deepwiki.com/mcp",
+          "type": "mcp"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "254",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

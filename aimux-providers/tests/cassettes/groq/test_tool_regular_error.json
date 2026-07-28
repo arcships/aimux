@@ -1,0 +1,39 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_tool_regular_error",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "92",
+      "content-type": "application/json",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "hello",
+          "role": "user"
+        }
+      ],
+      "model": "non-existent",
+      "n": 1,
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "body": "{\"error\": {\"code\": \"model_not_found\", \"message\": \"The model `non-existent` does not exist or you do not have access to it.\", \"type\": \"invalid_request_error\"}}"
+  }
+}

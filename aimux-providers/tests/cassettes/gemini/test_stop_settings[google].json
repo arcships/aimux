@@ -1,0 +1,44 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_stop_settings[google]",
+  "request": {
+    "path": "/v1beta/models/gemini-1.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "216",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France? Give me an answer that contains the word \"Paris\", but is not the first word."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "stopSequences": [
+          "Paris"
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=362",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -0.5998413562774658, \"content\": {\"parts\": [{\"text\": \"The most iconic city in France is \"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-1.5-flash\", \"responseId\": \"UB5DaMfEN7jFnvgPocrJaA\", \"usageMetadata\": {\"candidatesTokenCount\": 8, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 8}], \"promptTokenCount\": 25, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 25}], \"totalTokenCount\": 33}}"
+  }
+}

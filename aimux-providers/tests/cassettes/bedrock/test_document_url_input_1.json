@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_document_url_input_1",
+  "request": {
+    "path": "/model/anthropic.claude-v2/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'7535d77d-cb59-4518-ac5e-bfdb88c71968'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "17944",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1698}, \"output\": {\"message\": {\"content\": [{\"text\": \"Based on the provided XML data, the main content of the document is \\\"Dummy PDF file\\\". This is contained in the <document_content> tag for the document with index=\\\"1\\\".\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 68, \"outputTokens\": 42, \"totalTokens\": 110}}"
+  }
+}

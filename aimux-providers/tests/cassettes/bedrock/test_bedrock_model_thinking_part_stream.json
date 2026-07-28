@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_stream",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-20250514-v1%3A0/converse-stream",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'b4ecc788-cc6a-48e2-a2a7-50ac77ca1d00'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "191",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/vnd.amazon.eventstream"
+    },
+    "body": ""
+  }
+}

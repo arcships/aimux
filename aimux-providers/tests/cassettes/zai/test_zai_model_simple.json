@@ -1,0 +1,40 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "zai",
+  "scenario": "test_zai_model_simple",
+  "request": {
+    "path": "/api/paas/v4/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "137",
+      "content-type": "application/json",
+      "host": "api.z.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 2 + 2?",
+          "role": "user"
+        }
+      ],
+      "model": "glm-4.7",
+      "stream": false,
+      "thinking": {
+        "clear_thinking": false
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json; charset=UTF-8",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"2 + 2 is 4.\", \"reasoning_content\": \"\\n1.  **Analyze the user's input**: The user is asking a very simple arithmetic question: \\\"What is 2 + 2?\\\".\\n\\n2.  **Identify the core task**: The task is to perform addition of the numbers 2 and 2.\\n\\n3.  **Determine the answer**:\\n    *   The mathematical operation is addition (+).\\n    *   The operands are 2 and 2.\\n    *   The sum of 2 and 2 is 4.\\n\\n4.  **Formulate the response**:\\n    *   The most direct and correct answer is \\\"4\\\".\\n    *   I can add a complete sentence for better flow, like \\\"The answer is 4.\\\" or \\\"2 + 2 is 4.\\\"\\n    *   The user didn't ask for a long explanation or a joke, so a straightforward, concise answer is best.\\n\\n5.  **Review against potential pitfalls**:\\n    *   Are there any trick interpretations? \\\"2\\\" could be in base 10, base 2, etc. Without specification, base 10 is the default assumption. In base 10, 2+2=4.\\n    *   Could \\\"2\\\" be a different symbol? In the absence of context, \\\"2\\\" universally represents the number two.\\n    *   Is this a test of \\\"model alignment\\\"? No, it's a factual question.\\n    *   Is this a test of my ability to reason? A simple one, yes.\\n\\n6.  **Final Selection**: A simple, direct answer is best. \\\"4\\\" is the core of the answer. I will provide it in a complete sentence.\\n\\n    *   Draft 1: 4\\n    *   Draft 2: 2 + 2 is 4.\\n    *   Draft 3: The sum of 2 and 2 is 4.\\n\\n    Draft 2 is natural and clear.\\n\\n7.  **Final Output Generation**: I will output \\\"2 + 2 is 4.\\\" This is a perfect, unambiguous, and helpful response.\", \"role\": \"assistant\"}}], \"created\": 1782862773, \"id\": \"20260701073925df703dd30a854c37\", \"model\": \"glm-4.7\", \"object\": \"chat.completion\", \"request_id\": \"20260701073925df703dd30a854c37\", \"usage\": {\"completion_tokens\": 437, \"completion_tokens_details\": {\"reasoning_tokens\": 427}, \"prompt_tokens\": 13, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 450}}"
+  }
+}

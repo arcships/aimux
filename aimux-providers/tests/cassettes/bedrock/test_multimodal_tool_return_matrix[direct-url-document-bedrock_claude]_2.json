@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-document-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'6be850ec-7a75-46c1-bff4-7daca78a7458'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "25838",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3970}, \"output\": {\"message\": {\"content\": [{\"text\": \"The function executed successfully but returned no output or errors. This means either:\\n1. The file retrieval completed but returned empty/null content\\n2. The function processed but there was no document available to retrieve\\n3. The function is configured to work silently without returning data in this context\\n\\nUnfortunately, I did not receive any document content, text, or file data from the get_file tool. The result was empty - no document was provided for me to describe or analyze.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 630, \"outputTokens\": 102, \"serverToolUsage\": {}, \"totalTokens\": 732}}"
+  }
+}

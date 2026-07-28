@@ -1,0 +1,124 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "hand_driven_multi_turn_tool_run_completes_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the tools to compute (7 + 4) - 2: first compute 7 + 4 with the add tool, then subtract 2 from that result with the subtract tool, then state the final result.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "x": 7,
+                  "y": 4
+                },
+                "name": "add"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_1"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "add",
+                "response": {
+                  "result": 11
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a calculator assistant. You MUST use the provided tools for every arithmetic operation instead of computing results yourself. Once you have all the tool results you need, reply with the final numeric answer in plain text.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y together",
+              "name": "add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Subtract y from x (i.e. x - y)",
+              "name": "subtract",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"x\":11,\"y\":2},\"name\":\"subtract\"},\"thoughtSignature\":\"signature_REDACTED_2\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":19,\"promptTokenCount\":229,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":229}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":33,\"totalTokenCount\":281}}"
+  }
+}

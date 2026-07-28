@@ -1,0 +1,31 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_background_mode_streaming_starting_after_vcr_1",
+  "request": {
+    "path": "/v1/responses/resp_0850765c843cca5300699cc47d93c0819089a181f5feeff8eb",
+    "method": "GET",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "cookie": "__cf_bm=jZ0QTsLzIDc1I3stW.lx5t40SKoouJ0uqhX9201gWyk-1771881597.5242157-1.0.1.1-jfQdfQPWwKQAW3URI3mpKrBVYai9kszPsmkiw_1yi2qIVQ66d5WChjaNICJyafItof5.WwxR2kmADDtULQ47Kt.9a2qTxDamSwy3K38xNcFu_ACRlyFnQyA7bnMIvWcN",
+      "host": "api.openai.com"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "XXXXXX",
+      "openai-processing-ms": "500",
+      "openai-project": "proj_kGBnNoxZLwrofr0DRC3DVVYV",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

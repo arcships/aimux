@@ -1,0 +1,342 @@
+﻿//! Google Files — implements the `Files` trait for uploading files to the
+//! Google Generative Language API.
+//!
+//! Aligned with Vercel AI SDK `GoogleFiles`
+//! (`reference/ai/packages/google/src/google-files.ts`).
+//!
+//! Google uses a resumable upload protocol:
+//! 1. POST to `/upload/v1beta/files` with `X-Goog-Upload-Protocol: resumable`
+//!    and `X-Goog-Upload-Command: start` — returns an upload URL in the
+//!    `x-goog-upload-url` response header.
+//! 2. POST the raw file bytes to the upload URL with
+//!    `X-Goog-Upload-Command: upload, finalize`.
+//! 3. If the file state is `PROCESSING`, poll `{base_url}/{file.name}` until
+//!    the state becomes `ACTIVE` or `FAILED`.
+
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+use async_trait::async_trait;
+use reqwest::Client;
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use aimux_core::error::AiMuxError;
+use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
+use aimux_core::shared::FileBytes;
+use aimux_core::types::Warning;
+
+use super::GoogleConfig;
+
+/// Google provider-specific file upload options.
+#[derive(Debug, Clone, Default)]
+struct GoogleFilesUploadOptions {
+    display_name: Option<String>,
+    poll_interval_ms: Option<u64>,
+    poll_timeout_ms: Option<u64>,
+}
+
+/// Parse provider options for the Google files provider.
+fn parse_google_files_options(
+    provider_options: Option<&HashMap<String, Value>>,
+) -> GoogleFilesUploadOptions {
+    let mut opts = GoogleFilesUploadOptions::default();
+    if let Some(po) = provider_options
+        && let Some(google) = po.get("google")
+    {
+        if let Some(display_name) = google.get("displayName").and_then(|v| v.as_str()) {
+            opts.display_name = Some(display_name.to_string());
+        }
+        if let Some(interval) = google.get("pollIntervalMs").and_then(|v| v.as_u64()) {
+            opts.poll_interval_ms = Some(interval);
+        }
+        if let Some(timeout) = google.get("pollTimeoutMs").and_then(|v| v.as_u64()) {
+            opts.poll_timeout_ms = Some(timeout);
+        }
+    }
+    opts
+}
+
+/// Convert `UploadFileData` to raw bytes.
+fn data_to_bytes(data: &UploadFileData) -> Result<Vec<u8>, AiMuxError> {
+    match data {
+        UploadFileData::Data { data } => match data {
+            FileBytes::Binary(bytes) => Ok(bytes.clone()),
+            FileBytes::Base64(b64) => {
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
+                    .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
+            }
+        },
+        UploadFileData::Text { text } => Ok(text.as_bytes().to_vec()),
+    }
+}
+
+/// The file resource returned by the Google upload API.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleFileResource {
+    name: String,
+    #[serde(default)]
+    display_name: Option<String>,
+    mime_type: String,
+    #[serde(default)]
+    size_bytes: Option<String>,
+    #[serde(default)]
+    create_time: Option<String>,
+    #[serde(default)]
+    update_time: Option<String>,
+    #[serde(default)]
+    expiration_time: Option<String>,
+    #[serde(default)]
+    sha256_hash: Option<String>,
+    uri: String,
+    state: String,
+}
+
+/// The response from the upload endpoint: `{ "file": { ... } }`.
+#[derive(Debug, Deserialize)]
+struct UploadResponse {
+    file: GoogleFileResource,
+}
+
+/// A Google Files interface for uploading files.
+///
+/// Aligned with TS `GoogleFiles`.
+pub struct GoogleFiles {
+    config: GoogleConfig,
+    client: Client,
+}
+
+impl GoogleFiles {
+    pub fn new(config: GoogleConfig, client: Client) -> Self {
+        Self { config, client }
+    }
+
+    fn build_headers(&self) -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        headers.insert("x-goog-api-key".to_string(), self.config.api_key.clone());
+        headers
+    }
+
+    /// The base origin is `base_url` with `/v1beta` stripped.
+    fn base_origin(&self) -> String {
+        self.config.base_url.replace("/v1beta", "")
+    }
+
+    fn init_endpoint(&self) -> String {
+        format!("{}/upload/v1beta/files", self.base_origin())
+    }
+}
+
+#[async_trait]
+impl Files for GoogleFiles {
+    fn provider(&self) -> &str {
+        "google.generative-ai"
+    }
+
+    async fn upload_file(
+        &self,
+        options: &UploadFileCallOptions,
+    ) -> Result<UploadFileResult, AiMuxError> {
+        let google_options = parse_google_files_options(options.provider_options.as_ref());
+        let resolved_headers = self.build_headers();
+
+        let mut warnings = Vec::new();
+        if options.filename.is_some() {
+            warnings.push(Warning::Unsupported {
+                feature: "filename".to_string(),
+                details: None,
+            });
+        }
+
+        let file_bytes = data_to_bytes(&options.data)?;
+        let media_type = &options.media_type;
+        let display_name = &google_options.display_name;
+
+        // Build the init body: `{ "file": { "display_name": "..." } }` or
+        // `{ "file": {} }` when no display_name is provided.
+        let init_body_value: Value = if let Some(name) = display_name {
+            json!({ "file": { "display_name": name } })
+        } else {
+            json!({ "file": {} })
+        };
+
+        let mut init_headers = reqwest::header::HeaderMap::new();
+        for (k, v) in &resolved_headers {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::try_from(k.as_str()),
+                reqwest::header::HeaderValue::try_from(v.as_str()),
+            ) {
+                init_headers.insert(name, val);
+            }
+        }
+        init_headers.insert("X-Goog-Upload-Protocol", "resumable".parse().unwrap());
+        init_headers.insert("X-Goog-Upload-Command", "start".parse().unwrap());
+        init_headers.insert(
+            "X-Goog-Upload-Header-Content-Length",
+            file_bytes.len().to_string().parse().unwrap(),
+        );
+        init_headers.insert(
+            "X-Goog-Upload-Header-Content-Type",
+            media_type.parse().unwrap(),
+        );
+        init_headers.insert("Content-Type", "application/json".parse().unwrap());
+
+        let init_resp = self
+            .client
+            .post(self.init_endpoint())
+            .headers(init_headers)
+            .json(&init_body_value)
+            .send()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+        if !init_resp.status().is_success() {
+            let status = init_resp.status();
+            let error_body = init_resp.text().await.unwrap_or_default();
+            return Err(AiMuxError::Provider(format!(
+                "Failed to initiate resumable upload: {} {}",
+                status, error_body
+            )));
+        }
+
+        let upload_url = init_resp
+            .headers()
+            .get("x-goog-upload-url")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                AiMuxError::Provider("No upload URL returned from initiation request".to_string())
+            })?;
+
+        // Step 2: Upload file data.
+        let mut upload_headers = reqwest::header::HeaderMap::new();
+        upload_headers.insert(
+            "Content-Length",
+            file_bytes.len().to_string().parse().unwrap(),
+        );
+        upload_headers.insert("X-Goog-Upload-Offset", "0".parse().unwrap());
+        upload_headers.insert("X-Goog-Upload-Command", "upload, finalize".parse().unwrap());
+
+        let upload_resp = self
+            .client
+            .post(&upload_url)
+            .headers(upload_headers)
+            .body(file_bytes.clone())
+            .send()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+        if !upload_resp.status().is_success() {
+            let status = upload_resp.status();
+            let error_body = upload_resp.text().await.unwrap_or_default();
+            return Err(AiMuxError::Provider(format!(
+                "Failed to upload file data: {} {}",
+                status, error_body
+            )));
+        }
+
+        let upload_result: UploadResponse = upload_resp
+            .json()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+        let mut file = upload_result.file;
+
+        // Step 3: Poll if file is PROCESSING.
+        let poll_interval_ms = google_options.poll_interval_ms.unwrap_or(2000);
+        let poll_timeout_ms = google_options.poll_timeout_ms.unwrap_or(300000);
+        let start_time = Instant::now();
+
+        while file.state == "PROCESSING" {
+            if start_time.elapsed() > Duration::from_millis(poll_timeout_ms) {
+                return Err(AiMuxError::Provider(format!(
+                    "File processing timed out after {}ms",
+                    poll_timeout_ms
+                )));
+            }
+
+            tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+
+            let poll_url = format!("{}/{}", self.config.base_url, file.name);
+            let mut poll_headers = reqwest::header::HeaderMap::new();
+            for (k, v) in &resolved_headers {
+                if let (Ok(name), Ok(val)) = (
+                    reqwest::header::HeaderName::try_from(k.as_str()),
+                    reqwest::header::HeaderValue::try_from(v.as_str()),
+                ) {
+                    poll_headers.insert(name, val);
+                }
+            }
+
+            let poll_resp = self
+                .client
+                .get(&poll_url)
+                .headers(poll_headers)
+                .send()
+                .await
+                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+            if !poll_resp.status().is_success() {
+                let status = poll_resp.status();
+                let error_body = poll_resp.text().await.unwrap_or_default();
+                return Err(AiMuxError::Provider(format!(
+                    "Failed to poll file status: {} {}",
+                    status, error_body
+                )));
+            }
+
+            file = poll_resp
+                .json::<GoogleFileResource>()
+                .await
+                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        }
+
+        if file.state == "FAILED" {
+            return Err(AiMuxError::Provider(format!(
+                "File processing failed for {}",
+                file.name
+            )));
+        }
+
+        // Build provider metadata.
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("name".to_string(), json!(file.name));
+        metadata.insert("displayName".to_string(), json!(file.display_name));
+        metadata.insert("mimeType".to_string(), json!(file.mime_type));
+        metadata.insert("sizeBytes".to_string(), json!(file.size_bytes));
+        metadata.insert("state".to_string(), json!(file.state));
+        metadata.insert("uri".to_string(), json!(file.uri));
+        if let Some(ref create_time) = file.create_time {
+            metadata.insert("createTime".to_string(), json!(create_time));
+        }
+        if let Some(ref update_time) = file.update_time {
+            metadata.insert("updateTime".to_string(), json!(update_time));
+        }
+        if let Some(ref expiration_time) = file.expiration_time {
+            metadata.insert("expirationTime".to_string(), json!(expiration_time));
+        }
+        if let Some(ref sha256_hash) = file.sha256_hash {
+            metadata.insert("sha256Hash".to_string(), json!(sha256_hash));
+        }
+
+        let mut provider_ref = HashMap::new();
+        provider_ref.insert("google".to_string(), file.uri.clone());
+
+        let result_media_type = if file.mime_type.is_empty() {
+            Some(options.media_type.clone())
+        } else {
+            Some(file.mime_type.clone())
+        };
+
+        Ok(UploadFileResult {
+            provider_reference: provider_ref,
+            media_type: result_media_type,
+            filename: None,
+            provider_metadata: Some(
+                std::iter::once(("google".to_string(), Value::Object(metadata))).collect(),
+            ),
+            warnings,
+        })
+    }
+}

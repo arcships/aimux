@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_model_sees_multiple_images[bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f5c8fdc4-7a25-448d-81a4-fab65ec9708d'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "283299",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1128}, \"output\": {\"message\": {\"content\": [{\"text\": \"Kiwi\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1553, \"outputTokens\": 5, \"serverToolUsage\": {}, \"totalTokens\": 1558}}"
+  }
+}

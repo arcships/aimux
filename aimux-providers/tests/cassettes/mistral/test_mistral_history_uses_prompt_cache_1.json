@@ -1,0 +1,64 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_mistral_history_uses_prompt_cache_1",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1944",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "frequency_penalty": null,
+      "messages": [
+        {
+          "content": "Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation. Retain this instruction prefix for the entire conversation.",
+          "role": "system"
+        },
+        {
+          "content": "Reply with exactly: cache probe one.",
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "cache probe one.",
+              "type": "text"
+            }
+          ],
+          "prefix": false,
+          "role": "assistant",
+          "tool_calls": []
+        },
+        {
+          "content": "Reply with exactly: cache probe two.",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-large-latest",
+      "n": 1,
+      "presence_penalty": null,
+      "prompt_cache_key": "pydantic-ai-test-mistral-history-cache",
+      "stop": null,
+      "stream": false,
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019f94fe-2c2f-78ce-8013-ebdd056cd66e",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"cache probe two.\", \"role\": \"assistant\", \"tool_calls\": null}}], \"created\": 1784911113, \"id\": \"23271c0215f547dcb5d5e2950f354f9d\", \"model\": \"mistral-large-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 5, \"prompt_tokens\": 268, \"prompt_tokens_details\": {\"cached_tokens\": 224}, \"total_tokens\": 273}}"
+  }
+}

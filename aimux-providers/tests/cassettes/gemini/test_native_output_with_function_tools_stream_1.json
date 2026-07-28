@@ -1,0 +1,104 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_native_output_with_function_tools_stream_1",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1365",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the largest city in the user country?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "id": "96c1su3s",
+                "name": "get_user_country"
+              },
+              "thoughtSignature": "EpIDCo8DAQw51scL-dHffCC-bznOIyXjDPleN5yQL1zqs-4M_VtZCHcJrN8gh786ZjK9OZKuD6RdZHgfpv79cXyMPcENDzPM2VrQF0ZLkLBwpq98X6zkYNVkwocL_mdRCLNt7H-Stxu1kojfyFhLSEYUx2w5Ep0gOuF2lOdXs9nG0j5qO0osghTXqDz2AUUbinuJ4bX_34maQqECBO4g58rN-8_bKW1CW2CWWtJfSsfVNLutBS_NpJ_REk3cm3RT3viJU9YdruAMAC9K95vW5gGPkFbZ4weFTplNS9FBUjue7usTmrYTH0P-59L3xdXkn0X0QMHt1ACkOOl84cIscvYukdz9AC-a56q2kZPNEHxfHudLT5kbuYzL9ujEmJ79YWOG2cFfS2yjBXinkM6mjxraEXzt4sc1kOI2c37TGqlsFZH9UIRoNUm60rl5ligkxyDyGgrFXoVdEAPuM42SUr6KkhdOnR4Kjxf9vsqMaXUX2Br5ZyyRT1_PZBCnPSxe1bq7eTqAtvGUQJoG9L0tnpbDR9Eg"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "96c1su3s",
+                "name": "get_user_country",
+                "response": {
+                  "return_value": "Mexico"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseJsonSchema": {
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city",
+            "country"
+          ],
+          "title": "CityLocation",
+          "type": "object"
+        },
+        "responseMimeType": "application/json",
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_user_country",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-disposition": "attachment",
+      "content-type": "text/event-stream",
+      "server-timing": "gfet4t7; dur=817",
+      "vary": "Origin"
+    },
+    "body": ""
+  }
+}

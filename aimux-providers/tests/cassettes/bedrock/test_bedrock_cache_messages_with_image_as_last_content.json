@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_cache_messages_with_image_as_last_content",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'716ad445-3cea-4d37-a498-dddd7e7bcb26'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "136782",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 7112}, \"output\": {\"message\": {\"content\": [{\"text\": \"I'd be happy to analyze this image for you!\\n\\nThis is a close-up photograph of a **kiwi fruit cross-section**. Here are the key details:\\n\\n## Visual Characteristics:\\n- **Color Palette**: Vibrant green flesh with a pale cream/white center\\n- **Seeds**: Multiple small, black, teardrop-shaped seeds arranged in a radial pattern around the center\\n- **Texture**: The flesh appears juicy and translucent with a gradient from bright green at the edges to lighter green near the center\\n- **Skin**: Brown fuzzy skin visible around the perimeter of the slice\\n- **Pattern**: Natural starburst or sunburst pattern created by the seed arrangement\\n\\n## Composition:\\n- The slice is photographed from directly above against a white background\\n- The fruit is cut perpendicular to its length, showing a perfect circular cross-section\\n- The lighting is bright and even, highlighting the fruit's natural moisture and color variations\\n\\n## Notable Features:\\n- The radial symmetry creates an aesthetically pleasing natural pattern\\n- Tiny fine hairs (trichomes) are visible on the brown skin edge\\n- The flesh shows subtle striations radiating outward from the center\\n\\nThis type of image is commonly used in food photography, nutritional content, or botanical documentation.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheDetails\": [{\"inputTokens\": 2074, \"ttl\": \"5m\"}], \"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 2074, \"cacheWriteInputTokens\": 2074, \"inputTokens\": 3, \"outputTokens\": 288, \"serverToolUsage\": {}, \"totalTokens\": 2365}}"
+  }
+}

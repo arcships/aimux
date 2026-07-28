@@ -1,0 +1,88 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-video-google_gemini3]_1",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "2085",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a video file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "type": "OBJECT"
+                },
+                "id": "pyd_ai_01f4e9c0100d44ee8fc9bbaaad46be6a",
+                "name": "get_file"
+              },
+              "thoughtSignature": "EuEGCt4GAb4-9vv8MxdY1sRyxmIJiiPQw1veeVs5408LG9PFeY2MDTR50Xx3z_A1cUffVCrqaiPJcuxSiULMJdHzOxKXbfdRcYaZYK-vfPlVFQOAPcxl5ABJW9tRXATRFkjP8lpjGEqNCP_NFmxepu_VfRTFZTYvGS6wznt_nUD60xn06SelEd2cvrNm9hX4PuNvtspL_rnPjw3oa31VncxPvAyzDDOD5jV0uwKISgtI8oXZg5PKGZ9jr6Bwgg6_Vm-QLNU5JeYhc296dQLzis_OuulJCS3eefxS22o8g-dtq7pp0s_TX-cvqkQDREdq4VaBNhhAG5zV7YlRA7DDQO8f-aqib-Renp_-6xPppiAWeZ5hnnsXaIV1iR3opnqB-6kzt0WZCV3892PYZ6S8259-UfFRykgTgMU50ULEg8AiMcm-KqyjRYeG572xSe1_qccGMld6gmiBMGZ7XwDsgJeielnlgJXIRt6jACVfIkeCYv6qT5wTlQ7HcKFAwnvoaomU3VRba3dw-PL6NHcn2sTkeST8zV_pNkItjIdlGy6hHHW6AZj6x-bkRavbsNyFkENscuh9WdnpLVYdiO8Sv-khCN7W-jPvn604xrwJSC-uyHacVs-8uCaIujbVewmtlYj1vwIMUsUfSuR1gDS6Dp6h2qVkvU2RaTu4LwGO2pF5yNKodkIpe1xtnhVscbLBKDF52lr0hb5hG0YJg-54kaME3YJ8bAzxneNt64QUq9d4SkeC6gYs-9vckw4hYqEoPxs3l2x_-oMdhRm6lQlplaCZA42E0lIIz8yr68szVTH0hqqeOlqzACxo5rsMTac-IKRdAXQlF6o2cQBE5r1DPTeXylev25OM9N7VRrKNu_K0DB4PZgUkL_JZiMATYBMQj9uWn3lgO63cX55MaAU_yoYh-MywpmSJEAPvisv0qpN2hMfAEEHyrSuPQgQqFkwabwhVY7RpuajeJbbX5NJahUw2l3a0T1G3PzebdJLiExC6h6Jr9UEGruljMlv3gaOH34zNhTEJo8viqMLVKkr0vbtEECHEYz8P9BGPgoioN_Px8jgLy_T_SPemU5gvRSM4yqBDRfK7RlN-Pc-R_B9x-ijB9yPEfY1jMdWNt_Py9ITqs_L3KtKJBJFSaEerEfFhca4MuQ=="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_01f4e9c0100d44ee8fc9bbaaad46be6a",
+                "name": "get_file",
+                "response": {
+                  "error": "1 validation error:\n```json\n[\n  {\n    \"type\": \"extra_forbidden\",\n    \"loc\": [\n      \"type\"\n    ],\n    \"msg\": \"Extra inputs are not permitted\",\n    \"input\": \"OBJECT\"\n  }\n]\n```\n\nFix the errors and try again."
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=3117",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_file\"}, \"thoughtSignature\": \"EtULCtILAb4+9vtggEPtk6uodNv0Cfatgf8t2Ui9/fx8k7+opmHA2vkG7uYJZjxAt7MBoB2aPxZG0ZOWUbXz0zH7ugq4GHL5EEo5F2tURKy0lwnCSWk6I7AvOILubNZT8c17xkrA0WDo/33GAMqIONtCLZ5+D4lALDwaa40W820X26DKQfMJGNRntSrTyuWDCw09VpDtUyY7FZ2uFe6ErnYhG9QyqBt0hq9vowGN6s8ljpXWjRtviu9bxkKWlmG+VOIIRuxFJAFu8ZmTtrI0L6rNr1k54YcPHzrd1vtck0By5jvIRqjXPereC2129a1DioHUQTWWJd8sqBFyqD+2MzolzIU8J/2NQ39tNOrvBzw2WJq2TH2FjLHxMY4wF2AzAY7p2fF2mJOtGZKH2abGKYXX0nvDcUWaXFidEzRgEiJ50DCf8Kzl06V6lmAQvXmBypRB5j1BDC6oZIGn/PrcP7J+8hQdQHCO05p8HHvpOmMVlLRlJXnoat0qOLrvXsmJ1KIGfSbrWej+kQBBiyeuwhUjVVbS/h9tww7f1JuEOTECpnX8r+798IQRuIQwx1onBmvIl1A8FyV5N4fB/JJtQw3OrIm4FWAVYeuet9BXfyf6z7QGSaV80HD9WUPIgACDi1+seYC23K1IjVFkpkEQCYdQe7qa7RzZ+eaEsmCmLz53mduahEC+4MP5y6WNg875WGZxZDMzbeRW2CGXuivLxmXQ3UlZ3VHIDT9zELVWzMQfnEKO05Skl8XWuNBwDaibhRmxVhxzzOwo38BHKLRR5jm9bD1gB8zQ7GLYiB2rryNemhpkASeVU2lO1qSZdvWSbLu2hIbNW9pQkLZxg1m6789ZVW4PyvyvRGuQZyGHUWVKPwWD0tRBSxvtrUy0SoXzGr8roI6ZYGc9LTuU1npEGF5JZ4cOauuz5FWSfYXYXIeUFMyNdycRXrvbZ8mUXB0JGtoG6crIYIrFRYDU39yJRA3uzp/BRdRFAajVCMrfCgOskTlukVJbHY14HS+9SONRs4hMcrxkNyPHdZ+XfYxOK1CR+W2hK21OFXNJ4OwT/wlDxHNGq7Z3nE8hHGakk8K8tCfXFP4Fa7y1scF9eNjcAWYflu3uGpBLz5CoOaB41J2j3OGoBmH5gyY5A/e8TvQM8rQn/NnWGNPk1dlaEWWYI6DbL4YNdXEIxGUZ0274kj747Bpb9+Dt86vfufePbwQSpqolHSN6CugVu4YgRVpfxVoyAEIRwta+J1XkmWj9N1q1iryHUHLCzE3EjM9vHpGEICP9IpjzNwGtWsDNKOyG8+0sTateokMXDF+SsWwAVSocWwgxS5vXARlcyaWPJvz9Ly8CufoRmQ9mO5OWp7t11cSfkuF9+Xj/+FUmVsXUzeFX6KrCqw1/N3m8w+Dam7DDjxxr/M7L9O+bEwcKdqIUFVmO+chYi8alTK2OaPsZOvxcCNJmXpJzrP0jG/1IAGktrFn3SyB8QP71aFznl2uem9kW5SykzbR4/m+ig7p1+LYmAuWFlC7slqHlqHEAvafjmeWio2CwqjTXZei8O9ToRXXOydkQTtwogzaQUG3C89huvIT+bohsHoI0xRuemMXpAyrrSLTK5EtiIBW5312dh58tn7GPceznZtZcKEqw0fg6925ewvHOPldHDWi0H4OG/jz4Prjg58Mr7M9rTsDgcJhNZCeH1lnqF42bQFGv+CGYggxuKUvDqnveJ+LKDANdAFjmdJXuV3GfUWHBWnqOUWaQEX3IN8zniUHHlcdEYpk0vgIcM10c/Dh+HUyqeQ19ZWOZ2rs9JEu46b7y9uyn+I02xFsUfgBPpsC+7kv6NivL/Spf32kG6bsdegSFEusEw7wLNcK2HFOe9tofy49k/PViN+MDZGWGPsbom1u79nBgSNp8IvLT1acAKF2vEoSXDaSVXNc7QZYJXYPfbGAD9YbDYubUYnwsDzWkpfoxDTsJBzN45RKghw9yJ69UfIKKdblYofZsChs=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"efCTaY_LE9ecqtsPy7Lb2A0\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 347, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 347}], \"thoughtsTokenCount\": 346, \"totalTokenCount\": 703}}"
+  }
+}

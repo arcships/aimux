@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_streaming_error",
+  "request": {
+    "path": "/model/us.does-not-exist-model-v1%3A0/converse-stream",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'dd9acaf0-6382-4629-901c-8f81f5b798f3'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "101",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"message\": \"The provided model identifier is invalid.\"}"
+  }
+}

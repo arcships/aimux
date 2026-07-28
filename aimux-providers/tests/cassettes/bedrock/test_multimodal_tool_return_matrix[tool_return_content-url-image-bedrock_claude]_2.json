@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-image-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'6ed6d0d6-13c3-49f1-a62b-c068d39c2a85'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "151877",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5889}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a beautiful image of an orange-yellow rose. Here's what I can see:\\n\\n**Description:**\\n- **Main subject**: A single rose bloom in warm tones of orange and yellow\\n- **Petals**: The petals have a soft, delicate appearance with gradients blending from golden yellow to peachy orange\\n- **Water droplets**: There are visible water droplets on the petals, giving the rose a fresh, dewy look\\n- **Stem and leaves**: A brown/dark stem extends from the flower with a couple of green leaves attached\\n- **Background**: Clean white background, making the rose stand out prominently\\n- **Overall composition**: The rose appears to be photographed at an angle, showing the layered spiral structure of the petals characteristic of roses\\n\\nThe image has a clean, isolated presentation typical of stock photography or botanical imagery, with excellent detail that captures the texture and moisture on the flower.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 791, \"outputTokens\": 200, \"serverToolUsage\": {}, \"totalTokens\": 991}}"
+  }
+}

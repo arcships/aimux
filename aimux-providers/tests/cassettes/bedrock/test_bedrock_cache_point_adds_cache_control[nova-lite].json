@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_cache_point_adds_cache_control[nova-lite]",
+  "request": {
+    "path": "/model/us.amazon.nova-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1da8f54b-58a0-4a77-84b6-722da08ef224'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "5580",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 797}, \"output\": {\"message\": {\"content\": [{\"text\": \"5\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 1298, \"cacheWriteInputTokens\": 1298, \"inputTokens\": 10, \"outputTokens\": 2, \"serverToolUsage\": {}, \"totalTokens\": 1310}}"
+  }
+}

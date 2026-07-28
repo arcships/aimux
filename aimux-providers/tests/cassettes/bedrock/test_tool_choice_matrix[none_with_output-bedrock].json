@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_tool_choice_matrix[none_with_output-bedrock]",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'0d3ba26d-77f9-498e-adc5-1b0d56afe73d'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "686",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5822}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"city\": \"Paris\", \"summary\": \"Paris is the capital and most populous city of France, located in the north-central part of the country along the Seine River. Known as \\\"The City of Light\\\" (La Ville Lumi\\u00e8re), Paris is renowned for its art, fashion, gastronomy, and culture. The city is home to iconic landmarks including the Eiffel Tower, the Louvre Museum (the world's largest art museum), Notre-Dame Cathedral, the Arc de Triomphe, and the Champs-\\u00c9lys\\u00e9es. Paris has been a major center of art, literature, and philosophy for centuries, attracting artists, writers, and intellectuals from around the world. The city is divided into 20 arrondissements (districts) and is a global hub for business, diplomacy, fashion, and entertainment. Paris is also famous for its caf\\u00e9 culture, haute cuisine, wine, and pastries. With its beautiful architecture, charming neighborhoods like Montmartre and Le Marais, and romantic atmosphere, Paris remains one of the world's most visited cities.\"}, \"name\": \"final_result\", \"toolUseId\": \"tooluse_MbWBfVhW4qQWxyETq2Gtp6\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 734, \"outputTokens\": 271, \"serverToolUsage\": {}, \"totalTokens\": 1005}}"
+  }
+}

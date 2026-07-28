@@ -1,0 +1,44 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "zai",
+  "scenario": "test_zai_thinking_stream",
+  "request": {
+    "path": "/api/paas/v4/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "198",
+      "content-type": "application/json",
+      "host": "api.z.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 2 + 2?",
+          "role": "user"
+        }
+      ],
+      "model": "glm-4.7",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "thinking": {
+        "clear_thinking": false,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "text/event-stream;charset=UTF-8",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "vary": "Origin"
+    },
+    "body": ""
+  }
+}

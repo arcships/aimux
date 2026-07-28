@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-image-bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'309a7161-b2bd-46ba-afd1-200c976c1bb1'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "132186",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5666}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received an image of a **kiwi fruit cross-section**. \\n\\nHere's what I can see in the image:\\n\\n- **A perfectly sliced kiwi half** photographed from above against a white background\\n- **Vibrant green flesh** with a gradient from bright lime green on the outer edges to a lighter, pale green-yellow center\\n- **Small black seeds** arranged in a distinctive radial pattern around the center, creating a beautiful starburst or sunburst effect\\n- **A pale cream-colored core** in the very center\\n- **Brown fuzzy skin** visible around the edges of the slice\\n- **Fine details** showing the fruit's texture and tiny water droplets or moisture on the surface\\n\\nThe image is very clean and professional-looking, almost like a stock photo or food photography. The cross-section beautifully displays the kiwi's internal structure, with the seeds creating a striking natural pattern that radiates outward from the center.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 1087, \"outputTokens\": 212, \"serverToolUsage\": {}, \"totalTokens\": 1299}}"
+  }
+}

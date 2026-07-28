@@ -1,0 +1,57 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-document-openai_chat]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "366",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Use the get_file tool now to retrieve a document file, then describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_file",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "1272",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"message\": {\"annotations\": [], \"content\": null, \"refusal\": null, \"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{}\", \"name\": \"get_file\"}, \"id\": \"call_nBuvHbZuG4EK56IvD6hWHZXn\", \"type\": \"function\"}]}}], \"created\": 1770662503, \"id\": \"chatcmpl-D7QUZbBAQg2JoahTABq01tPVoeDjz\", \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": null, \"usage\": {\"completion_tokens\": 19, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 129, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 148}}"
+  }
+}

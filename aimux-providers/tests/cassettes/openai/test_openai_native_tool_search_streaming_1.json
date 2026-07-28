@@ -1,0 +1,118 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_native_tool_search_streaming_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1500",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=vWWzXQsOV46IfpPxxeQjXFSQqVP.tzWtxJ_phIsyA4k-1777591024.4207492-1.0.1.1-O0ddwdNzDkI9L8zeQOBPKBubQm5dG0WrlHILfNDlE9TeJXzb1gClVW5PT2nbsI_OOtC3PUTx6cc3yHSm4YQ_w2ZUaqGenHMxQNPnNcx5THOAk.jpmknqxB.ga1hLANR0",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "What is the current USD to EUR exchange rate?",
+          "role": "user"
+        },
+        {
+          "arguments": {
+            "queries": [
+              "get_exchange_rate"
+            ]
+          },
+          "call_id": "tsc_060f468708eb0ff90069f3e2f1da248193a424897296815e56",
+          "execution": "server",
+          "id": "tsc_060f468708eb0ff90069f3e2f1da248193a424897296815e56",
+          "status": "completed",
+          "type": "tool_search_call"
+        },
+        {
+          "arguments": "{\"from_currency\":\"USD\",\"to_currency\":\"EUR\"}",
+          "call_id": "call_CeXueyTqEJ1rgm84BHSwNPz8",
+          "id": "fc_060f468708eb0ff90069f3e2f2bb00819398117e5b32b4a3de",
+          "name": "get_exchange_rate",
+          "namespace": "get_exchange_rate",
+          "type": "function_call"
+        },
+        {
+          "call_id": "call_CeXueyTqEJ1rgm84BHSwNPz8",
+          "output": "1 USD = 0.92 EUR",
+          "type": "function_call_output"
+        }
+      ],
+      "model": "gpt-5.4",
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "type": "tool_search"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up the current exchange rate between two currencies.",
+          "name": "get_exchange_rate",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "from_currency": {
+                "type": "string"
+              },
+              "to_currency": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from_currency",
+              "to_currency"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up stock price by ticker symbol.",
+          "name": "stock_lookup",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "symbol": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "symbol"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "821",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

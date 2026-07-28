@@ -1,0 +1,74 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "streaming_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "I'm planning a trip. What is the current weather in Tokyo, Japan? Based on the weather conditions, should I pack an umbrella or sunscreen? Use the get_weather tool to check before answering.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "thinkingConfig": {
+          "includeThoughts": true,
+          "thinkingBudget": 4096
+        }
+      },
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a weather assistant. You have access to a get_weather tool. You must call the get_weather tool for any weather question and never guess weather data. After receiving the tool result, provide a concise summary of the weather.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city. Must be called for weather questions.",
+              "name": "get_weather",
+              "parameters": {
+                "properties": {
+                  "city": {
+                    "description": "City name to get weather for",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"**Determining Tokyo's Weather**\\n\\nI'm focusing on the user's weather inquiry for Tokyo. My next step is to use the `get_weather` tool. I'm going to set the `city` argument.\\n\\n\\n\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"promptTokenCount\":144,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":144}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":67,\"totalTokenCount\":211}}\r\n\r\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"**Analyzing Weather Request**\\n\\nI've determined the user needs a weather check for Tokyo, specifically for packing advice. The `get_weather` tool is the way to go, and I'll specify 'Tokyo, Japan' as the city. My analysis will focus on rain and sun, to offer concise packing suggestions based on the weather data retrieved. I'm ready to use the tool.\\n\\n\\n\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"promptTokenCount\":144,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":144}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":124,\"totalTokenCount\":268}}\r\n\r\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"city\":\"Tokyo, Japan\"},\"name\":\"get_weather\"},\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":15,\"promptTokenCount\":144,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":144}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":124,\"totalTokenCount\":283}}\r\n\r\n"
+  }
+}

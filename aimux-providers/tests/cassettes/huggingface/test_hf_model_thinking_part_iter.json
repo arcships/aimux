@@ -1,0 +1,46 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "huggingface",
+  "scenario": "test_hf_model_thinking_part_iter",
+  "request": {
+    "path": "/together/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "158",
+      "content-type": "application/json",
+      "host": "router.huggingface.co"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "How do I cross the street?",
+          "name": null,
+          "role": "user",
+          "tool_calls": null
+        }
+      ],
+      "model": "deepseek-ai/DeepSeek-R1",
+      "stream": true,
+      "tools": []
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash",
+      "cache-control": "no-cache, no-transform",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream;charset=utf-8",
+      "cross-origin-opener-policy": "same-origin",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "retry-after": "30",
+      "strict-transport-security": "max-age=15552000; includeSubDomains",
+      "vary": "Accept-Encoding"
+    },
+    "body": ""
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_mistral_forwards_penalties",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "176",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "frequency_penalty": 0.25,
+      "messages": [
+        {
+          "content": "hello",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-large-latest",
+      "n": 1,
+      "presence_penalty": 0.5,
+      "stream": false,
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019ef358-aa9c-7608-80de-5e23e136b528",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"Hello! \\ud83d\\ude0a How can I assist you today? Whether you have a question, need help with something, or just want to chat, I'm here for you!\", \"role\": \"assistant\", \"tool_calls\": null}}], \"created\": 1782199134, \"id\": \"74b5a04853d2428f8c69b8b35dc2d30b\", \"model\": \"mistral-large-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 36, \"prompt_tokens\": 4, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 40}}"
+  }
+}

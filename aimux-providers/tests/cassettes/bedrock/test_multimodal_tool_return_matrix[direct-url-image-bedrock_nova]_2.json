@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-image-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'9e45507c-cf5e-4314-8da8-1c201a83599a'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "151801",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1354}, \"output\": {\"message\": {\"content\": [{\"text\": \"I have retrieved an image file. Here's a description of what I received:\\n\\nThe image shows a vibrant, partially bloomed orange rose with soft gradients of yellow and orange petals. The flower appears to be in a state of growth, with a visible bud and several petals unfurling outward. A small, prominent leaf with a pinkish hue sits atop the rose, and water droplets are visible on the leaf, suggesting the flower has been recently watered or is glistening in natural light. The background is clean and white, which makes the rose stand out sharply and emphasizes its vivid colors and delicate texture. The overall composition conveys freshness and natural beauty.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1107, \"outputTokens\": 131, \"serverToolUsage\": {}, \"totalTokens\": 1238}}"
+  }
+}

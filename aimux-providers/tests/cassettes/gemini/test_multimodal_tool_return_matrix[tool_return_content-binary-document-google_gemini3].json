@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-document-google_gemini3]",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "373",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a document file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=5764",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"parameters\": {}}, \"name\": \"get_file\"}, \"thoughtSignature\": \"EpwYCpkYAb4+9vt8IuU9adxjx+i00edB/5364XWTO8nivwBlZQDmUngjLL4mqa1FLQgY00kYi87i4J95BFN16JbgfkQSCxgUNyqjm1m/GWQ+7OpofAIxTjVI2HPWvU5fXz1Si93S+0/uby1tN9GIsvfxqeXX8i6xbnA9TQZvs6X0nOhxhMeFd8n+U9xsMcB1Tm8zQZ5ZaDxGSqmPGzLrgtOvLJV9f8ULQe9jFRZW0pKYNvUKbfaBNVpL4aSiFTw1ClHfLurUUTarUwKd49qZsCbuYTzoMhWiD1wg93R73Oh+B9wjy/5oJTtJsDSrNQ8zu1b/1c/sIq8niB35Ueq+4TWs9yXgkMak9v5X+bvxMi6bjqHJCOARk/SeLJKSscRSVEQ4zQAUQZGkKXWuM83yih0p0MgyGWoZMBoKQykA5b+wYgW3XqWF/A7TB/+LpwKH/JeYq2friHC8iY5ot2x3QdKhpN90HUGvl8nwJpc7bbxsU6umLCaerJALD9WPm1cbabbmk69/88BI3JLpDFyX0fG0DaKwqcm6DJuyF+IHgBY/zmHocCt6hNp8dYclDvdYTY29VW6KNVRivJPLFmfw7/7MHprsPvBRR1v86NOwfIjVVqXyfI/SWuKgHTBC/vJU8p4AVO97tm6seT9biColUpjHRrs+b+9j0BnG22KTCvMfnVNWh/GBC7sdRy7ZyHOsGasSYs5OtZYdMboulnYlwVfUsSPH1wrTZz6/2onW1JM0gn06LJL0QFCXABenmcQuoLruVFqmlGyTRjeflHjXmf7eHZW+p0NdA98E/rl+zD2wbeLPkUSAE2KazJtW/5UURlnQHLWxfNfic6q27tw09xiOS/s+8OXi9zcp+nDJEMNutHj6S6aMljR24CJfHSf832AMM3lLd4wQCO5tsFh7Q7TnaJiEBEVhLuuPWfM2VIMyNXN0mXtoYd2UwdVsf0ct3cGVvvRwnZdhR1FUfWGZkPo47ze2t5xFjuxT/68NXWTF+lYKJ/r/ROq6TgslULBQ5Hi2Z41DUoOP32RQoQ2uOl47mnVd5nD4BNHhF+LgExIxhRi3v8vhtWgQQTSTLJUbaQdtgB4phVT9Rp+Z2yVXKc2VXG4wJ0Sq5ha7rqC9HWheF/ifNq6rAthSLU+9BwcDJqSDQLl3FkG7H8zMC1/ZUkPb1EgLI1z7axAo9SWdbciL+qXqpl9uh2SRcJIgauNY6MoOn+Z0Hi24JFvP2NWExetzReBt46wJg2E0TwiJTXPGs4c6lqMfU53pYmksWOZN5Z1Yq1wfNJRaalY4g5dE1XhRsixXN1ce40u9uV5w7GpZULLyfL1gukDAkORPQw76j8KkMBmFLQ8JZ81P7Rme2MpRLleT1LSqGKwl9E3QsX0Tvp0HePWjYF9pGTbhxs4cO+2W4+e7houMXVMl0/EPWZrqe0CNGTOG4L+A9WJ1zaz+DhPyibyV0ghNC0pctnQA8hFQp8lVQFiivou8wmqhHkMUebyMn/GVbghyD9wP1mPXnkJPIb1J3BwP49PfdNxqnImDAwWFNlfbJyLS3yDRZOF5iprGSBSS1NH7whMfJTxzAQdMIF8hNO/Sfcz/S1MCsQrCFDAM4+s433oBI3MgWjqezitnpTKSxsARt0/rbyu1+Ylp0J8MU391x84kU+v5bTiZ7JwrFIclZRJ1M1GBD8ygbH9xatISyHN9Z5mUYiRr0ll2DGK44vb2oaDlpnQIDqXwOevXi5XTV8EvVxb/r2iDGK1UfaOEaZN2oJPk3Oz+UXbo4UZ7z6jwvbMcHTofhHzS888+OfFC9PPELMV3MbPghwcZ+zvvWyk7l9fkprzQ1et+YeCCWjCTf69tjbkVr0E0BNYYsbPLGKr2GmP61ETWJNuumWy+vWoJXqbugwtxlXdvyavQN5I+rLw5KKtXGKI9CQZZgxGbSyXX3a560fBSAokO5OBayurlbkXriAzkVC5xsBnkdv7VSzqEWlTJTlLQyg15L4vNbh0yDa/zeWqD65nSGVlFlZz5WRG0qZ6DWZbwePeDMlglW5GF+yDmqcYl8bhpXNzFQ8nmj0YOyIhXvoVdIiYKaZqQp5N4WOxX59UbYmVkO5oOx0VNAJ8BjZgJI0j8XZ92H62niwfGxPBllz5wLE/K4LeOfa+szV9lSI2HSaZQfk4IznQyKrauJME2pM5KXhP9IDcikwaMHv6CmGaB6I3EJLTfrXv9WfNukpbBQi/3EFyZuTlxiCv2nJRx5CyEHSicpNGK7hnIbS/Mk5/ABP3UdPqCzTUIFycMW8eRhfHBfom/aHsZ2S54eoXr03cLXrUUx6CtpqmJRfFaH72IXTSOND/HjWW1uItjJyQ1SjNojSLdH/MsrsgsDUIfj0m5+B3BeQwdjgtNTRHEVOt2HwFvHTOzyYVVUiaYPYGhZNRVv2tZTdSmAtzbapS/SWFL6Vs8I5XUsEPnNMaD79tgPfxt3pSywk8zd8GDyROKSBFVa8tPaUL67C2Pe/6f+rtdlc220d3hSaEcfyFpwI5uzq1PhFeNPN+IwYI1i4aR2faDtxL17opNYn6PMg7YAhcSbY7T2wS4IDRBdLc2NXN/iSTqSOdNnxzsmc7KDU65SmnzamS7ABYFRXPX9m+zHiZ/0WMjcgxAkND4JUiBRAgOdr5qGaSyzh2CNA2HGKvuPhnEnbD60d0XdQZZkr8BKLK6TlpWj9ANGsSML4NrFzNL7HhC0F+9YoOaQI0HRu8wVq8E8PWAidXMC8AB3ENr0JNIL5W2e5eaN9tGRd+tOMiI+ifOiwnsPPTowQ7uQS0pJhqiIDzwDdsfh0LTfVyKWtKaKMMRDNr6OCbT/6Jg/jUC0VobsvA+35+L4GHAfDah+97bUDa3R7+4p59urTgpoGJ1mVPREqGtuP5foSsjLL8n9jXxuPznGrVdVLLR3vjSy/MjcQ4MIiQb3EhkQHNtkiLuT3ENAvg8SElSzpChNTnDgiw4CQR/vKGadLBy5G0CNoxJN4EhDFarOVJPloMkltBkwXxzjp8Ioe3DmUcY6Xtq5w96E2RIhReKG5TWmt1AHzsR7Vw3owWVUJfAgziNQ+0SLxq23UWtCgZ0pRETQ/kttx1Aw9mekqDYnSzAkg0rw7BrhS2YHrURxytQtIgeyYLNHjT0X6+Q+OMt3rtxnLTu+eulAuDkECPBzNbIzTYs2XwkLOKVVnPFAfDan5bi0RCl+04AkxEQIhmYhP+M773IUqx1vORfy7nwy+r+bj13RS9Yzm32kVFd/Z1cZ6UW9GjOWANHlVfIfLmwFEoIiRGyE8y1A5/ikui9GvAPhj6zL4rHVFO9U963vHcNUZFiuZyTEtRH9MBcozKHjklkbV7zBbIcZe639mknPD+n15pZUMbILnObuMul4FIE9tl+IOlEiQGrEYU+oWac5TB4tk3nM9rkl3m8nr2TKJ/csOueuoBVu4Ez3W/N4zLBe0h+r5MgNVLoh+aNkx2Osk1tRdMAl6j+lL62CsoV3RHEG3av24T5+9v2FpfaSP9x7LOcQ7ErvNR4LEdebplY9JCl2RQiQkNFQhkEv99wOQlrTTzIih58wU0qONQ/gsYG4txr7TOvkpNrpKnX20W4c2wb8uex+X9d71PJtu4aFZGYlCyUYPhzT9ysAQHtymU6boGd6Mr+zgtpDJzPz+inkJCiv/TbeDjNqdmfIe2EcNTmWB2MYqQ0Of0rwfUCw0c08V6W8kg5hNcJ+m9Q8g28kx553n716IS0TU0/H50BBf3hbTc9PVArYkV3te9pZfJyxBu6CXGohT+RpRs+teSbAk9SZl2HhfZ/P1nXnUvgs1X8tvIIoRNFTphkDkMpm5tenrckhkyBCFrzama4/U8w+urgEptPb4k46fkXg/jjmZyNtFzRZNoUcvRKt6O5pt8kAACF+7oQthk0lql1M/iC6YHSgUN5GKxqqcMjQmcCkbroxjlF2oRENhGClzfsmhO+sGjVALJK91w0Q3wZFkvk6wW6UU9AkwR7OzdEuWErmm/tYqgnLIHDxzlqc5MQv7IqbrAaMKeHFEFxt3kQJhHyLVzJRXas8I8t3mcdPTYChg0e1CwD4NR2mof4Q8Mr3ca+gWNEEofBA+nWqOqsr3/1i0rkvW6Y6zyYMHxNYUC6rQ==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"MOKTaZuxFYOGz7IPioq2uQo\", \"usageMetadata\": {\"candidatesTokenCount\": 13, \"promptTokenCount\": 36, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 36}], \"thoughtsTokenCount\": 801, \"totalTokenCount\": 850}}"
+  }
+}

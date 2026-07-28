@@ -1,0 +1,16 @@
+﻿[package]
+name = "aimux-stream"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Streaming primitives for aimux"
+
+[dependencies]
+futures = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+pin-project-lite = { workspace = true }
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

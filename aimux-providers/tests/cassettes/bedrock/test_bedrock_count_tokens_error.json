@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_count_tokens_error",
+  "request": {
+    "path": "/model/does-not-exist-model-v1%3A0/count-tokens",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'87ceac16-7e88-4a33-89cd-d505c87f36cd'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "103",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"message\": \"The provided model identifier is invalid.\"}"
+  }
+}

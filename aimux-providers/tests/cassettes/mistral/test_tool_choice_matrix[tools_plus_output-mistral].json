@@ -1,0 +1,84 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_tool_choice_matrix[tools_plus_output-mistral]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "680",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Get weather for Paris and summarize",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-large-latest",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "any",
+      "tools": [
+        {
+          "function": {
+            "description": "Get the current weather for a city.",
+            "name": "get_weather",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          }
+        },
+        {
+          "function": {
+            "description": "The final response which ends this conversation",
+            "name": "final_result",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city",
+                "summary"
+              ],
+              "title": "CityInfo",
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019c0b9d-2c0f-7737-a0e2-85f22d375c9a",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"message\": {\"content\": \"\", \"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{\\\"city\\\": \\\"Paris\\\"}\", \"name\": \"get_weather\"}, \"id\": \"rHU0eZiMa\", \"index\": 0}]}}], \"created\": 1769721375, \"id\": \"50fb748699f4490fa9a67f656fd878d6\", \"model\": \"mistral-large-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 12, \"num_cached_tokens\": 151, \"prompt_tokens\": 152, \"total_tokens\": 164}}"
+  }
+}

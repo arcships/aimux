@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_anthropic_tool_result_followed_by_document_accepted",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'9fd93467-ca23-4d75-b0cc-29664c1af4fd'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "750",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2100}, \"output\": {\"message\": {\"content\": [{\"text\": \"The document is titled \\\"Document 1.txt\\\" and contains only the text:\\n\\n**\\\"Dummy TXT file\\\"**\\n\\nIt appears to be a placeholder or test file with no substantial content.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 658, \"outputTokens\": 45, \"serverToolUsage\": {}, \"totalTokens\": 703}}"
+  }
+}

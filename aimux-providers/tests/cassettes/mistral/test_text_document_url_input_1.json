@@ -1,0 +1,50 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_text_document_url_input_1",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "6551",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is the main content on this document, in one sentence?",
+              "type": "text"
+            },
+            {
+              "text": "-----BEGIN FILE id=\"8c5d09\" type=\"text/plain\"-----\nThe following are the graphical (non-control) characters defined by\nISO 8859-1 (1987).  Descriptions in words aren't all that helpful,\nbut they're the best we can do in text.  A graphics file illustrating\nthe character set should be available from the same archive as this\nfile.\n\nHex Description                 Hex Description\n\n20  SPACE\n21  EXCLAMATION MARK            A1  INVERTED EXCLAMATION MARK\n22  QUOTATION MARK              A2  CENT SIGN\n23  NUMBER SIGN                 A3  POUND SIGN\n24  DOLLAR SIGN                 A4  CURRENCY SIGN\n25  PERCENT SIGN                A5  YEN SIGN\n26  AMPERSAND                   A6  BROKEN BAR\n27  APOSTROPHE                  A7  SECTION SIGN\n28  LEFT PARENTHESIS            A8  DIAERESIS\n29  RIGHT PARENTHESIS           A9  COPYRIGHT SIGN\n2A  ASTERISK                    AA  FEMININE ORDINAL INDICATOR\n2B  PLUS SIGN                   AB  LEFT-POINTING DOUBLE ANGLE QUOTATION MARK\n2C  COMMA                       AC  NOT SIGN\n2D  HYPHEN-MINUS                AD  SOFT HYPHEN\n2E  FULL STOP                   AE  REGISTERED SIGN\n2F  SOLIDUS                     AF  OVERLINE\n30  DIGIT ZERO                  B0  DEGREE SIGN\n31  DIGIT ONE                   B1  PLUS-MINUS SIGN\n32  DIGIT TWO                   B2  SUPERSCRIPT TWO\n33  DIGIT THREE                 B3  SUPERSCRIPT THREE\n34  DIGIT FOUR                  B4  ACUTE ACCENT\n35  DIGIT FIVE                  B5  MICRO SIGN\n36  DIGIT SIX                   B6  PILCROW SIGN\n37  DIGIT SEVEN                 B7  MIDDLE DOT\n38  DIGIT EIGHT                 B8  CEDILLA\n39  DIGIT NINE                  B9  SUPERSCRIPT ONE\n3A  COLON                       BA  MASCULINE ORDINAL INDICATOR\n3B  SEMICOLON                   BB  RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK\n3C  LESS-THAN SIGN              BC  VULGAR FRACTION ONE QUARTER\n3D  EQUALS SIGN                 BD  VULGAR FRACTION ONE HALF\n3E  GREATER-THAN SIGN           BE  VULGAR FRACTION THREE QUARTERS\n3F  QUESTION MARK               BF  INVERTED QUESTION MARK\n40  COMMERCIAL AT               C0  CAPITAL LETTER A WITH GRAVE\n41  CAPITAL LETTER A            C1  CAPITAL LETTER A WITH ACUTE\n42  CAPITAL LETTER B            C2  CAPITAL LETTER A WITH CIRCUMFLEX\n43  CAPITAL LETTER C            C3  CAPITAL LETTER A WITH TILDE\n44  CAPITAL LETTER D            C4  CAPITAL LETTER A WITH DIAERESIS\n45  CAPITAL LETTER E            C5  CAPITAL LETTER A WITH RING ABOVE\n46  CAPITAL LETTER F            C6  CAPITAL LETTER AE\n47  CAPITAL LETTER G            C7  CAPITAL LETTER C WITH CEDILLA\n48  CAPITAL LETTER H            C8  CAPITAL LETTER E WITH GRAVE\n49  CAPITAL LETTER I            C9  CAPITAL LETTER E WITH ACUTE\n4A  CAPITAL LETTER J            CA  CAPITAL LETTER E WITH CIRCUMFLEX\n4B  CAPITAL LETTER K            CB  CAPITAL LETTER E WITH DIAERESIS\n4C  CAPITAL LETTER L            CC  CAPITAL LETTER I WITH GRAVE\n4D  CAPITAL LETTER M            CD  CAPITAL LETTER I WITH ACUTE\n4E  CAPITAL LETTER N            CE  CAPITAL LETTER I WITH CIRCUMFLEX\n4F  CAPITAL LETTER O            CF  CAPITAL LETTER I WITH DIAERESIS\n50  CAPITAL LETTER P            D0  CAPITAL LETTER ETH (Icelandic)\n51  CAPITAL LETTER Q            D1  CAPITAL LETTER N WITH TILDE\n52  CAPITAL LETTER R            D2  CAPITAL LETTER O WITH GRAVE\n53  CAPITAL LETTER S            D3  CAPITAL LETTER O WITH ACUTE\n54  CAPITAL LETTER T            D4  CAPITAL LETTER O WITH CIRCUMFLEX\n55  CAPITAL LETTER U            D5  CAPITAL LETTER O WITH TILDE\n56  CAPITAL LETTER V            D6  CAPITAL LETTER O WITH DIAERESIS\n57  CAPITAL LETTER W            D7  MULTIPLICATION SIGN\n58  CAPITAL LETTER X            D8  CAPITAL LETTER O WITH STROKE\n59  CAPITAL LETTER Y            D9  CAPITAL LETTER U WITH GRAVE\n5A  CAPITAL LETTER Z            DA  CAPITAL LETTER U WITH ACUTE\n5B  LEFT SQUARE BRACKET         DB  CAPITAL LETTER U WITH CIRCUMFLEX\n5C  REVERSE SOLIDUS             DC  CAPITAL LETTER U WITH DIAERESIS\n5D  RIGHT SQUARE BRACKET        DD  CAPITAL LETTER Y WITH ACUTE\n5E  CIRCUMFLEX ACCENT           DE  CAPITAL LETTER THORN (Icelandic)\n5F  LOW LINE                    DF  SMALL LETTER SHARP S (German)\n60  GRAVE ACCENT                E0  SMALL LETTER A WITH GRAVE\n61  SMALL LETTER A              E1  SMALL LETTER A WITH ACUTE\n62  SMALL LETTER B              E2  SMALL LETTER A WITH CIRCUMFLEX\n63  SMALL LETTER C              E3  SMALL LETTER A WITH TILDE\n64  SMALL LETTER D              E4  SMALL LETTER A WITH DIAERESIS\n65  SMALL LETTER E              E5  SMALL LETTER A WITH RING ABOVE\n66  SMALL LETTER F              E6  SMALL LETTER AE\n67  SMALL LETTER G              E7  SMALL LETTER C WITH CEDILLA\n68  SMALL LETTER H              E8  SMALL LETTER E WITH GRAVE\n69  SMALL LETTER I              E9  SMALL LETTER E WITH ACUTE\n6A  SMALL LETTER J              EA  SMALL LETTER E WITH CIRCUMFLEX\n6B  SMALL LETTER K              EB  SMALL LETTER E WITH DIAERESIS\n6C  SMALL LETTER L              EC  SMALL LETTER I WITH GRAVE\n6D  SMALL LETTER M              ED  SMALL LETTER I WITH ACUTE\n6E  SMALL LETTER N              EE  SMALL LETTER I WITH CIRCUMFLEX\n6F  SMALL LETTER O              EF  SMALL LETTER I WITH DIAERESIS\n70  SMALL LETTER P              F0  SMALL LETTER ETH (Icelandic)\n71  SMALL LETTER Q              F1  SMALL LETTER N WITH TILDE\n72  SMALL LETTER R              F2  SMALL LETTER O WITH GRAVE\n73  SMALL LETTER S              F3  SMALL LETTER O WITH ACUTE\n74  SMALL LETTER T              F4  SMALL LETTER O WITH CIRCUMFLEX\n75  SMALL LETTER U              F5  SMALL LETTER O WITH TILDE\n76  SMALL LETTER V              F6  SMALL LETTER O WITH DIAERESIS\n77  SMALL LETTER W              F7  DIVISION SIGN\n78  SMALL LETTER X              F8  SMALL LETTER O WITH STROKE\n79  SMALL LETTER Y              F9  SMALL LETTER U WITH GRAVE\n7A  SMALL LETTER Z              FA  SMALL LETTER U WITH ACUTE\n7B  LEFT CURLY BRACKET          FB  SMALL LETTER U WITH CIRCUMFLEX\n7C  VERTICAL LINE               FC  SMALL LETTER U WITH DIAERESIS\n7D  RIGHT CURLY BRACKET         FD  SMALL LETTER Y WITH ACUTE\n7E  TILDE                       FE  SMALL LETTER THORN (Icelandic)\n                                FF  SMALL LETTER Y WITH DIAERESIS\n\n-----END FILE id=\"8c5d09\"-----",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "mistral-large-latest",
+      "n": 1,
+      "stream": false,
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019f7225-9ec2-7a09-acc1-e6f88a765738",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"This document lists the graphical (non-control) characters defined by the **ISO 8859-1 (1987) character encoding standard**, including their hexadecimal codes and descriptions.\", \"role\": \"assistant\", \"tool_calls\": null}}], \"created\": 1784326496, \"id\": \"e901c8cbc6d944b89a5030bc5b40afee\", \"model\": \"mistral-large-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 42, \"prompt_tokens\": 2297, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 2339}}"
+  }
+}

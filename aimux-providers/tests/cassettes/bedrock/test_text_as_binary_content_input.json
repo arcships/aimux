@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_text_as_binary_content_input",
+  "request": {
+    "path": "/model/us.amazon.nova-pro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'd290ddcb-1dcf-4c9c-a165-f8e6ebb77b1b'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "288",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2174}, \"output\": {\"message\": {\"content\": [{\"text\": \"The document you're referring to appears to be a test document, which means its primary purpose is likely to serve as an example or a placeholder rather than containing substantive content. Test documents are commonly used for various purposes such as:\\n\\n1. **Software Testing**: To verify that a system can correctly handle, display, or process documents.\\n2. **Design Mockups**: To illustrate how a document might look in a particular format or style.\\n3. **Training Materials**: To provide examples for instructional purposes.\\n4. **Placeholders**: To fill space in a system or application where real content will eventually be placed.\\n\\nSince this is a test document, it probably doesn't contain any meaningful or specific information beyond what is necessary to serve its testing purpose. If you have specific questions about the format, structure, or any particular element within the document, feel free to ask!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 21, \"outputTokens\": 175, \"totalTokens\": 196}}"
+  }
+}

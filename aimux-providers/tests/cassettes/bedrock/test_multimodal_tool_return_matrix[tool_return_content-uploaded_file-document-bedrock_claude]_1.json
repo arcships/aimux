@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-document-bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'2ec96c29-940e-4352-96a9-0165ae680c38'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "891",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"message\": \"The model returned the following errors: messages.2.content.2.document.source.type: Field required\"}"
+  }
+}

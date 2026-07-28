@@ -1,0 +1,64 @@
+{
+  "source": "rig (MIT)",
+  "provider": "openrouter",
+  "scenario": "batch_multi_extract_chain_0",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are an AI assistant whose purpose is to extract structured data from the provided text.\nYou will have access to a `submit` function that defines the structure of the data to extract from the provided text.\nUse the `submit` function to submit the structured data.\nBe sure to fill out every field and ALWAYS CALL THE `submit` function, even with default values!!!.\n                \n\n=============== ADDITIONAL INSTRUCTIONS ===============\nExtract names from the given text.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "I'm going to the store to buy milk and bread.",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-4o-mini",
+      "tool_choice": "required",
+      "tools": [
+        {
+          "function": {
+            "description": "Submit the structured data you extracted from the provided text.",
+            "name": "submit",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "properties": {
+                "names": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "names"
+              ],
+              "title": "Names",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":null,\"reasoning\":null,\"refusal\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"names\\\":[]}\",\"name\":\"submit\"},\"id\":\"call_REDACTED_1\",\"index\":0,\"type\":\"function\"}]},\"native_finish_reason\":\"tool_calls\"}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o-mini\",\"object\":\"chat.completion\",\"provider\":\"OpenAI\",\"service_tier\":null,\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_tokens\":12,\"completion_tokens_details\":{\"audio_tokens\":0,\"image_tokens\":0,\"reasoning_tokens\":0},\"cost\":0.00003015,\"cost_details\":{\"upstream_inference_completions_cost\":7.2e-6,\"upstream_inference_cost\":0.00003015,\"upstream_inference_prompt_cost\":0.00002295},\"is_byok\":false,\"prompt_tokens\":153,\"prompt_tokens_details\":{\"audio_tokens\":0,\"cache_write_tokens\":0,\"cached_tokens\":0,\"video_tokens\":0},\"total_tokens\":165}}"
+  }
+}

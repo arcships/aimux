@@ -1,0 +1,85 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_tool_use_failed_error_1",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1271",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=HQGTURxq.ABKK5N.52ZTgVrLU4K9GpykjN9SFqzKTjw-1771434738.0598443-1.0.1.1-H9P7hzlzqAAxV9v8iF5AKL.au7Xomt.Rgkf1HC.N_5DEOxVMO_ouqSp.32Ucj46nc1bZiTXmGAzpLweq4vKkde2bCfPaNtNSlW8cUqmnAXQgy6pdJ6fJIoUgJnSahpsc",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Be concise. Never use pretty double quotes, just regular ones.",
+          "role": "system"
+        },
+        {
+          "content": "Please call the \"get_something_by_name\" tool with non-existent parameters to test error handling; on the second try you can use valid args",
+          "role": "user"
+        },
+        {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"foo\":\"bar\"}",
+                "name": "get_something_by_name"
+              },
+              "id": "pyd_ai_445dbde6c4764cafb5782bb928ef6c2c",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "2 validation errors:\n```json\n[\n  {\n    \"type\": \"missing\",\n    \"loc\": [\n      \"name\"\n    ],\n    \"msg\": \"Field required\",\n    \"input\": {\n      \"foo\": \"bar\"\n    }\n  },\n  {\n    \"type\": \"extra_forbidden\",\n    \"loc\": [\n      \"foo\"\n    ],\n    \"msg\": \"Extra inputs are not permitted\",\n    \"input\": \"bar\"\n  }\n]\n```\n\nFix the errors and try again.",
+          "role": "tool",
+          "tool_call_id": "pyd_ai_445dbde6c4764cafb5782bb928ef6c2c"
+        }
+      ],
+      "model": "openai/gpt-oss-120b",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_something_by_name",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"logprobs\": null, \"message\": {\"reasoning\": \"We need to call with correct param: name field. Use some name, e.g., \\\"test\\\".\", \"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{\\\"name\\\":\\\"test\\\"}\", \"name\": \"get_something_by_name\"}, \"id\": \"fc_311ba17b-89f9-48d3-8fd9-7e74a1264855\", \"type\": \"function\"}]}}], \"created\": 1771434738, \"id\": \"chatcmpl-b089cbdd-ca65-41a1-9409-639d476f87c0\", \"model\": \"openai/gpt-oss-120b\", \"object\": \"chat.completion\", \"service_tier\": \"on_demand\", \"system_fingerprint\": \"fp_699d877a58\", \"usage\": {\"completion_time\": 0.110362968, \"completion_tokens\": 52, \"completion_tokens_details\": {\"reasoning_tokens\": 22}, \"prompt_time\": 0.014400533, \"prompt_tokens\": 301, \"queue_time\": 0.005000903, \"total_time\": 0.124763501, \"total_tokens\": 353}, \"usage_breakdown\": null, \"x_groq\": {\"id\": \"req_01khrvt0x4e8cs577wtgjk872s\", \"seed\": 47864733}}"
+  }
+}

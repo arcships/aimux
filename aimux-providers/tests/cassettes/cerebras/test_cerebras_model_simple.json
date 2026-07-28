@@ -1,0 +1,39 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "cerebras",
+  "scenario": "test_cerebras_model_simple",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "96",
+      "content-type": "application/json",
+      "host": "api.cerebras.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 2 + 2?",
+          "role": "user"
+        }
+      ],
+      "model": "llama-3.3-70b",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "inference-id": "chatcmpl-5af19e85-b8e3-4836-8486-5f2b0b250c8d",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=3600; includeSubDomains"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"2 + 2 = 4.\", \"role\": \"assistant\"}}], \"created\": 1764196886, \"id\": \"chatcmpl-5af19e85-b8e3-4836-8486-5f2b0b250c8d\", \"model\": \"llama-3.3-70b\", \"object\": \"chat.completion\", \"system_fingerprint\": \"fp_39d7524db11a51c65436\", \"time_info\": {\"completion_time\": 0.003934382, \"created\": 1764196886.043911, \"prompt_time\": 0.003177936, \"queue_time\": 0.04307491, \"total_time\": 0.051694631576538086}, \"usage\": {\"completion_tokens\": 9, \"prompt_tokens\": 43, \"total_tokens\": 52}}"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "cerebras",
+  "scenario": "test_known_model_names",
+  "request": {
+    "path": "/v1/models",
+    "method": "GET",
+    "headers": {
+      "accept": "application/json",
+      "connection": "keep-alive",
+      "host": "api.cerebras.ai"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "content-type": "application/json",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=3600; includeSubDomains"
+    },
+    "body": "{\"data\": [{\"created\": 0, \"id\": \"zai-glm-4.7\", \"object\": \"model\", \"owned_by\": \"Cerebras\"}, {\"created\": 0, \"id\": \"qwen-3-235b-a22b-instruct-2507\", \"object\": \"model\", \"owned_by\": \"Cerebras\"}, {\"created\": 0, \"id\": \"gpt-oss-120b\", \"object\": \"model\", \"owned_by\": \"Cerebras\"}, {\"created\": 0, \"id\": \"llama3.1-8b\", \"object\": \"model\", \"owned_by\": \"Cerebras\"}], \"object\": \"list\"}"
+  }
+}

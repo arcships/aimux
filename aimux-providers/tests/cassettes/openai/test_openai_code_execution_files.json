@@ -1,0 +1,32 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_code_execution_files",
+  "request": {
+    "path": "/v1/files",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "296",
+      "content-type": "multipart/form-data; boundary=7b51ebdb9f9704dab31d90e3f5eda002",
+      "host": "api.openai.com"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "233",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"bytes\": 30, \"created_at\": 1782404523, \"expires_at\": null, \"filename\": \"data.csv\", \"id\": \"file-MDLqXZjNjNeLwwaRACNDNf\", \"object\": \"file\", \"purpose\": \"assistants\", \"status\": \"processed\", \"status_details\": null}"
+  }
+}

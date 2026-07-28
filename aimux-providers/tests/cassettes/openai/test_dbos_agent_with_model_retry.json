@@ -1,0 +1,65 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_dbos_agent_with_model_retry",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "347",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is the weather in CDMX?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_weather_in_city",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            },
+            "strict": true
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "327",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"logprobs\": null, \"message\": {\"annotations\": [], \"content\": null, \"refusal\": null, \"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{\\\"city\\\":\\\"CDMX\\\"}\", \"name\": \"get_weather_in_city\"}, \"id\": \"call_fFAB8MNL3tUdfNIIdsIJTo0H\", \"type\": \"function\"}]}}], \"created\": 1756423190, \"id\": \"chatcmpl-C9gCExiXILzHBQ4ZuERdiURkHUZZM\", \"model\": \"gpt-4o-2024-08-06\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": \"fp_ea40d5097a\", \"usage\": {\"completion_tokens\": 17, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 47, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 64}}"
+  }
+}

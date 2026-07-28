@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_inference_profile_converse",
+  "request": {
+    "path": "/model/arn%3Aaws%3Abedrock%3Aus-east-1%3A123456789012%3Aapplication-inference-profile%2Fmi1dadi0g15f/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'2d3466c3-b989-4695-93e1-1d2caa52761d'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "127",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 257}, \"output\": {\"message\": {\"content\": [{\"text\": \"Hello\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 8, \"outputTokens\": 2, \"serverToolUsage\": {}, \"totalTokens\": 10}}"
+  }
+}

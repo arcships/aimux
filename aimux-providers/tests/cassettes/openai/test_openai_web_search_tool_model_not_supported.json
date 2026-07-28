@@ -1,0 +1,48 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_web_search_tool_model_not_supported",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "203",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "You are a helpful assistant.",
+          "role": "system"
+        },
+        {
+          "content": "What day is today?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o",
+      "stream": false,
+      "web_search_options": {
+        "search_context_size": "low"
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "23",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"error\": {\"code\": null, \"message\": \"Web search options not supported with this model.\", \"param\": \"web_search_options\", \"type\": \"invalid_request_error\"}}"
+  }
+}

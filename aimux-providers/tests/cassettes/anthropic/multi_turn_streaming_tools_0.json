@@ -1,0 +1,140 @@
+{
+  "source": "rig (MIT)",
+  "provider": "anthropic",
+  "scenario": "multi_turn_streaming_tools_0",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json",
+      "anthropic-version": "2023-06-01"
+    },
+    "body": {
+      "max_tokens": 64000,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Calculate ((10 - 4) * (3 + 5)) / 3 and describe the result in one short paragraph.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-6",
+      "stream": true,
+      "system": [
+        {
+          "text": "You must use tools for arithmetic.",
+          "type": "text"
+        }
+      ],
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "Add x and y together",
+          "input_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "x": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "y": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "title": "OperationArgs",
+            "type": "object"
+          },
+          "name": "add"
+        },
+        {
+          "description": "Subtract y from x (i.e.: x - y)",
+          "input_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "x": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "y": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "title": "OperationArgs",
+            "type": "object"
+          },
+          "name": "subtract"
+        },
+        {
+          "description": "Compute the product of x and y (i.e.: x * y).",
+          "input_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "x": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "y": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "title": "OperationArgs",
+            "type": "object"
+          },
+          "name": "multiply"
+        },
+        {
+          "description": "Compute the quotient of x and y.",
+          "input_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "x": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "y": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "title": "OperationArgs",
+            "type": "object"
+          },
+          "name": "divide"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "body": "event: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"msg_REDACTED_1\",\"model\":\"claude-sonnet-4-6\",\"role\":\"assistant\",\"stop_details\":null,\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"inference_geo\":\"global\",\"input_tokens\":1001,\"output_tokens\":2,\"service_tier\":\"standard\"}},\"type\":\"message_start\"}\n\nevent: content_block_start\ndata: {\"content_block\":{\"text\":\"\",\"type\":\"text\"},\"index\":0,\"type\":\"content_block_start\"}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"text\":\"I'll\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"text\":\" solve this step by step! Let me start by computing the two independent sub-expressions *\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"text\":\"*(10 - 4)** and **(3 + 5)** simultaneously first.\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\nevent: content_block_stop\ndata: {\"index\":0,\"type\":\"content_block_stop\"}\n\nevent: content_block_start\ndata: {\"content_block\":{\"caller\":{\"type\":\"direct\"},\"id\":\"toolu_REDACTED_1\",\"input\":{},\"name\":\"subtract\",\"type\":\"tool_use\"},\"index\":1,\"type\":\"content_block_start\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"{\\\"x\\\": 10\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\", \\\"y\\\":\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\" 4}\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\nevent: content_block_stop\ndata: {\"index\":1,\"type\":\"content_block_stop\"}\n\nevent: content_block_start\ndata: {\"content_block\":{\"caller\":{\"type\":\"direct\"},\"id\":\"toolu_REDACTED_2\",\"input\":{},\"name\":\"add\",\"type\":\"tool_use\"},\"index\":2,\"type\":\"content_block_start\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"\",\"type\":\"input_json_delta\"},\"index\":2,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"{\\\"x\\\": 3\",\"type\":\"input_json_delta\"},\"index\":2,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\", \\\"y\",\"type\":\"input_json_delta\"},\"index\":2,\"type\":\"content_block_delta\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"\\\": 5}\",\"type\":\"input_json_delta\"},\"index\":2,\"type\":\"content_block_delta\"}\n\nevent: content_block_stop\ndata: {\"index\":2,\"type\":\"content_block_stop\"}\n\nevent: message_delta\ndata: {\"delta\":{\"stop_details\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"type\":\"message_delta\",\"usage\":{\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"input_tokens\":1001,\"output_tokens\":161}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+  }
+}

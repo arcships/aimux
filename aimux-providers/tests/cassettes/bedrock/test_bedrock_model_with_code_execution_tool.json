@@ -1,0 +1,25 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_with_code_execution_tool",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'a9adf8c1-22ee-47fc-9cf2-ef831382043c'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "501",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "server-timing": "cfReqDur;dur=1778.436"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1604}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"snippet\": \"1234 * 5678\"}, \"name\": \"nova_code_interpreter\", \"toolUseId\": \"tooluse_dV5ehBNfl1hUE-UTM9cIww\", \"type\": \"server_tool_use\"}}, {\"toolResult\": {\"content\": [{\"json\": {\"exitCode\": 0, \"isError\": false, \"stdErr\": \"\", \"stdOut\": \"7006652\"}}], \"status\": \"success\", \"toolUseId\": \"tooluse_dV5ehBNfl1hUE-UTM9cIww\", \"type\": \"nova_code_interpreter_result\"}}, {\"toolUse\": {\"input\": {\"result\": 7006652.0}, \"name\": \"final_result\", \"toolUseId\": \"tooluse_DaRsVjwcShCI_3pOsIsWqg\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"inputTokens\": 1002, \"outputTokens\": 59, \"serverToolUsage\": {}, \"totalTokens\": 1061}}"
+  }
+}

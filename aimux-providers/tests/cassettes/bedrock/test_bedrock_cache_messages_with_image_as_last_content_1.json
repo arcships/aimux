@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_cache_messages_with_image_as_last_content_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'fe3747b8-a1fe-4b1d-9956-958bf3ac40b4'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "138167",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3447}, \"output\": {\"message\": {\"content\": [{\"text\": \"The image dimensions are **597 \\u00d7 597 pixels** (a perfect square).\\n\\nThis is a relatively small to medium-sized image by modern standards, suitable for web use, thumbnails, or social media posts, but not high-resolution enough for large-format printing.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheDetails\": [{\"inputTokens\": 297, \"ttl\": \"5m\"}], \"cacheReadInputTokenCount\": 2074, \"cacheReadInputTokens\": 2074, \"cacheWriteInputTokenCount\": 297, \"cacheWriteInputTokens\": 297, \"inputTokens\": 3, \"outputTokens\": 61, \"serverToolUsage\": {}, \"totalTokens\": 2435}}"
+  }
+}

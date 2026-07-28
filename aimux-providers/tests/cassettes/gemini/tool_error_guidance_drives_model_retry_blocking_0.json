@@ -1,0 +1,68 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "tool_error_guidance_drives_model_retry_blocking_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Look up the codeword for the red team.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You look up team codewords with the lookup_codeword tool. If the tool returns an error with guidance, follow that guidance and try again, then report the codeword you obtain.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Look up the secret codeword for a team.",
+              "name": "lookup_codeword",
+              "parameters": {
+                "properties": {
+                  "team": {
+                    "description": "The team name, lowercase",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "team"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"team\":\"red\"},\"name\":\"lookup_codeword\"},\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":16,\"promptTokenCount\":93,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":93}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":56,\"totalTokenCount\":165}}"
+  }
+}

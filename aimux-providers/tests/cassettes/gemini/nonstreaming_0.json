@@ -1,0 +1,74 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "nonstreaming_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "I'm planning a trip. What is the current weather in Tokyo, Japan? Based on the weather conditions, should I pack an umbrella or sunscreen? Use the get_weather tool to check before answering.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "thinkingConfig": {
+          "includeThoughts": true,
+          "thinkingBudget": 4096
+        }
+      },
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a weather assistant. You have access to a get_weather tool. You must call the get_weather tool for any weather question and never guess weather data. After receiving the tool result, provide a concise summary of the weather.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city. Must be called for weather questions.",
+              "name": "get_weather",
+              "parameters": {
+                "properties": {
+                  "city": {
+                    "description": "City name to get weather for",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"**Analyzing the Weather Query**\\n\\nOkay, so the user needs the current weather in Tokyo, and they're wondering about umbrella or sunscreen. Got it. This is straightforward. First, I need to call the `get_weather` tool. I'll pass \\\"Tokyo\\\" as the city parameter. That will give me the raw weather data. Once I have that, I can quickly distill the key information – the temperature, cloud cover, and probability of precipitation – and then formulate a clear recommendation for the user. Based on that data I will decide to suggest an umbrella, sunscreen, or both. Simple and direct. Let's get that weather data.\\n\",\"thought\":true},{\"functionCall\":{\"args\":{\"city\":\"Tokyo\"},\"name\":\"get_weather\"},\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":15,\"promptTokenCount\":144,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":144}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":98,\"totalTokenCount\":257}}"
+  }
+}

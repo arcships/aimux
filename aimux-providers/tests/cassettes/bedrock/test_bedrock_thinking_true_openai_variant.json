@@ -1,0 +1,27 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_thinking_true_openai_variant",
+  "request": {
+    "path": "/model/openai.gpt-oss-120b-1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "content-length": "190",
+      "content-type": "b'application/json'",
+      "user-agent": "b'Boto3/1.42.63 md/Botocore#1.42.63 ua/2.1 os/macos#25.0.0 md/arch#arm64 lang/python#3.12.12 md/pyimpl#CPython m/3,b,N,Z,D cfg/retry-mode#legacy Botocore/1.42.63'",
+      "amz-sdk-invocation-id": "b'7499ca95-3810-498d-b1f9-c03b9d49c24e'",
+      "amz-sdk-request": "b'attempt=1'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "date": "Thu, 14 May 2026 07:44:10 GMT",
+      "via": "1.1 google",
+      "x-amzn-requestid": "c46eb10b-f3d1-4838-bd57-8720009f5e0b"
+    },
+    "body": ""
+  }
+}

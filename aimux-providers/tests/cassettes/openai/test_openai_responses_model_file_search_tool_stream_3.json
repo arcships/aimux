@@ -1,0 +1,52 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_model_file_search_tool_stream_3",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "260",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=LZUzlDcZepc_37Mtq7t37OCgL92SO5bVsAK1Qd6UMRc-1764874066-1.0.1.1-ta3FeDiPXWoJbgvAO_0nr2DbLUDWBEhRYFxOhYQaebYZ9KArPzhAOyPvSKcR0H6dVuK7j5I_0_RqKd.8v92BzcMzYx3xJALz25EKFFU_AnE; _cfuvid=abg5ZnfnwjlpjpKjUKzrdli8AlYRqG1fuXPbjGI5FAk-1764874066398-0.0.1.1-604800000",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        }
+      ],
+      "instructions": "You are a helpful assistant.",
+      "model": "gpt-4o",
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "type": "file_search",
+          "vector_store_ids": [
+            "vs_6931d752e41c8191833fcaad1cf47055"
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "test-org",
+      "openai-processing-ms": "104",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

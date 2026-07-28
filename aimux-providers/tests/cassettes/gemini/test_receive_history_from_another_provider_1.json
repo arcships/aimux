@@ -1,0 +1,68 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_receive_history_from_another_provider_1",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "370",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "How much is 3 * 12390?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "I can calculate this for you using Python to ensure accuracy."
+            },
+            {
+              "text": "3 × 12390 = 37170"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "Multiplied by 12390"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "codeExecution": {}
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=3148",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"executableCode\": {\"code\": \"37170 * 12390\", \"id\": \"3u8s8qrk\", \"language\": \"PYTHON\"}, \"thoughtSignature\": \"EvIBCu8BAQw51sfvLo0OruZgsk+nk9cwj3xPxU5bu/+rXWIG7y5FdhPHP8AT2178yVguVTVlltwWpbvDvD4/6bGcapZAduF4uVS7lk6Gfe1yGFfip3AtSWf9fwXqmaxeprt/B74JOwgYBxD9KHc+Osl0jIsX8tUQ3RscPSbyjZKUG1BkDKO0nllA4MEGQeBn14OJIbZCbcCJOdOj7X+TywqK41vth6vsUApeI6fRVwBxZfvkwgiVaLa2AYJIezd+GH1G5SpGhNPYVPOlSVVqIRNPdmq5oHYiPN+Rspc93HFFkDZmVsP5vzzjYds+Ey6noAkcm8Q=\"}, {\"codeExecutionResult\": {\"id\": \"3u8s8qrk\", \"outcome\": \"OUTCOME_OK\"}}, {\"executableCode\": {\"code\": \"print(37170 * 12390)\", \"id\": \"sw1mur8k\", \"language\": \"PYTHON\"}, \"thoughtSignature\": \"Et8CCtwCAQw51sdTPVFbu350g/k4CBdOfR2weTmNfqBtRpI2ZB55iBf7O3w0QkIns17KKEmoruXs8Xn5a18hMqSvSQ9gJ8YzENZ9dRF9g9IyL8P5VNatXDxFHgaY7ThX4wFp/5mNn+CobuVpTxfhG7ONCjkVlv+Mtna5tijS7gPIJO5i2ja6WMWPAHXj68bv4XTq66bG1qmS9benKVimYYtkhB0L6tgBsfzsmWhmyjzC+vctqB0BAr93e20tZBshHzC76H8Xe7hkzOokQrUYECJgyVyaMKVpMjFWCtGr4+zxdvLYUXCac1DKKU1ztlakC2PoITyyrmj+6trO7fpTo1NbAinC7NJgKtDEwHTBD6SMmrAd7cap4MZ3KsmmLxo1r1Qs6g0szLPf22RPlJGkjT3peOo9nLkWq5I4qUF9i1L9KotqqA99q2WM9QGC1x76eyXIrUpsA2FVxSRtCnFbrwMy\"}, {\"codeExecutionResult\": {\"id\": \"sw1mur8k\", \"outcome\": \"OUTCOME_OK\", \"output\": \"460536300\\n\"}}, {\"text\": \"37,170 multiplied by 12,390 is **460,536,300**.\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"s1P6afbnGdzTz7IP3v-m4A0\", \"usageMetadata\": {\"candidatesTokenCount\": 82, \"promptTokenCount\": 343, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 277}], \"thoughtsTokenCount\": 159, \"toolUsePromptTokenCount\": 877, \"toolUsePromptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 877}], \"totalTokenCount\": 1461}}"
+  }
+}

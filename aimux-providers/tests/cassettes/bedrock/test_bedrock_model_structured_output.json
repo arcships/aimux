@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_structured_output",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'2653e012-c6a6-48cd-8f2f-f6cae6dcf5c7'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1052",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 401}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"city\": \"London\", \"date\": \"2022-01-01\"}, \"name\": \"temperature\", \"toolUseId\": \"tooluse_Mj06ft-ITJik1Otgpkc1uA\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"inputTokens\": 571, \"outputTokens\": 22, \"serverToolUsage\": {}, \"totalTokens\": 593}}"
+  }
+}

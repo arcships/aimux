@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_instructions_only_then_message_history[claude-sonnet-4-5]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'c0b46922-79aa-46dc-900f-4b7b8a6c7c6d'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "278",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1699}, \"output\": {\"message\": {\"content\": [{\"text\": \"Goodbye! Take care!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 32, \"outputTokens\": 9, \"serverToolUsage\": {}, \"totalTokens\": 41}}"
+  }
+}

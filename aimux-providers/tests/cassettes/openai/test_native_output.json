@@ -1,0 +1,77 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_native_output",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "533",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the largest city in the user country?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o",
+      "stream": false,
+      "text": {
+        "format": {
+          "name": "CityLocation",
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city",
+              "country"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "",
+          "name": "get_user_country",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "636",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"created_at\": 1749516047, \"error\": null, \"id\": \"resp_68477f0f220081a1a621d6bcdc7f31a50b8591d9001d2329\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"metadata\": {}, \"model\": \"gpt-4o-2024-08-06\", \"object\": \"response\", \"output\": [{\"arguments\": \"{}\", \"call_id\": \"call_tTAThu8l2S9hNky2krdwijGP\", \"id\": \"fc_68477f0fa7c081a19a525f7c6f180f310b8591d9001d2329\", \"name\": \"get_user_country\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"description\": null, \"name\": \"CityLocation\", \"schema\": {\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}}, \"required\": [\"city\", \"country\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"json_schema\"}}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_user_country\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 66, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 12, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 78}, \"user\": null}"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "source": "hand-written fixture",
+  "provider": "openai",
+  "scenario": "list_models",
+  "request": {
+    "path": "/v1/models",
+    "method": "GET",
+    "headers": {},
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": { "content-type": "application/json" },
+    "body": "{\"object\":\"list\",\"data\":[{\"id\":\"gpt-4o\",\"object\":\"model\",\"created\":1715367049,\"owned_by\":\"openai\"},{\"id\":\"gpt-4o-mini\",\"object\":\"model\",\"created\":1720695837,\"owned_by\":\"openai\"}]}"
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_tool_search_eval[google]_5",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "2724",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the current stock price for AAPL?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "queries": [
+                    "stock price",
+                    "financial data",
+                    "market data"
+                  ]
+                },
+                "id": "i1menwaq",
+                "name": "search_tools"
+              },
+              "thoughtSignature": "EqsBCqgBAQw51sey85muPaO5rYklDdcwk2GL8TNw2wrC0Ef9r7qLBVoo6REI7hFZblUaYIgQOwfE5gKFJlhWOYALAuRmaDBObZSBNGsVfA4FeVCJ9OVlgN0mzpwrED4ZVEynhx3lk2mcKoCFoFqutLiMWe9SIfbq5PveVOeOImOA5RpNvgDZtdBy7r7Nkf8-RBgz-qZRn66nrspo7YPWb_fLByteGeMBQEsyuqWR"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "i1menwaq",
+                "name": "search_tools",
+                "response": {
+                  "discovered_tools": [
+                    {
+                      "description": "Look up stock price by ticker symbol.",
+                      "name": "stock_lookup"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "symbol": "AAPL"
+                },
+                "id": "a0u2vv54",
+                "name": "stock_lookup"
+              },
+              "thoughtSignature": "EsYBCsMBAQw51scB3gJrhIMtKXWNg6yJFvgkDmQFNXu65FTXsWgLNRappNoIJsdEI4pJYGyRecnm8NnjxjKjED4JlisOP-pbn0Tq-KC4eqM6YRZUhVLpcSjNfncA8YPe8uxJsjTQ94NH2xUPYFRh5wpJJ5P5j2kF5Jm0HCdWI4RW2zZAbyPCkzFLZJ-X5z5D-Y6volKhKT1gx-WdX6_L12Bpj6V2lTalqnatVFlriRPUFFbEHqJJ7xSkDzCKFnBml71DyY_0ypJ8"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "a0u2vv54",
+                "name": "stock_lookup",
+                "response": {
+                  "return_value": "Stock AAPL: $150.00"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "AUTO"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city.",
+              "name": "get_weather",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Look up stock price by ticker symbol.",
+              "name": "stock_lookup",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "symbol": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "symbol"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
+              "name": "search_tools",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "queries": {
+                    "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "queries"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=851",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The current stock price for AAPL is $150.00.\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"n70Daoj0HdSsqtsP_qqimAE\", \"usageMetadata\": {\"candidatesTokenCount\": 16, \"promptTokenCount\": 428, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 428}], \"serviceTier\": \"standard\", \"totalTokenCount\": 444}}"
+  }
+}

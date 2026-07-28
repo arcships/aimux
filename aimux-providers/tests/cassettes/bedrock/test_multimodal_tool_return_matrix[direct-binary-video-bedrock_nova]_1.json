@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-binary-video-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'b94ee20d-68ba-4a05-8f50-ec9b421adb4b'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "836149",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2236}, \"output\": {\"message\": {\"content\": [{\"text\": \"I can see the file has been retrieved. The image shows a stunning desert landscape with red rock formations and a clear blue sky. It appears to be captured from a high vantage point, looking down into a canyon with a winding path visible in the foreground.\\n\\nWould you like me to:\\n1. Describe the scene in more detail?\\n2. Analyze any specific aspects of the image (e.g., lighting, composition)?\\n3. Suggest ways to enhance or edit this image?\\n4. Discuss the technical aspects of the camera setup visible in the frame?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2752, \"outputTokens\": 110, \"serverToolUsage\": {}, \"totalTokens\": 2862}}"
+  }
+}

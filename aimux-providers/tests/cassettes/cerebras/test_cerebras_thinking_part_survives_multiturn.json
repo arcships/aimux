@@ -1,0 +1,39 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "cerebras",
+  "scenario": "test_cerebras_thinking_part_survives_multiturn",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "124",
+      "content-type": "application/json",
+      "host": "api.cerebras.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 2 + 2? Think briefly first.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-oss-120b",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "inference-id": "chatcmpl-82d1c33a-3015-4a2e-a4e4-210e901e89f9",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"4.\", \"reasoning\": \"User asks simple: \\\"What is 2 + 2? Think briefly first.\\\" Answer: 4. Probably straightforward.\", \"role\": \"assistant\"}}], \"created\": 1781021261, \"id\": \"chatcmpl-82d1c33a-3015-4a2e-a4e4-210e901e89f9\", \"model\": \"gpt-oss-120b\", \"object\": \"chat.completion\", \"system_fingerprint\": \"fp_46358675aa6b1ba4d98d\", \"time_info\": {\"completion_time\": 0.017746517, \"created\": 1781021261.165281, \"prompt_time\": 0.002785251, \"queue_time\": 0.008762771, \"total_time\": 0.03152036666870117}, \"usage\": {\"completion_tokens\": 37, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"reasoning_tokens\": 25, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 79, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 116}}"
+  }
+}

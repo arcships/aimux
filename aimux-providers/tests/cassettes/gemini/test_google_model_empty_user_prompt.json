@@ -1,0 +1,52 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_empty_user_prompt",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "203",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": ""
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful assistant."
+          }
+        ],
+        "role": "user"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=4764",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hello! That's correct. I am designed to be a helpful assistant.\\n\\nI'm ready to assist you with a wide range of tasks, from answering questions and providing information to brainstorming ideas and generating creative content.\\n\\nHow can I help you today?\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"KY8gadCXGtqnmtkPvdGvsQg\", \"usageMetadata\": {\"candidatesTokenCount\": 53, \"promptTokenCount\": 8, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 8}], \"thoughtsTokenCount\": 725, \"totalTokenCount\": 786}}"
+  }
+}

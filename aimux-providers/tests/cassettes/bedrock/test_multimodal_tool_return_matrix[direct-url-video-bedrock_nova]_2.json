@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url-video-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'3d67c86a-0aae-4d4e-986e-025a975f2006'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1052069",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4555}, \"output\": {\"message\": {\"content\": [{\"text\": \"I've retrieved the file for you. It appears to be an animated sequence featuring a large, white bunny character in a grassy field with flowers and butterflies. The bunny seems to be interacting playfully with a purple butterfly and is surrounded by a pleasant, animated landscape with trees and mountains in the background.\\n\\nWould you like me to describe more details about the animation, or is there something specific you'd like to know about this file?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2526, \"outputTokens\": 86, \"serverToolUsage\": {}, \"totalTokens\": 2612}}"
+  }
+}

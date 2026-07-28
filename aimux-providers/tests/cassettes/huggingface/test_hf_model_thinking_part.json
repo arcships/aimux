@@ -1,0 +1,46 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "huggingface",
+  "scenario": "test_hf_model_thinking_part",
+  "request": {
+    "path": "/together/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "159",
+      "content-type": "application/json",
+      "host": "router.huggingface.co"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "How do I cross the street?",
+          "name": null,
+          "role": "user",
+          "tool_calls": null
+        }
+      ],
+      "model": "deepseek-ai/DeepSeek-R1",
+      "stream": false,
+      "tools": []
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash",
+      "connection": "keep-alive",
+      "content-type": "application/json; charset=utf-8",
+      "cross-origin-opener-policy": "same-origin",
+      "etag": "W/\"134b-xP9kCZwqh2xblMtyHapdfmyJj+0\"",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "retry-after": "30",
+      "strict-transport-security": "max-age=15552000; includeSubDomains",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"logprobs\": null, \"message\": {\"content\": \"<think>\\nOkay, the user asked \\\"How do I cross the street?\\\" Hmm, seems basic but actually super important. Gotta make sure they're safe, especially if they're a kid or someone unfamiliar with traffic rules. \\n\\nFirst thought: Should I assume they're asking for themselves or someone else? Maybe a parent teaching a child? Or a tourist in a new country? The answer would adjust slightly - like adding \\\"hold your child's hand\\\" for parents, or mentioning international traffic signals for travelers. But since they didn't specify, I'll keep it universal.\\n\\nBiggest danger points to cover: distractions (phones!), unmarked crossings, and assuming drivers see you. People underestimate how fast cars move. Also, that \\\"one last car\\\" that runs red lights - gotta warn about that. \\n\\nShould I mention disabilities? Like if someone uses a wheelchair or is visually impaired? Maybe just briefly - \\\"if you need extra time\\\" covers it without overcomplicating. \\n\\nOh! The \\\"make eye contact\\\" tip is crucial. So many accidents happen because pedestrians assume drivers are paying attention. And the \\\"walk, don't run\\\" part - running makes you unpredictable. \\n\\nWait, should I sound more urgent? Nah, calm but firm works better for safety stuff. Scaring people makes them panic. \\n\\nFinal check: Did I miss anything? Jaywalking risks? Covered in step 1. Night visibility? Added reflective gear. Roundabouts? Too niche - stick to standard crossings. \\n\\n...And done. Hope they actually follow this. Lives depend on it.\\n</think>\\nCrossing the street safely requires **awareness, caution, and following established rules**. Here's a step-by-step guide:\\n\\n### \\ud83d\\udea6 1. **Find a Safe Crossing Point**\\n   - **Use Crosswalks:** Always look for marked crosswalks (zebra stripes) or pedestrian signals. These are designed for your safety.\\n   - **Intersections:** Cross at corners or traffic lights, even if unmarked. Drivers expect pedestrians there.\\n   - **Avoid Jaywalking:** Never cross between parked cars, mid-block, or away from intersections--it's dangerous and often illegal.\\n\\n### \\ud83d\\udc40 2. **Stop, Look, and Listen**\\n   - **Pause at the Curb:** Don't step into the street immediately. Stop and assess traffic.\\n   - **Look Left-Right-Left:** Check for cars, bikes, scooters, etc.:\\n     - First look **LEFT** (closest lane).\\n     - Then **RIGHT**.\\n     - **LEFT AGAIN** before moving.\\n   - **Listen:** Turn off headphones or remove hoods. Engine sounds or horns can warn you of unseen vehicles.\\n\\n### \\ud83d\\udeb8 3. **Obey Traffic Signals (If Available)**\\n   - **Pedestrian Signals:** Wait for the \\\"Walk\\\" symbol (usually white). Never cross on a flashing or solid \\\"Don't Walk\\\" (red hand).\\n   - **Traffic Lights:** Cross only on green lights, but still check for turning vehicles.\\n   - **No Signals?** Wait for a large gap in traffic where you have enough time to cross safely.\\n\\n### \\ud83d\\ude97 4. **Make Eye Contact with Drivers**\\n   - Ensure drivers see you before crossing--especially at stop signs or turning lanes. A waving driver is safer than one looking at their phone.\\n\\n### \\ud83d\\udeb6 5. **Cross Carefully**\\n   - **Walk, Don't Run:** Walk steadily across. Running increases tripping risks.\\n   - **Stay Alert:** Keep scanning for traffic as you cross. Watch for bikes in bike lanes and turning vehicles.\\n   - **Avoid Distractions:** Put away your phone \\ud83d\\udcf5--no texting or scrolling while crossing.\\n\\n### \\ud83c\\udf19 6. **Special Situations**\\n   - **Uncontrolled Crossings (No Lights/Signs):** Cross only when traffic is clear. Raise your hand to signal intent.\\n   - **Roundabouts:** Use crosswalks before entering the circle. Drivers *inside* the roundabout have right-of-way.\\n   - **Night/Weather:** Wear reflective clothing or use a flashlight. Rain/fog reduces visibility.\\n   - **Children:** Hold their hands and teach them to follow these steps.\\n\\n### \\u26a0\\ufe0f Critical Reminders:\\n   - **Never Assume Drivers See You:** Many are distracted. Wait for them to stop.\\n   - **Watch for Turning Vehicles:** Drivers often focus on other cars, not pedestrians.\\n   - **Bikes & Scooters:** Check bike lanes--they move silently and quickly.\\n\\n### \\u2705 Key Safety Principle:\\n> **\\\"Be predictable, be visible, and be patient.\\\"** Rushing or ignoring rules puts you at risk.\\n\\nBy following these steps, you significantly reduce the risk of accidents. Stay vigilant--every crossing is different! \\ud83d\\uded1\\ud83d\\udc5f\", \"role\": \"assistant\", \"tool_calls\": []}, \"seed\": 8632262555654614000}], \"created\": 1769546616, \"id\": \"oV1mwwj-28Eivz-9c4b154f3b427f82\", \"model\": \"deepseek-ai/DeepSeek-R1\", \"object\": \"chat.completion\", \"prompt\": [], \"usage\": {\"cached_tokens\": 0, \"completion_tokens\": 995, \"prompt_tokens\": 10, \"total_tokens\": 1005}}"
+  }
+}

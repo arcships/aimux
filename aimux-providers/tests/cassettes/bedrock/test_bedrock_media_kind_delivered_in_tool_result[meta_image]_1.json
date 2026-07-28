@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_media_kind_delivered_in_tool_result[meta_image]_1",
+  "request": {
+    "path": "/model/us.meta.llama4-maverick-17b-instruct-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'43c99061-8ea9-4789-9100-ca0c9b3c0089'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "132068",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1179}, \"output\": {\"message\": {\"content\": [{\"text\": \"The image shows a cross-section of a kiwi fruit, with the outer skin removed and the inner flesh visible. The kiwi is cut in half, revealing its vibrant green color and numerous black seeds arranged in a circular pattern around the center. The background is white, providing a clean and neutral contrast to the fruit's bright colors.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1626, \"outputTokens\": 68, \"serverToolUsage\": {}, \"totalTokens\": 1694}}"
+  }
+}

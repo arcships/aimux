@@ -1,0 +1,55 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_model_sees_multiple_images[mistral]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "384",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Call the get_images tool. One image shows a fruit - what fruit is it? Just name the fruit.",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-medium-latest",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_images",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019c486d-6245-7787-90cf-26f378023ff2",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"message\": {\"content\": \"\", \"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{}\", \"name\": \"get_images\"}, \"id\": \"VB03LVVRm\", \"index\": 0}]}}], \"created\": 1770741654, \"id\": \"0549b2dd1fcd47e7a22af01652c714ef\", \"model\": \"mistral-medium-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 6, \"num_cached_tokens\": 0, \"prompt_tokens\": 68, \"total_tokens\": 74}}"
+  }
+}

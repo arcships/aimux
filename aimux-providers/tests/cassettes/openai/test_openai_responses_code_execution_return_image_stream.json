@@ -1,0 +1,55 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_code_execution_return_image_stream",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "300",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content",
+        "code_interpreter_call.outputs"
+      ],
+      "input": [
+        {
+          "content": "Create a chart of y=x^2 for x=-5 to 5",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5",
+      "previous_response_id": null,
+      "stream": true,
+      "tool_choice": "required",
+      "tools": [
+        {
+          "container": {
+            "type": "auto"
+          },
+          "type": "code_interpreter"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "2965",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

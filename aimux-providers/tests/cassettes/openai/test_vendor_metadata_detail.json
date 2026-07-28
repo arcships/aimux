@@ -1,0 +1,57 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_vendor_metadata_detail",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "406",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Call the get_images_with_metadata tool and describe what you see.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_images_with_metadata",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "1847",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1781041057, \"created_at\": 1781041055, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_00d3e6f1ea6a4421006a28879fcf24819e8345375efa3f4c19\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"moderation\": null, \"object\": \"response\", \"output\": [{\"content\": [], \"encrypted_content\": \"gAAAAABqKIehZGxXqbamqbrU_Axh4eKRlnbOBtopyRoi4nDHlZZc0w6Vem0CpN4dwhZiSpaXtOiKpnaW0rtM9CTOp5TPaVzSxUyPE986B-uY9TluJxliYyDNikCpRuZCfbPyiLqRVjB9fVDWUMZ2KJwELEF_J3B79qezX4JzaNfZY-ZQNPCYuhPqH1dZB_W5cWSlKhWVbVkn3wHXvdZKDMeh2AXd_-1t_dx-nxs1vPL_rlAe4RVIoL4MGLU8ckZTPHmQQGJE0fldPjQezeBtSu_nnSbIF1gDkrCR07ZFTzO1Stm0dbaQgkq8PUUdnoxzqc31PxHYg4P9xTUlXBpUTFjpkVbHuWKjU2tubj2b2f-H-cKlKaiB47GFx0Oqx5sW4XhLUCmWRuMt24LTF1wsVRVy0FruYkwPA2DwZdIP-7PYL7hq3fgtf8lo20dgIE7Po6j0mVTezyoX2b0OQMB45m3JqRXvPrIIIzqDnp8oykpqz5ZFYZoF70raxVP8PGTa7CVDzqQkccjJTzyVg682KHwackSW_Aq2o08QXUoHTDBMkIZZnmEAzN6eew01wy7EfCVkXWP2TF9qnS-LwHCQHocbIIk_TZeXQ9prNsyZr7aNy6b3K_ti9cCObE_PB1zEg92kzEU5ZCMuWX-meHubAHKhEOMPGpeIn3uOoqq7yTWBTFEkypKV1-e3Lfo-GHro2VaiYHdi6Uvrj8Bwy1gE-NA3Kaqx0xCGXdSWU1ClLWE0--t5dG849xCZ0-vH101Gb_H-yfyIv3gWjN4KhnCFWv6xv8gvLlUhZCHYfLjjsISUNeV20TX3ycBJuqLZaWQuhPeEdC7PdDUhLVIxngHrqkLYTW1Is2xOyoGKHGFbE-HPrmc_2Q-mJhbHGtmLPCUagvUa8yohE0XclvtdjPqBQd_huA-Aw2x7FOIAois-VRt-Cq7n5I4gVeRlNIilDYsk-6886lZRp09CB1B28Im2LirqySnP6AxXQncIoU92A_kO3JSnx6OG0lYLDjRcPj0oUrP8s7Yn4DU1cctLAZdfxVAyn4IScdYAxtpQhjDd2m_-S9zPjC-Yvl1rQ5DzBgNIMOw8ExEgBh0_5n2OI21JMWyqBTosU8CHcFnFY-2PnUfVscaDMsoLCRKkbiqeqevY_7BPsvyVr73avu7QbPCjDbDw4gT21q3f995jLE21On5-ZcDpVqrfEREiWG-oW-gWnuz-F8AkO4WJW0daK1sYs5-OsFOBVZaJWinWNFYy8UU6y33V57lcqsNGCzBCt6HINE0Rv5yQUfHAOAMX570iuTOVJCZK4zr5JslGRFNT4oWwGrX_otKFAH7qdrqzadPhUK_IB1cUitFyEmXInEvcqOzmM62UrrKyf8Qpfo_sz8DBS6iXhRQdueDAsICNx5fHLIjyotiWtcIhhxAlHSPJGxTp-Zj1-2BiyxQjcjgIu3vLrq2YD_tm3x78jpvuuWfhOqENwMHvAmpdG2ep-L1Qb4LCkt4bkv00YOPSr_JblEWn3Bcy2Q5spM1v6XKfXrAgJVGO5PoJz5i0LtvYYeceGMwnIMlmRIDJnRX-OikslbISrKhAwfQ0MSk=\", \"id\": \"rs_00d3e6f1ea6a4421006a2887a05764819ebd68b8f988e228a9\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_MM497Ty6NzmDcAvKbfZwnybg\", \"id\": \"fc_00d3e6f1ea6a4421006a2887a15fc8819e8f3b2a0ee90cd37d\", \"name\": \"get_images_with_metadata\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": \"in_memory\", \"reasoning\": {\"context\": \"current_turn\", \"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_images_with_metadata\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 44, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 107, \"output_tokens_details\": {\"reasoning_tokens\": 64}, \"total_tokens\": 151}, \"user\": null}"
+  }
+}

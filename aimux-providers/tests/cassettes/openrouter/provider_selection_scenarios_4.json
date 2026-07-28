@@ -1,0 +1,44 @@
+{
+  "source": "rig (MIT)",
+  "provider": "openrouter",
+  "scenario": "provider_selection_scenarios_4",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are a helpful assistant.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "country",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek/deepseek-v3.2",
+      "provider": {
+        "max_price": {
+          "completion": 0.5,
+          "prompt": 0.3
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"A \\\"country\\\" is a distinct territorial body or political entity. It is often synonymous with terms like nation, state, or nation-state. Here are key aspects that typically define a country:\\n\\n1. **Defined Territory**: A country has recognized borders, whether by land, water, or both.\\n2. **Permanent Population**: There are people living within its territory on an ongoing basis.\\n3. **Government**: A country has an organized political structure that exercises authority over its territory and population.\\n4. **Sovereignty**: It has the capacity to enter into relations with other countries and is not subject to external control. Recognition by other countries, especially through international bodies like the United Nations, often reinforces sovereignty.\\n\\nCountries vary widely in size, population, culture, language, political systems, and economic development. They interact through diplomacy, trade, treaties, and international organizations.\\n\\nIf you have a specific country in mind or want to explore topics like how countries are formed, their types, or examples, feel free to ask! 🌍\",\"reasoning\":null,\"refusal\":null,\"role\":\"assistant\"},\"native_finish_reason\":\"stop\"}],\"created\":0,\"id\":\"chatcmpl-REDACTED_5\",\"model\":\"deepseek/deepseek-v3.2-20251201\",\"object\":\"chat.completion\",\"provider\":\"AtlasCloud\",\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"completion_tokens\":209,\"completion_tokens_details\":{\"audio_tokens\":0,\"image_tokens\":0,\"reasoning_tokens\":0},\"cost\":0.00008228,\"cost_details\":{\"upstream_inference_completions_cost\":0.00007942,\"upstream_inference_cost\":0.00008228,\"upstream_inference_prompt_cost\":2.86e-6},\"is_byok\":false,\"prompt_tokens\":11,\"prompt_tokens_details\":{\"audio_tokens\":0,\"cache_write_tokens\":0,\"cached_tokens\":0,\"video_tokens\":0},\"total_tokens\":220}}"
+  }
+}

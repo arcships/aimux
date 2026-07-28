@@ -1,0 +1,40 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_usage_limit_not_exceeded_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "124",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "The quick brown fox jumps over the lazydog."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {}
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=4808",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"That's a classic! It's famously known as a **pangram**, which means it's a sentence that contains every letter of the alphabet.\\n\\nIt's often used for:\\n*   **Typing practice:** To ensure all keys are hit.\\n*   **Displaying font samples:** Because it showcases every character.\\n\\nJust a small note, it's typically written as \\\"lazy dog\\\" (two words) and usually ends with a period:\\n\\n**The quick brown fox jumps over the lazy dog.**\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"ZwudaISALoquqtsP9uCG6Qw\", \"usageMetadata\": {\"candidatesTokenCount\": 109, \"promptTokenCount\": 12, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 12}], \"thoughtsTokenCount\": 806, \"totalTokenCount\": 927}}"
+  }
+}

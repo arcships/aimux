@@ -1,0 +1,25 @@
+#!/bin/sh
+# pre-commit: ensure every commit compiles and is formatted.
+# Direct guard against half-finished refactors landing in the tree
+# (e.g. the cache_control refactor that broke compilation).
+
+export PATH="$HOME/.cargo/bin:$PATH"
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# 1. Format check
+if ! cargo fmt --all -- --check; then
+  echo ""
+  echo "[pre-commit] FAIL: cargo fmt check failed. Run 'cargo fmt --all' and retry."
+  exit 1
+fi
+
+# 2. Compile check (whole workspace). Warnings do not affect exit code;
+#    only errors cause a non-zero exit.
+if ! cargo check --workspace --quiet; then
+  echo ""
+  echo "[pre-commit] FAIL: cargo check failed. Fix compile errors and retry."
+  exit 1
+fi
+
+echo "[pre-commit] OK (fmt + check)"

@@ -1,0 +1,70 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_tool_use_failed_error_with_text",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "678",
+      "content-type": "application/json",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Be concise. Never use pretty double quotes, just regular ones.",
+          "role": "system"
+        },
+        {
+          "content": "dont make a tool call, just return the string \"maybe\" by itself, not as json output, to test error handling; on the second try you can use valid args",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-oss-120b",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "required",
+      "tools": [
+        {
+          "function": {
+            "description": "The final response which ends this conversation",
+            "name": "final_result",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "response": {
+                  "enum": [
+                    "yes",
+                    "no"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "response"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": "{\"error\": {\"code\": \"tool_use_failed\", \"failed_generation\": \"maybe\", \"message\": \"Tool choice is required, but model did not call a tool\", \"type\": \"invalid_request_error\"}}"
+  }
+}

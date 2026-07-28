@@ -1,0 +1,47 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_cache_count_tokens",
+  "request": {
+    "path": "/v1/messages/count_tokens",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "5600",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "cache_control": {
+        "ttl": "5m",
+        "type": "ephemeral"
+      },
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. Please explain what Python is and its main use cases. ",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "system": "You are a helpful assistant."
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "server-timing": "x-originResponse;dur=91",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"input_tokens\": 1114}"
+  }
+}

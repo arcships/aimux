@@ -1,0 +1,91 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_auto_mode_with_function_and_builtin_tools",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "769",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the largest city in the user country?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "allowedFunctionNames": [
+            "get_user_country",
+            "final_result"
+          ],
+          "mode": "ANY"
+        },
+        "includeServerSideToolInvocations": true
+      },
+      "tools": [
+        {
+          "googleSearch": {}
+        },
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_user_country",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            },
+            {
+              "description": "The final response which ends this conversation",
+              "name": "final_result",
+              "parameters_json_schema": {
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city",
+                  "country"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1113",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"id\": \"zi06h2mp\", \"name\": \"get_user_country\"}, \"thoughtSignature\": \"ErICCq8CAQw51scOhVQGJV1neXjtA/Uk+niiNN+l6mbPUl+FLteFkfFKn04Hkf1IRfXQScaFyB2OSmDO26xTbz9DCOv2DFNtdvtDvReRkfCMvJvv17H+eygb9viA9pr/AltzEnkGMzHjCT3xp3U7QDPSZdMBx+zVZDbWobHcyOHsOWarjUSpyBJf4jp3UxYTrLEq6G8icKVxxeaAYHuCeTj95Ipj+ijrFVZdOlsdi8I+HzU20YBznDAgpVUBuieeCvJQT9iJL5evRnnk0a7ZjrwSRoS18NmTIaGOC/a/MYFBptEmAwdPmsmDtq7kIcXYRkJOcOI83Cp2UvdK29t6wfQNH6GTOh+xyqzjAE+znyDaMBtWIE0dgGXQ0mq9/Mzf2Ii0ZM+scwiCbkK4FfF0mWPHK3f9\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"l1P6af_FOMXVz7IPi8y54Aw\", \"usageMetadata\": {\"candidatesTokenCount\": 12, \"promptTokenCount\": 85, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 85}], \"thoughtsTokenCount\": 60, \"totalTokenCount\": 157}}"
+  }
+}

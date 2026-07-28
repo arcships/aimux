@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[direct-uploaded_file-video-google_2_5]",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "370",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a video file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1181",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_file\"}, \"thoughtSignature\": \"CqMEAb4+9vuRXosrlzgdurWGzcZ1Oqx90f9JkicWerxjHGxxYYCVm1EHEwJeC9hFF2XZgK6WvOwrfetTHaZ4pDeGajdeVEBBIG0aJa3k2cxYbDqUt6NT5tg89LwnCSCfr9yaheQT7bxzoa7sYZ8GgsNAbl+ExdeB65jTLcNivc6nfXHo3gluqghMw9Y1Ib5AzjzdFhRK683JHHOHGap3o2GlpASdHdFgqJ7s0xIwhu9NXe0CzZAHxckW2op5faUWiSBVg6FyrDp9nVo/U0/uHurigJzS9dmQdEaTsaBA6kLktbBETqgxSfx5FwgMxBDAfH8hRmrrpbp9enuSIPlSpH19xKOJ7Jy/Cq4HZLKGZynUniqHVgUYRqhmWFvryKuN1czjUg+N2sm9oRY0bQEIohpcO0DByosV7i1mCnX5QqLuy7qBmZmBHQ/G3AhmVil5PKHkz2gmgWRC87+OgwtRnWpxvhzouGbV2jjc4+ANNIlnW7CsnzFdsBnx0oys4QpdwJjtcDmoIwP68pUgoPxU+TyjR98YbnEw0LoJDm0U3ole6aWPwSqohr7iefCuD7vQPvqodLfZJmXNDKjyU1ndQhOayO9qoii9nR+HtY4WpNHY3gOve8C61yTDOgC/olkkHNPBoPbTSuoYkdCPwTV3O33vOiiKZld53GbpRxDjLmJqd6qiEvzF+lEbPJwfnv8p7T+HzHGZ8vDUasrT6QAaIfd7zuu7GA==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"BpmoaYX3JpaDz7IPopqhMQ\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 41, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 41}], \"thoughtsTokenCount\": 135, \"totalTokenCount\": 186}}"
+  }
+}

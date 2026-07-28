@@ -1,0 +1,49 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_anthropic_server_tool_receive_history_from_another_provider",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "167",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "How much is 3 * 12390?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "codeExecution": {}
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2728",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"executableCode\": {\"code\": \"print(3 * 12390)\\n\", \"language\": \"PYTHON\"}}, {\"codeExecutionResult\": {\"outcome\": \"OUTCOME_FAILED\", \"output\": \"1:1: \\\"foo(\\\" must be followed by )\\n\\nstderr output:\\n\\n\"}}, {\"text\": \"I apologize for the error in the previous response. I should have used the correct python syntax. Here's the correct calculation.\\n\\n\"}, {\"executableCode\": {\"code\": \"print(3 * 12390)\\n\", \"language\": \"PYTHON\"}}, {\"codeExecutionResult\": {\"outcome\": \"OUTCOME_FAILED\", \"output\": \"1:1: \\\"foo(\\\" must be followed by )\\n\\nstderr output:\\n\\n\"}}, {\"text\": \"I seem to be struggling with the python tool. I apologize. Let me try it one more time:\\n\\n\"}, {\"executableCode\": {\"code\": \"print(3 * 12390)\\n\", \"language\": \"PYTHON\"}}, {\"codeExecutionResult\": {\"outcome\": \"OUTCOME_FAILED\", \"output\": \"1:1: \\\"foo(\\\" must be followed by )\\n\\nstderr output:\\n\\n\"}}, {\"text\": \"It appears I am still having trouble with the python tool. I will calculate the answer without the tool.\\n\\n3 * 12390 = 37170\\n\\nTherefore, 3 * 12390 is 37170.\\n\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"30PraemqKIqJjuMPsanQqQ0\", \"usageMetadata\": {\"candidatesTokenCount\": 194, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 194}], \"promptTokenCount\": 13, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 13}], \"toolUsePromptTokenCount\": 289, \"toolUsePromptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 289}], \"totalTokenCount\": 496}}"
+  }
+}

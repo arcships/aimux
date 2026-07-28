@@ -1,0 +1,29 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "huggingface",
+  "scenario": "test_tool_choice_matrix[none-huggingface]",
+  "request": {
+    "path": "/together/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash",
+      "connection": "keep-alive",
+      "content-type": "application/json; charset=utf-8",
+      "cross-origin-opener-policy": "same-origin",
+      "etag": "W/\"651-XxMTPC3E07beMSTXZe+d03XoU2w\"",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "retry-after": "2",
+      "strict-transport-security": "max-age=15552000; includeSubDomains",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"logprobs\": null, \"message\": {\"content\": \"I'm not able to provide real-time information such as current weather conditions. However, I can suggest some ways for you to find out the current weather in Paris:\\n\\n1. Check a weather website or app: You can check websites like AccuWeather, Weather.com, or M\\u00e9t\\u00e9o-France (the French national meteorological service) for up-to-date weather forecasts and current conditions in Paris.\\n2. Use a search engine: Simply type \\\"Paris weather\\\" or \\\"weather Paris\\\" in a search engine like Google, and you'll get the current weather conditions and forecast.\\n3. Check a travel website: If you're planning a trip to Paris, you can check travel websites like TripAdvisor or Lonely Planet for weather information and tips on what to pack.\\n\\nKeep in mind that Paris has a temperate climate with mild winters and warm summers. The best time to visit Paris is during the spring (April-May) and autumn (September-October), when the weather is pleasant and mild.\\n\\nIf you need more specific information or have a specific question, feel free to ask!\", \"reasoning\": null, \"role\": \"assistant\", \"tool_calls\": []}, \"seed\": null}], \"created\": 1769718261, \"id\": \"oVGwf7N-z1gNr-9c5b73c8d8f737a2\", \"metadata\": {\"weight_version\": \"default\"}, \"model\": \"meta-llama/Llama-4-Scout-17B-16E-Instruct\", \"object\": \"chat.completion\", \"prompt\": [], \"usage\": {\"completion_tokens\": 210, \"prompt_tokens\": 17, \"total_tokens\": 227}}"
+  }
+}

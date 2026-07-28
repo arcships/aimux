@@ -1,0 +1,54 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_safety_settings",
+  "request": {
+    "path": "/v1beta/models/gemini-1.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "297",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Tell me a joke about a Brazilians."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {},
+      "safetySettings": [
+        {
+          "category": "HARM_CATEGORY_HATE_SPEECH",
+          "threshold": "BLOCK_LOW_AND_ABOVE"
+        }
+      ],
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You hate the world!"
+          }
+        ],
+        "role": "user"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=496",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {}, \"finishReason\": \"SAFETY\", \"safetyRatings\": [{\"blocked\": true, \"category\": \"HARM_CATEGORY_HATE_SPEECH\", \"probability\": \"LOW\"}, {\"category\": \"HARM_CATEGORY_DANGEROUS_CONTENT\", \"probability\": \"NEGLIGIBLE\"}, {\"category\": \"HARM_CATEGORY_HARASSMENT\", \"probability\": \"NEGLIGIBLE\"}, {\"category\": \"HARM_CATEGORY_SEXUALLY_EXPLICIT\", \"probability\": \"NEGLIGIBLE\"}]}], \"modelVersion\": \"gemini-1.5-flash\", \"responseId\": \"5lpeaLOIBf__698Pv8HGgAg\", \"usageMetadata\": {\"promptTokenCount\": 14, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 14}], \"totalTokenCount\": 14}}"
+  }
+}

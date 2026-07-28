@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_strict_false_tool_with_nested_objects_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'742826b7-e87e-41c0-8558-b8ac396801a3'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1142",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3685}, \"output\": {\"message\": {\"content\": [{\"text\": \"I found John's record. He lives at 123 Main St, Springfield.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 782, \"outputTokens\": 20, \"serverToolUsage\": {}, \"totalTokens\": 802}}"
+  }
+}

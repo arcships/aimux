@@ -1,0 +1,61 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_thinking_with_modified_history_2",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "919",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=dR6QIBO3MIYxJlJhT2Z1Enf4hxSQe.yT90YFVOo4a44-1757687267-1.0.1.1-nWx6824Q_Wi6NATur__jq_d6LC1b4eLI1w2Gb3x0dnLFh7XjM9Gmzno6zguSb4oASi6pAaDj2yHyEWVqhctXQQCWkPvlSv40iFVUeaV9VFk; _cfuvid=yYorKmI5owOPwHY3si5KhFHr1dnp_lg_KgDMeAgTiFo-1757687267959-0.0.1.1-604800000",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "What is the meaning of life?",
+          "role": "user"
+        },
+        {
+          "content": "<think>\n**Considering perspectives on meaning**\n\nI need to keep my response succinct since this topic is philosophical and subjective. I'll provide various perspectives, such as biological, philosophical, personal constructs, and religious views. A practical approach might involve creating meaning through relationships, contribution, growth, experiences, and values. I should avoid being overly verbose and consider a short actionable framework focusing on values, strengths, service, wonder, and connection. Also, encouraging the user to share their thoughts would be great!\n</think>",
+          "role": "assistant"
+        },
+        {
+          "content": "The meaning of life is 42",
+          "role": "assistant"
+        },
+        {
+          "content": "Anything to add?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5",
+      "reasoning": {
+        "effort": "low",
+        "summary": "detailed"
+      },
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "4967",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"created_at\": 1757687268, \"error\": null, \"id\": \"resp_68c42de4afcc819f995a1c59fe87c9d5051f82c608a83beb\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABoxC3p_JDft5mZApHvSNXIJchnzlHvHJ_0MvxV372C_8pQ0XmmlsED9ZEZ6x976PF1a0OrmeTFGYN44If8r4GjEDFUmRyF0G7BA4DtGF1AvwHon2TmuHea2UarFMQ19aYM9b-dcFroJbFmvAzu3SyZk3YNqk9Os2xJpJFMblFZvLE-ZxHKQbdPQ36JKa1p-IqX8etYjenv_4HulDla5XoYKwjFgB2yvR1vyXZC0tzXqFRJLyaQBuKsVEqIF0Actxf3yRf9PysbfMxHBKpcIz7IkMcq0MsIXsBoKjpZ7SbpvSEMzeElD477LN6unADbwawXtNneLl6Km0cidynFED1Eytw2PSOJrljysvFNxDlwRYXScrfK6PM0g-TEhx6SMH_jx00v79CrYsDHSQJrRhBt3VVlSVV3unfdfpSJ2Q7gP_o5xwJ-pciWvmcC80R6MEdgjaREp9Sq9o7ewLKwmA3iFyq_w3SNo-fCZx-8Las8zamqD8Z4GvhrKjRVWwYK_r2WrWWUUO-USGcvJLf8TO5jVNQfPgcuQDqmannJ2V4DOszGLc_rtGDpe0h87hlvV0gEwGOdn-QjkyNcKG6X95Jg3qu3o8Uc7URABjUBYApy_SIBE7W92oPwdwyzNhevw4cLbfdmeq5MLYSsGPmYFq-7UeuSctHsdXqyLmBcLRU9QJewsJsxKH4BTIXqHWA9ocGuQWB9AfqT4MBfenxTFvet9UBG7MO3KF6YLaqi13mI6lWDvnwDAqkevAHnfwyMu6vvAXVtYuY0n2e56VgSSzZcvx8V1viBCxVC0hokOzIEC8BWfQnWN4iyBIiGv2YCDorGm3fqqmquQDnLw5O4V2USHWG1Fy1DLm6ycxF5-Rv8fXoaGTKBK0Xl6K5srSD9ICKnh8_-V8SctQhNj55QbJ5e89ne4TGuDkE8gdac4uWBJAqvnCTkwo6K2vElRPV42AHnCHcKhjcq2KMfqPuCzPfr4DZWHHAR1A19TfLgtMrt25EF_dh97Sr9jLv_SZLMLy8BQqMcd1SGgZRj2FR9XwQ8c_0lVR2NatqVEDYzjPYEF47M3OQybmEOdt5-62RK2Gih88dfimtbTMQiPLpfgSWURoK8jCAXYsEoirnrLp5hxfMjxnp1SIf0D8h3bqSDcLdQjBrjzjEr5699INoFJU7HYV2fQ6wOWYM_qjEdhY7JYZf-ins2Ddu4ynHTs3wJuqc3BorTeW3oys1im0fzQL3AN38ezz3_RxVknF5JbQOLYGvXFeosDSZLDzZpKnLUpqLJvJS3hfkCF1UQQle6U87yNQPNeXhmrjhA53khmca2EUYshyW3-28sXbB9ae_FqAczQtFQkPkKYyqROd-qGo2H3g9hWUCOnhgx7RWLL-PimrlZsqKrULjY-gqyN54CxSDDA7vnyfU0SWqrzaibalST8fu6mS-CcjqdKEZfSKT4t_0SlB6RoyLwo7SbjASeIzq82GEqriVxkalcy8BHlBF2SEUIgOx3LnaK_JwWLis_i2d3i9maydqugIMA7N_mxo6UpP1u8WU6YTd8YgzHqe5XnNQtmPbSJSOmIdAm8wqcDDQXaFnTzJqBq2WKEDpFuXnJqcO6T43WXrt-MQbXVQ8gpsYth3pQIZKl4umx4S1THu9RLurhHyS2TOMA3oGsaJrZudUgTruv2sa_QkOl0g19VGhqiC6SYW2mBmZcyWB1rfAasQXkERHRe6fy3BGG9k_e9HzcghzOQLhI-VAi13noMfS-Sw==\", \"id\": \"rs_68c42de4f63c819fb31b6019a4eaf67c051f82c608a83beb\", \"summary\": [{\"text\": \"**Expanding on life\\u2019s meaning**\\n\\nThe user previously got \\\"The meaning of life is 42,\\\" which is a fun reference. Now, I need to provide a thoughtful expansion with various perspectives and a practical framework. I\\u2019ll keep things concise and consider bullet points. I want to offer actionable steps around values, relationships, service, personal growth, awe, play, and reflecting on mortality. \\n\\nI\\u2019ll explore different viewpoints: evolutionary, existentialist, religious, humanist, and narrative identity, then invite them to share what resonates with them.\", \"type\": \"summary_text\"}], \"type\": \"reasoning\"}, {\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"Plenty.\\n\\nA few quick lenses:\\n- Biological: survive, reproduce, and help your group thrive.\\n- Existentialist: life has no built-in meaning; you create it through choices and commitments.\\n- Spiritual/religious: align with the divine, love others, cultivate virtue, serve.\\n- Humanist: reduce suffering, increase flourishing, deepen knowledge and beauty.\\n- Narrative: craft a story you\\u2019re proud to live in.\\n\\nA simple way to build meaning:\\n- Clarify values: list 5 you want to embody; make one small daily choice for each.\\n- Relationships: invest in a few people\\u2014show up, listen, express care.\\n- Service: do something useful for someone else every week.\\n- Growth: pick a challenge that stretches you; track progress.\\n- Awe and play: schedule regular time for nature, art, or curiosity.\\n- Mortality check: imagine looking back at 80\\u2014what would you wish you\\u2019d done more of? Do a little of that now.\\n\\nIf you share your beliefs and what you care about, I can tailor this to you.\", \"type\": \"output_text\"}], \"id\": \"msg_68c42de8a410819faf7a9cbebd2b4bc4051f82c608a83beb\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"prompt_cache_key\": null, \"reasoning\": {\"effort\": \"low\", \"summary\": \"detailed\"}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 142, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 355, \"output_tokens_details\": {\"reasoning_tokens\": 128}, \"total_tokens\": 497}, \"user\": null}"
+  }
+}

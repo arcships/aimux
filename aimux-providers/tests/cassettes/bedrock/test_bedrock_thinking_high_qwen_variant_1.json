@@ -1,0 +1,27 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_thinking_high_qwen_variant_1",
+  "request": {
+    "path": "/model/qwen.qwen3-32b-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "content-length": "609",
+      "content-type": "b'application/json'",
+      "user-agent": "b'Boto3/1.42.63 md/Botocore#1.42.63 ua/2.1 os/macos#25.0.0 md/arch#arm64 lang/python#3.12.12 md/pyimpl#CPython m/b,3,D,Z,N cfg/retry-mode#legacy Botocore/1.42.63'",
+      "amz-sdk-invocation-id": "b'200eae14-26fe-4849-8682-175e181858f5'",
+      "amz-sdk-request": "b'attempt=1'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "date": "Wed, 13 May 2026 22:52:35 GMT",
+      "via": "1.1 google",
+      "x-amzn-requestid": "8ea72997-1d7d-4c2a-bae0-1ccb1b1e76de"
+    },
+    "body": ""
+  }
+}

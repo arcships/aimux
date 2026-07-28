@@ -1,0 +1,203 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_tool_search_eval[anthropic]_6",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "3356",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is the current stock price for AAPL?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "I'll search for a tool that can help me get stock price information.",
+              "type": "text"
+            },
+            {
+              "id": "toolu_01STyXG2KReZkuFAiSBAFWLd",
+              "input": {
+                "queries": [
+                  "stock price",
+                  "AAPL",
+                  "ticker symbol",
+                  "market data",
+                  "financial data"
+                ]
+              },
+              "name": "search_tools",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "{\"discovered_tools\":[{\"name\":\"stock_lookup\",\"description\":\"Look up stock price by ticker symbol.\"}]}",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "toolu_01STyXG2KReZkuFAiSBAFWLd",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "Great! I found a tool to look up stock prices. Let me get the current stock price for AAPL.",
+              "type": "text"
+            },
+            {
+              "id": "toolu_014b9i18P8JdeixyRCGWwgBa",
+              "input": {
+                "ticker": "AAPL"
+              },
+              "name": "stock_lookup",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": "2 validation errors:\n```json\n[\n  {\n    \"type\": \"missing\",\n    \"loc\": [\n      \"symbol\"\n    ],\n    \"msg\": \"Field required\",\n    \"input\": {\n      \"ticker\": \"AAPL\"\n    }\n  },\n  {\n    \"type\": \"extra_forbidden\",\n    \"loc\": [\n      \"ticker\"\n    ],\n    \"msg\": \"Extra inputs are not permitted\",\n    \"input\": \"AAPL\"\n  }\n]\n```\n\nFix the errors and try again.",
+              "is_error": true,
+              "tool_use_id": "toolu_014b9i18P8JdeixyRCGWwgBa",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "Let me correct that - the parameter should be \"symbol\" instead of \"ticker\".",
+              "type": "text"
+            },
+            {
+              "id": "toolu_01GgM32pcJgjKXqUgpjs9XFT",
+              "input": {
+                "symbol": "AAPL"
+              },
+              "name": "stock_lookup",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "Stock AAPL: $150.00",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "toolu_01GgM32pcJgjKXqUgpjs9XFT",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "Get the current weather for a city.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "name": "get_weather"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up stock price by ticker symbol.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "symbol": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "symbol"
+            ],
+            "type": "object"
+          },
+          "name": "stock_lookup"
+        },
+        {
+          "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "queries": {
+                "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "queries"
+            ],
+            "type": "object"
+          },
+          "name": "search_tools"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-baad238eee9b0bdc58717fdf7cd830dc-820472d29a9ff18b-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"content\": [{\"text\": \"The current stock price for AAPL (Apple Inc.) is **$150.00**.\", \"type\": \"text\"}], \"id\": \"msg_013RuCXSvnQ3pJH7E3HEnr24\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 1218, \"output_tokens\": 23, \"service_tier\": \"standard\"}}"
+  }
+}

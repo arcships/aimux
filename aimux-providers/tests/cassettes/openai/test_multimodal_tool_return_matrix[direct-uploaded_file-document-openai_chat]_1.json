@@ -1,0 +1,92 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[direct-uploaded_file-document-openai_chat]_1",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "785",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=HyTfNc.jl9PkeAd0JiUzF3_5v.AbtLhzr2B6EYnw0Eo-1772656454.4199975-1.0.1.1-FJ5mqIwDh6hIKz4Z0XEvdyzjaQxr2k7HtQsHc_kk_ZrmdsxmLbY9rGvnGObv3C.XRGlMBZG.D4BpRG0h6OtUWZXGQny3KV8UXvPQdNE2plaJfVu3GOtw_zevtoF04c15",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Use the get_file tool now to retrieve a document file, then describe what you received.",
+          "role": "user"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{}",
+                "name": "get_file"
+              },
+              "id": "call_tg4fIQ1Z3FhJuGH2Ms382gqj",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "See file 44db51.",
+          "role": "tool",
+          "tool_call_id": "call_tg4fIQ1Z3FhJuGH2Ms382gqj"
+        },
+        {
+          "content": [
+            {
+              "text": "This is file 44db51:",
+              "type": "text"
+            },
+            {
+              "file": {
+                "file_id": "file-7qh8AjzrjyRGiQ7kaFybfG"
+              },
+              "type": "file"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_file",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "7136",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"annotations\": [], \"content\": \"I retrieved file 44db51. Summary of what I received:\\n\\n- File identifier: 44db51\\n- Pages: 1\\n- Parsed text (page 1): \\\"Dummy PDF file\\\"\\n- Rendered page image: available -- it appears to be a single-page PDF containing only that text (no other paragraphs, tables, diagrams, or embedded images detected).\\n\\nWould you like me to:\\n- show the rendered page image,\\n- export the page as plain text or another format,\\n- replace or annotate the page, or\\n- run any further checks or processing on this file?\", \"refusal\": null, \"role\": \"assistant\"}}], \"created\": 1772656457, \"id\": \"chatcmpl-DFnD7Uwaj0toM9Psu0V3iTL1fzuJe\", \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": null, \"usage\": {\"completion_tokens\": 321, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 192, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 392, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 713}}"
+  }
+}

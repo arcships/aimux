@@ -1,0 +1,77 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_compact_stateful_mode_stream_3",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "11412",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=1SamCZAcZ0SJ3cPM9ljjKFQfx7GS3ErvIbZzG277rks-1776381833.1168852-1.0.1.1-CXrDvGBu6Bc7IszhalUVDkwxLUKapFJAxrA.pFrGK7_JWHYk7lUOrBxhhUSYG5X2t.E4yVgQVDXWbBHMZCM_NwB7CvEaobSzw0nQjDAgmLtrOLMaN7aDJAHItMfGkaer",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "context_management": [
+        {
+          "compact_threshold": 1000,
+          "type": "compaction"
+        }
+      ],
+      "input": [
+        {
+          "content": "Tell me a 300-word story about a fox exploring a forest. Be very descriptive.",
+          "role": "user"
+        },
+        {
+          "content": "At dawn, golden sunlight filtered through the tangled branches of the ancient forest. A young fox named Lira padded quietly over dew-soft moss, her russet fur glowing like fire against a sea of emerald ferns. She paused, delicate ears swiveling to catch the distant trill of a songbird and the lazy gurgle of a stream winding through the glade ahead.\n\nAs Lira ventured deeper, the air grew cooler, heavy with the scent of damp earth and wild mint. Ferns brushed against her sides and shadows flickered as she slipped beneath arching roots and sprawling brambles. The trunks of towering oaks loomed above, their bark tattooed with lichen and moss. Lira stopped to nose at a cluster of mushrooms, delicate white domes hidden in shadow. Her swift eyes darted to a blue butterfly resting on a leaf, its wings quivering as if whispering secrets.\n\nHer paws led her to a clearing where sunlight spilled in warm pools, dappling the ground in gold. Here, a family of rabbits scattered at her arrival, their white tails flickering like specters. Lira crouched low, but curiosity steered her more than hunger today. She watched in awe as a red squirrel leapt from branch to branch above, chittering bravely.\n\nThe farther she went, the denser the forest grew. Wild honeysuckle hung in sweet-scented tangles, and tangled vines formed mysterious green tunnels. Lira squeezed through, emerging near the burbling stream she'd heard. She dipped her nose to the water, the chill stinging her whiskers, and admired her shimmering reflection amidst darting minnows.\n\nAs twilight painted lavender shadows, fireflies flickered on, dotting the darkness with living stars. Lira lay beneath the roots of an old beech, heart thrumming with the secrets of the forest. In the soft hush, she sensed she belonged; a bright spirit woven through the wild, beautiful world.",
+          "role": "assistant"
+        },
+        {
+          "content": "Now a 300-word story about a rabbit in a meadow. Be very descriptive.",
+          "role": "user"
+        },
+        {
+          "content": "The sun hovered above the horizon, spilling apricot-colored light across the sprawling meadow. Here, a young rabbit named Willow nestled in a thicket of clover, her nose twitching as she tasted the dawn. The world was painted with shimmering drops of dew that clung to every blade of grass, transforming the meadow into a sea of diamonds.\n\nWillow's mottled brown fur blended seamlessly into the tapestry of wildflowers. Buttercups, bluebells, and scarlet poppies nodded softly in a breeze scented with earth and blossom. Tall grasses brushed against her as she ventured out, moving cautiously, heart quickened by adventure.\n\nEverywhere, life hummed. Bees hovered over spiky purple thistles, their tiny bodies dusted with golden pollen. Swallows dipped and darted above, silvered bellies flashing as they snapped at drifting insects. In the distance, a pair of deer moved ghostlike through the veils of morning mist.\n\nWillow flitted from clover patch to dandelion tuft, nibbling tender green shoots. Each mouthful tasted of rain and sunlight. She sat up, ears tall and swiveling to catch the rustle of a hidden field mouse foraging beneath the roots. Young and wide-eyed, Willow gazed upward as a cloud of butterflies spiraled skyward, their wings a kaleidoscope of amber, azure, and pearl.\n\nBeyond the crest of the hill, hay-colored wheat rippled in waves and the sweet scent of wild strawberries beckoned. Willow paused at the edge of a burrow, nose wrinkling at the warm, familiar scent of family.\n\nAs the sun climbed higher, painting the world in dazzling clarity, Willow flopped onto her side in a patch of sun-warmed grass. The world thrummed--alive with bees, songbirds, and wind, bound together by golden light. Safe, curious, and content, Willow knew the meadow was her kingdom, bright and boundless beneath the open sky.",
+          "role": "assistant"
+        },
+        {
+          "content": "Now a 300-word story about a bear in a cave. Be very descriptive.",
+          "role": "user"
+        },
+        {
+          "content": "Deep in the cool hush of a mountain cave, where sunlight barely dared to slip across the rocky threshold, lived an old bear named Bram. The cave yawned open beneath a tangled curtain of ivy, its entrance worn smooth by centuries of paws and rain. Within, shadows claimed every corner, painted in shades of smoky blue and charcoal.\n\nBram's heavy frame moved with surprising grace over the gritty stone. His shaggy, silver-streaked fur bristled against the chilly air as he ambled to a patch of moss, its green glow an oasis in the gloom. The smell of earth was strong--loamy, damp, and sweet with decay. Water dripped in constant rhythm from the stalactites, making tiny clear pools that caught stray hints of daylight and shimmered like lost jewels.\n\nThe cave was Bram's fortress--a world of stone arches and hidden nooks. Cracked granite walls were scrawled with ancient claw marks and etched with spidery veins of quartz that gleamed in the dark. In one shadowed corner, a pile of sun-bleached bones spoke of old meals, while a patch of crumpled leaves, twigs, and soft shed fur formed a makeshift bed.\n\nAs Bram settled onto his bedding, the cave pulsed with quiet life. Tiny cave crickets chirped unseen in crevices, and a sleepy bat rustled somewhere overhead. Every sound bounced through the cavern, making the space feel vast but safe. Now and then, a draft of wind brought in the music of the outside world--the hush of pine needles, the echo of a distant owl.\n\nDrowsy and content, Bram stretched, filling the cave with a low, rumbling sigh. Surrounded by ancient stone and the whispers of the wild, he felt rooted and timeless. Here, in his hidden chamber, Bram was both king and keeper of secrets, sheltered by the heart of the mountain itself.",
+          "role": "assistant"
+        },
+        {
+          "encrypted_content": "gAAAAABp4W-pQG0E9NNg0EX06Ei2scR4-A0R2-QPfZzvD5T5pYAMLnYDssmY3_IF3RyVZTKHkbzOxp-yMDAB_kIub5eXmdbvVuHy8RHrOzs9OUGoJMeY61kyu9vb35YRDly5SPzvL8C7ZvPzmQy8UOl9na_acKuDWJ-1XOD8JfIjBnQ1tWDpKfvaSLvlTlc8pzikwzEWsIRAOA7XV2GGYqyG5onl7HE8Agpw6jF54tJ58T3ZQGLLfH8WMrwvLWTFsP2kMs84vNv8O1FmP6n07wsDR86d78WWDzC074HN3w-iN037kI6AKxMqXImIVKDileZJez5ebKQYH_2uPzcxCPvEZ6Srb369QvOU34U5Yr3XVFpJcHpRKa1FSHj5eQMd4TbyYWQB9bsMJrJ4ns4-Y7QMViDa2Ufsbf72aV6qhUlTW5Q8xWjUwartqtQUxdLXud2DpIIhc5kQ_jPFIl0YTCKJTuwHVfZuNlWcEw93rGklB1fVQ21nls0wVILvp0Rns0hYoJfNtsRwEAOsi1LS19gx-uWftE7nhPes1TFGCAPux4eXhdokkx-JQ0My0zej5Pi2fRTCSKTw3vtuciRoCV-6C7Mv2tafdsXl5VFlw4haq3CQt5bW00PoXbVybClahrMFDW-G9TDeTmkObaTmoWZzHEAUbHgSEoezHRfa1k9aNEv0KZy8-guqGVVXqR43lgKNz-VOk2HscopISZrRxf_tMaZyRyxefTrjGrniUREm63ZlwdF2oYPmJvfTqXXJY1-DrPidD5V0NTpAeAOFvbtVrQg23wNU6kBAFhV3PpUv9xmWF5gaaj7TCM5bMymTUL4H3P7RS3kY2HC6i8GcQQwPzBZmVtuArvDtzmO6L4QHhVrUfygbBdWR922GXqvZV_aV-U0IruqUNZZGD7fZo0q15EZs5-mHQLQ0XXOY4z_jDyP1yVUii7PKtaukPZWPuSew8ypzLqI11G6_YtYXqAS84Oc7f2P657LC-8QF2waSdSg9itl0BB-l0oLHE98maG1FPWk8FpbRrNB-loMjY4yhnsZGe8Qsqy9VwPsLWgGx3JHZtMj6fRcCZXRX1Qt13ogr_AyzuHu3GQ1Kh9iAPjvfOuuJYkwSS2yuhOOqCJ9UL5FydgZm7ddE7De-ywjbCxfXS-qWME9G8PjD8oMLx-_lnzGNVWcdy9bXtmCZZZIHD4dY73e87Ojaa819usCqNHW4Gb-RdxV7wgZhMaQ1EcqK_ug3xG-Vp6L9U-VNRvrROWArpYjQftHf59F_z2ytCwL6VGxE31dmsUILJNoWxbTbhRmrcZRQEl4rN5ZpUCIOIoATua1NyvqRdvCU50G3-uRrdl5ExX1u-6g9kA5gTgLNBqv-PB9hFKDdhLKBkrWDfvMzH8W0O7kFLTC-g4efgSgV7bLi5dcaHci6OM2k2TrwGtlDp7P_PXwFDqoYIpmWIVloA2alVmsVAyU7MAxd2BDtDfqX8vLkoruyRZQDV7nZMEVRvjILRkEpGMGknDvSuuejsqDogJ6i8uzH0a_SeBPm_f2cCzweb5hwD2WOf3H-bFArr44Zg1W4IUDRFym46T27FB0hpqgqtTmqDkX0DoqOOf0z7Kp-V8BBd_q00M5aLd0FmpJyVu25pMxDByV7qyNQJmUUIZeITa47VwrDpgQmISQH0wqUPboHDVmX3lBMbj32VV3eMUJgQU9JeKmZ1NfQgXmogaRBx39vIcbvQ2-EfAh6Rj_9wogl-FCwgyrM2i_fKnq9_MJy9BNEgFlQNSmXOMbe-B66hECbfhWLTKaj2MXQcm_o5xyYLdIDE0HMvUB1WZpNKMGd2gDQACXtTj31tT_O2OTdv56p_tnJuR0rRICPxJHKiWByZlHfUs3HN6aHE_uaKXFlCZfujt7HGsgGIg-UzPRVydIVVoWU0e2WqULufYUMQzP0-mgPwGywgrxI1fE3W1WKzBTWQVb0EAShIsMMbHZWx17ahWHCmDEuA1-wnfY7sdhdIkLOu5pbSk13bLoNCSZRY_69CdEmS8E0QJjSZmTDCD6p_ZJMgzLkL3nk-RLSPfBShErWSZ7TFwpIp9wNtlhwWRgH7ZxbdC9srRDsNn3KH9ybSVuEbWFVEgCu4sI8hnD6qg63WG76LdUeP3KLGpwLHMUbCEmLaLtK7CvlHf99z7QMo10wLEQS4vjxqkWdO5tEf-c2y7PSu1H0JEjCwInwAK1O6rqOg_rjT9cnHNVE5USx0po6oXzhcOt2BP8aqs2Kdr95okbNjod6uKAspPOwkmbWS7zwxuV9eLPfBNdQuEzFAuWLvG8MR94b7rFqk1mQKb_YJkfbKDo9HvAdRnFv9ZvooveK2x9YxcVWdlVl7rnbMiKKaWUkY-v84UFP3cWuWeTzlziUFbQ9hSTOlqF_j2KMmGomzZBbwzGSMOfgesK22l-qsedJRhGpxEKi-awetTTIrE7cxGFg1CjkbXwh9rVYDqpDE-FSPO5n4p3qjuNS6kUIKJaJY-BNqXr-vjeYsczcnXksYQg4aIaQWcnBzYc_yrpV_tb_vBdI1LC-39TDotIQyhYqXQhwH_3Lu539NEf0zQ7pd4Gd2j_0HiFcnw4wF0peu37Kizoxqh1qoT_U0BfQyd1QwGjdYYABS5UOzlOXdE7ofA6xjOcYDYwgydDnf8r0UeMeyeA7iINI1DMqZ9ZLkSE5r165CFUzLaNWAAZn9-hRlf0UT023bHrmP39dEI-eH14HuvyWJ_59N8v0MvbDzHJigdF95OKmjYZcxETEC2Q8f2zlSTmhnVauBlwtQ_KTdJoSjasOwxBzUtzpPSVGXPG2JKeiR_UEP-v1PnZdDgLcuvMIq0DiCtfv3KLyETilVUKI0vCobn5XbNBwpfGParsjlHvxBeHVxjtTSw6WynqBuGJk1-HHEUsaW0bmKiwJI0nGURGscSNmrb5bgLmIB6sofquwDFhBIM0exY-iRx8pUpqPCYQpBgg7zgRalQJGo1CU8yj53MknMtemvadJ9lF9kRhCZGbBT_PqUd0e9pKAfmSIhCEUZT05CJ_ZiBaUm0QgupOUJJKgsINSCsXX5WrNwm5jdvRHEwJcUdLZxCp7DiMNS9NsV3kGilO3xlYYyJCru15fD6PLoq3OJSu6aLMdY7PQSmbulw0CL_Kvzx2jC_J8FJDLPSITRDT2DQJZUTIWxHx8VCzOrDNpiarAxp9ICaUTwnFDaaeBtY5Vitmq931mx1xzdt_7MULogYAmm8M43dPwKlF9dj8NXIBUvaQFN45E5VEyq4UPhyKaeYun90X4ug8MgzYUSPOVDurXX7pLoDxCI46D6gGTZDMxb_HbRNl08NBCukX-c6MDPouF3rVZ0Dd1iudKzZDG622csqdiLuiBmLApCkpmpycQvApBaV2BhazwRMIJILRYJPe7nO_KvzaVTqi4lMbaX63xrXEJVqOVYIowh0tpB9OjULaMiJS6j6937nPEaRWZcZde_n7Rvy2hI_I7FxfWQaebRYI1HJe7GOourJ7IFgXNx3FmsoWfdS7YsGEqP4WjZZW4TpSPu8nhnGxL14giUkuXAKUSdW3g1QYkg8_dYVSuNgeoQK1LCrjCosdxUXlil4SfMEeyz26MV3UFllq4P6gI2ufU1V8OSe8y_u1tLPOee-ScYGNkns9qMKwXfXfwAtURy7OpjHWyySGX0HW0o1D22x02fXNAgPRn7KcYI2RHKWwPOI1eiPMYBEr6lEXWoB-WmRN8IfRTWL0OpTqKPPcclErWnN-jcAWCGcMyumMYGnFGGukWFjfJD0xmGZTOh8JRP2XdeU1QzzzhRr4_OYSDFcncrHtIdYeovtTeCSJGug53jiBbUVwKenNjL4eLLX3LHBsZZeRyM9a0QSRwPfjtpvZ3AAWHHdzM_MbisytR5_yAw8KUNu91jlhT6RcVsVHC1h-jE-bdavVKmB7h8U3PZD-3-n63-gg9sVY5Rd9SDi6qCN6H4Sh9okGkhxG-AhfuCEnwzKaM8CKgUBBt7jLCUoycmE3uGh1ml8NFFpmsByVEu_1TgFDZFPY65dnTjXEmoXMiLTrIk9_vTKUdIFd-H7HZk20yB1ziHiDYGs13KdGGXuGIF0D1362fi1_UQqtMfLEK6_wXdls68ljtT2jS7qs9EzUzUtBxIpbROhgSGXr6bLnVDGlUweaAkrmIyAJ9VdKEymmH5xd1e5kwgNj_Ljr0HDZ7VXPjM09EZyKu5k6L3JXD-MLgF54CC3rrLNomdvsRRmEaFExPqhSMvvdyrVr6GWHUB5S9zpnQarJlKRFGf6jWx0Ytt-g-50cCeJxQp7YZxMeVl74LPrjuAedpMGOHoblDZ_uvk3DYgYWLyGeyuID5OpSrehyUr6_b1nJlfp2sGdgvksWkhNsm1YExVyGMiZihi05fxxsUNl4KbbV-btZ2AumM3wW_OyQbRDD2zG2zPhTUouGLXQaBtc-Wlcgit6_DSV6uJdQefrXFg5XJAqG8aEnG_DfgFztenOjF-J0lIJCnh9Yg_H5bdabjfS1zaraE1n320j2_j1ehjJtrjNnnKCLwTY67eSmNmQnXy3DdgxoXodxsUeNUp2MgLV6YIyU7EanR1D3eTu3ZI1cZjj9O_jj9ljUER_BcGq27l6pqV4QrJI0gf8qE7B_YWkaB-EQnyDbDUpUZHVnC8GNfNXfX48SHvJYfYiL4I_lViuIda2s5yQm1hlzeHRCrfrzB0Ku2yOysVcWcHMFWrgjZBxmyfeN94M1ablwb01KPANzldzGAqCjzchlcn8K5btXrYayDzICxqWj2KyTA7DDmX12l3ojEv-1hRo66EmnaH_AYyLpLES6RPtZvfpdFbnMVkG3SyRtu3bafn_RAV8vFZhU3-y94ofPt05507QcjnvdUqzl-6urMmIeSgs-IN9nFrEJr612a_mkqtp0fi2EpuGawSDb4PDnmi6iuKhp9owAW4NheYuzgva-CWAPh0V3xBsqGjYEsYkepKP0vWrsL6O3nzIF0pX70kC6HS7HS9XDXkLYrgxd8dHY0gZiBCWe6xOBUaezXUYNvqtYgS_7eYkKlEz6WYVmAo5Z4K5FvItkqtfvDNZv1BrMbmFa31PnCIpDYPNEm5l9aThWaUZZwnwp3lok5NLtaPmAUXfaMcsRrXRYgxcgBdB4xyFcInDVrdBbtPfjWQPbRBk44_F6RMgrX0wGqXw0eBuevQYsU9r429Vms5nAzTsKK8BNt8gDfQw9JvjDxzdGXbYXOo1PM8mysyIbV",
+          "id": "cmp_067b756b377f97050069e16fa9b8408190ab05934212c434a0",
+          "type": "compaction"
+        },
+        {
+          "content": "What is 2+2?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4.1",
+      "stream": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "119",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

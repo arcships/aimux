@@ -1,0 +1,50 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openrouter",
+  "scenario": "test_openrouter_with_native_options",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "193",
+      "content-type": "application/json",
+      "host": "openrouter.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Who are you",
+          "role": "user"
+        }
+      ],
+      "model": "google/gemini-2.0-flash-exp:free",
+      "models": [
+        "x-ai/grok-4"
+      ],
+      "provider": {
+        "only": [
+          "xai"
+        ]
+      },
+      "stream": false,
+      "transforms": [
+        "middle-out"
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"logprobs\": null, \"message\": {\"content\": \"I'm Grok, a helpful and maximally truthful AI built by xAI. I'm not based on any other companies' models\\u2014instead, I'm inspired by the Hitchhiker's Guide to the Galaxy and JARVIS from Iron Man. My goal is to assist with questions, provide information, and maybe crack a joke or two along the way.\\n\\nWhat can I help you with today?\", \"reasoning\": null, \"refusal\": null, \"role\": \"assistant\"}, \"native_finish_reason\": \"stop\"}], \"created\": 1759509677, \"id\": \"gen-1759509677-MpJiZ3ZkiGU3lnbM8QKo\", \"model\": \"x-ai/grok-4\", \"object\": \"chat.completion\", \"provider\": \"xAI\", \"system_fingerprint\": \"fp_19e21a36c0\", \"usage\": {\"completion_tokens\": 240, \"completion_tokens_details\": {\"reasoning_tokens\": 165}, \"prompt_tokens\": 687, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 682}, \"total_tokens\": 927}}"
+  }
+}

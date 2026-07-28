@@ -1,0 +1,134 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_receive_web_search_history_from_another_provider_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "2522",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What are the latest news in the Netherlands?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "Based on the latest news from the Netherlands, here are some key recent developments:\n\n## Weather and Public Safety\n"
+            },
+            {
+              "text": "The Netherlands is experiencing windy and wet weather, with a code yellow strong winds warning issued for the coast"
+            },
+            {
+              "text": ". "
+            },
+            {
+              "text": "A sailing charter crashed into a freighter off the Harlingen coast, injuring five school children"
+            },
+            {
+              "text": ".\n\n## Political and Economic News\n"
+            },
+            {
+              "text": "Budget Day in the Netherlands is approaching, with MPs expected to face windy weather conditions during the event"
+            },
+            {
+              "text": ". "
+            },
+            {
+              "text": "There are concerns about political gridlock and costs driving Dutch firms to relocate abroad, according to entrepreneurs"
+            },
+            {
+              "text": ".\n\n"
+            },
+            {
+              "text": "Voters have little confidence in politics and don't expect improvement"
+            },
+            {
+              "text": ", reflecting ongoing political challenges in the country.\n\n## Energy and Infrastructure\n"
+            },
+            {
+              "text": "Dutch electricity production rose 7% in the first half of 2025"
+            },
+            {
+              "text": ", showing positive growth in the energy sector.\n\n## Transportation and Travel\n"
+            },
+            {
+              "text": "KLM has cancelled more than 100 flights due to a ground staff strike"
+            },
+            {
+              "text": ". On a more positive note, "
+            },
+            {
+              "text": "a skatepark has opened over the roof of an Amsterdam highway tunnel"
+            },
+            {
+              "text": ".\n\n## Recent Policy Changes\n"
+            },
+            {
+              "text": "The Netherlands is introducing a helmet requirement for e-bike riders under 18"
+            },
+            {
+              "text": ". "
+            },
+            {
+              "text": "NS (Dutch Railways) has begun alerting passengers about emptier trains with push notifications"
+            },
+            {
+              "text": ".\n\n## International Relations\n"
+            },
+            {
+              "text": "The Netherlands has declared far-right Israeli ministers persona non grata"
+            },
+            {
+              "text": ", and "
+            },
+            {
+              "text": "the country has condemned an Israeli strike on Doha, urging respect for state sovereignty"
+            },
+            {
+              "text": ".\n\n## Business and Innovation\n"
+            },
+            {
+              "text": "Several Dutch companies are making headlines, including Amsterdam-based Naq raising €6M for healthcare compliance and LeydenJar raising €23M for battery technology"
+            },
+            {
+              "text": ".\n\nThese developments reflect the Netherlands' ongoing challenges with weather, political confidence, and international relations, while also showing growth in energy production and continued innovation in business and infrastructure."
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "What day is tomorrow?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {}
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=862",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -0.2537533132041373, \"content\": {\"parts\": [{\"text\": \"To give you an accurate answer, I need a little more information. What is today's date?\\n\\nOnce I know today's date, I can easily tell you what tomorrow will be.\\n\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"ndnJaNP6FqLjqtsPh97wwQs\", \"usageMetadata\": {\"candidatesTokenCount\": 41, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 41}], \"promptTokenCount\": 376, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 376}], \"totalTokenCount\": 417}}"
+  }
+}

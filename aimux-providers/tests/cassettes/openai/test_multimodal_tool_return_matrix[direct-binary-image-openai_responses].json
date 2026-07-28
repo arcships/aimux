@@ -1,0 +1,58 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[direct-binary-image-openai_responses]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "409",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Use the get_file tool now to retrieve a image file, then describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_file",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "1335",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1769755916, \"created_at\": 1769755915, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0037449c9c450c7b00697c550ba490819fb8765a74675ee8cc\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABpfFUMqY6-4f0IEMs7JHAwEkAQGg99JYjU_G8ezHs-zAartcz1UET9sCovYZo2pwX8KLm9ucS78WQFKl1OWaIszpwjueJaRPRe_iqnSF2tXBnlL4iYVEf72g5VatZ3aOmKg4Grx9Qtrd57zjil5zgQaNhoa_jw641S3u9LM4LTZK9nDoJw5BaLsUrhTVV_sVjaqbhDh9SmJqGuMAlFg50rg_3AU-1zBif9QVWfpJMzf1OYl5_yazrW2dyGMIQayHbICfHDBUEx5m8ijTiD-RXz1lJo8KH96q6B4Mz1kui8ltMzwC6kYlJw8HkegToMQH88YRUfOE6K1SKMGsKG4BGyoyGnL1SgC_yDtKexf9FbmyAr3kfQDJV7aM7i-DAnhXONTRVtd4akTIeBO25OAypqTpTLBhF7XbF_4y-kDNr6AqTyDR4rVtJc7SnaHYg9FaAXoIfML1KeXiJl4zNz7W5QQ9hJycvPASvv24j5ZqKp-KIETIOAqRAHPBKKZdgcG8tRsT9a07sFBen9wRdSUvkoC8k17k5UEptrDntVPKalIHuccD3bSi1Ip0ScE1YjFSPrwlBRSia6U5p_ODs9drsZtyx0AvTh9-QT1izRyJzVUH4R-BvtfY_r6Q1wfDoQw5E4f3QzE3U6JmED3Jz3i4gVnMtSWVA0-cA2JvyZ9FzPcK-bm0LZO2GI7ZLnGBBb0PokcVo6WWuIQFh4NiUKyqtBulLvU2GizsLn8MxsbPoblsuHPiykRcrreeS7P8pP19SzJ956DhDzvpIxewZP63tO7RUPUNDoZL4Bladw1c06Smuodcpe51G0XfeFgIFL-mz26QppTz1u2EdatDBgcS7maty8XzDA790Kg2mjcZ-PRS7f1Qu5Gz_bbKqDtXARcSB9_nJ9Ikeahsd_I2KkejmtH1eSrYUMARfwzpPNRy_7_4FzGbl2hggP7GBLIvFHyJVSdo4zE20UDT8a2FWApWQavcfAfuMNnZYnlxVmJUwJe0TRiq2Ftuk9o42hq9CH4_hBBDIKCNrlk6aDL6PhkAkoBty5gw==\", \"id\": \"rs_0037449c9c450c7b00697c550c26a4819f91266f4a469eb8cd\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_vqEGoNIL0bjo2Fl52raz1iJG\", \"id\": \"fc_0037449c9c450c7b00697c550cb9b8819fae1ffee79737fea8\", \"name\": \"get_file\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_file\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 47, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 49, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 96}, \"user\": null}"
+  }
+}

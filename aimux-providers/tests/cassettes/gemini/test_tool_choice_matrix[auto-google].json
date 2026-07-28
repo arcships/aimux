@@ -1,0 +1,71 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_tool_choice_matrix[auto-google]",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "459",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What's the weather in Paris?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "AUTO"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city.",
+              "name": "get_weather",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1322",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"city\": \"Paris\"}, \"name\": \"get_weather\"}, \"thoughtSignature\": \"CusBAXLI2nxjqlNFmkZhFvBKYO2Qbvj3E+G7N6BmlLYeobi9hrXb2MqtS/9TkFYVru/pjEa0jD3zRZrqHuyr/OCYx7S1b4Ukwh3oq6L9AZ09WbcKvaHyZNyTmcJy23JbOYYX3naiWgfUo2l/CW26R1YL7brQc9tgTYqpzljWs/8vBp1aGjzXFtnZjSuDRnyUYnuzCgXDXr9rLnsnGljyhIKP5nElSp1QOr7f3elhfu62IlZvmEuthWANstRn8S7GTqW2Vm7tEQC1QOWIIOhYZgDRtLuagAYlouqi3qgstFV73ZgxWdDs/9ptuRUOag==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"78F7aafeKcDVz7IPh4DK-AM\", \"usageMetadata\": {\"candidatesTokenCount\": 15, \"promptTokenCount\": 49, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 49}], \"thoughtsTokenCount\": 48, \"totalTokenCount\": 112}}"
+  }
+}

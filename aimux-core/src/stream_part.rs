@@ -1,0 +1,93 @@
+﻿//! `StreamPart` — the individual chunk types emitted by `do_stream`.
+//!
+//! Aligned with V4 `LanguageModelV4StreamPart`. v0.1 implements the P0/P1 variants;
+//! P2 variants (reasoning, file, source) are defined but not yet emitted by providers.
+
+use serde_json::Value;
+
+use crate::error::AiMuxError;
+use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
+
+/// A single chunk in the stream returned by `do_stream`.
+#[derive(Debug)]
+pub enum StreamPart {
+    // ── P0: text ──
+    /// Start of a text segment.
+    TextStart { id: String },
+    /// A delta of generated text.
+    TextDelta { id: String, delta: String },
+    /// End of a text segment.
+    TextEnd { id: String },
+
+    // ── P0: stream lifecycle ──
+    /// First chunk — carries warnings from the provider.
+    StreamStart { warnings: Vec<Warning> },
+    /// Final chunk — carries usage, finish reason, and metadata.
+    Finish {
+        finish_reason: FinishReason,
+        usage: Usage,
+        provider_metadata: Option<ProviderMetadata>,
+    },
+    /// An error occurred mid-stream.
+    Error { error: AiMuxError },
+
+    // ── P1: tool calls ──
+    /// Start of a tool call's input streaming.
+    ToolInputStart { id: String, tool_name: String },
+    /// A delta of tool call input (partial JSON).
+    ToolInputDelta { id: String, delta: String },
+    /// End of a tool call's input streaming.
+    ToolInputEnd { id: String },
+    /// A complete tool call (alternative to the start/delta/end flow).
+    ToolCall {
+        tool_call_id: String,
+        tool_name: String,
+        input: Value,
+    },
+    /// A tool result (provider-executed tools).
+    ToolResult {
+        tool_call_id: String,
+        tool_name: String,
+        output: Value,
+    },
+
+    // ── P2: reasoning ──
+    ReasoningStart {
+        id: String,
+        /// Provider-specific metadata (e.g. xAI `itemId`).
+        #[allow(unused)]
+        provider_metadata: Option<ProviderMetadata>,
+    },
+    ReasoningDelta {
+        id: String,
+        delta: String,
+        /// Provider-specific metadata (e.g. xAI `itemId`).
+        #[allow(unused)]
+        provider_metadata: Option<ProviderMetadata>,
+    },
+    ReasoningEnd {
+        id: String,
+        /// Provider-specific metadata (e.g. xAI `itemId`, `reasoningEncryptedContent`).
+        #[allow(unused)]
+        provider_metadata: Option<ProviderMetadata>,
+    },
+
+    // ── P2: metadata ──
+    /// Response metadata (id, timestamp, model_id).
+    ResponseMetadata {
+        id: Option<String>,
+        timestamp: Option<String>,
+        model_id: Option<String>,
+    },
+
+    /// A source / citation (e.g. URL citation from search-preview models).
+    Source {
+        id: String,
+        source_type: String,
+        url: Option<String>,
+        title: Option<String>,
+    },
+
+    /// A raw chunk from the provider (for debugging, when `include_raw_chunks` is set).
+    Raw { raw_value: Value },
+}

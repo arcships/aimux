@@ -1,0 +1,39 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_previous_response_id_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the secret key again?",
+          "role": "user"
+        }
+      ],
+      "instructions": "",
+      "model": "gpt-5",
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "previous_response_id": "resp_1234"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"created_at\": 1743075630, \"error\": null, \"id\": \"resp_5678\", \"incomplete_details\": null, \"instructions\": \"\", \"max_output_tokens\": null, \"metadata\": {}, \"model\": \"gpt-5\", \"object\": \"response\", \"output\": [{\"content\": [{\"annotations\": [], \"text\": \"sesame\", \"type\": \"output_text\"}], \"id\": \"msg_test_previous_response_id\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"previous_response_id\": \"resp_1234\", \"reasoning\": null, \"status\": \"complete\", \"status_details\": null, \"tool_calls\": null, \"total_tokens\": 15, \"usage\": {\"input_tokens\": 10, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 1, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 11}}"
+  }
+}

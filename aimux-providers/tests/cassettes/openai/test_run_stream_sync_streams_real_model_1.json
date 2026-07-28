@@ -1,0 +1,85 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_run_stream_sync_streams_real_model_1",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "731",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is the capital of the UK? Use the tool, then answer.",
+          "role": "user"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"country\":\"UK\"}",
+                "name": "get_capital"
+              },
+              "id": "call_ZR5UUuTt3pf61kjwAJIYdVMj",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "London",
+          "role": "tool",
+          "tool_call_id": "call_ZR5UUuTt3pf61kjwAJIYdVMj"
+        }
+      ],
+      "model": "gpt-4o-mini",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_capital",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "country": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "country"
+              ],
+              "type": "object"
+            },
+            "strict": true
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-processing-ms": "290",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

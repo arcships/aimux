@@ -1,0 +1,58 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-document-openai_responses]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "412",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Use the get_file tool now to retrieve a document file, then describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_file",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "1709",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1770662966, \"created_at\": 1770662965, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_05fad36c0c9fffab00698a2c352db881979aafd31de6c62fca\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABpiiw2CtAEPeZPPe3DReLhvuNCZdhLyuSEcIXZSHjN03lvN_KMBXCGVOlXEQ9mWymx-RhRsZ1Br-2TyVdf3tOlGeRVsg8IRpZNbB5IjW_1SQw4Funx9zriyve7NmRI2-NrzTpZ0VpQhtot5143mbzOZ_JQ8lIs_yTNibJf5Vq4RXOdVThdCw0xlqEVMy7tIQHQFz00hpkp3GWPOW2H9lN9x7fA32sWFdaW1HFv7NTeen-IgU-1eIQsbHV54OHjEQ_EeuQhV2x9zTpRJfYE0eUaCWLn0Pfs8exNf6aPVJg_wvcNgZSdk6GoVmzbLO2xLp9qhtCVxSYxkKgW_U79r8bPFO22TPnTldXFqObVnsSWAluJnMCzOeYWDJ-u7izx3obvfskHacUCZovTeB9SjliG6uRHSbvkqUVtv9o1Nl9S-tFElVQRGVIyJ8T1MWBDaHG51UXcVX9ySXlvft72FetPGcDCtAH954iZoHmTTlyN32ww8liGphCVy7gzcmRmDoLAMF9hInPSGez2XGPPMpBtcXMABQhFgfANcNy0Xp2yS4T9BbdCSW6Tx2kGnA5zO1daNF5aiTXfGBnolVDIiqVMGx56RdXNoN1jrB80vrVIz0vt8kSA7iqB9WdDTH3xW5xQqhkd-d1LB21dcep8_AATLXuq1ntziaX8wOEfhOw53FihEjwoVhIbLNmr0ZdkZtveNxku2vIda3s1RbmZLnfnk2qNK9yVhPqkwOKVxD_8Ym9R9F6MGgmyBphc8nJih7F7go7afznaUlBsvOvsecPpPyfPzvPphhqLzxx2x4qZY3H6llq5AADR4-_a3BCw-eUdpx_rZyk_YggdrbqnH0N0jLCVROPwl1-eq4vA8CFlX_AZKwHsyAzMXnJ4mVTENilkj9g1dreVf_tCEFVner168WhkEyTv26u50tGUAlBLF91WmzrmcWpFENs7KYpzQBlOtypud83NBllzXImzvvhfnVgRsVeHq5FhxoLMQ2LxYqYdCaZ9ek-hIYT3mOG_xogVGOmvLOGkNgvkrBfOMlqiIqqI73DXZrrD2Cmnf6iQ5cb65-nBP3gclyqFVqMvnTBgpPa-fKSoU7z3EPUSOB1nb2cdxpmcaeTTmVjLwABxwPKdR-s=\", \"id\": \"rs_05fad36c0c9fffab00698a2c35b9808197ac778ce59d7e831e\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_gIflkk9V8xqxuDn5otXb6iar\", \"id\": \"fc_05fad36c0c9fffab00698a2c36a19c8197bb5ef3c3b8202428\", \"name\": \"get_file\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_file\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 47, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 65, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 112}, \"user\": null}"
+  }
+}

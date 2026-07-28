@@ -1,0 +1,64 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "streaming_history_preserves_hybrid_tool_result_image_parts_0",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the tool once, then answer with the dominant color in the returned image.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "temperature": 1.0
+      },
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a precise assistant. Call `render_reference_image` exactly once before answering. After the tool result arrives, do not call any more tools. Answer in one short sentence.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Return a reference image the assistant must inspect before answering.",
+              "name": "render_reference_image",
+              "parameters": {
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{},\"id\":\"9dbczjx5\",\"name\":\"render_reference_image\"},\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-3-flash-preview\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":12,\"promptTokenCount\":90,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":90}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":43,\"totalTokenCount\":145}}\r\n\r\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-3-flash-preview\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":12,\"promptTokenCount\":90,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":90}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":43,\"totalTokenCount\":145}}\r\n\r\n"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_retry",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'abecef80-4763-4cc9-9b08-e0f09f1ac527'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "508",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 581}, \"output\": {\"message\": {\"content\": [{\"text\": \"<thinking> To determine the capital of France, I can use the provided tool that returns the capital of a given country. Since the country in question is France, I will use the tool with the country parameter set to \\\"France\\\". </thinking>\\n\"}, {\"toolUse\": {\"input\": {\"country\": \"France\"}, \"name\": \"get_capital\", \"toolUseId\": \"tooluse_Ze_bgl9CSqu8aJv7XD-_Dw\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"inputTokens\": 426, \"outputTokens\": 66, \"serverToolUsage\": {}, \"totalTokens\": 492}}"
+  }
+}

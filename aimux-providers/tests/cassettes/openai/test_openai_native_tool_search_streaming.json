@@ -1,0 +1,92 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_native_tool_search_streaming",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "869",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "What is the current USD to EUR exchange rate?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5.4",
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "type": "tool_search"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up the current exchange rate between two currencies.",
+          "name": "get_exchange_rate",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "from_currency": {
+                "type": "string"
+              },
+              "to_currency": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from_currency",
+              "to_currency"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up stock price by ticker symbol.",
+          "name": "stock_lookup",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "symbol": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "symbol"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "517",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

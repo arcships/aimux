@@ -1,0 +1,58 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[direct-url_force_download-image-openai_responses]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "409",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Use the get_file tool now to retrieve a image file, then describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_file",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "3627",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1770662674, \"created_at\": 1770662670, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_095cd274ca92696600698a2b0ec43481a3a2decc208a2dfd04\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABpiisSD0DenvmSxclcL4W7TUFrgnIaFNL2Yd440oStho2M5ZIuncazE1ZjRWwBUN_DITSWtaF5S8bdBSTyR7tCQY0k_aq9x5udBY2S--WSMobK-W11NcTK81YcjwC1-R7ZHrpZNFLJCjRwNi_tpLCmC5cODVxR8kznbAJowQiLsDb68g-m2zMoPri6d5kz6MhRzwyW4qfjdnl3no8K1901fwopgQk4ZH7KakzrDk-lgLvAR99M6JY6kRsd4iJwK9_iuW3axHnuNzGdj7jQoBbwxS0Ll2-HYZm8LlnH80NXRqFnP3YijYF0pswuff3m1qoGWd-Ovmk4TgPmu1rdSwr_H6zFIUJxSFiUKczXIbRJbtfcJHqxMH-idpsir35ZnAqstc-zYc2KE78kInJjl5Gt4WDTNFzYPLbTG6ggjMeCcwBALBNIdbKdsJWfu9eaH9c6HAOAYSTCWyiAEvxbNNMXFl4BJ-N9NQAkrg5WCyJFXVZEILp4H7HSKwL0LM27u7vJ-1DOXE0XjOVPn_lwK8vQItSEnjdZwbXU13JY6hOk-4Uk4KlpvzSUvONVtoNxMjb05EBCgte32Ww1-kEX89H7VXHSvggqaZoT7cuxFFK8M0AOU4ry4v-ozYxmcR4WEWDTidBvGWtICeTV9catrp3cEhRPxZasMbIcZYy4Abp80JparI9oFaQds-1_-l6E7X6kxBOVPaQArYq-CETSoNcV8To4IWGGQEMkFxkoKMXLiOUKExV7GC6maTEdEaanOzEuT9AzTjcbJ9xkf6xriDAd3B8A_lRv2B3Ad9DNDjq6DBf54oLJ8PJ8nkS-3d99h3ycS-GKICoc0erQfH8s_iwypuyhvQYkzMGKD_xj8K2YEPmFj9qxVJZYACl3STXTc9kJdnC1kzJOr-TTdXq-nUqn6tdxtU0yM6IPOryC9dhsgfKN0ZKXzgdt1d3r-YKnF17xoD5MxzaNYeEP9-iTBy1RdF2JYt_Aa25iponExV5w0DoM7ugqLRwT4UyokQiBNVLzGstaU_DehBV0bq8E-tO7j9wQ35Ys139ZThmP8Nq9n2QeexgHceDLFVZOxc-FHcLkqBH3thdiseqE3Gpc3BjVNXMEmxTYD9xjLZU3GNXyhc8X4i9sq4aKunwtc1JXtf7_iLR-EHGhxLvbUOaYjwu02kkaY-ks150tZD0iznBW1l6Irj6oZUagwbdJyneG0mG11XsEQ-p3ubAKQvsn038f0JPBKjCOKWNow-EKB2ZhoGQlaclQTs3Zl3WW2w-L5urd3J4u0ubElqk96x8COE9bv3coBu5lrAHNyi7AykB30NFCf9LQ4gdLknUZq1EqjjilJBvNJKVg7sg3iLHzrHOgzcPY4nrgHISa26HMAagOPHO6qos=\", \"id\": \"rs_095cd274ca92696600698a2b0f0c0081a3ad26d77576d1207d\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_0AMpT3ANlK0LgSmLm5XyFD4H\", \"id\": \"fc_095cd274ca92696600698a2b1060e481a3a1bf1663c77fae09\", \"name\": \"get_file\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_file\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 47, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 97, \"output_tokens_details\": {\"reasoning_tokens\": 64}, \"total_tokens\": 144}, \"user\": null}"
+  }
+}

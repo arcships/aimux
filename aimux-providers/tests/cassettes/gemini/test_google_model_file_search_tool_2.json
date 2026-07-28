@@ -1,0 +1,27 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_file_search_tool_2",
+  "request": {
+    "path": "/upload/v1beta/fileSearchStores/testfilesearchstore-q7prdj5dqu8p:uploadToFileSearchStore",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "79",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "vary": "Origin",
+      "x-goog-upload-status": "final"
+    },
+    "body": "{\"name\": \"fileSearchStores/testfilesearchstore-q7prdj5dqu8p/upload/operations/h5s6ca4doiqm-o6z67pznvx9f\", \"response\": {\"@type\": \"type.googleapis.com/google.ai.generativelanguage.v1main.UploadToFileSearchStoreResponse\", \"documentName\": \"fileSearchStores/testfilesearchstore-q7prdj5dqu8p/documents/h5s6ca4doiqm-o6z67pznvx9f\", \"mimeType\": \"text/plain\", \"parent\": \"fileSearchStores/testfilesearchstore-q7prdj5dqu8p\", \"sizeBytes\": \"79\"}}"
+  }
+}

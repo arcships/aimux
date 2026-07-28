@@ -1,0 +1,62 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_model_mcp_list_tools_stream_backfills_missing_results",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "647",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "List the names of the tools available from each connected MCP server, then stop. Do not call any tools.",
+          "role": "user"
+        }
+      ],
+      "instructions": "You are a helpful assistant.",
+      "model": "gpt-4.1",
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "require_approval": "never",
+          "server_label": "deepwiki",
+          "server_url": "https://mcp.deepwiki.com/mcp",
+          "type": "mcp"
+        },
+        {
+          "require_approval": "never",
+          "server_label": "microsoft_learn",
+          "server_url": "https://learn.microsoft.com/api/mcp",
+          "type": "mcp"
+        },
+        {
+          "require_approval": "never",
+          "server_label": "gitmcp",
+          "server_url": "https://gitmcp.io/pydantic/pydantic-ai",
+          "type": "mcp"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-processing-ms": "1595",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

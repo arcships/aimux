@@ -1,0 +1,62 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "ollama",
+  "scenario": "test_ollama_cloud_tool_output",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "451",
+      "content-type": "application/json",
+      "host": "ollama.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-oss:20b",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "The final response which ends this conversation",
+            "name": "final_result",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "city": {
+                  "type": "string"
+                },
+                "country": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city",
+                "country"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json",
+      "traceparent": "00-45b6fb413b37b09131b2dfc5121d1337-f3906214e9114b6f-00"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"Paris.\", \"reasoning\": \"We need to answer question: \\\"What is the capital of France?\\\" The answer: Paris. The user didn't request the output to be in a specific format, but the system instructions specify that the tool should be used only if user requests. The user didn't request a tool. So we can produce a direct answer. The instruction: \\\"When I need to: use tool, say I need it with a brief statement\\\" - that's for tool usage. We don't need the tool. Just give the answer. Ensure no extra marks. Just plain text.\", \"role\": \"assistant\"}}], \"created\": 1776298297, \"id\": \"chatcmpl-395\", \"model\": \"gpt-oss:20b\", \"object\": \"chat.completion\", \"system_fingerprint\": \"fp_ollama\", \"usage\": {\"completion_tokens\": 122, \"prompt_tokens\": 134, \"total_tokens\": 256}}"
+  }
+}

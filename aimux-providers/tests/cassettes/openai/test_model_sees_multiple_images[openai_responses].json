@@ -1,0 +1,58 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_model_sees_multiple_images[openai_responses]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "417",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Call the get_images tool. One image shows a fruit - what fruit is it? Just name the fruit.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_images",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "2912",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1770663516, \"created_at\": 1770663513, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0e185054b04c9f8700698a2e59936c81968565b9042f18eb2b\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABpii5cIIfBLkHP6KWCF3nHAmWggdK3jVTN4wldCXzGl9WH1hmsj_WQ8kazeeU8mkey8b2kEfSKIcVaF99sHzeQ__zxq59vSAu2gj5bhtKKIm3Qq734gFZyiYKas0ALxLy7SWuYTu_GB_hVt-yCPPKc05Vjez91LC6qhoQF9EVnb8RvbuSubk7PTYg6xnn-VoBpiKR6DS3EVQWVWHONoxHwN7bpnCJgqmndZ4OoRJ0iF0rZPJdBP8FGm2_eQoxIA51L5vEcaxTlQlLQ7Cr7-NQtaNZDcgpSMt6nOkF7B5oPcIgNt2AzO3vA5Fvy2YecL7iGuskHXc1gFYRitM0_7jkCH_sWoEuFDMWCwfrg7BZ8kL71mz6hECnox4zVAS-iaLicQBh6HJGuIenALyIPlSLby7969DCQvvvaZQWIzCyAIVyxc0A1cgGK1mNbBUqt-8cqN40xUMxzLg8O8mxmMb-eujq2glKhKUdff2zuEH_k9IQygduP3DF3VDi_HstG8Tk3zieD_QchvGvtCYq5TDLQGJ7cgROTWEFe3J6bIBJSXsdclPngSfFLfwzY_6xuNGbqtD6NOF_Tc116ZX-SEZ-qm2wJ_ey01E9Sm7rDxf6XZrUmov6y36nyzNpYgGzZITlPcxgY4XYRXaGOvaZpR53tTYdEq6b4XzjS4QheA092096eyuhwJPifdlFPRno1iv5p7s88vwiSUhNz31LRdClw_vgtcc5nWamfubDDMR42fD8dbpp6iaNcTt0SP4rh_ruQUJpG_qdVl5pIIRv6JgglrNggvi9SFS_geQYn2sVnaVRv3cQdPyvytDOPEUfRzV0LfyOCZnXA2EQyc54S7vYzgjLHUxU1m40rWib4sJrtsNb2ifbkWhsRNWFiHbHypu6sjMM1YlVoQhR-_Jl5ihTzlawFIoJuJ5U6brJeyPzFITCR7C7YqrO4VoK1-Ui32HDA2g284Q2cPYOp7oZZHLZeftoYAk3Ze_tFtWzvYloMKS4WxQSF2cgogZhoqdHrwcffyEjCSIUQPtY2E62z5iaZHE6gh_V1C0bk96z4f2xWBQVmIqz6lvrJkUdAZLJ_1Wl8pR1WegJ-TkkZ9S-pQZvDRdjGQIdgQHs2ehwttRv9wj2fMTEsq54ggPkmcEdcG93u7JIlQRryXUhaxjbm-Be0f75jAvAIoaFXSKlajL3qe8qr1vYMPk-pXRCsZRn-ThtORReFBApoxXF_SQE8mph81ycu2gZT2mz96abTgXl-VmEbM3SeRnFkwg-WskYUGK25TrpaMPhhzJ8coEh0gqIes--PpnK-kjJRuHuueGjRRG8J3hOvhHYNVr-kCAHOkEk6AVD8VeCqDT-E0y-0pchEY7hQseka42aRKRJ8pYMIY5gybvNaw57cuFWqLsz8AARSoquL7kBqSE9ladmk49wkjiJT2ateCTQx4or5vTAcVvhTeG13_Q1iFr9VspCMBr6ThgO_dkF_biUOXCdkMA-WNjs5HPXdZAiNFMiacuzJ9vLOr_Wi1XuSBvrj0Fqi8C01ekLP7oUdtBqIY73EzYRfAAHfoPir-LCxmhrXJ8RJNMYwCa8hzTIB2WTuR5anuvvHA6WJLrraAdd8NPZHopKSEOHHcvunPcOcvUgfIcbrqyrrxSf3NvUsypnn_p4LOP7Jw1uGYq1ggp_kFzfeTQA4f6OO8jR1HqC2wPWGVZu7vP8f2bS6q7pFHLwNfYm7VtLh8zf80CO7oImFk4aIsyNc6sIk8dMUMD5fvLr8ai6l3mq8iAvBlx5zEPIqNx1gjd4E64AHsM0KvSIkzlfFK09AUJkx4dKNyUT5v6TE1-B3rjJCi1RU0S5QV-agjLHNYHbOEftLDQrT26Xd63V6HrKaQ0e6Exw-d7rmkypbur3MmFStP2w=\", \"id\": \"rs_0e185054b04c9f8700698a2e59e0dc8196995f47896f360a3c\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_wjNDj3nChcistZuw4o8FjTMe\", \"id\": \"fc_0e185054b04c9f8700698a2e5c20d481969205fe0f69d077fe\", \"name\": \"get_images\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_images\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 51, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 180, \"output_tokens_details\": {\"reasoning_tokens\": 128}, \"total_tokens\": 231}, \"user\": null}"
+  }
+}

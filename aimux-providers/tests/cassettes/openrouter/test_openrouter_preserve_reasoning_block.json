@@ -1,0 +1,39 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openrouter",
+  "scenario": "test_openrouter_preserve_reasoning_block",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "92",
+      "content-type": "application/json",
+      "host": "openrouter.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Hello!",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-5-mini",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"logprobs\": null, \"message\": {\"content\": \"Hello! How can I help you today?\", \"refusal\": null, \"role\": \"assistant\"}, \"native_finish_reason\": \"completed\"}], \"created\": 1761751488, \"id\": \"gen-1761751488-sw4FP5A0ecwISVPjA4ec\", \"model\": \"openai/gpt-5-mini\", \"object\": \"chat.completion\", \"provider\": \"OpenAI\", \"usage\": {\"completion_tokens\": 15, \"completion_tokens_details\": {\"reasoning_tokens\": 0}, \"prompt_tokens\": 8, \"total_tokens\": 23}}"
+  }
+}

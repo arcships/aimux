@@ -1,0 +1,41 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_tool_choice_matrix[none-mistral]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "147",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What's the weather in Paris?",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-large-latest",
+      "n": 1,
+      "stream": false,
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019c0b6d-88fc-71a7-b57c-b31f16b45ff8",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"To check the current weather in **Paris, France**, you can use reliable weather services like:\\n\\n- **[Weather.com (The Weather Channel)](https://weather.com/weather/today/l/Paris+France)**\\n- **[AccuWeather](https://www.accuweather.com/en/fr/paris/623/weather-forecast/623)**\\n- **[M\\u00e9t\\u00e9o France (Official French Weather Service)](https://meteofrance.com/previsions-meteo-france/paris/75000)**\\n\\n### **Quick Snapshot (as of my last update):**\\n- **Temperature:** Typically ranges between **10\\u00b0C to 25\\u00b0C (50\\u00b0F to 77\\u00b0F)** depending on the season.\\n- **Current Conditions:** Check for rain, sunshine, or wind (Paris can be rainy, especially in spring/fall).\\n- **Forecast:** Expect mild summers and chilly winters.\\n\\nFor real-time updates, I recommend checking one of the links above. Would you like help with a specific date or travel planning? \\ud83d\\ude0a\", \"role\": \"assistant\", \"tool_calls\": null}}], \"created\": 1769718253, \"id\": \"47323f9f81cb4030a4d5df425f877a31\", \"model\": \"mistral-large-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 224, \"num_cached_tokens\": 9, \"prompt_tokens\": 10, \"total_tokens\": 234}}"
+  }
+}

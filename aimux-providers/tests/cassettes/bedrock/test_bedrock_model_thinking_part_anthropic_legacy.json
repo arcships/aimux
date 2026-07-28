@@ -1,0 +1,23 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_anthropic_legacy",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'3282ced7-e367-4250-9e40-ea12eef084aa'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "213",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 8014}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"signature\": \"EqkCCkgIDRABGAIqQPUBXddf5oFtfQISm87nRz74H7uUTwDgg+h0YLLc3p/go3gpEXMfNHOTi6XbIIf1FqzmzRwPO3I5tNQwel4zDJsSDOH8dHCSFsa5/5wMgxoMyoNuL2Mch7do4OwvIjDiWYuBAMh88j45otVaBLl+sSioadFLRUSCdFo+QijHmwPPHprY7iqGWMetqej36OwqjgEuNJ2lzEjUXHRBfTWq7dVwpaidYPB8hwr5h6dakncxCcFTee4AtrwY8Wcq4dojKqGo/13KzWowF7k5SLmQhMOSAyPIyribxMEDS0TWBudZ9TmnNP2PpltcgueyrqsCubSG7/AISHrrqyADMOCPgGycPkE5TJALqh7tgxcBze3bb5hDTZSyt1F6MZjd6J7zGAE=\", \"text\": \"This is a straightforward question about crossing the street safely. I should provide practical safety advice for pedestrians.\"}}}, {\"text\": \"Here's how to cross the street safely:\\n\\n## Basic Steps\\n\\n1. **Find a safe crossing spot**\\n   - Use crosswalks, intersections, or pedestrian signals when available\\n   - Avoid crossing between parked cars or on curves where drivers can't see you\\n\\n2. **Stop at the curb/edge**\\n   - Don't step into the street yet\\n\\n3. **Look left, right, then left again**\\n   - Keep looking while you cross\\n\\n4. **Listen for traffic**\\n   - Remove headphones or turn down volume\\n   - Listen for engines, horns, or warning sounds\\n\\n5. **Make eye contact with drivers**\\n   - Ensure they see you before crossing\\n\\n6. **Wait for a safe gap in traffic**\\n   - If there's a signal, wait for the \\\"walk\\\" signal\\n   - Don't assume cars will stop\\n\\n7. **Walk, don't run**\\n   - Stay alert and keep watching for cars\\n   - Be visible--wear bright colors at night\\n\\n## Extra Tips\\n- Put your phone away while crossing\\n- Watch for turning vehicles\\n- Be extra careful in bad weather or low light\\n- Teach children to hold an adult's hand\\n\\nIs there a specific crossing situation you're dealing with?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 43, \"outputTokens\": 306, \"serverToolUsage\": {}, \"totalTokens\": 349}}"
+  }
+}

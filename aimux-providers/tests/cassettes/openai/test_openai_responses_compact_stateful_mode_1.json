@@ -1,0 +1,56 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_compact_stateful_mode_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "2149",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=etsoaW1ccusauMIytS5v66CfDNgglhmD1G2Y65qTOWU-1776297291.895674-1.0.1.1-98PLJKycMzSlLl2dyJ.oZS3oO1fznEi6ianH3LRcfcOy6UbvIChAFoEkqvaK1zUGgKPZrJHPLz0eH0ggoTIp0K2CSN03u.CWEJ4LR.svgVoCLx.55L3y6P3NJDFegU4z",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "context_management": [
+        {
+          "compact_threshold": 1000,
+          "type": "compaction"
+        }
+      ],
+      "input": [
+        {
+          "content": "Tell me a 300-word story about a fox exploring a forest. Be very descriptive.",
+          "role": "user"
+        },
+        {
+          "content": "Beneath a canopy of emerald leaves, the early morning sun painted the forest floor in delicate dappled gold. Rustling quietly through undergrowth beaded with dew, a red fox named Lira slipped between bramble and fern, her russet fur glowing against the shadowy world.\n\nThe air was thick with the scent of moss and wild garlic. Every step quickened Lira's heart--younger foxes might shy away from the unknown, but curiosity lit her amber eyes. Birds warbled high overhead, while a squirrel chattered in indignation from a low-hanging branch, its tail flickering like a candle flame. Lira paused, nose twitching, savoring the earthy perfume of leaf litter as she contemplated her path.\n\nSlipping through a patch of bluebells, their soft petals brushing her sides, she startled a family of rabbits who disappeared into a tangle of roots. Not far away, a chorus of frogs sang by a crystal brook. Lira padded closer, watching their comical leaps with tilted head, her own reflection rippling on the water's surface.\n\nContinuing on, she found a fallen oak, its ancient trunk sprawled across her path--a bridge blanketed in moss and lichen. With a light leap, she climbed atop it, where the world seemed to slow. Up here, she watched shafts of sunlight pierce the gloom, catching motes of pollen swirling in the air like gold dust. The forest buzzed around her, insect wings humming and leaves murmuring old secrets.\n\nLira cocked her head, listening to the heartbeat of the forest--the distant hoot of an owl, the thump of a distant deer. Each sound was familiar, comforting, and a little thrilling. With one last glance at the waking world, she bounded off the log, disappearing into the green shadows, eager for whatever wonders lay hidden in the heart of the ancient wood.",
+          "role": "assistant"
+        },
+        {
+          "content": "Now a 300-word story about a rabbit in a meadow. Be very descriptive.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4.1",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "8773",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1776297313, \"created_at\": 1776297304, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0ab254158f5dbe3b0069e02558c7b481938dca8f1cacc977fd\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-4.1-2025-04-14\", \"object\": \"response\", \"output\": [{\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"In the gentle embrace of sunrise, a silvery mist hovered above the meadow, clinging to each blade of grass like a whispered secret. A young rabbit named Willow emerged from the safety of her burrow, her velvety fur brushed by dew. Her ears, soft as petals, turned toward the distant chirruping of larks as she took her first tentative steps into the open.\\n\\nThe meadow, awash in golden light, unfurled before her like a colossal quilt, stitched together with wildflowers--violet clover, butter-yellow dandelions, and delicate, nodding daisies. Willow nibbled at clover leaves glistening with morning moisture, the sweetness flooding her senses as she tasted the new day.\\n\\nA gentle breeze swept through the grasses, bending them in rippling green waves. Willow's nose twitched, picking up the scent of earth and honeysuckle, and she paused to watch bees buzzing from blossom to blossom, their legs weighed down with pollen. Pastel butterflies drifted lazily over the tall grass, their wings flashing soft blues and oranges whenever the sunlight struck them.\\n\\nFrom her vantage beneath a tuft of trembling fescue, Willow saw the meadow's secret wonders unfold--a shimmer of wings as a red dragonfly darted past, the flicker of a shrew vanishing beneath a leaf. Overhead, clouds sailed across an endless sky as swallows swooped and turned, slicing through the air with playful grace.\\n\\nA sudden gust sent dandelion seeds swirling into the breeze, dancing like tiny stars in the air around Willow. She froze, perfectly still, as a shadow crossed her path--just a kestrel, wheeling high above, its sharp cry quickly swallowed by the wide, open day.\\n\\nWith the world brightening around her, Willow hopped joyfully through the tall grass, heart pounding with the simple thrill of freedom beneath the sunlit sky.\", \"type\": \"output_text\"}], \"id\": \"msg_0ab254158f5dbe3b0069e0255993ec81938e1c70891196c284\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 435, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 388, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 823}, \"user\": null}"
+  }
+}

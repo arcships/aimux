@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_strict_tool_supported_model",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'02a5a330-d1e2-4e4f-bd50-64f90c2ca91c'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "376",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4890}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"city\": \"Paris\"}, \"name\": \"get_weather\", \"toolUseId\": \"tooluse_8ZVLMmsdearTDSS0unN07z\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 560, \"outputTokens\": 53, \"serverToolUsage\": {}, \"totalTokens\": 613}}"
+  }
+}

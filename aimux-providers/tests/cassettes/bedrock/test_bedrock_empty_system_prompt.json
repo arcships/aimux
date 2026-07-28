@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_empty_system_prompt",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f7bcae08-c412-4981-bb8e-76b7d34df036'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "126",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1406}, \"output\": {\"message\": {\"content\": [{\"text\": \"The capital of France is Paris. Paris, officially known as \\\"Ville de Paris,\\\" is not only the capital city but also the most populous city in France. It is located in the northern central part of the country along the Seine River. Paris is a major global city, renowned for its cultural, political, economic, and social influence. It is famous for its landmarks such as the Eiffel Tower, the Louvre Museum, Notre-Dame Cathedral, and the Champs-\\u00c9lys\\u00e9es, among many other historic and modern attractions. The city has played a significant role in the history of art, fashion, gastronomy, and science.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 7, \"outputTokens\": 126, \"totalTokens\": 133}}"
+  }
+}

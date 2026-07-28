@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+*.swp
+*.swo
+.DS_Store
+
+# Reference sources (Vercel AI SDK + AI gateways: new-api, one-api, litellm, portkey-gateway — kept locally for design reference)
+/reference

@@ -1,0 +1,105 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_retry_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "1682",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "country": "France"
+                },
+                "id": "pyd_ai_1f2bdea4ea804905a3f05dfe5b96a7fb",
+                "name": "get_capital"
+              },
+              "thoughtSignature": "CpYEAXLI2nxHJhy3F4oMijlAus2CPUEnTw16KkDpmU77MgVhg6piCF3GycCmKbjhGXQ8mBK5lSpsqwI7DapurrH-NcQiuUJYF1CpS438_kC6pw0JsXszEoBQyJN7zTXqfLgiNOzO5sBwQU1fc5cBUiMzzAxHOyltJwZcYOqFXMPQ0c2AaNvHO4nOOFwRrJuwGVfpfP1BnpuiDUz5c5roIwkC8sykcxva7lOniPdd5Soy0juNxCK4BAXTq_TgHPxB6yEUBGaAYaR9JId6EaWV1_gDa-eSpvLI8P4TQiFWa4UUK_89_TmMEQlRsmbGHcuxU-6GGLI0szs5h2dq8yM8Dy5R_DyB9xXPwUl4c9A-m64LEk6aludQE2X_LKb7y1pfL2f6wjH89DY4F4Y0934R21eYeb9MZMuB-IYaEYIvk7Fhdx5VolnNYPoqoLpCxwHVucmEBruS9m7Li6VO7zZdDVgikbWKxZyixLIfy4LKthacCJERSAJl4aAAllotfzZopY-dUkujmlny_UyPotpJXH-3K6L2Ge3uFOmNShPNN3oSMBf2K3DBit6OE5FA4JMyi7PnzlhiSmPLVOFZEWvINXbHim4Bh7QpIyGnIiT5n_8lSIrcNbf_vD_ZqDqivM_gjyS_ayZqW7tzNW5J1xDkiJpEUK1aokoG-GeaKXZ-AsR6xPXj6hYqpYRhtCsY49KhVme_JJp6XMrN"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_1f2bdea4ea804905a3f05dfe5b96a7fb",
+                "name": "get_capital",
+                "response": {
+                  "error": "The country is not supported. Use \"La France\" instead.\n\nFix the errors and try again."
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ],
+        "temperature": 0.0
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful chatbot."
+          }
+        ],
+        "role": "user"
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the capital of a country.",
+              "name": "get_capital",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "country": {
+                    "description": "The country name.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "country"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=4567",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"country\": \"La France\"}, \"name\": \"get_capital\"}, \"thoughtSignature\": \"Ct8GAXLI2nz7mNfYmvoMGtxbp6sB05S83E1PgFbBidrtXSNPmssR19LsxIgLyCeT2CLOe1EiWP9Vw6M4hVSB8yaWgKruIK7GBaUt44ElKq+1tPlYToIrEmM+Y+YATGnWU9BeX8+RTpPzE2j0dEkAxfe+15IrZxBj7RTydL6FL3wpRgeMn3urrBXIDY/JfXlRakk8UKMhrwh4hC6jDEaeRGQUrrXChZ0yqj2MH3uEKsVBTiQi1HIs082MMRPSWE7RWoHCY7zWe3xrGRkiOyIZ/irYsMlMjLyUkqPrmQITg02oRWDsvE1E0Hf3saKxV/KKFjYExsaZpvms8z2Zqmy/vYsSU50PRPjJADOcbooiuUNFNAzf+yGgO2cRyZbZRORzf/nOAGlUJKBfCEnqkwprLr/VfNyBK5VmlPjj8+oPcVH7rCkbH5jLG0PrjB9jpiyYzr7YHUjWYHxLBAlCXMEt/iBc6lMviMJ9GckFGzIOPCzi/PVF/l7kcubCV01mfskGbJAy1UQ2khZW+uCeIc1eWr7+0sC7+mdnfHqpSCZJCom0KQiE/CHKSbn6ROS5dCYHwSYjmxyR1ja4LxssSDKafJUHjE1GlnlQy03bb/QoI+MDCIdRS+y0FwXt2TPgo8nuqIlhzx1NaDtA8431G9UPxCgs6fkRf1/QBo6TvI9VMT/mYhMb0+91ZwEIyA1YlKYErO2MSZwlbgZtMyWYGpLJ9NOBh6+6Ww9oYtNinL9gEhcDXJStJWSiJXGOWUEc6nUG7n8waM1Iqgg/pBx3VxDqrN5Wcnyu0uamQEo63xUeB/YAmOAuuhuPBhcfW3/oqTUaApDtCFMsCoJE3tf//RhW3J1b0IWOvN9/kgsKDpMX+GK5F5+b0JSsz2kdUo9u7he14C8fyLDx1fswFzIwpSmNdqs23RZUfqB9yajh83wWK7UdPxOcX+Mq7TlocixYZf8B4hARE1ORwkmzvL1XUtCLHJWN4KvrkahYS2+El3po/K/+dnmFyYDnusyjpsLnkV7uPBvqBlkP0cg0TT6afeuPffxBM68yI4k+iCFVLxwQCYG68BCRT96rBDyCt4rpECd1PUYFmQWhGbdS4norEcXbwcBNj79LbXak4KI9vbxR0wzgsuShBc78V51cMQU720slB+U=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"h5YoaYnYK5q5mtkP6u3JoAs\", \"usageMetadata\": {\"candidatesTokenCount\": 16, \"promptTokenCount\": 109, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 109}], \"thoughtsTokenCount\": 199, \"totalTokenCount\": 324}}"
+  }
+}

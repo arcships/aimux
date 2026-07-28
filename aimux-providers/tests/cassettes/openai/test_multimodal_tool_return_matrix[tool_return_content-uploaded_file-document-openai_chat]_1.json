@@ -1,0 +1,88 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-document-openai_chat]_1",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "732",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=QdioKvPt1soObfuXscvJVI6YzrNyvPPpKzfcAX7o4Cs-1772656470.9245317-1.0.1.1-LEG0tv6mCBZh0RXe22kE67H5hrFH29rZZP0SVKewpK2HaqrwoFXaBH7HBtshv.opu.oMXfkCnrlrDzBg_Ac0aObVqO4hd93YxggxJv_hzX6EnoePZ_RKFMzFEf2PM_a4",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Use the get_file tool now to retrieve a document file, then describe what you received.",
+          "role": "user"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{}",
+                "name": "get_file"
+              },
+              "id": "call_2IDxBAleIuZyViB5UVOapbQA",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "File attached",
+          "role": "tool",
+          "tool_call_id": "call_2IDxBAleIuZyViB5UVOapbQA"
+        },
+        {
+          "content": [
+            {
+              "file": {
+                "file_id": "file-7qh8AjzrjyRGiQ7kaFybfG"
+              },
+              "type": "file"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_file",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "8947",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"annotations\": [], \"content\": \"I retrieved a document file. Summary of what I found:\\n\\n- File type: PDF (one page).\\n- Parsed text (page 1): \\\"Dummy PDF file\\\".\\n- Page count: 1.\\n- No other parsed text or visible metadata was returned.\\n\\nThere is a rendered image available for the page if you want me to view it (in case it contains visual content not captured in the parsed text). What would you like me to do next -- display the page image, extract/download the file, or run further analysis?\", \"refusal\": null, \"role\": \"assistant\"}}], \"created\": 1772656473, \"id\": \"chatcmpl-DFnDN3kmFM4MP4EYHXvPw1hlLKo5k\", \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": null, \"usage\": {\"completion_tokens\": 372, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 256, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 375, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 747}}"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_compact_stateful_mode_stream_2",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "4195",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=1SamCZAcZ0SJ3cPM9ljjKFQfx7GS3ErvIbZzG277rks-1776381833.1168852-1.0.1.1-CXrDvGBu6Bc7IszhalUVDkwxLUKapFJAxrA.pFrGK7_JWHYk7lUOrBxhhUSYG5X2t.E4yVgQVDXWbBHMZCM_NwB7CvEaobSzw0nQjDAgmLtrOLMaN7aDJAHItMfGkaer",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "context_management": [
+        {
+          "compact_threshold": 1000,
+          "type": "compaction"
+        }
+      ],
+      "input": [
+        {
+          "content": "Tell me a 300-word story about a fox exploring a forest. Be very descriptive.",
+          "role": "user"
+        },
+        {
+          "content": "At dawn, golden sunlight filtered through the tangled branches of the ancient forest. A young fox named Lira padded quietly over dew-soft moss, her russet fur glowing like fire against a sea of emerald ferns. She paused, delicate ears swiveling to catch the distant trill of a songbird and the lazy gurgle of a stream winding through the glade ahead.\n\nAs Lira ventured deeper, the air grew cooler, heavy with the scent of damp earth and wild mint. Ferns brushed against her sides and shadows flickered as she slipped beneath arching roots and sprawling brambles. The trunks of towering oaks loomed above, their bark tattooed with lichen and moss. Lira stopped to nose at a cluster of mushrooms, delicate white domes hidden in shadow. Her swift eyes darted to a blue butterfly resting on a leaf, its wings quivering as if whispering secrets.\n\nHer paws led her to a clearing where sunlight spilled in warm pools, dappling the ground in gold. Here, a family of rabbits scattered at her arrival, their white tails flickering like specters. Lira crouched low, but curiosity steered her more than hunger today. She watched in awe as a red squirrel leapt from branch to branch above, chittering bravely.\n\nThe farther she went, the denser the forest grew. Wild honeysuckle hung in sweet-scented tangles, and tangled vines formed mysterious green tunnels. Lira squeezed through, emerging near the burbling stream she'd heard. She dipped her nose to the water, the chill stinging her whiskers, and admired her shimmering reflection amidst darting minnows.\n\nAs twilight painted lavender shadows, fireflies flickered on, dotting the darkness with living stars. Lira lay beneath the roots of an old beech, heart thrumming with the secrets of the forest. In the soft hush, she sensed she belonged; a bright spirit woven through the wild, beautiful world.",
+          "role": "assistant"
+        },
+        {
+          "content": "Now a 300-word story about a rabbit in a meadow. Be very descriptive.",
+          "role": "user"
+        },
+        {
+          "content": "The sun hovered above the horizon, spilling apricot-colored light across the sprawling meadow. Here, a young rabbit named Willow nestled in a thicket of clover, her nose twitching as she tasted the dawn. The world was painted with shimmering drops of dew that clung to every blade of grass, transforming the meadow into a sea of diamonds.\n\nWillow's mottled brown fur blended seamlessly into the tapestry of wildflowers. Buttercups, bluebells, and scarlet poppies nodded softly in a breeze scented with earth and blossom. Tall grasses brushed against her as she ventured out, moving cautiously, heart quickened by adventure.\n\nEverywhere, life hummed. Bees hovered over spiky purple thistles, their tiny bodies dusted with golden pollen. Swallows dipped and darted above, silvered bellies flashing as they snapped at drifting insects. In the distance, a pair of deer moved ghostlike through the veils of morning mist.\n\nWillow flitted from clover patch to dandelion tuft, nibbling tender green shoots. Each mouthful tasted of rain and sunlight. She sat up, ears tall and swiveling to catch the rustle of a hidden field mouse foraging beneath the roots. Young and wide-eyed, Willow gazed upward as a cloud of butterflies spiraled skyward, their wings a kaleidoscope of amber, azure, and pearl.\n\nBeyond the crest of the hill, hay-colored wheat rippled in waves and the sweet scent of wild strawberries beckoned. Willow paused at the edge of a burrow, nose wrinkling at the warm, familiar scent of family.\n\nAs the sun climbed higher, painting the world in dazzling clarity, Willow flopped onto her side in a patch of sun-warmed grass. The world thrummed--alive with bees, songbirds, and wind, bound together by golden light. Safe, curious, and content, Willow knew the meadow was her kingdom, bright and boundless beneath the open sky.",
+          "role": "assistant"
+        },
+        {
+          "content": "Now a 300-word story about a bear in a cave. Be very descriptive.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4.1",
+      "stream": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "96",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

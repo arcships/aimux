@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_anthropic_tool_with_thinking",
+  "request": {
+    "path": "/model/us.anthropic.claude-3-7-sonnet-20250219-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'2c9c4fd7-2cee-4c96-b0ec-f317cdd10bc9'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "396",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3896}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"signature\": \"ErcBCkgIBhABGAIiQDYN+P1S3ACL3r24cAMKCrRNiuPPxvmT2uzREPLRyKEUXagRbXn97QCke6L7OEZvlh7NdA/MQNTwMZV8TuB4qPASDLNxYxDx1S3luCIfARoMIwLZXwhsvjjTN72XIjAJrEl5ryAvv6C1+6YMCPC73ffE+kgwB96IcZaOuDFQtyaoWwcFcDPBguM6YNp5e3cqHbDQ3QF5dR4PP5q+3K23pual3pUdT/0e7khyIxXkGAI=\", \"text\": \"The user is asking for the largest city in their country. To answer this, I first need to determine what country the user is from. I can use the `get_user_country` function to retrieve this information.\\n\\nOnce I have the user's country, I can then provide information about the largest city in that country.\"}}}, {\"text\": \"I'll need to check what country you're from to answer that question.\"}, {\"toolUse\": {\"input\": {}, \"name\": \"get_user_country\", \"toolUseId\": \"tooluse_W9DaUFg4Tj2cRPpndqxWSg\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 397, \"outputTokens\": 130, \"totalTokens\": 527}}"
+  }
+}

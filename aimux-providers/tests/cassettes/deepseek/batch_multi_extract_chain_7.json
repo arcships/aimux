@@ -1,0 +1,62 @@
+{
+  "source": "rig (MIT)",
+  "provider": "deepseek",
+  "scenario": "batch_multi_extract_chain_7",
+  "request": {
+    "path": "/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "You are an AI assistant whose purpose is to extract structured data from the provided text.\nYou will have access to a `submit` function that defines the structure of the data to extract from the provided text.\nUse the `submit` function to submit the structured data.\nBe sure to fill out every field and ALWAYS CALL THE `submit` function, even with default values!!!.\n                \n\n=============== ADDITIONAL INSTRUCTIONS ===============\nExtract sentiment and confidence from the given text.",
+          "role": "system"
+        },
+        {
+          "content": "Ada Lovelace discussed analytical engines and early programming.",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek-v4-flash",
+      "tool_choice": null,
+      "tools": [
+        {
+          "function": {
+            "description": "Submit the structured data you extracted from the provided text.",
+            "name": "submit",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "properties": {
+                "confidence": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "sentiment": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "sentiment",
+                "confidence"
+              ],
+              "title": "Sentiment",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"The text is a neutral, factual statement about Ada Lovelace's discussions on analytical engines and early programming. It carries no strong positive or negative sentiment.\",\"reasoning_content\":\"The text is about Ada Lovelace, who is known for her work on Charles Babbage's early mechanical general-purpose computer, the Analytical Engine. The text seems factual and neutral in tone, simply stating that she discussed analytical engines and early programming. \\n\\nLet me determine:\\n- Sentiment: This seems neutral, so around 0 (or slightly positive since it's acknowledging her contributions). Let's say 0.2 for slightly positive.\\n- Confidence: The text is straightforward and factual, so high confidence. Let's say 0.9.\\n\\nActually, let me think more carefully. The text is \\\"Ada Lovelace discussed analytical engines and early programming.\\\" This is a neutral factual statement. Sentiment should be around 0 (neutral). I'll give it 0.0 for neutral sentiment with high confidence 0.95.\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"sentiment\\\": 0.0, \\\"confidence\\\": 0.95}\",\"name\":\"submit\"},\"id\":\"call_REDACTED_8\",\"index\":0,\"type\":\"function\"}]}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_8\",\"model\":\"deepseek-v4-flash\",\"object\":\"chat.completion\",\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_tokens\":264,\"completion_tokens_details\":{\"reasoning_tokens\":170},\"prompt_cache_hit_tokens\":0,\"prompt_cache_miss_tokens\":440,\"prompt_tokens\":440,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":704}}"
+  }
+}

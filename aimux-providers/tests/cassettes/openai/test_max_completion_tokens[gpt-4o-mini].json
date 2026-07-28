@@ -1,0 +1,41 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_max_completion_tokens[gpt-4o-mini]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "123",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "max_completion_tokens": 100,
+      "messages": [
+        {
+          "content": "hello",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o-mini",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "462",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"logprobs\": null, \"message\": {\"annotations\": [], \"content\": \"Hello! How can I assist you today?\", \"refusal\": null, \"role\": \"assistant\"}}], \"created\": 1781536548, \"id\": \"chatcmpl-Dr3KONlJHqM2OKkn7IPxwgC3ZIEZw\", \"model\": \"gpt-4o-mini-2024-07-18\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": \"fp_4f5f0b399a\", \"usage\": {\"completion_tokens\": 9, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 8, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 17}}"
+  }
+}

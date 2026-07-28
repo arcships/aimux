@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_mixed_content_ordering[bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'0b256aaf-67e4-4c11-9641-9f2350bf143c'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "132252",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4792}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received mixed content from the tool, which included:\\n\\n1. **Text output**: The phrase \\\"Here is the image:\\\"\\n\\n2. **An image**: A beautiful cross-section of a kiwi fruit, showing:\\n   - Vibrant bright green flesh\\n   - A pale yellowish-white center\\n   - A ring of small black seeds arranged in a radial pattern around the center\\n   - Brown fuzzy skin visible around the edges\\n   - The image is shot against a white background and shows the characteristic star-burst pattern of a kiwi's interior\\n\\n3. **JSON data**: `{\\\"pydantic_ai_marker\\\":\\\"test_42\\\"}` - appears to be some kind of test marker or identifier\\n\\nSo the function returned a combination of text, image, and structured data - truly \\\"mixed content\\\" as the function name suggests!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 1126, \"outputTokens\": 184, \"serverToolUsage\": {}, \"totalTokens\": 1310}}"
+  }
+}

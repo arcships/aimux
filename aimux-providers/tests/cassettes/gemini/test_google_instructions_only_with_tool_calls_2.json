@@ -1,0 +1,180 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_instructions_only_with_tool_calls_2",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "3187",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": ""
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "id": "pyd_ai_df5891897e434a16add992cc09f10172",
+                "name": "generate_topic"
+              },
+              "thoughtSignature": "Es8FCswFAXLI2nxFGW9oAYt0fTQoHlYcudYTgqNXlir9nzbXoqFXqLY9sWOIMaevBSmRIl_38GhJB-V-cQHNBmUzxq17UwAqJmMgQ99kWRCfLmU1uUtLpz260ep1CbMwDTJeIsjLz9JzjMd3vMx7gWYrvmOMg7aANsbpw1iHw_YtlA5mXdU0Mn6TOdO9UiGTnnDgzfqu_aoYPNT2DSs_ZlUVpOawy-Ds0hY-BakQLutn2fT--i4lLLwstQjuAsgONiLIWp47NyJ9S9mR8kMnlKuDn1xZMxAHl9YK6j47Rmu9qiWM0fK9fxJOzRiUxQ4eDhWqUKAjrdPPsH8MYaIJMANNbrS2rtHUWcsfKTPbKlBGUA_5BtuxIT11yIIL78MF-RId8W6s0j2VuRYNzzLqAz961XU9v3-sd7TS-aiSXzzffIoDVpvz0Ozs5Dq6jkzTEnPqbxBX7ctd-SHh_X-DYXYEk_f-0RKTn4ZWjVIVGeAqcg66zZCNtbzfCDKh9164rrhDUEddrrNVyQ-N04iUYxZCvU7xSSTLxbt8zJ2LhPNWmI6Y3zhISUP23o_TcvpRecQgR2iTY4k2UV3iTygB9qcYnC3Ka4-SiuXuAfRHs28FqtHvA6jrEDty6-DDaG5uudrN3wTYvawBYnxTLgK3uDTuTkg-OLYl5WEF-_9BOd3kcoxx-yDR140Xt21-rXGLC7fusqaJ_TZoClO3mf7V7lEEypYVRMpvbC9B8gI84x6o4yXc-G1EJrJIOmch_K6tyE9razLuPy5BzT3WDvieYDOpGNvePrKbWWtJKXt06undMLLzM7lwVFGPCB03sP7e3YCKRHQ9LE4eVD5CHa0UEISGhQ7vytpzfXKFNi2C35MujDS4DYE9_aG4YiJdCPxCinmggdYw5j872KKx8VNlZC8CZShSkt7Hnbc6pDIbCKpg2x4yTeBAT3783UHrkQCEaZs="
+            },
+            {
+              "functionCall": {
+                "args": {},
+                "id": "pyd_ai_102eb2f935364e77bac26307e3428e2b",
+                "name": "generate_topic"
+              }
+            },
+            {
+              "functionCall": {
+                "args": {},
+                "id": "pyd_ai_cc6e16722f9a428db81532521a689ea7",
+                "name": "generate_topic"
+              }
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_df5891897e434a16add992cc09f10172",
+                "name": "generate_topic",
+                "response": {
+                  "return_value": "cars"
+                }
+              }
+            },
+            {
+              "functionResponse": {
+                "id": "pyd_ai_102eb2f935364e77bac26307e3428e2b",
+                "name": "generate_topic",
+                "response": {
+                  "return_value": "penguins"
+                }
+              }
+            },
+            {
+              "functionResponse": {
+                "id": "pyd_ai_cc6e16722f9a428db81532521a689ea7",
+                "name": "generate_topic",
+                "response": {
+                  "return_value": "cars"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "id": "pyd_ai_e3c6d964a3004470a4faf43826b7a3cb",
+                "name": "generate_topic"
+              },
+              "thoughtSignature": "EtkBCtYBAXLI2nw30WDVpjR1pyPO7RX8irBHXj_Gr3vxDSk-rgwZCdVoqguEYPHH7cUse9KvaZ3EJYu8PrHkjjtzW9b9KJ8PGz_RgeYPQpq28UIvdfmTZ5Q8h89N39bPVdrfLbdhQ5xbbDu5E1fWCOvcs8r2G1MTlJhqSfnSCIFR3J7xaAmOqE0UEW3Xo5sWjV14pkl5Zvmd41eAl6ZUr6XHVgH-zQ__TBeRh6CF13VtGTNFteKz7sO6VHe-i5jSsyGFgdWXNW9HpnW7GPPjw1h63pnfeI9y8HpJCA=="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_e3c6d964a3004470a4faf43826b7a3cb",
+                "name": "generate_topic",
+                "response": {
+                  "return_value": "penguins"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "Tell three jokes. Generate topics with the generate_topic tool."
+          }
+        ],
+        "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "allowedFunctionNames": [
+            "generate_topic",
+            "final_result"
+          ],
+          "mode": "ANY"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "generate_topic",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            },
+            {
+              "description": "The final response which ends this conversation",
+              "name": "final_result",
+              "parameters_json_schema": {
+                "properties": {
+                  "response": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "response"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2076",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"generate_topic\"}, \"thoughtSignature\": \"EssDCsgDAXLI2nxz8kX3GkXEKN0KCAhr0Gg9JagHp1Fbs+BXhySvBeQARCEMrUl8qbvEaUXCfJF1ltXlV+uQ1xCrtGpUvW1eXcP90Mf+NVG3OfRDXBmo9seckCU0Exqdg46IxKG5GWL3+3WEnd1DdlTXEDE6yDUD4yD5lQFIMTqAeC3TmHTFDSqrqPamIYq2fHT6E/c1WGOf+xL6RnHwoJAOMnHyNlZILsZVxgbfN5RQ8MHRvEuCy5SftmthgibFMeVvrb7W/RpByDRwzA3xuVvradT+v7FlTNb2FQHHfz9VBoLrzPbWb6Rd3BSFtFK17hnlsfvuii3gQP9LKwM3WyM2I/tJuStl5LFvJ0xFnezfP1lVdZZQd2RpPKL4iDXyYzfyOUurNafmq7iixP9Dh7NNEoLk+ZlL4FQ5crsy/hutI/VdmsPC79PlgdTbDuXECMx+fMOi/22WYSEmbolRdT+IFclQQiAEYa64QBbxb2SNV8glomaOEN91UBzzPBvBNWSutzGBGBSlax+a1tBwRFkWaYkhrYxhdavs2C5hWuuGwm2acOH9SrbQfxyxz7zdUlOMVmcgb18qY0sNYAItz1Iv9oWkrA8DTW/WZxvH\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"xOd8af-EN9nRz7IPqJDR-AM\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 415, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 415}], \"thoughtsTokenCount\": 105, \"totalTokenCount\": 530}}"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_model_retry",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "349",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the location of Londos and London?",
+          "role": "user"
+        }
+      ],
+      "instructions": "",
+      "model": "gpt-4o",
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "",
+          "name": "get_location",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "loc_name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "loc_name"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "937",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"created_at\": 1743079364, \"error\": null, \"id\": \"resp_67e547c48c9481918c5c4394464ce0c60ae6111e84dd5c08\", \"incomplete_details\": null, \"instructions\": \"\", \"max_output_tokens\": null, \"metadata\": {}, \"model\": \"gpt-4o-2024-08-06\", \"object\": \"response\", \"output\": [{\"arguments\": \"{\\\"loc_name\\\":\\\"Londos\\\"}\", \"call_id\": \"call_LWVp74L5HaH2KNvgVz9PJsrj\", \"id\": \"fc_67e547c540648191bc7505ac667e023f0ae6111e84dd5c08\", \"name\": \"get_location\", \"status\": \"completed\", \"type\": \"function_call\"}, {\"arguments\": \"{\\\"loc_name\\\":\\\"London\\\"}\", \"call_id\": \"call_YnRAWeTyxI91m5uNa5bxXwVO\", \"id\": \"fc_67e547c55c3081919da7a3f7fe81a1030ae6111e84dd5c08\", \"name\": \"get_location\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"reasoning\": {\"effort\": null, \"generate_summary\": null}, \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_location\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"loc_name\": {\"type\": \"string\"}}, \"required\": [\"loc_name\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}], \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 0, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 0, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 0}, \"user\": null}"
+  }
+}

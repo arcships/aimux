@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_anthropic_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-20250514-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'13a1a90b-dbe7-4e20-b659-fb646d53b48f'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "2331",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 7756}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"signature\": \"EqkECkgIBxABGAIqQHq1oS+sf/YrAVWg+yVzsVuCiHur1smX27D/xjDFfxR08xEIR3u2YQw8dCZq01Gr7i2Llo3PSiHjRFsiUENtPMsSDKDp77RxiL4iVJUcKRoMl+QGPqtnGq4iQtSEIjAHz8DBce5MNBFJGtLccqDWSAT11yrqfnJMT9cDB/lUxZOyNuk4kpnUKYlN9munxhwqjgO6ztQcIlxDZJ70Dbs7yc/HZC9bHbj5fp1Aig8cFMtFmGdpE1OnVC5yKMhuZmzaQPaV655QTjWs0i4nQ6JwJUOMWCJgrBSGHm13vNoyehWlIro+VIlmBxCuftjQDWMQ+aIs2WceZdmUhfrLIlMuHbS8tU1Si2oi+wA6J3VMlPW2Skc8YlNpmZKqjhC6RXtRBs9/zEQMc4iIHz41YQo5vnAopz93wa5bsaXSB23wua1iAPCdUq7cE6bpZ2ClnybPu6XvpFSwcn9duCJMUB5fbNXVpmAacmVE48auuY/MULuMCMAtLxoPr3Njgla4aubbFHuKeMzjMGYSh8W63etC+BYe5GQ+a4Rsg8xQ8hyqmKXYfBA3i8oAGnft39rQJvmiqZNlqthri7uIkgXDUrerraEotSzcwvQeGd9ASo+NI3N7Nyh2qfyg+w4R97xtl7s/0E/FOglSdqB1yE/Drp0Paqdo4v3GHYQ1EFrZky7AiQZU/PbDdi9O3+biBNRMjIBZx5RuIe0FGr1ubMmSrmDhPRgB\", \"text\": \"The human is asking about crossing a river, using the analogy to my previous answer about crossing a street. This is an interesting analogy - just like crossing a street requires safety considerations and proper methods, crossing a river also requires careful planning and safety measures. Let me think about the various ways to cross a river and the safety considerations involved.\"}}}, {\"text\": \"Great analogy! Just like crossing a street, crossing a river requires planning, safety awareness, and choosing the right method. Here are the main approaches:\\n\\n**Designated crossing points (like crosswalks):**\\n- **Bridges** - The safest option when available\\n- **Ferries** - Official water transportation\\n- **Marked fords** - Shallow crossing points approved for wading\\n\\n**If no designated crossing exists:**\\n1. **Assess the situation first:**\\n   - Water depth, speed, and temperature\\n   - Your swimming ability and fitness level\\n   - Weather conditions and visibility\\n   - Presence of hazards (rapids, debris, wildlife)\\n\\n2. **Crossing methods:**\\n   - **Wading** - Only in shallow, slow-moving water\\n   - **Swimming** - If you're a strong swimmer and conditions allow\\n   - **Using flotation** - Kayak, raft, or other watercraft\\n   - **Improvised bridge** - Fallen logs (test stability first)\\n\\n**Safety essentials:**\\n- Never cross alone - use the buddy system\\n- Wear a life jacket if available\\n- Choose the narrowest, calmest section\\n- Cross at an angle downstream to account for current\\n- Have an exit strategy and know what's downstream\\n- Consider hypothermia risk in cold water\\n\\n**When NOT to cross:**\\n- Fast-moving or flood conditions\\n- Water above your waist\\n- Poor visibility or bad weather\\n- If you're not a confident swimmer\\n\\nJust like with streets, sometimes the best choice is to find an alternate route or wait for better conditions!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 334, \"outputTokens\": 432, \"totalTokens\": 766}}"
+  }
+}

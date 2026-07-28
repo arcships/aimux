@@ -1,0 +1,49 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_thinking_roundtrip_wire_stable[ag_ui-0_1_13]",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "236",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Briefly: what is 17 * 23? Think first.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "thinking": {
+        "budget_tokens": 1024,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-dc8f52d114d90a217652497fda8e5b78-744ef3948c9aa560-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"content\": [{\"signature\": \"EvMCCm4IDxgCKkBE0p/gSfslgYoMmoemAD063lJAiMvcShO/u6pOvrM5dH3v7Jfy2W3Syx4XNK5Rhd9ABAinRBQp7gij6gKq4y3vMhpjbGF1ZGUtc29ubmV0LTQtNS0yMDI1MDkyOTgAQgh0aGlua2luZxIMhk8ISPbHO9FAncaiGgwZgE///ai4loOb5yAiMJAUGp7hT2NaezGj+6Lnq7F5nKCk5ghMiBNyohpFF+cUAz1Z0a5VqIw5sIW62i3jKiqyAYE2frpB4m/Oy3/V9H5JLMCeDsrmgXJR5Y010N24gC+xCToWD/DSUv8NG07LLPxzOXQyl9JqP09OrBVRbow0lgOfkU0UXUYOeKkhZwcCOwg/0kynAW7dFnfDr9jI18TIdveXndYwUJZ6mqZs1xWYcXlD+Vne4Qm8nKgYfmBEGboS0y94cNodPLFGdgLZJ4eGNccPht6DeSSyS/9DpKpxxwzsyVFlhFLfsQuWEFbp4hXBRfgYAQ==\", \"thinking\": \"Let me calculate 17 * 23.\\n\\nI can break this down:\\n17 * 23 = 17 * 20 + 17 * 3\\n= 340 + 51\\n= 391\\n\\nLet me verify:\\n17 * 20 = 340 \\u2713\\n17 * 3 = 51 \\u2713\\n340 + 51 = 391 \\u2713\", \"type\": \"thinking\"}, {\"text\": \"17 * 23 = 391\\n\\n(I broke it down as: 17 \\u00d7 20 = 340, plus 17 \\u00d7 3 = 51, giving 340 + 51 = 391)\", \"type\": \"text\"}], \"id\": \"msg_011CcmZtr3JDBGubCX9bN3RW\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 51, \"output_tokens\": 161, \"output_tokens_details\": {\"thinking_tokens\": 104}, \"service_tier\": \"standard\"}}"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_cohere_model_thinking_part",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "192",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "How do I cross the street?",
+          "role": "user"
+        }
+      ],
+      "model": "o3-mini",
+      "reasoning": {
+        "effort": "high",
+        "summary": "detailed"
+      },
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "27304",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"created_at\": 1757110037, \"error\": null, \"id\": \"resp_68bb5f153efc81a2b3958ddb1f257ff30886f4f20524f3b9\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"o3-mini-2025-01-31\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABou18w-tnw3PeRaIu1LZDyAtTvtsQv1IozIXwqBtTJfITgSk81Gjt11pOYwaNHQ_n9SGf5GoHvOl1Tl44pyO4bwFqyZMook1aE4lCklYVJfdInLFJbNTyu_yf8kO422Mx85-t3F9jJRfQ-SozQyVIqX7TAgK43-ltc8muzsl5hL66fWRLrKsRKex7ROd5a1EkxppflSp42KUaHzlc2Klhy9X-FxbFnB3jaB-mMbwNHblwORj79p1zwExmUBN-mtehe0UYyTlnnNRO6AwblUIhL9YV2TFBeymAQKaI9xcja2lkTNQ0NU_H3U21mGNufMyCA2LzDhspNb1S1a08rm5tfOIX676k0ZyxeTxTQ1mJZbx9YqVjWC0_x69Xw3_jOqX2E9Ipt3NJ0WWK3UkDsg8AL5-NLnsgyEk6OnxtcUpu3nknVPkk=\", \"id\": \"rs_68bb5f22b28c81a281be815a6b7c28ac0886f4f20524f3b9\", \"summary\": [{\"text\": \"**Exploring street crossing safety**\\n\\nI'll provide a widely recommended list for crossing streets: First, \\\"Stop at the curb,\\\" then \\\"Look both ways,\\\" followed by \\\"Listen for traffic,\\\" and finally, \\\"Think if it's safe to cross.\\\" Additionally, I can mention waiting for a gap in traffic if there\\u2019s no signal, looking left and right twice at intersections, and avoiding distractions like mobile phones or headphones. It seems clear that asking \\\"How do I cross the street?\\\" is a safe and practical question.\", \"type\": \"summary_text\"}, {\"text\": \"**Providing street crossing safety tips**\\n\\nIt's likely the user is asking about crossing the street safely, so I'm going to compile clear steps along with a disclaimer that I'm not a safety professional. Here are some general guidelines: \\n\\n1. Use designated crosswalks or intersections with pedestrian signals whenever possible. \\n2. Approach the curb and look for oncoming traffic, avoiding distractions like texting. \\n3. Wait for the walk signal if there is one. \\n4. Look left, then right, and left again before crossing. \\n5. If there are no crosswalks, stop and look both ways before proceeding. \\n6. Stay aware of turning vehicles and ensure you\\u2019re at a safe distance from the road once across. \\n\\nAlways prioritize safety and seek advice if unsure about local conditions.\", \"type\": \"summary_text\"}, {\"text\": \"**Giving street crossing instructions**\\n\\nI want to remind the user that I'm not a safety professional, so it's essential to follow local traffic rules. I'll present straightforward instructions to ensure clarity, including an additional note to avoid texting or using a mobile phone while crossing. It\\u2019s important to double-check the steps and instructions for accuracy. Overall, I\\u2019m focused on providing careful instructions to help everyone cross the street safely.\", \"type\": \"summary_text\"}], \"type\": \"reasoning\"}, {\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"I'm happy to help with some general safety guidelines. However, please note that I'm not a certified traffic safety expert and local laws or conditions can vary. Always follow the rules of your specific area. Here are some general steps for crossing the street safely:\\n\\n1. Find a safe place to cross. When possible, use a designated crosswalk or intersection that has pedestrian signals or a marked crossing zone.\\n\\n2. Stop at the curb. Before stepping off the curb, pause and eliminate distractions (like your phone or music) so you can fully focus on traffic.\\n\\n3. Check for traffic. Look in all directions:\\n\\u2003\\u2022 First, look to the left (since traffic typically comes from that direction in many countries).\\n\\u2003\\u2022 Then look to the right.\\n\\u2003\\u2022 Look to the left again before stepping off.\\nMake sure no vehicles, bicycles, or other moving obstacles are approaching.\\n\\n4. Observe any pedestrian signals. If there are traffic lights or a pedestrian walk signal, wait for the \\u201cWalk\\u201d sign (or green signal) before crossing. Even then, double-check that vehicles are stopping.\\n\\n5. Make eye contact. If possible, try to make eye contact with drivers to confirm that they\\u2019ve seen you and are yielding if you're in a crosswalk.\\n\\n6. Cross at a steady pace. Once you are sure it\\u2019s safe, cross briskly and don\\u2019t run. Continue scanning for traffic as you cross.\\n\\n7. Remain alert. Even while crossing, be aware of your surroundings; sometimes, vehicles may turn into the street or a distracted driver might not be expecting pedestrians.\\n\\n8. If there\\u2019s no crosswalk or signal, find the spot with good visibility in both directions and cross only when you\\u2019re completely sure no vehicles are coming.\\n\\nRemember, these are general recommendations. Always prioritize your safety by adapting your actions to the specific conditions of your surroundings, and consider local guidelines or traffic rules. Stay safe!\", \"type\": \"output_text\"}], \"id\": \"msg_68bb5f2f841c81a2ac10a89324b670e70886f4f20524f3b9\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"prompt_cache_key\": null, \"reasoning\": {\"effort\": \"high\", \"summary\": \"detailed\"}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 13, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 2241, \"output_tokens_details\": {\"reasoning_tokens\": 1856}, \"total_tokens\": 2254}, \"user\": null}"
+  }
+}

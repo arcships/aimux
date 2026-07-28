@@ -1,0 +1,41 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_responses_count_tokens",
+  "request": {
+    "path": "/v1/responses/input_tokens",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "112",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "",
+          "role": "user"
+        }
+      ],
+      "instructions": "Follow the system instructions.",
+      "model": "gpt-4.1-mini"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-aqgbrbgshrc0qzcisc6v053e",
+      "openai-processing-ms": "39",
+      "openai-project": "proj_sazfDS4z1dBLe741ZQt2ckC8",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"input_tokens\": 16, \"object\": \"response.input_tokens\"}"
+  }
+}

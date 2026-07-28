@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_tool_choice_matrix[none-bedrock]",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f576c90c-9632-4a0e-91ed-d014b6ab301f'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "124",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2396}, \"output\": {\"message\": {\"content\": [{\"text\": \"I don't have access to real-time weather data or the ability to browse the internet, so I can't tell you the current weather in Paris.\\n\\nTo get the current weather in Paris, you could:\\n- Check a weather website like weather.com, weather.gov, or accuweather.com\\n- Search \\\"Paris weather\\\" on Google or another search engine\\n- Use a weather app on your phone\\n- Ask a voice assistant with internet access like Siri, Google Assistant, or Alexa\\n\\nIs there anything else I can help you with regarding Paris?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 14, \"outputTokens\": 124, \"serverToolUsage\": {}, \"totalTokens\": 138}}"
+  }
+}

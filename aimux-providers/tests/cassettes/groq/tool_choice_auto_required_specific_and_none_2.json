@@ -1,0 +1,61 @@
+{
+  "source": "rig (MIT)",
+  "provider": "groq",
+  "scenario": "tool_choice_auto_required_specific_and_none_2",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Call the orchard-label tool exactly once with an empty object and do not call any other tool.",
+          "role": "user"
+        }
+      ],
+      "model": "llama-3.3-70b-versatile",
+      "tool_choice": {
+        "function": {
+          "name": "lookup_orchard_label"
+        },
+        "type": "function"
+      },
+      "tools": [
+        {
+          "function": {
+            "description": "Return the alpha signal marker.",
+            "name": "lookup_harbor_label",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Return the beta signal marker.",
+            "name": "lookup_orchard_label",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null,\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{}\",\"name\":\"lookup_orchard_label\"},\"id\":\"call_REDACTED_3\",\"type\":\"function\"}]}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_3\",\"model\":\"llama-3.3-70b-versatile\",\"object\":\"chat.completion\",\"service_tier\":\"on_demand\",\"system_fingerprint\":\"fp_REDACTED_3\",\"usage\":{\"completion_time\":0.027099985,\"completion_tokens\":5,\"prompt_time\":0.017971389,\"prompt_tokens\":304,\"queue_time\":0.070917625,\"total_time\":0.045071374,\"total_tokens\":309},\"usage_breakdown\":null,\"x_groq\":{\"id\":\"req_REDACTED_3\",\"seed\":1013582742}}"
+  }
+}

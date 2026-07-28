@@ -1,0 +1,35 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "TestOpenAI.test_embed_error",
+  "request": {
+    "path": "/v1/embeddings",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "76",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "encoding_format": "base64",
+      "input": [
+        "Hello, world!"
+      ],
+      "model": "nonexistent"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json; charset=utf-8",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "vary": "Origin"
+    },
+    "body": "{\"error\": {\"code\": \"model_not_found\", \"message\": \"The model `nonexistent` does not exist or you do not have access to it.\", \"param\": null, \"type\": \"invalid_request_error\"}}"
+  }
+}

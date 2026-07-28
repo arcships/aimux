@@ -1,0 +1,23 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_anthropic_legacy_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'd69e01f5-d7b1-4c87-b6d2-6601c8e638a5'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "2080",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 12365}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"signature\": \"EoMHCkgIDRABGAIqQP8Rojwvl6OxxHAHwqntIBwfOk4Jlf0UPqocHmQOT67FNzX5d+rL3Niv/TvsU2I5jJzzrMJHUp1UEZ/c0tQzP6kSDFnDqqPFpm0B+CRyEhoM3WPVanquGkZh86tQIjAWcf40Om1LHuCd5ZVKYgVBzboKZvuiAbgzFG4iKKcCVQLH/1gNhFnw63TscGyYxmIq6AWcYeBi6Bribs17hPXyCAGNDYSR8nq1nL/ja0qZBUQQlLFkIT1b3MDjfjV0pDaCr71RkVJ20fgBSGTBPeBK0luPOHgbVaiFj9e6A8TyRgczEmFodyGTTGvxvwrwoCztoU+8hovPCDvLLSzf4rD6fy2nDlGbPpfBkTVseXUpQ1/MSUZ6es14Wdn1PWz8uOeAOwweSzuV0wHHmuAg691QIH/+TnnD4Aq9mEGlVwrYUZzxpWm6AyfTGs3P8ATcma1KsxBNiceNW5c/DbeEpM+y5oRW20FIVS2jepbt/6bgDxDIWjXSzYGK2T3REtDdM90NKPNA2Nrkj5ZCojeOl0PP21ExVzIt0xLyQ1aQS3QMFGQeNgENNiKr/BxWsWqHSwg/pz3nDwbcLzrk65AAlBd/H+mCmxAX98NLCwWohJDsMOYkMdN+wzjqRVpxO9xGEQnPY531Bf/xMHHO5KFjiJe//SaBvJ5OYAjgFO2V7k5p/XdCh9WLQo6zU9wCV4/lWA/fUj6Uqe/SSZmcvjWzz1h4fC+X+hVWhZHxvUgPhSorvHsG26/8lXyJEs4EjmwsNIbrTuG7p1kFJqseR8UldKbrPq64mLkYKZu3RO0iBAH5gSv2UtOomGNv2UjtLimwViXOynhNrAf6AnbnhQrar6SiiBPUzekJraW8zdXeJ3nvYhhnIniMXn2POCUR13DAwSlhPmrqyvbzR2uoqy8uBn5tGZkOgXPtU78R6ykNVVxHUJAL7ykOVl96PNATwoKXFwJ/nGVIK3uDx6BRDqPPCPX1X0f2zFFTO5JquGhIXz/OvkFJodUwG1qeS3IT9EoFgiIydcKSfkiwjc0oASRS/C11ugQisriaVVAc3BQrwJWk4RgaZsAdCHM82USm4uaSl2AZMdnwT6r0s10F/ojayNEI/NN1koloRaMzQT1SyoamvuojOoOXaqAirlmTHzpsadcX/sYy9K5/tf/F5NgYhIXMvob6tWX/dl1h4GEYAQ==\", \"text\": \"The user is asking for an analogy between crossing a street and crossing a river. This is an interesting question that asks me to think about the parallel challenges and solutions. Let me think about the key elements:\\n\\nCrossing a street:\\n- Find safe crossing spots (crosswalks, intersections)\\n- Look for hazards (traffic)\\n- Use infrastructure when available\\n- Timing and safety assessment\\n- Stay alert during crossing\\n\\nCrossing a river:\\n- Find safe crossing points (bridges, fords, ferries)\\n- Look for hazards (current, depth, obstacles)\\n- Use infrastructure when available\\n- Assess conditions and safety\\n- Stay alert during crossing\\n\\nThis is a nice analogy! I should provide helpful, practical information about river crossing.\"}}}, {\"text\": \"Great analogy! Here's how the principles translate:\\n\\n## Find Safe Crossing Points\\n\\n**Like using crosswalks:**\\n- **Bridges** - the \\\"crosswalk\\\" of rivers (safest option)\\n- **Ferries or boats** - the \\\"pedestrian signal\\\" \\n- **Fords** - shallow areas (like a quiet intersection)\\n- **Stepping stones** - natural crossing infrastructure\\n\\n## Assess Before Crossing\\n\\n**Like looking for traffic:**\\n- Check water **depth** and **current speed**\\n- Look for hazards: debris, slippery rocks, drop-offs\\n- Consider **weather** - recent rain means faster current\\n- Scout up and downstream for easier spots\\n\\n## Cross Safely\\n\\n**Like walking alertly:**\\n- Use a **walking stick** for balance (test depth)\\n- Cross at an **angle downstream** - don't fight the current\\n- **Unbuckle backpack straps** - so you can ditch weight if needed\\n- **Never cross alone** if it's risky\\n- Turn sideways to reduce resistance in strong current\\n\\n## Know When NOT to Cross\\n\\n**Like waiting for traffic to clear:**\\n- Water above your knees = dangerous current\\n- Fast-moving or murky water\\n- Cold water (hypothermia risk)\\n- If unsure, find another way\\n\\n**The key similarity**: Use infrastructure when available, assess the hazards, and don't take unnecessary risks!\\n\\nWhat kind of river crossing did you have in mind?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 341, \"outputTokens\": 501, \"serverToolUsage\": {}, \"totalTokens\": 842}}"
+  }
+}

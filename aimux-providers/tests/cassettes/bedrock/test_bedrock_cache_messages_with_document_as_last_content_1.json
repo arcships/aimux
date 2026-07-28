@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_cache_messages_with_document_as_last_content_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'779d3d43-fc65-4156-9d43-8e765e90eedd'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "7110",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2818}, \"output\": {\"message\": {\"content\": [{\"text\": \"Based on the documents provided:\\n\\n**Document 1 (Document 1.txt)**: 10 words\\n- \\\"This is a test document with important analysis data.\\\"\\n\\n**Document 2 (Document 2.txt)**: 8 words\\n- \\\"This is a test document with unimportant data.\\\"\\n\\nBoth documents are very short - just single sentences. If you're asking about character count instead:\\n\\n- Document 1: 55 characters (including spaces)\\n- Document 2: 49 characters (including spaces)\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheDetails\": [{\"inputTokens\": 236, \"ttl\": \"5m\"}], \"cacheReadInputTokenCount\": 1712, \"cacheReadInputTokens\": 1712, \"cacheWriteInputTokenCount\": 236, \"cacheWriteInputTokens\": 236, \"inputTokens\": 3, \"outputTokens\": 121, \"serverToolUsage\": {}, \"totalTokens\": 2072}}"
+  }
+}

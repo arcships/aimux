@@ -1,0 +1,46 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_openai_responses_thinking_part_from_other_model",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "206",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "How do I cross the street?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-6",
+      "stream": false,
+      "thinking": {
+        "budget_tokens": 1024,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"signature\": \"EqoCCkYIBxgCKkAoOWiWQi/c6N2UksdHUlmyFgKWGiyPfDJamfrD6LmJROziUeKzwgGN4M9Z+ImackxUekJCckGJS3vdT8SpNOVGEgzL1nT2Yxb6tp86P4EaDJYK7hn3rvdckV0/xyIw4yqALy9+XXrazF86S38qjjq8q8St3fUd0V0HqynzA/9NhdMZ8iKo7asLYY97zZNDKpEBdazwi0P4qEgGGqnsl1p6/EstTF90GaxuiYHVKaBKlKUC66RX9KF0IEmer2Opo1qB4vbv9Bl/LFmsOpxX7EdaA+2oRmbKJY6aNEZig1ik3RkCQLgeDdkRN/peJIiWPVCgpcXF4Nc2/3GfuKnpgMrGpQ4ZRnvJ6JxqnvuAyHyXlLSzTuLiglH8kbY3mB79TmMO0BgB\", \"thinking\": \"This is a straightforward question about pedestrian safety. I should provide clear, practical advice for crossing streets safely.\", \"type\": \"thinking\"}, {\"text\": \"Here's how to cross the street safely:\\n\\n**At intersections with traffic lights:**\\n1. Wait for the pedestrian walk signal\\n2. Look both ways before stepping into the street\\n3. Make eye contact with drivers when possible\\n4. Walk briskly but don't run\\n5. Stay alert for turning vehicles\\n\\n**At intersections without signals:**\\n1. Stop at the curb or edge of the road\\n2. Look left, right, then left again\\n3. Listen for approaching vehicles\\n4. Wait for a clear gap in traffic\\n5. Cross quickly but carefully\\n\\n**General safety tips:**\\n- Use crosswalks and intersections when available\\n- Avoid crossing between parked cars\\n- Put away phones/distractions\\n- Wear bright or reflective clothing in low light\\n- Make yourself visible to drivers\\n- Be extra cautious in bad weather\\n\\n**If there's no crosswalk:**\\n- Choose the shortest, most visible crossing point\\n- Ensure you have enough time to cross completely\\n- Be especially vigilant since drivers won't expect pedestrians\\n\\nWould you like more specific advice for any particular situation, like crossing busy streets or navigating specific types of intersections?\", \"type\": \"text\"}], \"id\": \"msg_0114iHK2ditgTf1N8FWomc4E\", \"model\": \"claude-sonnet-4-6\", \"role\": \"assistant\", \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 42, \"output_tokens\": 291, \"service_tier\": \"standard\"}}"
+  }
+}

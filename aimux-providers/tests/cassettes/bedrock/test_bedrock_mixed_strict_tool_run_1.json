@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_mixed_strict_tool_run_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'c798ec53-7dd6-4819-8c53-b84b8902f03a'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1029",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4037}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"country\": \"Japan\"}, \"name\": \"capital_lookup\", \"toolUseId\": \"tooluse_k5WHQUrqFgm8eDWkXPCheP\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 691, \"outputTokens\": 53, \"serverToolUsage\": {}, \"totalTokens\": 744}}"
+  }
+}

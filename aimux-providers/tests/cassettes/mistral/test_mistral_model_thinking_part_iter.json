@@ -1,0 +1,39 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_mistral_model_thinking_part_iter",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "117",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "How do I cross the street?",
+          "role": "user"
+        }
+      ],
+      "model": "magistral-medium-latest",
+      "stream": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "mistral-correlation-id": "019ac842-8151-73a9-a77a-2b27a0800270",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

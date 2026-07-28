@@ -1,0 +1,56 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_file_search_grounding_gemini_3[False]_3",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "314",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "includeServerSideToolInvocations": true
+      },
+      "tools": [
+        {
+          "fileSearch": {
+            "file_search_store_names": [
+              "fileSearchStores/testfilesearchgrounding-su9hjfq28i0f"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=7525",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"thoughtSignature\": \"Ep8ECpwECAISlwQBDDnWx3nxZZkx53J81dknu/p6PSL7nvN6Z9mcPRuUlyPdyw10jPYc/JGpCPpWvuCkjp4VCZYED//zZsP5UnL4zFlQAs8U7+Wb9Ai3Ku2a3LsV+7uIBNXcJEuZ9eaR9uYrsh8/ishQNYkQd+Y4GZVCI/H2kU7Bvkx61NhZWY2FfljElmaPBQsYSUNAyvOWlq6XMpSLewYBZ7UN3HdChRUrNu2JQxb5sjpBZS+q/wu/qix8m3I6N0BslGZ4eZCAd9gHj13Vw+CGdrh7vHywLcq7vSQX8V2EZPcuhP3CJ8xYF7VShcubxnZrKLQYUI2U0VcTil+Rinzl/P1HBxWoxxLmNcDDVOVLDTq1p80FLn5EWBdrMa58xcspLAG0h0qNHTAQQm5aZDDFOyj8GROa0o4BsyLjDtO/e6GckRQxntSAGzdah+QQJ5CyZwU/e5nN5xaL9dMaUAyapIbsFydY86/kk8occiiBcuuNxefZZnSjr/1v8aG2YgtyVj/nGv6ccuyIxHG96HrGa6GkR4SYjMfHcuLrcnRewIuDfFxHwcYQfLd2tsycszjPIZDI0CpUcV/Ab+9XS78r02/aJ0hYhP3jIS1iU+zCPW/lTmMGtvXt8VKk4u8/j9xQ/7mr7x3xL002hQ07wL9CBob/WwBSvfNSOzfnuD9H/B2B4PHFNGXRdw9Sepv/3NcOfVL53QMRVyUCrU3t6I23\", \"toolCall\": {\"id\": \"j425u3dm\", \"toolType\": \"FILE_SEARCH\"}}, {\"thoughtSignature\": \"EtIGCs8GCAISygYBDDnWxyZiZPm/aPDQ7a49v/2zaRiGiEe2bbdAe1DlecBZ8jQF+D+Fj7s+bF6RvHNVqfOdtFql3fA/SdyNzFvwQVoBf2wtG727GrXm2SGM0VEOz3CJhQl2fqkTwcBA3YI7pREguh75T3Z2/cfgQZySqnIm8PXSARP7OIgKTVfh6yLdMlF96YKF+tFK6WXJ597C5tjET57tIDDSkPHbEG8sP12xC4LNsAjaBnKs1XQebD2/rKxsu72yKb2piXsBdGzUOBd4EPsdCgIEHjsYd0yRV6lHR+Z9hp8wnZ+NYsu9O/V7mIw3Y7W8OthsC24bKNL5q2ARqb0o34WiU+15EqzkVSX2skC2ypzI33Es2P5QKBWJZa/VwAwtvwEdX/VJWWb+l9O+ltyu89PRiHi/pKQGJeUtA/9IwmkhOmSpSKCBTeB0LnxC68bWDOOuT9gOmAtJmHEw8PaNY9pHzQIr44Nott/vCAW1LV+Fih5Sjo+gI70fKC0kZAyqv41pRXWatuSsliiePisTY0852sjjXYFNi7oUX45pLfN+RHC4BmcZIdHPBkzhreEPXKSqHJ+bHsh5dgL1pT8q5DqLPIQ1lP1gouEmT3qWEfhL6AtulKOcgzrHp2gwXoL4rMGsu0w/wDmL6vxvv6MQLnmR1f44oPE70p3881NJrE1H+U+Y9kYEZDSPE8Hf8h9kn7jHnoU/6C6mwIGKf8N1MGqRdUluG8brEUxCR84/9flVzP+3S76bHZ2hCa7eSiH8ZGOsERXaCrRHyxhgknof1kLFkyhSLZkI0YX8oGFRPE9JhbbBOblxO7/yqnrrL8SksJd2OczyNWh4BEKrz/5vrY6izQy8iSwROpI8hu9Wy+x+gduAGwAu59aMWm8YX0s19IRfdALC5iKyPagE2antuKvOzUrEwTLOtqyorOPzsinJcRwlgfYrZRUJBjuk3bYlGlHdIY6W/ljLqBXwL3G3hyYGDuG/Q2BtZ8wTmMzP7k3jlhIg2CYEvemQBwc+7arDCwIv0Y46kgQZeNK/m+F89gaPDr1qpLsuEbewCBsNvnlpIotKD2Ie4dC1Dv4Vfh72Odm5cm47YFDiTrYbr9x7kJF+/4iqiSsKc1/psjBn0tKAZg==\", \"toolResponse\": {\"id\": \"j425u3dm\", \"toolType\": \"FILE_SEARCH\"}}, {\"text\": \"The capital of France is **Paris**. It is the country's most populous city and is well-known for its significant influence on art, fashion, gastronomy, and culture, as well as iconic landmarks like the Eiffel Tower.\", \"thoughtSignature\": \"EpECCo4CAQw51seaFbVTQru59pOd78NbEoLI/22zZmnUvCP41hTwTylHgQoatr3wzGbo0ZbuAA0uebiy0WX4MusmnERKG99OwXsIbvKDRHyaVvEUoTDcb/lolK9d51TSol8kuO7kmGOpXZDiX/MV+B5k2w170WBqs/T8KYrHVVeX0H7CTRBlmcCXivJsE4UMa7sKGfK0aMMtqoWAjlCJJutxoQmeKxDQEa1E9wF3wXzU6dY8rSQ3y7PQoKpvn5GN5aJla0LJagRr41xlx5zhSjJK9G+PmAqA8muHv2Owme3ct0LX0XBfn9K0i10yh6M83tzSJ/UM6dr+/jIvFDWssL+YUUmFO2H1rGPIEjC8wd1OPTdb\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"groundingMetadata\": {\"groundingChunks\": [{\"retrievedContext\": {\"customMetadata\": [{\"key\": \"source_url\", \"stringValue\": \"https://example.com/paris\"}], \"fileSearchStore\": \"fileSearchStores/testfilesearchgrounding-su9hjfq28i0f\", \"text\": \"Paris is the capital of France. The Eiffel Tower is a famous landmark in Paris.\\n\"}}], \"groundingSupports\": [{\"groundingChunkIndices\": [0], \"segment\": {\"endIndex\": 35, \"text\": \"The capital of France is **Paris**.\"}}]}, \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"C3dHaoDmDObL4-EP4PLVsQE\", \"usageMetadata\": {\"candidatesTokenCount\": 66, \"promptTokenCount\": 95, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 95}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 132, \"toolUsePromptTokenCount\": 439, \"toolUsePromptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 439}], \"totalTokenCount\": 732}}"
+  }
+}

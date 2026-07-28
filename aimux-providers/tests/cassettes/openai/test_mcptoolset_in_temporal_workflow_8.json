@@ -1,0 +1,136 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_mcptoolset_in_temporal_workflow_8",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "7833",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Can you tell me more about the pydantic/pydantic-ai repo? Keep your answer short",
+          "role": "user"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"repoName\":\"pydantic/pydantic-ai\",\"question\":\"Can you provide a brief overview of the pydantic/pydantic-ai repository?\"}",
+                "name": "ask_question"
+              },
+              "id": "call_E6buTJzN2iixh8hPq09Bbz8I",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "Pydantic AI is a Python framework designed to build production-grade applications using Generative AI, emphasizing an ergonomic developer experience and type-safety . It provides type-safe agents, a model-agnostic design supporting over 15 LLM providers, structured outputs with Pydantic validation, comprehensive observability, and production-ready tooling . The project is structured as a `uv` workspace monorepo, including core framework components, an evaluation system, a graph execution engine, examples, and a CLI tool .\n\n## Core Purpose and Features\nThe primary purpose of Pydantic AI is to simplify the development of reliable AI applications by offering a robust framework that integrates type-safety and an intuitive developer experience . It aims to provide a unified approach to interacting with various LLM providers and managing complex agent workflows .\n\nKey features include:\n*   **Type-Safe Agents**: Agents are generic `Agent[Deps, Output]` for compile-time validation, utilizing `RunContext[Deps]` for dependency injection and Pydantic `output_type` for output validation .\n*   **Model-Agnostic Design**: It supports over 15 LLM providers through a unified `Model` interface, allowing developers to switch between different models without significant code changes .\n*   **Structured Outputs**: Pydantic AI leverages Pydantic for automatic validation and self-correction of structured outputs from LLMs .\n*   **Comprehensive Observability**: The framework includes comprehensive observability features via OpenTelemetry and native Logfire integration .\n*   **Production-Ready Tooling**: This includes an evaluation framework (`pydantic-evals`), durable execution capabilities, and protocol integrations .\n\n## Monorepo Package Structure\nPydantic AI is organized as a `uv` workspace monorepo containing several distinct Python packages :\n\n```mermaid\ngraph TB\n    subgraph \"Main Packages\"\n        PYDANTIC_AI[\"pydantic-ai<br/>(Metapackage)\"]\n        SLIM[\"pydantic-ai-slim<br/>Core Framework\"]\n        GRAPH[\"pydantic-graph<br/>State Machine\"]\n        EVALS[\"pydantic-evals<br/>Evaluation Framework\"]\n        CLAI[\"clai<br/>CLI Tool\"]\n    end\n    \n    subgraph \"Package Relationships\"\n        PYDANTIC_AI -->|\"bundles\"| SLIM\n        PYDANTIC_AI -->|\"bundles\"| GRAPH\n        PYDANTIC_AI -->|\"bundles\"| EVALS\n        PYDANTIC_AI -->|\"bundles\"| CLAI\n        \n        SLIM -->|\"depends on\"| GRAPH\n        EVALS -->|\"depends on\"| SLIM\n        CLAI -->|\"depends on\"| PYDANTIC_AI\n    end\n    \n    subgraph \"External Dependencies\"\n        PYDANTIC[\"Pydantic>=2.12\"]\n        HTTPX[\"httpx>=0.27\"]\n        LOGFIRE[\"logfire-api>=3.14.1\"]\n    end\n    \n    SLIM -->|\"requires\"| PYDANTIC\n    SLIM -->|\"requires\"| HTTPX\n    GRAPH -->|\"requires\"| LOGFIRE\n```\n\n\n| Package | Purpose | Key Exports |\n|---------|---------|--------------|\n| `pydantic-ai-slim` | Core agent framework with minimal base dependencies. | `Agent`, `Model`, `RunContext` |\n| `pydantic-graph` | A typed graph and state machine library used for agent loops. | `BaseNode`, `Graph` |\n| `pydantic-evals` | Framework for systematic testing and evaluation of LLM performance. | `Dataset`, `Evaluator` |\n| `clai` | Command-line interface for interacting with agents and models. | `pai` / `clai` commands |\n| `pydantic-ai` | Batteries-included package bundling all features and common providers. | (Re-exports from slim) |\n\n\n## Core Architecture Components\nThe architecture bridges the gap between high-level natural language intent and structured code execution .\n\n```mermaid\ngraph TB\n    subgraph \"Natural Language Space\"\n        PROMPT[\"User Prompt / System Instructions\"]\n        HISTORY[\"Conversation History (ModelMessage)\"]\n    end\n\n    subgraph \"Code Entity Space (pydantic_ai)\"\n        AGENT[\"Agent Class\"]\n        RUN_CTX[\"RunContext\"]\n        TOOLS[\"Tool Registry (@agent.tool)\"]\n        MODEL_BASE[\"Model ABC\"]\n    end\n\n    subgraph \"Graph Engine (pydantic_graph)\"\n        NODE_UP[\"UserPromptNode\"]\n        NODE_MR[\"ModelRequestNode\"]\n        NODE_CT[\"CallToolsNode\"]\n    end\n\n    PROMPT --> AGENT\n    AGENT --> NODE_UP\n    NODE_UP --> NODE_MR\n    NODE_MR --> MODEL_BASE\n    MODEL_BASE --> HISTORY\n    NODE_MR --> NODE_CT\n    NODE_CT --> TOOLS\n    TOOLS --> RUN_CTX\n    NODE_CT --> NODE_MR\n```\n\n\n**Key Code Entities:**\n1.  **Agent (`pydantic_ai.Agent`)**: The central orchestrator managing tools, instructions, and model interaction .\n2.  **Model (`pydantic_ai.models.Model`)**: An abstract base class defining how to communicate with LLM providers .\n3.  **Graph Nodes**: The internal execution loop uses nodes like `ModelRequestNode` to manage the state machine of an agent run .\n4.  **RunContext (`pydantic_ai.RunContext`)**: Provides access to dependencies and state within tools and dynamic instructions .\n\n## Notes\nThe `CLAUDE.md` file provides guidance for Claude Code when working with the repository, including development commands and an overview of core components and design patterns . The `mkdocs.yml` file defines the structure and content of the project's documentation, including navigation, plugins, and watch directories for various packages . The `docs/install.md` file details how to install the `pydantic-ai` package and its optional components, including a \"slim\" installation option for specific model dependencies .\n\nWiki pages you might want to explore:\n- [Overview (pydantic/pydantic-ai)](/wiki/pydantic/pydantic-ai#1)\n- [Project Philosophy and Contribution Guidelines (pydantic/pydantic-ai)](/wiki/pydantic/pydantic-ai#1.3)\n- [Anthropic Integration (pydantic/pydantic-ai)](/wiki/pydantic/pydantic-ai#4.3)\n\nView this search on DeepWiki: https://deepwiki.com/search/can-you-provide-a-brief-overvi_371585fa-e3cd-4bad-8846-1c602f7c12a1\n",
+          "role": "tool",
+          "tool_call_id": "call_E6buTJzN2iixh8hPq09Bbz8I"
+        }
+      ],
+      "model": "gpt-4o",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "Get a list of documentation topics for a GitHub repository.\n\nArgs:\n    repoName: GitHub repository in owner/repo format (e.g. \"facebook/react\")",
+            "name": "read_wiki_structure",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "repoName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repoName"
+              ],
+              "type": "object"
+            },
+            "strict": true
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "View documentation about a GitHub repository.\n\nArgs:\n    repoName: GitHub repository in owner/repo format (e.g. \"facebook/react\")",
+            "name": "read_wiki_contents",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "repoName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repoName"
+              ],
+              "type": "object"
+            },
+            "strict": true
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Ask any question about a GitHub repository and get an AI-powered, context-grounded response.\n\nArgs:\n    repoName: GitHub repository or list of repositories (max 10) in owner/repo format\n    question: The question to ask about the repository",
+            "name": "ask_question",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "question": {
+                  "type": "string"
+                },
+                "repoName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "repoName",
+                "question"
+              ],
+              "type": "object"
+            },
+            "strict": true
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "1642",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"logprobs\": null, \"message\": {\"annotations\": [], \"content\": \"The pydantic/pydantic-ai repository is a Python framework designed for building production-grade applications with Generative AI, focusing on type-safety and an ergonomic developer experience. Key features include type-safe agents, a model-agnostic design supporting over 15 LLM providers, structured outputs validated by Pydantic, comprehensive observability, and production-ready tooling. The project is structured as a monorepo, including core framework components, evaluation systems, a graph execution engine, examples, and a CLI tool. It's organized into several packages, such as `pydantic-ai-slim` for the core agent framework and `pydantic-evals` for evaluating LLM performance, among others.\", \"refusal\": null, \"role\": \"assistant\"}}], \"created\": 1778623411, \"id\": \"chatcmpl-DepUJLyEM7sTe1g4ISFcaaJ5q7f9t\", \"model\": \"gpt-4o-2024-08-06\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": \"fp_2dd602437d\", \"usage\": {\"completion_tokens\": 142, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 1636, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 1778}}"
+  }
+}

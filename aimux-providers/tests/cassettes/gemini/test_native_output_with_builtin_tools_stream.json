@@ -1,0 +1,70 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_native_output_with_builtin_tools_stream",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "452",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the largest city in Mexico?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseJsonSchema": {
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city",
+            "country"
+          ],
+          "title": "CityLocation",
+          "type": "object"
+        },
+        "responseMimeType": "application/json",
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "includeServerSideToolInvocations": true
+      },
+      "tools": [
+        {
+          "googleSearch": {}
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-disposition": "attachment",
+      "content-type": "text/event-stream",
+      "server-timing": "gfet4t7; dur=1557",
+      "vary": "Origin"
+    },
+    "body": ""
+  }
+}

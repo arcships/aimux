@@ -1,0 +1,43 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_model_usage_limit_not_exceeded_1",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "172",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "The quick brown fox jumps over the lazydog.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "retry-after": "19",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"text\": \"I noticed a small typo in that famous pangram! It should be:\\n\\n\\\"The quick brown fox jumps over the **lazy dog**.\\\"\\n\\n(There should be a space between \\\"lazy\\\" and \\\"dog\\\")\\n\\nThis sentence is often used for testing typewriters, fonts, and keyboards because it contains every letter of the English alphabet at least once.\", \"type\": \"text\"}], \"id\": \"msg_01QHpSAhCiB6L5pL23LjdRAy\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 19, \"output_tokens\": 77, \"service_tier\": \"standard\"}}"
+  }
+}

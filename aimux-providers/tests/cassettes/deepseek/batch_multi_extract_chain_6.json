@@ -1,0 +1,62 @@
+{
+  "source": "rig (MIT)",
+  "provider": "deepseek",
+  "scenario": "batch_multi_extract_chain_6",
+  "request": {
+    "path": "/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "You are an AI assistant whose purpose is to extract structured data from the provided text.\nYou will have access to a `submit` function that defines the structure of the data to extract from the provided text.\nUse the `submit` function to submit the structured data.\nBe sure to fill out every field and ALWAYS CALL THE `submit` function, even with default values!!!.\n                \n\n=============== ADDITIONAL INSTRUCTIONS ===============\nExtract sentiment and confidence from the given text.",
+          "role": "system"
+        },
+        {
+          "content": "I'm going to the store to buy milk and bread.",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek-v4-flash",
+      "tool_choice": null,
+      "tools": [
+        {
+          "function": {
+            "description": "Submit the structured data you extracted from the provided text.",
+            "name": "submit",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "properties": {
+                "confidence": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "sentiment": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "sentiment",
+                "confidence"
+              ],
+              "title": "Sentiment",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"\",\"reasoning_content\":\"The user's text is \\\"I'm going to the store to buy milk and bread.\\\" This text seems fairly neutral - it's a simple statement about going to the store. Let me analyze the sentiment:\\n\\nThe statement is factual and neutral. There's no strong positive or negative emotion expressed. I'd give it a sentiment close to 0 (neutral).\\n\\nFor confidence, since the text is straightforward and clearly neutral, I'd say high confidence.\\n\\nLet me assign:\\n- sentiment: 0.0 (neutral)\\n- confidence: 0.9 (high confidence it's neutral)\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"sentiment\\\": 0.0, \\\"confidence\\\": 0.9}\",\"name\":\"submit\"},\"id\":\"call_REDACTED_7\",\"index\":0,\"type\":\"function\"}]}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_7\",\"model\":\"deepseek-v4-flash\",\"object\":\"chat.completion\",\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_tokens\":181,\"completion_tokens_details\":{\"reasoning_tokens\":117},\"prompt_cache_hit_tokens\":0,\"prompt_cache_miss_tokens\":441,\"prompt_tokens\":441,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":622}}"
+  }
+}

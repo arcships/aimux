@@ -1,0 +1,40 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_responses_usage_limit_not_exceeded",
+  "request": {
+    "path": "/v1/responses/input_tokens",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "136",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "The quick brown fox jumps over the lazy dog.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4.1-mini"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-aqgbrbgshrc0qzcisc6v053e",
+      "openai-processing-ms": "35",
+      "openai-project": "proj_sazfDS4z1dBLe741ZQt2ckC8",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"input_tokens\": 18, \"object\": \"response.input_tokens\"}"
+  }
+}

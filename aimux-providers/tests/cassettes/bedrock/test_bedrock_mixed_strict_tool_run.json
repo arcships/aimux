@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_mixed_strict_tool_run",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'2e822e23-d834-4bb1-8587-d184b95fc023'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "667",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4750}, \"output\": {\"message\": {\"content\": [{\"text\": \"I'll help you find the capital city using the available tools.\"}, {\"toolUse\": {\"input\": {}, \"name\": \"country_source\", \"toolUseId\": \"tooluse_YFo0dGJWt2BxnVmdQ8qPQt\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 628, \"outputTokens\": 50, \"serverToolUsage\": {}, \"totalTokens\": 678}}"
+  }
+}

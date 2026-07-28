@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_guardrail_config",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'798270ba-ee91-4ddf-b8ba-834f0d418cc0'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "273",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1257}, \"output\": {\"message\": {\"content\": [{\"text\": \"The capital of France is Paris. Paris is not only the capital city but also the most populous city in France, serving as the center of French government, culture, and commerce. It's known for its historical and cultural landmarks such as the Eiffel Tower, the Louvre Museum, Notre-Dame Cathedral, and many charming neighborhoods like Montmartre.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"trace\": {\"guardrail\": {\"actionReason\": \"No action.\", \"inputAssessment\": {\"xbgw7g293v7o\": {\"appliedGuardrailDetails\": {\"guardrailArn\": \"arn:aws:bedrock:us-east-1:353014496775:guardrail/xbgw7g293v7o\", \"guardrailId\": \"xbgw7g293v7o\", \"guardrailOrigin\": [\"REQUEST\"], \"guardrailOwnership\": \"SELF\", \"guardrailVersion\": \"DRAFT\"}, \"invocationMetrics\": {\"guardrailCoverage\": {\"textCharacters\": {\"guarded\": 30, \"total\": 30}}, \"guardrailProcessingLatency\": 397, \"usage\": {\"automatedReasoningPolicies\": 0, \"automatedReasoningPolicyUnits\": 0, \"contentPolicyImageUnits\": 0, \"contentPolicyUnits\": 0, \"contextualGroundingPolicyUnits\": 0, \"sensitiveInformationPolicyFreeUnits\": 0, \"sensitiveInformationPolicyUnits\": 0, \"topicPolicyUnits\": 1, \"wordPolicyUnits\": 0}}}}, \"modelOutput\": [], \"outputAssessments\": {\"xbgw7g293v7o\": [{\"appliedGuardrailDetails\": {\"guardrailArn\": \"arn:aws:bedrock:us-east-1:353014496775:guardrail/xbgw7g293v7o\", \"guardrailId\": \"xbgw7g293v7o\", \"guardrailOrigin\": [\"REQUEST\"], \"guardrailOwnership\": \"SELF\", \"guardrailVersion\": \"DRAFT\"}, \"invocationMetrics\": {\"guardrailCoverage\": {\"textCharacters\": {\"guarded\": 345, \"total\": 345}}, \"guardrailProcessingLatency\": 370, \"usage\": {\"automatedReasoningPolicies\": 0, \"automatedReasoningPolicyUnits\": 0, \"contentPolicyImageUnits\": 0, \"contentPolicyUnits\": 0, \"contextualGroundingPolicyUnits\": 0, \"sensitiveInformationPolicyFreeUnits\": 0, \"sensitiveInformationPolicyUnits\": 0, \"topicPolicyUnits\": 1, \"wordPolicyUnits\": 0}}}]}}}, \"usage\": {\"inputTokens\": 13, \"outputTokens\": 69, \"serverToolUsage\": {}, \"totalTokens\": 82}}"
+  }
+}

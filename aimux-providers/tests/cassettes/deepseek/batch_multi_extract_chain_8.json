@@ -1,0 +1,62 @@
+{
+  "source": "rig (MIT)",
+  "provider": "deepseek",
+  "scenario": "batch_multi_extract_chain_8",
+  "request": {
+    "path": "/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "You are an AI assistant whose purpose is to extract structured data from the provided text.\nYou will have access to a `submit` function that defines the structure of the data to extract from the provided text.\nUse the `submit` function to submit the structured data.\nBe sure to fill out every field and ALWAYS CALL THE `submit` function, even with default values!!!.\n                \n\n=============== ADDITIONAL INSTRUCTIONS ===============\nExtract sentiment and confidence from the given text.",
+          "role": "system"
+        },
+        {
+          "content": "I love my dog, but I hate rainy weather.",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek-v4-flash",
+      "tool_choice": null,
+      "tools": [
+        {
+          "function": {
+            "description": "Submit the structured data you extracted from the provided text.",
+            "name": "submit",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "properties": {
+                "confidence": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "sentiment": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "sentiment",
+                "confidence"
+              ],
+              "title": "Sentiment",
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"\",\"reasoning_content\":\"Let me analyze the text to extract sentiment and confidence.\\n\\nThe text says: \\\"I love my dog, but I hate rainy weather.\\\"\\n\\nThis text contains mixed sentiments - positive (\\\"I love my dog\\\") and negative (\\\"I hate rainy weather\\\"). Overall, the sentiment is somewhat neutral or slightly negative due to the \\\"but\\\" clause.\\n\\nLet me think about this more carefully:\\n- \\\"I love my dog\\\" - very positive\\n- \\\"but I hate rainy weather\\\" - very negative\\n- The word \\\"but\\\" gives more weight to the second clause\\n\\nOverall sentiment: somewhere around neutral, maybe slightly negative. Let's say -0.2 on a scale from -1 (very negative) to +1 (very positive).\\n\\nConfidence: The sentiment is mixed, so confidence isn't very high. Maybe 0.5 to 0.6.\\n\\nLet me go with sentiment around -0.3 and confidence around 0.6.\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"sentiment\\\": -0.3, \\\"confidence\\\": 0.6}\",\"name\":\"submit\"},\"id\":\"call_REDACTED_9\",\"index\":0,\"type\":\"function\"}]}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_9\",\"model\":\"deepseek-v4-flash\",\"object\":\"chat.completion\",\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_tokens\":255,\"completion_tokens_details\":{\"reasoning_tokens\":190},\"prompt_cache_hit_tokens\":0,\"prompt_cache_miss_tokens\":440,\"prompt_tokens\":440,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":695}}"
+  }
+}

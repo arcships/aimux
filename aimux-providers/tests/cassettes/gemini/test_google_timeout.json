@@ -1,0 +1,40 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_timeout",
+  "request": {
+    "path": "/v1beta/models/gemini-1.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "87",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Hello!"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {}
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=369",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -0.0010216936299746687, \"content\": {\"parts\": [{\"text\": \"Hello there! How can I help you today?\\n\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-1.5-flash\", \"responseId\": \"LVteaPaFMdm7nvgPz5Sb0Aw\", \"usageMetadata\": {\"candidatesTokenCount\": 11, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 11}], \"promptTokenCount\": 2, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 2}], \"totalTokenCount\": 13}}"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_moonshotai_tool_call",
+  "request": {
+    "path": "/model/moonshot.kimi-k2-thinking/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'8c035cb8-db96-49d0-86be-c67e97609988'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "503",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1169}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"text\": \" The user is asking for the current temperature in London. They've explicitly requested the use of a tool for this purpose. I have a tool called `get_temperature` that can provide this information. It requires a single parameter \\\"city\\\" which should be \\\"London\\\" in this case.\"}}}, {\"toolUse\": {\"input\": {\"city\": \"London\"}, \"name\": \"get_temperature\", \"toolUseId\": \"functions.get_temperature:0\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"inputTokens\": 92, \"outputTokens\": 75, \"serverToolUsage\": {}, \"totalTokens\": 167}}"
+  }
+}

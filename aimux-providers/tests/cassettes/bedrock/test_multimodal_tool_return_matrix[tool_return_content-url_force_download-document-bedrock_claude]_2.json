@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url_force_download-document-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'b38e15db-9c84-428b-80d0-536fd16d7f72'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "25904",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4665}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a PDF document with the following characteristics:\\n\\n**Document Type:** PDF file (application/pdf)\\n\\n**Title:** \\\"Sample PDF\\\"\\n\\n**Content Description:**\\n- The document appears to be a test or sample PDF file\\n- It has a subtitle that reads \\\"This is a simple PDF file. Fun fun fun.\\\"\\n- The main body consists of Lorem Ipsum text, which is commonly used placeholder text in publishing and design\\n- The document is one page long\\n- The text is formatted in multiple paragraphs containing standard Lorem Ipsum passages\\n\\n**Purpose:** This appears to be a demonstration or test PDF document, likely used for testing PDF reading capabilities, file handling, or document processing systems. The Lorem Ipsum text is Latin-derived filler text that has been used in the printing and typesetting industry since the 1500s.\\n\\nThe document doesn't contain any meaningful content or data - it's purely a sample/test file with placeholder text.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 3309, \"outputTokens\": 204, \"serverToolUsage\": {}, \"totalTokens\": 3513}}"
+  }
+}

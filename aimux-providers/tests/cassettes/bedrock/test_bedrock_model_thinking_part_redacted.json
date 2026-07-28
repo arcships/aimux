@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_redacted",
+  "request": {
+    "path": "/model/us.anthropic.claude-3-7-sonnet-20250219-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'a05a90a5-bc16-439e-ab6d-2fe4196262da'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "299",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5846}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"redactedContent\": \"RXU4RUNrZ0lCeEFCR0FJcVFJaGtJYVN0OHBFZXF5N3pOYUVLL0thRC9rWnVKVVMrcEJnaU1tdVFWbzRWMzJIc3lwK3R6elBndHNFWVptQzRKNlVza3JROThFU1ZCM0UzT2xMaFRTa1NER2NycncxRE8xR1ZhQUNoakJvTUJhVU5kSzBBcHdYZTVJVG1JakI4YUt6dGQ0UVUxVUVyN1pUMzNkWXVOTU9KdURGMllrcmhrTWR5R1JSMnNNZ1I4UzR0ZEQzSFp2eDlkbmlUZnFvcTFBTy9zQXdsL2NTK0NxVXcxTi91UmZaWU9IMEV2UDljdDVOTjdrNGhTWEV1b3FyZTFpbzArTDNJYWZnaGJMNDFmNHhtd1pKbmpib2I5SHFmMmJJVG04V2N1dWtzTTNFL0plb1EvWUViMWtvV1VOTG9KeDF3R0t5RTlMckNJOHkwYmRjOFN0SVkvS1VlVGpIdkd3SjBZK3UzSlVqTi92Q2lRSTNUOTZIVThWdVNzckwzdXUrVHFDOXc2Y3RVdGg4ejMrZUx4cEpYb2d6Vk9sVFZidXM5N2ZXU1JqcjlzZjQ0TFBOWmgySTBpanRGYVZid0FCZzJJRU14VW5sRUtxUzRTNGtQd2tuTEtodGxVWWhXeTlpQlI1VnFLK29PazRJKzQ2QXVOQWZ6SFhvRGs5d1diSlJaV25BZEJ5ZXMvbnRzNTZsZTBsQkJPVlZGUnlPSnRwVlg5ME1CeHYrOStDZ243TXU1UUM3U0dRbTkxOVEremFwdzBQdUxualdNR0tYbkd6RkhwcEdhZ3ozeiszYzA4QTl6NGJMY29YRnlpVGNMQ2plbzN4NHVNL281UFBZODBnVk92T01HYXNSaXV3Q0tTYjhHd3AxYTN4S3hPZFVGVUo4L1pyVjFEazdVNy9zamZ3YUFybUVDc0RmbHB1NzRhb0U4MWRMcU5Na2tXRlJNUFl2REpIaitnTnVXVzN1U2lOQ3MxeWtCTjVQMnExWXEwbSs2SGluRlFYeXhUM0VEODJUbzZHdUFhU3luVS9MbDdtMTFxdnJYVkRZUGJPZnkxRTk0WDF2NE40L3ZkUnJRTUpURDcrMWU5UnpZR2Y0YXlyc1lBUT09\"}}, {\"text\": \"I notice you've sent what appears to be some kind of trigger or command string. I can't respond to attempts to access internal systems or manipulate how I process information. \\n\\nInstead, I'd be happy to have a normal conversation with you. Is there something specific I can help you with today? I'm here to provide information, have discussions, or assist with tasks within my guidelines.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 92, \"outputTokens\": 176, \"totalTokens\": 268}}"
+  }
+}

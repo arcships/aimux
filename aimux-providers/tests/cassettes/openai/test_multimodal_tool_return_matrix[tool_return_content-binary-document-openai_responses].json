@@ -1,0 +1,58 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-document-openai_responses]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "412",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Use the get_file tool now to retrieve a document file, then describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_file",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "user-grnwlxd1653lxdzp921aoihz",
+      "openai-processing-ms": "929",
+      "openai-project": "proj_FYsIItHHgnSPdHBVMzhNBWGa",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1769756046, \"created_at\": 1769756045, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0d1fd54abcba659100697c558db824819181ecb06fff42d671\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABpfFWO96Z8RH3Q1kGn14IXdUvvR0mxDccDk8_5-rFzcVdfFcIGV64lRIFN5aRrg2HjNMDYR5rq5qoNHdaS-yU0r4Gy2sresJ8Tbn20VqJ_rTchyQCmkCBHs6wxdP_zq6esGh9Cxwg6J1V-qKlAAmOA64EhTc3-qoNnhE6YazCKj5jpl1HjzAojjL57V5gAWWeDpEPsuiKVx1UqZXAJZIX6Buc1uV6zN9CE97-QGobupa1jtltKxppFc_K_Vw9j0Huf8IpYxwuWSzMeM3Axx7rAWEPf7b4cRVO7Kqspp4HSlSbBnSDRfyEO9m0P2H6_xGFSZUuULH6l6CLPrM5ebHnz4vt20jqS_Qk54Km0MFOS07NzChyd_1KAJGGXFvbGXHQQeipDO6sRrlRzADTuCT6x74x07oE3-r5kanvffJhTXyjZ8Vu1cuDCRjP1QHKKtgLvgD8XfTe5wz-ewhRsVvr9rT5yjSGP5sNKTVPv3_QVdE8LhTALL_gZ8QhHGyU8fBe4-IAnbTwOQveYFQtlONFFhQ4NkSV9oK0i-rmkmKw46hXebszqamV1jglYQUxtJ1yOO_EH_eaZ9TvH-vrZRhBHKBbZT9iDjbz91G7EbpBUXkuisMNSDPtTAW6qxoOf1NpZdH1Qgu_vUjVc0gE801nkmf2UjCtY5RHVgNM9xu_rR40rWdxxVJn6PPFa1mKuQAj7PrdkXR4KF4PvgvUxO18OKhqbD1V24fy7NXEoTcijMKm5Z7EsCIRSVLs0LDKfY6wR6YQHEb6jbdu5CAvSy9OTdhyeQhyq41eftHwCRLRJGhzHZb14uGNjRUyrvv3DowiWsdijlEgPlEkxvxcH92CjDNo6tQrR-u6YKqmoSgO7m3LY8cwqLsLBbVpxebTouHvUuDyf8EJrUF5tYAPuPTcvhaclbaZm1RXapgEAVuPkGeGGwjUjv7uh4faUEm2iz4JVmkLXWQRB0VYuUyj8_T5zwEeEVfAjqu5C6yl7R1kFF3HiuSg=\", \"id\": \"rs_0d1fd54abcba659100697c558df89481918615bf18e9602db8\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_4iw4Fy8zrd6UMnyPXTaY3WaL\", \"id\": \"fc_0d1fd54abcba659100697c558e676c8191b61c6e28558c1c98\", \"name\": \"get_file\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_file\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 47, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 43, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 90}, \"user\": null}"
+  }
+}

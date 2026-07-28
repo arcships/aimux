@@ -1,0 +1,73 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "two_arg_rewrites_chain_blocking_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the add tool to add 1 and 1, then report the tool's result.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a calculator assistant. Use the add tool for the addition.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y together",
+              "name": "add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"x\":1,\"y\":1},\"name\":\"add\"},\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":18,\"promptTokenCount\":86,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":86}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":49,\"totalTokenCount\":153}}"
+  }
+}

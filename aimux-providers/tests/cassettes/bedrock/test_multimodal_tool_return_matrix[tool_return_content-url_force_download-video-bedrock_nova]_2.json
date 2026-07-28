@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url_force_download-video-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'64890309-def2-4852-afc4-b3aabd393f22'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1052032",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2919}, \"output\": {\"message\": {\"content\": [{\"text\": \"It looks like you've shared a still frame from an animated scene featuring a large, round, white rabbit with long ears, interacting with a pink butterfly in a grassy meadow. The rabbit appears to be smiling and moving playfully, surrounded by flowers and butterflies.\\n\\nCould you clarify what specific help or analysis you need regarding this image? For example:\\n- Are you looking for a description or interpretation of the scene?\\n- Do you need help identifying the source or context of the animation?\\n- Are you interested in analyzing the visual elements (characters, setting, mood)?\\n- Or is there another specific question you have in mind? \\n\\nLet me know how I can assist you!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2514, \"outputTokens\": 133, \"serverToolUsage\": {}, \"totalTokens\": 2647}}"
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_to_google_deferred_capability_history_replay",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "1092",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "cache_control": {
+        "ttl": "5m",
+        "type": "ephemeral"
+      },
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Can I get a refund on order-123?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "system": [
+        {
+          "text": "The following capabilities are deferred and can be loaded using the `load_capability` tool:\n- refunds: Refund policy tools.",
+          "type": "text"
+        }
+      ],
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "Load a capability to access its full instructions and tools.",
+          "input_schema": {
+            "description": "Typed arguments for a `load_capability` call.",
+            "properties": {
+              "id": {
+                "description": "The id of the capability to load.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "name": "load_capability"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up the refund policy for an order.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "order_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "order_id"
+            ],
+            "type": "object"
+          },
+          "name": "lookup_refund_policy"
+        },
+        {
+          "name": "tool_search_tool_bm25",
+          "type": "tool_search_tool_bm25_20251119"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-6bc42d8aa1a1fb8ffc06b7299d436118-9aa3f30d99c22a5a-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"content\": [{\"text\": \"I'll help you with your refund request for order-123. Let me load the refund policy tools to assist you.\", \"type\": \"text\"}, {\"caller\": {\"type\": \"direct\"}, \"id\": \"toolu_01VLwCjyU7u928EqHmMRvow8\", \"input\": {\"id\": \"refunds\"}, \"name\": \"load_capability\", \"type\": \"tool_use\"}], \"id\": \"msg_01JuTv3CpWFzdYPTWMce8rMV\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 819, \"output_tokens\": 81, \"service_tier\": \"standard\"}}"
+  }
+}

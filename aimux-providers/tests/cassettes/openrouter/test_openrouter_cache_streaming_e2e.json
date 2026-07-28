@@ -1,0 +1,64 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openrouter",
+  "scenario": "test_openrouter_cache_streaming_e2e",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "1504",
+      "content-type": "application/json",
+      "host": "openrouter.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "cache_control": {
+                "ttl": "5m",
+                "type": "ephemeral"
+              },
+              "text": "You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching. You are a helpful assistant that specializes in caching.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": [
+            {
+              "cache_control": {
+                "ttl": "5m",
+                "type": "ephemeral"
+              },
+              "text": "Say hello in one word.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "anthropic/claude-sonnet-4.6",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin"
+    },
+    "body": ""
+  }
+}

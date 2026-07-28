@@ -1,0 +1,209 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "five_turn_chat_history_stress_preserves_context_and_tools_4",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Turn 1 of 5. Remember that the alpha token is NOVA. Reply exactly ACK-ALPHA.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "**My Immediate Response**\n\nOkay, this is straightforward. The user has given me a very basic instruction: recall a specific token and use it to craft a pre-defined response. No complex analysis, no external information needed, just immediate recall and replication. I understand the task completely. I just need to output \"ACK-ALPHA\". That's it. Simple execution, no further consideration is necessary.\n",
+              "thought": true
+            },
+            {
+              "text": "ACK-ALPHA",
+              "thought": false
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "Turn 2 of 5. Use the stress_add tool to compute 123 + 77. Remember the tool result as SUM. Reply exactly SUM=<tool result>.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "Okay, here's my summary, presented as a stream of thought:\n\n**Calculating a Simple Sum with `stress_add`**\n\nAlright, the user wants me to crunch some numbers. Specifically, they want me to calculate 123 + 77. No problem. That looks like a job for the `stress_add` tool. So, my immediate next step is to *call* that tool, feed it the numbers 123 and 77, and let it do its thing.\n\nOnce I have the output from the `stress_add` tool, I need to remember that result. I need to internally label it as \"SUM.\" Gotta make sure I don't lose track of that crucial piece of information. Finally, I need to format my response just right, because the user specified a particular output structure. I'll make sure it's perfect.\n",
+              "thought": true
+            },
+            {
+              "functionCall": {
+                "args": {
+                  "x": 123,
+                  "y": 77
+                },
+                "name": "stress_add"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_2"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "stress_add",
+                "response": {
+                  "result": 200
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "SUM={'stress_add_response': {'result': 200}}",
+              "thought": false
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "Turn 3 of 5. Use the stress_subtract tool to compute the remembered SUM minus 58. If you need concrete tool arguments, use x=200 and y=58. Remember the tool result as DELTA. Reply exactly DELTA=<tool result>.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "**My Approach to Using the Stress Subtraction Tool**\n\nOkay, so I'm aiming to leverage that `stress_subtract` tool. I've got my parameters locked and loaded: `x=200` and `y=58`. Simple enough. My next step, naturally, is to execute that function call. I need to make it explicitly `stress_subtract(x=200, y=58)`. And, critically, I need to capture the output – that crucial result. Let's assign it to a variable, I think I'll call that `DELTA`. This `DELTA` is the key, the output I'll be working with. I need to remember the value of `DELTA` after I use it.\n",
+              "thought": true
+            },
+            {
+              "functionCall": {
+                "args": {
+                  "x": 200,
+                  "y": 58
+                },
+                "name": "stress_subtract"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_3"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "stress_subtract",
+                "response": {
+                  "result": 142
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "temperature": 0.0,
+        "thinkingConfig": {
+          "includeThoughts": true,
+          "thinkingBudget": 1024
+        }
+      },
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are running a deterministic Rig integration test. Preserve facts across turns. When a prompt says to use a tool, call exactly that tool before answering. Keep replies concise. When asked for the final code, return only the code with no markdown, quotes, or commentary.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y. This tool must be used for stress-test addition turns.",
+              "name": "stress_add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "Left operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "Right operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Subtract y from x. This tool must be used for stress-test subtraction turns.",
+              "name": "stress_subtract",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "Value to subtract from",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "Value to subtract",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"DELTA={'stress_subtract_response': {'result': 142}}\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_5\",\"usageMetadata\":{\"candidatesTokenCount\":16,\"promptTokenCount\":831,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":831}],\"serviceTier\":\"standard\",\"totalTokenCount\":847}}"
+  }
+}

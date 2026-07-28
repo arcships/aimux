@@ -1,0 +1,55 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "groq",
+  "scenario": "test_model_sees_multiple_images[groq]",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "414",
+      "content-type": "application/json",
+      "host": "api.groq.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Call the get_images tool. One image shows a fruit - what fruit is it? Just name the fruit.",
+          "role": "user"
+        }
+      ],
+      "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "n": 1,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "function": {
+            "description": "",
+            "name": "get_images",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=15552000",
+      "vary": "Origin"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"tool_calls\", \"index\": 0, \"logprobs\": null, \"message\": {\"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{}\", \"name\": \"get_images\"}, \"id\": \"4bbc9mwp9\", \"type\": \"function\"}]}}], \"created\": 1770663522, \"id\": \"chatcmpl-53d32b49-d43e-4786-9c8c-544feb9b2acb\", \"model\": \"meta-llama/llama-4-maverick-17b-128e-instruct\", \"object\": \"chat.completion\", \"service_tier\": \"on_demand\", \"system_fingerprint\": \"fp_d2c1f7e199\", \"usage\": {\"completion_time\": 0.092866247, \"completion_tokens\": 46, \"prompt_time\": 0.099323725, \"prompt_tokens\": 715, \"queue_time\": 0.291992438, \"total_time\": 0.192189972, \"total_tokens\": 761}, \"usage_breakdown\": null, \"x_groq\": {\"id\": \"req_01kh1wabemfg6a12xvmjsy0h5a\", \"seed\": 1529361633}}"
+  }
+}

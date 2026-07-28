@@ -1,0 +1,42 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "zai",
+  "scenario": "test_zai_preserved_thinking_round_trip",
+  "request": {
+    "path": "/api/paas/v4/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "176",
+      "content-type": "application/json",
+      "host": "api.z.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 17 * 19? Think it through.",
+          "role": "user"
+        }
+      ],
+      "model": "glm-4.7",
+      "stream": false,
+      "thinking": {
+        "clear_thinking": false,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json; charset=UTF-8",
+      "keep-alive": "timeout=6",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"17 * 19 is 323.\\n\\nHere is one way to think it through:\\nYou can use the difference of squares formula, which states that $a^2 - b^2 = (a - b)(a + b)$.\\n\\nLet $a = 18$ and $b = 1$.\\nThen $(18 - 1)(18 + 1) = 18^2 - 1^2$.\\nSince $18^2 = 324$ and $1^2 = 1$, the result is $324 - 1 = 323$.\", \"reasoning_content\": \"\\nThe user is asking for the product of 17 and 19.\\nThis is a simple arithmetic calculation.\\nThere are no complex phrasings or hidden intents in the prompt.\\nThere is no request for my system instructions or chain of thought.\", \"role\": \"assistant\"}}], \"created\": 1782525485, \"id\": \"20260627095802052b238eb03242c2\", \"model\": \"glm-4.7\", \"object\": \"chat.completion\", \"request_id\": \"20260627095802052b238eb03242c2\", \"usage\": {\"completion_tokens\": 172, \"completion_tokens_details\": {\"reasoning_tokens\": 49}, \"prompt_tokens\": 17, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 189}}"
+  }
+}

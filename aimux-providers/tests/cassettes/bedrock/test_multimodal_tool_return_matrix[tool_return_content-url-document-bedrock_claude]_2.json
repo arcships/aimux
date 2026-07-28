@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-document-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f7e3dbe7-53ae-457f-9d51-5f41a7533238'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "25913",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5810}, \"output\": {\"message\": {\"content\": [{\"text\": \"I've successfully retrieved the document! Here's what I received:\\n\\n## Document Description\\n\\n**Type:** PDF file  \\n**Title:** \\\"Sample PDF\\\"  \\n**Subtitle:** \\\"This is a simple PDF file. Fun fun fun.\\\"\\n\\n**Content:** This is a single-page sample PDF document that contains Lorem Ipsum placeholder text. The document appears to be a test or demonstration PDF file.\\n\\n**Structure:**\\n- A header with the title \\\"Sample PDF\\\" in large, thin font\\n- A subtitle line in italics\\n- Multiple paragraphs of Lorem Ipsum text (classic Latin placeholder text commonly used in design and publishing)\\n\\n**Purpose:** This appears to be a generic sample/test PDF file, likely used for testing PDF functionality, file handling, or document processing systems. The Lorem Ipsum text is standard filler text that has been used in the printing and typesetting industry since the 1500s.\\n\\nThe document is well-formatted with clear paragraph breaks and contains several paragraphs of continuous Latin text discussing various topics in the typical Lorem Ipsum style.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 3310, \"outputTokens\": 229, \"serverToolUsage\": {}, \"totalTokens\": 3539}}"
+  }
+}

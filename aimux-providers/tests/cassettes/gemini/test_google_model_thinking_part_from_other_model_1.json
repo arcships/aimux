@@ -1,0 +1,102 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_thinking_part_from_other_model_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "5456",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "How do I cross the street?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "**Providing street crossing guidance**\n\nI need to respond to the user's question about how to cross the street. I’ll give clear, step-by-step guidance while keeping it simple and not overly formatted, possibly with bullet points. It will be important to cover general safety, such as using crosswalks, obeying signals, looking left-right-left, making eye contact with drivers, and avoiding distractions like headphones. Suggestions for kids holding an adult's hand and wearing visible clothing at night should also be included. Let's keep this information straightforward!",
+              "thought": true
+            },
+            {
+              "text": "**Clarifying crossing context**\n\nI want to ask the user some contextual questions, like whether they're in a country with left-hand traffic, if there are signals or crosswalks, or if they have any mobility needs. However, I’ll primarily stick to general advice for crossing the street safely. I don’t think disclaimers are necessary, but I should ensure not to encourage risky behavior. I'll provide a concise bullet list of instructions, avoiding heavy formatting and tools for this task.",
+              "thought": true
+            },
+            {
+              "text": "**Detailing crossing instructions**\n\nI want to provide clear crossing instructions that cover both signalized and unsignalized situations. At signalized intersections, I’ll recommend pressing the button, waiting for the \"WALK\" symbol, checking for turning vehicles, and scanning while crossing. For unsignalized crosswalks, picking a gap and making eye contact is essential. I’ll also advise on mid-block crossings, emphasizing visibility at night and using curbs or median islands. For roundabouts and trams/bicycles, I need to specify checking both directions. Plus, reminding kids to hold hands and to put down smartphones is crucial, especially in icy conditions.",
+              "thought": true
+            },
+            {
+              "text": "**Creating concise crossing instructions**\n\nI want the answer to be short and straightforward since the user hasn't requested a lot of detail. I plan to mention looking both ways while adapting to traffic direction, but I think I can simplify it by just saying to \"look both ways and keep scanning.\" I’ll structure the advice clearly: \n\n- Before crossing: choose the safest place, remove distractions, plan your route.  \n- At signalized intersections and unsignalized crosswalks: specific tips for each.  \n- I’ll also mention if there’s no crosswalk and provide tips for while crossing, especially at night or for children.  \n- Lastly, I'll add that if someone doesn’t feel safe, they should wait for a safer opportunity. A bullet list is fine to keep it organized!",
+              "thought": true
+            },
+            {
+              "text": "**Crafting street crossing steps**\n\nI want to create a concise guide on crossing the street safely, using bullet points for clarity. Here's what I’ll include: \n\n- Use a crosswalk or intersection; avoid mid-block and choose a well-lit place.  \n- At signals, press the button, wait for the WALK signal, and check for vehicles.  \n- Without a signal, stop at the curb, look both ways, listen, and wait for a big gap before crossing.  \n- Keep scanning while crossing and watch for silent vehicles.  \n- At night, wear bright clothing and carry a light.  \n- Hold kids' hands and teach them to stop at curbs.  \n- For roundabouts, cross at designated areas.  \n- If unsure, wait for the next opportunity.  \nI might ask the user if they’re in a place with pedestrian signals or crosswalks to tailor the advice further!",
+              "thought": true
+            },
+            {
+              "text": "Here’s a safe, simple way to cross a street:\n\n- Use a crosswalk or intersection if you can; it’s safer and drivers expect you there. Press the pedestrian button if there is one.\n- Stop at the curb. Put your phone away and remove/turn down headphones.\n- Look for traffic and listen. Check both directions and for turning vehicles, bikes, and quiet EVs. Keep scanning.\n- If there’s a pedestrian signal: start on the WALK. If it starts flashing while you’re in the street, keep going to the other side—don’t stop in the road.\n- If there’s no signal: wait for a large gap in all lanes or for vehicles to stop. Make eye contact with drivers; don’t assume they’ll yield.\n- Walk straight across at a brisk pace (don’t run), and keep looking both ways as you cross each lane.\n- For multi-lane roads, be sure every lane has stopped or there’s a clear gap before you enter it. Use medians/islands to pause if needed.\n- Avoid crossing between parked cars, on curves, or near hill crests where drivers can’t see you well.\n- At night or in rain, make yourself visible (light-colored/reflective clothing, a small light).\n- With kids, hold hands and have them stop at the curb first.\n\nIf you tell me whether you have signals/crosswalks where you are (or if traffic drives on the left), I can tailor this to your situation."
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "Considering the way to cross the street, analogously, how do I cross the river?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "thinkingConfig": {
+          "includeThoughts": true
+        }
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful assistant."
+          }
+        ],
+        "role": "user"
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "dummy",
+              "parameters": {
+                "properties": {},
+                "type": "OBJECT"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=21021",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"**Analogies and River Crossings**\\n\\nOkay, so the user wants to understand how to approach crossing a river, using the familiar concept of crossing a street as an analogy. That's a great starting point! I'll break it down by drawing parallels to those street-crossing techniques. The goal, of course, is the same: to get from one side to the other safely and efficiently, but with different hazards.\\n\\n**Think about it like this:**\\n\\n*   **Safest Option (Like a Bridge/Crosswalk with a Signal):** Opt for a designated crossing whenever possible. These are like the bridges and ferries of the river world. They're engineered for safety and are the top recommendation.\\n    *   **Bridge:** The direct equivalent! It completely removes you from the hazard.\\n    *   **Ferry:** Also designed for safe passage, providing a platform to get across.\\n*   **Cautious Approach (Like an Unmarked Crosswalk):** If there's no bridge or ferry, find a safe, natural crossing point like a ford. Look for wide, shallow areas with a slow, clear bottom. This requires personal assessment.\\n*   **Last Resort (Like Jaywalking):** Wading or swimming across an unknown section is the riskiest, like jaywalking. Only do this if there's no other choice, and only after thorough assessment!\\n\\n**Now, the \\\"Safety Rules\\\" \\u2013 directly mirroring the street crossing advice:**\\n\\n*   **\\\"Use a designated crossing\\\"** \\u2013 That means bridge or ferry. If not, carefully assess!\\n*   **\\\"Stop and look\\\"** \\u2013 Absolutely! \\\"Read\\\" the river. Look upstream and downstream for potential hazards like rapids, waterfalls, or floating debris. Check the depth (a stick is your friend!), the speed (anything faster than a walking pace is risky), the clarity of the water, and its temperature.\\n*   **\\\"Wait for a safe gap\\\"** \\u2013 Time your crossing well. Avoid floods, bad weather, or dusk. The calmer, the better.\\n*   **\\\"Cross directly and predictably\\\"** \\u2013 Plan your path carefully. Face upstream and use a stick for support. Move diagonally downstream with the current to maximize stability.\\n*   **\\\"Be visible\\\"** \\u2013 Don't go alone! Tell someone your plans.\\n*   **\\\"Avoid dangerous spots\\\"** \\u2013 Steer clear of bends, narrow channels, and areas with obstacles.\\n\\nIn essence, crossing a river, just like crossing a street, is about preparation, assessment, and choosing the safest available option. You can translate street crossing tips into river crossing best practices. By understanding the risks and choosing your method wisely, crossing a river can be just as manageable as crossing a street.\\n\", \"thought\": true}, {\"text\": \"Of course. That's an excellent analogy. Let's break down how to cross a river using the same logic as crossing a street.\\n\\nThe core principle is the same: **Assess the danger and choose the safest possible method to get to the other side.**\\n\\nHere is the analogous guide to crossing a river:\\n\\n### 1. Use a Designated Crossing (Like a Crosswalk or Bridge)\\nThis is always the safest and most recommended option.\\n*   **The Analogy:** A pedestrian bridge or a crosswalk with a traffic light.\\n*   **In the River:** **Use a bridge or a ferry.** It's built specifically for safe crossing and completely removes you from the primary hazard (the water).\\n\\n### 2. Find the Safest Place to Cross (Like an Unmarked Intersection)\\nIf there's no designated crossing, you must choose your spot carefully.\\n*   **The Analogy:** Finding a well-lit intersection with good visibility instead of jaywalking between parked cars.\\n*   **In the River:** **Find a proper ford.** Look for a section that is:\\n    *   **Wide and Straight:** The river's energy is spread out, so the current is slower and the water is shallower. Avoid narrow channels and sharp bends where the water is deep and fast.\\n    *   **Shallow:** Look for gravel bars or riffles. Ideally, the water should not be deeper than your knees. Water above the thigh is very dangerous.\\n    *   **Clear:** You want to see the bottom so you can avoid holes, large rocks, or debris.\\n\\n### 3. Stop, Look, and Listen Before You Enter\\nAssess the conditions before you commit.\\n*   **The Analogy:** Stopping at the curb to look both ways for traffic.\\n*   **In the River:** **\\\"Read\\\" the river.**\\n    *   **Look:** Check the speed. Is it faster than a walking pace? If so, it may be too strong. Throw a stick in to gauge the speed. Look upstream and downstream for hazards like rapids, waterfalls, or floating logs.\\n    *   **Listen:** Can you hear large rocks rolling along the bottom? That's a sign of a powerful current.\\n    *   **Test:** Use a sturdy stick or trekking pole to probe the depth and check the stability of the riverbed before you take a step.\\n\\n### 4. Cross Safely and Deliberately\\nOnce you've decided it's safe, use the proper technique.\\n*   **The Analogy:** Walking briskly (not running), making eye contact with drivers, and continuously scanning for traffic.\\n*   **In the River:**\\n    *   **Prepare:** Unbuckle the waist and chest straps of your backpack so you can shed it easily if you fall. Wear shoes for protection and traction.\\n    *   **Face Upstream:** Always face the current. This allows your legs to brace against the force of the water.\\n    *   **Use a Tool:** Use a strong stick or trekking poles on your upstream side to create a stable tripod with your feet.\\n    *   **Move Methodically:** Shuffle your feet. Never cross your feet. Maintain two points of contact with the riverbed at all times.\\n    *   **Angle Downstream:** Plan your path to exit the river slightly downstream from where you entered, moving with the current, not fighting it directly.\\n\\nIn short, the analogy holds perfectly: The safest way is to use infrastructure designed for the task (a bridge). If you can't, you must become the safety expert by carefully choosing your location, assessing all the risks, and using a proven, safe technique to manage the hazard.\", \"thoughtSignature\": \"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\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"mPvBaJmNOMywqtsPsb_l2A4\", \"usageMetadata\": {\"candidatesTokenCount\": 778, \"promptTokenCount\": 1106, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 1106}], \"thoughtsTokenCount\": 1089, \"totalTokenCount\": 2973}}"
+  }
+}

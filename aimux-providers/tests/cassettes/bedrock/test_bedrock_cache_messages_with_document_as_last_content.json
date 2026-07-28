@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_cache_messages_with_document_as_last_content",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'd9d1c570-bc19-4ec8-a212-f756f05a5420'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "5916",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5246}, \"output\": {\"message\": {\"content\": [{\"text\": \"I'll analyze the documents you've provided:\\n\\n## Document 1 (Document 1.txt)\\n- **Content**: Contains important analysis data\\n- **Key characteristic**: Explicitly marked as containing \\\"important\\\" information\\n- **Purpose**: Appears to be a test document designed to hold significant analytical data\\n\\n## Document 2 (Document 2.txt)\\n- **Content**: Contains unimportant data\\n- **Key characteristic**: Explicitly marked as containing \\\"unimportant\\\" information\\n- **Purpose**: Also a test document, but with data of lesser significance\\n\\n## Summary\\nBoth documents appear to be test files with minimal content. The main distinction between them is the stated importance level of their data - Document 1 contains information designated as important for analysis, while Document 2's data is marked as unimportant. Without more specific content or a particular analysis goal, these seem to be placeholder documents for testing document analysis capabilities.\\n\\nIs there a specific aspect of these documents you'd like me to focus on or a particular type of analysis you need?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheDetails\": [{\"inputTokens\": 1712, \"ttl\": \"5m\"}], \"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 1712, \"cacheWriteInputTokens\": 1712, \"inputTokens\": 3, \"outputTokens\": 227, \"serverToolUsage\": {}, \"totalTokens\": 1942}}"
+  }
+}

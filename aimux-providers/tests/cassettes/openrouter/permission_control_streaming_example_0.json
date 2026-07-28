@@ -1,0 +1,63 @@
+{
+  "source": "rig (MIT)",
+  "provider": "openrouter",
+  "scenario": "permission_control_streaming_example_0",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are a helpful assistant that can read files using different methods.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "Use the available tools to read test.txt now. Do not ask any follow-up questions; just read the file and report its content.",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-4o",
+      "stream": true,
+      "tools": [
+        {
+          "function": {
+            "description": "Read the first line of test.txt using the head command",
+            "name": "read_file_head",
+            "parameters": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Read the last line of test.txt using the tail command",
+            "name": "read_file_tail",
+            "parameters": {
+              "properties": {},
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": ": OPENROUTER PROCESSING\n\n: OPENROUTER PROCESSING\n\ndata: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"\",\"name\":\"read_file_head\"},\"id\":\"call_REDACTED_1\",\"index\":0,\"type\":\"function\"}]},\"finish_reason\":null,\"index\":0,\"native_finish_reason\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"native_finish_reason\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{}\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"native_finish_reason\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"\",\"name\":\"read_file_tail\"},\"id\":\"call_REDACTED_2\",\"index\":1,\"type\":\"function\"}]},\"finish_reason\":null,\"index\":0,\"native_finish_reason\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"\"},\"index\":1}]},\"finish_reason\":null,\"index\":0,\"native_finish_reason\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{}\"},\"index\":1}]},\"finish_reason\":null,\"index\":0,\"native_finish_reason\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"tool_calls\",\"index\":0,\"native_finish_reason\":\"tool_calls\"}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"tool_calls\",\"index\":0,\"native_finish_reason\":\"tool_calls\"}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"openai/gpt-4o\",\"object\":\"chat.completion.chunk\",\"provider\":\"Azure\",\"service_tier\":null,\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_tokens\":42,\"completion_tokens_details\":{\"audio_tokens\":0,\"image_tokens\":0,\"reasoning_tokens\":0},\"cost\":0.0006825,\"cost_details\":{\"upstream_inference_completions_cost\":0.00042,\"upstream_inference_cost\":0.0006825,\"upstream_inference_prompt_cost\":0.0002625},\"is_byok\":false,\"prompt_tokens\":105,\"prompt_tokens_details\":{\"audio_tokens\":0,\"cache_write_tokens\":0,\"cached_tokens\":0,\"video_tokens\":0},\"total_tokens\":147}}\n\ndata: [DONE]\n\n"
+  }
+}

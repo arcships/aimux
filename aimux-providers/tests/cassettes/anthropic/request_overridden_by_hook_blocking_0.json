@@ -1,0 +1,63 @@
+{
+  "source": "rig (MIT)",
+  "provider": "anthropic",
+  "scenario": "request_overridden_by_hook_blocking_0",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json",
+      "anthropic-version": "2023-06-01"
+    },
+    "body": {
+      "max_tokens": 64000,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "I'm planning a trip to Paris. Use a tool to help me prepare.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-6",
+      "system": [
+        {
+          "text": "You are a travel assistant. Use the available tools to gather information before answering.",
+          "type": "text"
+        }
+      ],
+      "tool_choice": {
+        "type": "any"
+      },
+      "tools": [
+        {
+          "description": "Get the current weather for a location.",
+          "input_schema": {
+            "properties": {
+              "location": {
+                "description": "City name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "location"
+            ],
+            "type": "object"
+          },
+          "name": "get_weather"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"content\":[{\"caller\":{\"type\":\"direct\"},\"id\":\"toolu_REDACTED_1\",\"input\":{\"location\":\"Paris\"},\"name\":\"get_weather\",\"type\":\"tool_use\"}],\"id\":\"msg_REDACTED_1\",\"model\":\"claude-sonnet-4-6\",\"role\":\"assistant\",\"stop_details\":null,\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"inference_geo\":\"global\",\"input_tokens\":692,\"output_tokens\":38,\"service_tier\":\"standard\"}}"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_thinking_with_modified_history_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "2459",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=dR6QIBO3MIYxJlJhT2Z1Enf4hxSQe.yT90YFVOo4a44-1757687267-1.0.1.1-nWx6824Q_Wi6NATur__jq_d6LC1b4eLI1w2Gb3x0dnLFh7XjM9Gmzno6zguSb4oASi6pAaDj2yHyEWVqhctXQQCWkPvlSv40iFVUeaV9VFk; _cfuvid=yYorKmI5owOPwHY3si5KhFHr1dnp_lg_KgDMeAgTiFo-1757687267959-0.0.1.1-604800000",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "What is the meaning of life?",
+          "role": "user"
+        },
+        {
+          "encrypted_content": "gAAAAABoxC3jL8rEbUKD8lpf1c-Nsg3pHMMS-F3R8gSD70l1CqSDEDbRHb-RON-ky68O9d6U5yRza2QcOL_INFcEqh7UahVonIaJ9O0yHm3axMRB5U3RGOEkQnNoiuIIuJAKhRBwhXaGpYAxkIidtB7V6DjcWfGNC5GAAOPzSPV4exCwR5DFwAUAehzqP20hVkhUNrxFuRNNxqcQc6oDxlb3TG0R-s57XsGfwQmQsYcy-oXX8CtOwYf0Xw-FHM0rNYZeNkCOXKdJwJ1gDLSrVj61tbdyg2LEo5fKfvMDFFq4lZAfptEEQW5YIyKiu_BXK8FeWLh4B0ha5mUqcAkArNwnIUM5ZoAmAa5oBL5i0rzDq_0s6eCn2xcV4O_HSxrumb2oE-U8fbNRrN3TTPBs6pyn91Wy6wF_XPHcydlVCyX7M6pRe_DHMVXNLW8OsmcliFPxR746xu2YrWEgsWLmd_H58sLoKH_eCUumnMFJet9Jz5OAQRhh_k7_zlTkBUEU1Sgj9HOTL3Acl856qr_cYrE_mcUNuN4JpP5Zt1vkz_OXC-LqPDMzunmX2-_qLtXPPfYWrqfru9AkV6x5aXlpdssQuCKk1-lEt2n8nZZ86FdVX9vCz7OmtVsU_mF3rNJ5Zyrz6O281ry45AfrBIUEvqP1uLTs-2QLyC5PLP2P3TF6xTNf4bKWhro0KAnw68DmngraxTAi_f8PjRe8Ss0D1BYJkOADcGZmepUAuA3gKuJfRWGwpT0jlhmwfcAVzZQS38XGJpFKI5xOeZjD0kdTcvOCO4FrYylTBSLy-luYfPjK5Lk7sq_UQZNVG7pE2cXGocty3XxB2a3unIgoj4KHa3Ahhpo13u84bkLxbSDdy9vetYQS_mUqyYV6vxBTzCfOjKQNmN-7CNCiMPs3Kbxf1up3jkC1smu0hW7GuFjGMUvmWFzyTP1y8w7SIRa-5IlbKcUZIx-ls5-fDmwxsIf1QdKAIRj9099XxJZvdtaR73F6FYFPDNA0KJxMo_-wZjXESv0twWNb5YnQXF7eRT867dznqwKEPKzntxg7gwPG9fooRmVplzo_3GLyZ9Te5GxLj2ExgsCxxwiHr1GczhlMARlAzt2aMvMhTaMQMrJ2KB2-3E9cEQtoKr5w5uGkRFqYZyaESX7cQYHyupUx-DchzkTCfUHUJ-0_CNHCCiBdr5XT1Lx-vcdrsoDKiE4FnxlGm_q58IAOoZ3US-a39dh1d_iOeLFUUCa2LhZ81UmHuO1pmFiakRmOiZ8Jd_xyN7SnpFKv2Wm7kG7B_x4BJXUNONw_kdE9eufb1XwHzpNiBPmlJgDknTshAVKj-WXx6N7T8Y4UBWZzX4f7gUt5Kj3PFvl9x-TsN-EprofNRgvrJO7v3cacnByq0a10-eygnS-muykVmFOSL6NVf5ggBw6AJR9FuKcMNdtNlA==",
+          "id": "rs_68c42de022c881948db7ed1cc2529f2e0202c9ad459e0d23",
+          "summary": [
+            {
+              "text": "**Considering perspectives on meaning**\n\nI need to keep my response succinct since this topic is philosophical and subjective. I'll provide various perspectives, such as biological, philosophical, personal constructs, and religious views. A practical approach might involve creating meaning through relationships, contribution, growth, experiences, and values. I should avoid being overly verbose and consider a short actionable framework focusing on values, strengths, service, wonder, and connection. Also, encouraging the user to share their thoughts would be great!",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "content": "The meaning of life is 42",
+          "role": "assistant"
+        },
+        {
+          "content": "Anything to add?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5",
+      "reasoning": {
+        "effort": "low",
+        "summary": "detailed"
+      },
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "40",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"error\": {\"code\": null, \"message\": \"Item 'rs_68c42de022c881948db7ed1cc2529f2e0202c9ad459e0d23' of type 'reasoning' was provided without its required following item.\", \"param\": \"input\", \"type\": \"invalid_request_error\"}}"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_optional_fields_native_output",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "538",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Tell me about London, UK with population 9 million"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseJsonSchema": {
+          "description": "A city and its country.",
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "country": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "population": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "title": "CityLocation",
+          "type": "object"
+        },
+        "responseMimeType": "application/json",
+        "responseModalities": [
+          "TEXT"
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1364",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"{\\\"city\\\": \\\"London\\\", \\\"country\\\": \\\"UK\\\", \\\"population\\\": 9000000}\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"C5MUaeyaDuzBxN8P-KjW-AY\", \"usageMetadata\": {\"candidatesTokenCount\": 24, \"promptTokenCount\": 12, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 12}], \"thoughtsTokenCount\": 130, \"totalTokenCount\": 166}}"
+  }
+}

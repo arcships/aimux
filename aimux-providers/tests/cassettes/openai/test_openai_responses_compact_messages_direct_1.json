@@ -1,0 +1,51 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_compact_messages_direct_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "256",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=_bWBNMWY8f8XVYSnE7FWKbuMm7WvLE.TvyHS.OqSavM-1775105421.6098542-1.0.1.1-UhzvDhFbxzvJ9Tiv9gtfvtzhFvVPeiUK8DtN9esV9DTaSdjEP0ZKnro3MF5_mGCbCeuZlHs_l.C7iWRXfRfgCvZBB8FtfQU4ed8s_oNx.uVQ6S6gAydGGoxo1ltl3qYG",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "Hello!",
+          "role": "user"
+        },
+        {
+          "content": "Hello! How can I assist you today?",
+          "role": "assistant"
+        },
+        {
+          "content": "How are you?",
+          "role": "user"
+        }
+      ],
+      "instructions": "You are a helpful assistant.",
+      "model": "gpt-4o-mini",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "1513",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1775105425, \"created_at\": 1775105423, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0be9b6eb4e93ff0a0069cdf58fd96481908725cdfdbdfb3db4\", \"incomplete_details\": null, \"instructions\": \"You are a helpful assistant.\", \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-4o-mini-2024-07-18\", \"object\": \"response\", \"output\": [{\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"I'm just a program, but I'm here and ready to help you! How about you? How are you doing?\", \"type\": \"output_text\"}], \"id\": \"msg_0be9b6eb4e93ff0a0069cdf590b44c8190802d197e194313d4\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 40, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 24, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 64}, \"user\": null}"
+  }
+}

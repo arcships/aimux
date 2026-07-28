@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-image-google_gemini3]",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "370",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a image file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=3139",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"list_files\"}, \"thoughtSignature\": \"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\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"Gpmoae2mEbXhz7IP68CPCA\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 36, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 36}], \"thoughtsTokenCount\": 406, \"totalTokenCount\": 452}}"
+  }
+}

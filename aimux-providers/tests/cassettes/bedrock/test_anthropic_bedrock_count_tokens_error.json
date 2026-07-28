@@ -1,0 +1,32 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_anthropic_bedrock_count_tokens_error",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-20250514-v1:0/count-tokens",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "216",
+      "content-type": "application/json",
+      "host": "bedrock-runtime.us-east-1.amazonaws.com"
+    },
+    "body": {
+      "input": {
+        "invokeModel": {
+          "body": "eyJhbnRocm9waWNfdmVyc2lvbiI6ImJlZHJvY2stMjAyMy0wNS0zMSIsIm1heF90b2tlbnMiOjQwOTYsIm1lc3NhZ2VzIjpbeyJyb2xlIjoidXNlciIsImNvbnRlbnQiOlt7InRleHQiOiJoZWxsbyIsInR5cGUiOiJ0ZXh0In1dfV19"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"message\": \"The provided model doesn't support counting tokens.\"}"
+  }
+}

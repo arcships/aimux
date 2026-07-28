@@ -1,0 +1,76 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_retry",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "548",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ],
+        "temperature": 0.0
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful chatbot."
+          }
+        ],
+        "role": "user"
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the capital of a country.",
+              "name": "get_capital",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "country": {
+                    "description": "The country name.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "country"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2250",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"country\": \"France\"}, \"name\": \"get_capital\"}, \"thoughtSignature\": \"CpYEAXLI2nxHJhy3F4oMijlAus2CPUEnTw16KkDpmU77MgVhg6piCF3GycCmKbjhGXQ8mBK5lSpsqwI7DapurrH+NcQiuUJYF1CpS438/kC6pw0JsXszEoBQyJN7zTXqfLgiNOzO5sBwQU1fc5cBUiMzzAxHOyltJwZcYOqFXMPQ0c2AaNvHO4nOOFwRrJuwGVfpfP1BnpuiDUz5c5roIwkC8sykcxva7lOniPdd5Soy0juNxCK4BAXTq/TgHPxB6yEUBGaAYaR9JId6EaWV1/gDa+eSpvLI8P4TQiFWa4UUK/89/TmMEQlRsmbGHcuxU+6GGLI0szs5h2dq8yM8Dy5R/DyB9xXPwUl4c9A+m64LEk6aludQE2X/LKb7y1pfL2f6wjH89DY4F4Y0934R21eYeb9MZMuB+IYaEYIvk7Fhdx5VolnNYPoqoLpCxwHVucmEBruS9m7Li6VO7zZdDVgikbWKxZyixLIfy4LKthacCJERSAJl4aAAllotfzZopY+dUkujmlny/UyPotpJXH+3K6L2Ge3uFOmNShPNN3oSMBf2K3DBit6OE5FA4JMyi7PnzlhiSmPLVOFZEWvINXbHim4Bh7QpIyGnIiT5n/8lSIrcNbf/vD/ZqDqivM/gjyS/ayZqW7tzNW5J1xDkiJpEUK1aokoG+GeaKXZ+AsR6xPXj6hYqpYRhtCsY49KhVme/JJp6XMrN\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"g5YoaezOBeyrqtsPwYqL2Q8\", \"usageMetadata\": {\"candidatesTokenCount\": 15, \"promptTokenCount\": 57, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 57}], \"thoughtsTokenCount\": 124, \"totalTokenCount\": 196}}"
+  }
+}

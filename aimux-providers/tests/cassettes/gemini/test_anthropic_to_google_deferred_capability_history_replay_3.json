@@ -1,0 +1,229 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_anthropic_to_google_deferred_capability_history_replay_3",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "3840",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Can I get a refund on order-123?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "I'll help you with your refund request for order-123. Let me load the refund policy tools to assist you."
+            },
+            {
+              "functionCall": {
+                "args": {
+                  "id": "refunds"
+                },
+                "id": "toolu_01VLwCjyU7u928EqHmMRvow8",
+                "name": "load_capability"
+              },
+              "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "toolu_01VLwCjyU7u928EqHmMRvow8",
+                "name": "load_capability",
+                "response": {
+                  "instructions": "Use the refund policy tool before answering refund questions."
+                }
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "queries": [
+                    "refunds"
+                  ]
+                },
+                "id": "auto_load_0f10f8b659c3c105",
+                "name": "search_tools"
+              },
+              "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "auto_load_0f10f8b659c3c105",
+                "name": "search_tools",
+                "response": {
+                  "discovered_tools": [
+                    {
+                      "description": "Look up the refund policy for an order.",
+                      "name": "lookup_refund_policy"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "order_id": "order-123"
+                },
+                "id": "toolu_01JA8S35SNy1ruX8gAXgb3Y6",
+                "name": "lookup_refund_policy"
+              },
+              "thoughtSignature": "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "toolu_01JA8S35SNy1ruX8gAXgb3Y6",
+                "name": "lookup_refund_policy",
+                "response": {
+                  "return_value": "order-123: refund allowed for 30 days"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "Based on the refund policy for order-123, **yes, you can get a refund!** This order is eligible for a refund within 30 days of purchase.\n\nTo proceed with your refund request, I would need to connect you with the appropriate team or you may need to:\n- Contact customer support directly\n- Use the returns portal if available on the website\n- Provide additional information such as the reason for the refund\n\nWould you like help with anything else regarding this refund?"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "And what about order-456?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "The following capabilities are deferred and can be loaded using the `load_capability` tool:\n- refunds: Refund policy tools."
+          }
+        ],
+        "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "AUTO"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Load a capability to access its full instructions and tools.",
+              "name": "load_capability",
+              "parameters_json_schema": {
+                "description": "Typed arguments for a `load_capability` call.",
+                "properties": {
+                  "id": {
+                    "description": "The id of the capability to load.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Look up the refund policy for an order.",
+              "name": "lookup_refund_policy",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "order_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "order_id"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
+              "name": "search_tools",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "queries": {
+                    "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "queries"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1599",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"order_id\": \"order-456\"}, \"id\": \"gjl2yj5t\", \"name\": \"lookup_refund_policy\"}, \"thoughtSignature\": \"Er0CCroCAQw51sdA+E0ygIgeJHfFC9LHB7POgkxY+QfxkH7AtvwKaLlu3T2VUlr0rdah9XtSaxNvgZ62BMjpMf+TrTX+cagYCwcvN4zPtTjT5fdxTMCPQKhEYnTmexGJipwqFO81JfHzKw8CvI/XAd9nrYjpbwkboLtkCS7lTBXreoczNUagHVw+SWJtiFeje8vKDzuxjI28rySkDQaI1DitBsBcCOyB0pCLUwVdQWPC/I+KTgI/NWEDNkXZ/ybMWJ8rMKYVzDVlA6/vDN6npaFshm2kcJ/1W92HEaN8cmSdOGFkEnfOv6vBrENK8GEj499G80AO7N3u/9qL6gIvvKZd8Peno39+1G8cVtzhvtrKXwEaeA6cjVGAxgMGAjcd3okRYiSmoq6e+Q6yM6SDDtakE+QwLqpVTyeiJfT29Nk=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"BdkPaub4GpKEz7IP3urOsQs\", \"usageMetadata\": {\"candidatesTokenCount\": 24, \"promptTokenCount\": 620, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 620}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 70, \"totalTokenCount\": 714}}"
+  }
+}

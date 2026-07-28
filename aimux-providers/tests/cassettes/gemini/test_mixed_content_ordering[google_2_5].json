@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_mixed_content_ordering[google_2_5]",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "358",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Call the get_mixed_content tool and describe what you received."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_mixed_content",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=704",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_mixed_content\"}, \"thoughtSignature\": \"CpsBAb4+9vuc2EnpMDBAqY9vee2vDhFwvjxW3peDfJa9Q+QCw33bLyg1rwxihkK75uDPlc/a4V8nccsAgob1U5h6oyj2syiNq/W4yfMNWIZNrBbe81ujVYPFxW7xJrgNAv70Rt1rziTq+oMUDlB7ZtfBusl/NxKglLRkUXw0DgDfeWDhpO9/+/q33EFwEHtkz0AHN3qiiBVphGboAyA=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"LuuTacRP_fOq2w_WiKK5CA\", \"usageMetadata\": {\"candidatesTokenCount\": 12, \"promptTokenCount\": 38, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 38}], \"thoughtsTokenCount\": 30, \"totalTokenCount\": 80}}"
+  }
+}

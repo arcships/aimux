@@ -1,0 +1,39 @@
+{
+  "source": "rig (MIT)",
+  "provider": "bedrock",
+  "scenario": "none_nonstreaming_no_tools",
+  "request": {
+    "path": "/model/amazon.nova-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "inferenceConfig": {
+        "temperature": 0.0
+      },
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Calculate 20 + 22 directly in text. Do not call tools."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a deterministic calculator test. Answer directly in text."
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\":{\"latencyMs\":337},\"output\":{\"message\":{\"content\":[{\"text\":\"20 + 22 = 42\"}],\"role\":\"assistant\"}},\"stopReason\":\"end_turn\",\"usage\":{\"inputTokens\":29,\"outputTokens\":12,\"serverToolUsage\":{},\"totalTokens\":41}}"
+  }
+}

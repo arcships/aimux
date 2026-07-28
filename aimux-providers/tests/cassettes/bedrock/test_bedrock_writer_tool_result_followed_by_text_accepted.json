@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_writer_tool_result_followed_by_text_accepted",
+  "request": {
+    "path": "/model/us.writer.palmyra-x4-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'81a8bd66-d2d4-406b-af68-d4366a7bb156'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "611",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 488}, \"output\": {\"message\": {\"content\": [{\"text\": \"DONE\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 88, \"outputTokens\": 1, \"serverToolUsage\": {}, \"totalTokens\": 89}}"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_cross_provider_capability_replay[openai-responses-gpt-5.4-anthropic-claude-sonnet-4-5]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1270",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Can I get a refund on order-123?",
+          "role": "user"
+        }
+      ],
+      "instructions": "The following capabilities are deferred and can be loaded using the `load_capability` tool:\n- refunds: Refund policy tools.",
+      "model": "gpt-5.4",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "Search for relevant tools.",
+          "execution": "client",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "queries": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "queries"
+            ],
+            "type": "object"
+          },
+          "type": "tool_search"
+        },
+        {
+          "description": "Load a capability to access its full instructions and tools.",
+          "name": "load_capability",
+          "parameters": {
+            "additionalProperties": false,
+            "description": "Typed arguments for a `load_capability` call.",
+            "properties": {
+              "id": {
+                "description": "The id of the capability to load.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up the refund policy for an order.",
+          "name": "lookup_refund_policy",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "order_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "order_id"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "5517",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1779453268, \"created_at\": 1779453263, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_040209b5e6fae8a5006a104d4f064c819d9cd32793af1cbceb\", \"incomplete_details\": null, \"instructions\": \"The following capabilities are deferred and can be loaded using the `load_capability` tool:\\n- refunds: Refund policy tools.\", \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5.4-2026-03-05\", \"moderation\": null, \"object\": \"response\", \"output\": [{\"arguments\": \"{\\\"id\\\":\\\"refunds\\\"}\", \"call_id\": \"call_cz5QL7hm3knhkMdvj2tcF03U\", \"id\": \"fc_040209b5e6fae8a5006a104d4fbb0c819db0b661bd87f20864\", \"name\": \"load_capability\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": \"in_memory\", \"reasoning\": {\"effort\": \"none\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": \"Load a capability to access its full instructions and tools.\", \"name\": \"load_capability\", \"parameters\": {\"additionalProperties\": false, \"description\": \"Typed arguments for a `load_capability` call.\", \"properties\": {\"id\": {\"description\": \"The id of the capability to load.\", \"type\": \"string\"}}, \"required\": [\"id\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}, {\"defer_loading\": true, \"description\": \"Look up the refund policy for an order.\", \"name\": \"lookup_refund_policy\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"order_id\": {\"type\": \"string\"}}, \"required\": [\"order_id\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}, {\"description\": \"Search for relevant tools.\", \"execution\": \"client\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"queries\": {\"items\": {\"type\": \"string\"}, \"type\": \"array\"}}, \"required\": [\"queries\"], \"type\": \"object\"}, \"type\": \"tool_search\"}], \"top_logprobs\": 0, \"top_p\": 0.98, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 146, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 20, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 166}, \"user\": null}"
+  }
+}

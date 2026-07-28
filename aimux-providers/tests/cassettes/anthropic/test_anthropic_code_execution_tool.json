@@ -1,0 +1,64 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_code_execution_tool",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "413",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "How much is 3 * 12390?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-6",
+      "stream": false,
+      "system": [
+        {
+          "text": "Always use the code execution tool for math.",
+          "type": "text"
+        }
+      ],
+      "thinking": {
+        "budget_tokens": 3000,
+        "type": "enabled"
+      },
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "name": "code_execution",
+          "type": "code_execution_20260120"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "server-timing": "x-originResponse;dur=5649",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"container\": {\"expires_at\": \"2026-04-24T11:19:38.758845Z\", \"id\": \"container_011CaNRhtVsGiXZx1CgSETLH\"}, \"content\": [{\"signature\": \"EuMBClsIDRgCKkCBepwkio14AThnNMEKAu3rSfMVfRaW6geACt55taz42duIJbFXxOJf0tI8EjTRA9RAKhwp+xXRURux2EQFBfXyMhFjbGF1ZGUtc29ubmV0LTQtNjgAEgzHGYHisxljYWpLnrgaDKZKZae+36/i1yGDySIw0y5IUqbGZAIbYwNMB08PQHqnGTATDg6fz5BZamuXOePOJjzuZAIgrLwihf5klQ2GKjY4OpKH9AeabXOH8IMNB0hXb2kKErLgHKRqM1XpUgcb1+CT+WQ44PaSGqORUYphCKXv3rL84J0YAQ==\", \"thinking\": \"The user wants to calculate 3 * 12390.\", \"type\": \"thinking\"}, {\"id\": \"srvtoolu_01Y5A969cu9rsnDkHF6brfKF\", \"input\": {\"command\": \"echo $((3 * 12390))\"}, \"name\": \"bash_code_execution\", \"type\": \"server_tool_use\"}, {\"content\": {\"content\": [], \"return_code\": 0, \"stderr\": \"\", \"stdout\": \"37170\\n\", \"type\": \"bash_code_execution_result\"}, \"tool_use_id\": \"srvtoolu_01Y5A969cu9rsnDkHF6brfKF\", \"type\": \"bash_code_execution_tool_result\"}, {\"text\": \"The result of **3 \\u00d7 12,390 = 37,170**.\", \"type\": \"text\"}], \"id\": \"msg_01FzttSG1H2WSfUwv2J5qbMB\", \"model\": \"claude-sonnet-4-6\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"global\", \"input_tokens\": 4692, \"output_tokens\": 106, \"server_tool_use\": {\"web_fetch_requests\": 0, \"web_search_requests\": 0}, \"service_tier\": \"standard\"}}"
+  }
+}

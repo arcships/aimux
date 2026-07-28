@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-binary-document-bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'ed108083-f2f6-4a9c-9f81-83e32dfa0d20'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "18512",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3936}, \"output\": {\"message\": {\"content\": [{\"text\": \"Perfect! I successfully retrieved the document. Here's what I received:\\n\\n**Document Description:**\\n- **File Type:** PDF document\\n- **Content:** A simple test/placeholder PDF file\\n- **Page Count:** 1 page\\n- **Text Content:** The document contains only the text \\\"Dummy PDF file\\\" as a heading at the top of the page\\n- **Layout:** Minimal content with mostly white/blank space below the heading\\n\\nThis appears to be a test or dummy PDF file, likely used for testing file retrieval functionality or as a placeholder document. It contains no substantive content beyond its identifying title.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 2242, \"outputTokens\": 133, \"serverToolUsage\": {}, \"totalTokens\": 2375}}"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_file_search_grounding_gemini_3[True]_1",
+  "request": {
+    "path": "/upload/v1beta/fileSearchStores/testfilesearchgroundingstre-p2hcv3cs2i69:uploadToFileSearchStore",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "114",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "customMetadata": [
+        {
+          "key": "source_url",
+          "string_value": "https://example.com/paris"
+        }
+      ],
+      "mimeType": "text/plain"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "text/plain; charset=utf-8",
+      "x-goog-upload-status": "active",
+      "x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/v1beta/fileSearchStores/testfilesearchgroundingstre-p2hcv3cs2i69:uploadToFileSearchStore?upload_id=AJ5rDhH3IzYsSk05mdIOhDiyQSIwWYTjVbwAod8o9Iq5huA_C7NkfF1pP6_8WBWpxUmwspxwvUPcIzMTs60xnXkDJMTfmJIQraqQeBT_b5vsnaE&upload_protocol=resumable"
+    },
+    "body": ""
+  }
+}

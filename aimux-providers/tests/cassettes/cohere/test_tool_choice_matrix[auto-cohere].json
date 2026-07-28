@@ -1,0 +1,63 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "cohere",
+  "scenario": "test_tool_choice_matrix[auto-cohere]",
+  "request": {
+    "path": "/v2/chat",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "379",
+      "content-type": "application/json",
+      "host": "api.cohere.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What's the weather in Paris?",
+          "role": "user"
+        }
+      ],
+      "model": "command-r7b-12-2024",
+      "stream": false,
+      "tools": [
+        {
+          "function": {
+            "description": "Get the current weather for a city.",
+            "name": "get_weather",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Debug-Trace-ID",
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache, no-store, no-transform, must-revalidate, private, max-age=0",
+      "content-type": "application/json",
+      "expires": "Thu, 01 Jan 1970 00:00:00 GMT",
+      "num_chars": "6783",
+      "num_tokens": "66",
+      "pragma": "no-cache",
+      "vary": "Origin,Accept-Encoding"
+    },
+    "body": "{\"finish_reason\": \"TOOL_CALL\", \"id\": \"5481bf9b-876e-487f-88fe-6b59a9a5b96c\", \"message\": {\"role\": \"assistant\", \"tool_calls\": [{\"function\": {\"arguments\": \"{\\\"city\\\":\\\"Paris\\\"}\", \"name\": \"get_weather\"}, \"id\": \"get_weather_9gpb31r7h7mj\", \"type\": \"function\"}], \"tool_plan\": \"I will use the 'get_weather' tool to find the weather in Paris.\"}, \"usage\": {\"billed_units\": {\"input_tokens\": 41, \"output_tokens\": 25}, \"cached_tokens\": 144, \"tokens\": {\"input_tokens\": 1441, \"output_tokens\": 54}}}"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_inference_profile_count_tokens",
+  "request": {
+    "path": "/model/anthropic.claude-sonnet-4-20250514-v1%3A0/count-tokens",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'51ec8e13-01c2-4ea4-857c-5b9ff43ebb54'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "111",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"inputTokens\": 11}"
+  }
+}

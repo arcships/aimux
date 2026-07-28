@@ -1,0 +1,275 @@
+﻿//! Amazon Bedrock Reranking — implements the `RerankingModel` trait.
+//!
+//! Aligned with Vercel AI SDK `AmazonBedrockRerankingModel`
+//! (`reference/ai/packages/amazon-bedrock/src/reranking/amazon-bedrock-reranking-model.ts`).
+//!
+//! Uses the Bedrock Agent Runtime `/rerank` endpoint.
+
+use std::collections::HashMap;
+
+use async_trait::async_trait;
+use reqwest::Client;
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use aimux_core::error::AiMuxError;
+use aimux_core::reranking_model::{
+    RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
+    RerankingResult,
+};
+
+use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+
+use super::BedrockAuth;
+use super::sigv4::sign_request;
+
+/// Bedrock provider-specific reranking options.
+#[derive(Debug, Clone, Default)]
+struct BedrockRerankingOptions {
+    next_token: Option<String>,
+    additional_model_request_fields: Option<Value>,
+}
+
+fn parse_bedrock_reranking_options(
+    provider_options: Option<&HashMap<String, Value>>,
+) -> BedrockRerankingOptions {
+    let mut opts = BedrockRerankingOptions::default();
+    if let Some(po) = provider_options {
+        // Prefer "amazonBedrock"; fall back to "bedrock".
+        let bedrock = po.get("amazonBedrock").or_else(|| po.get("bedrock"));
+        if let Some(bedrock) = bedrock {
+            if let Some(token) = bedrock.get("nextToken").and_then(|v| v.as_str()) {
+                opts.next_token = Some(token.to_string());
+            }
+            if let Some(fields) = bedrock.get("additionalModelRequestFields") {
+                opts.additional_model_request_fields = Some(fields.clone());
+            }
+        }
+    }
+    opts
+}
+
+/// The response from the Bedrock `/rerank` endpoint.
+#[derive(Debug, Deserialize)]
+struct BedrockRerankingResponse {
+    results: Vec<BedrockRerankingResult>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct BedrockRerankingResult {
+    index: u32,
+    relevanceScore: f64,
+}
+
+/// An Amazon Bedrock reranking model.
+pub struct BedrockRerankingModel {
+    model_id: String,
+    base_url: String,
+    region: String,
+    auth: BedrockAuth,
+    client: Client,
+}
+
+impl BedrockRerankingModel {
+    pub fn new(
+        model_id: String,
+        base_url: String,
+        region: String,
+        auth: BedrockAuth,
+        client: Client,
+    ) -> Self {
+        Self {
+            model_id,
+            base_url,
+            region,
+            auth,
+            client,
+        }
+    }
+
+    fn endpoint(&self) -> String {
+        format!("{}/rerank", self.base_url)
+    }
+
+    fn build_headers(
+        &self,
+        body: &str,
+        url: &str,
+        extra: Option<&HashMap<String, String>>,
+    ) -> Result<Vec<(String, String)>, AiMuxError> {
+        let mut extra_headers: Vec<(String, String)> = Vec::new();
+        if let Some(extra) = extra {
+            for (k, v) in extra {
+                extra_headers.push((k.clone(), v.clone()));
+            }
+        }
+
+        match &self.auth {
+            BedrockAuth::BearerToken(token) => {
+                let mut headers = vec![
+                    ("Content-Type".to_string(), "application/json".to_string()),
+                    ("Authorization".to_string(), format!("Bearer {}", token)),
+                ];
+                headers.extend(extra_headers);
+                Ok(headers)
+            }
+            BedrockAuth::SigV4(creds) => {
+                let signed = sign_request(creds, "bedrock", "POST", url, body, &extra_headers);
+                let mut headers =
+                    vec![("Content-Type".to_string(), "application/json".to_string())];
+                for (k, v) in &signed.headers {
+                    headers.push((k.clone(), v.clone()));
+                }
+                Ok(headers)
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl RerankingModel for BedrockRerankingModel {
+    fn provider(&self) -> &str {
+        "amazon-bedrock"
+    }
+
+    fn model_id(&self) -> &str {
+        &self.model_id
+    }
+
+    async fn do_rerank(
+        &self,
+        options: &RerankingCallOptions,
+    ) -> Result<RerankingResult, AiMuxError> {
+        let bedrock_options = parse_bedrock_reranking_options(options.provider_options.as_ref());
+
+        let model_arn = format!(
+            "arn:aws:bedrock:{}::foundation-model/{}",
+            self.region, self.model_id
+        );
+
+        // Build sources array.
+        let sources: Vec<Value> = match &options.documents {
+            RerankingDocuments::Text { values } => values
+                .iter()
+                .map(|v| {
+                    json!({
+                        "type": "INLINE",
+                        "inlineDocumentSource": {
+                            "type": "TEXT",
+                            "textDocument": { "text": v }
+                        }
+                    })
+                })
+                .collect(),
+            RerankingDocuments::Object { values } => values
+                .iter()
+                .map(|v| {
+                    json!({
+                        "type": "INLINE",
+                        "inlineDocumentSource": {
+                            "type": "JSON",
+                            "jsonDocument": v
+                        }
+                    })
+                })
+                .collect(),
+        };
+
+        let mut body = json!({
+            "queries": [
+                {
+                    "textQuery": { "text": options.query },
+                    "type": "TEXT"
+                }
+            ],
+            "rerankingConfiguration": {
+                "bedrockRerankingConfiguration": {
+                    "modelConfiguration": {
+                        "modelArn": model_arn
+                    },
+                    "numberOfResults": options.top_n
+                },
+                "type": "BEDROCK_RERANKING_MODEL"
+            },
+            "sources": sources
+        });
+
+        if let Some(ref token) = bedrock_options.next_token {
+            body["nextToken"] = json!(token);
+        }
+        if let Some(ref fields) = bedrock_options.additional_model_request_fields {
+            body["rerankingConfiguration"]["bedrockRerankingConfiguration"]["modelConfiguration"]
+                ["additionalModelRequestFields"] = fields.clone();
+        }
+
+        let body_str = serde_json::to_string(&body).unwrap_or_default();
+        let url = self.endpoint();
+        let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
+
+        let mut req = self.client.post(&url);
+        for (k, v) in &headers {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::try_from(k),
+                reqwest::header::HeaderValue::try_from(v),
+            ) {
+                req = req.header(name, val);
+            }
+        }
+
+        let resp = req
+            .body(body_str)
+            .send()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(parse_provider_error(
+                status.as_u16(),
+                &text,
+                &DEFAULT_ERROR_STRUCTURE,
+            ));
+        }
+
+        // Capture response headers.
+        let response_headers: HashMap<String, String> = resp
+            .headers()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+            .collect();
+
+        let raw_body: Value = resp
+            .json()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+
+        let data: BedrockRerankingResponse =
+            serde_json::from_value(raw_body.clone()).map_err(|e| {
+                AiMuxError::Provider(format!("failed to parse reranking response: {e}"))
+            })?;
+
+        let ranking: Vec<RerankingRank> = data
+            .results
+            .into_iter()
+            .map(|r| RerankingRank {
+                index: r.index,
+                relevance_score: r.relevanceScore,
+            })
+            .collect();
+
+        Ok(RerankingResult {
+            ranking,
+            provider_metadata: None,
+            warnings: None,
+            response: Some(RerankingResponse {
+                id: None,
+                timestamp: None,
+                model_id: None,
+                headers: Some(response_headers),
+                body: Some(raw_body),
+            }),
+        })
+    }
+}

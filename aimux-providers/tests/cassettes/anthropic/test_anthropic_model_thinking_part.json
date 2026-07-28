@@ -1,0 +1,47 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_model_thinking_part",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "224",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "How do I cross the street?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "thinking": {
+        "budget_tokens": 1024,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"signature\": \"Eq8CCkYICxgCKkDdadQOXMzNBqjrNVAKWsgUfg49NpPg026zBGxIIGwEHVCq0JTW/P9fKHjZdjgO8Dyx03YDw6hN0w1HucifXFggEgzoVS5Gogi9nvJSOA8aDDYuCAX4nGGkeHQLayIw+MWbf/TYU4AqT1X89p4S7fe7LOO+B8o24yCHQ8cFK9QK9p5WMj2Y4oBFBfC9uL8ZKpYBDjoKceyqFJA56ewVH73lNY5szTvm52+CVXMZJCb8x0B1bf9LIOsFUoJD6F4gZBdKfMqJgFCcKFR6iZh09pwa0E8lHvEnUeF1A0AJ6z0j8gQd5NxgipxWrF9908qJbMSkVDdg1dT/3Rr0nbGguAYTYdoV4MrVxyk29dSkkjyAAZBMI3p+HOwiaT6GmYq4qVE3kWnSoiEJGAE=\", \"thinking\": \"This is a straightforward question about pedestrian safety. I should provide clear, practical advice about crossing the street safely.\", \"type\": \"thinking\"}, {\"text\": \"Here's how to cross the street safely:\\n\\n## Basic Steps\\n\\n1. **Find a safe crossing point**\\n   - Use crosswalks, intersections, or pedestrian signals when available\\n   - Avoid crossing between parked cars or on curves\\n\\n2. **Stop at the curb/edge**\\n   - Don't step into the street yet\\n\\n3. **Look all directions**\\n   - Look left, then right, then left again\\n   - Keep looking while you cross\\n\\n4. **Listen for traffic**\\n   - Remove headphones or lower volume\\n   - Listen for engines, horns, or sirens\\n\\n5. **Wait for a safe gap**\\n   - Make sure cars have stopped or are far enough away\\n   - Make eye contact with drivers if possible\\n\\n6. **Cross steadily**\\n   - Walk, don't run (unless necessary)\\n   - Stay alert and keep watching for cars\\n   - Stay in the crosswalk if there is one\\n\\n## At Traffic Signals\\n- Press the pedestrian button if there is one\\n- Wait for the \\\"WALK\\\" signal\\n- Still look both ways even with a walk signal\\n- Don't start crossing on a flashing \\\"DON'T WALK\\\"\\n\\n**Key point**: Always assume drivers may not see you, so stay alert and make safe choices.\", \"type\": \"text\"}], \"id\": \"msg_01TGA8SWcHTTn5674cmicbnJ\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 43, \"output_tokens\": 321, \"service_tier\": \"standard\"}}"
+  }
+}

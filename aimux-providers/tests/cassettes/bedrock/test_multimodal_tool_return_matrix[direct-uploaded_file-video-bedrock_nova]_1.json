@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-uploaded_file-video-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1479a4cb-6036-4b12-9fa6-9ac3f682a8a2'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "749",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"message\": \"The model returned the following errors: Malformed input request: #/messages/2/content/0: extraneous key [toolResult] is not permitted, please reformat your input and try again.\"}"
+  }
+}

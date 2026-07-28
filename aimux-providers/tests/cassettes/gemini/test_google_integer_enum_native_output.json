@@ -1,0 +1,73 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_integer_enum_native_output",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "509",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Create a task named \"Fix bug\" with a priority"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseJsonSchema": {
+          "$defs": {
+            "Priority": {
+              "enum": [
+                1,
+                2,
+                3
+              ],
+              "title": "Priority",
+              "type": "integer"
+            }
+          },
+          "description": "A task with a priority level.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "priority": {
+              "$ref": "#/$defs/Priority"
+            }
+          },
+          "required": [
+            "name",
+            "priority"
+          ],
+          "title": "Task",
+          "type": "object"
+        },
+        "responseMimeType": "application/json",
+        "responseModalities": [
+          "TEXT"
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2911",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"{\\\"name\\\": \\\"Fix bug\\\", \\\"priority\\\": 1}\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"D5MUaYKeH9PjnsEPron42AQ\", \"usageMetadata\": {\"candidatesTokenCount\": 13, \"promptTokenCount\": 12, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 12}], \"thoughtsTokenCount\": 448, \"totalTokenCount\": 473}}"
+  }
+}

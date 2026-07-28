@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-video-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'd9aeec4d-6bfc-4241-96ee-188ae3ae47ac'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1052032",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5811}, \"output\": {\"message\": {\"content\": [{\"text\": \"I can see the image! It features a large, white, chubby bunny character with long ears, standing in a grassy field. The bunny has a cheerful expression and is surrounded by colorful butterflies, particularly a prominent purple one. The background shows a bright, sunny meadow with green grass, flowers, and a few trees under a clear blue sky. The overall scene feels whimsical and playful, suggesting a children's animation or cartoon setting. \\n\\nWould you like me to analyze any specific aspect of this image further?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2514, \"outputTokens\": 104, \"serverToolUsage\": {}, \"totalTokens\": 2618}}"
+  }
+}

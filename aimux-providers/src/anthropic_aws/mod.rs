@@ -1,0 +1,185 @@
+﻿//! Anthropic-AWS (Claude Platform on AWS) provider.
+//!
+//! Implements the `LanguageModel` trait against the Claude Platform on AWS API
+//! (`aws-external-anthropic.{region}.api.aws/v1/messages`). This is the
+//! Anthropic Messages API hosted in AWS, authenticated with either AWS SigV4
+//! or an AWS-provisioned API key.
+//!
+//! The request/response format is identical to the standard Anthropic API, so
+//! this provider reuses the shared [`crate::anthropic::convert`] message
+//! conversion logic. The differences are:
+//! - **Endpoint**: `aws-external-anthropic.{region}.api.aws/v1/messages`
+//!   instead of `api.anthropic.com/v1/messages`.
+//! - **Authentication**: AWS SigV4 signing (service name
+//!   `aws-external-anthropic`) or `x-api-key` header.
+//!
+//! Reference: https://docs.anthropic.com/en/api/messages
+
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model::LanguageModel;
+use aimux_core::provider::Provider;
+use aimux_provider_utils::without_trailing_slash;
+use reqwest::Client;
+
+mod model;
+
+pub use model::{AnthropicAwsConfig, AnthropicAwsModel};
+
+use crate::bedrock::sigv4::AwsCredentials;
+
+/// Authentication method for the Anthropic-AWS provider.
+#[derive(Debug, Clone)]
+pub enum AnthropicAwsAuth {
+    /// `x-api-key` header authentication (takes precedence when provided).
+    ApiKey(String),
+    /// AWS SigV4 signing with static credentials (service:
+    /// `aws-external-anthropic`).
+    SigV4(AwsCredentials),
+}
+
+/// Configuration for the Anthropic-AWS provider.
+#[derive(Debug, Clone)]
+pub struct AnthropicAwsProviderConfig {
+    pub base_url: String,
+    pub auth: AnthropicAwsAuth,
+    pub api_version: String,
+    /// Optional workspace ID sent as `anthropic-workspace-id` header.
+    pub workspace_id: Option<String>,
+}
+
+impl AnthropicAwsProviderConfig {
+    /// Create a config using AWS SigV4 credentials.
+    pub fn new(
+        access_key_id: impl Into<String>,
+        secret_access_key: impl Into<String>,
+        region: impl Into<String>,
+    ) -> Self {
+        let region = region.into();
+        let base_url = format!("https://aws-external-anthropic.{}.api.aws/v1", region);
+        Self {
+            base_url,
+            auth: AnthropicAwsAuth::SigV4(AwsCredentials {
+                access_key_id: access_key_id.into(),
+                secret_access_key: secret_access_key.into(),
+                session_token: None,
+                region,
+            }),
+            api_version: "2023-06-01".to_string(),
+            workspace_id: None,
+        }
+    }
+
+    /// Create a config using an API key (`x-api-key` auth).
+    pub fn with_api_key(api_key: impl Into<String>, region: impl Into<String>) -> Self {
+        let region = region.into();
+        let base_url = format!("https://aws-external-anthropic.{}.api.aws/v1", region);
+        Self {
+            base_url,
+            auth: AnthropicAwsAuth::ApiKey(api_key.into()),
+            api_version: "2023-06-01".to_string(),
+            workspace_id: None,
+        }
+    }
+
+    /// Override the base URL (useful for tests / proxies).
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = without_trailing_slash(&url.into());
+        self
+    }
+
+    /// Set the Anthropic API version header.
+    pub fn with_api_version(mut self, version: impl Into<String>) -> Self {
+        self.api_version = version.into();
+        self
+    }
+
+    /// Set the workspace ID.
+    pub fn with_workspace_id(mut self, workspace_id: impl Into<String>) -> Self {
+        self.workspace_id = Some(workspace_id.into());
+        self
+    }
+
+    /// Add a session token for temporary STS credentials.
+    pub fn with_session_token(mut self, token: impl Into<String>) -> Self {
+        if let AnthropicAwsAuth::SigV4(ref mut creds) = self.auth {
+            creds.session_token = Some(token.into());
+        }
+        self
+    }
+
+    /// Create from environment variables.
+    ///
+    /// Checks for `ANTHROPIC_AWS_API_KEY` first (API key auth), then falls
+    /// back to `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `AWS_REGION`.
+    pub fn from_env() -> Result<Self, AiMuxError> {
+        if let Ok(key) = std::env::var("ANTHROPIC_AWS_API_KEY")
+            && !key.trim().is_empty()
+        {
+            let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+            return Ok(Self::with_api_key(key, region));
+        }
+
+        let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").map_err(|_| {
+            AiMuxError::InvalidArgument(
+                "AWS_ACCESS_KEY_ID (or ANTHROPIC_AWS_API_KEY) environment variable is required for Anthropic-AWS"
+                    .to_string(),
+            )
+        })?;
+        let secret_access_key = std::env::var("AWS_SECRET_ACCESS_KEY").map_err(|_| {
+            AiMuxError::InvalidArgument(
+                "AWS_SECRET_ACCESS_KEY environment variable is required for Anthropic-AWS"
+                    .to_string(),
+            )
+        })?;
+        let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+
+        let mut config = Self::new(access_key_id, secret_access_key, region);
+        if let Ok(token) = std::env::var("AWS_SESSION_TOKEN") {
+            config = config.with_session_token(token);
+        }
+        if let Ok(ws) = std::env::var("ANTHROPIC_AWS_WORKSPACE_ID") {
+            config = config.with_workspace_id(ws);
+        }
+        Ok(config)
+    }
+}
+
+/// Anthropic-AWS provider — creates [`AnthropicAwsModel`] instances.
+pub struct AnthropicAwsProvider {
+    config: AnthropicAwsProviderConfig,
+    client: Client,
+}
+
+impl AnthropicAwsProvider {
+    pub fn new(config: AnthropicAwsProviderConfig) -> Self {
+        Self {
+            config,
+            client: Client::new(),
+        }
+    }
+
+    /// Create a model instance for the given Anthropic model id
+    /// (e.g. `"claude-sonnet-4-20250514"`).
+    pub fn model(&self, model_id: &str) -> AnthropicAwsModel {
+        AnthropicAwsModel::new(
+            model_id.to_string(),
+            AnthropicAwsConfig {
+                base_url: self.config.base_url.clone(),
+                auth: self.config.auth.clone(),
+                api_version: self.config.api_version.clone(),
+                workspace_id: self.config.workspace_id.clone(),
+            },
+            self.client.clone(),
+        )
+    }
+}
+
+impl Provider for AnthropicAwsProvider {
+    fn name(&self) -> &str {
+        "anthropic-aws"
+    }
+
+    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
+        Ok(Box::new(self.model(model_id)))
+    }
+}

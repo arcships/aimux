@@ -1,0 +1,70 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "string_output_verbatim_struct_output_json_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Call fetch_motto and fetch_config, then summarize both outputs in one sentence.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You must use the provided tools before answering.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Fetch the two-line workshop motto.",
+              "name": "fetch_motto",
+              "parameters": {
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Fetch the service configuration object.",
+              "name": "fetch_config",
+              "parameters": {
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{},\"name\":\"fetch_motto\"},\"thoughtSignature\":\"signature_REDACTED_1\"},{\"functionCall\":{\"args\":{},\"name\":\"fetch_config\"}}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":21,\"promptTokenCount\":86,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":86}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":71,\"totalTokenCount\":178}}"
+  }
+}

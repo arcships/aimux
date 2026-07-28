@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-image-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'c88bae72-7b74-41c6-9f45-2da04c42e408'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "770",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2178}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received an image file showing a close-up of a sliced kiwi. The kiwi has been cut in half, revealing its vibrant green flesh and numerous small black seeds arranged in a radial pattern around the central core. The texture appears juicy and slightly fibrous, with the seeds clearly visible against the bright green background. The cut surface shows the kiwi's smooth, slightly fuzzy outer skin at the edge of the slice. The image is well-lit, highlighting the natural colors and details of the fruit.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1384, \"outputTokens\": 100, \"serverToolUsage\": {}, \"totalTokens\": 1484}}"
+  }
+}

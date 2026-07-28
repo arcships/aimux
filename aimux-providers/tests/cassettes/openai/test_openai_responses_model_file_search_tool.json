@@ -1,0 +1,33 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_model_file_search_tool",
+  "request": {
+    "path": "/v1/files",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "340",
+      "content-type": "multipart/form-data; boundary=e8131246d030eccf259f1df4b4e32241",
+      "host": "api.openai.com"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "test-org",
+      "openai-processing-ms": "294",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"bytes\": 65, \"created_at\": 1764874025, \"expires_at\": null, \"filename\": \"tmp2zuepgia.txt\", \"id\": \"file-U6Ke78qu8nkANsrCrjoYBr\", \"object\": \"file\", \"purpose\": \"assistants\", \"status\": \"processed\", \"status_details\": null}"
+  }
+}

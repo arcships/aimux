@@ -1,0 +1,124 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "add_tool_between_turns_appears_in_next_request_3",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is 50 - 8?",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "x": 50,
+                  "y": 8
+                },
+                "name": "subtract"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_3"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "subtract",
+                "response": {
+                  "result": 42
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a calculator assistant. You MUST use the provided tools for every arithmetic operation instead of computing results yourself. Once you have all the tool results you need, reply with the final numeric answer in plain text.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y together",
+              "name": "add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Subtract y from x (i.e. x - y)",
+              "name": "subtract",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"The result of 50 - 8 is 42.\"},{\"text\":\"42\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_4\",\"usageMetadata\":{\"candidatesTokenCount\":17,\"promptTokenCount\":194,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":194}],\"serviceTier\":\"standard\",\"totalTokenCount\":211}}"
+  }
+}

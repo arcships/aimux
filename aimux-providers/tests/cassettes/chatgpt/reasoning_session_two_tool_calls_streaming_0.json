@@ -1,0 +1,61 @@
+{
+  "source": "rig (MIT)",
+  "provider": "chatgpt",
+  "scenario": "reasoning_session_two_tool_calls_streaming_0",
+  "request": {
+    "path": "/backend-api/codex/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": [
+            {
+              "text": "I need the current weather in Tokyo and in Paris. Use the get_weather tool once per city, then compare the two cities in one short paragraph that mentions both city names.",
+              "type": "input_text"
+            }
+          ],
+          "role": "user",
+          "type": "message"
+        }
+      ],
+      "instructions": "You are a weather assistant. You have access to a get_weather tool. You must call the get_weather tool for any weather question and never guess weather data. After receiving the tool result, provide a concise summary of the weather.",
+      "model": "gpt-5.4",
+      "reasoning": {
+        "effort": "low"
+      },
+      "store": false,
+      "stream": true,
+      "tools": [
+        {
+          "description": "Get the current weather for a city. Must be called for weather questions.",
+          "name": "get_weather",
+          "parameters": {
+            "properties": {
+              "city": {
+                "description": "City name to get weather for",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": "event: response.created\ndata: {\"response\":{\"background\":false,\"completed_at\":null,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_1\",\"incomplete_details\":null,\"instructions\":\"You are a weather assistant. You have access to a get_weather tool. You must call the get_weather tool for any weather question and never guess weather data. After receiving the tool result, provide a concise summary of the weather.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{},\"model\":\"gpt-5.4\",\"moderation\":null,\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":\"id_REDACTED_1\",\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"low\",\"mode\":\"standard\",\"summary\":null},\"safety_identifier\":\"id_REDACTED_2\",\"service_tier\":\"auto\",\"status\":\"in_progress\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[{\"description\":\"Get the current weather for a city. Must be called for weather questions.\",\"name\":\"get_weather\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"city\":{\"description\":\"City name to get weather for\",\"type\":\"string\"}},\"required\":[\"city\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":null,\"user\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.in_progress\ndata: {\"response\":{\"background\":false,\"completed_at\":null,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_1\",\"incomplete_details\":null,\"instructions\":\"You are a weather assistant. You have access to a get_weather tool. You must call the get_weather tool for any weather question and never guess weather data. After receiving the tool result, provide a concise summary of the weather.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{},\"model\":\"gpt-5.4\",\"moderation\":null,\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":\"id_REDACTED_1\",\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"low\",\"mode\":\"standard\",\"summary\":null},\"safety_identifier\":\"id_REDACTED_2\",\"service_tier\":\"auto\",\"status\":\"in_progress\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[{\"description\":\"Get the current weather for a city. Must be called for weather questions.\",\"name\":\"get_weather\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"city\":{\"description\":\"City name to get weather for\",\"type\":\"string\"}},\"required\":[\"city\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":null,\"user\":null},\"sequence_number\":1,\"type\":\"response.in_progress\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"encrypted_content\":\"encrypted_content_REDACTED_1\",\"id\":\"rs_REDACTED_1\",\"summary\":[],\"type\":\"reasoning\"},\"output_index\":0,\"sequence_number\":2,\"type\":\"response.output_item.added\"}\n\nevent: response.output_item.done\ndata: {\"item\":{\"content\":[],\"encrypted_content\":\"encrypted_content_REDACTED_2\",\"id\":\"rs_REDACTED_1\",\"summary\":[],\"type\":\"reasoning\"},\"output_index\":0,\"sequence_number\":3,\"type\":\"response.output_item.done\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"arguments\":\"\",\"call_id\":\"call_REDACTED_1\",\"id\":\"fc_REDACTED_1\",\"name\":\"get_weather\",\"status\":\"in_progress\",\"type\":\"function_call\"},\"output_index\":1,\"sequence_number\":4,\"type\":\"response.output_item.added\"}\n\nevent: response.function_call_arguments.delta\ndata: {\"delta\":\"{\\\"city\\\":\\\"Tokyo\\\"}\",\"item_id\":\"fc_REDACTED_1\",\"obfuscation\":\"obfuscation_REDACTED_1\",\"output_index\":1,\"sequence_number\":5,\"type\":\"response.function_call_arguments.delta\"}\n\nevent: response.function_call_arguments.done\ndata: {\"arguments\":\"{\\\"city\\\":\\\"Tokyo\\\"}\",\"item_id\":\"fc_REDACTED_1\",\"output_index\":1,\"sequence_number\":6,\"type\":\"response.function_call_arguments.done\"}\n\nevent: response.output_item.done\ndata: {\"item\":{\"arguments\":\"{\\\"city\\\":\\\"Tokyo\\\"}\",\"call_id\":\"call_REDACTED_1\",\"id\":\"fc_REDACTED_1\",\"name\":\"get_weather\",\"status\":\"completed\",\"type\":\"function_call\"},\"output_index\":1,\"sequence_number\":7,\"type\":\"response.output_item.done\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"arguments\":\"\",\"call_id\":\"call_REDACTED_2\",\"id\":\"fc_REDACTED_2\",\"name\":\"get_weather\",\"status\":\"in_progress\",\"type\":\"function_call\"},\"output_index\":2,\"sequence_number\":8,\"type\":\"response.output_item.added\"}\n\nevent: response.function_call_arguments.delta\ndata: {\"delta\":\"{\\\"city\\\":\\\"Paris\\\"}\",\"item_id\":\"fc_REDACTED_2\",\"obfuscation\":\"obfuscation_REDACTED_1\",\"output_index\":2,\"sequence_number\":9,\"type\":\"response.function_call_arguments.delta\"}\n\nevent: response.function_call_arguments.done\ndata: {\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\",\"item_id\":\"fc_REDACTED_2\",\"output_index\":2,\"sequence_number\":10,\"type\":\"response.function_call_arguments.done\"}\n\nevent: response.output_item.done\ndata: {\"item\":{\"arguments\":\"{\\\"city\\\":\\\"Paris\\\"}\",\"call_id\":\"call_REDACTED_2\",\"id\":\"fc_REDACTED_2\",\"name\":\"get_weather\",\"status\":\"completed\",\"type\":\"function_call\"},\"output_index\":2,\"sequence_number\":11,\"type\":\"response.output_item.done\"}\n\nevent: response.completed\ndata: {\"response\":{\"background\":false,\"completed_at\":0,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_1\",\"incomplete_details\":null,\"instructions\":\"You are a weather assistant. You have access to a get_weather tool. You must call the get_weather tool for any weather question and never guess weather data. After receiving the tool result, provide a concise summary of the weather.\",\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{},\"model\":\"gpt-5.4\",\"moderation\":null,\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":\"id_REDACTED_1\",\"prompt_cache_retention\":\"24h\",\"reasoning\":{\"context\":\"current_turn\",\"effort\":\"low\",\"mode\":\"standard\",\"summary\":null},\"safety_identifier\":\"id_REDACTED_2\",\"service_tier\":\"default\",\"status\":\"completed\",\"store\":false,\"temperature\":1.0,\"text\":{\"format\":{\"type\":\"text\"},\"verbosity\":\"medium\"},\"tool_choice\":\"auto\",\"tool_usage\":{\"image_gen\":{\"input_tokens\":0,\"input_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"output_tokens\":0,\"output_tokens_details\":{\"image_tokens\":0,\"text_tokens\":0},\"total_tokens\":0},\"web_search\":{\"num_requests\":0}},\"tools\":[{\"description\":\"Get the current weather for a city. Must be called for weather questions.\",\"name\":\"get_weather\",\"parameters\":{\"additionalProperties\":false,\"properties\":{\"city\":{\"description\":\"City name to get weather for\",\"type\":\"string\"}},\"required\":[\"city\"],\"type\":\"object\"},\"strict\":true,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.98,\"truncation\":\"disabled\",\"usage\":{\"input_tokens\":144,\"input_tokens_details\":{\"cached_tokens\":0},\"output_tokens\":61,\"output_tokens_details\":{\"reasoning_tokens\":11},\"total_tokens\":205},\"user\":null},\"sequence_number\":12,\"type\":\"response.completed\"}\n\n"
+  }
+}

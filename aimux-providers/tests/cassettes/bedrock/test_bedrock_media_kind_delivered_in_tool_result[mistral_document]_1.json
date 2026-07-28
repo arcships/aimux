@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_media_kind_delivered_in_tool_result[mistral_document]_1",
+  "request": {
+    "path": "/model/us.mistral.pixtral-large-2502-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'17e29d0a-4c62-42c0-a35e-42364ab45ebb'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "18348",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 855}, \"output\": {\"message\": {\"content\": [{\"text\": \"The received data contains a list of documents. The first document is named \\\"Document 1.pdf\\\" and its content is described as \\\"Dummy PDF file\\\".\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 150, \"outputTokens\": 34, \"serverToolUsage\": {}, \"totalTokens\": 184}}"
+  }
+}

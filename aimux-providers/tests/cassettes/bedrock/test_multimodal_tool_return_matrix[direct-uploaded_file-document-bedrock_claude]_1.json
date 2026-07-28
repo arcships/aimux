@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-uploaded_file-document-bedrock_claude]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1e962e02-0aa8-424b-b429-88c94606ebf4'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "825",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4221}, \"output\": {\"message\": {\"content\": [{\"text\": \"The function executed successfully but returned no visible output or content. This could mean:\\n\\n1. **Empty document** - The file may be empty or contain no data\\n2. **Binary or non-text format** - The file might be in a format that doesn't display as text (like an image, PDF, or other binary format)\\n3. **Silent return** - The function completed but the system didn't return any readable content\\n\\nThe tool ran without errors, which indicates it executed properly, but there's no document content for me to describe. If you expected specific content to be returned, you may want to check:\\n- Whether the file exists in the expected location\\n- Whether the file contains actual data\\n- Whether there are additional parameters needed to retrieve the file properly\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 630, \"outputTokens\": 163, \"serverToolUsage\": {}, \"totalTokens\": 793}}"
+  }
+}

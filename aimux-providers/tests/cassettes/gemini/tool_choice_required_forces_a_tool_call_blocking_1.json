@@ -1,0 +1,103 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "tool_choice_required_forces_a_tool_call_blocking_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the add tool to compute 12 plus 30, then report the number.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "x": 12,
+                  "y": 30
+                },
+                "name": "add"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_1"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "add",
+                "response": {
+                  "result": 42
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a calculator assistant.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y together",
+              "name": "add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"The sum is 42.\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":7,\"promptTokenCount\":111,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":111}],\"serviceTier\":\"standard\",\"totalTokenCount\":118}}"
+  }
+}

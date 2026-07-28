@@ -1,0 +1,52 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_image_generation_stream_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "235",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=4WrzAerJAERtrEtHsB.cFJ6v5MH6Y2Gk56L5wxUq.vQ-1759351124-1.0.1.1-ayAA.0_wL04nZV6gmS3rj63EMq8zqEClp78xRO9CwTF8ueIT6NV74RjuxcORx4VKX41NjZLiICBwS7nd20hIvhEmNTm9eN4EMdi5huUIUBA; _cfuvid=zPdniYrg3Nij6AS.4hS4cDT7JbaceUPoVIisOnDRApM-1759351124249-0.0.1.1-604800000",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Generate an image of an axolotl.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5",
+      "previous_response_id": null,
+      "stream": true,
+      "tool_choice": "required",
+      "tools": [
+        {
+          "type": "image_generation"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "130",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "zai",
+  "scenario": "test_zai_reasoning_effort",
+  "request": {
+    "path": "/api/paas/v4/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "184",
+      "content-type": "application/json",
+      "host": "api.z.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 2 + 2?",
+          "role": "user"
+        }
+      ],
+      "model": "glm-5.2",
+      "reasoning_effort": "high",
+      "stream": false,
+      "thinking": {
+        "clear_thinking": false,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json; charset=UTF-8",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"2 + 2 = 4\", \"reasoning_content\": \"1.  Identify the core question: The user is asking for the result of the mathematical expression \\\"2 + 2\\\".\\n2.  Perform the calculation: 2 + 2 = 4.\\n3.  Formulate the response: State the answer clearly and concisely.\", \"role\": \"assistant\"}}], \"created\": 1782860828, \"id\": \"202607010707065a46740249494b23\", \"model\": \"glm-5.2\", \"object\": \"chat.completion\", \"request_id\": \"202607010707065a46740249494b23\", \"usage\": {\"completion_tokens\": 67, \"completion_tokens_details\": {\"reasoning_tokens\": 58}, \"prompt_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 87}}"
+  }
+}

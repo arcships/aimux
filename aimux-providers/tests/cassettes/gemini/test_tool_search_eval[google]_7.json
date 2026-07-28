@@ -1,0 +1,91 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_tool_search_eval[google]_7",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1314",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Book a flight from New York to London for next week."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "AUTO"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city.",
+              "name": "get_weather",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
+              "name": "search_tools",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "queries": {
+                    "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "queries"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1620",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"queries\": [\"flight booking\", \"search flights\", \"book flight\"]}, \"id\": \"1rw0qtec\", \"name\": \"search_tools\"}, \"thoughtSignature\": \"Es8CCswCAQw51sfr9PqjT/0iBSJ3NxMS6qmtQ8gWZ6fmW0jSQ2kR8dl5DC0uJ4Se3/PwYvAIPvNuB2T/UyP7SE15234MdpyUCnXjTBnkxgi00m3MWqCGljkbrsVEoqq5lRXJe9BaJhtOwgIe9VYpdK60xMMEub1AueQqcfifU6wLNT8/FLugfQKPo/RUYVUvMPf2DnPlARsErRbkwviyj5dogQTA4dSmKUrkbkS13fmcOZZeJcs+aBElVbN45Z7AXhyRFOH5MzW0qiKCbZf2t7Nw6rJobxpzrs9gcUYMviTPTsSs0/sAQ7wQl8H2zleC7p+fQ1JC0HClGxZCUuCgqU6CDWXt4TOOAUmPpk7WUCP7k1nxF4nDYo9lakkQOikYj707/6vxF60OlxuGFMDEZJbTdIZ3vVVhBVzh22udVPL29EzDzr5PvRiwo56GzJ8vRD4=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"or0DaoS8CPaVmtkPp_KFkQE\", \"usageMetadata\": {\"candidatesTokenCount\": 27, \"promptTokenCount\": 221, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 221}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 63, \"totalTokenCount\": 311}}"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_top_p",
+  "request": {
+    "path": "/v1beta/models/gemini-1.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "212",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "topP": 0.5
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful chatbot."
+          }
+        ],
+        "role": "user"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=482",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -0.00010893134458456188, \"content\": {\"parts\": [{\"text\": \"The capital of France is Paris.\\n\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-1.5-flash\", \"responseId\": \"z1peaLH-Ff__698Pv8HGgAg\", \"usageMetadata\": {\"candidatesTokenCount\": 8, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 8}], \"promptTokenCount\": 13, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 13}], \"totalTokenCount\": 21}}"
+  }
+}

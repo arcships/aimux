@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_nova_tool_result_followed_by_document_accepted",
+  "request": {
+    "path": "/model/us.amazon.nova-pro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'89116a07-b840-44d3-b9b1-fc6bd9b3ecd3'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "668",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1953}, \"output\": {\"message\": {\"content\": [{\"text\": \"<thinking> The tool 'get_expenses' has returned a success status, but the actual expenses data is not provided. The response mentions a \\\"Dummy TXT file\\\", which suggests that the expenses data might be in a text file. However, I do not have direct access to file contents or the ability to read files. I need to inform the user that I cannot retrieve the expenses data without further information or tools. </thinking>\\n\\nI'm sorry, but I can't directly access or read the contents of files. The tool 'get_expenses' has indicated a success status, but it did not provide the actual expenses data. If the expenses are stored in a \\\"Dummy TXT file\\\", I would need a tool that can read file contents to retrieve the data. Unfortunately, I do not have such a tool available. Please provide the expenses data directly or let me know if there's another way I can assist you.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 436, \"outputTokens\": 193, \"serverToolUsage\": {}, \"totalTokens\": 629}}"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-binary-document-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'e0f0bd8f-d839-4b77-b0eb-da2fff49e926'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "18461",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2976}, \"output\": {\"message\": {\"content\": [{\"text\": \"I have successfully retrieved the file using the `get_file` tool. The file is identified as **file 90ffd2**.\\n\\n### Description of the File:\\nThe file appears to be a **PDF document** with the title **\\\"Dummy PDF file\\\"** prominently displayed at the top of the page. The rest of the page is blank, indicating that this is likely a placeholder or test PDF with minimal content. There are no additional sections, images, tables, or text visible in the file.\\n\\n### Key Observations:\\n- **Format**: PDF (Portable Document Format)\\n- **Content**: Minimal - only the title \\\"Dummy PDF file\\\" is present.\\n- **Purpose**: Likely intended as a placeholder, test file, or demonstration document, given its sparse content.\\n\\nIf you need further analysis or extraction of additional details from this file, please let me know!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 3536, \"outputTokens\": 174, \"serverToolUsage\": {}, \"totalTokens\": 3710}}"
+  }
+}

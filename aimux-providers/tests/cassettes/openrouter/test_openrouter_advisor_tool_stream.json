@@ -1,0 +1,53 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openrouter",
+  "scenario": "test_openrouter_advisor_tool_stream",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "423",
+      "content-type": "application/json",
+      "host": "openrouter.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Consult your advisor tool for a recommendation first, then answer in one sentence: what should I name a Python retry library?",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-4o-mini",
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tools": [
+        {
+          "parameters": {
+            "forward_transcript": false,
+            "max_completion_tokens": 1024,
+            "model": "~anthropic/claude-opus-latest"
+          },
+          "type": "openrouter:advisor"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "X-Generation-Id,X-Provider-Name,cf-ray",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin"
+    },
+    "body": ""
+  }
+}

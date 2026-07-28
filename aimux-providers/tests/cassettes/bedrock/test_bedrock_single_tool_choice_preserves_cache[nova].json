@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_single_tool_choice_preserves_cache[nova]",
+  "request": {
+    "path": "/model/us.amazon.nova-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'e86037a0-0097-49c7-9f71-e8380d03e26a'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "8255",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 404}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {}, \"name\": \"catalog_lookup\", \"toolUseId\": \"tooluse_AbFzl4JzQNAtgEfnacertb\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 2492, \"cacheWriteInputTokens\": 2492, \"inputTokens\": 22, \"outputTokens\": 13, \"serverToolUsage\": {}, \"totalTokens\": 2527}}"
+  }
+}

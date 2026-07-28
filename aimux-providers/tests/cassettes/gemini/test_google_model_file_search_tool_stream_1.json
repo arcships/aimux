@@ -1,0 +1,30 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_file_search_tool_stream_1",
+  "request": {
+    "path": "/upload/v1beta/fileSearchStores/testfilesearchstream-lsy34id7fwk0:uploadToFileSearchStore",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "26",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "mimeType": "text/plain"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "text/plain; charset=utf-8",
+      "x-goog-upload-status": "active",
+      "x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/v1beta/fileSearchStores/testfilesearchstream-lsy34id7fwk0:uploadToFileSearchStore?upload_id=AOCedOHvwjpkJ0FX7gB-GkYoyln9VZ_H7AxB7XF5W9bme5CW92iomOE5BCUJzEbiLfuZSFKTL4jURclB3_tkTp0k6K5c4Uz9IJ1rzqKd3H8JfA&upload_protocol=resumable"
+    },
+    "body": ""
+  }
+}

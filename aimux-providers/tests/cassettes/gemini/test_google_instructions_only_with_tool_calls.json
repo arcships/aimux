@@ -1,0 +1,94 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_instructions_only_with_tool_calls",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "777",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": ""
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "Tell three jokes. Generate topics with the generate_topic tool."
+          }
+        ],
+        "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "allowedFunctionNames": [
+            "generate_topic",
+            "final_result"
+          ],
+          "mode": "ANY"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "generate_topic",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            },
+            {
+              "description": "The final response which ends this conversation",
+              "name": "final_result",
+              "parameters_json_schema": {
+                "properties": {
+                  "response": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "response"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2596",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"generate_topic\"}, \"thoughtSignature\": \"Es8FCswFAXLI2nxFGW9oAYt0fTQoHlYcudYTgqNXlir9nzbXoqFXqLY9sWOIMaevBSmRIl/38GhJB+V+cQHNBmUzxq17UwAqJmMgQ99kWRCfLmU1uUtLpz260ep1CbMwDTJeIsjLz9JzjMd3vMx7gWYrvmOMg7aANsbpw1iHw/YtlA5mXdU0Mn6TOdO9UiGTnnDgzfqu/aoYPNT2DSs/ZlUVpOawy+Ds0hY+BakQLutn2fT++i4lLLwstQjuAsgONiLIWp47NyJ9S9mR8kMnlKuDn1xZMxAHl9YK6j47Rmu9qiWM0fK9fxJOzRiUxQ4eDhWqUKAjrdPPsH8MYaIJMANNbrS2rtHUWcsfKTPbKlBGUA/5BtuxIT11yIIL78MF+RId8W6s0j2VuRYNzzLqAz961XU9v3+sd7TS+aiSXzzffIoDVpvz0Ozs5Dq6jkzTEnPqbxBX7ctd+SHh/X+DYXYEk/f+0RKTn4ZWjVIVGeAqcg66zZCNtbzfCDKh9164rrhDUEddrrNVyQ+N04iUYxZCvU7xSSTLxbt8zJ2LhPNWmI6Y3zhISUP23o/TcvpRecQgR2iTY4k2UV3iTygB9qcYnC3Ka4+SiuXuAfRHs28FqtHvA6jrEDty6+DDaG5uudrN3wTYvawBYnxTLgK3uDTuTkg+OLYl5WEF+/9BOd3kcoxx+yDR140Xt21+rXGLC7fusqaJ/TZoClO3mf7V7lEEypYVRMpvbC9B8gI84x6o4yXc+G1EJrJIOmch/K6tyE9razLuPy5BzT3WDvieYDOpGNvePrKbWWtJKXt06undMLLzM7lwVFGPCB03sP7e3YCKRHQ9LE4eVD5CHa0UEISGhQ7vytpzfXKFNi2C35MujDS4DYE9/aG4YiJdCPxCinmggdYw5j872KKx8VNlZC8CZShSkt7Hnbc6pDIbCKpg2x4yTeBAT3783UHrkQCEaZs=\"}, {\"functionCall\": {\"args\": {}, \"name\": \"generate_topic\"}}, {\"functionCall\": {\"args\": {}, \"name\": \"generate_topic\"}}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"wOd8abGuO5rgz7IP5tLEGA\", \"usageMetadata\": {\"candidatesTokenCount\": 30, \"promptTokenCount\": 83, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 83}], \"thoughtsTokenCount\": 190, \"totalTokenCount\": 303}}"
+  }
+}

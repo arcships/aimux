@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_mistral_two_tool_returns_images_accepted",
+  "request": {
+    "path": "/model/us.mistral.pixtral-large-2502-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'd7e331f4-7cce-4267-8173-0b962771f8e4'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "263945",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1141}, \"output\": {\"message\": {\"content\": [{\"text\": \"Kiwi\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2982, \"outputTokens\": 3, \"serverToolUsage\": {}, \"totalTokens\": 2985}}"
+  }
+}

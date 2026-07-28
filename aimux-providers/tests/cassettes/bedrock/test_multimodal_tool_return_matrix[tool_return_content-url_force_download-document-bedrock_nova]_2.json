@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url_force_download-document-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'b75c72af-2d8f-46fe-a867-bd08a323073e'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "25855",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3695}, \"output\": {\"message\": {\"content\": [{\"text\": \"I've retrieved the document file as requested. Here's a description of what I received:\\n\\nThe file is a **PDF document** with the following characteristics:\\n\\n1. **Title**: \\\"Sample PDF\\\"\\n2. **Subtitle**: \\\"This is a simple PDF file. Fun fun fun.\\\"\\n3. **Content**: The document contains multiple paragraphs of **Lorem Ipsum** text - placeholder text commonly used in publishing and web design to demonstrate layouts.\\n\\nKey observations about the document:\\n- It appears to be a **template or demonstration file** rather than a substantive document\\n- The text is purely **Lorem Ipsum** (nonsensical placeholder text)\\n- Contains approximately **4-5 paragraphs** of text\\n- Uses standard PDF formatting with clear typography\\n- Includes both heading styles and body text formatting\\n\\nThe document seems to be intentionally simple, likely created to showcase basic PDF functionality or as a placeholder for testing purposes. It doesn't contain any meaningful content beyond serving as a demonstration of PDF structure and formatting.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 3514, \"outputTokens\": 200, \"serverToolUsage\": {}, \"totalTokens\": 3714}}"
+  }
+}

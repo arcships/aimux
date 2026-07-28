@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url_force_download-image-bedrock_claude]_2",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'c6784008-d612-4c03-989f-ae5da19e6e11'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "151877",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 6105}, \"output\": {\"message\": {\"content\": [{\"text\": \"I received a beautiful image of an orange-yellow rose. Here's what I can see:\\n\\n**Description:**\\n- The main subject is a rose in warm, vibrant colors - predominantly orange with yellow gradients throughout the petals\\n- The rose appears to be in full bloom with layered, delicate petals that have a slightly translucent quality\\n- There are water droplets visible on the petals, giving it a fresh, dewy appearance\\n- A pink rose bud is visible at the top of the stem\\n- The stem extends diagonally across the image with what appears to be a small leaf or foliage in green/blue-green tones\\n- The background is pure white, making the rose stand out dramatically\\n- The image has a clean, professional quality - possibly a photograph taken for artistic or botanical purposes\\n\\nThe overall composition is elegant and highlights the natural beauty of the rose with excellent detail in the petal structure and coloration.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 791, \"outputTokens\": 204, \"serverToolUsage\": {}, \"totalTokens\": 995}}"
+  }
+}

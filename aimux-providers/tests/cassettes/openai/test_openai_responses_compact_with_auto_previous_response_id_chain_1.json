@@ -1,0 +1,43 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_compact_with_auto_previous_response_id_chain_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "172",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=QP2Rt5pJte7UBOT3BuwAj3KAYkOh_FwrgppGK2Of5s8-1776203679.0400488-1.0.1.1-u3CDZO1I416xr6oQSuzvttUf3aazsWkgKEdL59M9JEtS0neXp1p1OpLwnap1NdfiDrcZGYasHwthU58_qUSRlXiWoqWk9LZXxODKoHwld1B.Jt0jNTAIhjqnfXM23Eb9",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "And 3+3?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4.1",
+      "previous_response_id": "resp_0d4b654a05c1a7a70069deb79f81b88197a19f61e394151ecc",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "1287",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1776203681, \"created_at\": 1776203680, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0d4b654a05c1a7a70069deb7a08194819784d6491244b331d6\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-4.1-2025-04-14\", \"object\": \"response\", \"output\": [{\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"3 + 3 = **6**\", \"type\": \"output_text\"}], \"id\": \"msg_0d4b654a05c1a7a70069deb7a1610c81978d03f03f1593780f\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": \"resp_0d4b654a05c1a7a70069deb79f81b88197a19f61e394151ecc\", \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 36, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 9, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 45}, \"user\": null}"
+  }
+}

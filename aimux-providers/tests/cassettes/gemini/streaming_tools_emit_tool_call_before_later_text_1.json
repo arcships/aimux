@@ -1,0 +1,91 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "streaming_tools_emit_tool_call_before_later_text_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Call `lookup_harbor_label` exactly once before answering. After the tool result is available, answer in one short sentence that includes the exact tool output.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "name": "lookup_harbor_label"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_1"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "lookup_harbor_label",
+                "response": {
+                  "result": "crimson-harbor"
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "temperature": 1.0
+      },
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You must call the requested tool before writing any normal text. After the tool result is available, do not call any more tools and answer in one short sentence that includes the exact tool output.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Return the alpha signal marker.",
+              "name": "lookup_harbor_label",
+              "parameters": {
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"The harbor label is\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":4,\"promptTokenCount\":173,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":173}],\"serviceTier\":\"standard\",\"totalTokenCount\":177}}\r\n\r\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" crimson-harbor.\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":10,\"promptTokenCount\":173,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":173}],\"serviceTier\":\"standard\",\"totalTokenCount\":183}}\r\n\r\n"
+  }
+}

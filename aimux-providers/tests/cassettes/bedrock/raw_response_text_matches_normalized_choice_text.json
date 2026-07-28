@@ -1,0 +1,39 @@
+{
+  "source": "rig (MIT)",
+  "provider": "bedrock",
+  "scenario": "raw_response_text_matches_normalized_choice_text",
+  "request": {
+    "path": "/model/amazon.nova-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "inferenceConfig": {
+        "temperature": 0.0
+      },
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Reply with exactly two short lines and nothing else. First line: cedar. Second line: maple."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": [
+        {
+          "text": "Return exactly the requested text as plain text with no bullets, quotes, or extra commentary."
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\":{\"latencyMs\":332},\"output\":{\"message\":{\"content\":[{\"text\":\"cedar\\nmaple\"}],\"role\":\"assistant\"}},\"stopReason\":\"end_turn\",\"usage\":{\"inputTokens\":38,\"outputTokens\":5,\"serverToolUsage\":{},\"totalTokens\":43}}"
+  }
+}

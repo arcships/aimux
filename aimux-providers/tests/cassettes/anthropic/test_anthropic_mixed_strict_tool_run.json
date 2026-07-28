@@ -1,0 +1,75 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_mixed_strict_tool_run",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "649",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Use the registered tools and respond exactly as `Capital: <city>`.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "system": "Always call `country_source` first, then call `capital_lookup` with that result before replying.",
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "name": "country_source",
+          "strict": true
+        },
+        {
+          "description": "",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "country"
+            ],
+            "type": "object"
+          },
+          "name": "capital_lookup"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "retry-after": "4",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"text\": \"I'll help you find the capital city using the available tools.\", \"type\": \"text\"}, {\"id\": \"toolu_01Ttepb9joVoQFHP568v7UAL\", \"input\": {}, \"name\": \"country_source\", \"type\": \"tool_use\"}], \"id\": \"msg_01CTV3rhAAYCrzRGTEoJbJt7\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 628, \"output_tokens\": 50, \"service_tier\": \"standard\"}}"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_usage_limit_exceeded",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:countTokens",
+    "method": "POST",
+    "headers": {
+      "content-type": "application/json",
+      "user-agent": "google-genai-sdk/1.26.0 gl-python/3.12.7",
+      "x-goog-api-client": "google-genai-sdk/1.26.0 gl-python/3.12.7"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "date": "Fri, 01 Aug 2025 15:59:25 GMT",
+      "server": "scaffolding on HTTPServer2",
+      "server-timing": "gfet4t7; dur=1582",
+      "vary": "Origin",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "SAMEORIGIN",
+      "x-xss-protection": "0"
+    },
+    "body": ""
+  }
+}

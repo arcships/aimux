@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-image-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'beb7a33a-632c-481c-b191-c86c9e4e22bc'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "151828",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1518}, \"output\": {\"message\": {\"content\": [{\"text\": \"I've retrieved the image file for you. Here's what I received:\\n\\nThe image shows a beautiful orange rose with vibrant yellow and orange petals. The rose has a soft, glowing appearance with subtle gradients of color across its petals. A distinctive feature is a small, pinkish-red leaf or petal resting atop the rose, which appears to be glistening with water droplets, giving it a fresh, dewy look. The background is pure white, which makes the rose stand out prominently and creates a clean, isolated presentation of the flower. The composition is simple yet elegant, focusing entirely on the natural beauty of the rose.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1109, \"outputTokens\": 125, \"serverToolUsage\": {}, \"totalTokens\": 1234}}"
+  }
+}

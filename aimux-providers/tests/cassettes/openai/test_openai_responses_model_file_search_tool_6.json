@@ -1,0 +1,33 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_model_file_search_tool_6",
+  "request": {
+    "path": "/v1/vector_stores/vs_6931d72a43048191bbe7518b93c1d8ed",
+    "method": "DELETE",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=pOFiohBcCSNEoTwVeKfMsURH2i_6iujII4wN0KAg3Ic-1764874047-1.0.1.1-4Mn3Val75JXx410hU759Lb8rP7Es3wsJhrb9JbHeRoKhRUYwGR23Vg5rGSzpQMVe.zVZnT9Y5Tj2dBqSpR.oblXC9y3iuqH5bLk_YDgwiZo; _cfuvid=hDhEp5NY2clE8gCmtBf30EFrYpYMILKFQ3WjTnbzsK4-1764874047422-0.0.1.1-604800000",
+      "host": "api.openai.com",
+      "openai-beta": "assistants=v2"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "test-org",
+      "openai-processing-ms": "1039",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"deleted\": true, \"id\": \"vs_6931d72a43048191bbe7518b93c1d8ed\", \"object\": \"vector_store.deleted\"}"
+  }
+}

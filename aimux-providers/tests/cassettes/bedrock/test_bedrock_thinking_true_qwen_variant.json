@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_thinking_true_qwen_variant",
+  "request": {
+    "path": "/model/qwen.qwen3-32b-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'0bd82cbb-dba9-4b4f-8ff0-5afffcfef4c5'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "188",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 518}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"text\": \"\\nOkay, the user wants me to reply with the single word \\\"ok\\\". Let me check the instructions again. They said \\\"Reply with the single word: ok\\\". So I should just respond with \\\"ok\\\" without any additional text or explanation. No need to add anything else. Let me make sure there are no typos and that I'm following the format correctly. Alright, that's all.\\n\"}}}, {\"text\": \"\\n\\nok\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 15, \"outputTokens\": 86, \"serverToolUsage\": {}, \"totalTokens\": 101}}"
+  }
+}

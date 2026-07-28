@@ -1,0 +1,60 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_pause_turn_web_search_streaming_vcr",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "1344",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 15000,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Run a series of web searches to gather up-to-date context. Do 6 separate searches, one at a time, and do not answer until all searches are complete. Queries: 1) \"San Francisco weather today\", 2) \"San Francisco sunrise time today\", 3) \"Golden Gate Bridge traffic today\", 4) \"San Francisco air quality today\", 5) \"San Francisco events this week\", 6) \"San Francisco ferry schedule today\". 7) \"prevailing information on quantum computing today\", 8) \"latest news on the stock market today\", 9) \"latest news on the weather in San Francisco today\", 10) \"latest news on the traffic in San Francisco today\", 11) \"latest news on the air quality in San Francisco today\", 12) \"latest news on the events in San Francisco this week\", 13) \"latest news on the ferry schedule in San Francisco today\", 14) \"latest news on the quantum computing in San Francisco today\", 15) \"latest news on the stock market in San Francisco today\", After the searches, provide a concise summary.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": true,
+      "thinking": {
+        "budget_tokens": 4096,
+        "type": "enabled"
+      },
+      "tools": [
+        {
+          "allowed_domains": null,
+          "blocked_domains": null,
+          "max_uses": null,
+          "name": "web_search",
+          "type": "web_search_20250305",
+          "user_location": null
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "text/event-stream; charset=utf-8",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-dc49f176bee4d28e25d2dac20c149227-6fac282e8e25c907-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": ""
+  }
+}

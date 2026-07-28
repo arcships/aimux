@@ -1,0 +1,102 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_file_search_grounding_gemini_3[True]_4",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "5917",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "thoughtSignature": "EpYSCpMSCAISjhIBDDnWx-meFE0lq4hrGQYuMZoLV_gi_Nj-DoiDjsCqvSsP2fXzn_h_ya43XIWuvWlsYEzJdGxyavjiV-wb6b96vPloCbWRE2e7PouynE14eZW1mvP1EOiqLU7Y2QTiNJkm_3HEiPvIqNWbn4bTsrnppATAm06JhjnDQuKcl2VYvWhnAwDTQKwy7vfaayIpt1muE-ZMikH3fzCrQ04ONwjW_z6Hi43J-3SCrW0YpkG8pTKIAlT1jP9Js2UohMLE5yt2ggyq996hZDcC8yiL1GDKnT9rqK1n221wk6zuGyltOlFDF4tOh2KFj0wOCgIrpv5vTSk0ZgvO5zItW2cb2cRQuINL_K6O4HFs0VbHxmp36wBm4aSVIuJ5PXUfcbuDVmR_W_qYmjstQFARwO1dWTReDOtIqeQ8cV8NDp-NB71tA7b5e3KjlKbkJDM8abCSAC2Ad77YmFsNDzi7fuO-Fl19bwLfMa_G_o6fQ-Uf3_C0Hm1ow_fIIgZ_OIVcyAEi5kj3QlClasmiZCzGpdGVEra1mIoO9BfHsWD-FVn1_60aGQnyX3JxJpji2f8Op_OtsS6ZcjZ1f-VKJ_EaWxmnS1OcaJknI7CnoTf72fezY_cgcww1GYsFekA3Zkep9jq1__5ghq3ldXFcRg9xwRFQZL3BiCdnIH7Vg0nLA2Zcd29DNliiqQXzCCIqYYHDD7wv8vskd9QnetdnxFVKs1CEP1RgL31Q57FA1B-afUcPDNu74d6TTXqRiIn_kwMdDARsxdi9WJV5gMSdClQ0aBCcilm0AHCMTl0eNSLpPtP32_I5N2gI2jHHubAn_tz2kDpP7niKsP0xrOB3W_FJkuSVUhoNCNTr6JqH4EnFsIrH76POtTSvVfLXHvrDuF0aA2313rzBcynWLtgLm3YhkzjwwOi3lNyTy2Uf3hly_mrptoadxtA8dyyLlOKeBrOenexxZ6-7WO8rBtLG1S2qKEYqVq3s2HSMOSycWkqgZrZoas4XTCH_5qF3CNbKnzUE5R0Qj1tiNKeO23Wcdvc40g5hhXjiFZEomvTpfCer_B18pQRLvegW_LGVDOqoaMmwOdxMPxGHipcwgHlpc6AYdcmXIMcOF2iA1H_no25p4R7JXIkCtVwlRwbwM4q4xbmIXXG1fXSSe4OqOeCXJICHNZlsW0GKFiTVojied3pimRKdT57RtEOYSWwB2h6Tj46tM5b7gVEwAyng923PLKDX0-EugtlE3Dk1Roj0Wy1RdS_V35KGzwjifqAGZlDUnaJ7o8Hv7S6pknFMTZ4D4HVwrQbd5yQIlkb1C8bid2ugUN3oQnZPM3clH5LsKfGH8DjYBdji_kdG7c-WQ5RBZEOLKHo0z3VqCAVLhh9CzjfOV694AyUA59g_8bNnRXF8auoq5En5OpGy62RAbfwwqw-sedaEv1MqHqnCgJtA6rQNfUdd0sQoDOjhVyfMF7e1J-sWzcgqJ3sVKt3XazX-QGjs2HYktUi-FodtMsB3rHmdCzm7ix_0riSCu5iE3UADSAl-Bx0I0cgSIwXf2Mzf_tJ4vL9lzNf0hMk7UAXN2OjYn2MyTn1lwe2Ra3vKljlAzhSldag6QxlqixZCJNln5JT3vO1_sY7G0M6y_uZsoAAUHOgjx1e4zFC_5sljIurfR9x8EXpNf08KQ2CVHcrBKTn06vbHE_JdG_wr3ra9GlRprhgk_xgIecvPAXt90UU1AUm4gTbgPC3VDYExlVVTfz4_kOKs1SQLLlFLVmddVTHWIPYbZ9InErfPyC0UZTnZio3yCVJkG8CNKusOr6m2qjgtGaqILF07mHB21Iw2uDjMuR8eL6HmpgX7fA2G7eZXhoalmFBvivVpNfMl5IAdZn7VmngV5bsjeGVKt6shlh_83jHsyK8Dxu901nbsgfAklSwZ7qDsBc7wA1tedfAQY0ftMJNrF7M_vhJ_FE4uxUjJlA28LEGpFRwYXxOHC897AZeQGpztVLsmGXCmlrfd-Xtgae5RalokCrajnM58WSRz26sNZgHQobokWkfDuQgscSLXEo1grKxuI8bcHI6T4TVqpdealzMH-awhMf0GHIwdEGOD0diYNK_Ow7tbrOTPFLdYkJYFmG9FgrEt1OE2T2q5H0AVUma08mwRe-LOTNSwaB6EiSoFuMAayFmKnB-0jhzyg521L5Mq_8KjtaZ3_uu4L0RITOo-ySoRD7k0U1s4GHYVz5EWZhglbtQ5B6MQC4nNlIRcD_bRp5WoefU2OJ0j_pg8Jfe6g6SauX6-zI52A257cf8Qxn-doJimwUhiLVR3wVb00Xr92qekDlaldUOlfdYC4xJAOyCK88kffrv3BmM9x94CyOXNnr64rF4YtpYJEC_SfqV7O62ARlY-9SP78nrHrjqBgYzC_zaEz6WR6DzMRY9Z7g_KffSYZ3rgZxBHjpW3c0FSwEo_5Z_sPMCpv6kNCWVkOJ8JxbapoJeulfMGhLd5xMMOwHz-X1FYCK3sgub-EeTM-i-j3VBMUR4fsV2hwJPHyof1pt7EAaHmuCHnQnDBbwstQoAv4SUCiQwTVtn5tsDcMEdt3jLlI3wC3FH_RQjACTTk0LSm5uJh92KrhwGSivSUKAwAdPgXHRJsSYhhtJb2xHJNPusLgEdyK_Cqn7aA-aJaUbRDn6IgFumJUBkvJHyINFpOrNiMxIJFQq-uB7pri0AZF-ASC9os89stgioc1mNxyek3apzP5o93Th6PWlxLNno5Pay8vh15Ted0dpH_61lRFtHl6Aih70lYLlcUNGnvUyj6_CfzNh0IhdhZmiRhwoqpqgN5Cj4eYcNWGCSbV8MBkdUngCqdUQgLtPUtEy7JRcKc2DAlrNOjbxA0NKSZYHgRr1ZzY_IRT0nir91dfLPcb1_vOkMuOU8-nkryi4mlIZQvbtdMNXrnHBsDenvMvNsjAihP1yrvEUStlFguMMSw0EXpDUKAipZv9OYCjP6I65oRgFOOAnAUo4S9WBTPrxJkuzrI2EvYyJ7RhQf-9z7X71giazn8NfcRB2g6Fb2dteNZMZlC-xD8gX1_0awBtuZHkKrUgqH54Sf2s99AoO4aC7H8hX0Ufe8utw==",
+              "toolCall": {
+                "args": {},
+                "id": "tju3qkc9",
+                "tool_type": "FILE_SEARCH"
+              }
+            },
+            {
+              "thoughtSignature": "EtoGCtcGCAIS0gYBDDnWx2K2DVCm1ZWnP0675oPNCJS7xypyPbF6AMpZRd2H2X0IRw9yxSlW_q0ErGgZnhy5ci7LLl7V_NfQSHoGQJcxrY-sdcI73XzT1NW_GvRk1KxMu5gAw2o9LsbyMVJWWzF71sWkNnSPKyczq-xTbwLNGvoDpeVMNYyu4chJN8etBBssAsPjHE6pJZ4cRsUDSHt01oxqLl7Z6aII_av_ejy14MdjU6seRwxc7NEE1ygVPLGYNBCBhxzKYJdZEPx5eCYiIfiTJ4dQy9-DdYY3FAgjncnBGuCcxfmYfowaOna88s2MxxyjvL9-ZV7Ir7Qs5QuvjJmR4DKqP2UcHxW-AhltxchzW9G4Pc2JasygxvnfadMS5AbStFNVML62AYw96AFMpleDTm9OFzTgho9RY5nf9nIVeMgK90J0bYVHdf_AiEvacn1NHmqs24aCpQNs1l2s4oOH_vMpEDCLPWBK-MbmTqx8y-UQTD17t7DSMjHCohQvjmwhi0k8CMl8khCfjvHT8gKgiFrs4O-kVkwO3WgtlXS1_bfQt7hdM0SOdM8FABgn3mM2PuCkdNeC9BEKjokQmibYrAU95AGpESoBR1ui3zxaepRygrhEJrMYhHuvPdSOzkupx2awL8Rh4EmbxKgGPFP1jJy_uXs9Q6ct2qe_n4sEyUNasXQx8w3vXUznkifGdutRbheQTHafpts5pl05shrZO1wtoSkWhdBBeyhpMtgyrVLJ9kiyj0dAnbRd4YqAdDGZhk-xU-nwGCGBddHkF82VDprh2e8fcemANG67F7D3N_0l26MQT45989y9LLtX0QJxtS5Jy4aZYHYanzlm-6iUc_fWT1FRhsy2kpHHFsXqgQOxpzambx-xP3P3muH3VVttq4UR0Wd3ZDOqIb-fMs89IaGzkv1TeQhueonE1HCWA0-nFY2bkhtCZxCXA93nqR92_169mEIDjvEiTfvOV79hP0KV-xHKAoXcu_tplg3bTWzAbMyIvO5HLiyVsKoUelt_L7MwcISI6O8GbhY53PTpXlpCtTGDT7ZPERvOe_imDiZjEuwjqvopnJWQmm2tLjPMyA5y7o65Z9844l5-MXTrWwc_Udk3zLf_3GuojQNsJBSHfkcnmMH2JcY1",
+              "toolResponse": {
+                "id": "tju3qkc9",
+                "response": {
+                  "result": [
+                    {
+                      "custom_metadata": [
+                        {
+                          "key": "source_url",
+                          "string_value": "https://example.com/paris"
+                        }
+                      ],
+                      "file_search_store": "fileSearchStores/testfilesearchgroundingstre-p2hcv3cs2i69",
+                      "text": "Paris is the capital of France. The Eiffel Tower is a famous landmark in Paris.\n"
+                    }
+                  ]
+                },
+                "tool_type": "FILE_SEARCH"
+              }
+            },
+            {
+              "text": "The capital of France is **Paris**.\n\nParis is not only the capital but also the largest city in France. It is a major global center for art, fashion, gastronomy, and culture. Often referred to as the \"City of Light\" (*La Ville Lumière*), it is home to world-famous landmarks such as the **Eiffel Tower**, the **Louvre Museum**, and the **Notre-Dame Cathedral**. The city is situated on the Seine River in the northern part of the country.",
+              "thoughtSignature": "EsUBCsIBAQw51sdPkH-3cSEO15H8ynZHJdCu8bTuZBDDhVsxXscTeWA7yVbhGlA-PQrtcIYH33bq-wkWwwajFgdZF4JWg9_LAWzqnMNvueiVa4HwvxyU6-ktk8-Vousq4M8zTQuGshfiHm5Z0JDSlxIjvcT6NHooFrlvxw-MmIwyTuFIzKghpun-x_rYE8Q1toFyzzjTfhApLeeVWjRVR3fBjkN4mtz0U0aOwU8eDN4VT8q4IVWWMzZLQgRshfYfVrEGbnY-2l8="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "text": "What famous landmark is it known for?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "includeServerSideToolInvocations": true
+      },
+      "tools": [
+        {
+          "fileSearch": {
+            "file_search_store_names": [
+              "fileSearchStores/testfilesearchgroundingstre-p2hcv3cs2i69"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=8889",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"thoughtSignature\": \"EsUECsIECAISvQQBDDnWx6h2ozIwj2tyW5MU98EZ/Y7AN2A9HESiU8uxJWxWx0KYSPsDZlFVoOphNQsO2VczFuvaDKyr2MZov3KqiKwgYiD/7AClWVk7VRuTkRMi2pJsGGAfCzu/L5x0yU7r9qmEYpcLnLusKvGOvJ68J/WfkUbUb0TrFCU0CcSWhryLoyignLHZlD/QrMUx0MR35/Cq98TxcPPWHS2Rm2fhBSDcIX0n0RJtsWFKZOI/bEk1U4DNUOqZhHvIp25Ju8T1bCa0tqptQLSx+ym4Bf3gb9jJhjBUKBwmZuGqPNXrf6CMRAC/ohThrfMelkLYut8n9JM1co0F/7OFQ6OPTwarnZaQxWu2ZgfsIPhlihsCT/p9PPaFa8prfVWFvkFfiVtmd02wGYGOSr8Hh7hXTP/Tdr6DwBrjHcVaJEySZOeZHriOcaLC0IHSU9fKL5v6ukPpwmUeW2xjoth+iCs2T5PedOoDleSrK6gcwdMnEwFBswqHgyTg6edHl65Se4ZKnMpNUaMVgeAWEn+8eLSr/YScBXQ8L+3RFrDgTmKPko9is8sFTV1uZWeoJ+3LXy4fVeB9TP4Yd9BqEkZGGpqd1sbzwE89IHquPi6HRarH3Fwa8llRzWtuJougmeMrSILbu5RzIi4Kly+jAqVJ2wBpWlcZLLn8sPwYKwnFGc95gDg+QOPaBvhytdwNCCN/K1CnblXrKeyijg/2A6DXXyQAim+etgPqIzGEZe6yG99kUa36Nm2Th5/qp4IKfOnXX/Q=\", \"toolCall\": {\"id\": \"1ml9ew09\", \"toolType\": \"FILE_SEARCH\"}}, {\"thoughtSignature\": \"EtQGCtEGCAISzAYBDDnWx6WUtsYZ0DKSz/czXtnE6jcZQLKkBNoY26x6j02b9GA+afmxYKubd9A6budKjjVwIzO/z3cAEPKn+lRPFj6zehsfr/z0ZTxOUP7UwlcdITgWDF5joUCamESjgyjUKT/kxuRHFRQEHw2y37+21Db/lA4apQB0pdZ9/t6CylM9UAuc3n7fx7gM2ha/gfpd/CetkbxS8yyq0PJvqpaLjr/4PAiYd/PYAxsf2n/ieKmEhqrqCILmW809GAF7xjvbBBfwmTE9aKZNVFFzwqIL3Izz43j9gxIC3wx6Mh/FbpFyQeK37yKnIqjr1rkXrO/wVWdXQJHd8md8h/Qv4ar6PBuQ8P732RDhgLMTKxSlA7SLGmmv+5oOMwYnEt10X72MPqL23/1MOM9M3Ag5SvK9GpXgnZTjSFcdCU6gSp+BOIwehUOUYrk/FNg7tgxkX14Z6skVBqrjjoxS+d2VHPWbfTtHRvO1KeAQynELXAR1LPRIz2yHGtdOktE7KdRhLKAP0WzR0VOEpfYifU6tGbilN93Keff7CikgN/ojV4skqcCPurdKkNMJXPnh7Hr93/gkckFf4ZcIvypHBP8sXIbAVr7UE2xFdV85qgmK5PVzQIyFzoN7t5lSqSE6OltElszCo8gvaUmoSII1TmgX0knIg+zdBRiZf7J6I1V8NjF2kx2m3vV0ok2cWU2mSbRsVysC2Rf04TXCIq9PlLJcoHrHnhPc9RyL/CBls18y3r2icYiA7iH0shxKo7fluQA6EQO9MNhpWP6ObK+yD/oQ4AkXRa9HOvvYycdjLPqqjHRVK/5XbP4KPd9PfnmVkutYWJPEkmyEdHGKh75iYnm2fb9ljo/0xpAPZhrS+AigI5DHid8CLhrMKITe0Ay079AeAvRyRW3tk92YikESrgqeguhUrl0BPJDkcAiMAg+607fIP5tH++sunbdz81n3io1j8rPsHXwBhDx0KYissVBH8JXcm+3n3hs3OBNKbzDgGllhei+XToPUTZ4BpijmHuxawridm3c2+pAloo/llLLOlyLVzQXOvFpziGTDgDrF/rM6ARMhWXp4b7MsJ883mzRkJm6syMMjoNMsezt2mxZM05PmDGcq8iio3W+EZoE/\", \"toolResponse\": {\"id\": \"1ml9ew09\", \"toolType\": \"FILE_SEARCH\"}}, {\"text\": \"Paris is home to several world-famous landmarks, most notably:\\n\\n*   **The Eiffel Tower:** Perhaps the most iconic symbol of both Paris and France, this iron lattice tower was built for the 1889 World's Fair.\\n*   **The Louvre Museum:** The world's largest art museum and a historic monument, famous for housing the *Mona Lisa*.\\n*   **Notre-Dame Cathedral:** A masterpiece of French Gothic architecture, known for its stunning stained glass and gargoyles.\\n*   **The Arc de Triomphe:** A massive triumphal arch standing at the western end of the Champs-\\u00c9lys\\u00e9es, honoring those who fought and died for France.\\n*   **Sacr\\u00e9-C\\u0153ur Basilica:** A white-domed basilica located at the highest point of the city in Montmartre, offering panoramic views of Paris.\\n*   **The Palace of Versailles:** While located just outside the city center, this former royal residence is one of the most famous landmarks associated with Parisian history.\", \"thoughtSignature\": \"EsgDCsUDAQw51sdnEr+iFoJ7DrTYE/exAyDqHAhFj9d0Et1ekFYYBExy/9WIYIi9qPr5CTOvYFSmki6Opawcq1F/nSvkkuMBy++6sgfjBaJ9VP4whzPswbFF6LAcCPPU5qVY4GCqMTVaiNqenhWdDLVeSKMLWkIcrdUG6s90ewDBkJEkHaPbwtgTViE2YZ10ke/hLoeWCk22Ow/3JfjSw9G6yd+Jta5AHxzgvaohFYE8NVTAAXWLE9jiwfhP1F7e3C04lWGQT/UVWgGqKzAGAw9/cqTt4RA7dsQrz/CRBROo0PHoaL0BqSC3Zxdja1oVHMAOv1ndbmZjkMEJURTZvR7nAQ2xgnpJmVORq307keHQm0pvyqqK/gFVlErA7+/sSEKurwRdiE3uoIjpKDJqVJn2LIbhPtuVHhvAfQZvbc1nmVMyE2y1tlt7u4XwK5FhwMNIQ1KX3/8SisCP9Osx/Hz+LlNh17+A3CsdQoqR+s1hS53bPg2A1BZrgUhhOeIizg7MWH5nJLqDo8t7HkgV8UP/4YjnDnt2X/LMihhAqx/39T7k+vk8EFp2G5vYqy/nSgbZUWrbmMOqDn2KXJINM2liaOtIsK+JfDux\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"groundingMetadata\": {\"groundingChunks\": [{\"retrievedContext\": {\"customMetadata\": [{\"key\": \"source_url\", \"stringValue\": \"https://example.com/paris\"}], \"fileSearchStore\": \"fileSearchStores/testfilesearchgroundingstre-p2hcv3cs2i69\", \"text\": \"Paris is the capital of France. The Eiffel Tower is a famous landmark in Paris.\\n\"}}]}, \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"MHdHar61HJ-8juMPut3eSQ\", \"usageMetadata\": {\"candidatesTokenCount\": 230, \"promptTokenCount\": 294, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 294}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 158, \"toolUsePromptTokenCount\": 605, \"toolUsePromptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 605}], \"totalTokenCount\": 1287}}"
+  }
+}

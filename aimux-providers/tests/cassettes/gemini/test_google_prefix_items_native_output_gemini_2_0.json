@@ -1,0 +1,68 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_prefix_items_native_output_gemini_2_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "508",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Give me coordinates for New York City: latitude 40.7128, longitude -74.0060"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseJsonSchema": {
+          "description": "A 2D coordinate with latitude and longitude.",
+          "properties": {
+            "point": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          },
+          "required": [
+            "point"
+          ],
+          "title": "Coordinate",
+          "type": "object"
+        },
+        "responseMimeType": "application/json",
+        "responseModalities": [
+          "TEXT"
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=794",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -0.0006413730443455279, \"content\": {\"parts\": [{\"text\": \"{\\n  \\\"point\\\": [\\n    40.7128,\\n    -74.0060\\n  ]\\n}\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"CpQcaZeFELrrkdUP_f6z-QI\", \"usageMetadata\": {\"candidatesTokenCount\": 32, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 32}], \"promptTokenCount\": 27, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 27}], \"totalTokenCount\": 59}}"
+  }
+}

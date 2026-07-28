@@ -1,0 +1,67 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_tool_call_roundtrip_wire_stable[vercel]_3",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "536",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is the weather in Paris? Use the tool.",
+          "role": "user"
+        },
+        {
+          "content": null,
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{\"city\":\"Paris\"}",
+                "name": "get_weather"
+              },
+              "id": "call_i8bNJ8oVFq9EVr3dZvYC0tiJ",
+              "type": "function"
+            }
+          ]
+        },
+        {
+          "content": "sunny in Paris",
+          "role": "tool",
+          "tool_call_id": "call_i8bNJ8oVFq9EVr3dZvYC0tiJ"
+        },
+        {
+          "content": "The weather in Paris is sunny.",
+          "role": "assistant"
+        },
+        {
+          "content": "Reply with exactly: OK",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "X-Request-ID",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "351",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"logprobs\": null, \"message\": {\"annotations\": [], \"content\": \"OK\", \"refusal\": null, \"role\": \"assistant\"}}], \"created\": 1783375761, \"id\": \"chatcmpl-Dyln7eWP9e8BUZZ7d7BabGc6C9GeY\", \"model\": \"gpt-4o-2024-08-06\", \"object\": \"chat.completion\", \"service_tier\": \"default\", \"system_fingerprint\": \"fp_0a0219177f\", \"usage\": {\"completion_tokens\": 1, \"completion_tokens_details\": {\"accepted_prediction_tokens\": 0, \"audio_tokens\": 0, \"reasoning_tokens\": 0, \"rejected_prediction_tokens\": 0}, \"prompt_tokens\": 64, \"prompt_tokens_details\": {\"audio_tokens\": 0, \"cached_tokens\": 0}, \"total_tokens\": 65}}"
+  }
+}

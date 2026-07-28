@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_tool_choice_matrix[tools_plus_output-bedrock]_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'a10287f3-c671-41f1-afc2-386160d00728'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "1012",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 1702}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"city\": \"Paris\", \"summary\": \"The weather in Paris is sunny with a temperature of 22\\u00b0C.\"}, \"name\": \"final_result\", \"toolUseId\": \"tooluse_NMTJfE8fQJefMEo7zjZOsg\", \"type\": \"tool_use\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 813, \"outputTokens\": 68, \"serverToolUsage\": {}, \"totalTokens\": 881}}"
+  }
+}

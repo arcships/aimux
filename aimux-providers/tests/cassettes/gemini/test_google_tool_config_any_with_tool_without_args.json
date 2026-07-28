@@ -1,0 +1,78 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_tool_config_any_with_tool_without_args",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "526",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "run bar for me please"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {},
+      "toolConfig": {
+        "functionCallingConfig": {
+          "allowedFunctionNames": [
+            "bar",
+            "final_result"
+          ],
+          "mode": "ANY"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "bar",
+              "parameters": {
+                "properties": {},
+                "type": "OBJECT"
+              }
+            },
+            {
+              "description": "The final response which ends this conversation",
+              "name": "final_result",
+              "parameters": {
+                "properties": {
+                  "bar": {
+                    "type": "STRING"
+                  }
+                },
+                "required": [
+                  "bar"
+                ],
+                "type": "OBJECT"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=442",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": 2.5814981199800968e-05, \"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"bar\"}}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"LFteaOOfMaPG1PIPi5qVEA\", \"usageMetadata\": {\"candidatesTokenCount\": 1, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 1}], \"promptTokenCount\": 21, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 21}], \"totalTokenCount\": 22}}"
+  }
+}

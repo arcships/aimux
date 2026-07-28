@@ -1,0 +1,53 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_max_tokens_thinking_model_empty_response",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "253",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 5,
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful chatbot."
+          }
+        ],
+        "role": "user"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1606",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"role\": \"model\"}, \"finishReason\": \"MAX_TOKENS\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"fH8oaunbEbr9qtsPjYGX4A0\", \"usageMetadata\": {\"promptTokenCount\": 15, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 15}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 2, \"totalTokenCount\": 17}}"
+  }
+}

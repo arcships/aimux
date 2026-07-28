@@ -1,0 +1,196 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "manual_multi_turn_streaming_loop_2",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Calculate ((10 - 4) * (3 + 5)) / 3 and describe the result in one short paragraph.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "x": 10,
+                  "y": 4
+                },
+                "name": "subtract"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_1"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "subtract",
+                "response": {
+                  "result": 6
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "x": 3,
+                  "y": 5
+                },
+                "name": "add"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_2"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "add",
+                "response": {
+                  "result": 8
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You must use tools to answer arithmetic prompts.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y together",
+              "name": "add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Subtract y from x (i.e.: x - y)",
+              "name": "subtract",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Compute the product of x and y (i.e.: x * y)",
+              "name": "multiply",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Compute the quotient of x and y.",
+              "name": "divide",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"x\":6,\"y\":8},\"name\":\"multiply\"},\"thoughtSignature\":\"signature_REDACTED_3\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_3\",\"usageMetadata\":{\"candidatesTokenCount\":18,\"promptTokenCount\":478,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":478}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":38,\"totalTokenCount\":534}}\r\n\r\n"
+  }
+}

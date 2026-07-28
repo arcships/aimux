@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_stop_settings[bedrock]",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'aa21a106-62c3-42cb-9d65-a10c63a214ad'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "231",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 189}, \"output\": {\"message\": {\"content\": [{\"text\": \"The city of Paris\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 25, \"outputTokens\": 4, \"totalTokens\": 29}}"
+  }
+}

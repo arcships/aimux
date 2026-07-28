@@ -1,0 +1,47 @@
+{
+  "source": "rig (MIT)",
+  "provider": "deepseek",
+  "scenario": "tool_choice_required_specific_and_none_0",
+  "request": {
+    "path": "/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "Call lookup_harbor_label exactly once with an empty object and do not answer in prose.",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek-v4-flash",
+      "thinking": {
+        "type": "disabled"
+      },
+      "tool_choice": "required",
+      "tools": [
+        {
+          "function": {
+            "description": "Return the alpha signal marker.",
+            "name": "lookup_harbor_label",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{}\",\"name\":\"lookup_harbor_label\"},\"id\":\"call_REDACTED_1\",\"index\":0,\"type\":\"function\"}]}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"deepseek-v4-flash\",\"object\":\"chat.completion\",\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_tokens\":24,\"prompt_cache_hit_tokens\":0,\"prompt_cache_miss_tokens\":290,\"prompt_tokens\":290,\"prompt_tokens_details\":{\"cached_tokens\":0},\"total_tokens\":314}}"
+  }
+}

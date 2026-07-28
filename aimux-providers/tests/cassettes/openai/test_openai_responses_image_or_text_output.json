@@ -1,0 +1,51 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_image_or_text_output",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "246",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Tell me a two-sentence story about an axolotl.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5",
+      "previous_response_id": null,
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "type": "image_generation"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "5178",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"created_at\": 1759346021, \"error\": null, \"id\": \"resp_0960b15765e287d40068dd7d64da6c8190aa14e5beb071fb5c\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABo3X1q-wdduu-HRWtShfXOFKIoCDmsxFYBwlsZ3gKzkO0PDBUqTK9ZriRw72Q4M9N1oh5W6IaTdZo6Ce-O4HNEn2cQf8CyWxU0MjX0GdAj-QKWkoTe5Lsf_JI1T3eqTwU9776ltIobR0D5pmRIc5v3Tj2kTJyR2_AAgFf4zEVfFmx7MXTHTQlb3712MVjwzUXS-xa7-Gh89PAPD8eH02LkueGEilZjD46GZ9zu3xNql5NPxOrlwMUAFLQiXA349VRmMMrIyp213ox61FOB-VV3AWiRMZeUQpY6m6d7GVGkkNl8zy5MwcdZ-DE7Z5c62FZOJ5xUPksazZRychCLFfrwx-92PHe_Oh4p7RUsXtRSbPbDahonsmjfYqo2Dw5OAZ3pwpnu6spelOmEjrkPdEskcGWjdLxAzDS9U8DkffKz8dXuNQY0RSXrXwfmwjkvtG3wiqRp4CvfXaZIvXM700Iaye0wXGcNHC9knPePdnpXaT16chUd2yrNHLL6MMil616E3J1fsKIUgIZ9xQJUAbvqXApSnD-0tiiqYU1j_Jy3kzO3rLy8SbndDx4Pl4YXnd489nnyjTtyhm1c0R3R0ysZnWby8phOD9lkE5IvUdxi7GsUKcLSpkv7ernmxx8DyAI2Jk6aajhQBZ4HJXY4wd8GNE75A_5Upj0hN9SBNQSlza3eCUkN5U-_9luCmoWMXg5vJ5yhbmuIbYAhfe5GdJSxbLuKnyAkqX5I5gcmtmbFAu9VJVQdXDJDCfs4oQussSSmifMDF6Ph-MXC93Na68bi8LQh9TJD02GG4Fuf3LFqfGYfmVV3HHnsWxrPiOXE-TXa7MYYcum7kD5kOa-yEuCSDB-n4qJgTxGj4nPbgBcxEy_hpQXrEvn0wUjP_mngTgFZjVWe8LQ_t-fEHkEfVWGGHYtSy6SNwm8SILV78ek8cL1jp1N1Zb697jCbfRNOUAmHGhMdIAbINW3yu7_Ude0_0x0BgSf46fA4VKODOWdyy6_t5mAiVBN44bwvbcpTfA8zx1zW-xK4DlqALqUUvudMqyENxGulqwSZZmTIq50B5vDeCSvTPU3vlf4UyEDoos_rj1jkeTcf-UG1ghPwEokj8vEBMFfcLO0Uv_xluiZm4Q2F_AtYcp7YMQa66Wa05-4Myp94UuWlBCsYYBC-eAPWbfP-3YPHKZRX6xzMy3s0jQ1K8VGlEqLpgFfLYXyJj7QUmglD-JKAB4kNzgVvAbBKH6IPB_r63n7rqyvEH1SVbRp0DTbpx_xJrJ3jZKCOEIpVnSU1Rcx-WrvEyQho_BKRm4o0NRlse1TcPeHx2pjEMKupyWw6O7LSit1gImpxnX6aCpl97pQf9VvN2Shk8kXegPDRc1UjzXBKnuDL-xC_MA18wxgqwVpULXj9GpjGNUnpy6M6julZITAKr5zU10mGFsYmRdXRn0RaXkPWRqrzakyJbs8vu0pIEXq9drZQMj3Q1wRLkqqo7IyHhnqw6Ngw3eSXDUIfie0BtlqhXekzp6U-eIa9V7JtZ70KY0SRv6rG-JG0gBCREV0aFHjnyYXsXE0vpPtRvNybawnYTjQoxFrOR4Mn3zonqOr3l5Lk-bcgmnvzYX3zfQ1TONPZpLJRUyu2ELsxl92Om0IYC25EOLwLnIVYbx5yHVk0atPEOi1xqaNc5UrRoDzSfBABfyEqXhfEIyKNzyj-O_-rOA1vR5sTfGYqS-6V3uYAscvtlErrZufIiMdwHsPGkC5FxRk6L-_9yu8G1WEm_qZOt7IyZR-lA5Mzuai36kxN8SAPYN6toOeapP9_lFrGFcXeScy9l4pEjnEOM3RQIfX5Q5Roqf25FQR4ZlD2s7_D0pSYLLNlWiuyhf_FxJ05z7EDbbYjyzDOi9JGEZRX1dONJtv9LIQzL_3ZcO3Se-crPZitlfCXlKgH90XMgx6cv3UE6y0h_Moy7mLo9zVTF2-GueQyoO0tYsijuDornGuhdnGycvZzvS_Qz1G9nXVK-m4EYTXkwL3r0A==\", \"id\": \"rs_0960b15765e287d40068dd7d658e98819081d364d87d98e8e4\", \"summary\": [], \"type\": \"reasoning\"}, {\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"An axolotl named Puddle practiced tiny pirouettes whenever raindrops tapped the aquarium glass, the whole world conducting her in soft percussion. One stormy night the power went out, and in the hush, her gilled smile steadied a lonely kid who realized he wasn\\u2019t the only small wonder afloat in the dark.\", \"type\": \"output_text\"}], \"id\": \"msg_0960b15765e287d40068dd7d68b3ec8190a48a278a137103ca\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"prompt_cache_key\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"background\": \"auto\", \"moderation\": \"auto\", \"n\": 1, \"output_compression\": 100, \"output_format\": \"png\", \"quality\": \"auto\", \"size\": \"auto\", \"type\": \"image_generation\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 361, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 265, \"output_tokens_details\": {\"reasoning_tokens\": 192}, \"total_tokens\": 626}, \"user\": null}"
+  }
+}

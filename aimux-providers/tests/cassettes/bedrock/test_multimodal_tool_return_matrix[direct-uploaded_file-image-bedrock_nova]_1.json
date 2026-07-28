@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[direct-uploaded_file-image-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'155d8521-cded-4406-a0a3-d2783ff6b4df'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "743",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 991}, \"output\": {\"message\": {\"content\": [{\"text\": \"I retrieved an image file showing a cross-section of a **kiwi fruit**. The slice reveals the bright green flesh with its characteristic radiating pattern of white flesh and dark seeds. The seeds are neatly arranged in a central row, and the outer skin is visible along the edge of the slice, showing the thin, fuzzy exterior typical of a kiwi. The image is clean and well-lit, highlighting the vibrant colors and texture of the fruit.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 1382, \"outputTokens\": 90, \"serverToolUsage\": {}, \"totalTokens\": 1472}}"
+  }
+}

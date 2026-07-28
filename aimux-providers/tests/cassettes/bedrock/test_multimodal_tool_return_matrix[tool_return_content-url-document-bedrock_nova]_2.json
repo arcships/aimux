@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-document-bedrock_nova]_2",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'abd9a7fd-ed73-4fc4-ba0d-f77ddc2c8e64'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "25855",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5287}, \"output\": {\"message\": {\"content\": [{\"text\": \"### Description of the Retrieved File\\n\\nThe file retrieved is a **simple PDF document** titled **\\\"Sample PDF\\\"**. Here is a detailed description of its contents and structure:\\n\\n---\\n\\n#### **Header**\\n- The document begins with a prominent title:  \\n  **\\\"Sample PDF\\\"**  \\n  Below the title, a subtitle reads:  \\n  **\\\"This is a simple PDF file. Fun fun fun.\\\"**\\n\\n---\\n\\n#### **Body Content**\\nThe main body of the document consists of **multiple paragraphs** filled with **Lorem Ipsum placeholder text**. Lorem Ipsum is commonly used as dummy text in the design and publishing industry to demonstrate layouts before final content is available. The text appears to be **standard Lorem Ipsum**, which is typically a scrambled version of sections from \\\"De Finibus Bonorum et Malorum\\\" (The Extremes of Good and Evil) by Cicero, a 1st-century BC Roman philosopher.\\n\\nKey characteristics of the text:\\n- **Repetitive and nonsensical**: The sentences are grammatically structured but convey no real meaning.\\n- **Structured in paragraphs**: The content is divided into several paragraphs, each containing multiple lines of text.\\n- **Stylistically consistent**: The text maintains a uniform tone and structure throughout, typical of placeholder content used for layout previews.\\n\\n---\\n\\n#### **Visual Layout**\\n- The document appears to be **plain text-based** with no visible images, tables, or complex formatting.\\n- The font used is likely a standard **serif font**, typical for PDF documents.\\n- There are **no headers, footers, page numbers, or additional design elements** visible in the excerpt provided.\\n\\n---\\n\\n#### **Purpose**\\nBased on its content and structure, this PDF seems to serve as a **template or demonstration file**. It is likely used for:\\n- Testing PDF rendering capabilities.\\n- Demonstrating layout designs.\\n- Serving as a placeholder in software or design tools before final content is inserted.\\n\\n---\\n\\n### Summary\\nYou have retrieved a **simple PDF document** titled **\\\"Sample PDF\\\"**. It contains **Lorem Ipsum placeholder text** organized into multiple paragraphs. The document is minimalistic, with no images, tables, or advanced formatting, and is likely intended for **layout demonstration or testing purposes**.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 3514, \"outputTokens\": 442, \"serverToolUsage\": {}, \"totalTokens\": 3956}}"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_native_output_minimax",
+  "request": {
+    "path": "/model/minimax.minimax-m2/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'59a24d52-6514-43d2-9b10-8f62f3e905fb'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "580",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 5622}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"text\": \"I need to answer the user's question about Paris' capital status, including the country and population. I'll provide the city, which is Paris, France, and its population. As of 2023, the population for Paris is approximately 2.1 million within the city proper and over 12 million in the metropolitan area. I want to clarify whether the user prefers the city or metropolitan area population to avoid any ambiguity.\\n\\nIt's best to clarify that Paris has a population of about 2.1 million, and the metropolitan area is over 12 million. I want to avoid using ambiguous terms like \\\"approximately 12.5 million\\\" without specifying numbers. So, I can confidently say around 12.1 million for the metropolitan area as of 2023. I also need to confirm the capital of France is indeed Paris, which is essential. Let's keep it straightforward and concise!\\n\\nI'm focusing on the capital of France, which is Paris. The city's population is about 2.1 million, and the metropolitan area has over 12 million residents. I think I should include this information without unnecessary formatting or disclaimers. They didn't ask for 2023 data specifically, but I'll mention \\\"as of 2023\\\" for clarity. So, I'll present the information in a neat format to make it easy for the user to read\"}}}, {\"text\": \"{\\n\\n\\n  \\\"city\\\": \\\"Paris\\\",\\n  \\\"country\\\": \\\"France\\\",\\n  \\\"population\\\": 2110000\\n}\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 40, \"outputTokens\": 302, \"serverToolUsage\": {}, \"totalTokens\": 342}}"
+  }
+}

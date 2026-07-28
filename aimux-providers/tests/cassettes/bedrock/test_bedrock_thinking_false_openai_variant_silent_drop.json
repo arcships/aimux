@@ -1,0 +1,27 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_thinking_false_openai_variant_silent_drop",
+  "request": {
+    "path": "/model/openai.gpt-oss-120b-1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "content-length": "126",
+      "content-type": "b'application/json'",
+      "user-agent": "b'Boto3/1.42.63 md/Botocore#1.42.63 ua/2.1 os/macos#25.0.0 md/arch#arm64 lang/python#3.12.12 md/pyimpl#CPython m/b,3,D,Z,N cfg/retry-mode#legacy Botocore/1.42.63'",
+      "amz-sdk-invocation-id": "b'255855c1-58f8-45c3-ac5f-76a7d1785e35'",
+      "amz-sdk-request": "b'attempt=1'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "date": "Wed, 13 May 2026 22:52:32 GMT",
+      "via": "1.1 google",
+      "x-amzn-requestid": "696bc8dc-e7a2-4860-a608-18d32ede2018"
+    },
+    "body": ""
+  }
+}

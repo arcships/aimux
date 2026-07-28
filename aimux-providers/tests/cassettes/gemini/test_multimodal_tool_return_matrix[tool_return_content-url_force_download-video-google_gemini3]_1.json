@@ -1,0 +1,86 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url_force_download-video-google_gemini3]_1",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1843",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a video file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "id": "pyd_ai_cc51015ab0104c65b2cd2e9369af2240",
+                "name": "list_files"
+              },
+              "thoughtSignature": "EqAGCp0GAb4-9vsNSThRnUze_kj31eFQf4FxgahWil62Cwwn63_1KOwD8DwHiS9Nykm4e06GCFe5KJmPfHPjV6dVPqILzwXXAJ1jktxsHnuwkoQSUmnd2wt5kOpYP-Skq7vXhkwYmZRgYw5YU-efng8bE6jHFeOLdz9C2dW_iIhVYP9EvhI-fW0uHb-zGuyzMpO3IVADncohM2Ys8rfW5-7_PnbnSi_7gk0-EjM4Y1JPrNlwAJEWgQ-GcAEmAGUe8af3K4SoY3m1Ng8c7hcAERTeKH7FSIMVDzqANsja9BfHx7hov9WTCr7oOWc4PT4bt2af8CVjnwoDLMYzXE1s9a32gQSR2EuuQuxu7OJx3y2iEvmmNP4eNcWCuAlPknWrf_E0VdqksfSjla40JlxczdmkX-la_AaKIVuzqFcSoHh0sMwTrt_CKAsJZpOXEr8ICN8MfLYU0svVLKy0QJg7ch8pF_YPRYxaJKFHThhQRwT9JHzUFoe8B6iYChhZ9tAL63s7MR70bPxqCk2E_x7JV1GsGsEiASahKxo6wB0auJIXTRb58lhBiklEAxolToRnl2WuGM__j1o05dtaoAIIlvLoD4sWnHztLwbTe-prN_NebOT05idQN-SHlIKD9cfCYV3FA_Dr9Ek1BszfwkiBzBT54TlMmSp_GSnfI2JZCvIVL2GG6_eTPS-oqFycApqPmlo-cph5nkQ8McotOI9oAcGObcH02HGr905UmTUZ-uwCK3QdwF1E9WUFm9ueYPm5XG7vNlSj-0JhgO79bNPsxqgJqkCAUEMccv37etvFORfPzrYRyN_ZSSOnjZq1chx9-qjm8csCgwbOaARPJtrwUudwDulb0YXjLR3Ho5geuyB06_Zkb6a1Nly_MbkG0hPUp9wnzIR9wme3I53MdvIWFEgheR-SlfKco6NAItlH9V6HPUUKacRn6VgEcNw-kriTuXfx9m4y0z50rGRCmJgANKDlEN4B73p3SLnYRO9vWWphlnuEdwhbhz9Foe4he80lHRBPKdx467yxh-QSE5Hr31mgNT9vflOOkyHsizND04tLuQM="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_cc51015ab0104c65b2cd2e9369af2240",
+                "name": "list_files",
+                "response": {
+                  "error": "Unknown tool name: 'list_files'. Available tools: 'get_file'\n\nFix the errors and try again."
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=4170",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"name\": \"files/input_file_0.mp4\"}, \"name\": \"get_file\"}, \"thoughtSignature\": \"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\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"woqUaYrsD9Pa-8YPtL-soA0\", \"usageMetadata\": {\"candidatesTokenCount\": 25, \"promptTokenCount\": 284, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 284}], \"thoughtsTokenCount\": 466, \"totalTokenCount\": 775}}"
+  }
+}

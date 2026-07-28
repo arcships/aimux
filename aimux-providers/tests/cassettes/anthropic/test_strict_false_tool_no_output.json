@@ -1,0 +1,68 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_strict_false_tool_no_output",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "408",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "How far is Madrid from Lisbon?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "city_a": {
+                "type": "string"
+              },
+              "city_b": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city_a",
+              "city_b"
+            ],
+            "type": "object"
+          },
+          "name": "calculate_distance"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "retry-after": "43",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"content\": [{\"id\": \"toolu_01Sf98HFxwykzZEhZBc3EKAt\", \"input\": {\"city_a\": \"Madrid\", \"city_b\": \"Lisbon\"}, \"name\": \"calculate_distance\", \"type\": \"tool_use\"}], \"id\": \"msg_01DNqTmhJ3jnMeQssMABXEZz\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"input_tokens\": 583, \"output_tokens\": 76, \"service_tier\": \"standard\"}}"
+  }
+}

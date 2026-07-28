@@ -1,0 +1,22 @@
+{
+  "source": "rig (MIT)",
+  "provider": "anthropic",
+  "scenario": "messages_document_file_id_roundtrip_live_4",
+  "request": {
+    "path": "/v1/files/file_REDACTED_1",
+    "method": "DELETE",
+    "headers": {
+      "accept": "*/*",
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "files-api-2025-04-14"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"id\":\"file_REDACTED_1\",\"type\":\"file_deleted\"}"
+  }
+}

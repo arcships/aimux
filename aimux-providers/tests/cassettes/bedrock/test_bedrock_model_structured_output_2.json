@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_structured_output_2",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'640025de-8ca6-42ec-a0c2-3692ade73268'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "2145",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 468}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {\"city\": \"London\", \"date\": \"2022-01-01\", \"temperature\": \"30\\u00b0C\"}, \"name\": \"final_result\", \"toolUseId\": \"tooluse_qVHAm8Q9QMGoJRkk06_TVA\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"inputTokens\": 821, \"outputTokens\": 31, \"serverToolUsage\": {}, \"totalTokens\": 852}}"
+  }
+}

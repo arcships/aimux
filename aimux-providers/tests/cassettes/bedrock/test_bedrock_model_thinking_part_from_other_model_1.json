@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_thinking_part_from_other_model_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-20250514-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'8f124029-7b5c-4a07-b3ad-11a096b386a2'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "5581",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 13879}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"signature\": \"Es4FCkgIBxABGAIqQMN4sFOn9Em/PepMCcKcz9OouVipCu3IvqdO2Gsiq1ibYVMxahaPn0ryu9fbV9emOP2O6XErfQJJah6OBdhrAQESDGqy6kCYCVr9ri5vaBoMxjWO09J27hfH47DaIjBeYviRqLR2DfclmjTr4HNF02SJq38kzzlnAJtCdsh4RS4gOveNrT5iusOY21uFIJEqswQEE40C7XRcN8xinDMOTPGde3SxMwuPlqfqVOhRq8lILofb0DhCrrRVqkQmrEgNHmAEr4DaP8M39vghUZQXSZWfDDmIL14P5VpntR8uv+DDYlB/5gKdTd8U5FR721QIyKHCteEpUAmJ82OgMsobIrmOq+t/9am9NbmI+rhBpoOhABI6sTa/Gb0izVym2LFvmrWREyhKZGcSQbQd2z/QXctsXE5FXmbwg8fKv+Li1EKaEv9LOAJAqHVu1EGUcUJKgA8Ky1rCmSAHDXrnE9JAubZC6yO7tUSge6VOxJeJwdaW2EJzMPMTbjEEoXArUxOLM9Jy4t+PZv4YuzGnyH0VL5trTuZVZ9Mseylk7c4rBh36fJykB6KJxfml6UAPa4+uEczXRjNk3uaHiYs/QRFKo8F/sNaLWnf3+BnZ6vOCdM7/Egu6YJhemGQrreA/PSnXoI+2LStFgFfR/u9a9J0FW26TCBzTQjRd3cvpqaunRri0xdF8lYBiYjehSCcVvEbXqRe0cWGUm8T9ad0z1TB6VdF8fmtMKlusFEKshD3OVJCE+fX7l7nPbUt5PgNN/YLmI57X+pSM9SqexhkTyGRCsOZvaxxeqlZzeb35qQLSmZdIXMf6hfRrlPWzK2jLA6Ci31t4EGhgXbDqnHqveBY1KksIbE2zDLV3LSNNr9I4pojyRNU2d+04hWS1/ubr2TMP6Ge0OI+S2l7WPvGeAYq2AO+I/e3JGSdUnVqCVj7KLOpIEKNSiRgB\", \"text\": \"The user is asking about crossing a river, using the street crossing analogy. This is an interesting question that could have both literal and metaphorical interpretations, but I think they're asking literally about how to safely cross a river, drawing parallels to the systematic safety approach I gave for crossing streets.\\n\\nI should provide practical advice about river crossing safety, which is quite different from street crossing but can follow some similar principles like assessing conditions, finding the safest route, and being prepared.\"}}}, {\"text\": \"Great analogy! Here's how to safely cross a river, following similar safety principles:\\n\\n**Before attempting:**\\n- **Find the safest crossing point** - Look for shallow, wide areas with slower current, like a bend or where the river spreads out. Avoid narrow, deep sections.\\n- **Assess conditions** - Check water depth, current speed, and weather. Never cross during floods or storms.\\n- **Look for established crossings** - Bridges, fords, or ferry services are always safer than improvising.\\n\\n**If you must wade across:**\\n- **Stop and plan** - Just like stopping at the curb, pause to read the water and plan your route.\\n- **Use a stick or pole** for balance and to test depth ahead of you.\\n- **Face upstream** and move diagonally downstream while crossing - fighting the current directly is exhausting.\\n- **Go slowly and deliberately** - Test each step, keep three points of contact.\\n- **Stay low** - Bend your knees for better balance and lower center of gravity.\\n- **Cross as a group** if possible - link arms with others for stability.\\n\\n**Safety gear:**\\n- Life jacket if available\\n- Rope for emergency\\n- Waterproof bag for essentials\\n- Quick-dry clothing\\n\\n**Know when NOT to cross:**\\n- If water is above your knees\\n- If you can't see the bottom\\n- If current is too strong to stand easily\\n- If water temperature is very cold\\n\\n**Alternative \\\"bridges\\\":**\\n- Fallen logs (test stability first)\\n- Rock hopping in shallow areas\\n- Established boat crossings or ferries\\n\\nThe key parallel is: just like with streets, preparation and choosing the right crossing point makes all the difference!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 1241, \"outputTokens\": 495, \"totalTokens\": 1736}}"
+  }
+}

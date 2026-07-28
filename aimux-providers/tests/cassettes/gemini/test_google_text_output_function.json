@@ -1,0 +1,54 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_text_output_function",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "331",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the largest city in the user country? Use the get_user_country tool and then your own world knowledge."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {},
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_user_country",
+              "parameters": {
+                "properties": {},
+                "type": "OBJECT"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=5967",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_user_country\"}}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"models/gemini-2.5-pro\", \"responseId\": \"NVteaJuxIuikkdUP1L_2sAY\", \"usageMetadata\": {\"candidatesTokenCount\": 12, \"promptTokenCount\": 49, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 49}], \"thoughtsTokenCount\": 264, \"totalTokenCount\": 325}}"
+  }
+}

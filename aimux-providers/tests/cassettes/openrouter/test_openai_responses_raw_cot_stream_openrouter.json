@@ -1,0 +1,40 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openrouter",
+  "scenario": "test_openai_responses_raw_cot_stream_openrouter",
+  "request": {
+    "path": "/api/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "95",
+      "content-type": "application/json",
+      "host": "openrouter.ai"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is 2+2?",
+          "role": "user"
+        }
+      ],
+      "model": "openai/gpt-oss-20b",
+      "stream": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream",
+      "permissions-policy": "payment=(self \"https://checkout.stripe.com\" \"https://connect-js.stripe.com\" \"https://js.stripe.com\" \"https://*.js.stripe.com\" \"https://hooks.stripe.com\")",
+      "referrer-policy": "no-referrer, strict-origin-when-cross-origin",
+      "vary": "Accept-Encoding"
+    },
+    "body": ""
+  }
+}

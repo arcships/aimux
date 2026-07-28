@@ -1,0 +1,57 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_multimodal_tool_return_matrix[direct-uploaded_file-image-openai_responses]",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "409",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "Use the get_file tool now to retrieve a image file, then describe what you received.",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5-mini",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_file",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-expose-headers": "CF-Ray",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "1877",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1781030184, \"created_at\": 1781030183, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_07fb6c700c679e0b006a285d272e90819ebfa4747eb4c35af4\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-mini-2025-08-07\", \"moderation\": null, \"object\": \"response\", \"output\": [{\"content\": [], \"encrypted_content\": \"gAAAAABqKF0pjha6OxJ5iwy_dW6fdklzLPkXhSzgPh-D6Qtxj9naohj5nJlgdBCbkmyGvReiQ2X1YWH9pr8jy8PwcnlHsj_FQsdBD6BISYN6tewf74Sembec0ewXr-4me4HkJb5YxvUyJGT7x-vDdHj6UkSTfY8prwRwTNOljowVbLkKfWq9FAtRGGfFeL8rfSvhn0GdUbKIayJqebRL5bk9sdWBW6gQ2JDnkRR9HP5vc7Fh2BbrgwuUl1KejAXFTehI9LWy6JMwyaF1QiVZUodklq-qPaBxqc2_VpCVCorumd31R8ZWQkmOag6hgZtDQQFhOrervJcCijM7BREYuFadADyQlRpJAVRDi4uwTLuI7CimYiFbucS42IyS9e1l4jDOxru1VeuTCzseGyhInqXCfUL3tQ2iK0fMQjmMsSKHtcUk2C5Q85smshwcJyerry2qEIVSblQeQh7HlRVZVFANOUzOJeC1YsEzNgjE0tt5_jQKycyfQl2Y3WtjvAGqkEUOkA_FVKQAhuNVUmYaJG1D0HCLIqtAAcDr-zWuVuVdGXuq5RhmFJAq_nIuR9a6X_iCGkwycXZjuWYsyQaGFrlV7jzpvRa4kTuF62EDT5T8K7f3qavCWCyASFutWF_NT148mVnjOxcS8BmpYKzfZBxAz8J8ppoqH6-u5pAVm744ZbOdEEMdLjCK7NmNcUvNIRWd7W5I0XTPYMA1NbFMurhol3czTRLGg-blSSLmuV8MZwQh2uc7jsrepn-CkcUAv83AVDx41XGvjPzdTVbBblzmfFfQxfLWhiFs8TwAtHSz5AiCfOGZAr80-R2H_LvoBFp1dQy2G4pY0C7QxbWesoPgE4az008ZqZXH6V2kpcDM4gc_8gmCH-fMU-OUC92AmANxrXs3w3JWucXJTXtEZHWBszcdze5BbRfGxqXxBtb3spfZOTNoG04Asx4cdB57oD3KEJpumMqsPdwulc2_zcJRmR8lILFFhKiN77zuWt7LDY8hNMp6kWbm4C7y2fKvtld-9cmbQNrTOv_vsfENXRkvXN7-8xY1j-fTlHd0Mu326rccxf0y81WXpX_rEfX4KSvTQQQqclHdf2xuyLikpnsyNvcqYFu4lmwnIKL5DdDK1ZNRyO39WqXE20ri1w5oq9-97f6oFQbfPtm0CYsJBrmaOXRGqV1eIMMuJEhGNguG4_ZpNG-sn85K8bCGFu6RDiW5iUKWoEEDpBpUQA0iW3cglSGUCWemhDGgqtBhNVvzcSZIui-t5PJOpVmjBTPyN-TMjmycXoKB5YK9qymmN-2Xofg-S7H56SAqP_46h41qPe45gn4dZyI17Rw9AzR_eVA6Nw0_cH4aRiMwqvF6OW4cyfREYtCH7g2VYzXO_DOyhpmP3oCP-Fb1UPuGDTLsDWp6sQu3ZfJKXNjceM8fAUAWGQwQW1RNMSwlnHbENi3CK1jCAVsgZ0K7r07y-7oXYpQh9PezCPgUNM8bq8KhCIVqvRaVsy5T1Zk78j1f_CO8J9Oi3V_c1VW2bHfETFeegd7xO1M_fjrEpz7D2plqASUoReZxyGyqAg==\", \"id\": \"rs_07fb6c700c679e0b006a285d27d7c4819ebb375614ce1d2b6a\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_LnP8E5XLOOXYQzUbJHIBKlE2\", \"id\": \"fc_07fb6c700c679e0b006a285d28dae0819ea0739ed14b3b3ed5\", \"name\": \"get_file\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": \"in_memory\", \"reasoning\": {\"context\": \"current_turn\", \"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_file\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 47, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 109, \"output_tokens_details\": {\"reasoning_tokens\": 64}, \"total_tokens\": 156}, \"user\": null}"
+  }
+}

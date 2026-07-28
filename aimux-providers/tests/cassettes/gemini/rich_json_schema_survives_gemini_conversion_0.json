@@ -1,0 +1,95 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "rich_json_schema_survives_gemini_conversion_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Plan a trip for 2 travellers to Lyon by train, passing through Dijon and then Macon, no notes.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a travel planner. You must use the plan_trip tool to plan trips, then confirm the booking to the user.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Plan a trip itinerary.",
+              "name": "plan_trip",
+              "parameters": {
+                "properties": {
+                  "destination": {
+                    "description": "Destination city",
+                    "type": "string"
+                  },
+                  "notes": {
+                    "description": "Optional free-form notes",
+                    "type": "string"
+                  },
+                  "transport": {
+                    "description": "Mode of transport",
+                    "enum": [
+                      "train",
+                      "car",
+                      "plane"
+                    ],
+                    "type": "string"
+                  },
+                  "travellers": {
+                    "description": "Number of travellers",
+                    "type": "integer"
+                  },
+                  "waypoints": {
+                    "description": "Cities to pass through, in order",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "destination",
+                  "travellers",
+                  "transport",
+                  "waypoints"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"destination\":\"Lyon\",\"notes\":null,\"transport\":\"train\",\"travellers\":2,\"waypoints\":[\"Dijon\",\"Macon\"]},\"name\":\"plan_trip\"},\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"finishMessage\":\"Model generated function call(s).\",\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":40,\"promptTokenCount\":162,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":162}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":110,\"totalTokenCount\":312}}"
+  }
+}

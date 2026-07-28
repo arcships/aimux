@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_media_kind_delivered_in_tool_result[meta_document]_1",
+  "request": {
+    "path": "/model/us.meta.llama4-maverick-17b-instruct-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'be661768-3de5-4f3b-ba97-bfc9af224671'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "18348",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 571}, \"output\": {\"message\": {\"content\": [{\"text\": \"The `get_file` tool was called and returned a dummy PDF file.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 208, \"outputTokens\": 16, \"serverToolUsage\": {}, \"totalTokens\": 224}}"
+  }
+}

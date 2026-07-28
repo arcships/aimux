@@ -1,0 +1,38 @@
+{
+  "source": "derived from openai (MIT) — thin wrapper",
+  "provider": "moonshotai",
+  "scenario": "thin_wrapper_nonstream",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Return exactly the requested text as plain text with no bullets, quotes, or extra commentary.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "Reply with exactly two short lines and nothing else. First line: cedar. Second line: maple.",
+          "role": "user"
+        }
+      ],
+      "model": "moonshot-v1-8k"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"annotations\":[],\"content\":\"cedar  \\nmaple\",\"refusal\":null,\"role\":\"assistant\"}}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"gpt-4o-2024-08-06\",\"object\":\"chat.completion\",\"service_tier\":\"default\",\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_tokens\":5,\"completion_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0},\"prompt_tokens\":49,\"prompt_tokens_details\":{\"audio_tokens\":0,\"cached_tokens\":0},\"total_tokens\":54}}"
+  }
+}

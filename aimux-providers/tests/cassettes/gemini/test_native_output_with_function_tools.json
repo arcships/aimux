@@ -1,0 +1,76 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_native_output_with_function_tools",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "554",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the largest city in the user country?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseJsonSchema": {
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city",
+            "country"
+          ],
+          "title": "CityLocation",
+          "type": "object"
+        },
+        "responseMimeType": "application/json",
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_user_country",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1295",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"id\": \"w71i0cbt\", \"name\": \"get_user_country\"}, \"thoughtSignature\": \"Es0DCsoDAQw51sf4ceGEX2Y8/rpMeG6cdLuYkNMby8I4y/ZkN+Vblkw8fRaWFN9Jf682+NRuWI5DKFLlNOsiNIapxOgUCMsYEtMQ/Tpm2bBuwt+XOhGqdgtUM5+DS0VGVVrMGoFVH+sz7CGgD5eRI+nBl+H3QWSF5mPnv04C7cTUeTnX48lLa0k4GyUKmkTrVM4SqMH/QWDzofWNDdqUowCxOUC3ZeDI3oRPDAug7hty20a6LJurfPQ1KAO8F9GqfRlGHHJv9iS8TwOlJ/LZMzeQpsV65b28Jr39WeEICcF+Vgn6C1KfYGsuqHMHmsY/+nquhxmESdQc3gNT2I+XwMtLHAyc/TYBPOkAr6E7LH67HnC9pFwUA9NwIt63qIQO3jlpllvdsF7Pn3xSa3OA4LRY5mP3rGb49tSLpSGiZwN0oT55wI2oBa4d2j+5L3NcLIEe+GpBpfKKXghA2j+nGwhkvltXI9jQEABZ70co8EQPGOGIhHzpKVDErNztUdw27Jh1JrgFDawnbt9O6OF8vRorLLyMvDjs3ioFPVu31aiS0uop2srOUl0y4huaxXJ+6B0Sx1FOaF7DwTNsParp79IQwdZkVNfzA6HJB9AzYnQ=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"wlP6af6uB-rBz7IP3s-7kAc\", \"usageMetadata\": {\"candidatesTokenCount\": 12, \"promptTokenCount\": 29, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 29}], \"thoughtsTokenCount\": 102, \"totalTokenCount\": 143}}"
+  }
+}

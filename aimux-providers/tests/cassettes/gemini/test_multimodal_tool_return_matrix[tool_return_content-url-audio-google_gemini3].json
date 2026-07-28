@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-audio-google_gemini3]",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "370",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a audio file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=3576",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"list_files\"}, \"thoughtSignature\": \"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\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"ouKTaZuJMN2Gz7IPwfHRuQc\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 36, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 36}], \"thoughtsTokenCount\": 465, \"totalTokenCount\": 511}}"
+  }
+}

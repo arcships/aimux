@@ -1,0 +1,41 @@
+{
+  "source": "rig (MIT)",
+  "provider": "openrouter",
+  "scenario": "provider_selection_scenarios_2",
+  "request": {
+    "path": "/api/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are a helpful assistant.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "french hello",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek/deepseek-v3.2",
+      "provider": {
+        "sort": "latency"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null,\"message\":{\"content\":\"Bonjour !  \\nComment puis-je vous aider aujourd'hui ? 😊\",\"reasoning\":null,\"refusal\":null,\"role\":\"assistant\"},\"native_finish_reason\":\"stop\"}],\"created\":0,\"id\":\"chatcmpl-REDACTED_3\",\"model\":\"deepseek/deepseek-v3.2-20251201\",\"object\":\"chat.completion\",\"provider\":\"Friendli\",\"service_tier\":null,\"system_fingerprint\":null,\"usage\":{\"completion_tokens\":15,\"completion_tokens_details\":{\"audio_tokens\":0,\"image_tokens\":0,\"reasoning_tokens\":0},\"cost\":0.000035,\"cost_details\":{\"upstream_inference_completions_cost\":0.0000225,\"upstream_inference_cost\":0.000035,\"upstream_inference_prompt_cost\":0.0000125},\"is_byok\":false,\"prompt_tokens\":25,\"prompt_tokens_details\":{\"audio_tokens\":0,\"cache_write_tokens\":0,\"cached_tokens\":0,\"video_tokens\":0},\"total_tokens\":40}}"
+  }
+}

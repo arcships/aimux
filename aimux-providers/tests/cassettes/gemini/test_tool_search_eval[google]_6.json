@@ -1,0 +1,91 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_tool_search_eval[google]_6",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1304",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Translate 'hello, how are you?' to French."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "AUTO"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Get the current weather for a city.",
+              "name": "get_weather",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
+              "name": "search_tools",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "queries": {
+                    "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "queries"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1719",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"\\\"Hello, how are you?\\\" can be translated into French in a few ways depending on the level of formality:\\n\\n*   **Formal (or to a group):** \\\"Bonjour, comment allez-vous ?\\\"\\n*   **Informal (to a friend):** \\\"Salut, comment vas-tu ?\\\"\\n*   **Casual/Common:** \\\"Salut, \\u00e7a va ?\\\"\", \"thoughtSignature\": \"EssECsgEAQw51sds6GQ5/C4MGBPDcu+7EG29uDZJ3fSES/LOCfCcR0t0HUihhP8Z7ZQ3+IonX52K4ISluAO2OKQMRJ6cUqv0ROVGaLh9y/kuyMaZl8gef0/hx9oo8OdaYZtKhXFQQedTMGdhDoG5vdzpurDKm7uxGk4gk5F+WRWu/0mdRqJVBfNXnb20OB7vvNjubff1OM/1N0UKMXp9d4n6/1k7WDvD3k0SQXfyUHFCb64u8E1R2h4ZEX+HLt3dUr4KtFAStO5O6pPlONMURi7lwte5fBYThtTaq7qZqU8UDA5TyhdAmS2H1AYs6clRoROd2siyC5yzx2ZxzpmjFTSOKswQkj+X8wOf+bEtd0Wrh1ukrGigkjxq/f6Z7NS9jAI96PqXGvXUdaM3g0T1qEYYijxX5sEDFc2T9ZKTrF7f4iM3XM5JXUrfAs7j7nNV2Xp8CIlD1NkNUN0gYoCbHpDbfxsETkWEiwRkIYhnpWSKs00ZrYHE2qI3gWx0ESImX2eM8QpYh3EpkRs8DItUQgsXbQgbQvxrazJmP8luYQJOeBblDhgTBxzqQ4Bqob7HzEwbPk0W980N8aVW3ieh+SwvOGlZ9zF3YmPtXFZkqMC9PiAec8wuU04dcYkOSk9PtCREbOQ5MAk40uhAqD3BV7vcklxTUA4IVn5SmuWi3z612Jjt8dbXCOgHQVLwZ32ZLsxS8E5p1womfjLMaE6CCYsong9OW+l8KcvK2xME+L+5g2xOXTiejAnPWMbFkMLvgY7Lp8dfwk8jtnGjjzc=\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"oL0DatfED7uKqtsP_ZrRwAE\", \"usageMetadata\": {\"candidatesTokenCount\": 77, \"promptTokenCount\": 220, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 220}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 153, \"totalTokenCount\": 450}}"
+  }
+}

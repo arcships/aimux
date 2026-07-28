@@ -1,0 +1,69 @@
+{
+  "source": "rig (MIT)",
+  "provider": "groq",
+  "scenario": "parallel_tool_calls_single_turn_streaming_0",
+  "request": {
+    "path": "/openai/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "You are a precise assistant. When tools are available, you must use them instead of guessing. Call both `lookup_harbor_label` and `lookup_orchard_label` before writing any normal text. Never call the same tool twice once you already have its result.",
+              "type": "text"
+            }
+          ],
+          "role": "system"
+        },
+        {
+          "content": "Call `lookup_harbor_label` and `lookup_orchard_label` exactly once each before answering. After both tool results are available, stop calling tools and respond in one short sentence that includes both exact tool outputs.",
+          "role": "user"
+        }
+      ],
+      "model": "llama-3.3-70b-versatile",
+      "parallel_tool_calls": true,
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tools": [
+        {
+          "function": {
+            "description": "Return the alpha signal marker.",
+            "name": "lookup_harbor_label",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        },
+        {
+          "function": {
+            "description": "Return the beta signal marker.",
+            "name": "lookup_orchard_label",
+            "parameters": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"choices\":[{\"delta\":{\"content\":null,\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"llama-3.3-70b-versatile\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"fp_REDACTED_1\",\"x_groq\":{\"id\":\"req_REDACTED_1\",\"seed\":1150097355}}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"null\",\"name\":\"lookup_harbor_label\"},\"id\":\"call_REDACTED_1\",\"index\":0,\"type\":\"function\"}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"llama-3.3-70b-versatile\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"null\",\"name\":\"lookup_orchard_label\"},\"id\":\"call_REDACTED_2\",\"index\":1,\"type\":\"function\"}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"llama-3.3-70b-versatile\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"fp_REDACTED_1\"}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null}],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"llama-3.3-70b-versatile\",\"object\":\"chat.completion.chunk\",\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_time\":0.091978111,\"completion_tokens\":35,\"prompt_time\":0.021670855,\"prompt_tokens\":359,\"queue_time\":0.175070297,\"total_time\":0.113648966,\"total_tokens\":394},\"x_groq\":{\"id\":\"req_REDACTED_1\",\"usage\":{\"completion_time\":0.091978111,\"completion_tokens\":35,\"prompt_time\":0.021670855,\"prompt_tokens\":359,\"queue_time\":0.175070297,\"total_time\":0.113648966,\"total_tokens\":394}}}\n\ndata: {\"choices\":[],\"created\":0,\"id\":\"chatcmpl-REDACTED_1\",\"model\":\"llama-3.3-70b-versatile\",\"object\":\"chat.completion.chunk\",\"service_tier\":\"on_demand\",\"system_fingerprint\":\"fp_REDACTED_1\",\"usage\":{\"completion_time\":0.091978111,\"completion_tokens\":35,\"prompt_time\":0.021670855,\"prompt_tokens\":359,\"queue_time\":0.175070297,\"total_time\":0.113648966,\"total_tokens\":394}}\n\ndata: [DONE]\n\n"
+  }
+}

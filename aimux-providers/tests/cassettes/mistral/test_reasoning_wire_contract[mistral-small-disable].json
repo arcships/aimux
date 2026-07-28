@@ -1,0 +1,42 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "mistral",
+  "scenario": "test_reasoning_wire_contract[mistral-small-disable]",
+  "request": {
+    "path": "/v1/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "187",
+      "content-type": "application/json",
+      "host": "api.mistral.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 2+2? Reply with just the number.",
+          "role": "user"
+        }
+      ],
+      "model": "mistral-small-latest",
+      "n": 1,
+      "reasoning_effort": "none",
+      "stream": false,
+      "top_p": 1.0
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "mistral-correlation-id": "019f7ef0-7de3-7f3c-b206-72ab6035b66d",
+      "strict-transport-security": "max-age=15552000; includeSubDomains; preload"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"4\", \"role\": \"assistant\", \"tool_calls\": null}}], \"created\": 1784541117, \"id\": \"a291ec8830634e2d860041e1db70516b\", \"model\": \"mistral-small-latest\", \"object\": \"chat.completion\", \"usage\": {\"completion_tokens\": 2, \"prompt_tokens\": 28, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 30}}"
+  }
+}

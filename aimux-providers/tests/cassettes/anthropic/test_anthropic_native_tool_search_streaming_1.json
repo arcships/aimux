@@ -1,0 +1,153 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_native_tool_search_streaming_1",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1862",
+      "content-type": "application/json",
+      "cookie": "_cfuvid=ZVRPY4bieT3f6Wbvvvd0Z6rZTHoeovxaCetrSIzL7Gc-1777591288.755355-1.0.1.1-9Pd.dngFYqxWoHI59rJ0AEj0hihv.VY.Xkgp1ZNvvw0",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is the current USD to EUR exchange rate?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "Let me search for a tool that can provide current exchange rate information.",
+              "type": "text"
+            },
+            {
+              "id": "srvtoolu_01S5swZdBmTzLDVzwcT5LbHp",
+              "input": {
+                "query": "USD EUR exchange rate currency conversion"
+              },
+              "name": "tool_search_tool_bm25",
+              "type": "server_tool_use"
+            },
+            {
+              "content": {
+                "tool_references": [
+                  {
+                    "tool_name": "get_exchange_rate",
+                    "type": "tool_reference"
+                  }
+                ],
+                "type": "tool_search_tool_search_result"
+              },
+              "tool_use_id": "srvtoolu_01S5swZdBmTzLDVzwcT5LbHp",
+              "type": "tool_search_tool_result"
+            },
+            {
+              "text": "I found the right tool! Let me fetch the current USD to EUR exchange rate for you.",
+              "type": "text"
+            },
+            {
+              "id": "toolu_01EFn5wTNBYA8Reni8rbmnHT",
+              "input": {
+                "from_currency": "USD",
+                "to_currency": "EUR"
+              },
+              "name": "get_exchange_rate",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "1 USD = 0.92 EUR",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "toolu_01EFn5wTNBYA8Reni8rbmnHT",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-6",
+      "stream": true,
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "defer_loading": true,
+          "description": "Look up the current exchange rate between two currencies.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "from_currency": {
+                "type": "string"
+              },
+              "to_currency": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "from_currency",
+              "to_currency"
+            ],
+            "type": "object"
+          },
+          "name": "get_exchange_rate"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up stock price by ticker symbol.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "symbol": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "symbol"
+            ],
+            "type": "object"
+          },
+          "name": "stock_lookup"
+        },
+        {
+          "name": "tool_search_tool_bm25",
+          "type": "tool_search_tool_bm25_20251119"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "text/event-stream; charset=utf-8",
+      "server-timing": "x-originResponse;dur=940",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "vary": "Accept-Encoding"
+    },
+    "body": ""
+  }
+}

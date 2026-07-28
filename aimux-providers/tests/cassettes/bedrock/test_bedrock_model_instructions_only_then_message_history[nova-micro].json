@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_instructions_only_then_message_history[nova-micro]",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'd54f66bd-49d9-4c05-80ac-baf04ea30e1d'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "135",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 450}, \"output\": {\"message\": {\"content\": [{\"text\": \"Hello! How can I assist you today?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 7, \"outputTokens\": 10, \"serverToolUsage\": {}, \"totalTokens\": 17}}"
+  }
+}

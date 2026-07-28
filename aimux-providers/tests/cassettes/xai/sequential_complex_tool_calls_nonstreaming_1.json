@@ -1,0 +1,163 @@
+{
+  "source": "rig (MIT)",
+  "provider": "xai",
+  "scenario": "sequential_complex_tool_calls_nonstreaming_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "You are a deterministic xAI tool orchestration test harness. Use the tools instead of inventing values. For the production-readiness scenario, call exactly one tool at a time in this order: 1. ping_empty with an empty JSON object. 2. inspect_manifest with project rig-xai, flags critical=true and retries=2, steps plan weight=1 and verify weight=2, and the exact note from the user. 3. join_labels with labels [north, beta gamma, quote:\"delta\", slash\\path] and separator |. 4. escape_echo with the exact escaped text from the user. After all tool results are available, answer in one short sentence that includes EMPTY-OK, MANIFEST-OK, LABELS-OK, and ESCAPE-OK.",
+          "role": "system",
+          "type": "message"
+        },
+        {
+          "content": "Run the production-readiness scenario. The manifest note is `line one; line two says \"hello\" and path C:\\rig\\xai`. The escaped text is `Line 1\nLine \"2\" with backslash \\ and unicode snowman ☃`.",
+          "role": "user",
+          "type": "message"
+        },
+        {
+          "id": "rs_REDACTED_1",
+          "summary": [
+            {
+              "text": "The task is: \"Run the production-readiness scenario. The manifest note is `line one; line two says \"hello\" and path C:\\rig\\xai`. The escaped text is `Line 1",
+              "type": "summary_text"
+            }
+          ],
+          "type": "reasoning"
+        },
+        {
+          "arguments": "{}",
+          "call_id": "call_REDACTED_1",
+          "name": "ping_empty",
+          "type": "function_call"
+        },
+        {
+          "call_id": "call_REDACTED_1",
+          "output": "EMPTY-OK",
+          "type": "function_call_output"
+        }
+      ],
+      "model": "grok-4.3",
+      "parallel_tool_calls": false,
+      "tools": [
+        {
+          "description": "Return EMPTY-OK. This tool takes no arguments.",
+          "name": "ping_empty",
+          "parameters": {
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "Validate a nested deployment manifest.",
+          "name": "inspect_manifest",
+          "parameters": {
+            "properties": {
+              "flags": {
+                "properties": {
+                  "critical": {
+                    "type": "boolean"
+                  },
+                  "retries": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "critical",
+                  "retries"
+                ],
+                "type": "object"
+              },
+              "note": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              },
+              "steps": {
+                "items": {
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "weight": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "weight"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "project",
+              "flags",
+              "steps",
+              "note"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "Join label strings with the requested separator.",
+          "name": "join_labels",
+          "parameters": {
+            "properties": {
+              "labels": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "separator": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "labels",
+              "separator"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        },
+        {
+          "description": "Echo a string containing escaping-sensitive characters.",
+          "name": "escape_echo",
+          "parameters": {
+            "properties": {
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "{\"background\":false,\"completed_at\":0,\"created_at\":0,\"error\":null,\"frequency_penalty\":0.0,\"id\":\"resp_REDACTED_2\",\"incomplete_details\":null,\"instructions\":null,\"max_output_tokens\":null,\"max_tool_calls\":null,\"metadata\":{\"system_fingerprint\":\"fp_REDACTED_1\"},\"model\":\"grok-4.3\",\"object\":\"response\",\"output\":[{\"id\":\"rs_REDACTED_2\",\"status\":\"completed\",\"summary\":[{\"text\":\"The instruction is: For the production-readiness scenario, call exactly one tool at a time in this order: 1. ping_empty with an empty JSON object. 2. inspect_manifest with project rig-xai, flags criti...\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"},{\"arguments\":\"{\\\"project\\\":\\\"rig-xai\\\",\\\"flags\\\":{\\\"critical\\\":true,\\\"retries\\\":2},\\\"steps\\\":[{\\\"name\\\":\\\"plan\\\",\\\"weight\\\":1},{\\\"name\\\":\\\"verify\\\",\\\"weight\\\":2}],\\\"note\\\":\\\"line one; line two says \\\\\\\"hello\\\\\\\" and path C:\\\\\\\\rig\\\\\\\\xai\\\"}\",\"call_id\":\"call_REDACTED_2\",\"id\":\"fc_REDACTED_2\",\"name\":\"inspect_manifest\",\"status\":\"completed\",\"type\":\"function_call\"}],\"parallel_tool_calls\":false,\"presence_penalty\":0.0,\"previous_response_id\":null,\"prompt_cache_key\":null,\"reasoning\":{\"effort\":\"low\",\"summary\":\"detailed\"},\"safety_identifier\":null,\"service_tier\":\"default\",\"status\":\"completed\",\"store\":true,\"temperature\":0.7,\"text\":{\"format\":{\"type\":\"text\"}},\"tool_choice\":\"auto\",\"tools\":[{\"description\":\"Return EMPTY-OK. This tool takes no arguments.\",\"name\":\"ping_empty\",\"parameters\":{\"properties\":{},\"required\":[],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"},{\"description\":\"Validate a nested deployment manifest.\",\"name\":\"inspect_manifest\",\"parameters\":{\"properties\":{\"flags\":{\"properties\":{\"critical\":{\"type\":\"boolean\"},\"retries\":{\"type\":\"integer\"}},\"required\":[\"critical\",\"retries\"],\"type\":\"object\"},\"note\":{\"type\":\"string\"},\"project\":{\"type\":\"string\"},\"steps\":{\"items\":{\"properties\":{\"name\":{\"type\":\"string\"},\"weight\":{\"type\":\"integer\"}},\"required\":[\"name\",\"weight\"],\"type\":\"object\"},\"type\":\"array\"}},\"required\":[\"project\",\"flags\",\"steps\",\"note\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"},{\"description\":\"Join label strings with the requested separator.\",\"name\":\"join_labels\",\"parameters\":{\"properties\":{\"labels\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"separator\":{\"type\":\"string\"}},\"required\":[\"labels\",\"separator\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"},{\"description\":\"Echo a string containing escaping-sensitive characters.\",\"name\":\"escape_echo\",\"parameters\":{\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"],\"type\":\"object\"},\"strict\":false,\"type\":\"function\"}],\"top_logprobs\":0,\"top_p\":0.95,\"truncation\":\"disabled\",\"usage\":{\"context_details\":{\"input_tokens\":712,\"output_tokens\":345},\"cost_in_usd_ticks\":10805000,\"input_tokens\":712,\"input_tokens_details\":{\"cached_tokens\":640},\"num_server_side_tools_used\":0,\"num_sources_used\":0,\"output_tokens\":345,\"output_tokens_details\":{\"reasoning_tokens\":267},\"total_tokens\":1057},\"user\":null}"
+  }
+}

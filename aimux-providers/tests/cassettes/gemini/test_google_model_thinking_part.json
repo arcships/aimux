@@ -1,0 +1,70 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_thinking_part",
+  "request": {
+    "path": "/v1beta/models/gemini-3-pro-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "447",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "How do I cross the street?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ],
+        "thinkingConfig": {
+          "include_thoughts": true
+        }
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful assistant."
+          }
+        ],
+        "role": "user"
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "dummy",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=19175",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"**A Safe Street-Crossing Guide: My Thought Process**\\n\\nAlright, let's break this down. My goal is to craft a guide on safe street crossing. I need to be comprehensive, clear, and universally applicable, but I've got to consider regional differences.\\n\\nFirst, I identify the core principles: **visibility, awareness, rules, and patience**. These are the pillars of pedestrian safety. I'll need to structure the guide logically: introduce the importance of safety, then detail the step-by-step process of finding a safe spot, the \\\"Stop, Look, Listen\\\" routine, interpreting signals, crossing without signals, and addressing special scenarios.\\n\\nMy initial drafting starts with the universally recognized \\\"Stop, Look, Listen\\\" mantra. I'll explain where the best places to cross are \\u2013 crosswalks, intersections, away from obstructions \\u2013 and the basic procedure: stop at the curb, then look left-right-left (or right-left-right for countries with left-hand traffic, I'll specify that), and listen for traffic. Eye contact with drivers is key.\\n\\nFor traffic signals, I'll explain what the \\\"Walk\\\" and \\\"Don't Walk\\\" signs mean, and how to deal with flashing signals. Even while crossing, I should be mindful of staying safe - walking, not running, keeping looking, and putting the phone away.\\n\\nI'll address special scenarios: crossing between parked cars is dangerous; nighttime requires bright clothing or a flashlight. Roundabouts need special attention, and I'll emphasize those safe crossings.\\n\\nAs I refine, I'll check for clarity, a helpful tone, and effective formatting with bolding and bullet points. I should also address edge cases. What about visually impaired individuals? Tactile paving and audio signals need a mention. If there are no crosswalks, I'll include advice on safe jaywalking.\\n\\nFinally, the guide structure is the most important output. The final response will have that critical structure: find a safe spot, stop, look and listen, and then cross safely.\\n\\nI'll confirm the advice aligns with standard pedestrian safety guidelines. I'll also add a crucial note about the \\\"Left-Right-Left\\\" sequence. In countries with left-hand traffic, it's \\\"Right-Left-Right.\\\" This is crucial.\\n\\nThen, I'm ready to produce the final response.\\n\\n\\n\", \"thought\": true}, {\"text\": \"Crossing the street safely is a fundamental skill that requires awareness and patience. Here is a step-by-step guide to doing it correctly.\\n\\n### 1. Find a Safe Place to Cross\\n*   **Crosswalks/Intersections:** Always try to cross at a designated crosswalk (zebra crossing) or an intersection with traffic lights. This is where drivers expect to see pedestrians.\\n*   **Good Visibility:** If there is no crosswalk, find a spot where you have a clear view of the road in both directions and where drivers can clearly see you.\\n*   **Avoid:** Do not cross near a sharp curve, the crest of a hill, or between parked cars, as these block vision.\\n\\n### 2. Stop at the Edge\\n*   Stop at the curb or the edge of the road. Do not step into the street yet.\\n*   If there are parked cars blocking your view, step out to the edge of the cars carefully to see down the street, but stay ready to pull back instantly.\\n\\n### 3. The \\\"Left-Right-Left\\\" Rule\\nBefore stepping off the curb, follow this pattern (assuming you are in a country where cars drive on the right side of the road, like the US or most of Europe):\\n1.  **Look Left:** This is the direction traffic will be coming from in the lane closest to you.\\n2.  **Look Right:** Check the traffic coming from the other direction.\\n3.  **Look Left Again:** Re-check the first lane to make sure a car hasn\\u2019t appeared while you were looking right.\\n\\n*(Note: If you are in the UK, Australia, or Japan, look **Right-Left-Right**).*\\n\\n### 4. Listen and Evaluate\\n*   **Listen:** Take your headphones off or turn the volume down. You can often hear a car or motorcycle speeding around a corner before you see it. Listen for sirens.\\n*   **Eye Contact:** If a car is stopped, make eye contact with the driver to ensure they see you and are letting you pass. Never assume a car will stop just because you are there.\\n\\n### 5. Follow Traffic Signals\\n*   **\\\"Walk\\\" Signal (White figure or Green man):** It is safe to look and cross.\\n*   **Flashing Hand (or countdown timer):** Do **not** start crossing. If you are already in the middle of the street, keep walking to finish crossing.\\n*   **Solid Hand (or Red man):** Do not cross. Wait for the next cycle.\\n\\n### 6. Cross Safely\\n*   **Walk, Don't Run:** Walk briskly but do not run. Running increases the chance of tripping and falling in the path of a vehicle.\\n*   **Keep Looking:** Continue scanning left and right as you walk across the street.\\n*   **Walk Straight:** Cross at a right angle (straight across), not diagonally. It is the shortest distance to the other side.\\n\\n### Important Safety Tips\\n*   **Put the Phone Away:** Do not text or scroll social media while crossing. \\\"Distracted walking\\\" is a major cause of accidents.\\n*   **Night Crossing:** If crossing at night, try to do so under a street lamp. Wear light-colored or reflective clothing if possible.\\n*   **Turning Cars:** Even if you have the \\\"Walk\\\" signal, watch out for cars turning left or right across the crosswalk. They may be looking at traffic lights rather than looking for you.\", \"thoughtSignature\": \"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\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-pro-preview\", \"responseId\": \"ON4gaYT4Gc20qtsP2bSiiQ0\", \"usageMetadata\": {\"candidatesTokenCount\": 736, \"promptTokenCount\": 29, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 29}], \"thoughtsTokenCount\": 1001, \"totalTokenCount\": 1766}}"
+  }
+}

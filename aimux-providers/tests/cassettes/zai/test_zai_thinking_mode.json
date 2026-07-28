@@ -1,0 +1,41 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "zai",
+  "scenario": "test_zai_thinking_mode",
+  "request": {
+    "path": "/api/paas/v4/chat/completions",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "156",
+      "content-type": "application/json",
+      "host": "api.z.ai"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": "What is 2 + 2?",
+          "role": "user"
+        }
+      ],
+      "model": "glm-4.7",
+      "stream": false,
+      "thinking": {
+        "clear_thinking": false,
+        "type": "enabled"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json; charset=UTF-8",
+      "strict-transport-security": "max-age=31536000; includeSubDomains",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"choices\": [{\"finish_reason\": \"stop\", \"index\": 0, \"message\": {\"content\": \"2 + 2 is 4.\", \"reasoning_content\": \"\\n1.  **Identify the user's question:** The user is asking \\\"What is 2 + 2?\\\".\\n\\n2.  **Analyze the request:**\\n    *   The request is a simple arithmetic question.\\n    *   The intent is to get the correct sum.\\n    *   The request is not harmful, controversial, or complex. It's a very standard and safe query.\\n    *   There's no request for chain of thought or any other special formatting. The system instructions about CoT are not triggered by this simple question.\\n\\n3.  **Formulate the answer:**\\n    *   The calculation is 2 + 2.\\n    *   The result is 4.\\n\\n4.  **Construct the final response:**\\n    *   The most direct and helpful answer is simply the number.\\n    *   A complete sentence is also good and adds a polite tone.\\n    *   Options: \\\"4\\\", \\\"2 + 2 is 4.\\\", \\\"The answer is 4.\\\"\\n    *   Let's go with a clear, complete sentence. \\\"2 + 2 is 4.\\\" or \\\"The answer is 4.\\\"\", \"role\": \"assistant\"}}], \"created\": 1782861024, \"id\": \"20260701071019fb893cf0ba38429c\", \"model\": \"glm-4.7\", \"object\": \"chat.completion\", \"request_id\": \"20260701071019fb893cf0ba38429c\", \"usage\": {\"completion_tokens\": 247, \"completion_tokens_details\": {\"reasoning_tokens\": 237}, \"prompt_tokens\": 13, \"prompt_tokens_details\": {\"cached_tokens\": 0}, \"total_tokens\": 260}}"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_count_tokens_error",
+  "request": {
+    "path": "/v1/messages/count_tokens",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "105",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "hello",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-does-not-exist"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"error\": {\"message\": \"model: claude-does-not-exist\", \"type\": \"not_found_error\"}, \"request_id\": \"req_011CVEA3SF7rnb3DuBZytqQa\", \"type\": \"error\"}"
+  }
+}

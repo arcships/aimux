@@ -1,0 +1,88 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-url-image-google_gemini3]_1",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "4233",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Use the get_file tool now to retrieve a image file, then describe what you received."
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "path": "input_file_0.png"
+                },
+                "id": "pyd_ai_f1250f5dd0a648019dee60a2738e8f14",
+                "name": "get_file"
+              },
+              "thoughtSignature": "Ep4TCpsTAb4-9vtItFZB77PQRIsoZfqc3GapEFag8guxNSUeNoUo0t4iEkp1Ix-o-gtZM6fhoma8-N8lgcoVzJrDGlZsLrVFDzFDjhnBFMJGDg5Z1O5lXLpNAbiL6gdekidU4pkeI40g5IjXolMMKvp2lKmhQJhJeOuwYkMsA9zanuGh7WDo1nIxzR1Atr6VR16ciN_Iw_sFvvDgWkKwBQlbYusatEJZXp1v-pr8g3e9o8IDYFry-30XF0UKHqXQ0wzC1B63uplkA-mpdAsUMmHbKEcI1UgqUV8MMjPWuIKKL56jJC_4eyiUNnCmBz_jBGXD2KyhYj3lnGte4R7UwK7gEhxh70A_9t_tFO5QvDb120vTn4TqX9XwgeDQ0IlpZgmTB0zzaGEgGs2uEGbIEr5TGo57gHdRBIu19034qzD7AOgxjiE4-gh-6nU1ykGyyCcXmbn2Ig8rJIFFA5BqiTfkxb19-s9dUNRZUTjt5Oy4wJ371uptJaLyo4kbHlB1zj8JH4t8UhdDwBSuUGru-dDSUFtSTT7FWgcVwxDSZ9aNer4PUiVeCA1QUf1pUHvTqxsVrpsENHXFg-LyJSFUUvKK2-4T5cEEZXc0dJL2i0BxCqW2AnKSJOfro8hHRlWyot5KXdvP8_OX0nZR--s6UcuBLvUR5EZPzkjKWsYNrzlruu7xFnwxdZKoiequ9moRx7pug3TyCGTwlAfwiV623qIxb_3eZmWJI75oAcF57WJSEdGlOPrNSblkXmXkNGGtWBF1tvo5SvcaN7VvsLtlQwsmsHSA3AUadm9f2PAFaxSFErwoh5ntxAahhLOrF1Sys7eBeg-45zkKT_gbWE_M8ekQJ2USNrN7RfRnG0wc3gONTRINd1A6EDkTFvC7_gV4lEW2HZKN246IVvt_9eC7aCVUWfToM3KmYX6wdlfWR9y-QuLkyuzMDpbHdfPajyIM2ZFhpelKNxK-dAtsCDfF1tjTD-SaV1h3HifqNXcvPk6FDzeAJq5iKKu6lcoISoab19C7g_WRpNJoDJJa-LokyzqfKyBVYIreD3cLpKNJyRcymRojlJHfdV-O5RchiNO_n86Fok0CFH-5STvgkp94S81tqkKMyag2QdL2q_hJE4hHwMjIKR65GD9CAKsk4zLeV0AfTcEanw0JC8OKaQ5QMJy1eWRw-5qd4l5FJ3MoOZQsRPZeJsZpvz6jiadR5ki9R3rl-b1TkjXRGvjmuTocfY9GTTa448fKBgmrgcmPdlYXpY_ckQFvo4rQWWUxSpR6HR607LFCBXuPo9wQUHKNMFRQ7oxqp3kKx-CFn8gbKrZ4C4rgfsmcEZcYL8RKXWTtgsVmz-yUGVEbhepSx3tKCl3lqFMjuYRSIr54lQ04NuJdAbAijbwQ3Xdq8IFuBbVE6OZxJrS47ygkIF3EcdHmAeLkqy_IjuDZqzEmq0K_HPfNrvWQrv3uVRjfdCeF6RyEaf0Xpe78SRKm2kNXeYmzGGqcQo6YFTWQhEmKMv0Bz0zU14rA7yWdK4hzPel8L58JB4OwBEpxGD842yzxEzPeh4YeLTOScLCL_KUZIfrMBMsAs9IhosfLZ08ftDgzdeMtvNL7XZZZfcPA-ZVzMHNgCJN90c1rn9OtCa9Jw4YtEMh7T5H7v3jqRI0UIgqNOTE59OleqY0gA2evw_gCg6jPZFC7kQMijy2WpEvX8_i3AQwGB1CIh2MDXoMI7vl4tt-v1JgCije9a8nE9bj4aQqGVQzEW9KSzd0L-gzuBv3UZCwE_PRC3w3AAVTev_2OWMJy6fi7jDYpSsjiczEIWyKtyOLp9d7hRYlEM-AK8PKKUoSRgCZezfAEzXzNWAAV2gnj7LgePbGe59RCfgL83Tp3YlKIZeWpuwMgGv3Duxz4NjeL6hvPH3PQ3UxATkc8rNsG_NCWxnrwu8JZyf7IyDzjzOWkMGC_elWsPGABPIQJ5eLvkTsHkNwc8wHV_ZOqsLrqqClP6F7S7TgU3kt7_5dgp2Nmy_0B_KECQLYHKA6ndemBmfp8gFM6Q6tSldFedfowBxaWEegRjdmHpkS6lB-7THQR9LNdD_dJClABqalruEpkrl-jFnEV7JVdv0NZ2fbEG7yQM6yClGGlqmVUZi1nrYVbY5XJNSn8DprHREK_tDddvuu2LhVqei2jk91VLJYr0DNFYgiYVPyZAIrmYdAuSp4MXdDyBtTSPoKaEWiq1AqHYmCXxy2qqIGrJMsxi_JtyuYUgiEpb8h8W9NSGcqvBQ9JG5oZ_B_SAKkXBm6oxlYe-sbUZYpu_3fMRNQXisktP4j_DigcNONyzxToXymF2jA78LR8S3TpT5jSmX90eVzBVPApjYaiN_CFqHsy0eFQWgvjWf1fyRWOc8QjQv9cVxui9yJypGEIS54omDfZzjX8S7XfzKSks_xItGrRZaMO9q_I-Pe7MCfAruPCBHZ3tZcTEm4iZ_EGXBsYm4xFTB5OLfr4WntQZ7CZ8S-yGN_MHdWSNX7mnTERoWX4Ecfp95ip1ezYBfCc4ONlxo_uoXUq7BDC32Nyznqv7nA3a2WP9c5FQgwL2cE5pn-WB_UGaz_L1F0q36ewDYjvavM5o0GqrTmP-SA2GuDojq8px4_vIC0laQ_ZIT0g3tRvPt3DvDQJg9KUji44neP-XUrt6TZa9o2HOOUQZOp5NgSmPfj7pHeHPq7wIzyRCchbFVt0pWYOconiWHY6n1_Gra8Rh8XAl-mfv98g8VU-gKd7PUwiy1DnJ3gpXwzSHoFsG1QD-SIkGF2SD8FRj6ZZjyudwPrr-U9UyL9DwunVK12dxiLATpbeENo0f3M5q6gLWwZylJhJDTuXwRyy2M5MAL8xMg3yg-e1dDepP2Hpd4zj4f-r7Y-fzSuGDvGdr2hLHdl1c7D41Axv7_aqW31-OeMG8l8QO09oobWnkfNQPlH6aldFF1TJCNDhycWyxkh6p0D6bdfyVQhWpoonLo4vIjMwkqCJnNoWgk-SmRhe5ZJXQGq57XQB_dx2CIEDp4iRQdRnJBhTNSGifppHSm5lUf_gAGPMZoiv2PrURXp9DBmfMsCpSTpZ9mcQADwAa3OwxAy2cQ489M8vPGl_ZBDy4RtKvETEMmzxP5QTKNfcmv_Jyq1fPLiO0kS4_UnLyTzPJGp5e14KeSuS5ufQ_wkN-VW6NjYCZUbqKM_aASgqlhhH2sUDv_NELupnWKot9xJvwvYK1rLrzokR02lmcQG1j-DU7wgK63KcEleptgci6zGx1WnhXLi4Vil1BVQ6i4weekpLiiQ="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "pyd_ai_f1250f5dd0a648019dee60a2738e8f14",
+                "name": "get_file",
+                "response": {
+                  "error": "1 validation error:\n```json\n[\n  {\n    \"type\": \"extra_forbidden\",\n    \"loc\": [\n      \"path\"\n    ],\n    \"msg\": \"Extra inputs are not permitted\",\n    \"input\": \"input_file_0.png\"\n  }\n]\n```\n\nFix the errors and try again."
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_file",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=3202",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_file\"}, \"thoughtSignature\": \"EuwLCukLAb4+9vubD6CAS3FrbHjgFJkzwrV1TeWOe12sdhlyayY8pY93I8SuBwzU0fgthr5aA7lA0KY9+mZsyVHhoR4foCEGQdSMTZjVMMsbbxOeeX2F2tfavjtDuH4gfIwyujto2tKA+vZQU89Icn3BNc7bVh0dHasBWEOoCoGxzY0NLW1wFKF1h0tUUut66gb8o2YXS3zdRUVFblu/pc+mZhYdjjjJmoLSRDWOoJBajMiSlTV4i7Rga/+8glh2HHBhobjFyaiN66ysSfjb7jxZ7WnEIXveaut79xOhYXGrN9UDeLiMsEPXjtEBjZn3kzQrRpV8KLuRZRjrvKbi1A/T+D8Ba7McBQr7w2YUqFb422mJU1HmxIu51EYSyNTmrIPJFy64QCZarpA7wY03BoppOdjeWJtzgYoDVVh0votLfg+VeCq//F+VElA3dRAdQy3g9UQ4T7u2uEP6nfWLMTeFtXF3kRaOzZcvMDBHXVtpJWiqT60sRlKaNR0M+8F/Gr4AkPCuaiphwG+jwEmuXpAdrb8771LkKiUa5QSFA1UdX6YVIrNcaFBxqkR0ye5DRMVseEFZazOuWXWGVE5N/aAWvXzW7i1XxzEc95DkQHKh7abMTAvCPtk7Q9AXxpG8Y1xSU/TkaZONk/YILgBT2WctYuG+1QLbIzMJ4bfOrjj2s6k8z6tTUkiyb1zlWYwXymfCqVT8BNo70yahmtdSOiGqGX/TqF1n9l0cJy/L8hCocfcau6YYajKs0wbAveJ63FQQmvpKddkh5vu37ne5/XqT3jTcnhJUyYWrEZQWrsriq2NJoW7rv4dPx6meQX1Tm1ZtB0wtPWKVxtYrr3uTJQSZdVAK9NBSu+umVu5orLtv1r9ZHLvJOMzaugeTHEc4qBfUZvvEnVVFdivfLsxj8DgD2CcLABf/2NzVYH8JSNai0xVTTDaYzbLV+i+NQCZjgSig9FYcvXe5pe0VveAogH0DdVewHQj/1ulCLnBi1NHinJQ2Um8C/yLrcHkmDNeC9VeqRIGRaU40yHmcb1jaekD/qvgQKJOg1j1Oqzli+9gadM1DX8zD5ICktF/HlQEfxfRRhF+e9UhC7do/ozdwlSnH+XpjVBQFwM5e+2D8G2/X3v5aAzx+zXyIvvecXprRbG2m8MS9OiulDyvQXYmViyudbl53VLuei4z4antRO9JQ7SLqtKb61RK3JqrTcWvWgFxcqkk5SB9yc0rJYTqTyYXiKLK8tDol7qRULFPGAkSblYUqXryMonaOkoCKyJmfr0RRr52KO4+wchQmZ1e8NZXEZSnB7wecPHASHJZmgzvXbw2zGHIxC1W/+B8ZyfoeH35mA+54lEzxEXwgJ0SqOFtgG38M4ylxfl7vw/4QwO74WbOv8e6pa4sWm/8aJ6zdi5ZIZUnyaSUKfxxHapivuX601mnAvebFGDA9ITDUhKp9hoU6x4yHYjvmTlX/++O/pOopWrAcPTGefTDU+vdDyRpM9+gj+QbHbC9aFhdabwZ0sK1MjyjaMzxXppH/oxcTdXDIIRhavbt3sIVCOWwsHQz/f9Nu8jZVseoODkt7M3GbKg1pC+unO5OrqEEqPgQ5LzK+HJ/BEG1NHwTy73erI3vROr6Fu5XKQYOaeK+pV0qg2wRcGlxOMMW/5ku9guUWf8JAQ4U4PTXUNTD/lmYm/qmsCcAqx1VPQH6vd5qyRK63Rk/fbHqdmGRaFf1yBc586VGtjM6tTL1fWrzoAp4yPaWFxqkbEqmlavh+b7/yaQkhUaIAKJ2omu/dufBP1SgOP6DBzUHCNoZ0Y+W6nkUSsULW7VrBoe6OYt/mnj1pJNjVuJpvfJnft/NVPtS3hfUsqc9a2mZHREhpzxcmSOQmKNcfVvn3Cyu64ncWA9k293GbJSZ6cynl/vQNH+8oGY10SkJbp8I8OMf2pzSvs4NegdqtY5+hoL4Q4MVAYKCXHIk2uyAvrLY69HuRK1e7Y8d5G50BhU1U6FaA2ceK3NzHqH5JMVjSHzHLT/FEXGpUjw==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"duKTaZrZN_iVmtkP3tvxqAg\", \"usageMetadata\": {\"candidatesTokenCount\": 10, \"promptTokenCount\": 793, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 793}], \"thoughtsTokenCount\": 375, \"totalTokenCount\": 1178}}"
+  }
+}

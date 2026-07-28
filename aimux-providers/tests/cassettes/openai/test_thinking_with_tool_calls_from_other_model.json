@@ -1,0 +1,58 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_thinking_with_tool_calls_from_other_model",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "330",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "input": [
+        {
+          "content": "What is the capital of the country?",
+          "role": "user"
+        }
+      ],
+      "model": "gpt-5",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "get_country",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object"
+          },
+          "strict": false,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "5359",
+      "openai-project": "proj_dKobscVY9YJxeEaDJen54e3d",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"created_at\": 1763762239, \"error\": null, \"id\": \"resp_0c71d6d8526a7a4b006920e03f691c819dbca4d1d793e86703\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5-2025-08-07\", \"object\": \"response\", \"output\": [{\"encrypted_content\": \"gAAAAABpIOBE-GFcLVcRkg7rtGVk9wZURtFXWHX121fEz0YuY9gEUFJYm62OIEOrBbZYncHMR4oXByNrKuxPDSu4KoK6JEM8E1p0SugYiReQKivUu4cYcQtdJDoN9pMXIl_--xEdJUVqNkuWY_-H1lTMS_se595lDBjHWybTNE-k3E8HU6jLCfaMcRGFn6IJ9vc_Zj-_mi7CodOCv_1ewDTYTwROCXl3OD5dhFa-2-g4gxUXPCrz20qbvjOJcCeZpBVCeXQY6EcuIL7ILGBh_YhSlY3NGz5ZJ7eF-K_8CMrv5jsJMMD9PVVeWQ_FNM4oF4aBxcy9i2wx5yjcyJFYXuGLQz3_MVJH4b9jeN4DIfmOilO8mmIl86bYOGSzOI7rXZjnORt-SsIPvOb02fafU1sUGXqGipZ6wAXdvpAHa9cMYmadtPvIQzC8aURkEfTO0P4xzWiEEtFFjnhQYCgtQ3WE035OobKLYsjL1Hvgpu65-yR9LDL76vme7ZAvBU3xLxV43xqkIWeCdCvF2p12s_0u1A4oR4QDkQe0Xp_hGV5lLUSwPma9JAgAyyUndcZwNlBEfDI-Ipe3Pdz9kLr7AmznwJPS5sPa-p0xbSO1rcnAP84KpfD9BlMjwGTrzJ9l-Ta-IgJFkkFSdgzxtEVpzneKgDAPx_LcZimXY5EgJ_RTeIcFRmZNXWoEabA3Y4RNgSRlsebWj-paC0oajqEBke1e8pJ0fXAPWH1Bmjieim6Vx3sB1HGQxhcHyj7TdpkqDFL3l1g6gy6Cj-ZNPsIJ9D_TcX43-NfoY7QGyXOjgLZQKRDIkXBz3J95DY5Hmj-MxAZN6KM-IcJlwnA4-qgp0gbtDDM6g7jy6irn10eNWarAyhKor9Vs_Y-JwYH1NNIUilRBKKpC8nG-yXXBKR7lLz_SNurIHk772mvN4cMli5psKQ9vYI8NQNp8utxCI3V-QEcT5vVETbPf8goediEmSe8SOPL6Ww2JS6WJtO5rW-Hjw2FgGVpcmdtkKApM6DN-MqVHoWX_l7o8xXrR8JR7tZ5t8bo3LtIiwdFwel2-uK--HB99F6Sljd0rgRRFtr8nV2DvabWifldGt2nfZaDYK_PPvoBQNEkODoRaqE0kezmSoFxuAa56gQHD5Bc36bZFdZr1uBBIRI5x5VAzBJgfN7klzNFs-BAM0FOm4kGQf0syjBIlLuruf_67TIk1C0-tK_EO61IWAwFn5FELdiIog2b5Gi4HmrRANvNyijMLUYoyRmluMWCJHQlWCUdmI_5gEb3WP_splCcsZFA-8Fk4O9AIoT1JbiSB-0jlDkWmQl8T0n83uDyPaGey98h7bUmhrtSpZyOf0xsg8baWwLXBSvvtBLQopedge5_nvf0feWG5WC6ecJCKfmvy6z0EfR71iuOC-4qO_KLVGRdQe7qSzkapAJaZkziYXpxHycQb9OHlzjI-VvrGr3douZjP8pM9NzSkPMQD1Fj3DI2eXbF8pqjQUgfNu9O8y-cpXcFrPDXe1tkkXjBYTKF4Tm2v4BmojXtXpy_TfS3DElZN1lONO1hQLdd6czFNyf5cB3hAcTjsctLaE12icSdaD-_mqrKULUqwMCR_nnzZcz2u7Mdkydv1RBZYOmSDwGhE0encPLS4vL7gFdCow74TuEHSWEHecWafc4-vsmzXv83t-j6geiNxIvk6UqDbeV4CIaA98dYNJfZzVVRrbG-05kjLE9HCW8bsgzAokBu4RkPEjzLSYGkn5RLQNpnM8eD9hrXGdLXtNxpfYc_c8rk3uQvtUe4KaIXLjmU9LUwanYLi9JFhfGXaBRmFS5WigD_ki76gsnH0qsSLOTiTiRLnVuuaTMWmp0j1xiAqaLD43Awh40hbT0Mp_9TZ1e8WaKARG5S92vfboPuDDq5yZdrPcvqASvP8x46_7fRndV0_YU1cJBF9rU-IBxjowRWHWUVpl8rVtyYTv4dKDjhPEyMMfQL6dJq7PWK3i4NS4qYMnfd9KvmLi9zKXBTAv2QvBQoW4-saePFkw5U1jdkPDo0PdEhKs03SrpdISqTw5DW_r0nhkJGnLDdtbdmdsHXHDeXojDIIv4MiBJDVbZNoULkNmVsURejvhUrEvbUkcQFff42nNRiOWz0cSROv0JAx6SOHFEfL-zpJzX4BDUJoLCAdra_MGGau6Twvdr4L2i4fuOh-BM7y-IE4OJD-qPMquMIkC6pItNPhtnMkAE_3Q5Z54PX_SMXX6N_z35q2ar_TAt3x8DGn-AjUZALs1Oru4VECb7aY09ondPRrjCLTJ-HcjMeHxCvvka9QwaCLuSvk1sMXqzBz2LhhSZeHB40SLH6gM7GtAbR4Tc1918SuhAXY4Amgw4u1f8B2LiDplKtJEDuUZUmq98pD0QjfLu-enX93KLL_Z0Jpr2Y6UWNQzB1O019vSZYvOhLmcZj0quiJr7tVQd3750fQmYuFot7xDedLBlkEt2-5rCMY6m3f525RMOgc2ldnwviHwpy-Nz7X86HpdPYo-A4Tz1jXSwtrHFCrO1-j-K_TCyPipKXRo2Hp-1k6oAiq1ymhIa_YW4jSxiB1kcPj7M6Hoaj_Hd6GpoMG2UOSeONIXToS3FW7mhDqwDaI0TH3LdH6M2GcARwx1LT25blS4QhkNXhE2Gf6Qf07q5-xZjC6aStd7EbTaDoehZ7CwNn2NTnYCrZ8fXalPoZAkd2SWGcv28M92rcoGVfc33PGJI046FGVG4vhtIg1HRQtDs6_9JXoF2mWXzuXMbwl2EFQrKi0cHJHBtV7KHevf8V80SFJB2G0MNlNHdZkkiiGiSqYEwgjmBS2lcf-gao0yZmmi-MjtYfxq9cKhFmWEcLz8_O5oqEyhjA-ZV6eFua9qPEHqWc8UoxhTiiji16ZcRmGRnSI5QGL4GpOwA==\", \"id\": \"rs_0c71d6d8526a7a4b006920e03fd67c819da5eead157faee94b\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{}\", \"call_id\": \"call_1w9YRdMtRTRucwZShoZYlLJp\", \"id\": \"fc_0c71d6d8526a7a4b006920e0447ea8819da94e572b1f077c44\", \"name\": \"get_country\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": \"medium\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": null, \"name\": \"get_country\", \"parameters\": {\"additionalProperties\": false, \"properties\": {}, \"type\": \"object\"}, \"strict\": false, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 37, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 272, \"output_tokens_details\": {\"reasoning_tokens\": 256}, \"total_tokens\": 309}, \"user\": null}"
+  }
+}

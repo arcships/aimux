@@ -1,0 +1,42 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "TestGoogle.test_embed_error",
+  "request": {
+    "path": "/v1beta/models/nonexistent-model:batchEmbedContents",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "135",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "requests": [
+        {
+          "content": {
+            "parts": [
+              {
+                "text": "Hello, world!"
+              }
+            ]
+          },
+          "model": "models/nonexistent-model",
+          "taskType": "RETRIEVAL_QUERY"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=77",
+      "vary": "Origin"
+    },
+    "body": "{\"error\": {\"code\": 404, \"message\": \"models/nonexistent-model is not found for API version v1beta, or is not supported for embedContent. Call ListModels to see the list of available models and their supported methods.\", \"status\": \"NOT_FOUND\"}}"
+  }
+}

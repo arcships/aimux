@@ -1,0 +1,29 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_conversation_id_tool_call_continuation_3",
+  "request": {
+    "path": "/v1/conversations/conv_010000000000000000000000000000000000000000000000",
+    "method": "DELETE",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "host": "api.openai.com"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "openai-processing-ms": "651",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": "{\"deleted\": true, \"id\": \"conv_010000000000000000000000000000000000000000000000\", \"object\": \"conversation.deleted\"}"
+  }
+}

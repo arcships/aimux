@@ -1,0 +1,74 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_openai_responses_stream_1",
+  "request": {
+    "path": "/v1/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "610",
+      "content-type": "application/json",
+      "cookie": "__cf_bm=elE9FknxoKl9hypuWr9U7L0wvq0uECHBbKEn0s4ymsE-1743082657-1.0.1.1-NtLziVJ.95rmB6AWode1f2xyipNMUbu_BKePPZjYQerhr9gRgMHV4iW.0tAhxdVAlgKvQ1BP.yKoSYj9GVD3phMrStrVxclEQ5scgA37Ie0; _cfuvid=jgKaRpCXzc4an8g3tXyrelqdUfEtMZsdBPqFq9LZqR4-1743082657435-0.0.1.1-604800000",
+      "host": "api.openai.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the capital of France?",
+          "role": "user"
+        },
+        {
+          "arguments": "{\"country\":\"France\"}",
+          "call_id": "fc_67e554a1de488191af0831d35cbe082e0794405d35281ae2",
+          "name": "get_capital",
+          "type": "function_call"
+        },
+        {
+          "call_id": "fc_67e554a1de488191af0831d35cbe082e0794405d35281ae2",
+          "output": "Paris",
+          "type": "function_call_output"
+        }
+      ],
+      "instructions": "",
+      "model": "gpt-4o",
+      "stream": true,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "",
+          "name": "get_capital",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "country"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "openai-organization": "pydantic-28gund",
+      "openai-processing-ms": "122",
+      "openai-version": "2020-10-01",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
+    },
+    "body": ""
+  }
+}

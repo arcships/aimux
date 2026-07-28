@@ -1,0 +1,65 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_dict_with_additional_properties_native_output_gemini_2_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "519",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Create a config named \"api-config\" with metadata author=\"Alice\" and version=\"1.0\""
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseJsonSchema": {
+          "description": "A response with configuration metadata.",
+          "properties": {
+            "metadata": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "metadata"
+          ],
+          "title": "ConfigResponse",
+          "type": "object"
+        },
+        "responseMimeType": "application/json",
+        "responseModalities": [
+          "TEXT"
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=818",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -1.4634492981713265e-05, \"content\": {\"parts\": [{\"text\": \"{\\n  \\\"name\\\": \\\"api-config\\\",\\n  \\\"metadata\\\": {\\n    \\\"author\\\": \\\"Alice\\\",\\n    \\\"version\\\": \\\"1.0\\\"\\n  }\\n}\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"8pMcab_EMqWd28oP46bOiAk\", \"usageMetadata\": {\"candidatesTokenCount\": 40, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 40}], \"promptTokenCount\": 22, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 22}], \"totalTokenCount\": 62}}"
+  }
+}

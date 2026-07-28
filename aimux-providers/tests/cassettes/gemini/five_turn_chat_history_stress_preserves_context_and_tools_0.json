@@ -1,0 +1,101 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "five_turn_chat_history_stress_preserves_context_and_tools_0",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Turn 1 of 5. Remember that the alpha token is NOVA. Reply exactly ACK-ALPHA.",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 4096,
+        "temperature": 0.0,
+        "thinkingConfig": {
+          "includeThoughts": true,
+          "thinkingBudget": 1024
+        }
+      },
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are running a deterministic Rig integration test. Preserve facts across turns. When a prompt says to use a tool, call exactly that tool before answering. Keep replies concise. When asked for the final code, return only the code with no markdown, quotes, or commentary.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y. This tool must be used for stress-test addition turns.",
+              "name": "stress_add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "Left operand",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "Right operand",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Subtract y from x. This tool must be used for stress-test subtraction turns.",
+              "name": "stress_subtract",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "Value to subtract from",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "Value to subtract",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"**My Immediate Response**\\n\\nOkay, this is straightforward. The user has given me a very basic instruction: recall a specific token and use it to craft a pre-defined response. No complex analysis, no external information needed, just immediate recall and replication. I understand the task completely. I just need to output \\\"ACK-ALPHA\\\". That's it. Simple execution, no further consideration is necessary.\\n\",\"thought\":true},{\"text\":\"ACK-ALPHA\",\"thoughtSignature\":\"signature_REDACTED_1\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":3,\"promptTokenCount\":204,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":204}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":41,\"totalTokenCount\":248}}"
+  }
+}

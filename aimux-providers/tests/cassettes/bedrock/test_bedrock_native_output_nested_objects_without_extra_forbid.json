@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_native_output_nested_objects_without_extra_forbid",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-6/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'2556a3a7-da25-4a7e-bb4e-bf9ad6ba0a9b'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "875",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4117}, \"output\": {\"message\": {\"content\": [{\"text\": \"{\\\"name\\\":\\\"John\\\",\\\"address\\\":{\\\"street\\\":\\\"123 Main St\\\",\\\"city\\\":\\\"Springfield\\\"}}\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 317, \"outputTokens\": 23, \"serverToolUsage\": {}, \"totalTokens\": 340}}"
+  }
+}

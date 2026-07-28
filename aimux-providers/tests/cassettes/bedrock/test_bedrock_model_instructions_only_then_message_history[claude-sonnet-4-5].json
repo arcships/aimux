@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_instructions_only_then_message_history[claude-sonnet-4-5]",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'bc227510-e92e-4706-87b9-4e9a98dbbf22'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "135",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 2708}, \"output\": {\"message\": {\"content\": [{\"text\": \"Hello! How can I help you today?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 13, \"outputTokens\": 12, \"serverToolUsage\": {}, \"totalTokens\": 25}}"
+  }
+}

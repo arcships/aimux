@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_native_output_nvidia",
+  "request": {
+    "path": "/model/nvidia.nemotron-nano-12b-v2/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'66fff346-4897-4964-b503-4254098ee030'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "580",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 401}, \"output\": {\"message\": {\"content\": [{\"text\": \"{\\n  \\\"city\\\": \\\"Paris\\\",\\n  \\\"country\\\": \\\"France\\\",\\n  \\\"population\\\": 2148000\\n}\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 33, \"outputTokens\": 30, \"serverToolUsage\": {}, \"totalTokens\": 63}}"
+  }
+}

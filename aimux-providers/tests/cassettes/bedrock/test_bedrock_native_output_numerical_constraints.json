@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_native_output_numerical_constraints",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'fbcf6d1d-5338-4062-841e-baf12d82b127'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "846",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 3758}, \"output\": {\"message\": {\"content\": [{\"text\": \"{\\\"score\\\": 85.5, \\\"rating\\\": 15, \\\"priority\\\": \\\"high\\\"}\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 308, \"outputTokens\": 23, \"serverToolUsage\": {}, \"totalTokens\": 331}}"
+  }
+}

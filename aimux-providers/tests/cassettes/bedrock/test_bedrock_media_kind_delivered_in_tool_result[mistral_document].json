@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_media_kind_delivered_in_tool_result[mistral_document]",
+  "request": {
+    "path": "/model/us.mistral.pixtral-large-2502-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'faafd417-b5ff-4290-a925-7e7d34ca7ee7'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "319",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 651}, \"output\": {\"message\": {\"content\": [{\"toolUse\": {\"input\": {}, \"name\": \"get_file\", \"toolUseId\": \"tooluse_daIKOZu4g4GrvIIv9wdqy4\"}}], \"role\": \"assistant\"}}, \"stopReason\": \"tool_use\", \"usage\": {\"inputTokens\": 64, \"outputTokens\": 17, \"serverToolUsage\": {}, \"totalTokens\": 81}}"
+  }
+}

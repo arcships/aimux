@@ -1,0 +1,54 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_model_text_as_binary_content_input",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "301",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the main content on this document?"
+            },
+            {
+              "inlineData": {
+                "data": "VGhpcyBpcyBhIHRlc3QgZG9jdW1lbnQu",
+                "mimeType": "text/plain"
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {},
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful chatbot."
+          }
+        ],
+        "role": "user"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=571",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": -0.2041482448577881, \"content\": {\"parts\": [{\"text\": \"The main content of the document is that it is a test document.\\n\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash\", \"responseId\": \"9ofNaNqNKNWDmtkPs-nsqAU\", \"usageMetadata\": {\"candidatesTokenCount\": 15, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 15}], \"promptTokenCount\": 21, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 21}], \"totalTokenCount\": 36}}"
+  }
+}

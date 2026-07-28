@@ -1,0 +1,114 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_thinking_with_tool_calls_from_other_model_2",
+  "request": {
+    "path": "/v1beta/models/gemini-3-pro-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "1036",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of the country?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {},
+                "id": "call_1w9YRdMtRTRucwZShoZYlLJp",
+                "name": "get_country"
+              },
+              "thoughtSignature": "Y29udGV4dF9lbmdpbmVlcmluZ19pc190aGVfd2F5X3RvX2dv"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "call_1w9YRdMtRTRucwZShoZYlLJp",
+                "name": "get_country",
+                "response": {
+                  "return_value": "Mexico"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "allowedFunctionNames": [
+            "get_country",
+            "final_result"
+          ],
+          "mode": "ANY"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_country",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {},
+                "type": "object"
+              }
+            },
+            {
+              "description": "The final response which ends this conversation",
+              "name": "final_result",
+              "parameters_json_schema": {
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  },
+                  "country": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city",
+                  "country"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2544",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"city\": \"Mexico City\", \"country\": \"Mexico\"}, \"name\": \"final_result\"}, \"thoughtSignature\": \"EpwECpkEAdHtim86ETW8V4+qxyxWDha4/3VXdFm652EpxpxjJe1O3/95mcVWWPd8xbhSpqu6CXQDQE6jrBXvT9jP3mB2iROjcBKfvpoaYTg5jW0q1Bx6xzDDynyx0wOJmXU/msrzloqD871tuysrO8zrgkv7e2lfa34UzUBpWtos4Y2qQhDJ+X2rrcns8YAYmXYIcZgh8nX/N3oSWgZF6C0S9pKK142KcmcXXEjDwvqYhffVu1ZQy5Pib2TvyhK0VrbGnttRipA7QnNL+8SA8toMexAL3mNI9GC2HygZLe1KVQ0q+RwXWmA9xAMW+vvhDM9aW2ZZkEMF+j/5YBC+dEywpwafKw7hHZHgwakBgL3+KsUI/HygotDnOJowM9tx+mpEoPI75qZhp+01Yl7HZVx7qYimjMMfl589UtM3oreJNHAz5pSUX9ueyvqzb8NJZ1xUHluzBmh6kMBIJlNA6EbKLh5tJPd7gfT9VfQ39nkGj4fBkd8Cc0Hc8Xjf72bxBV5TZ4JCZAwX2hu//aBhDCH5f1EapA5AqbCOww7Kx4umFsDyfpfU9kDfqbA98dEvBVXE6+/zHQ5JEz6pB+36gGf9JON0zokMdLahsj7X4uZ3EkQJsZJ3gRLsIPLoNLLjX/szaqJ2LwQYF7bBJrtvH25XiBV59mEQDe+qZE+PKovbQZXRAnXTJ/Tw/OVWkahMxpufBkqextcwfy16KZcI\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-pro-preview\", \"responseId\": \"TeAgaaKoDO-tz7IPmu30uQo\", \"usageMetadata\": {\"candidatesTokenCount\": 23, \"promptTokenCount\": 107, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 107}], \"thoughtsTokenCount\": 123, \"totalTokenCount\": 253}}"
+  }
+}

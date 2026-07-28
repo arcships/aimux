@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_multimodal_tool_return_matrix[tool_return_content-uploaded_file-video-bedrock_nova]_1",
+  "request": {
+    "path": "/model/us.amazon.nova-2-lite-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'1e86fe08-7f6b-456e-b828-cd55830de7d8'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "776",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 6411}, \"output\": {\"message\": {\"content\": [{\"text\": \"Thanks for sharing the image. I can see it's a beautiful desert landscape captured with a camera mounted on a tripod, and the scene is displayed on a monitor/recorder screen. The image shows:\\n\\n- **A dramatic desert canyon** with red rock formations\\n- **Snow-capped mountains** in the background under a clear blue sky\\n- **A dry, rocky trail** leading through the canyon\\n- **Sparse desert vegetation** along the trail\\n\\nThis appears to be a professional filming setup, possibly for a nature documentary or travel vlog. The composition and lighting suggest it was taken during the golden hour (either sunrise or sunset), which creates warm tones and long shadows that enhance the texture of the rock formations.\\n\\nWould you like me to analyze any specific aspects of this image further? For example:\\n- Camera settings/technique\\n- Composition and framing\\n- Lighting conditions\\n- Potential editing suggestions\\n- Or something else?\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2736, \"outputTokens\": 186, \"serverToolUsage\": {}, \"totalTokens\": 2922}}"
+  }
+}

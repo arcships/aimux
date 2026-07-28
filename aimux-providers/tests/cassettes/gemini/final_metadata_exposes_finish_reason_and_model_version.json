@@ -1,0 +1,37 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "final_metadata_exposes_finish_reason_and_model_version",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Reply with exactly: final metadata ok",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": null,
+      "safetySettings": null,
+      "systemInstruction": null,
+      "toolConfig": null
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"final metadata ok\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_1\",\"usageMetadata\":{\"candidatesTokenCount\":3,\"promptTokenCount\":8,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":8}],\"serviceTier\":\"standard\",\"thoughtsTokenCount\":32,\"totalTokenCount\":43}}\r\n\r\n"
+  }
+}

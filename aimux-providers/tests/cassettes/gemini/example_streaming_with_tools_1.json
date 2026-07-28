@@ -1,0 +1,127 @@
+{
+  "source": "rig (MIT)",
+  "provider": "gemini",
+  "scenario": "example_streaming_with_tools_1",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "text/event-stream",
+      "content-type": "application/json"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Calculate 2 - 5",
+              "thought": false
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "x": 2,
+                  "y": 5
+                },
+                "name": "subtract"
+              },
+              "thought": false,
+              "thoughtSignature": "signature_REDACTED_1"
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "name": "subtract",
+                "response": {
+                  "result": -3
+                }
+              },
+              "thought": false
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "maxOutputTokens": 1024,
+        "temperature": 1.0
+      },
+      "safetySettings": null,
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a calculator here to help the user perform arithmetic operations. Use the tools provided to answer the user's question.",
+            "thought": false
+          }
+        ],
+        "role": "model"
+      },
+      "toolConfig": null,
+      "tools": [
+        {
+          "codeExecution": null,
+          "functionDeclarations": [
+            {
+              "description": "Add x and y together",
+              "name": "add",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The first number to add",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The second number to add",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Subtract y from x (i.e.: x - y)",
+              "name": "subtract",
+              "parameters": {
+                "properties": {
+                  "x": {
+                    "description": "The number to subtract from",
+                    "type": "number"
+                  },
+                  "y": {
+                    "description": "The number to subtract",
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream"
+    },
+    "body": "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"The result of \"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":3,\"promptTokenCount\":223,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":223}],\"serviceTier\":\"standard\",\"totalTokenCount\":226}}\r\n\r\ndata: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"2 - 5 is -3.\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"gemini-2.5-flash\",\"responseId\":\"id_REDACTED_2\",\"usageMetadata\":{\"candidatesTokenCount\":11,\"promptTokenCount\":223,\"promptTokensDetails\":[{\"modality\":\"TEXT\",\"tokenCount\":223}],\"serviceTier\":\"standard\",\"totalTokenCount\":234}}\r\n\r\n"
+  }
+}

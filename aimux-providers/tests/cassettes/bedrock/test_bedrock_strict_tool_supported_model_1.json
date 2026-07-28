@@ -1,0 +1,24 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_strict_tool_supported_model_1",
+  "request": {
+    "path": "/model/us.anthropic.claude-sonnet-4-5-20250929-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'f4d94536-f1c9-4c8f-a917-9c4b46729706'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "703",
+      "content-type": "b'application/json'"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 4434}, \"output\": {\"message\": {\"content\": [{\"text\": \"The weather in Paris is currently sunny with a temperature of 22\\u00b0C (approximately 72\\u00b0F). It's a beautiful day!\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"cacheReadInputTokenCount\": 0, \"cacheReadInputTokens\": 0, \"cacheWriteInputTokenCount\": 0, \"cacheWriteInputTokens\": 0, \"inputTokens\": 637, \"outputTokens\": 31, \"serverToolUsage\": {}, \"totalTokens\": 668}}"
+  }
+}

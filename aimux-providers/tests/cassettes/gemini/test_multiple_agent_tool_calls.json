@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_multiple_agent_tool_calls",
+  "request": {
+    "path": "/v1beta/models/gemini-2.0-flash-exp:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "content-length": "318",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "tools": {
+        "function_declarations": [
+          {
+            "description": "Get the capital of a country.",
+            "name": "get_capital",
+            "parameters": {
+              "properties": {
+                "country": {
+                  "description": "The country name.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "country"
+              ],
+              "type": "object"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=407",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"avgLogprobs\": 3.921892493963242e-06, \"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"country\": \"France\"}, \"name\": \"get_capital\"}}], \"role\": \"model\"}, \"finishReason\": \"STOP\"}], \"modelVersion\": \"gemini-2.0-flash-exp\", \"usageMetadata\": {\"candidatesTokenCount\": 5, \"candidatesTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 5}], \"promptTokenCount\": 23, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 23}], \"totalTokenCount\": 28}}"
+  }
+}
