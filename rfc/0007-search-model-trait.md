@@ -1,6 +1,6 @@
 # RFC-0007：Search Model Trait 设计
 
-> **状态**：DRAFT（待评审）
+> **状态**：ACCEPTED
 > **日期**：2026-07-28
 > **范围**：`aimux-core` 新增 `SearchModel` trait 及配套类型
 > **关联**：[Provider 开发规范](0006-provider-development.md)、[Provider 调研报告](../docs/provider-research/README.md)
@@ -207,6 +207,8 @@ impl Provider for TavilyProvider {
 3. 不定义流式搜索——所有 11 个 provider 均为同步请求/响应。
 4. 不定义 search + generate 组合抽象。
 5. 不为个别 provider 的特有字段（如 serper 的 `peopleAlsoAsk`、google_pse 的 `cx`）在核心 trait 中增加字段——这些走 `provider_options` 透传。
+6. 不在核心 trait 中定义 `model_id` 路由逻辑——endpoint 路径参数（如 dataforseo 的 `/v3/serp/google/organic/live/advanced`）由各 provider 在 `do_search` 内部自行处理。
+7. 不在 `SearchResultItem` 中定义 `published_date` 字段——多数 provider 不支持，tavily/serper 等可通过 `provider_metadata` 透传。
 
 ## 8. 变更范围
 
@@ -223,11 +225,11 @@ impl Provider for TavilyProvider {
 2. **provider 差异大**：11 个 provider 的字段差异较大（如 dataforseo 用 Basic 鉴权、searxng 无鉴权、tavily 有 answer 字段）。缓解：核心 trait 只覆盖共性，特有字段走 `provider_options`。
 3. **与 language model 搜索的组合**：用户可能期望 search → generate 的组合流程。缓解：本 RFC 不处理组合，留待后续提案。
 
-## 10. 开放问题
+## 10. 开放问题（已关闭）
 
-1. `SearchResultItem` 是否需要 `published_date` 字段？（tavily/serper 支持，但多数不支持）
-2. `time_range` 应为 `String` 还是 `enum`？（provider 使用的值不同：tavily 用 day/week/month/year，serper 用过去一小时/24小时/一周/一个月/一年）
-3. 是否需要 `SearchModel::max_results_per_call()` 方法（类似 `EmbeddingModel::max_embeddings_per_call`）？
+1. ~~`SearchResultItem` 是否需要 `published_date` 字段？~~ **不加。** 多数 provider 不支持，tavily/serper 等可通过 `provider_metadata` 透传。与 RFC-0006 §2.3"只有请求代码会读取的配置项才对外暴露"原则一致。
+2. ~~`time_range` 应为 `String` 还是 `enum`？~~ **保持 `String`。** 各 provider 的枚举值不统一（tavily 用 day/week/month/year，serper 用中文式描述），强行 enum 会丢失语义或导致 mapping 地狱。String + provider_options 是最务实的。
+3. ~~是否需要 `SearchModel::max_results_per_call()` 方法？~~ **不需要。** search 不像 embedding 有批量调用的硬限制——`max_results` 已经在 `SearchCallOptions` 中，provider 自行截断即可。
 
 ## 11. 实现顺序
 
