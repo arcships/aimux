@@ -392,3 +392,18 @@ pub use vllm::{VllmConfig, VllmProvider};
 pub use wafer::{WaferConfig, WaferProvider};
 pub use xiaomimimo::{XiaomimimoConfig, XiaomimimoProvider};
 pub use xinference::{XinferenceConfig, XinferenceProvider};
+
+// P0 thin-wrapper providers (provider-research batch).
+pub mod abacus;
+pub mod abliteration_ai;
+pub mod aiand;
+pub mod ambient;
+pub mod umans_ai;
+pub mod venice;
+
+pub use abacus::{AbacusConfig, AbacusProvider};
+pub use abliteration_ai::{AbliterationAiConfig, AbliterationAiProvider};
+pub use aiand::{AiandConfig, AiandProvider};
+pub use ambient::{AmbientConfig, AmbientProvider};
+pub use umans_ai::{UmansAiConfig, UmansAiProvider};
+pub use venice::{VeniceConfig, VeniceProvider};

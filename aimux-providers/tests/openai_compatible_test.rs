@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the OpenAI-compatible provider wrappers.
+//! Wiremock tests for the OpenAI-compatible provider wrappers.
 //!
 //! Each of the 8 wrappers (groq, deepseek, togetherai, fireworks, perplexity,
 //! cerebras, xai, moonshotai) is a thin layer over [`OpenAIProvider`] that
@@ -31,12 +31,15 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
 use aimux_providers::{
-    AlibabaConfig, AlibabaProvider, BasetenConfig, BasetenProvider, ByteDanceConfig,
-    ByteDanceProvider, CerebrasConfig, CerebrasProvider, DeepInfraConfig, DeepInfraProvider,
-    DeepSeekConfig, DeepSeekProvider, FireworksConfig, FireworksProvider, GroqConfig, GroqProvider,
-    HuggingFaceConfig, HuggingFaceProvider, MoonshotAIConfig, MoonshotAIProvider, PerplexityConfig,
-    PerplexityProvider, TogetherAIConfig, TogetherAIProvider, VercelConfig, VercelProvider,
-    XAIConfig, XAIProvider,
+    AbacusConfig, AbacusProvider, AlibabaConfig, AlibabaProvider, BasetenConfig, BasetenProvider,
+    ByteDanceConfig, ByteDanceProvider, CerebrasConfig, CerebrasProvider, DeepInfraConfig,
+    DeepInfraProvider, DeepSeekConfig, DeepSeekProvider, FireworksConfig, FireworksProvider,
+    GroqConfig, GroqProvider, HuggingFaceConfig, HuggingFaceProvider, MoonshotAIConfig,
+    MoonshotAIProvider, PerplexityConfig, PerplexityProvider, TogetherAIConfig, TogetherAIProvider,
+    VercelConfig, VercelProvider, XAIConfig, XAIProvider, abliteration_ai::AbliterationAiConfig,
+    abliteration_ai::AbliterationAiProvider, aiand::AiandConfig, aiand::AiandProvider,
+    ambient::AmbientConfig, ambient::AmbientProvider, umans_ai::UmansAiConfig,
+    umans_ai::UmansAiProvider, venice::VeniceConfig, venice::VeniceProvider,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -344,6 +347,19 @@ openai_compatible_tests!(
     "doubao-pro-32k"
 );
 openai_compatible_tests!(vercel, VercelConfig, VercelProvider, "v0-1.5-md");
+
+// P0 thin-wrapper providers (provider-research batch).
+openai_compatible_tests!(abacus, AbacusConfig, AbacusProvider, "route-llm");
+openai_compatible_tests!(
+    abliteration_ai,
+    AbliterationAiConfig,
+    AbliterationAiProvider,
+    "abliterated-model"
+);
+openai_compatible_tests!(aiand, AiandConfig, AiandProvider, "openai/gpt-oss-120b");
+openai_compatible_tests!(ambient, AmbientConfig, AmbientProvider, "ambient/large");
+openai_compatible_tests!(umans_ai, UmansAiConfig, UmansAiProvider, "umans-coder");
+openai_compatible_tests!(venice, VeniceConfig, VeniceProvider, "zai-org-glm-5");
 
 // ════════════════════════════════════════════════════════════════════════════
 // Tool-call scenarios — a second macro generating 2 tests per provider:
