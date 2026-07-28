@@ -31,16 +31,35 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
 use aimux_providers::{
-    AbacusConfig, AbacusProvider, AlibabaConfig, AlibabaProvider, BasetenConfig, BasetenProvider,
-    ByteDanceConfig, ByteDanceProvider, CerebrasConfig, CerebrasProvider, DeepInfraConfig,
-    DeepInfraProvider, DeepSeekConfig, DeepSeekProvider, FireworksConfig, FireworksProvider,
-    GroqConfig, GroqProvider, HuggingFaceConfig, HuggingFaceProvider, MoonshotAIConfig,
-    MoonshotAIProvider, PerplexityConfig, PerplexityProvider, TogetherAIConfig, TogetherAIProvider,
-    VercelConfig, VercelProvider, XAIConfig, XAIProvider, abliteration_ai::AbliterationAiConfig,
-    abliteration_ai::AbliterationAiProvider, ai_router::AiRouterConfig,
-    ai_router::AiRouterProvider, aiand::AiandConfig, aiand::AiandProvider, aki_io::AkiIoConfig,
-    aki_io::AkiIoProvider, alibaba_coding_plan::AlibabaCodingPlanConfig,
-    alibaba_coding_plan::AlibabaCodingPlanProvider,
+    AbacusConfig, AbacusProvider, AlibabaConfig, AlibabaProvider, ApertisConfig, ApertisProvider,
+    AtomicChatConfig, AtomicChatProvider, BasetenConfig, BasetenProvider, BlueclawConfig,
+    BlueclawProvider, ByteDanceConfig, ByteDanceProvider, CerebrasConfig, CerebrasProvider,
+    CloudflareConfig, CloudflareProvider, DarkbloomConfig, DarkbloomProvider, DeepInfraConfig,
+    DeepInfraProvider, DeepSeekConfig, DeepSeekProvider, FirepassConfig, FirepassProvider,
+    FireworksConfig, FireworksProvider, FreemodelConfig, FreemodelProvider, GmiConfig, GmiProvider,
+    GroqConfig, GroqProvider, HetznerConfig, HetznerProvider, HuggingFaceConfig,
+    HuggingFaceProvider, IflowcnConfig, IflowcnProvider, KuaeCloudCodingPlanConfig,
+    KuaeCloudCodingPlanProvider, LemonadeConfig, LemonadeProvider, LibertaiConfig,
+    LibertaiProvider, LynkrConfig, LynkrProvider, MinimaxCnCodingPlanConfig,
+    MinimaxCnCodingPlanProvider, MinimaxCodingPlanConfig, MinimaxCodingPlanProvider,
+    MoonshotAIConfig, MoonshotAIProvider, MoonshotaiCnConfig, MoonshotaiCnProvider, OpencodeConfig,
+    OpencodeProvider, PerplexityConfig, PerplexityProvider, PinstripesConfig, PinstripesProvider,
+    PrivatemodeAiConfig, PrivatemodeAiProvider, PublicaiConfig, PublicaiProvider, SnowflakeConfig,
+    SnowflakeProvider, SyntheticConfig, SyntheticProvider, TencentCodingPlanConfig,
+    TencentCodingPlanProvider, TencentTokenPlanConfig, TencentTokenPlanEnterpriseAutoConfig,
+    TencentTokenPlanEnterpriseAutoProvider, TencentTokenPlanEnterpriseProConfig,
+    TencentTokenPlanEnterpriseProProvider, TencentTokenPlanGeneralPersonalConfig,
+    TencentTokenPlanGeneralPersonalProvider, TencentTokenPlanHyPersonalConfig,
+    TencentTokenPlanHyPersonalProvider, TencentTokenPlanProvider, TensormeshConfig,
+    TensormeshProvider, ThinkingmachinesConfig, ThinkingmachinesProvider, TinfoilConfig,
+    TinfoilProvider, TogetherAIConfig, TogetherAIProvider, VercelConfig, VercelProvider, XAIConfig,
+    XAIProvider, XiaomiTokenPlanAmsConfig, XiaomiTokenPlanAmsProvider, XiaomiTokenPlanCnConfig,
+    XiaomiTokenPlanCnProvider, XiaomiTokenPlanSgpConfig, XiaomiTokenPlanSgpProvider,
+    XpersonaConfig, XpersonaProvider, ZeldocConfig, ZeldocProvider,
+    abliteration_ai::AbliterationAiConfig, abliteration_ai::AbliterationAiProvider,
+    ai_router::AiRouterConfig, ai_router::AiRouterProvider, aiand::AiandConfig,
+    aiand::AiandProvider, aki_io::AkiIoConfig, aki_io::AkiIoProvider,
+    alibaba_coding_plan::AlibabaCodingPlanConfig, alibaba_coding_plan::AlibabaCodingPlanProvider,
     alibaba_coding_plan_cn::AlibabaCodingPlanCnConfig,
     alibaba_coding_plan_cn::AlibabaCodingPlanCnProvider,
     alibaba_token_plan::AlibabaTokenPlanConfig, alibaba_token_plan::AlibabaTokenPlanProvider,
@@ -1106,4 +1125,193 @@ openai_compatible_tests!(
     ZenmuxConfig,
     ZenmuxProvider,
     "anthropic/claude-opus-4"
+);
+
+// P2 thin-wrapper providers (provider-research batch).
+openai_compatible_tests!(apertis, ApertisConfig, ApertisProvider, "apertis/<model>");
+openai_compatible_tests!(
+    darkbloom,
+    DarkbloomConfig,
+    DarkbloomProvider,
+    "darkbloom/gemma-4-26b"
+);
+openai_compatible_tests!(
+    libertai,
+    LibertaiConfig,
+    LibertaiProvider,
+    "libertai/bge-m3"
+);
+openai_compatible_tests!(
+    pinstripes,
+    PinstripesConfig,
+    PinstripesProvider,
+    "pinstripes/ps/deepseek-v4-flash"
+);
+openai_compatible_tests!(
+    publicai,
+    PublicaiConfig,
+    PublicaiProvider,
+    "publicai/BSC-LT/ALIA-40b-instruct_Q8_0"
+);
+openai_compatible_tests!(
+    synthetic,
+    SyntheticConfig,
+    SyntheticProvider,
+    "hf:MiniMaxAI/MiniMax-M2"
+);
+openai_compatible_tests!(
+    tensormesh,
+    TensormeshConfig,
+    TensormeshProvider,
+    "tensormesh/MiniMaxAI/MiniMax-M2.5"
+);
+openai_compatible_tests!(
+    atomic_chat,
+    AtomicChatConfig,
+    AtomicChatProvider,
+    "Meta-Llama-3_1-8B-Instruct-GGUF"
+);
+openai_compatible_tests!(
+    blueclaw,
+    BlueclawConfig,
+    BlueclawProvider,
+    "Qwen/Qwen3.6-35B-A3B-FP8"
+);
+openai_compatible_tests!(
+    cloudflare,
+    CloudflareConfig,
+    CloudflareProvider,
+    "cloudflare/@cf/..."
+);
+openai_compatible_tests!(
+    firepass,
+    FirepassConfig,
+    FirepassProvider,
+    "accounts/fireworks/routers/kimi-k2p6-turbo"
+);
+openai_compatible_tests!(
+    freemodel,
+    FreemodelConfig,
+    FreemodelProvider,
+    "claude-fable-5"
+);
+openai_compatible_tests!(gmi, GmiConfig, GmiProvider, "gmi/");
+openai_compatible_tests!(
+    hetzner,
+    HetznerConfig,
+    HetznerProvider,
+    "Qwen/Qwen3.6-35B-A3B-FP8"
+);
+openai_compatible_tests!(iflowcn, IflowcnConfig, IflowcnProvider, "deepseek-r1");
+openai_compatible_tests!(
+    kuae_cloud_coding_plan,
+    KuaeCloudCodingPlanConfig,
+    KuaeCloudCodingPlanProvider,
+    "GLM-4.7"
+);
+openai_compatible_tests!(
+    lemonade,
+    LemonadeConfig,
+    LemonadeProvider,
+    "Qwen3-0.6B-GGUF"
+);
+openai_compatible_tests!(lynkr, LynkrConfig, LynkrProvider, "lynkr-auto");
+openai_compatible_tests!(
+    minimax_cn_coding_plan,
+    MinimaxCnCodingPlanConfig,
+    MinimaxCnCodingPlanProvider,
+    "MiniMax-M3"
+);
+openai_compatible_tests!(
+    minimax_coding_plan,
+    MinimaxCodingPlanConfig,
+    MinimaxCodingPlanProvider,
+    "MiniMax-M3"
+);
+openai_compatible_tests!(
+    moonshotai_cn,
+    MoonshotaiCnConfig,
+    MoonshotaiCnProvider,
+    "kimi-k2-0711-preview"
+);
+openai_compatible_tests!(
+    opencode,
+    OpencodeConfig,
+    OpencodeProvider,
+    "/chat/completions"
+);
+openai_compatible_tests!(
+    tencent_coding_plan,
+    TencentCodingPlanConfig,
+    TencentCodingPlanProvider,
+    "glm-5"
+);
+openai_compatible_tests!(
+    tencent_token_plan,
+    TencentTokenPlanConfig,
+    TencentTokenPlanProvider,
+    "hy3"
+);
+openai_compatible_tests!(
+    tencent_token_plan_enterprise_auto,
+    TencentTokenPlanEnterpriseAutoConfig,
+    TencentTokenPlanEnterpriseAutoProvider,
+    "auto"
+);
+openai_compatible_tests!(
+    tencent_token_plan_enterprise_pro,
+    TencentTokenPlanEnterpriseProConfig,
+    TencentTokenPlanEnterpriseProProvider,
+    "auto"
+);
+openai_compatible_tests!(
+    tencent_token_plan_general_personal,
+    TencentTokenPlanGeneralPersonalConfig,
+    TencentTokenPlanGeneralPersonalProvider,
+    "deepseek-v4-flash-202605"
+);
+openai_compatible_tests!(
+    tencent_token_plan_hy_personal,
+    TencentTokenPlanHyPersonalConfig,
+    TencentTokenPlanHyPersonalProvider,
+    "hy3"
+);
+openai_compatible_tests!(
+    thinkingmachines,
+    ThinkingmachinesConfig,
+    ThinkingmachinesProvider,
+    "thinkingmachines/Inkling"
+);
+openai_compatible_tests!(tinfoil, TinfoilConfig, TinfoilProvider, "gemma4-31b");
+openai_compatible_tests!(
+    xiaomi_token_plan_ams,
+    XiaomiTokenPlanAmsConfig,
+    XiaomiTokenPlanAmsProvider,
+    "mimo-v2-omni"
+);
+openai_compatible_tests!(
+    xiaomi_token_plan_cn,
+    XiaomiTokenPlanCnConfig,
+    XiaomiTokenPlanCnProvider,
+    "mimo-v2-omni"
+);
+openai_compatible_tests!(
+    xiaomi_token_plan_sgp,
+    XiaomiTokenPlanSgpConfig,
+    XiaomiTokenPlanSgpProvider,
+    "mimo-v2-omni"
+);
+openai_compatible_tests!(xpersona, XpersonaConfig, XpersonaProvider, "claude-fable-5");
+openai_compatible_tests!(zeldoc, ZeldocConfig, ZeldocProvider, "z-code");
+openai_compatible_tests!(
+    privatemode_ai,
+    PrivatemodeAiConfig,
+    PrivatemodeAiProvider,
+    "gpt-oss-120b"
+);
+openai_compatible_tests!(
+    snowflake,
+    SnowflakeConfig,
+    SnowflakeProvider,
+    "claude-sonnet-4-5"
 );

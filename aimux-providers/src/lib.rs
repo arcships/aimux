@@ -594,3 +594,88 @@ pub use zai_coding_plan::{ZaiCodingPlanConfig, ZaiCodingPlanProvider};
 pub use zenmux::{ZenmuxConfig, ZenmuxProvider};
 pub use zhipu_v4::{ZhipuV4Config, ZhipuV4Provider};
 pub use zhipuai_coding_plan::{ZhipuaiCodingPlanConfig, ZhipuaiCodingPlanProvider};
+
+// P2 thin-wrapper providers (provider-research batch).
+pub mod apertis;
+pub mod atomic_chat;
+pub mod blueclaw;
+pub mod cloudflare;
+pub mod darkbloom;
+pub mod firepass;
+pub mod freemodel;
+pub mod gmi;
+pub mod hetzner;
+pub mod iflowcn;
+pub mod kuae_cloud_coding_plan;
+pub mod lemonade;
+pub mod libertai;
+pub mod lynkr;
+pub mod minimax_cn_coding_plan;
+pub mod minimax_coding_plan;
+pub mod moonshotai_cn;
+pub mod opencode;
+pub mod pinstripes;
+pub mod privatemode_ai;
+pub mod publicai;
+pub mod snowflake;
+pub mod synthetic;
+pub mod tencent_coding_plan;
+pub mod tencent_token_plan;
+pub mod tencent_token_plan_enterprise_auto;
+pub mod tencent_token_plan_enterprise_pro;
+pub mod tencent_token_plan_general_personal;
+pub mod tencent_token_plan_hy_personal;
+pub mod tensormesh;
+pub mod thinkingmachines;
+pub mod tinfoil;
+pub mod xiaomi_token_plan_ams;
+pub mod xiaomi_token_plan_cn;
+pub mod xiaomi_token_plan_sgp;
+pub mod xpersona;
+pub mod zeldoc;
+
+pub use apertis::{ApertisConfig, ApertisProvider};
+pub use atomic_chat::{AtomicChatConfig, AtomicChatProvider};
+pub use blueclaw::{BlueclawConfig, BlueclawProvider};
+pub use cloudflare::{CloudflareConfig, CloudflareProvider};
+pub use darkbloom::{DarkbloomConfig, DarkbloomProvider};
+pub use firepass::{FirepassConfig, FirepassProvider};
+pub use freemodel::{FreemodelConfig, FreemodelProvider};
+pub use gmi::{GmiConfig, GmiProvider};
+pub use hetzner::{HetznerConfig, HetznerProvider};
+pub use iflowcn::{IflowcnConfig, IflowcnProvider};
+pub use kuae_cloud_coding_plan::{KuaeCloudCodingPlanConfig, KuaeCloudCodingPlanProvider};
+pub use lemonade::{LemonadeConfig, LemonadeProvider};
+pub use libertai::{LibertaiConfig, LibertaiProvider};
+pub use lynkr::{LynkrConfig, LynkrProvider};
+pub use minimax_cn_coding_plan::{MinimaxCnCodingPlanConfig, MinimaxCnCodingPlanProvider};
+pub use minimax_coding_plan::{MinimaxCodingPlanConfig, MinimaxCodingPlanProvider};
+pub use moonshotai_cn::{MoonshotaiCnConfig, MoonshotaiCnProvider};
+pub use opencode::{OpencodeConfig, OpencodeProvider};
+pub use pinstripes::{PinstripesConfig, PinstripesProvider};
+pub use privatemode_ai::{PrivatemodeAiConfig, PrivatemodeAiProvider};
+pub use publicai::{PublicaiConfig, PublicaiProvider};
+pub use snowflake::{SnowflakeConfig, SnowflakeProvider};
+pub use synthetic::{SyntheticConfig, SyntheticProvider};
+pub use tencent_coding_plan::{TencentCodingPlanConfig, TencentCodingPlanProvider};
+pub use tencent_token_plan::{TencentTokenPlanConfig, TencentTokenPlanProvider};
+pub use tencent_token_plan_enterprise_auto::{
+    TencentTokenPlanEnterpriseAutoConfig, TencentTokenPlanEnterpriseAutoProvider,
+};
+pub use tencent_token_plan_enterprise_pro::{
+    TencentTokenPlanEnterpriseProConfig, TencentTokenPlanEnterpriseProProvider,
+};
+pub use tencent_token_plan_general_personal::{
+    TencentTokenPlanGeneralPersonalConfig, TencentTokenPlanGeneralPersonalProvider,
+};
+pub use tencent_token_plan_hy_personal::{
+    TencentTokenPlanHyPersonalConfig, TencentTokenPlanHyPersonalProvider,
+};
+pub use tensormesh::{TensormeshConfig, TensormeshProvider};
+pub use thinkingmachines::{ThinkingmachinesConfig, ThinkingmachinesProvider};
+pub use tinfoil::{TinfoilConfig, TinfoilProvider};
+pub use xiaomi_token_plan_ams::{XiaomiTokenPlanAmsConfig, XiaomiTokenPlanAmsProvider};
+pub use xiaomi_token_plan_cn::{XiaomiTokenPlanCnConfig, XiaomiTokenPlanCnProvider};
+pub use xiaomi_token_plan_sgp::{XiaomiTokenPlanSgpConfig, XiaomiTokenPlanSgpProvider};
+pub use xpersona::{XpersonaConfig, XpersonaProvider};
+pub use zeldoc::{ZeldocConfig, ZeldocProvider};
