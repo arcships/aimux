@@ -599,6 +599,33 @@ pub use zenmux::{ZenmuxConfig, ZenmuxProvider};
 pub use zhipu_v4::{ZhipuV4Config, ZhipuV4Provider};
 pub use zhipuai_coding_plan::{ZhipuaiCodingPlanConfig, ZhipuaiCodingPlanProvider};
 
+// Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
+// Each wraps the shared OpenAIProvider against the Vertex AI MaaS OpenAPI
+// endpoint, authenticating with a Google Cloud Bearer token.
+pub mod vertex_ai_ai21_models;
+pub mod vertex_ai_anthropic_models;
+pub mod vertex_ai_deepseek_models;
+pub mod vertex_ai_llama_models;
+pub mod vertex_ai_minimax_models;
+pub mod vertex_ai_mistral_models;
+pub mod vertex_ai_moonshot_models;
+pub mod vertex_ai_openai_models;
+pub mod vertex_ai_qwen_models;
+pub mod vertex_ai_zai_models;
+
+pub use vertex_ai_ai21_models::{VertexAiAi21ModelsConfig, VertexAiAi21ModelsProvider};
+pub use vertex_ai_anthropic_models::{
+    VertexAiAnthropicModelsConfig, VertexAiAnthropicModelsProvider,
+};
+pub use vertex_ai_deepseek_models::{VertexAiDeepseekModelsConfig, VertexAiDeepseekModelsProvider};
+pub use vertex_ai_llama_models::{VertexAiLlamaModelsConfig, VertexAiLlamaModelsProvider};
+pub use vertex_ai_minimax_models::{VertexAiMinimaxModelsConfig, VertexAiMinimaxModelsProvider};
+pub use vertex_ai_mistral_models::{VertexAiMistralModelsConfig, VertexAiMistralModelsProvider};
+pub use vertex_ai_moonshot_models::{VertexAiMoonshotModelsConfig, VertexAiMoonshotModelsProvider};
+pub use vertex_ai_openai_models::{VertexAiOpenaiModelsConfig, VertexAiOpenaiModelsProvider};
+pub use vertex_ai_qwen_models::{VertexAiQwenModelsConfig, VertexAiQwenModelsProvider};
+pub use vertex_ai_zai_models::{VertexAiZaiModelsConfig, VertexAiZaiModelsProvider};
+
 // Search-only providers (web search modality).
 pub mod dataforseo;
 pub mod exa_ai;

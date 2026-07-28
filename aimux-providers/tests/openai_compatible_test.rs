@@ -52,8 +52,15 @@ use aimux_providers::{
     TencentTokenPlanGeneralPersonalProvider, TencentTokenPlanHyPersonalConfig,
     TencentTokenPlanHyPersonalProvider, TencentTokenPlanProvider, TensormeshConfig,
     TensormeshProvider, ThinkingmachinesConfig, ThinkingmachinesProvider, TinfoilConfig,
-    TinfoilProvider, TogetherAIConfig, TogetherAIProvider, VercelConfig, VercelProvider, XAIConfig,
-    XAIProvider, XiaomiTokenPlanAmsConfig, XiaomiTokenPlanAmsProvider, XiaomiTokenPlanCnConfig,
+    TinfoilProvider, TogetherAIConfig, TogetherAIProvider, VercelConfig, VercelProvider,
+    VertexAiAi21ModelsConfig, VertexAiAi21ModelsProvider, VertexAiAnthropicModelsConfig,
+    VertexAiAnthropicModelsProvider, VertexAiDeepseekModelsConfig, VertexAiDeepseekModelsProvider,
+    VertexAiLlamaModelsConfig, VertexAiLlamaModelsProvider, VertexAiMinimaxModelsConfig,
+    VertexAiMinimaxModelsProvider, VertexAiMistralModelsConfig, VertexAiMistralModelsProvider,
+    VertexAiMoonshotModelsConfig, VertexAiMoonshotModelsProvider, VertexAiOpenaiModelsConfig,
+    VertexAiOpenaiModelsProvider, VertexAiQwenModelsConfig, VertexAiQwenModelsProvider,
+    VertexAiZaiModelsConfig, VertexAiZaiModelsProvider, XAIConfig, XAIProvider,
+    XiaomiTokenPlanAmsConfig, XiaomiTokenPlanAmsProvider, XiaomiTokenPlanCnConfig,
     XiaomiTokenPlanCnProvider, XiaomiTokenPlanSgpConfig, XiaomiTokenPlanSgpProvider,
     XpersonaConfig, XpersonaProvider, ZeldocConfig, ZeldocProvider,
     abliteration_ai::AbliterationAiConfig, abliteration_ai::AbliterationAiProvider,
@@ -1314,4 +1321,66 @@ openai_compatible_tests!(
     SnowflakeConfig,
     SnowflakeProvider,
     "claude-sonnet-4-5"
+);
+
+// Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
+openai_compatible_tests!(
+    vertex_ai_ai21_models,
+    VertexAiAi21ModelsConfig,
+    VertexAiAi21ModelsProvider,
+    "ai21/jamba-1.5-large"
+);
+openai_compatible_tests!(
+    vertex_ai_anthropic_models,
+    VertexAiAnthropicModelsConfig,
+    VertexAiAnthropicModelsProvider,
+    "anthropic/claude-sonnet-4"
+);
+openai_compatible_tests!(
+    vertex_ai_deepseek_models,
+    VertexAiDeepseekModelsConfig,
+    VertexAiDeepseekModelsProvider,
+    "deepseek-ai/deepseek-v3.1-maas"
+);
+openai_compatible_tests!(
+    vertex_ai_llama_models,
+    VertexAiLlamaModelsConfig,
+    VertexAiLlamaModelsProvider,
+    "meta/llama-4-scout-17b-16e-instruct-maas"
+);
+openai_compatible_tests!(
+    vertex_ai_minimax_models,
+    VertexAiMinimaxModelsConfig,
+    VertexAiMinimaxModelsProvider,
+    "minimax/minimax-m2-maas"
+);
+openai_compatible_tests!(
+    vertex_ai_mistral_models,
+    VertexAiMistralModelsConfig,
+    VertexAiMistralModelsProvider,
+    "mistralai/mistral-large-2411"
+);
+openai_compatible_tests!(
+    vertex_ai_moonshot_models,
+    VertexAiMoonshotModelsConfig,
+    VertexAiMoonshotModelsProvider,
+    "moonshotai/kimi-k2-thinking-maas"
+);
+openai_compatible_tests!(
+    vertex_ai_openai_models,
+    VertexAiOpenaiModelsConfig,
+    VertexAiOpenaiModelsProvider,
+    "openai/gpt-oss-120b-maas"
+);
+openai_compatible_tests!(
+    vertex_ai_qwen_models,
+    VertexAiQwenModelsConfig,
+    VertexAiQwenModelsProvider,
+    "qwen/qwen3-coder-480b-a35b-instruct-maas"
+);
+openai_compatible_tests!(
+    vertex_ai_zai_models,
+    VertexAiZaiModelsConfig,
+    VertexAiZaiModelsProvider,
+    "zai-org/glm-4.7-maas"
 );
