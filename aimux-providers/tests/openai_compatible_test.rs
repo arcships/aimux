@@ -37,9 +37,71 @@ use aimux_providers::{
     GroqConfig, GroqProvider, HuggingFaceConfig, HuggingFaceProvider, MoonshotAIConfig,
     MoonshotAIProvider, PerplexityConfig, PerplexityProvider, TogetherAIConfig, TogetherAIProvider,
     VercelConfig, VercelProvider, XAIConfig, XAIProvider, abliteration_ai::AbliterationAiConfig,
-    abliteration_ai::AbliterationAiProvider, aiand::AiandConfig, aiand::AiandProvider,
-    ambient::AmbientConfig, ambient::AmbientProvider, umans_ai::UmansAiConfig,
-    umans_ai::UmansAiProvider, venice::VeniceConfig, venice::VeniceProvider,
+    abliteration_ai::AbliterationAiProvider, ai_router::AiRouterConfig,
+    ai_router::AiRouterProvider, aiand::AiandConfig, aiand::AiandProvider, aki_io::AkiIoConfig,
+    aki_io::AkiIoProvider, alibaba_coding_plan::AlibabaCodingPlanConfig,
+    alibaba_coding_plan::AlibabaCodingPlanProvider,
+    alibaba_coding_plan_cn::AlibabaCodingPlanCnConfig,
+    alibaba_coding_plan_cn::AlibabaCodingPlanCnProvider,
+    alibaba_token_plan::AlibabaTokenPlanConfig, alibaba_token_plan::AlibabaTokenPlanProvider,
+    alibaba_token_plan_cn::AlibabaTokenPlanCnConfig,
+    alibaba_token_plan_cn::AlibabaTokenPlanCnProvider, ambient::AmbientConfig,
+    ambient::AmbientProvider, anyapi::AnyapiConfig, anyapi::AnyapiProvider, auriko::AurikoConfig,
+    auriko::AurikoProvider, baidu_v2::BaiduV2Config, baidu_v2::BaiduV2Provider,
+    bailing::BailingConfig, bailing::BailingProvider, bedrock_mantle::BedrockMantleConfig,
+    bedrock_mantle::BedrockMantleProvider, berget::BergetConfig, berget::BergetProvider,
+    cherryin::CherryinConfig, cherryin::CherryinProvider, chutes::ChutesConfig,
+    chutes::ChutesProvider, claudinio::ClaudinioConfig, claudinio::ClaudinioProvider,
+    cloudferro_sherlock::CloudferroSherlockConfig, cloudferro_sherlock::CloudferroSherlockProvider,
+    cloudflare_workers_ai::CloudflareWorkersAiConfig,
+    cloudflare_workers_ai::CloudflareWorkersAiProvider, cortecs::CortecsConfig,
+    cortecs::CortecsProvider, crof::CrofConfig, crof::CrofProvider, crossmodel::CrossmodelConfig,
+    crossmodel::CrossmodelProvider, crusoe::CrusoeConfig, crusoe::CrusoeProvider,
+    daoxe::DaoxeConfig, daoxe::DaoxeProvider, digitalocean::DigitaloceanConfig,
+    digitalocean::DigitaloceanProvider, dinference::DinferenceConfig,
+    dinference::DinferenceProvider, doubao::DoubaoConfig, doubao::DoubaoProvider, drun::DrunConfig,
+    drun::DrunProvider, ebcloud::EbcloudConfig, ebcloud::EbcloudProvider,
+    empiriolabs::EmpiriolabsConfig, empiriolabs::EmpiriolabsProvider, evroc::EvrocConfig,
+    evroc::EvrocProvider, frogbot::FrogbotConfig, frogbot::FrogbotProvider,
+    gmicloud::GmicloudConfig, gmicloud::GmicloudProvider, hpc_ai::HpcAiConfig,
+    hpc_ai::HpcAiProvider, inceptron::InceptronConfig, inceptron::InceptronProvider,
+    inferx::InferxConfig, inferx::InferxProvider, io_net::IoNetConfig, io_net::IoNetProvider,
+    jiekou::JiekouConfig, jiekou::JiekouProvider, kenari::KenariConfig, kenari::KenariProvider,
+    kimi::KimiConfig, kimi::KimiProvider, kimi_for_coding::KimiForCodingConfig,
+    kimi_for_coding::KimiForCodingProvider, lilac::LilacConfig, lilac::LilacProvider,
+    llama::LlamaConfig, llama::LlamaProvider, llamagate::LlamagateConfig,
+    llamagate::LlamagateProvider, llmgateway::LlmgatewayConfig, llmgateway::LlmgatewayProvider,
+    llmtr::LlmtrConfig, llmtr::LlmtrProvider, lucidquery::LucidqueryConfig,
+    lucidquery::LucidqueryProvider, meganova::MeganovaConfig, meganova::MeganovaProvider,
+    merge_gateway::MergeGatewayConfig, merge_gateway::MergeGatewayProvider, meta::MetaConfig,
+    meta::MetaProvider, mimo::MimoConfig, mimo::MimoProvider, minimax_cn::MinimaxCnConfig,
+    minimax_cn::MinimaxCnProvider, mixlayer::MixlayerConfig, mixlayer::MixlayerProvider,
+    moark::MoarkConfig, moark::MoarkProvider, model_oracle_ai::ModelOracleAiConfig,
+    model_oracle_ai::ModelOracleAiProvider, nearai::NearaiConfig, nearai::NearaiProvider,
+    neon::NeonConfig, neon::NeonProvider, neuralwatt::NeuralwattConfig,
+    neuralwatt::NeuralwattProvider, oci::OciConfig, oci::OciProvider, ofox::OfoxConfig,
+    ofox::OfoxProvider, perplexity_agent::PerplexityAgentConfig,
+    perplexity_agent::PerplexityAgentProvider, poe::PoeConfig, poe::PoeProvider,
+    poolside::PoolsideConfig, poolside::PoolsideProvider, ppinfra::PpinfraConfig,
+    ppinfra::PpinfraProvider, qihang_ai::QihangAiConfig, qihang_ai::QihangAiProvider,
+    regolo_ai::RegoloAiConfig, regolo_ai::RegoloAiProvider, routing_run::RoutingRunConfig,
+    routing_run::RoutingRunProvider, snowflake_cortex::SnowflakeCortexConfig,
+    snowflake_cortex::SnowflakeCortexProvider, stackit::StackitConfig, stackit::StackitProvider,
+    stepfun_ai_step_plan::StepfunAiStepPlanConfig, stepfun_ai_step_plan::StepfunAiStepPlanProvider,
+    stepfun_step_plan::StepfunStepPlanConfig, stepfun_step_plan::StepfunStepPlanProvider,
+    subconscious::SubconsciousConfig, subconscious::SubconsciousProvider,
+    tencent_tokenhub::TencentTokenhubConfig, tencent_tokenhub::TencentTokenhubProvider,
+    the_grid_ai::TheGridAiConfig, the_grid_ai::TheGridAiProvider, tokenflux::TokenfluxConfig,
+    tokenflux::TokenfluxProvider, trustedrouter::TrustedrouterConfig,
+    trustedrouter::TrustedrouterProvider, umans_ai::UmansAiConfig, umans_ai::UmansAiProvider,
+    unorouter::UnorouterConfig, unorouter::UnorouterProvider, venice::VeniceConfig,
+    venice::VeniceProvider, vivgrid::VivgridConfig, vivgrid::VivgridProvider,
+    volc_engine::VolcEngineConfig, volc_engine::VolcEngineProvider, vultr::VultrConfig,
+    vultr::VultrProvider, wandb::WandbConfig, wandb::WandbProvider, xunfei::XunfeiConfig,
+    xunfei::XunfeiProvider, zai_coding_plan::ZaiCodingPlanConfig,
+    zai_coding_plan::ZaiCodingPlanProvider, zenmux::ZenmuxConfig, zenmux::ZenmuxProvider,
+    zhipu_v4::ZhipuV4Config, zhipu_v4::ZhipuV4Provider,
+    zhipuai_coding_plan::ZhipuaiCodingPlanConfig, zhipuai_coding_plan::ZhipuaiCodingPlanProvider,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -724,3 +786,324 @@ async fn groq_exposes_response_headers() {
         .expect("response_headers should be Some");
     assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
+
+// P1 thin-wrapper providers (provider-research batch).
+openai_compatible_tests!(chutes, ChutesConfig, ChutesProvider, "default");
+openai_compatible_tests!(meta, MetaConfig, MetaProvider, "meta/muse-spark-1.1");
+openai_compatible_tests!(poe, PoeConfig, PoeProvider, "anthropic/claude-haiku-3");
+openai_compatible_tests!(
+    wandb,
+    WandbConfig,
+    WandbProvider,
+    "JetBrains/Mellum2-12B-A2.5B-Instruct"
+);
+openai_compatible_tests!(ai_router, AiRouterConfig, AiRouterProvider, "/v1/models");
+openai_compatible_tests!(aki_io, AkiIoConfig, AkiIoProvider, "llama3-chat-70b");
+openai_compatible_tests!(
+    alibaba_coding_plan,
+    AlibabaCodingPlanConfig,
+    AlibabaCodingPlanProvider,
+    "sk-sp-xxxxx"
+);
+openai_compatible_tests!(
+    alibaba_coding_plan_cn,
+    AlibabaCodingPlanCnConfig,
+    AlibabaCodingPlanCnProvider,
+    "sk-sp-xxxxx"
+);
+openai_compatible_tests!(anyapi, AnyapiConfig, AnyapiProvider, "messages");
+openai_compatible_tests!(auriko, AurikoConfig, AurikoProvider, "budget_exhausted");
+openai_compatible_tests!(baidu_v2, BaiduV2Config, BaiduV2Provider, "qianfan/");
+openai_compatible_tests!(bailing, BailingConfig, BailingProvider, "enable_search");
+openai_compatible_tests!(berget, BergetConfig, BergetProvider, "google/");
+openai_compatible_tests!(claudinio, ClaudinioConfig, ClaudinioProvider, "max_tokens");
+openai_compatible_tests!(
+    cloudferro_sherlock,
+    CloudferroSherlockConfig,
+    CloudferroSherlockProvider,
+    "MiniMaxAI/MiniMax-M2.5"
+);
+openai_compatible_tests!(
+    cloudflare_workers_ai,
+    CloudflareWorkersAiConfig,
+    CloudflareWorkersAiProvider,
+    "@cf/meta/llama-3.1-8b-instruct"
+);
+openai_compatible_tests!(cortecs, CortecsConfig, CortecsProvider, "claude-4-5-sonnet");
+openai_compatible_tests!(crof, CrofConfig, CrofProvider, "deepseek-v3.2");
+openai_compatible_tests!(
+    crossmodel,
+    CrossmodelConfig,
+    CrossmodelProvider,
+    "vendor/model"
+);
+openai_compatible_tests!(
+    crusoe,
+    CrusoeConfig,
+    CrusoeProvider,
+    "deepseek-ai/DeepSeek-V3-0324"
+);
+openai_compatible_tests!(
+    daoxe,
+    DaoxeConfig,
+    DaoxeProvider,
+    "claude-sonnet-4-20250514"
+);
+openai_compatible_tests!(dinference, DinferenceConfig, DinferenceProvider, "glm-5");
+openai_compatible_tests!(drun, DrunConfig, DrunProvider, "public/deepseek-r1");
+openai_compatible_tests!(ebcloud, EbcloudConfig, EbcloudProvider, "DeepSeek-V4-Flash");
+openai_compatible_tests!(
+    empiriolabs,
+    EmpiriolabsConfig,
+    EmpiriolabsProvider,
+    "sk-empiriolabs-"
+);
+openai_compatible_tests!(frogbot, FrogbotConfig, FrogbotProvider, "claude-haiku-4-5");
+openai_compatible_tests!(
+    gmicloud,
+    GmicloudConfig,
+    GmicloudProvider,
+    "Qwen/Qwen3.7-Max"
+);
+openai_compatible_tests!(
+    hpc_ai,
+    HpcAiConfig,
+    HpcAiProvider,
+    "anthropic/claude-opus-4.7"
+);
+openai_compatible_tests!(
+    inceptron,
+    InceptronConfig,
+    InceptronProvider,
+    "MiniMaxAI/MiniMax-M2.5"
+);
+openai_compatible_tests!(inferx, InferxConfig, InferxProvider, "Qwen/Qwen3.6-35B-A3B");
+openai_compatible_tests!(
+    io_net,
+    IoNetConfig,
+    IoNetProvider,
+    "meta-llama/Llama-3.3-70B-Instruct"
+);
+openai_compatible_tests!(jiekou, JiekouConfig, JiekouProvider, "deepseek/deepseek-r1");
+openai_compatible_tests!(kenari, KenariConfig, KenariProvider, "gpt-4o-mini");
+openai_compatible_tests!(kimi, KimiConfig, KimiProvider, "thinking");
+openai_compatible_tests!(
+    kimi_for_coding,
+    KimiForCodingConfig,
+    KimiForCodingProvider,
+    "k3"
+);
+openai_compatible_tests!(lilac, LilacConfig, LilacProvider, "moonshotai/kimi-k2.6");
+openai_compatible_tests!(
+    llama,
+    LlamaConfig,
+    LlamaProvider,
+    "Llama-4-Scout-17B-16E-Instruct-FP8"
+);
+openai_compatible_tests!(llmgateway, LlmgatewayConfig, LlmgatewayProvider, "gpt-4o");
+openai_compatible_tests!(llmtr, LlmtrConfig, LlmtrProvider, "model");
+openai_compatible_tests!(
+    lucidquery,
+    LucidqueryConfig,
+    LucidqueryProvider,
+    "lucidquery-agi-01-frontier"
+);
+openai_compatible_tests!(
+    meganova,
+    MeganovaConfig,
+    MeganovaProvider,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507"
+);
+openai_compatible_tests!(
+    merge_gateway,
+    MergeGatewayConfig,
+    MergeGatewayProvider,
+    "gpt-5.2"
+);
+openai_compatible_tests!(mimo, MimoConfig, MimoProvider, "mimo-v2.5-pro");
+openai_compatible_tests!(minimax_cn, MinimaxCnConfig, MinimaxCnProvider, "MiniMax-M2");
+openai_compatible_tests!(mixlayer, MixlayerConfig, MixlayerProvider, "qwen/");
+openai_compatible_tests!(moark, MoarkConfig, MoarkProvider, "GLM-4.7");
+openai_compatible_tests!(
+    model_oracle_ai,
+    ModelOracleAiConfig,
+    ModelOracleAiProvider,
+    "reasoning_effort"
+);
+openai_compatible_tests!(neon, NeonConfig, NeonProvider, "nt_live_...");
+openai_compatible_tests!(
+    neuralwatt,
+    NeuralwattConfig,
+    NeuralwattProvider,
+    "meta-llama/"
+);
+openai_compatible_tests!(
+    ofox,
+    OfoxConfig,
+    OfoxProvider,
+    "Three Protocols, One Gateway"
+);
+openai_compatible_tests!(
+    perplexity_agent,
+    PerplexityAgentConfig,
+    PerplexityAgentProvider,
+    "openai/gpt-5.6-sol"
+);
+openai_compatible_tests!(
+    poolside,
+    PoolsideConfig,
+    PoolsideProvider,
+    "poolside/laguna-s-2.1"
+);
+openai_compatible_tests!(
+    ppinfra,
+    PpinfraConfig,
+    PpinfraProvider,
+    "deepseek/deepseek-v3-0324"
+);
+openai_compatible_tests!(qihang_ai, QihangAiConfig, QihangAiProvider, "gpt-4o");
+openai_compatible_tests!(
+    routing_run,
+    RoutingRunConfig,
+    RoutingRunProvider,
+    "routing-run/claude-opus-4-8"
+);
+openai_compatible_tests!(
+    snowflake_cortex,
+    SnowflakeCortexConfig,
+    SnowflakeCortexProvider,
+    "claude-sonnet-4-5"
+);
+openai_compatible_tests!(
+    stackit,
+    StackitConfig,
+    StackitProvider,
+    "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8"
+);
+openai_compatible_tests!(
+    stepfun_ai_step_plan,
+    StepfunAiStepPlanConfig,
+    StepfunAiStepPlanProvider,
+    "step-3.7-flash"
+);
+openai_compatible_tests!(
+    stepfun_step_plan,
+    StepfunStepPlanConfig,
+    StepfunStepPlanProvider,
+    "step-3.7-flash"
+);
+openai_compatible_tests!(
+    subconscious,
+    SubconsciousConfig,
+    SubconsciousProvider,
+    "subconscious/tim-qwen3.6-27b"
+);
+openai_compatible_tests!(
+    tencent_tokenhub,
+    TencentTokenhubConfig,
+    TencentTokenhubProvider,
+    "chat.completion"
+);
+openai_compatible_tests!(
+    the_grid_ai,
+    TheGridAiConfig,
+    TheGridAiProvider,
+    "text-prime"
+);
+openai_compatible_tests!(
+    tokenflux,
+    TokenfluxConfig,
+    TokenfluxProvider,
+    "chat.completion"
+);
+openai_compatible_tests!(
+    trustedrouter,
+    TrustedrouterConfig,
+    TrustedrouterProvider,
+    "trustedrouter/auto"
+);
+openai_compatible_tests!(
+    unorouter,
+    UnorouterConfig,
+    UnorouterProvider,
+    "claude-haiku-4-5-20251001"
+);
+openai_compatible_tests!(vivgrid, VivgridConfig, VivgridProvider, "messages");
+openai_compatible_tests!(
+    volc_engine,
+    VolcEngineConfig,
+    VolcEngineProvider,
+    "ep-20240xxxxxxxx"
+);
+openai_compatible_tests!(vultr, VultrConfig, VultrProvider, "messages");
+openai_compatible_tests!(xunfei, XunfeiConfig, XunfeiProvider, "messages");
+openai_compatible_tests!(
+    zai_coding_plan,
+    ZaiCodingPlanConfig,
+    ZaiCodingPlanProvider,
+    "glm-4.5-air"
+);
+openai_compatible_tests!(zhipu_v4, ZhipuV4Config, ZhipuV4Provider, "/api/paas/v4");
+openai_compatible_tests!(
+    alibaba_token_plan,
+    AlibabaTokenPlanConfig,
+    AlibabaTokenPlanProvider,
+    "MiniMax-M2.5"
+);
+openai_compatible_tests!(
+    alibaba_token_plan_cn,
+    AlibabaTokenPlanCnConfig,
+    AlibabaTokenPlanCnProvider,
+    "MiniMax-M2.5"
+);
+openai_compatible_tests!(
+    bedrock_mantle,
+    BedrockMantleConfig,
+    BedrockMantleProvider,
+    "us-east-1"
+);
+openai_compatible_tests!(
+    cherryin,
+    CherryinConfig,
+    CherryinProvider,
+    "BAAI/bge-reranker-v2-m3(free)"
+);
+openai_compatible_tests!(
+    digitalocean,
+    DigitaloceanConfig,
+    DigitaloceanProvider,
+    "anthropic-claude-3.5-sonnet"
+);
+openai_compatible_tests!(doubao, DoubaoConfig, DoubaoProvider, "deepseek-v3-2-251201");
+openai_compatible_tests!(evroc, EvrocConfig, EvrocProvider, "KBLab/kb-whisper-large");
+openai_compatible_tests!(
+    llamagate,
+    LlamagateConfig,
+    LlamagateProvider,
+    "llamagate/codellama-7b"
+);
+openai_compatible_tests!(
+    zhipuai_coding_plan,
+    ZhipuaiCodingPlanConfig,
+    ZhipuaiCodingPlanProvider,
+    "glm-4.5-air"
+);
+openai_compatible_tests!(
+    nearai,
+    NearaiConfig,
+    NearaiProvider,
+    "Qwen/Qwen3-30B-A3B-Instruct-2507"
+);
+openai_compatible_tests!(oci, OciConfig, OciProvider, "oci/cohere.command-a-03-2025");
+openai_compatible_tests!(
+    regolo_ai,
+    RegoloAiConfig,
+    RegoloAiProvider,
+    "llama-3.3-70b-instruct"
+);
+openai_compatible_tests!(
+    zenmux,
+    ZenmuxConfig,
+    ZenmuxProvider,
+    "anthropic/claude-opus-4"
+);
