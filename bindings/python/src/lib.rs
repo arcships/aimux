@@ -7,6 +7,9 @@
 // edition-2024 lint. Suppress until pyo3 0.23+ lands.
 #![allow(unsafe_op_in_unsafe_fn)]
 
+mod multimodal;
+pub use multimodal::*;
+
 use std::sync::Arc;
 
 use aimux_core::generate::{generate_text, stream_text, GenerateTextOptions};
@@ -19,7 +22,7 @@ use pyo3::prelude::*;
 // Global tokio runtime
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn runtime() -> &'static tokio::runtime::Runtime {
+pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     use std::sync::OnceLock;
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RT.get_or_init(|| {
@@ -203,6 +206,28 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;
+
+    // Multimodal classes.
+    m.add_class::<EmbeddingModel>()?;
+    m.add_class::<SpeechModel>()?;
+    m.add_class::<ImageModel>()?;
+    m.add_class::<TranscriptionModel>()?;
+    m.add_class::<RerankingModel>()?;
+    m.add_class::<VideoModel>()?;
+    m.add_class::<SearchModel>()?;
+    m.add_class::<Files>()?;
+
+    // Multimodal factory functions.
+    m.add_function(wrap_pyfunction!(openai_embedding, m)?)?;
+    m.add_function(wrap_pyfunction!(openai_speech, m)?)?;
+    m.add_function(wrap_pyfunction!(openai_image, m)?)?;
+    m.add_function(wrap_pyfunction!(openai_transcription, m)?)?;
+    m.add_function(wrap_pyfunction!(openai_files, m)?)?;
+    m.add_function(wrap_pyfunction!(cohere_embedding, m)?)?;
+    m.add_function(wrap_pyfunction!(cohere_reranking, m)?)?;
+    m.add_function(wrap_pyfunction!(google_embedding, m)?)?;
+    m.add_function(wrap_pyfunction!(google_image, m)?)?;
+    m.add_function(wrap_pyfunction!(google_video, m)?)?;
     Ok(())
 }
 

@@ -10,6 +10,9 @@
 //! - `streamText` returns an AsyncGenerator yielding StreamPart JSON strings.
 //! - The TS wrapper layer (index.ts) parses JSON into typed objects.
 
+mod multimodal;
+pub use multimodal::*;
+
 use std::future::Future;
 use std::sync::Arc;
 

@@ -700,8 +700,26 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.EmbeddingModel = nativeBinding.EmbeddingModel
+module.exports.Files = nativeBinding.Files
+module.exports.ImageModel = nativeBinding.ImageModel
 module.exports.Model = nativeBinding.Model
+module.exports.RerankingModel = nativeBinding.RerankingModel
+module.exports.SearchModel = nativeBinding.SearchModel
+module.exports.SpeechModel = nativeBinding.SpeechModel
 module.exports.StreamTextGenerator = nativeBinding.StreamTextGenerator
+module.exports.TranscriptionModel = nativeBinding.TranscriptionModel
+module.exports.VideoModel = nativeBinding.VideoModel
 module.exports.anthropic = nativeBinding.anthropic
+module.exports.cohereEmbedding = nativeBinding.cohereEmbedding
+module.exports.cohereReranking = nativeBinding.cohereReranking
 module.exports.deepseek = nativeBinding.deepseek
+module.exports.googleEmbedding = nativeBinding.googleEmbedding
+module.exports.googleImage = nativeBinding.googleImage
+module.exports.googleVideo = nativeBinding.googleVideo
 module.exports.openai = nativeBinding.openai
+module.exports.openaiEmbedding = nativeBinding.openaiEmbedding
+module.exports.openaiFiles = nativeBinding.openaiFiles
+module.exports.openaiImage = nativeBinding.openaiImage
+module.exports.openaiSpeech = nativeBinding.openaiSpeech
+module.exports.openaiTranscription = nativeBinding.openaiTranscription

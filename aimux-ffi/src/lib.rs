@@ -42,7 +42,21 @@ use tokio::runtime::Runtime;
 // Global state: handle registry + tokio runtime
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ModelRegistry = HashMap<u64, Arc<dyn LanguageModel>>;
+/// A type-erased model handle. One registry holds all modalities.
+#[derive(Clone)]
+enum ModelHandle {
+    Language(Arc<dyn LanguageModel>),
+    Embedding(Arc<dyn aimux_core::embedding_model::EmbeddingModel>),
+    Speech(Arc<dyn aimux_core::speech_model::SpeechModel>),
+    Image(Arc<dyn aimux_core::image_model::ImageModel>),
+    Transcription(Arc<dyn aimux_core::transcription_model::TranscriptionModel>),
+    Reranking(Arc<dyn aimux_core::reranking_model::RerankingModel>),
+    Video(Arc<dyn aimux_core::video_model::VideoModel>),
+    Search(Arc<dyn aimux_core::search_model::SearchModel>),
+    Files(Arc<dyn aimux_core::files_model::Files>),
+}
+
+type ModelRegistry = HashMap<u64, ModelHandle>;
 
 static REGISTRY: OnceLock<Mutex<ModelRegistry>> = OnceLock::new();
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
@@ -59,12 +73,29 @@ fn intern_model(model: Arc<dyn LanguageModel>) -> u64 {
     registry()
         .lock()
         .expect("aimux-ffi: registry mutex poisoned")
-        .insert(handle, model);
+        .insert(handle, ModelHandle::Language(model));
+    handle
+}
+
+fn intern_handle(h: ModelHandle) -> u64 {
+    let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+    registry()
+        .lock()
+        .expect("aimux-ffi: registry mutex poisoned")
+        .insert(handle, h);
     handle
 }
 
 /// Look up a model by handle, cloning the `Arc` out of the registry.
 fn get_model(handle: u64) -> Option<Arc<dyn LanguageModel>> {
+    match get_handle(handle)? {
+        ModelHandle::Language(m) => Some(m),
+        _ => None,
+    }
+}
+
+/// Look up any handle (multimodal).
+fn get_handle(handle: u64) -> Option<ModelHandle> {
     registry()
         .lock()
         .expect("aimux-ffi: registry mutex poisoned")
@@ -349,4 +380,218 @@ pub unsafe extern "C" fn aimux_free_string(ptr: *mut c_char) {
     }
     // SAFETY: caller guarantees `ptr` came from `CString::into_raw`.
     drop(unsafe { CString::from_raw(ptr) });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Embedding
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create an OpenAI embedding model instance. Returns 0 on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_embedding_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
+    let model = provider.embedding_model(&model_id);
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+}
+
+/// Generate embeddings. `values_json` is a JSON array of strings.
+/// Returns EmbeddingResult JSON (caller must free).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_embed(handle: u64, values_json: *const c_char, opts_json: *const c_char) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Embedding(m)) => m,
+        _ => return error_json_raw("invalid embedding handle"),
+    };
+    let values_json = match cstr_to_string(values_json) {
+        Some(s) => s,
+        None => return error_json_raw("invalid values_json"),
+    };
+    let mut opts = aimux_core::embedding_model::EmbeddingCallOptions::new("");
+    if let Some(s) = cstr_to_string(opts_json) {
+        if !s.trim().is_empty() && s.trim() != "null" {
+            match serde_json::from_str::<aimux_core::embedding_model::EmbeddingCallOptions>(&s) {
+                Ok(o) => opts = o,
+                Err(e) => return error_json_raw(format!("invalid opts: {e}")),
+            }
+        }
+    }
+    let values: Vec<String> = match serde_json::from_str(&values_json) {
+        Ok(v) => v,
+        Err(e) => return error_json_raw(format!("invalid values: {e}")),
+    };
+    opts.values = values;
+
+    let result = runtime().block_on(async move { model.do_embed(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("embed: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Speech (TTS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_speech_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
+    let model = provider.speech(&model_id);
+    intern_handle(ModelHandle::Speech(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_speech_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Speech(m)) => m,
+        _ => return error_json_raw("invalid speech handle"),
+    };
+    let opts_json = match cstr_to_string(opts_json) {
+        Some(s) => s,
+        None => return error_json_raw("invalid opts_json"),
+    };
+    let opts: aimux_core::speech_model::SpeechCallOptions = match serde_json::from_str(&opts_json) {
+        Ok(o) => o,
+        Err(e) => return error_json_raw(format!("invalid opts: {e}")),
+    };
+    let result = runtime().block_on(async move { model.do_generate(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("speech: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Image
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
+    let model = provider.image(&model_id);
+    intern_handle(ModelHandle::Image(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_image_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Image(m)) => m,
+        _ => return error_json_raw("invalid image handle"),
+    };
+    let opts_json = match cstr_to_string(opts_json) {
+        Some(s) => s,
+        None => return error_json_raw("invalid opts_json"),
+    };
+    let opts: aimux_core::image_model::ImageCallOptions = match serde_json::from_str(&opts_json) {
+        Ok(o) => o,
+        Err(e) => return error_json_raw(format!("invalid opts: {e}")),
+    };
+    let result = runtime().block_on(async move { model.do_generate(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("image: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Transcription (non-streaming)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_transcription_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
+    let model = provider.transcription(&model_id);
+    intern_handle(ModelHandle::Transcription(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_transcription_generate(
+    handle: u64,
+    audio_base64: *const c_char,
+    media_type: *const c_char,
+    opts_json: *const c_char,
+) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Transcription(m)) => m,
+        _ => return error_json_raw("invalid transcription handle"),
+    };
+    let audio_base64 = match cstr_to_string(audio_base64) {
+        Some(s) => s,
+        None => return error_json_raw("invalid audio_base64"),
+    };
+    let media_type = match cstr_to_string(media_type) {
+        Some(s) => s,
+        None => return error_json_raw("invalid media_type"),
+    };
+    let opts = aimux_core::transcription_model::TranscriptionCallOptions::new(
+        aimux_core::transcription_model::AudioInput::Base64(audio_base64),
+        media_type,
+    );
+    let result = runtime().block_on(async move { model.do_generate(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("transcription: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Files
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_files_new(api_key: *const c_char) -> u64 {
+    let api_key = match cstr_to_string(api_key) {
+        Some(s) => s,
+        None => return 0,
+    };
+    let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
+    let files = provider.files();
+    intern_handle(ModelHandle::Files(Arc::new(files)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_file_upload(
+    handle: u64,
+    data_base64: *const c_char,
+    media_type: *const c_char,
+    opts_json: *const c_char,
+) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Files(m)) => m,
+        _ => return error_json_raw("invalid files handle"),
+    };
+    let data_base64 = match cstr_to_string(data_base64) {
+        Some(s) => s,
+        None => return error_json_raw("invalid data_base64"),
+    };
+    let media_type = match cstr_to_string(media_type) {
+        Some(s) => s,
+        None => return error_json_raw("invalid media_type"),
+    };
+    let opts = aimux_core::files_model::UploadFileCallOptions::new(
+        aimux_core::files_model::UploadFileData::Data {
+            data: aimux_core::shared::FileBytes::Base64(data_base64),
+        },
+        media_type,
+    );
+    let result = runtime().block_on(async move { model.upload_file(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("file_upload: {e}")),
+    }
 }

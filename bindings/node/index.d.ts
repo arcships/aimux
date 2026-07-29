@@ -9,6 +9,32 @@ declare global {
   }
 }
 
+export declare class EmbeddingModel {
+  /**
+   * Generate embeddings. `values_json` is a JSON array of strings.
+   * Returns JSON-serialized EmbeddingResult.
+   */
+  embed(valuesJson: string, optsJson?: string | undefined | null): Promise<string>
+}
+
+export declare class Files {
+  /**
+   * Upload a file. `data_base64` is base64-encoded file content,
+   * `media_type` is e.g. "application/pdf", `opts_json` is optional
+   * (may contain filename, provider_options).
+   * Returns JSON-serialized UploadFileResult (contains provider file ID).
+   */
+  uploadFile(dataBase64: string, mediaType: string, optsJson?: string | undefined | null): Promise<string>
+}
+
+export declare class ImageModel {
+  /**
+   * Generate images. `opts_json` is JSON-serialized ImageCallOptions.
+   * Returns JSON-serialized ImageResult (images as base64 in JSON).
+   */
+  generate(optsJson: string): Promise<string>
+}
+
 export declare class Model {
   /**
    * Generate text (non-streaming).
@@ -25,6 +51,31 @@ export declare class Model {
    * Use `for await (const part of model.streamText(...))` to consume.
    */
   streamText(prompt: string, options?: string | undefined | null): Promise<AsyncGenerator<string>>
+}
+
+export declare class RerankingModel {
+  /**
+   * Rerank documents. `query` is the search query, `docs_json` is a JSON
+   * array of documents, `opts_json` is optional JSON options.
+   * Returns JSON-serialized RerankingResult.
+   */
+  rerank(query: string, docsJson: string, optsJson?: string | undefined | null): Promise<string>
+}
+
+export declare class SearchModel {
+  /**
+   * Search. `query` is the search query, `opts_json` is optional JSON options.
+   * Returns JSON-serialized SearchResult.
+   */
+  search(query: string, optsJson?: string | undefined | null): Promise<string>
+}
+
+export declare class SpeechModel {
+  /**
+   * Generate speech audio. `opts_json` is JSON-serialized SpeechCallOptions.
+   * Returns JSON-serialized SpeechResult (audio as base64 in JSON).
+   */
+  generate(optsJson: string): Promise<string>
 }
 
 /**
@@ -44,11 +95,58 @@ export declare class StreamTextGenerator {
   [globalThis.Symbol.asyncIterator](): globalThis.__NapiRsAsyncGenerator<StreamTextGenerator, string, void, undefined>
 }
 
+export declare class TranscriptionModel {
+  /**
+   * Transcribe audio. `audio_base64` is base64-encoded audio data.
+   * `media_type` is e.g. "audio/mp3". `opts_json` is optional JSON options.
+   * Returns JSON-serialized TranscriptionResult.
+   */
+  generate(audioBase64: string, mediaType: string, optsJson?: string | undefined | null): Promise<string>
+}
+
+export declare class VideoModel {
+  /**
+   * Generate video. `opts_json` is JSON-serialized VideoCallOptions.
+   * Returns JSON-serialized VideoResult (typically contains a URL).
+   */
+  generate(optsJson: string): Promise<string>
+}
+
 /** Create an Anthropic model instance. */
 export declare function anthropic(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<Model>
+
+/** Create a Cohere embedding model instance. */
+export declare function cohereEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
+
+/** Create a Cohere reranking model instance. */
+export declare function cohereReranking(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<RerankingModel>
 
 /** Create a DeepSeek model instance. */
 export declare function deepseek(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<Model>
 
+/** Create a Google embedding model instance. */
+export declare function googleEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
+
+/** Create a Google image model instance. */
+export declare function googleImage(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<ImageModel>
+
+/** Create a Google video model instance. */
+export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<VideoModel>
+
 /** Create an OpenAI model instance. */
 export declare function openai(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<Model>
+
+/** Create an OpenAI embedding model instance. */
+export declare function openaiEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
+
+/** Create OpenAI files manager. */
+export declare function openaiFiles(apiKey: string, baseUrl?: string | undefined | null): Promise<Files>
+
+/** Create an OpenAI image model instance. */
+export declare function openaiImage(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<ImageModel>
+
+/** Create an OpenAI speech (TTS) model instance. */
+export declare function openaiSpeech(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<SpeechModel>
+
+/** Create an OpenAI transcription model instance. */
+export declare function openaiTranscription(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<TranscriptionModel>

@@ -98,11 +98,37 @@ void aimux_stream_text(uint64_t handle,
 void aimux_drop_handle(uint64_t handle);
 
 /**
- * Free a string previously returned by aimux_generate_text.
+ * Free a string previously returned by aimux_generate_text or other
+ * functions returning char*.
  *
- * @param ptr Pointer from aimux_generate_text (NULL is safe).
+ * @param ptr Pointer from an aimux_* function (NULL is safe).
  */
 void aimux_free_string(char *ptr);
+
+/* ── Embedding ───────────────────────────────────────────────────────────── */
+
+uint64_t aimux_openai_embedding_new(const char *api_key, const char *model_id);
+char *aimux_embed(uint64_t handle, const char *values_json, const char *opts_json);
+
+/* ── Speech (TTS) ────────────────────────────────────────────────────────── */
+
+uint64_t aimux_openai_speech_new(const char *api_key, const char *model_id);
+char *aimux_speech_generate(uint64_t handle, const char *opts_json);
+
+/* ── Image ──────────────────────────────────────────────────────────────── */
+
+uint64_t aimux_openai_image_new(const char *api_key, const char *model_id);
+char *aimux_image_generate(uint64_t handle, const char *opts_json);
+
+/* ── Transcription (STT, non-streaming) ──────────────────────────────────── */
+
+uint64_t aimux_openai_transcription_new(const char *api_key, const char *model_id);
+char *aimux_transcription_generate(uint64_t handle, const char *audio_base64, const char *media_type, const char *opts_json);
+
+/* ── Files ──────────────────────────────────────────────────────────────── */
+
+uint64_t aimux_openai_files_new(const char *api_key);
+char *aimux_file_upload(uint64_t handle, const char *data_base64, const char *media_type, const char *opts_json);
 
 #ifdef __cplusplus
 } /* extern "C" */
