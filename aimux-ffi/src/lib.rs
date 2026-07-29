@@ -33,7 +33,10 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::provider::Provider;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+use aimux_providers::cohere::{CohereConfig, CohereProvider};
+use aimux_providers::google::{GoogleConfig, GoogleProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
 
 use futures::StreamExt;
 use tokio::runtime::Runtime;
@@ -208,6 +211,33 @@ pub extern "C" fn aimux_openai_new(api_key: *const c_char, model_id: *const c_ch
     }
 }
 
+/// Create an OpenAI model instance with a custom base URL.
+///
+/// `base_url` may be null (defaults to the provider's standard URL).
+/// Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let mut config = OpenAIConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url) {
+        if !url.is_empty() {
+            config = config.with_base_url(url);
+        }
+    }
+    let provider = OpenAIProvider::new(config);
+    match provider.language_model(&model_id) {
+        Ok(model) => intern_model(Arc::from(model)),
+        Err(_) => 0,
+    }
+}
+
 /// Create an Anthropic model instance, returning its opaque handle.
 ///
 /// Returns `0` on failure (null arguments or invalid model id).
@@ -218,6 +248,33 @@ pub extern "C" fn aimux_anthropic_new(api_key: *const c_char, model_id: *const c
         _ => return 0,
     };
     let provider = AnthropicProvider::new(AnthropicConfig::new(api_key));
+    match provider.language_model(&model_id) {
+        Ok(model) => intern_model(Arc::from(model)),
+        Err(_) => 0,
+    }
+}
+
+/// Create an Anthropic model instance with a custom base URL.
+///
+/// `base_url` may be null (defaults to the provider's standard URL).
+/// Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_anthropic_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let mut config = AnthropicConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url) {
+        if !url.is_empty() {
+            config = config.with_base_url(url);
+        }
+    }
+    let provider = AnthropicProvider::new(config);
     match provider.language_model(&model_id) {
         Ok(model) => intern_model(Arc::from(model)),
         Err(_) => 0,
@@ -593,5 +650,127 @@ pub extern "C" fn aimux_file_upload(
     match result {
         Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
         Err(e) => error_json_raw(format!("file_upload: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Reranking
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create a Cohere reranking model instance. Returns 0 on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_cohere_reranking_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = CohereProvider::new(CohereConfig::new(api_key));
+    let model = provider.reranking_model(&model_id);
+    intern_handle(ModelHandle::Reranking(Arc::new(model)))
+}
+
+/// Rerank documents. `opts_json` is JSON-serialized `RerankingCallOptions`
+/// (must contain `query` and `documents`). Returns `RerankingResult` JSON
+/// (caller must free), or `{"error":"..."}` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_rerank(handle: u64, opts_json: *const c_char) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Reranking(m)) => m,
+        _ => return error_json_raw("invalid reranking handle"),
+    };
+    let opts_json = match cstr_to_string(opts_json) {
+        Some(s) => s,
+        None => return error_json_raw("invalid opts_json"),
+    };
+    let opts: aimux_core::reranking_model::RerankingCallOptions =
+        match serde_json::from_str(&opts_json) {
+            Ok(o) => o,
+            Err(e) => return error_json_raw(format!("invalid opts: {e}")),
+        };
+    let result = runtime().block_on(async move { model.do_rerank(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("rerank: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Video
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create a Google video model instance. Returns 0 on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_google_video_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = GoogleProvider::new(GoogleConfig::new(api_key));
+    let model = provider.video(&model_id);
+    intern_handle(ModelHandle::Video(Arc::new(model)))
+}
+
+/// Generate video. `opts_json` is JSON-serialized `VideoCallOptions`
+/// (must contain `prompt`). Returns `VideoResult` JSON (caller must free),
+/// or `{"error":"..."}` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_video_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Video(m)) => m,
+        _ => return error_json_raw("invalid video handle"),
+    };
+    let opts_json = match cstr_to_string(opts_json) {
+        Some(s) => s,
+        None => return error_json_raw("invalid opts_json"),
+    };
+    let opts: aimux_core::video_model::VideoCallOptions = match serde_json::from_str(&opts_json) {
+        Ok(o) => o,
+        Err(e) => return error_json_raw(format!("invalid opts: {e}")),
+    };
+    let result = runtime().block_on(async move { model.do_generate(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("video: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Search
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create a Tavily search model instance. `model_id` is accepted for API
+/// symmetry but ignored (Tavily uses a fixed endpoint). Returns 0 on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_tavily_search_new(api_key: *const c_char, _model_id: *const c_char) -> u64 {
+    let api_key = match cstr_to_string(api_key) {
+        Some(s) => s,
+        None => return 0,
+    };
+    let provider = TavilyProvider::new(TavilyConfig::new(api_key));
+    let model = provider.search_model();
+    intern_handle(ModelHandle::Search(Arc::new(model)))
+}
+
+/// Execute a search. `opts_json` is JSON-serialized `SearchCallOptions`
+/// (must contain `query`). Returns `SearchResult` JSON (caller must free),
+/// or `{"error":"..."}` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_search(handle: u64, opts_json: *const c_char) -> *mut c_char {
+    let model = match get_handle(handle) {
+        Some(ModelHandle::Search(m)) => m,
+        _ => return error_json_raw("invalid search handle"),
+    };
+    let opts_json = match cstr_to_string(opts_json) {
+        Some(s) => s,
+        None => return error_json_raw("invalid opts_json"),
+    };
+    let opts: aimux_core::search_model::SearchCallOptions = match serde_json::from_str(&opts_json) {
+        Ok(o) => o,
+        Err(e) => return error_json_raw(format!("invalid opts: {e}")),
+    };
+    let result = runtime().block_on(async move { model.do_search(&opts).await });
+    match result {
+        Ok(r) => serde_json::to_string(&r).map(into_cstring_raw).unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
+        Err(e) => error_json_raw(format!("search: {e}")),
     }
 }

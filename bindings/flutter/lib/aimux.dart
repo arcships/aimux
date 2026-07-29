@@ -19,6 +19,13 @@ import 'package:ffi/ffi.dart';
 typedef _OpenaiNewC = Uint64 Function(Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
 typedef _OpenaiNewDart = int Function(Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
 
+// Constructors with a custom base URL (aimux_*_new_with_base). The same
+// signature covers both OpenAI and Anthropic.
+typedef _NewWithBaseC = Uint64 Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
+typedef _NewWithBaseDart = int Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
+
 typedef _GenerateTextC = Pointer<Utf8> Function(
     Uint64 handle, Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson);
 typedef _GenerateTextDart = Pointer<Utf8> Function(
@@ -42,6 +49,8 @@ typedef _OnErrorC = Void Function(Pointer<Utf8>);
 final class _AimuxFFI {
   final int Function(Pointer<Utf8>, Pointer<Utf8>) openaiNew;
   final int Function(Pointer<Utf8>, Pointer<Utf8>) anthropicNew;
+  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>) openaiNewWithBase;
+  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>) anthropicNewWithBase;
   final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) generateText;
   final void Function(int, Pointer<Utf8>, Pointer<Utf8>?,
       Pointer<NativeFunction<_OnPartC>>, Pointer<NativeFunction<_OnDoneC>>,
@@ -49,8 +58,15 @@ final class _AimuxFFI {
   final void Function(int) dropHandle;
   final void Function(Pointer<Utf8>) freeString;
 
-  _AimuxFFI._(this.openaiNew, this.anthropicNew, this.generateText,
-      this.streamText, this.dropHandle, this.freeString);
+  _AimuxFFI._(
+      this.openaiNew,
+      this.anthropicNew,
+      this.openaiNewWithBase,
+      this.anthropicNewWithBase,
+      this.generateText,
+      this.streamText,
+      this.dropHandle,
+      this.freeString);
 
   factory _AimuxFFI() {
     final libName = _platformLibName();
@@ -59,6 +75,8 @@ final class _AimuxFFI {
     return _AimuxFFI._(
       dylib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_openai_new'),
       dylib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_anthropic_new'),
+      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_openai_new_with_base'),
+      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_anthropic_new_with_base'),
       dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_text'),
       dylib.lookupFunction<
           _StreamTextC,
@@ -134,20 +152,39 @@ class Model {
   Model._(this._handle, this._ffi);
 
   /// Create an OpenAI model instance.
-  factory Model.openai(String apiKey, String modelId) {
+  ///
+  /// Pass [baseUrl] to target an OpenAI-compatible endpoint (Azure, Groq,
+  /// a local mock server, etc.). When null, the provider's standard URL is
+  /// used via `aimux_openai_new`.
+  factory Model.openai(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _AimuxFFI();
     final h = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) => ffi.openaiNew(keyPtr, idPtr));
+      return _withUtf8(modelId, (idPtr) {
+        if (baseUrl == null) {
+          return ffi.openaiNew(keyPtr, idPtr);
+        }
+        return _withUtf8(baseUrl,
+            (basePtr) => ffi.openaiNewWithBase(keyPtr, idPtr, basePtr));
+      });
     });
     if (h == 0) throw StateError('Failed to create OpenAI model');
     return Model._(h, ffi);
   }
 
   /// Create an Anthropic model instance.
-  factory Model.anthropic(String apiKey, String modelId) {
+  ///
+  /// Pass [baseUrl] to target a custom Anthropic-compatible endpoint. When
+  /// null, the provider's standard URL is used via `aimux_anthropic_new`.
+  factory Model.anthropic(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _AimuxFFI();
     final h = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) => ffi.anthropicNew(keyPtr, idPtr));
+      return _withUtf8(modelId, (idPtr) {
+        if (baseUrl == null) {
+          return ffi.anthropicNew(keyPtr, idPtr);
+        }
+        return _withUtf8(baseUrl,
+            (basePtr) => ffi.anthropicNewWithBase(keyPtr, idPtr, basePtr));
+      });
     });
     if (h == 0) throw StateError('Failed to create Anthropic model');
     return Model._(h, ffi);

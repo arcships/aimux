@@ -20,6 +20,8 @@ import java.io.Closeable
 internal interface AimuxFFI : Library {
     fun aimux_openai_new(apiKey: String, modelId: String): Long
     fun aimux_anthropic_new(apiKey: String, modelId: String): Long
+    fun aimux_openai_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_anthropic_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
 
     fun aimux_generate_text(handle: Long, promptJson: String, optsJson: String?): Pointer?
     fun aimux_stream_text(
@@ -80,6 +82,20 @@ class Model private constructor(private val handle: Long) : Closeable {
         /** Create an Anthropic model instance. */
         fun anthropic(apiKey: String, modelId: String): Model {
             val h = FFI.lib.aimux_anthropic_new(apiKey, modelId)
+            require(h != 0L) { "Failed to create Anthropic model" }
+            return Model(h)
+        }
+
+        /** Create an OpenAI model instance with a custom base URL. */
+        fun openai(apiKey: String, modelId: String, baseUrl: String): Model {
+            val h = FFI.lib.aimux_openai_new_with_base(apiKey, modelId, baseUrl)
+            require(h != 0L) { "Failed to create OpenAI model" }
+            return Model(h)
+        }
+
+        /** Create an Anthropic model instance with a custom base URL. */
+        fun anthropic(apiKey: String, modelId: String, baseUrl: String): Model {
+            val h = FFI.lib.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl)
             require(h != 0L) { "Failed to create Anthropic model" }
             return Model(h)
         }

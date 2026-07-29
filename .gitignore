@@ -9,11 +9,15 @@ Cargo.lock
 
 # Binding build artifacts — never commit
 bindings/*/target/
+bindings/swift/.build/
+bindings/kotlin/.gradle/
+bindings/kotlin/.kotlin/
 bindings/node/*.node
 bindings/node/*.node.tmp
 bindings/python/*.so
 bindings/python/**/*.so
 bindings/python/.venv/
+bindings/python/.pytest_cache/
 bindings/python/**/*.egg-info/
 bindings/flutter/.dart_tool/
 bindings/flutter/.packages

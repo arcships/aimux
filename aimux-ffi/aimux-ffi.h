@@ -48,6 +48,18 @@ extern "C" {
 uint64_t aimux_openai_new(const char *api_key, const char *model_id);
 
 /**
+ * Create an OpenAI model instance with a custom base URL.
+ *
+ * @param api_key  NUL-terminated API key string.
+ * @param model_id NUL-terminated model ID (e.g. "gpt-4o").
+ * @param base_url NUL-terminated base URL (NULL or empty uses the provider default).
+ * @return Opaque handle (>0 on success, 0 on failure).
+ */
+uint64_t aimux_openai_new_with_base(const char *api_key,
+                                    const char *model_id,
+                                    const char *base_url);
+
+/**
  * Create an Anthropic model instance.
  *
  * @param api_key  NUL-terminated API key string.
@@ -55,6 +67,18 @@ uint64_t aimux_openai_new(const char *api_key, const char *model_id);
  * @return Opaque handle (>0 on success, 0 on failure).
  */
 uint64_t aimux_anthropic_new(const char *api_key, const char *model_id);
+
+/**
+ * Create an Anthropic model instance with a custom base URL.
+ *
+ * @param api_key  NUL-terminated API key string.
+ * @param model_id NUL-terminated model ID (e.g. "claude-3-5-sonnet-20241022").
+ * @param base_url NUL-terminated base URL (NULL or empty uses the provider default).
+ * @return Opaque handle (>0 on success, 0 on failure).
+ */
+uint64_t aimux_anthropic_new_with_base(const char *api_key,
+                                       const char *model_id,
+                                       const char *base_url);
 
 /* ── Generation ─────────────────────────────────────────────────────────── */
 

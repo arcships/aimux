@@ -73,6 +73,27 @@ public final class Model: @unchecked Sendable {
         return Model(handle: handle)
     }
 
+    /// Create an OpenAI model instance with a custom base URL.
+    ///
+    /// An empty `baseUrl` falls back to the provider's standard URL
+    /// (see `aimux_openai_new_with_base`).
+    public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
+        let handle = aimux_openai_new_with_base(apiKey, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create an Anthropic model instance with a custom base URL.
+    public static func anthropic(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
+        let handle = aimux_anthropic_new_with_base(apiKey, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
     // ── Generation ─────────────────────────────────────────────────────────
 
     /// Generate text (non-streaming).

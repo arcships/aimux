@@ -17,8 +17,10 @@
 - [文件上传](#文件上传)
 - [Provider 工厂函数](#provider-工厂函数)
 - [工具调用](#工具调用)
+- [多角色消息](#多角色消息)
 - [Rust API](#rust-api)
 - [C ABI (aimux-ffi)](#c-abi-aimux-ffi)
+- [多语言绑定](#多语言绑定)
 
 ---
 
@@ -139,13 +141,81 @@ let result = generate_text(
 
 ```typescript
 interface GenerateTextResult {
-  text: string                  // 生成的文本
-  tool_calls: ToolCall[]        // 工具调用列表
+  text: string                  // 生成的文本（所有 Text 变体拼接）
+  tool_calls: ToolCall[]        // 工具调用列表（从 content 提取）
   finish_reason: FinishReason    // 停止原因
   usage: Usage                  // token 用量
   warnings: Warning[]           // 警告
-  raw: GenerateResult           // 原始 provider 结果
+  raw: GenerateResult           // 原始 provider 结果（含完整 content）
 }
+```
+
+> **注意**：`result.text` 和 `result.tool_calls` 是从 `result.raw.content` 提取的便捷字段。
+> `Source`、`Reasoning`、`ToolResult` 变体不会出现在便捷字段中——需通过 `result.raw.content` 访问。
+
+### 结构化 content（`raw.content`）
+
+`result.raw.content` 是 `GenerateContent` 数组，包含 5 种变体：
+
+| 变体 | 字段 | 说明 |
+|------|------|------|
+| `Text` | `text` | 生成的文本 |
+| `ToolCall` | `tool_call_id`, `tool_name`, `input` | 模型请求的工具调用 |
+| `Source` | `id`, `source_type`, `url?`, `title?` | 引用/来源 |
+| `Reasoning` | `text`, `provider_metadata?` | 推理/思考段 |
+| `ToolResult` | `tool_call_id`, `tool_name`, `result` | provider 执行的工具结果 |
+
+```typescript
+// 访问结构化 content
+const result = await generateText(model, "...", { tools })
+const rawContent = result.raw.content
+const toolCallPart = rawContent.find(c => c.ToolCall)
+const reasoningPart = rawContent.find(c => c.Reasoning)
+```
+
+### 多角色消息
+
+`prompt` 可传消息数组实现多轮对话，角色支持 `system` / `user` / `assistant` / `tool`：
+
+```typescript
+// Node.js — 多轮对话 + 工具往返
+const result = await generateText(model, [
+  { role: 'user', content: "What's the weather in Tokyo?" },
+  { role: 'assistant', content: null, tool_calls: [{
+    id: 'call_abc', type: 'function',
+    function: { name: 'get_weather', arguments: '{"location":"Tokyo"}' }
+  }]},
+  { role: 'tool', tool_call_id: 'call_abc',
+    content: '{"temperature":22,"condition":"sunny"}' }
+], { tools })
+```
+
+```python
+# Python — system + user 多轮
+result = generate_text(model, [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is Rust?"},
+])
+```
+
+```rust
+// Rust — 工具往返
+let messages = vec![
+    ModelMessage::user("What's the weather in Tokyo?"),
+    ModelMessage {
+        role: Role::Assistant,
+        content: MessageContent::Parts(vec![ContentPart::tool_call(
+            "call_abc", "get_weather", json!({"location": "Tokyo"}),
+        )]),
+    },
+    ModelMessage {
+        role: Role::Tool,
+        content: MessageContent::Parts(vec![ContentPart::tool_result(
+            "call_abc", json!({"temperature": 22, "condition": "sunny"}),
+        )]),
+    },
+];
+let result = generate_text(&model, messages, opts).await?;
 ```
 
 ---
@@ -204,12 +274,16 @@ while let Some(part) = stream.next().await {
 | 变体 | 说明 |
 |------|------|
 | `StreamStart` | 流开始（携带 warnings） |
-| `TextStart` / `TextDelta` / `TextEnd` | 文本段 |
+| `TextStart` / `TextDelta` / `TextEnd` | 文本段生命周期 |
 | `ToolInputStart` / `ToolInputDelta` / `ToolInputEnd` | 工具调用输入流 |
 | `ToolCall` | 完整工具调用 |
-| `ReasoningStart` / `ReasoningDelta` / `ReasoningEnd` | 推理段 |
+| `ToolResult` | provider 执行的工具结果 |
+| `ReasoningStart` / `ReasoningDelta` / `ReasoningEnd` | 推理段生命周期 |
+| `ResponseMetadata` | 响应元数据（id, timestamp, model_id） |
+| `Source` | 引用/来源 |
 | `Finish` | 流结束（携带 usage + finish_reason） |
 | `Error` | 流错误 |
+| `Raw` | provider 原始 chunk（调试用，`include_raw_chunks` 时） |
 
 ---
 
@@ -449,6 +523,16 @@ let result = model.do_generate(&opts).await?;
 // result.videos[0] 是 VideoData::Url { url, media_type }
 ```
 
+### C ABI
+
+```c
+uint64_t handle = aimux_google_video_new(api_key, "veo-3.0");
+// opts_json: {"prompt":"A cat playing piano","n":1}
+const char *result = aimux_video_generate(handle, opts_json);
+aimux_drop_handle(handle);
+aimux_free_string(result);
+```
+
 ---
 
 ## 重排序
@@ -485,11 +569,28 @@ let result = model.do_rerank(&opts).await?;
 // result.ranks 按 score 排序
 ```
 
+### C ABI
+
+```c
+uint64_t handle = aimux_cohere_reranking_new(api_key, "rerank-v3.0");
+// opts_json: {"query":"What is Rust?","documents":{"Text":{"values":["doc1","doc2"]}},"top_n":3}
+const char *result = aimux_rerank(handle, opts_json);
+aimux_drop_handle(handle);
+aimux_free_string(result);
+```
+
 ---
 
 ## 搜索
 
 调用搜索 provider 获取结果。
+
+### Node.js
+
+```typescript
+// SearchModel 类已暴露，但无独立工厂函数——通过 Rust 核心或 C ABI 使用
+// Node 绑定暂未暴露 search 工厂函数
+```
 
 ### Rust
 
@@ -500,6 +601,17 @@ let model = provider.search_model("tavily-search");
 let opts = SearchCallOptions::new("What is Rust?");
 let result = model.do_search(&opts).await?;
 // result.results 是 Vec<SearchResultItem>
+```
+
+### C ABI
+
+```c
+uint64_t handle = aimux_tavily_search_new(api_key, "tavily-search");
+// opts_json: {"query":"What is Rust?","max_results":5}
+const char *result = aimux_search(handle, opts_json);
+// result: {"results":[{"title":"...","url":"...","content":"..."}],"answer":null}
+aimux_drop_handle(handle);
+aimux_free_string(result);
 ```
 
 ---
@@ -678,23 +790,73 @@ C ABI 边界为 Swift / Kotlin / Flutter / C++ 提供 FFI 接口。所有函数�
 
 ### 函数列表
 
+#### 语言模型
+
 | 函数 | 说明 |
 |------|------|
 | `aimux_openai_new(api_key, model_id)` | 创建 OpenAI 语言模型 |
+| `aimux_openai_new_with_base(api_key, model_id, base_url)` | 创建 OpenAI 语言模型（自定义 base_url，用于 mock 测试） |
 | `aimux_anthropic_new(api_key, model_id)` | 创建 Anthropic 语言模型 |
+| `aimux_anthropic_new_with_base(api_key, model_id, base_url)` | 创建 Anthropic 语言模型（自定义 base_url） |
 | `aimux_generate_text(handle, prompt_json, opts_json)` | 非流式生成（返回 JSON 字符串） |
 | `aimux_stream_text(handle, prompt_json, opts_json, on_part, on_done, on_error)` | 流式生成（push 回调） |
+
+#### 向量嵌入
+
+| 函数 | 说明 |
+|------|------|
 | `aimux_openai_embedding_new(api_key, model_id)` | 创建 embedding 模型 |
 | `aimux_embed(handle, values_json, opts_json)` | 生成向量嵌入 |
+
+#### 语音
+
+| 函数 | 说明 |
+|------|------|
 | `aimux_openai_speech_new(api_key, model_id)` | 创建 TTS 模型 |
 | `aimux_speech_generate(handle, opts_json)` | 生成语音 |
-| `aimux_openai_image_new(api_key, model_id)` | 创建图像模型 |
-| `aimux_image_generate(handle, opts_json)` | 生成图像 |
 | `aimux_openai_transcription_new(api_key, model_id)` | 创建 STT 模型 |
 | `aimux_transcription_generate(handle, audio_base64, media_type, opts_json)` | 转录音频 |
+
+#### 图像
+
+| 函数 | 说明 |
+|------|------|
+| `aimux_openai_image_new(api_key, model_id)` | 创建图像模型 |
+| `aimux_image_generate(handle, opts_json)` | 生成图像 |
+
+#### 视频生成（2026-07-29 新增）
+
+| 函数 | 说明 |
+|------|------|
+| `aimux_google_video_new(api_key, model_id)` | 创建 Google 视频模型 |
+| `aimux_video_generate(handle, opts_json)` | 生成视频（`VideoCallOptions` JSON） |
+
+#### 重排序（2026-07-29 新增）
+
+| 函数 | 说明 |
+|------|------|
+| `aimux_cohere_reranking_new(api_key, model_id)` | 创建 Cohere 重排序模型 |
+| `aimux_rerank(handle, opts_json)` | 重排序（`RerankingCallOptions` JSON） |
+
+#### 搜索（2026-07-29 新增）
+
+| 函数 | 说明 |
+|------|------|
+| `aimux_tavily_search_new(api_key, model_id)` | 创建 Tavily 搜索模型（`model_id` 仅占位，Tavily 用固定端点） |
+| `aimux_search(handle, opts_json)` | 执行搜索（`SearchCallOptions` JSON） |
+
+#### 文件
+
+| 函数 | 说明 |
+|------|------|
 | `aimux_openai_files_new(api_key)` | 创建文件管理器 |
 | `aimux_file_upload(handle, data_base64, media_type, opts_json)` | 上传文件 |
-| `aimux_drop_handle(handle)` | 释放模型句柄 |
+
+#### 资源管理
+
+| 函数 | 说明 |
+|------|------|
+| `aimux_drop_handle(handle)` | 释放模型句柄（0 是 no-op） |
 | `aimux_free_string(ptr)` | 释放返回的字符串 |
 
 ### 内存管理
@@ -716,6 +878,59 @@ C ABI 边界为 Swift / Kotlin / Flutter / C++ 提供 FFI 接口。所有函数�
 | [RFC-0001](rfc/0001-multilang-bindings.md) | 多语言绑定方案 |
 | [RFC-0003](rfc/0003-test-cassette.md) | 录播测试方案 |
 | [RFC-0008](rfc/0008-multimodal-bindings.md) | 多模态绑定设计 |
+
+## 多语言绑定
+
+所有绑定层共享同一 Rust 核心，API 形状一致。以下列出各绑定的构造方式和 base_url 支持。
+
+| 绑定 | FFI 方式 | base_url 支持 | 构造示例 |
+|------|---------|:---:|---------|
+| **Node.js** | napi-rs（直接调 Rust） | ✅ 第 3 参数 | `await openai(key, model, 'http://localhost:3000')` |
+| **Python** | PyO3（直接调 Rust） | ✅ 第 3 参数 | `openai(key, model, "http://localhost:3000")` |
+| **Swift** | C ABI（CAimuxFFI） | ✅ `baseUrl:` 参数 | `try Model.openai(apiKey: key, modelId: model, baseUrl: url)` |
+| **Kotlin** | C ABI（JNA） | ✅ 第 3 参数 | `Model.openai(key, model, baseUrl)` |
+| **Flutter/Dart** | C ABI（dart:ffi） | ✅ `baseUrl:` 命名参数 | `Model.openai(key, model, baseUrl: url)` |
+| **C/C++** | C ABI（直接链接） | ✅ `_with_base` 函数 | `aimux_openai_new_with_base(key, model, url)` |
+
+> Node/Python 绑定绕过 C ABI 直接调 `aimux-providers`；Swift/Kotlin/Flutter/C 通过 `aimux-ffi` C ABI。
+
+### Swift
+
+```swift
+import Aimux
+
+let model = try Model.openai(apiKey: "sk-...", modelId: "gpt-4o", baseUrl: "http://localhost:3000")
+let result = try model.generateText(prompt: "\"What is Rust?\"")
+// 或传多角色消息
+let result2 = try model.generateText(prompt: #"[{"role":"user","content":"Hello"}]"#)
+```
+
+### Kotlin
+
+```kotlin
+Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
+    val result = model.generateText("\"What is Rust?\"")
+}
+// 流式
+Model.openai("sk-...", "gpt-4o").use { model ->
+    model.streamText("\"Write a haiku\"", onPart = { println(it) }, onDone = {}, onError = {})
+}
+```
+
+### Flutter/Dart
+
+```dart
+final model = Model.openai('sk-...', 'gpt-4o', baseUrl: 'http://localhost:3000');
+final result = model.generateText('What is Rust?');
+model.close();
+// 流式
+final stream = model.streamText('Write a haiku');
+await for (final part in stream) {
+  if (part.containsKey('TextDelta')) print(part['TextDelta']['delta']);
+}
+```
+
+---
 
 ## License
 

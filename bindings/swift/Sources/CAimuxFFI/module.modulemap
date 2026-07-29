@@ -1,5 +1,5 @@
 module CAimuxFFI {
-    header "../../aimux-ffi.h"
+    header "../../../../aimux-ffi/aimux-ffi.h"
     link "aimux_ffi"
     export *
 }

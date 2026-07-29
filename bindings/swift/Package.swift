@@ -19,8 +19,7 @@ let package = Package(
         .systemLibrary(
             name: "CAimuxFFI",
             path: "Sources/CAimuxFFI",
-            pkgConfig: "aimux-ffi",
-            providers: [.build]
+            pkgConfig: "aimux-ffi"
         ),
         .target(
             name: "Aimux",
