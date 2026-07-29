@@ -1,0 +1,20 @@
+[package]
+name = "aimux-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C ABI boundary for aimux multi-language bindings (opaque handle + push stream)"
+
+[lib]
+# Produce linkable artifacts for C ABI consumers (Swift / Kotlin / C).
+# `rlib` lets other Rust crates depend on this crate too.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+aimux-core = { workspace = true }
+aimux-providers = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+# Needed to drive `Stream::next` while consuming `stream_text` output.
+futures = { workspace = true }

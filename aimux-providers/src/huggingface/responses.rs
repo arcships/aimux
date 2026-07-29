@@ -251,7 +251,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                     raw: None,
                                 };
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e),
+                                    error: AiMuxError::Json(e.to_string()),
                                 });
                                 stream_errored = true;
                                 continue;

@@ -315,7 +315,7 @@ impl ImageModel for StabilityImageModel {
                 .await
                 .map_err(|e| AiMuxError::Http(e.to_string()))?
                 .to_vec();
-            let v: Value = serde_json::from_slice(&body).map_err(AiMuxError::Json)?;
+            let v: Value = serde_json::from_slice(&body).map_err(|e| AiMuxError::Json(e.to_string()))?;
             let b64 = v.get("image").and_then(|i| i.as_str()).ok_or_else(|| {
                 AiMuxError::Provider("Stability response missing `image` field".into())
             })?;

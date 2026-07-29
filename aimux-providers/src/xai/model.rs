@@ -346,7 +346,7 @@ impl LanguageModel for XaiModel {
                             Ok(v) => v,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e),
+                                    error: AiMuxError::Json(e.to_string()),
                                 });
                                 break;
                             }
@@ -368,7 +368,7 @@ impl LanguageModel for XaiModel {
                             Ok(c) => c,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e),
+                                    error: AiMuxError::Json(e.to_string()),
                                 });
                                 break;
                             }

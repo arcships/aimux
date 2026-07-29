@@ -2,9 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use ts_rs::TS;
 
 /// A model identifier in `"provider/model-name"` format, e.g. `"openai/gpt-4o"`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ModelId {
     provider: String,
     model: String,

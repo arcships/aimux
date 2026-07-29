@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use std::pin::Pin;
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::stream_part::StreamPart;
@@ -12,7 +14,8 @@ use crate::types::{FinishReason, ProviderMetadata, ResponseMetadata, Usage, Warn
 use serde_json::Value;
 
 /// A content item in the generation result.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum GenerateContent {
     /// Generated text.
     Text { text: String },
@@ -49,7 +52,8 @@ pub enum GenerateContent {
 }
 
 /// Result of `LanguageModel::do_generate` (non-streaming).
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct GenerateResult {
     /// Generated content items (text, tool calls, etc.).
     pub content: Vec<GenerateContent>,

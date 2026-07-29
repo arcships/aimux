@@ -699,7 +699,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         };
 
         let parsed: ElevenLabsTranscriptionResponse =
-            serde_json::from_value(raw_body.clone()).map_err(AiMuxError::Json)?;
+            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .words

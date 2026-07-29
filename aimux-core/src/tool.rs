@@ -4,9 +4,11 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 /// A tool definition passed to the model in `CallOptions.tools`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FunctionTool {
     /// Unique tool name.
     pub name: String,
@@ -63,7 +65,8 @@ impl FunctionTool {
 /// Provider tools are specific to a certain provider. The input and output
 /// schemas are defined by the provider, and some are executed on the provider's
 /// servers (e.g. web search, code execution).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ProviderTool {
     /// The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
     pub id: String,
@@ -77,8 +80,9 @@ pub struct ProviderTool {
 /// A tool that can be either a user-defined function tool or a
 /// provider-defined tool. Mirrors the V4
 /// `Array<LanguageModelV4FunctionTool | LanguageModelV4ProviderTool>`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export)]
 pub enum Tool {
     /// A user-defined function tool.
     Function(FunctionTool),
@@ -93,7 +97,8 @@ impl From<FunctionTool> for Tool {
 }
 
 /// A tool call requested by the model.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ToolCall {
     /// Provider-assigned call id.
     pub tool_call_id: String,
@@ -104,7 +109,8 @@ pub struct ToolCall {
 }
 
 /// The result of executing a tool call, to be sent back to the model.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ToolResult {
     /// Must match the corresponding `ToolCall::tool_call_id`.
     pub tool_call_id: String,
@@ -113,7 +119,13 @@ pub struct ToolResult {
 }
 
 /// How the model should choose tools.
-#[derive(Debug, Clone, Default)]
+///
+/// Wire format aligns with Vercel AI SDK `toolChoice`:
+/// `"auto" | "none" | "required" | { "type": "tool", "toolName": "..." }`.
+/// This is a mixed tagged/untagged shape (unit variants as bare strings,
+/// `Tool` variant as a tagged object), so serde is implemented by hand.
+#[derive(Debug, Clone, Default, PartialEq, TS)]
+#[ts(export, type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }")]
 pub enum ToolChoice {
     /// Model decides whether to call a tool (default).
     #[default]
@@ -124,4 +136,68 @@ pub enum ToolChoice {
     Required,
     /// Model must call the specified tool.
     Tool { tool_name: String },
+}
+
+impl Serialize for ToolChoice {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        match self {
+            ToolChoice::Auto => serializer.serialize_str("auto"),
+            ToolChoice::None => serializer.serialize_str("none"),
+            ToolChoice::Required => serializer.serialize_str("required"),
+            ToolChoice::Tool { tool_name } => {
+                let mut s = serializer.serialize_struct("ToolChoice", 2)?;
+                s.serialize_field("type", "tool")?;
+                s.serialize_field("toolName", tool_name)?;
+                s.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolChoice {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Str(String),
+            Tool {
+                #[serde(rename = "type")]
+                typ: String,
+                #[serde(rename = "toolName")]
+                tool_name: Option<String>,
+            },
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Str(s) => match s.as_str() {
+                "auto" => Ok(ToolChoice::Auto),
+                "none" => Ok(ToolChoice::None),
+                "required" => Ok(ToolChoice::Required),
+                other => Err(D::Error::custom(format!(
+                    "unknown toolChoice '{other}' (expected auto/none/required or {{type:\"tool\",toolName}})"
+                ))),
+            },
+            Repr::Tool { typ, tool_name } => {
+                if typ != "tool" {
+                    return Err(D::Error::custom(format!(
+                        "unknown toolChoice type '{typ}' (expected \"tool\")"
+                    )));
+                }
+                let tool_name = tool_name.ok_or_else(|| {
+                    D::Error::custom("toolChoice {type:\"tool\"} requires a toolName field")
+                })?;
+                Ok(ToolChoice::Tool { tool_name })
+            }
+        }
+    }
 }

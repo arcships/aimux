@@ -7,6 +7,8 @@
 //! directly.
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -23,12 +25,15 @@ pub type Embedding = Vec<f32>;
 /// Options passed to [`EmbeddingModel::do_embed`].
 ///
 /// Aligned with V4 `EmbeddingModelV4CallOptions`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EmbeddingCallOptions {
     /// List of text values to generate embeddings for.
     pub values: Vec<String>,
 
     /// Abort signal for cancelling the operation.
+    #[serde(skip)]
+    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Additional provider-specific options, keyed by provider name.
@@ -51,7 +56,8 @@ impl EmbeddingCallOptions {
 }
 
 /// Token usage for an embedding call. Embeddings only report input tokens.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EmbeddingUsage {
     /// Number of input tokens consumed.
     pub tokens: u32,
@@ -60,7 +66,8 @@ pub struct EmbeddingUsage {
 /// The result of [`EmbeddingModel::do_embed`].
 ///
 /// Aligned with V4 `EmbeddingModelV4Result`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EmbeddingResult {
     /// Generated embeddings, in the same order as the input `values`.
     pub embeddings: Vec<Embedding>,
@@ -79,7 +86,8 @@ pub struct EmbeddingResult {
 }
 
 /// Debugging response info specific to embedding calls.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct EmbeddingResponse {
     /// Response headers.
     pub headers: Option<SharedHeaders>,

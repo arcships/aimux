@@ -299,7 +299,7 @@ impl VideoModel for KlingAIVideoModel {
             ));
         }
 
-        let task: KlingAITaskResponse = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let task: KlingAITaskResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         if task.code != 0 {
             return Err(AiMuxError::Provider(
@@ -346,7 +346,7 @@ impl VideoModel for KlingAIVideoModel {
             }
 
             let result: KlingAITaskResult =
-                serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+                serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if result.code != 0 {
                 return Err(AiMuxError::Provider(

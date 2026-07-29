@@ -1,0 +1,84 @@
+[
+  {
+    "name": "tool_choice_auto",
+    "type": "ToolChoice",
+    "rust_value": "Auto",
+    "json": "\"auto\"",
+    "description": "Auto tool choice serializes as bare string"
+  },
+  {
+    "name": "tool_choice_none",
+    "type": "ToolChoice",
+    "rust_value": "None",
+    "json": "\"none\"",
+    "description": "None tool choice serializes as bare string"
+  },
+  {
+    "name": "tool_choice_required",
+    "type": "ToolChoice",
+    "rust_value": "Required",
+    "json": "\"required\"",
+    "description": "Required tool choice serializes as bare string"
+  },
+  {
+    "name": "tool_choice_tool",
+    "type": "ToolChoice",
+    "rust_value": "Tool { tool_name: \"get_weather\" }",
+    "json": "{\"type\":\"tool\",\"toolName\":\"get_weather\"}",
+    "description": "Tool variant serializes as tagged object with camelCase field"
+  },
+  {
+    "name": "stream_part_text_delta",
+    "type": "StreamPart",
+    "json": "{\"TextDelta\":{\"id\":\"tx1\",\"delta\":\"Hello\"}}",
+    "description": "TextDelta stream part"
+  },
+  {
+    "name": "stream_part_finish",
+    "type": "StreamPart",
+    "json": "{\"Finish\":{\"finish_reason\":{\"unified\":{\"stop\":null},\"raw\":null},\"usage\":{\"input_tokens\":{\"total\":10},\"output_tokens\":{\"total\":20}},\"provider_metadata\":null}}",
+    "description": "Finish stream part with usage"
+  },
+  {
+    "name": "stream_part_stream_start",
+    "type": "StreamPart",
+    "json": "{\"StreamStart\":{\"warnings\":[]}}",
+    "description": "StreamStart with empty warnings"
+  },
+  {
+    "name": "generate_text_options_default",
+    "type": "GenerateTextOptions",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null}",
+    "description": "Default GenerateTextOptions with all fields null"
+  },
+  {
+    "name": "role_user",
+    "type": "Role",
+    "json": "\"user\"",
+    "description": "User role serializes as lowercase string"
+  },
+  {
+    "name": "role_system",
+    "type": "Role",
+    "json": "\"system\"",
+    "description": "System role serializes as lowercase string"
+  },
+  {
+    "name": "model_message_text",
+    "type": "ModelMessage",
+    "json": "{\"role\":\"user\",\"content\":\"Hello\"}",
+    "description": "ModelMessage with text content"
+  },
+  {
+    "name": "finish_reason_unified_stop",
+    "type": "FinishReasonUnified",
+    "json": "\"stop\"",
+    "description": "FinishReasonUnified stop variant"
+  },
+  {
+    "name": "reasoning_effort_high",
+    "type": "ReasoningEffort",
+    "json": "\"high\"",
+    "description": "ReasoningEffort high variant"
+  }
+]

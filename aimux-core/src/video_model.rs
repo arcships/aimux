@@ -4,6 +4,8 @@
 //! (`reference/ai/packages/provider/src/video-model/v4/`).
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -14,7 +16,8 @@ use crate::shared::{
 /// A video or image file used for video editing or image-to-video generation.
 ///
 /// Aligned with V4 `VideoModelV4File`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum VideoFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -33,7 +36,8 @@ pub enum VideoFile {
 }
 
 /// File payload for a [`VideoFile::File`]: base64 string or raw bytes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum VideoFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -44,7 +48,8 @@ pub enum VideoFileData {
 /// The role a frame image plays in video generation.
 ///
 /// Aligned with V4 `VideoModelV4FrameType`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum VideoFrameType {
     /// The starting frame the model animates from.
     FirstFrame,
@@ -55,7 +60,8 @@ pub enum VideoFrameType {
 /// A role-tagged image input for image-to-video and first-last-frame generation.
 ///
 /// Aligned with V4 `VideoModelV4FrameImage`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct VideoFrameImage {
     /// The image file used for this frame.
     pub image: VideoFile,
@@ -67,7 +73,8 @@ pub struct VideoFrameImage {
 ///
 /// Aligned with V4 `VideoModelV4VideoData`. Most providers return URLs due to
 /// large file sizes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum VideoData {
     /// Video available as a URL (most common).
     Url { url: String, media_type: String },
@@ -80,7 +87,8 @@ pub enum VideoData {
 /// Options passed to [`VideoModel::do_generate`].
 ///
 /// Aligned with V4 `VideoModelV4CallOptions`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct VideoCallOptions {
     /// Text prompt for the video generation. `None` when not required.
     pub prompt: Option<String>,
@@ -120,6 +128,8 @@ pub struct VideoCallOptions {
     pub provider_options: SharedProviderOptions,
 
     /// Abort signal for cancelling the operation.
+    #[serde(skip)]
+    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Additional HTTP headers to send with the request.
@@ -151,7 +161,8 @@ impl VideoCallOptions {
 /// The result of [`VideoModel::do_generate`].
 ///
 /// Aligned with V4 `VideoModelV4Result`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct VideoResult {
     /// Generated videos as URLs, base64 strings, or binary data.
     pub videos: Vec<VideoData>,
@@ -167,7 +178,8 @@ pub struct VideoResult {
 }
 
 /// Response information for a video generation call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct VideoResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,

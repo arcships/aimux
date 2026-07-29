@@ -10,7 +10,9 @@ use std::collections::HashMap;
 use std::pin::Pin;
 
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
@@ -30,7 +32,8 @@ use crate::types::{FinishReason, ReasoningEffort, Usage, Warning};
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct GenerateTextOptions {
     pub max_output_tokens: Option<u32>,
     pub temperature: Option<f64>,
@@ -82,7 +85,8 @@ impl GenerateTextOptions {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Result of `generate_text` (user-facing).
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct GenerateTextResult {
     /// The generated text (concatenated from all text content parts).
     pub text: String,

@@ -481,7 +481,7 @@ impl VideoModel for ReplicateVideoModel {
             ));
         }
 
-        let prediction: Value = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let prediction: Value = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let prediction_id = prediction
             .get("id")
             .and_then(|v| v.as_str())

@@ -237,7 +237,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         }
 
         let submit_response: RevaiJobResponse =
-            serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+            serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         if submit_response.status.as_deref() == Some("failed") {
             return Err(AiMuxError::Provider(
@@ -273,7 +273,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
                 ));
             }
 
-            let poll: RevaiJobResponse = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+            let poll: RevaiJobResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if poll.status.as_deref() == Some("transcribed") {
                 job_status = poll;
@@ -312,7 +312,7 @@ impl TranscriptionModel for RevaiTranscriptionModel {
 
         let raw_body: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
         let parsed: RevaiTranscriptResponse =
-            serde_json::from_value(raw_body.clone()).map_err(AiMuxError::Json)?;
+            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Process monologues to extract segments and text.
         let mut segments: Vec<TranscriptionSegment> = Vec::new();

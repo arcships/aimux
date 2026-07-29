@@ -1,0 +1,674 @@
+[
+  {
+    "id": "chutes",
+    "name": "Chutes",
+    "base_url": "https://llm.chutes.ai/v1",
+    "env_var": "CHUTES_API_KEY",
+    "model": "default",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "meta",
+    "name": "Meta",
+    "base_url": "https://api.meta.ai/v1",
+    "env_var": "MODEL_API_KEY",
+    "model": "meta/muse-spark-1.1",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "poe",
+    "name": "Poe",
+    "base_url": "https://api.poe.com/v1",
+    "env_var": "POE_API_KEY",
+    "model": "anthropic/claude-haiku-3",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "wandb",
+    "name": "Weights & Biases",
+    "base_url": "https://api.inference.wandb.ai/v1",
+    "env_var": "WANDB_API_KEY",
+    "model": "JetBrains/Mellum2-12B-A2.5B-Instruct",
+    "file": "batch-01.md"
+  },
+  {
+    "id": "ai_router",
+    "name": "AI-ROUTER",
+    "base_url": "https://api.ai-router.dev/v1",
+    "env_var": "AI_ROUTER_API_KEY",
+    "model": "/v1/models",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "aki_io",
+    "name": "AKI.IO",
+    "base_url": "https://aki.io/openai/v1",
+    "env_var": "AKI_IO_API_KEY",
+    "model": "llama3-chat-70b",
+    "file": "batch-03.md"
+  },
+  {
+    "id": "alibaba_coding_plan",
+    "name": "Alibaba Coding Plan",
+    "base_url": "https://coding-intl.dashscope.aliyuncs.com/v1",
+    "env_var": "ALIBABA_CODING_PLAN_API_KEY",
+    "model": "sk-sp-xxxxx",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "alibaba_coding_plan_cn",
+    "name": "Alibaba Coding Plan (China)",
+    "base_url": "https://coding.dashscope.aliyuncs.com/v1",
+    "env_var": "ALIBABA_CODING_PLAN_API_KEY",
+    "model": "sk-sp-xxxxx",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "anyapi",
+    "name": "AnyAPI",
+    "base_url": "https://api.anyapi.ai/v1",
+    "env_var": "ANYAPI_KEY",
+    "model": "messages",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "auriko",
+    "name": "Auriko",
+    "base_url": "https://api.auriko.ai/v1",
+    "env_var": "AURIKO_API_KEY",
+    "model": "budget_exhausted",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "baidu_v2",
+    "name": "BaiduV2",
+    "base_url": "https://qianfan.baidubce.com/v2",
+    "env_var": "QIANFAN_API_KEY",
+    "model": "qianfan/",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "bailing",
+    "name": "Bailing",
+    "base_url": "https://api.ant-ling.com/v1",
+    "env_var": "BAILING_API_TOKEN",
+    "model": "enable_search",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "berget",
+    "name": "Berget.AI",
+    "base_url": "https://api.berget.ai/v1",
+    "env_var": "BERGET_API_KEY",
+    "model": "google/",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "claudinio",
+    "name": "Claudinio",
+    "base_url": "https://api.claudin.io",
+    "env_var": "CLAUDINIO_API_KEY",
+    "model": "max_tokens",
+    "file": "batch-04.md"
+  },
+  {
+    "id": "cloudferro_sherlock",
+    "name": "CloudFerro Sherlock",
+    "base_url": "https://api-sherlock.cloudferro.com/openai/v1",
+    "env_var": "CLOUDFERRO_SHERLOCK_API_KEY",
+    "model": "MiniMaxAI/MiniMax-M2.5",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "cloudflare_workers_ai",
+    "name": "Cloudflare Workers AI",
+    "base_url": "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
+    "env_var": "CLOUDFLARE_API_KEY",
+    "model": "@cf/meta/llama-3.1-8b-instruct",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "cortecs",
+    "name": "Cortecs",
+    "base_url": "https://api.cortecs.ai/v1/",
+    "env_var": "CORTECS_API_KEY",
+    "model": "claude-4-5-sonnet",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "crof",
+    "name": "CrofAI",
+    "base_url": "https://crof.ai/v1",
+    "env_var": "CROF_API_KEY",
+    "model": "deepseek-v3.2",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "crossmodel",
+    "name": "CrossModel",
+    "base_url": "https://api.crossmodel.ai/v1",
+    "env_var": "CROSSMODEL_API_KEY",
+    "model": "vendor/model",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "crusoe",
+    "name": "Crusoe",
+    "base_url": "https://api.inference.crusoecloud.com/v1",
+    "env_var": "CRUSOE_API_KEY",
+    "model": "deepseek-ai/DeepSeek-V3-0324",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "daoxe",
+    "name": "DaoXE",
+    "base_url": "https://daoxe.com/v1",
+    "env_var": "DAOXE_API_KEY",
+    "model": "claude-sonnet-4-20250514",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "dinference",
+    "name": "DInference",
+    "base_url": "https://api.dinference.com/v1",
+    "env_var": "DINFERENCE_API_KEY",
+    "model": "glm-5",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "drun",
+    "name": "D.Run (China)",
+    "base_url": "https://chat.d.run/v1",
+    "env_var": "DRUN_API_KEY",
+    "model": "public/deepseek-r1",
+    "file": "batch-05.md"
+  },
+  {
+    "id": "ebcloud",
+    "name": "EBCloud",
+    "base_url": "https://maas-api.ebcloud.com/v1",
+    "env_var": "EBCLOUD_API_KEY",
+    "model": "DeepSeek-V4-Flash",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "empiriolabs",
+    "name": "EmpirioLabs AI",
+    "base_url": "https://api.empiriolabs.ai/v1",
+    "env_var": "EMPIRIOLABS_API_KEY",
+    "model": "sk-empiriolabs-",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "frogbot",
+    "name": "FrogBot",
+    "base_url": "https://app.frogbot.ai/api/v1",
+    "env_var": "FROGBOT_API_KEY",
+    "model": "claude-haiku-4-5",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "gmicloud",
+    "name": "GMI Cloud",
+    "base_url": "https://api.gmi-serving.com/v1",
+    "env_var": "GMI_API_KEY",
+    "model": "Qwen/Qwen3.7-Max",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "hpc_ai",
+    "name": "HPC-AI",
+    "base_url": "https://api.hpc-ai.com/inference/v1",
+    "env_var": "INFERENCE_API_KEY",
+    "model": "anthropic/claude-opus-4.7",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "inceptron",
+    "name": "Inceptron",
+    "base_url": "https://api.inceptron.io/v1",
+    "env_var": "INCEPTRON_API_KEY",
+    "model": "MiniMaxAI/MiniMax-M2.5",
+    "file": "batch-06.md"
+  },
+  {
+    "id": "inferx",
+    "name": "InferX",
+    "base_url": "https://model.inferx.net/v1",
+    "env_var": "INFERX_API_KEY",
+    "model": "Qwen/Qwen3.6-35B-A3B",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "io_net",
+    "name": "IO.NET",
+    "base_url": "https://api.intelligence.io.solutions/api/v1",
+    "env_var": "IOINTELLIGENCE_API_KEY",
+    "model": "meta-llama/Llama-3.3-70B-Instruct",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "jiekou",
+    "name": "Jiekou.AI",
+    "base_url": "https://api.highwayapi.ai/openai",
+    "env_var": "JIEKOU_API_KEY",
+    "model": "deepseek/deepseek-r1",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kenari",
+    "name": "Kenari",
+    "base_url": "https://kenari.id/v1",
+    "env_var": "KENARI_API_KEY",
+    "model": "gpt-4o-mini",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kimi",
+    "name": "Kimi",
+    "base_url": "https://api.moonshot.ai/v1",
+    "env_var": "MOONSHOT_API_KEY",
+    "model": "thinking",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "kimi_for_coding",
+    "name": "Kimi For Coding",
+    "base_url": "https://api.kimi.com/coding/v1",
+    "env_var": "KIMI_API_KEY",
+    "model": "k3",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "lilac",
+    "name": "Lilac",
+    "base_url": "https://api.getlilac.com/v1",
+    "env_var": "LILAC_API_KEY",
+    "model": "moonshotai/kimi-k2.6",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "llama",
+    "name": "Llama",
+    "base_url": "https://api.llama.com/compat/v1/",
+    "env_var": "LLAMA_API_KEY",
+    "model": "Llama-4-Scout-17B-16E-Instruct-FP8",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "llmgateway",
+    "name": "LLM Gateway",
+    "base_url": "https://api.llmgateway.io/v1",
+    "env_var": "LLM_GATEWAY_API_KEY",
+    "model": "gpt-4o",
+    "file": "batch-07.md"
+  },
+  {
+    "id": "llmtr",
+    "name": "LLMTR",
+    "base_url": "https://llmtr.com/v1",
+    "env_var": "LLMTR_API_KEY",
+    "model": "model",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "lucidquery",
+    "name": "LucidQuery",
+    "base_url": "https://api.lucidquery.com/v1",
+    "env_var": "LUCIDQUERY_API_KEY",
+    "model": "lucidquery-agi-01-frontier",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "meganova",
+    "name": "Meganova",
+    "base_url": "https://api.meganova.ai/v1",
+    "env_var": "MEGANOVA_API_KEY",
+    "model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "merge_gateway",
+    "name": "Merge Gateway",
+    "base_url": "https://api-gateway.merge.dev/v1/openai",
+    "env_var": "MERGE_GATEWAY_API_KEY",
+    "model": "gpt-5.2",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "mimo",
+    "name": "Mimo",
+    "base_url": "https://api.xiaomimimo.com/v1",
+    "env_var": "MIMO_API_KEY",
+    "model": "mimo-v2.5-pro",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "minimax_cn",
+    "name": "MiniMax (minimaxi.com)",
+    "base_url": "https://api.minimaxi.com/v1",
+    "env_var": "MINIMAX_API_KEY",
+    "model": "MiniMax-M2",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "mixlayer",
+    "name": "Mixlayer",
+    "base_url": "https://models.mixlayer.ai/v1",
+    "env_var": "MIXLAYER_API_KEY",
+    "model": "qwen/",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "moark",
+    "name": "Moark",
+    "base_url": "https://api.moark.com/v1",
+    "env_var": "MOARK_API_KEY",
+    "model": "GLM-4.7",
+    "file": "batch-08.md"
+  },
+  {
+    "id": "model_oracle_ai",
+    "name": "Model Oracle AI",
+    "base_url": "https://api.modeloracle.com/api/v1",
+    "env_var": "MODEL_ORACLE_API_KEY",
+    "model": "reasoning_effort",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "neon",
+    "name": "Neon",
+    "base_url": "https://<branch-host>/v1",
+    "env_var": "NEON_AI_GATEWAY_TOKEN",
+    "model": "nt_live_...",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "neuralwatt",
+    "name": "Neuralwatt",
+    "base_url": "https://api.neuralwatt.com/v1",
+    "env_var": "NEURALWATT_API_KEY",
+    "model": "meta-llama/",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "ofox",
+    "name": "OfoxAI",
+    "base_url": "https://api.ofox.ai/v1",
+    "env_var": "OFOX_API_KEY",
+    "model": "Three Protocols, One Gateway",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "perplexity_agent",
+    "name": "Perplexity Agent",
+    "base_url": "https://api.perplexity.ai/v1",
+    "env_var": "PERPLEXITY_API_KEY",
+    "model": "openai/gpt-5.6-sol",
+    "file": "batch-09.md"
+  },
+  {
+    "id": "poolside",
+    "name": "Poolside",
+    "base_url": "https://inference.poolside.ai/v1",
+    "env_var": "POOLSIDE_API_KEY",
+    "model": "poolside/laguna-s-2.1",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "ppinfra",
+    "name": "PPInfra（PPIO 派欧云）",
+    "base_url": "https://api.ppio.com/openai",
+    "env_var": "PPIO_API_KEY",
+    "model": "deepseek/deepseek-v3-0324",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "qihang_ai",
+    "name": "QiHang（启航 AI）",
+    "base_url": "https://api.qhaigc.net/v1",
+    "env_var": "QIHANG_API_KEY",
+    "model": "gpt-4o",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "routing_run",
+    "name": "routing.run",
+    "base_url": "https://api.routing.run/v1",
+    "env_var": "ROUTING_RUN_API_KEY",
+    "model": "routing-run/claude-opus-4-8",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "snowflake_cortex",
+    "name": "Snowflake Cortex",
+    "base_url": "https://<account-identifier>.snowflakecomputing.com/api/v2/cortex/v1",
+    "env_var": "SNOWFLAKE_CORTEX_PAT",
+    "model": "claude-sonnet-4-5",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "stackit",
+    "name": "STACKIT",
+    "base_url": "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1",
+    "env_var": "STACKIT_API_KEY",
+    "model": "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "stepfun_ai_step_plan",
+    "name": "StepFun Step Plan (Global)",
+    "base_url": "https://api.stepfun.ai/step_plan/v1",
+    "env_var": "STEPFUN_API_KEY",
+    "model": "step-3.7-flash",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "stepfun_step_plan",
+    "name": "StepFun Step Plan (China)",
+    "base_url": "https://api.stepfun.com/step_plan/v1",
+    "env_var": "STEPFUN_API_KEY",
+    "model": "step-3.7-flash",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "subconscious",
+    "name": "Subconscious",
+    "base_url": "https://api.subconscious.dev/v1",
+    "env_var": "SUBCONSCIOUS_API_KEY",
+    "model": "subconscious/tim-qwen3.6-27b",
+    "file": "batch-10.md"
+  },
+  {
+    "id": "tencent_tokenhub",
+    "name": "Tencent TokenHub",
+    "base_url": "https://tokenhub.tencentmaas.com/v1",
+    "env_var": "TENCENT_TOKENHUB_API_KEY",
+    "model": "chat.completion",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "the_grid_ai",
+    "name": "The Grid AI",
+    "base_url": "https://thegrid.ai/docs",
+    "env_var": "THEGRIDAI_API_KEY",
+    "model": "text-prime",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "tokenflux",
+    "name": "Tokenflux",
+    "base_url": "https://tokenflux.ai/v1",
+    "env_var": "TOKENFLUX_API_KEY",
+    "model": "chat.completion",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "trustedrouter",
+    "name": "TrustedRouter",
+    "base_url": "https://api.trustedrouter.com/v1",
+    "env_var": "TRUSTEDROUTER_API_KEY",
+    "model": "trustedrouter/auto",
+    "file": "batch-11.md"
+  },
+  {
+    "id": "unorouter",
+    "name": "UnoRouter",
+    "base_url": "https://unorouter.com/en",
+    "env_var": "UNOROUTER_API_KEY",
+    "model": "claude-haiku-4-5-20251001",
+    "file": "batch-12.md"
+  },
+  {
+    "id": "vivgrid",
+    "name": "Vivgrid",
+    "base_url": "https://api.vivgrid.com/v1",
+    "env_var": "VIVGRID_API_KEY",
+    "model": "messages",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "volc_engine",
+    "name": "VolcEngine",
+    "base_url": "https://ark.cn-beijing.volces.com",
+    "env_var": "ARK_API_KEY",
+    "model": "ep-20240xxxxxxxx",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "vultr",
+    "name": "Vultr",
+    "base_url": "https://api.vultrinference.com/v1",
+    "env_var": "VULTR_API_KEY",
+    "model": "messages",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "xunfei",
+    "name": "Xunfei",
+    "base_url": "https://spark-api-open.xf-yun.com/v1",
+    "env_var": "XUNFEI_API_PASSWORD",
+    "model": "messages",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "zai_coding_plan",
+    "name": "Z.AI Coding Plan",
+    "base_url": "https://api.z.ai/api/anthropic",
+    "env_var": "ZHIPU_API_KEY",
+    "model": "glm-4.5-air",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "zhipu_v4",
+    "name": "ZhipuV4",
+    "base_url": "https://open.bigmodel.cn",
+    "env_var": "ZHIPU_API_KEY",
+    "model": "/api/paas/v4",
+    "file": "batch-13.md"
+  },
+  {
+    "id": "alibaba_token_plan",
+    "name": "Alibaba Token Plan",
+    "base_url": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    "env_var": "ALIBABA_TOKEN_PLAN_API_KEY",
+    "model": "MiniMax-M2.5",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "alibaba_token_plan_cn",
+    "name": "Alibaba Token Plan (China)",
+    "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    "env_var": "ALIBABA_TOKEN_PLAN_API_KEY",
+    "model": "MiniMax-M2.5",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "bedrock_mantle",
+    "name": "Bedrock Mantle",
+    "base_url": "https://bedrock-mantle.{region}.api.aws/v1",
+    "env_var": "BEDROCK_MANTLE_API_KEY",
+    "model": "us-east-1",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "cherryin",
+    "name": "cherryin",
+    "base_url": "https://open.cherryin.net",
+    "env_var": "CHERRYIN_API_KEY",
+    "model": "BAAI/bge-reranker-v2-m3(free)",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "digitalocean",
+    "name": "DigitalOcean",
+    "base_url": "https://inference.do-ai.run",
+    "env_var": "DIGITALOCEAN_ACCESS_TOKEN",
+    "model": "anthropic-claude-3.5-sonnet",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "doubao",
+    "name": "Doubao",
+    "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+    "env_var": "ARK_API_KEY",
+    "model": "deepseek-v3-2-251201",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "evroc",
+    "name": "evroc",
+    "base_url": "https://models.think.evroc.com/v1",
+    "env_var": "EVROC_API_KEY",
+    "model": "KBLab/kb-whisper-large",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "llamagate",
+    "name": "Llamagate",
+    "base_url": "https://api.llamagate.dev/v1",
+    "env_var": "LLAMAGATE_API_KEY",
+    "model": "llamagate/codellama-7b",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "zhipuai_coding_plan",
+    "name": "Zhipu AI Coding Plan",
+    "base_url": "https://docs.bigmodel.cn/cn/coding-plan/quick-start",
+    "env_var": "ZHIPU_API_KEY",
+    "model": "glm-4.5-air",
+    "file": "batch-14.md"
+  },
+  {
+    "id": "nearai",
+    "name": "NEAR AI Cloud",
+    "base_url": "https://cloud-api.near.ai/v1",
+    "env_var": "NEARAI_API_KEY",
+    "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "oci",
+    "name": "OCI",
+    "base_url": "https://inference.generativeai.${region}.oci.oraclecloud.com/openai/v1",
+    "env_var": "OCI_API_KEY",
+    "model": "oci/cohere.command-a-03-2025",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "regolo_ai",
+    "name": "Regolo AI",
+    "base_url": "https://api.regolo.ai/v1",
+    "env_var": "REGOLO_API_KEY",
+    "model": "llama-3.3-70b-instruct",
+    "file": "batch-15.md"
+  },
+  {
+    "id": "zenmux",
+    "name": "ZenMux",
+    "base_url": "https://zenmux.ai/api/v1",
+    "env_var": "ZENMUX_API_KEY",
+    "model": "anthropic/claude-opus-4",
+    "file": "batch-15.md"
+  }
+]

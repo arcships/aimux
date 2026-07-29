@@ -4,6 +4,8 @@
 //! (`reference/ai/packages/provider/src/image-model/v4/`).
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -14,7 +16,8 @@ use crate::shared::{
 /// An image file used for image editing or variation generation.
 ///
 /// Aligned with V4 `ImageModelV4File`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum ImageFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -31,7 +34,8 @@ pub enum ImageFile {
 }
 
 /// File payload for an [`ImageFile::File`]: base64 string or raw bytes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum ImageFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -46,7 +50,8 @@ pub enum ImageFileData {
 /// union. Providers should return data without unnecessary conversion: if the
 /// upstream API returns base64, return [`ImageOutputs::Base64`]; if binary,
 /// return [`ImageOutputs::Binary`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum ImageOutputs {
     /// Images as base64-encoded strings.
     Base64(Vec<String>),
@@ -57,7 +62,8 @@ pub enum ImageOutputs {
 /// Token usage for an image generation call (if the provider reports it).
 ///
 /// Aligned with V4 `ImageModelV4Usage`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ImageUsage {
     /// Number of input (prompt) tokens used.
     pub input_tokens: Option<u32>,
@@ -70,7 +76,8 @@ pub struct ImageUsage {
 /// Options passed to [`ImageModel::do_generate`].
 ///
 /// Aligned with V4 `ImageModelV4CallOptions`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ImageCallOptions {
     /// Prompt for the image generation. `None` for operations (e.g. upscaling)
     /// that do not require a prompt.
@@ -100,6 +107,8 @@ pub struct ImageCallOptions {
     pub provider_options: SharedProviderOptions,
 
     /// Abort signal for cancelling the operation.
+    #[serde(skip)]
+    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Additional HTTP headers to send with the request.
@@ -127,7 +136,8 @@ impl ImageCallOptions {
 /// The result of [`ImageModel::do_generate`].
 ///
 /// Aligned with V4 `ImageModelV4Result`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ImageResult {
     /// Generated images (base64 strings or binary data).
     pub images: ImageOutputs,
@@ -146,7 +156,8 @@ pub struct ImageResult {
 }
 
 /// Response information for an image generation call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ImageResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,

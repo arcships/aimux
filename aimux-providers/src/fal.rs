@@ -258,7 +258,7 @@ impl TranscriptionModel for FalTranscriptionModel {
             ));
         }
 
-        let job: FalJobResponse = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let job: FalJobResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Poll for result.
         let raw_body: Value;
@@ -300,7 +300,7 @@ impl TranscriptionModel for FalTranscriptionModel {
         }
 
         let parsed: FalTranscriptionResponse =
-            serde_json::from_value(raw_body.clone()).map_err(AiMuxError::Json)?;
+            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .chunks
@@ -804,7 +804,7 @@ impl VideoModel for FalVideoModel {
             ));
         }
 
-        let job: FalJobResponse = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let job: FalJobResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Poll.
         let raw_body: Value;

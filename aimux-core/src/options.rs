@@ -4,14 +4,17 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 use crate::language_model_message::LanguageModelPrompt;
 pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolChoice};
 use crate::types::ReasoningEffort;
 
 /// How the model should format its response.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum ResponseFormat {
     /// Plain text (default).
     Text,
@@ -28,7 +31,8 @@ pub enum ResponseFormat {
 /// This is the **provider-facing** options struct. Users interact with
 /// `GenerateTextOptions` (user-facing) which is converted to `CallOptions`
 /// by the `generate_text` / `stream_text` functions.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CallOptions {
     /// The standardized prompt (message array). Required.
     pub prompt: LanguageModelPrompt,

@@ -1,9 +1,12 @@
 ﻿//! Error types for aimux-core.
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use ts_rs::TS;
 
 /// Unified error type for all aimux operations.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
+#[ts(export)]
 pub enum AiMuxError {
     #[error("provider error: {0}")]
     Provider(String),
@@ -12,7 +15,7 @@ pub enum AiMuxError {
     Http(String),
 
     #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(String),
 
     #[error("stream error: {0}")]
     Stream(String),
@@ -46,6 +49,12 @@ pub enum AiMuxError {
 
     #[error("{0}")]
     Other(String),
+}
+
+impl From<serde_json::Error> for AiMuxError {
+    fn from(e: serde_json::Error) -> Self {
+        AiMuxError::Json(e.to_string())
+    }
 }
 
 impl AiMuxError {

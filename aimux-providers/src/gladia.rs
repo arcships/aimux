@@ -234,7 +234,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             ));
         }
 
-        let upload: GladiaUploadResponse = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let upload: GladiaUploadResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Step 2: Initiate transcription.
         let mut body = Map::new();
@@ -272,7 +272,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             ));
         }
 
-        let init: GladiaInitResponse = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let init: GladiaInitResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Step 3: Poll for result.
         let mut raw_body: Value;
@@ -306,7 +306,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
             raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
             let parsed: GladiaResultResponse =
-                serde_json::from_value(raw_body.clone()).map_err(AiMuxError::Json)?;
+                serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if parsed.status == "done" {
                 let result = parsed.result.ok_or_else(|| {

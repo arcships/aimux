@@ -6,13 +6,16 @@
 
 use crate::content::ContentPart;
 use crate::message::Role;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 /// A single provider-facing message.
 ///
 /// Unlike `ModelMessage` (which can have string content), this always has
 /// `content: Vec<ContentPart>` — strings are normalized to `ContentPart::Text`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct LanguageModelPromptMessage {
     pub role: Role,
     pub content: Vec<ContentPart>,

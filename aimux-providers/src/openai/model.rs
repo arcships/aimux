@@ -444,7 +444,7 @@ pub async fn execute_stream(
                         Err(e) => {
                             // Unparsable chunk — emit Error, then finish.
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::Json(e),
+                                error: AiMuxError::Json(e.to_string()),
                             });
                             stream_errored = true;
                             break;
@@ -465,7 +465,7 @@ pub async fn execute_stream(
                         Ok(c) => c,
                         Err(e) => {
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::Json(e),
+                                error: AiMuxError::Json(e.to_string()),
                             });
                             stream_errored = true;
                             break;

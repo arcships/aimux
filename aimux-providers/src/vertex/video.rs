@@ -174,7 +174,7 @@ impl VideoModel for VertexVideoModel {
             ));
         }
 
-        let predict_response: Value = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let predict_response: Value = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let operation_name = predict_response
             .get("name")
             .and_then(|v| v.as_str())

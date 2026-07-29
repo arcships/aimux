@@ -287,7 +287,7 @@ impl VideoModel for RunwaymlVideoModel {
         }
 
         let task: RunwaymlTaskCreationResponse =
-            serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+            serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let task_id = task.id;
 
         // Poll for completion.
@@ -332,7 +332,7 @@ impl VideoModel for RunwaymlVideoModel {
             }
 
             let task_details: RunwaymlTaskDetailsResponse =
-                serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+                serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             let status_str = task_details.status.clone().unwrap_or_default();
             match status_str.as_str() {

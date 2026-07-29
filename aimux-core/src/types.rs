@@ -2,9 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 /// Unified finish reason (why the model stopped generating).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FinishReason {
     /// The unified reason.
     pub unified: FinishReasonUnified,
@@ -13,8 +15,9 @@ pub struct FinishReason {
 }
 
 /// Unified finish reason enum (aligned with V4 `LanguageModelV4FinishReason`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
+#[ts(export)]
 pub enum FinishReasonUnified {
     Stop,
     Length,
@@ -25,14 +28,16 @@ pub enum FinishReasonUnified {
 }
 
 /// Token usage statistics.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Usage {
     pub input_tokens: TokenUsage,
     pub output_tokens: TokenUsage,
 }
 
 /// Token usage detail (with cache breakdown).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TokenUsage {
     /// Total tokens.
     pub total: Option<u32>,
@@ -57,9 +62,10 @@ pub struct TokenUsage {
 ///
 /// Controls how much reasoning/thinking the model performs. Maps to
 /// OpenAI `reasoning_effort` and Anthropic `thinking` config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
+#[ts(export)]
 pub enum ReasoningEffort {
     /// Provider default — no explicit reasoning config sent.
     #[default]
@@ -109,7 +115,8 @@ impl std::str::FromStr for ReasoningEffort {
 }
 
 /// A warning issued by the provider (e.g. unsupported parameter).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum Warning {
     /// A feature is not supported by this provider.
     Unsupported {
@@ -128,7 +135,8 @@ pub enum Warning {
 }
 
 /// Metadata about the API response.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ResponseMetadata {
     pub id: Option<String>,
     pub timestamp: Option<String>,

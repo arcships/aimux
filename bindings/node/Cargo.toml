@@ -1,0 +1,22 @@
+[package]
+name = "aimux-node"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Node.js binding for aimux (napi-rs, native path — bypasses aimux-ffi)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+aimux-core = { path = "../../aimux-core" }
+aimux-providers = { path = "../../aimux-providers" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+napi = { version = "3", features = ["napi8", "tokio_rt", "async"] }
+napi-derive = "3"
+
+# Keep this crate out of the main cargo workspace — napi-rs builds it independently.
+[workspace]

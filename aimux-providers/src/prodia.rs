@@ -431,7 +431,7 @@ impl VideoModel for ProdiaVideoModel {
             ));
         }
 
-        let job: Value = serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+        let job: Value = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let job_id = job
             .get("job")
             .and_then(|v| v.as_str())

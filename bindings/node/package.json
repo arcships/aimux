@@ -1,0 +1,27 @@
+{
+  "name": "aimux",
+  "version": "0.1.0",
+  "description": "Unified LLM service layer — one API for 172+ AI providers (Rust core, Node.js binding)",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "aimux",
+    "package": {
+      "name": "@aimux/node"
+    }
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "test": "ava",
+    "prepublishOnly": "napi prepublish -t npm"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.8.0",
+    "ava": "^6.0.0"
+  },
+  "engines": {
+    "node": ">= 18"
+  },
+  "license": "MIT"
+}

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "aimux-core",
+    "aimux-ffi",
     "aimux-provider-utils",
     "aimux-providers",
     "aimux-stream",
@@ -56,6 +57,7 @@ quote = "1"
 
 # Internal crates
 aimux-core = { path = "aimux-core" }
+aimux-providers = { path = "aimux-providers" }
 aimux-stream = { path = "aimux-stream" }
 aimux-provider-utils = { path = "aimux-provider-utils" }
 aimux-tools = { path = "aimux-tools" }
@@ -65,3 +67,6 @@ httpdate = "1"
 
 # Serial test execution (for env-var-mutating tests)
 serial_test = "3"
+
+# TypeScript type generation (auto-generate .d.ts from Rust types)
+ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }

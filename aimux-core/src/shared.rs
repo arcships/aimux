@@ -12,7 +12,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 // Re-export the existing `Warning` so providers can import everything they
 // need from `crate::shared` in one place.
@@ -54,7 +56,8 @@ pub type SharedProviderReference = HashMap<String, String>;
 /// Providers should pass file data through without unnecessary conversion: if
 /// the upstream API returns base64, return [`FileBytes::Base64`]; if it
 /// returns binary, return [`FileBytes::Binary`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum FileBytes {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -65,7 +68,8 @@ pub enum FileBytes {
 /// File data as a tagged discriminated union.
 ///
 /// Aligned with V4 `SharedV4FileData`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
@@ -114,7 +118,8 @@ impl AbortSignal {
 /// Newtype that enforces the `WxH` format used by V4 image `size` and video
 /// `resolution` options. Aligned with the TS template-literal type
 /// `` `${number}x${number}` ``.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Size {
     width: u32,
     height: u32,
@@ -169,7 +174,8 @@ impl std::str::FromStr for Size {
 /// Newtype that enforces the `W:H` format used by V4 image and video
 /// `aspectRatio` options. Aligned with the TS template-literal type
 /// `` `${number}:${number}` ``.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct AspectRatio {
     width: u32,
     height: u32,
@@ -235,7 +241,8 @@ fn parse_pair(s: &str, sep: char) -> Option<(u32, u32)> {
 /// subsets; traits whose TS spec marks `response` as required use
 /// `ResponseInfo` directly, while those that mark it optional use
 /// `Option<ResponseInfo>`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ResponseInfo {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,
@@ -250,7 +257,8 @@ pub struct ResponseInfo {
 /// Optional request information for telemetry and debugging.
 ///
 /// Aligned with the `request?` object that appears on some V4 model results.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct RequestInfo {
     /// The request body that was sent (opaque JSON).
     pub body: Option<Value>,

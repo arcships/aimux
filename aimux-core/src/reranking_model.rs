@@ -4,6 +4,8 @@
 //! (`reference/ai/packages/provider/src/reranking-model/v4/`).
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -13,7 +15,8 @@ use crate::shared::{
 /// Documents to rerank: either a list of texts or a list of JSON objects.
 ///
 /// Aligned with V4 `RerankingModelV4CallOptions.documents`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum RerankingDocuments {
     /// A list of plain-text documents.
     Text { values: Vec<String> },
@@ -24,7 +27,8 @@ pub enum RerankingDocuments {
 /// Options passed to [`RerankingModel::do_rerank`].
 ///
 /// Aligned with V4 `RerankingModelV4CallOptions`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct RerankingCallOptions {
     /// Documents to rerank.
     pub documents: RerankingDocuments,
@@ -36,6 +40,8 @@ pub struct RerankingCallOptions {
     pub top_n: Option<u32>,
 
     /// Abort signal for cancelling the operation.
+    #[serde(skip)]
+    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Additional provider-specific options, keyed by provider name.
@@ -60,7 +66,8 @@ impl RerankingCallOptions {
 }
 
 /// A single reranked entry: the original index and its relevance score.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct RerankingRank {
     /// The index of the document in the original list (before reranking).
     pub index: u32,
@@ -71,7 +78,8 @@ pub struct RerankingRank {
 /// The result of [`RerankingModel::do_rerank`].
 ///
 /// Aligned with V4 `RerankingModelV4Result`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct RerankingResult {
     /// Ordered list of reranked documents, sorted by descending relevance
     /// score. Each entry's `index` refers to the position in the original
@@ -89,7 +97,8 @@ pub struct RerankingResult {
 }
 
 /// Optional response information for a reranking call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct RerankingResponse {
     /// ID for the generated response, if the provider sends one.
     pub id: Option<String>,

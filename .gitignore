@@ -6,3 +6,17 @@ Cargo.lock
 
 # Reference sources (Vercel AI SDK + AI gateways: new-api, one-api, litellm, portkey-gateway — kept locally for design reference)
 /reference
+
+# Binding build artifacts — never commit
+bindings/*/target/
+bindings/node/*.node
+bindings/node/*.node.tmp
+bindings/python/*.so
+bindings/python/**/*.so
+bindings/python/.venv/
+bindings/python/**/*.egg-info/
+bindings/flutter/.dart_tool/
+bindings/flutter/.packages
+bindings/node/node_modules/
+bindings/node/package-lock.json
+aimux-core/bindings/bindings/

@@ -453,7 +453,7 @@ impl LanguageModel for OpenAIResponsesModel {
                             Ok(v) => v,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e),
+                                    error: AiMuxError::Json(e.to_string()),
                                 });
                                 stream_errored = true;
                                 break;

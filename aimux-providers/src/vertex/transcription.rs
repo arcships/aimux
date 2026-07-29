@@ -285,7 +285,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
         };
 
         let parsed: GoogleVertexResponse =
-            serde_json::from_value(raw_body.clone()).map_err(AiMuxError::Json)?;
+            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let results = parsed.results.unwrap_or_default();
 

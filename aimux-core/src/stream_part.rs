@@ -3,13 +3,16 @@
 //! Aligned with V4 `LanguageModelV4StreamPart`. v0.1 implements the P0/P1 variants;
 //! P2 variants (reasoning, file, source) are defined but not yet emitted by providers.
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
 
 /// A single chunk in the stream returned by `do_stream`.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum StreamPart {
     // ── P0: text ──
     /// Start of a text segment.

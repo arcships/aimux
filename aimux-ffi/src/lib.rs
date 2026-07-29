@@ -1,0 +1,352 @@
+//! aimux-ffi: C ABI boundary for multi-language bindings.
+//!
+//! Provides an opaque handle registry + JSON wire boundary + push callback
+//! stream. Only used by C ABI bindings (Swift / Kotlin / C). Native bindings
+//! (Python / Node / Flutter) bypass this layer and use `aimux-providers`
+//! directly.
+//!
+//! ## Memory ownership
+//!
+//! - [`aimux_generate_text`] returns a `*mut c_char` owned by the caller; the
+//!   caller MUST free it with [`aimux_free_string`].
+//! - [`aimux_stream_text`] callbacks receive `*const c_char` pointers that are
+//!   valid **only for the duration of the callback**. The callback must copy
+//!   the data synchronously; the backing buffer is freed when the callback
+//!   returns.
+//!
+//! ## Concurrency
+//!
+//! All async provider work runs on a shared multi-threaded tokio runtime. The
+//! C ABI functions are synchronous: they `block_on` the runtime until the
+//! operation completes. Callbacks execute on the same thread/call-stack that
+//! invoked the FFI function, so they must not re-enter the FFI layer (doing so
+//! would deadlock the runtime).
+
+use std::collections::HashMap;
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+
+use aimux_core::generate::{generate_text, stream_text, GenerateTextOptions};
+use aimux_core::language_model::LanguageModel;
+use aimux_core::message::ModelPrompt;
+use aimux_core::provider::Provider;
+use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+
+use futures::StreamExt;
+use tokio::runtime::Runtime;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Global state: handle registry + tokio runtime
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ModelRegistry = HashMap<u64, Arc<dyn LanguageModel>>;
+
+static REGISTRY: OnceLock<Mutex<ModelRegistry>> = OnceLock::new();
+static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
+
+fn registry() -> &'static Mutex<ModelRegistry> {
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Register a model instance, returning its opaque `u64` handle.
+///
+/// Handles start at 1; 0 is reserved for "failure / invalid".
+fn intern_model(model: Arc<dyn LanguageModel>) -> u64 {
+    let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
+    registry()
+        .lock()
+        .expect("aimux-ffi: registry mutex poisoned")
+        .insert(handle, model);
+    handle
+}
+
+/// Look up a model by handle, cloning the `Arc` out of the registry.
+fn get_model(handle: u64) -> Option<Arc<dyn LanguageModel>> {
+    registry()
+        .lock()
+        .expect("aimux-ffi: registry mutex poisoned")
+        .get(&handle)
+        .cloned()
+}
+
+/// Remove a handle from the registry (the model drops when the last ref goes).
+fn drop_handle(handle: u64) {
+    registry()
+        .lock()
+        .expect("aimux-ffi: registry mutex poisoned")
+        .remove(&handle);
+}
+
+/// The shared tokio runtime driving all async provider calls.
+fn runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Runtime::new().expect("aimux-ffi: failed to build tokio runtime")
+    })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Copy a NUL-terminated C string into an owned `String`.
+///
+/// Returns `None` for a null pointer or invalid UTF-8.
+///
+/// # Safety
+///
+/// `ptr` must be null or a valid NUL-terminated C string valid for the
+/// duration of this call.
+fn cstr_to_string(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    // SAFETY: caller guarantees `ptr` is a valid NUL-terminated C string.
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    cstr.to_str().ok().map(str::to_owned)
+}
+
+/// Parse the prompt JSON accepted by the FFI.
+///
+/// Accepts either a bare prompt value (`"text"` or `[{...}]`) or a wrapper
+/// object `{"prompt": <value>}`.
+fn parse_prompt(json: &str) -> Result<ModelPrompt, serde_json::Error> {
+    let value: serde_json::Value = serde_json::from_str(json)?;
+    let inner = match &value {
+        serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
+            obj.get("prompt").expect("checked by guard")
+        }
+        _ => &value,
+    };
+    serde_json::from_value(inner.clone())
+}
+
+/// Parse the options JSON. Empty / `null` yields the default options.
+fn parse_opts(json: &str) -> Result<GenerateTextOptions, serde_json::Error> {
+    let trimmed = json.trim();
+    if trimmed.is_empty() || trimmed == "null" {
+        return Ok(GenerateTextOptions::default());
+    }
+    serde_json::from_str(json)
+}
+
+/// Build an owned C string (`*mut c_char`) from a `String`, transferring
+/// ownership to the caller (who must free it with [`aimux_free_string`]).
+fn into_cstring_raw(s: String) -> *mut c_char {
+    CString::new(s)
+        .map(|c| c.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Build an error JSON string `{"error":"..."}` as an owned `*mut c_char`.
+fn error_json_raw(msg: impl std::fmt::Display) -> *mut c_char {
+    into_cstring_raw(serde_json::json!({ "error": msg.to_string() }).to_string())
+}
+
+/// Invoke the `on_error` callback with an error JSON string.
+///
+/// The pointer is valid only for the duration of the callback (no leak: the
+/// backing `CString` is freed when this function returns).
+fn fire_error(on_error: extern "C" fn(*const c_char), msg: impl std::fmt::Display) {
+    let json = serde_json::json!({ "error": msg.to_string() }).to_string();
+    if let Ok(cstr) = CString::new(json) {
+        on_error(cstr.as_ptr());
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: provider constructors
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create an OpenAI model instance, returning its opaque handle.
+///
+/// Returns `0` on failure (null arguments or invalid model id).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
+    match provider.language_model(&model_id) {
+        Ok(model) => intern_model(Arc::from(model)),
+        Err(_) => 0,
+    }
+}
+
+/// Create an Anthropic model instance, returning its opaque handle.
+///
+/// Returns `0` on failure (null arguments or invalid model id).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_anthropic_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = AnthropicProvider::new(AnthropicConfig::new(api_key));
+    match provider.language_model(&model_id) {
+        Ok(model) => intern_model(Arc::from(model)),
+        Err(_) => 0,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: non-streaming generation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Non-streaming generation.
+///
+/// `prompt_json` is either a bare prompt value (`"text"` or a messages array)
+/// or `{"prompt": <value>}`. `opts_json` is a serialized `GenerateTextOptions`
+/// (empty / null for defaults).
+///
+/// Returns a JSON string — the serialized `GenerateTextResult`, or
+/// `{"error":"..."}` on failure — that the caller MUST free with
+/// [`aimux_free_string`]. Returns a null pointer only if allocation fails.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_generate_text(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+) -> *mut c_char {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => return error_json_raw("invalid handle"),
+    };
+
+    let prompt = match cstr_to_string(prompt_json).and_then(|s| parse_prompt(&s).ok()) {
+        Some(p) => p,
+        None => return error_json_raw("invalid prompt_json"),
+    };
+
+    let opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => return error_json_raw(format!("invalid opts_json: {e}")),
+        },
+        None => GenerateTextOptions::default(),
+    };
+
+    let result = runtime().block_on(async move { generate_text(&*model, prompt, opts).await });
+
+    match result {
+        Ok(r) => serde_json::to_string(&r)
+            .map(into_cstring_raw)
+            .unwrap_or_else(|e| error_json_raw(format!("serialize result: {e}"))),
+        Err(e) => error_json_raw(format!("generate_text: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: streaming generation (push callbacks)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Streaming generation with push callbacks.
+///
+/// Blocks the calling thread until the stream completes (synchronous +
+/// callback mode). Callbacks are invoked in the same call stack:
+/// - `on_part(json)`: each `StreamPart` serialized as JSON. The pointer is
+///   valid only during the call.
+/// - `on_done()`: invoked once when the stream ends normally.
+/// - `on_error(err_json)`: invoked on a stream-level error (an `Err` from the
+///   stream, or failure to start streaming). Valid only during the call.
+///
+/// `StreamPart::Error` (a provider-reported mid-stream error) is delivered via
+/// `on_part` like any other part; the C caller may parse it to react.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_stream_text(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    on_part: extern "C" fn(*const c_char),
+    on_done: extern "C" fn(),
+    on_error: extern "C" fn(*const c_char),
+) {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => {
+            fire_error(on_error, "invalid handle");
+            return;
+        }
+    };
+
+    let prompt = match cstr_to_string(prompt_json).and_then(|s| parse_prompt(&s).ok()) {
+        Some(p) => p,
+        None => {
+            fire_error(on_error, "invalid prompt_json");
+            return;
+        }
+    };
+
+    let opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => {
+                fire_error(on_error, format!("invalid opts_json: {e}"));
+                return;
+            }
+        },
+        None => GenerateTextOptions::default(),
+    };
+
+    runtime().block_on(async move {
+        let stream_result = stream_text(&*model, prompt, opts).await;
+        match stream_result {
+            Ok(sr) => {
+                let mut stream = sr.stream;
+                while let Some(item) = stream.next().await {
+                    match item {
+                        Ok(part) => {
+                            let json =
+                                serde_json::to_string(&part).unwrap_or_else(|_| "{}".to_string());
+                            // `cstr` lives for this block: pointer is valid
+                            // during `on_part`, freed when the block ends.
+                            if let Ok(cstr) = CString::new(json) {
+                                on_part(cstr.as_ptr());
+                            }
+                        }
+                        Err(e) => {
+                            fire_error(on_error, format!("stream error: {e}"));
+                            return;
+                        }
+                    }
+                }
+                on_done();
+            }
+            Err(e) => fire_error(on_error, format!("stream_text: {e}")),
+        }
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: resource management
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Release a model handle previously returned by `aimux_*_new`.
+///
+/// Safe to call with `0` (no-op).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_drop_handle(handle: u64) {
+    if handle != 0 {
+        drop_handle(handle);
+    }
+}
+
+/// Free a C string previously returned by [`aimux_generate_text`].
+///
+/// # Safety
+///
+/// `ptr` must be null or a pointer previously produced by
+/// [`aimux_generate_text`] (i.e. via `CString::into_raw`). Passing any other
+/// pointer is undefined behavior.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aimux_free_string(ptr: *mut c_char) {
+    if ptr.is_null() {
+        return;
+    }
+    // SAFETY: caller guarantees `ptr` came from `CString::into_raw`.
+    drop(unsafe { CString::from_raw(ptr) });
+}

@@ -12,6 +12,8 @@ use std::pin::Pin;
 
 use async_trait::async_trait;
 use futures::Stream;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -19,7 +21,8 @@ use crate::shared::{
 };
 
 /// Audio input: raw bytes or a base64-encoded string.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum AudioInput {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -28,7 +31,8 @@ pub enum AudioInput {
 }
 
 /// A chunk of audio in a streaming transcription request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum AudioChunk {
     /// Raw binary bytes.
     Binary(Vec<u8>),
@@ -37,7 +41,8 @@ pub enum AudioChunk {
 }
 
 /// A transcript segment with timing information.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TranscriptionSegment {
     /// The text content of this segment.
     pub text: String,
@@ -50,7 +55,8 @@ pub struct TranscriptionSegment {
 /// Options passed to [`TranscriptionModel::do_generate`].
 ///
 /// Aligned with V4 `TranscriptionModelV4CallOptions`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TranscriptionCallOptions {
     /// Audio data to transcribe (raw bytes or a base64-encoded string).
     pub audio: AudioInput,
@@ -62,6 +68,8 @@ pub struct TranscriptionCallOptions {
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Abort signal for cancelling the operation.
+    #[serde(skip)]
+    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Additional HTTP headers to send with the request.
@@ -84,7 +92,8 @@ impl TranscriptionCallOptions {
 /// The result of [`TranscriptionModel::do_generate`].
 ///
 /// Aligned with V4 `TranscriptionModelV4Result`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TranscriptionResult {
     /// The complete transcribed text from the audio.
     pub text: String,
@@ -112,14 +121,16 @@ pub struct TranscriptionResult {
 }
 
 /// Optional request information for a transcription call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TranscriptionRequest {
     /// Raw request HTTP body that was sent (JSON stringified).
     pub body: Option<String>,
 }
 
 /// Response information for a transcription call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TranscriptionResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,
@@ -132,7 +143,8 @@ pub struct TranscriptionResponse {
 }
 
 /// The input audio format for a streaming transcription request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct InputAudioFormat {
     /// Audio format type, e.g. `"audio/pcm"`, `"audio/pcmu"`, `"audio/pcma"`.
     pub format_type: String,
@@ -180,7 +192,8 @@ impl std::fmt::Debug for TranscriptionStreamOptions {
 /// A single chunk in the stream returned by `do_stream`.
 ///
 /// Aligned with V4 `TranscriptionModelV4StreamPart`.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum TranscriptionStreamPart {
     /// Stream start event, carrying warnings.
     StreamStart { warnings: Vec<Warning> },

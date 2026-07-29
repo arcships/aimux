@@ -5,12 +5,14 @@
 //! `LanguageModel::do_generate` / `do_stream`.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::content::ContentPart;
 
 /// Who sent the message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(export)]
 pub enum Role {
     System,
     /// The default role (a bare `Role::default()` yields `User`, matching the
@@ -22,15 +24,17 @@ pub enum Role {
 }
 
 /// Message body: either a simple string or multi-part content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(untagged)]
+#[ts(export)]
 pub enum MessageContent {
     Text(String),
     Parts(Vec<ContentPart>),
 }
 
 /// A single user-facing chat message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ModelMessage {
     pub role: Role,
     pub content: MessageContent,
@@ -72,7 +76,9 @@ impl ModelMessage {
 /// What the user passes as `prompt` to `generate_text` / `stream_text`.
 ///
 /// Can be a simple string (converted to a single user message) or a list of messages.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
 pub enum ModelPrompt {
     /// A plain string prompt — equivalent to a single user message.
     Text(String),

@@ -232,7 +232,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         }
 
         let upload: AssemblyAIUploadResponse =
-            serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+            serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Step 2: Submit transcript request.
         let mut body = Map::new();
@@ -284,7 +284,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         }
 
         let submit: AssemblyAISubmitResponse =
-            serde_json::from_str(&text).map_err(AiMuxError::Json)?;
+            serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Step 3: Poll for completion.
         let mut raw_body: Value;
@@ -318,7 +318,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
             raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
             let parsed: AssemblyAITranscriptResponse =
-                serde_json::from_value(raw_body.clone()).map_err(AiMuxError::Json)?;
+                serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if parsed.status == "completed" {
                 // Build segments from words (timestamps are in milliseconds).

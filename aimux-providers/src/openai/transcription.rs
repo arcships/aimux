@@ -378,7 +378,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         };
 
         let parsed: OpenAITranscriptionResponse =
-            serde_json::from_value(raw_body.clone()).map_err(AiMuxError::Json)?;
+            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Map language name to ISO 639-1 code.
         let language = parsed

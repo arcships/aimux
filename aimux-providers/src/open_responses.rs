@@ -446,7 +446,7 @@ impl LanguageModel for OpenResponsesModel {
                             Ok(v) => v,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e),
+                                    error: AiMuxError::Json(e.to_string()),
                                 });
                                 break;
                             }

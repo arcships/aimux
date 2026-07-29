@@ -1,0 +1,22 @@
+[package]
+name = "aimux-python"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Python binding for aimux (PyO3, native path — bypasses aimux-ffi)"
+
+[lib]
+name = "aimux"
+crate-type = ["cdylib"]
+
+[dependencies]
+aimux-core = { path = "../../aimux-core" }
+aimux-providers = { path = "../../aimux-providers" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
+
+# Keep out of main workspace
+[workspace]

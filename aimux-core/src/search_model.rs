@@ -6,13 +6,16 @@
 //! `provider_options`; the core trait only models the shared structure.
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{AbortSignal, SharedHeaders, SharedProviderMetadata, SharedProviderOptions};
 use crate::types::Warning;
 
 /// Options passed to [`SearchModel::do_search`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SearchCallOptions {
     /// The search query string.
     pub query: String,
@@ -37,6 +40,8 @@ pub struct SearchCallOptions {
     pub exclude_domains: Option<Vec<String>>,
 
     /// Abort signal for cancelling the operation.
+    #[serde(skip)]
+    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Additional provider-specific options, keyed by provider name.
@@ -64,7 +69,8 @@ impl SearchCallOptions {
 }
 
 /// A single search result item.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SearchResultItem {
     /// The title of the result (e.g. page title).
     pub title: Option<String>,
@@ -87,7 +93,8 @@ pub struct SearchResultItem {
 }
 
 /// The result of [`SearchModel::do_search`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SearchResult {
     /// Ordered list of search results.
     pub results: Vec<SearchResultItem>,
@@ -107,7 +114,8 @@ pub struct SearchResult {
 }
 
 /// Optional response information for a search call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SearchResponse {
     /// Response headers.
     pub headers: Option<SharedHeaders>,

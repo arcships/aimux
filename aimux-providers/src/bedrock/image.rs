@@ -280,7 +280,7 @@ impl ImageModel for BedrockImageModel {
             });
         }
 
-        let body_str = serde_json::to_string(&Value::Object(args)).map_err(AiMuxError::Json)?;
+        let body_str = serde_json::to_string(&Value::Object(args)).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
         let hm: reqwest::header::HeaderMap = headers

@@ -7,6 +7,8 @@
 //! (no `do_` prefix), matching the TS spec.
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -18,7 +20,8 @@ use crate::shared::{
 /// The V4 spec restricts upload input to the `data` and `text` variants of
 /// `SharedV4FileData` (URLs and provider references are not valid uploads), so
 /// this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum UploadFileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },
@@ -29,7 +32,8 @@ pub enum UploadFileData {
 /// Options passed to [`Files::upload_file`].
 ///
 /// Aligned with V4 `FilesV4UploadFileCallOptions`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct UploadFileCallOptions {
     /// The file data (raw bytes/base64 or inline text).
     pub data: UploadFileData,
@@ -59,7 +63,8 @@ impl UploadFileCallOptions {
 /// Result of [`Files::upload_file`].
 ///
 /// Aligned with V4 `FilesV4UploadFileResult`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct UploadFileResult {
     /// A provider reference mapping provider names to provider-specific file
     /// identifiers.

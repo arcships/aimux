@@ -4,6 +4,8 @@
 //! (`reference/ai/packages/provider/src/speech-model/v4/`).
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
@@ -14,7 +16,8 @@ use crate::shared::{
 ///
 /// The TS result type is `string | Uint8Array`. Providers should return data
 /// without unnecessary conversion.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub enum AudioData {
     /// Audio as a base64-encoded string.
     Base64(String),
@@ -25,7 +28,8 @@ pub enum AudioData {
 /// Options passed to [`SpeechModel::do_generate`].
 ///
 /// Aligned with V4 `SpeechModelV4CallOptions`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SpeechCallOptions {
     /// Text to convert to speech.
     pub text: String,
@@ -52,6 +56,8 @@ pub struct SpeechCallOptions {
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Abort signal for cancelling the operation.
+    #[serde(skip)]
+    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Additional HTTP headers to send with the request.
@@ -78,7 +84,8 @@ impl SpeechCallOptions {
 /// The result of [`SpeechModel::do_generate`].
 ///
 /// Aligned with V4 `SpeechModelV4Result`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SpeechResult {
     /// Generated audio (base64 string or binary data).
     pub audio: AudioData,
@@ -97,14 +104,16 @@ pub struct SpeechResult {
 }
 
 /// Optional request information for a speech call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SpeechRequest {
     /// Response body (HTTP providers only).
     pub body: Option<serde_json::Value>,
 }
 
 /// Response information for a speech call.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SpeechResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,
