@@ -103,16 +103,33 @@ cargo test -p aimux-providers --tests
 
 测试不依赖网络和密钥，用 cassette 回放真实 API 响应。详见 [rfc/0003-test-cassette.md](rfc/0003-test-cassette.md)。
 
+## 多语言绑定
+
+aimux 提供 6 种语言绑定，共享同一个 Rust 核心：
+
+| 绑定 | 路径 | 工具 | 目录 |
+|------|------|------|------|
+| **Node.js** | 原生 | napi-rs v3 | [bindings/node/](bindings/node/) |
+| **Python** | 原生 | PyO3 + maturin | [bindings/python/](bindings/python/) |
+| **Swift** | C ABI | Swift Package | [bindings/swift/](bindings/swift/) |
+| **Kotlin** | C ABI | JNA | [bindings/kotlin/](bindings/kotlin/) |
+| **Flutter** | C ABI | dart:ffi | [bindings/flutter/](bindings/flutter/) |
+| **C / C++** | C ABI | 直接链接 | [bindings/c/](bindings/c/) |
+
+详见 [bindings/README.md](bindings/README.md) 和 [API 文档](docs/API.md)。
+
 ## 设计文档
 
 | 文档 | 内容 |
 |------|------|
+| [docs/API.md](docs/API.md) | **API 文档**（全部模态 × 全部语言） |
 | [rfc/0001-multilang-bindings.md](rfc/0001-multilang-bindings.md) | 多语言绑定方案（Node/Swift/Kotlin/Flutter/Python） |
 | [rfc/0002-provider-improvements.md](rfc/0002-provider-improvements.md) | 配置描述结构与薄封装改进 |
 | [rfc/0003-test-cassette.md](rfc/0003-test-cassette.md) | 录播测试方案 |
 | [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md) | 全网厂商清单与实现现状 |
 | [rfc/0005-protocol-conversion.md](rfc/0005-protocol-conversion.md) | 协议转换与适配层设计 |
 | [rfc/0006-provider-development.md](rfc/0006-provider-development.md) | Provider 最小准入、实现路径、核心契约、按需测试与验收规范 |
+| [rfc/0008-multimodal-bindings.md](rfc/0008-multimodal-bindings.md) | 多模态绑定设计 |
 
 ## License
 

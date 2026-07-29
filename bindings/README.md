@@ -16,8 +16,6 @@ aimux 的多语言绑定。所有绑定共享同一个 Rust 核心（aimux-core 
 | **Kotlin** | C ABI | JNA | ✅ PoC | [kotlin/](kotlin/) |
 | **Flutter** | C ABI | dart:ffi 手写 | ✅ PoC | [flutter/](flutter/) |
 | **C / C++** | C ABI | 直接链接 aimux-ffi.h | ✅ PoC | [c/](c/) |
-| **Kotlin** | C ABI | JNA | ✅ PoC | [kotlin/](kotlin/) |
-| **Flutter** | 原生 | flutter_rust_bridge | ✅ PoC | [flutter/](flutter/) |
 | **C / C++** | C ABI | 直接链接 aimux-ffi.h | ✅ PoC | [c/](c/) |
 
 ## 构建
