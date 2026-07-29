@@ -4,4 +4,33 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A content item in the generation result.
  */
-export type GenerateContent = { "Text": { text: string, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, } } | { "Source": { id: string, source_type: string, url: string | null, title: string | null, } } | { "Reasoning": { text: string, provider_metadata: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, } };
+export type GenerateContent = { "Text": { text: string, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
+/**
+ * Whether the tool call will be executed by the provider.
+ * If false/unset, the tool call is executed by the client.
+ */
+provider_executed?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, 
+/**
+ * Additional provider-specific metadata for the tool call.
+ */
+provider_metadata?: JsonValue | null, } } | { "Source": { id: string, source_type: string, url: string | null, title: string | null, } } | { "Reasoning": { text: string, provider_metadata: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
+/**
+ * Whether the result is an error or error message.
+ */
+is_error?: boolean | null, 
+/**
+ * Whether the result is preliminary (replaces prior, e.g. image previews).
+ */
+preliminary?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, 
+/**
+ * Additional provider-specific metadata for the tool result.
+ */
+provider_metadata?: JsonValue | null, } };

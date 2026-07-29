@@ -86,6 +86,7 @@ fn convert_usage(tokens: &TokenPair) -> Usage {
             total: Some(tokens.output_tokens),
             ..Default::default()
         },
+        raw: None,
     }
 }
 
@@ -217,6 +218,9 @@ impl LanguageModel for CohereModel {
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.function.name.clone(),
                     input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
             }
         }
@@ -430,6 +434,8 @@ impl LanguageModel for CohereModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
                                         tool_name: name,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
 
                                     if !initial_args.is_empty() {
@@ -483,6 +489,8 @@ impl LanguageModel for CohereModel {
                                         tool_call_id: ptc.id,
                                         tool_name: ptc.name,
                                         input,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 }
                             }

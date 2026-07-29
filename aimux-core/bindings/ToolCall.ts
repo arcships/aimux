@@ -16,4 +16,12 @@ tool_name: string,
 /**
  * Arguments as a JSON value (usually an object).
  */
-input: JsonValue, };
+input: JsonValue, 
+/**
+ * Whether the tool call will be executed by the provider.
+ */
+provider_executed?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, };

@@ -134,6 +134,9 @@ impl LanguageModel for AnthropicModel {
                         tool_call_id: id.clone(),
                         tool_name: name.clone(),
                         input: input.clone(),
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: None,
                     });
                 }
                 ContentBlock::Thinking {
@@ -158,6 +161,9 @@ impl LanguageModel for AnthropicModel {
                         tool_call_id: id.clone(),
                         tool_name: name.clone(),
                         input: input.clone(),
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: None,
                     });
                 }
                 _ => {}
@@ -194,6 +200,7 @@ impl LanguageModel for AnthropicModel {
                 reasoning: reasoning_tokens,
                 ..Default::default()
             },
+            raw: None,
         };
 
         Ok(GenerateResult {
@@ -323,6 +330,8 @@ impl LanguageModel for AnthropicModel {
                                         yield Ok(StreamPart::ToolInputStart {
                                             id: id.clone(),
                                             tool_name: name.clone(),
+                                            provider_executed: None,
+                                            dynamic: None,
                                         });
                                         blocks.insert(index, BlockState::ToolUse {
                                             id,
@@ -455,6 +464,8 @@ impl LanguageModel for AnthropicModel {
                                                 tool_call_id: id,
                                                 tool_name: name,
                                                 input,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
                                         }
                                     }

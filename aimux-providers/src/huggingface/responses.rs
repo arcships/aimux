@@ -321,6 +321,8 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                             yield Ok(StreamPart::ToolInputStart {
                                                 id: call_id,
                                                 tool_name: name,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
                                         }
                                         "reasoning" => {
@@ -389,6 +391,8 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 tool_call_id: call_id.clone(),
                                                 tool_name: name.clone(),
                                                 input,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
 
                                             if let Some(output) =
@@ -398,6 +402,9 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     tool_call_id: call_id,
                                                     tool_name: name.clone(),
                                                     output: Value::String(output.to_string()),
+                                                    is_error: None,
+                                                    preliminary: None,
+                                                    dynamic: None,
                                                 });
                                             }
                                         }
@@ -1085,6 +1092,9 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     tool_call_id: call_id.to_string(),
                     tool_name: name.to_string(),
                     input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
                 // Tool result — the Rust GenerateContent enum has no ToolResult
                 // variant, so it is omitted (the TS emits it as a separate
@@ -1104,6 +1114,9 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     tool_call_id: id.to_string(),
                     tool_name: name.to_string(),
                     input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
             }
 
@@ -1114,6 +1127,9 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     tool_call_id: id.to_string(),
                     tool_name: "list_tools".to_string(),
                     input: json!({ "server_label": server_label }),
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
             }
 
@@ -1190,6 +1206,7 @@ fn convert_usage(usage: Option<&Value>) -> Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
+        raw: None,
     }
 }
 

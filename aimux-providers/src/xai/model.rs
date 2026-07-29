@@ -180,6 +180,9 @@ impl LanguageModel for XaiModel {
                     tool_call_id: tc.id,
                     tool_name: tc.function.name,
                     input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
             }
         }
@@ -219,6 +222,7 @@ impl LanguageModel for XaiModel {
                 reasoning: Some(0),
                 ..Default::default()
             },
+            raw: None,
         });
 
         let timestamp = data.created.map(|c| {
@@ -512,6 +516,8 @@ impl LanguageModel for XaiModel {
                                         yield Ok(StreamPart::ToolInputStart {
                                             id,
                                             tool_name: name,
+                                            provider_executed: None,
+                                            dynamic: None,
                                         });
                                     }
 
@@ -544,6 +550,8 @@ impl LanguageModel for XaiModel {
                                             tool_call_id: id.clone(),
                                             tool_name: name.clone(),
                                             input,
+                                            provider_executed: None,
+                                            dynamic: None,
                                         });
                                     }
                                 }
@@ -590,6 +598,8 @@ impl LanguageModel for XaiModel {
                         tool_call_id: id.clone(),
                         tool_name: name.clone(),
                         input,
+                        provider_executed: None,
+                        dynamic: None,
                     });
                 }
             }
@@ -614,6 +624,7 @@ impl LanguageModel for XaiModel {
                         reasoning: Some(0),
                         ..Default::default()
                     },
+                    raw: None,
                 }),
                 provider_metadata: None,
             });

@@ -660,6 +660,7 @@ pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
             text: Some(output),
             ..Default::default()
         },
+        raw: None,
     }
 }
 

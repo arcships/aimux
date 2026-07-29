@@ -123,6 +123,7 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
+        raw: None,
     }
 }
 
@@ -270,6 +271,9 @@ pub async fn execute_generate(
                 tool_call_id: tc.id,
                 tool_name: tc.function.name,
                 input,
+                provider_executed: None,
+                dynamic: None,
+                provider_metadata: None,
             });
         }
     }
@@ -580,6 +584,8 @@ pub async fn execute_stream(
                                     yield Ok(StreamPart::ToolInputStart {
                                         id,
                                         tool_name: name,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 }
 
@@ -633,6 +639,8 @@ pub async fn execute_stream(
                                         tool_call_id: acc.id.clone(),
                                         tool_name: acc.name.clone(),
                                         input,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 }
                             }
@@ -681,6 +689,8 @@ pub async fn execute_stream(
                     tool_call_id: acc.id.clone(),
                     tool_name: acc.name.clone(),
                     input,
+                    provider_executed: None,
+                    dynamic: None,
                 });
             }
         }

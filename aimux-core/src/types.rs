@@ -33,6 +33,9 @@ pub enum FinishReasonUnified {
 pub struct Usage {
     pub input_tokens: TokenUsage,
     pub output_tokens: TokenUsage,
+    /// Raw usage information from the provider (opaque, provider-specific).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<Value>,
 }
 
 /// Token usage detail (with cache breakdown).

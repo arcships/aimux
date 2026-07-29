@@ -181,11 +181,14 @@ pub async fn generate_text(
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 tool_calls.push(crate::tool::ToolCall {
                     tool_call_id: tool_call_id.clone(),
                     tool_name: tool_name.clone(),
                     input: input.clone(),
+                    provider_executed: None,
+                    dynamic: None,
                 });
             }
             // Sources / citations are not text or tool calls; skip them here.

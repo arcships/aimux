@@ -309,6 +309,8 @@ impl LanguageModel for BedrockModel {
                                 yield Ok(StreamPart::ToolInputStart {
                                     id: id.clone(),
                                     tool_name: name.clone(),
+                                    provider_executed: None,
+                                    dynamic: None,
                                 });
                                 tool_blocks.insert(idx, (id, name, String::new()));
                             } else {
@@ -401,6 +403,8 @@ impl LanguageModel for BedrockModel {
                                 tool_call_id: id,
                                 tool_name: name,
                                 input,
+                                provider_executed: None,
+                                dynamic: None,
                             });
                         } else if reasoning_id.is_some() {
                             let id = idx.to_string();
@@ -493,6 +497,9 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
             tool_call_id: tool_use.tool_use_id.clone(),
             tool_name: tool_use.name.clone(),
             input: tool_use.input.clone(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
         });
     }
     if let Some(rc) = &block.reasoning_content {

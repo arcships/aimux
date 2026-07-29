@@ -311,6 +311,9 @@ impl LanguageModel for OpenResponsesModel {
                             tool_call_id: call_id,
                             tool_name: name,
                             input,
+                            provider_executed: None,
+                            dynamic: None,
+                            provider_metadata: None,
                         });
                     }
                     _ => {}
@@ -607,6 +610,8 @@ impl LanguageModel for OpenResponsesModel {
                                                 tool_call_id,
                                                 tool_name,
                                                 input,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
                                             has_tool_calls = true;
                                         }
@@ -1323,5 +1328,6 @@ fn extract_usage_from_value(usage: &Value) -> Usage {
             reasoning: reasoning_tokens,
             ..Default::default()
         },
+        raw: None,
     }
 }

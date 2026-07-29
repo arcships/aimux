@@ -75,6 +75,7 @@ pub fn convert_xai_responses_usage(usage: &XaiResponsesUsage) -> aimux_core::typ
             reasoning: Some(reasoning as u32),
             ..Default::default()
         },
+        raw: None,
     }
 }
 

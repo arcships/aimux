@@ -106,6 +106,12 @@ pub struct ToolCall {
     pub tool_name: String,
     /// Arguments as a JSON value (usually an object).
     pub input: Value,
+    /// Whether the tool call will be executed by the provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_executed: Option<bool>,
+    /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
 }
 
 /// The result of executing a tool call, to be sent back to the model.
@@ -116,6 +122,12 @@ pub struct ToolResult {
     pub tool_call_id: String,
     /// The tool's output (usually a JSON-serializable value or plain text).
     pub output: Value,
+    /// Whether the result is an error or error message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+    /// Whether the result is preliminary (replaces prior, e.g. image previews).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preliminary: Option<bool>,
 }
 
 /// How the model should choose tools.

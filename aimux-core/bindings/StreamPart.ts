@@ -8,7 +8,35 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A single chunk in the stream returned by `do_stream`.
  */
-export type StreamPart = { "TextStart": { id: string, } } | { "TextDelta": { id: string, delta: string, } } | { "TextEnd": { id: string, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: JsonValue | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string, } } | { "ToolInputDelta": { id: string, delta: string, } } | { "ToolInputEnd": { id: string, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, } } | { "ToolResult": { tool_call_id: string, tool_name: string, output: JsonValue, } } | { "ReasoningStart": { id: string, 
+export type StreamPart = { "TextStart": { id: string, } } | { "TextDelta": { id: string, delta: string, } } | { "TextEnd": { id: string, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: JsonValue | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string, 
+/**
+ * Whether the tool call will be executed by the provider.
+ */
+provider_executed?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, } } | { "ToolInputDelta": { id: string, delta: string, } } | { "ToolInputEnd": { id: string, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
+/**
+ * Whether the tool call will be executed by the provider.
+ */
+provider_executed?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, output: JsonValue, 
+/**
+ * Whether the result is an error or error message.
+ */
+is_error?: boolean | null, 
+/**
+ * Whether the result is preliminary (replaces prior, e.g. image previews).
+ */
+preliminary?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, } } | { "ReasoningStart": { id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */

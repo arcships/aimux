@@ -966,6 +966,7 @@ pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::t
             total: Some(candidates + thoughts),
             ..Default::default()
         },
+        raw: None,
     }
 }
 

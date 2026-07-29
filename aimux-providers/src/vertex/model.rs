@@ -349,6 +349,8 @@ impl LanguageModel for VertexModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
                                         tool_name: name.to_string(),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                     let args_str = args.to_string();
                                     yield Ok(StreamPart::ToolInputDelta {
@@ -360,6 +362,8 @@ impl LanguageModel for VertexModel {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
                                         input: args,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                     has_tool_calls = true;
                                 }
@@ -449,6 +453,9 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 tool_call_id: id,
                 tool_name: name,
                 input,
+                provider_executed: None,
+                dynamic: None,
+                provider_metadata: None,
             });
             has_tool_calls = true;
         }

@@ -243,6 +243,9 @@ impl LanguageModel for OpenAIResponsesModel {
                         tool_call_id: call_id,
                         tool_name: name,
                         input,
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: None,
                     });
                 }
                 Some("custom_tool_call") => {
@@ -264,6 +267,9 @@ impl LanguageModel for OpenAIResponsesModel {
                         tool_call_id: call_id,
                         tool_name: name,
                         input,
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: None,
                     });
                 }
                 Some("reasoning") => {
@@ -534,6 +540,8 @@ impl LanguageModel for OpenAIResponsesModel {
                                             yield Ok(StreamPart::ToolInputStart {
                                                 id: call_id,
                                                 tool_name: name,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
                                         }
                                         "custom_tool_call" => {
@@ -557,6 +565,8 @@ impl LanguageModel for OpenAIResponsesModel {
                                             yield Ok(StreamPart::ToolInputStart {
                                                 id: call_id,
                                                 tool_name: name,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
                                         }
                                         "reasoning" => {
@@ -765,6 +775,8 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 tool_call_id: call_id,
                                                 tool_name: name,
                                                 input,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
                                         }
                                         "custom_tool_call" => {
@@ -795,6 +807,8 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 tool_call_id: call_id,
                                                 tool_name: name,
                                                 input,
+                                                provider_executed: None,
+                                                dynamic: None,
                                             });
                                         }
                                         "reasoning" => {

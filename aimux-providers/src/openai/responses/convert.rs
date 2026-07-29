@@ -1041,6 +1041,7 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>) -> Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
+        raw: None,
     }
 }
 

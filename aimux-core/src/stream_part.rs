@@ -36,7 +36,16 @@ pub enum StreamPart {
 
     // ── P1: tool calls ──
     /// Start of a tool call's input streaming.
-    ToolInputStart { id: String, tool_name: String },
+    ToolInputStart {
+        id: String,
+        tool_name: String,
+        /// Whether the tool call will be executed by the provider.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_executed: Option<bool>,
+        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dynamic: Option<bool>,
+    },
     /// A delta of tool call input (partial JSON).
     ToolInputDelta { id: String, delta: String },
     /// End of a tool call's input streaming.
@@ -46,12 +55,27 @@ pub enum StreamPart {
         tool_call_id: String,
         tool_name: String,
         input: Value,
+        /// Whether the tool call will be executed by the provider.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_executed: Option<bool>,
+        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dynamic: Option<bool>,
     },
     /// A tool result (provider-executed tools).
     ToolResult {
         tool_call_id: String,
         tool_name: String,
         output: Value,
+        /// Whether the result is an error or error message.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+        /// Whether the result is preliminary (replaces prior, e.g. image previews).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        preliminary: Option<bool>,
+        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dynamic: Option<bool>,
     },
 
     // ── P2: reasoning ──

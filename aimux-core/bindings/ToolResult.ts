@@ -12,4 +12,12 @@ tool_call_id: string,
 /**
  * The tool's output (usually a JSON-serializable value or plain text).
  */
-output: JsonValue, };
+output: JsonValue, 
+/**
+ * Whether the result is an error or error message.
+ */
+is_error?: boolean | null, 
+/**
+ * Whether the result is preliminary (replaces prior, e.g. image previews).
+ */
+preliminary?: boolean | null, };

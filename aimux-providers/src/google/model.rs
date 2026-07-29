@@ -387,6 +387,8 @@ impl LanguageModel for GoogleModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
                                         tool_name: name.to_string(),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                     let args_str = args.to_string();
                                     yield Ok(StreamPart::ToolInputDelta {
@@ -398,6 +400,8 @@ impl LanguageModel for GoogleModel {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
                                         input: args,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                     has_tool_calls = true;
                                 } else if let Some(ec) = part.get("executableCode") {
@@ -415,6 +419,8 @@ impl LanguageModel for GoogleModel {
                                             tool_call_id: id,
                                             tool_name: "code_execution".to_string(),
                                             input: ec.clone(),
+                                            provider_executed: None,
+                                            dynamic: None,
                                         });
                                         // provider-executed → does NOT set has_tool_calls
                                     }
@@ -435,6 +441,9 @@ impl LanguageModel for GoogleModel {
                                             tool_call_id: call_id,
                                             tool_name: String::new(),
                                             output: json!({ "outcome": outcome, "output": output }),
+                                            is_error: None,
+                                            preliminary: None,
+                                            dynamic: None,
                                         });
                                     }
                                 } else if let Some(tc) = part.get("toolCall") {
@@ -455,6 +464,8 @@ impl LanguageModel for GoogleModel {
                                         tool_call_id: id,
                                         tool_name: format!("server:{}", tool_type),
                                         input: args,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                     // provider-executed → does NOT set has_tool_calls
                                 } else if let Some(tr) = part.get("toolResponse") {
@@ -474,6 +485,9 @@ impl LanguageModel for GoogleModel {
                                         tool_call_id: id,
                                         tool_name: String::new(),
                                         output: response,
+                                        is_error: None,
+                                        preliminary: None,
+                                        dynamic: None,
                                     });
                                 }
                             }
@@ -590,6 +604,9 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     tool_call_id: id,
                     tool_name: name,
                     input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
                 has_tool_calls = true;
             } else if let Some(ec) = part.get("executableCode") {
@@ -605,6 +622,9 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                         tool_call_id: String::new(),
                         tool_name: "code_execution".to_string(),
                         input: ec.clone(),
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: None,
                     });
                     // provider-executed → does NOT set has_tool_calls
                 }
@@ -624,6 +644,9 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     tool_call_id: id,
                     tool_name: format!("server:{}", tool_type),
                     input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
                 // provider-executed → does NOT set has_tool_calls
             } else if part.get("toolResponse").is_some() {

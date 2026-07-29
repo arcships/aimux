@@ -27,7 +27,7 @@ import java.nio.charset.StandardCharsets
 
 /// A tiny mock HTTP server that records the last request body and replays a
 /// preset response. Listens on a random loopback port.
-private class MockProviderServer {
+internal class MockProviderServer {
     private val server: HttpServer =
         HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
 

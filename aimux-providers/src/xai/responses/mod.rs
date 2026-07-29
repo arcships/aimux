@@ -151,6 +151,9 @@ impl LanguageModel for XaiResponsesModel {
                     tool_call_id: part_id.to_string(),
                     tool_name: tool_name.clone(),
                     input: Value::String(String::new()),
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
 
                 let queries = part
@@ -175,6 +178,10 @@ impl LanguageModel for XaiResponsesModel {
                     tool_call_id: part_id.to_string(),
                     tool_name,
                     result: json!({ "queries": queries, "results": results }),
+                    is_error: None,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
                 continue;
             }
@@ -200,6 +207,9 @@ impl LanguageModel for XaiResponsesModel {
                     tool_call_id: part_id.to_string(),
                     tool_name,
                     input: Value::String(tool_input),
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
                 continue;
             }
@@ -252,6 +262,9 @@ impl LanguageModel for XaiResponsesModel {
                         tool_call_id: call_id.to_string(),
                         tool_name: name.to_string(),
                         input,
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: None,
                     });
                 }
                 "reasoning" => {
@@ -710,6 +723,8 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: part_id.to_string(),
@@ -722,6 +737,8 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
                                         input: Value::String(String::new()),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 }
 
@@ -739,6 +756,9 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
                                         output: json!({ "queries": queries, "results": results }),
+                                        is_error: None,
+                                        preliminary: None,
+                                        dynamic: None,
                                     });
                                 }
                                 continue;
@@ -767,6 +787,8 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: part_id.to_string(),
@@ -779,6 +801,8 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_call_id: part_id.to_string(),
                                         tool_name: tool_name.clone(),
                                         input: Value::String(tool_input),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 }
 
@@ -787,6 +811,9 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
                                         output: json!({}),
+                                        is_error: None,
+                                        preliminary: None,
+                                        dynamic: None,
                                     });
                                 }
                                 continue;
@@ -841,6 +868,8 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: call_id.to_string(),
                                         tool_name: name.to_string(),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 } else {
                                     // output_item.done
@@ -856,6 +885,8 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_call_id: call_id.to_string(),
                                         tool_name: name.to_string(),
                                         input,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 }
                                 continue;
@@ -899,6 +930,7 @@ impl LanguageModel for XaiResponsesModel {
                         reasoning: Some(0),
                         ..Default::default()
                     },
+                    raw: None,
                 }),
                 provider_metadata: provider_meta,
             });

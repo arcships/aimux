@@ -114,6 +114,7 @@ pub fn convert_xai_usage(usage: &XaiUsageResponse) -> aimux_core::types::Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
+        raw: None,
     }
 }
 

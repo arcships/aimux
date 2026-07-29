@@ -120,6 +120,7 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
             total: Some(completion_tokens),
             ..Default::default()
         },
+        raw: None,
     }
 }
 
@@ -279,6 +280,9 @@ impl LanguageModel for MistralModel {
                     tool_call_id: tc.id,
                     tool_name: tc.function.name,
                     input,
+                    provider_executed: None,
+                    dynamic: None,
+                    provider_metadata: None,
                 });
             }
         }
@@ -505,6 +509,8 @@ impl LanguageModel for MistralModel {
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: tool_id.clone(),
                                         tool_name: tool_name.clone(),
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
 
                                     if !args.is_empty() {
@@ -524,6 +530,8 @@ impl LanguageModel for MistralModel {
                                         tool_call_id: tool_id,
                                         tool_name,
                                         input,
+                                        provider_executed: None,
+                                        dynamic: None,
                                     });
                                 }
                             }

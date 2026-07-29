@@ -24,6 +24,16 @@ pub enum GenerateContent {
         tool_call_id: String,
         tool_name: String,
         input: serde_json::Value,
+        /// Whether the tool call will be executed by the provider.
+        /// If false/unset, the tool call is executed by the client.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_executed: Option<bool>,
+        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dynamic: Option<bool>,
+        /// Additional provider-specific metadata for the tool call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
     },
     /// A source / citation (e.g. URL citation from search-preview models).
     Source {
@@ -48,6 +58,18 @@ pub enum GenerateContent {
         tool_call_id: String,
         tool_name: String,
         result: Value,
+        /// Whether the result is an error or error message.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+        /// Whether the result is preliminary (replaces prior, e.g. image previews).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        preliminary: Option<bool>,
+        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dynamic: Option<bool>,
+        /// Additional provider-specific metadata for the tool result.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
     },
 }
 

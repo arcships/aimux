@@ -4,6 +4,17 @@
   "description": "Unified LLM service layer — one API for 172+ AI providers (Rust core, Node.js binding)",
   "main": "index.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./raw": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "napi": {
     "name": "aimux",
     "package": {
