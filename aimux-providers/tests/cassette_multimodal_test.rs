@@ -61,12 +61,7 @@ async fn mount_single(cass: &Value) -> (MockServer, String) {
 
 // ── Embedding cassettes ─────────────────────────────────────────────────────
 
-/// OpenAI embedding cassette uses base64-encoded float32 vectors
-/// (`encoding_format: "base64"`). The provider currently doesn't decode
-/// base64 embeddings, returning empty vectors. This is a known provider
-/// bug — the test is ignored until the provider handles base64 embeddings.
 #[tokio::test]
-#[ignore = "provider doesn't decode base64-encoded embeddings (OpenAI encoding_format=base64)"]
 async fn cassette_openai_embedding_query() {
     let cass = load_cassette("openai", "TestOpenAI.test_query.json")
         .expect("cassette should load");
@@ -89,9 +84,7 @@ async fn cassette_openai_embedding_query() {
     );
 }
 
-/// Same as above — base64-encoded embeddings not yet supported by provider.
 #[tokio::test]
-#[ignore = "provider doesn't decode base64-encoded embeddings (OpenAI encoding_format=base64)"]
 async fn cassette_openai_embedding_documents() {
     let cass = load_cassette("openai", "TestOpenAI.test_documents.json")
         .expect("cassette should load");

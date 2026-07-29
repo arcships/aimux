@@ -145,19 +145,28 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
             .map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         // Extract embeddings: response.data[].embedding
+        // The embedding field can be a JSON array of floats (default) or a
+        // base64-encoded string (when encoding_format="base64").
         let embeddings: Vec<Vec<f32>> = raw_value
             .get("data")
             .and_then(|d| d.as_array())
             .map(|arr| {
                 arr.iter()
                     .filter_map(|item| {
-                        item.get("embedding")
-                            .and_then(|e| e.as_array())
-                            .map(|vals| {
-                                vals.iter()
+                        let emb = item.get("embedding")?;
+                        if let Some(arr) = emb.as_array() {
+                            // Standard format: array of numbers
+                            Some(
+                                arr.iter()
                                     .filter_map(|v| v.as_f64().map(|f| f as f32))
-                                    .collect()
-                            })
+                                    .collect(),
+                            )
+                        } else if let Some(s) = emb.as_str() {
+                            // Base64 format: decode to little-endian f32 array
+                            decode_base64_embedding(s)
+                        } else {
+                            None
+                        }
                     })
                     .collect()
             })
@@ -210,4 +219,23 @@ fn parse_openai_provider_options(
             .and_then(|u| u.as_str())
             .map(|s| s.to_string()),
     }
+}
+
+/// Decode a base64-encoded embedding string into a `Vec<f32>`.
+///
+/// OpenAI's API returns embeddings as base64-encoded little-endian f32
+/// arrays when `encoding_format: "base64"` is requested. The raw bytes
+/// are decoded from base64, then reinterpreted as little-endian f32.
+fn decode_base64_embedding(s: &str) -> Option<Vec<f32>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(s).ok()?;
+    if bytes.len() % 4 != 0 {
+        return None;
+    }
+    Some(
+        bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect(),
+    )
 }
