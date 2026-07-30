@@ -1,8 +1,17 @@
 # 数据类型定义：aimux vs AI SDK V4 对比
 
-> **日期**：2026-07-29
+> **日期**：2026-07-30（v0.2 修订）
 > **范围**：aimux Rust 核心类型（ts-rs 导出 79 个 .ts）vs AI SDK V4 provider 类型（`@ai-sdk/provider` V4）
 > **方法**：逐类型对比字段、命名、结构
+
+---
+
+## 修订记录
+
+| 日期 | 版本 | 说明 |
+|------|------|------|
+| 2026-07-29 | v0.1 | 初稿，逐类型对比 aimux ts-rs 导出 vs AI SDK V4 provider 类型 |
+| 2026-07-30 | v0.2 | 重新核查 Rust 源码。commit `2585b3c7`（"5 语言类型化 wrapper + Rust 核心类型补字段"）已补上 ToolCall.provider_executed/dynamic、TokenUsage.no_cache/cache_read/cache_write/text/reasoning。原文档标记的"缺字段"大多已过时，逐条修正。 |
 
 ---
 
@@ -164,12 +173,12 @@ type LanguageModelV4StreamPart =
 |------|-------|-----------|------|
 | id | `tool_call_id` | `toolCallId` | 🟡 命名 |
 | name | `tool_name` | `toolName` | 🟡 命名 |
-| input | `JsonValue`（已解析对象） | `string`（stringified JSON） | 🔴 类型不同 |
-| providerExecuted | ❌ 无 | ✅ 有 | 🟡 缺字段 |
-| dynamic | ❌ 无 | ✅ 有 | 🟡 缺字段 |
+| input | `JsonValue`（已解析对象） | `string`（stringified JSON） | 🟡 类型不同（aimux 更友好） |
+| providerExecuted | ✅ `provider_executed: Option<bool>` | ✅ 有 | 🟡 命名 |
+| dynamic | ✅ `dynamic: Option<bool>` | ✅ 有 | 🟡 命名 |
 | providerMetadata | ❌ 无（在 ToolCall 变体上无） | ✅ 有 | 🟡 缺字段 |
 
-**关键差异**：`input` 类型——aimux 用 `JsonValue`（已解析），AI SDK V4 用 `string`（需 parse）。aimux 的更友好（用户不用再 parse），但与 AI SDK wire 格式不一致。
+> **v0.2 修正**：`provider_executed` 和 `dynamic` 已在 commit `2585b3c7` 中补上。原文档标记为 ❌，实际代码已有（[tool.rs](../aimux-core/src/tool.rs)）。仅剩 `providerMetadata` 缺失。
 
 ### 2.5 ToolResult
 
@@ -177,12 +186,12 @@ type LanguageModelV4StreamPart =
 |------|------|-----------|------|
 | id | `tool_call_id` | `toolCallId` | 🟡 命名 |
 | name | ❌ 无 | `toolName` | 🟡 缺字段 |
-| output | `output: JsonValue` | `result: NonNullable<JSONValue>` | 🔴 字段名 + 类型不同 |
+| output | `output: JsonValue` | `result: NonNullable<JSONValue>` | 🟡 字段名不同 |
 | isError | ❌ 无 | ✅ 有 | 🟡 缺字段 |
 | preliminary | ❌ 无 | ✅ 有 | 🟡 缺字段 |
 | dynamic | ❌ 无 | ✅ 有 | 🟡 缺字段 |
 
-**差异级别**：🟡-🔴 `output` vs `result` 字段名不同，缺 4 个字段。
+> **v0.2 确认**：`GenerateContent::ToolResult` 和 `StreamPart::ToolResult` 已有 `tool_name`/`is_error`/`preliminary`/`dynamic`（commit `2585b3c7`）。**仅 `ContentPart::ToolResult`（用户输入侧）缺这些字段**——它只有 `tool_call_id`/`output`/`provider_options`。可补（见 §4）。
 
 ### 2.6 FunctionTool
 
@@ -213,8 +222,15 @@ type LanguageModelV4StreamPart =
 
 **aimux**：
 ```typescript
-type Usage = { input_tokens: TokenUsage, output_tokens: TokenUsage }
-type TokenUsage = { total: number | null, ... }  // 简化
+type Usage = { input_tokens: TokenUsage, output_tokens: TokenUsage, raw?: Value }
+type TokenUsage = {
+  total: number | null,
+  no_cache: number | null,
+  cache_read: number | null,
+  cache_write: number | null,
+  text: number | null,
+  reasoning: number | null,
+}
 ```
 
 **AI SDK V4**：
@@ -229,11 +245,10 @@ type LanguageModelV4Usage = {
 | 差异点 | aimux | AI SDK V4 |
 |--------|-------|-----------|
 | 命名 | `input_tokens` / `output_tokens` | `inputTokens` / `outputTokens` |
-| 子字段 | `total` | `total` + `noCache?` + `cacheRead?` + `cacheWrite?` |
-| output 细分 | 无 | `text?` + `reasoning?` |
-| raw | ❌ 无 | ✅ `raw?: JSONObject` |
+| 子字段 | `total` + `no_cache` + `cache_read` + `cache_write` + `text` + `reasoning` | `total` + `noCache?` + `cacheRead?` + `cacheWrite?` + `text?` + `reasoning?` |
+| raw | ✅ `raw?: Value` | ✅ `raw?: JSONObject` |
 
-**差异级别**：🟡 命名 + aimux 缺 cache/text/reasoning 细分 + raw。
+> **v0.2 修正**：`TokenUsage` 的 `no_cache`/`cache_read`/`cache_write`/`text`/`reasoning` 和 `Usage.raw` 已在 commit `2585b3c7` 中全部补上。原文档标记为"缺 cache/text/reasoning 细分 + raw"，实际代码已完整。**仅剩命名差异（snake_case vs camelCase）。**
 
 ### 2.9 FinishReason
 
@@ -342,18 +357,23 @@ type ContentPart =
 
 ---
 
-## 4. 结构差异汇总
+## 4. 结构差异汇总（v0.2 重新核查）
 
-| 差异点 | aimux | AI SDK V4 | 影响范围 | 修复方案 |
-|--------|-------|-----------|---------|---------|
-| **标签方式** | 外部标签（`{"TextDelta": {...}}`） | 内部标签（`{type: "text-delta", ...}`） | GenerateContent, StreamPart | wrapper 做转换 |
-| **ToolCall.input** | `JsonValue`（已解析） | `string`（stringified） | ToolCall, ContentPart, StreamPart | aimux 更友好，不改 |
-| **ToolResult 字段名** | `output` | `result` | ContentPart, StreamPart | wrapper 映射 |
-| **ToolChoice 格式** | `"auto"` 裸字符串 | `{type: "auto"}` 对象 | ToolChoice | wrapper 转换 |
-| **File 拆分** | 4 变体（file/file_base64/file_url/file_reference） | 1 变体（data 是 tagged union） | ContentPart | wrapper 合并 |
-| **缺字段** | ToolCall 缺 `providerExecuted`/`dynamic`；ToolResult 缺 `isError`/`preliminary` | — | 工具相关类型 | Rust 核心补字段（可选） |
-| **Usage 细分** | 只有 `total` | 有 `noCache`/`cacheRead`/`cacheWrite`/`text`/`reasoning` | Usage | Rust 核心补字段（可选） |
-| **缺变体** | GenerateContent/StreamPart 缺 `File`/`ToolApprovalRequest`/`Custom`/`ReasoningFile` | — | 内容/流式 | Rust 核心补（可选） |
+| 差异点 | aimux | AI SDK V4 | 影响范围 | 状态 | 修复方案 |
+|--------|-------|-----------|---------|:----:|---------|
+| **标签方式** | 外部标签（`{"TextDelta": {...}}`） | 内部标签（`{type: "text-delta", ...}`） | GenerateContent, StreamPart | 🟡 设计差异 | wrapper 做转换；或 Rust 加 `#[serde(tag = "type")]`（breaking change） |
+| **字段命名** | snake_case | camelCase | 全部 | 🟡 设计差异 | wrapper 做 snake↔camel 映射（各语言已有或可加） |
+| **ToolCall.input** | `JsonValue`（已解析） | `string`（stringified） | ToolCall, ContentPart, StreamPart | 🟢 aimux 更友好 | 不改 |
+| **ToolCall.provider_executed/dynamic** | ✅ 已有 | ✅ 有 | ToolCall | 🟢 已对齐 | commit `2585b3c7` 已补 |
+| **ToolResult 字段名** | `output` | `result` | ContentPart, StreamPart | 🟡 命名 | wrapper 映射 |
+| **ToolResult 缺字段** | 仅 `ContentPart::ToolResult` 缺 `is_error`/`preliminary`/`dynamic`/`tool_name`；`GenerateContent`/`StreamPart` 的 ToolResult 已完整 | — | ContentPart | 🔴 待补 | Rust 核心加字段（可做） |
+| **ToolChoice 格式** | `"Auto"` 裸字符串 | `{type: "auto"}` 对象 | ToolChoice | 🟡 格式 | wrapper 转换；或 Rust 加 `#[serde(rename_all = "lowercase")]` |
+| **File 拆分** | 4 变体（file/file_base64/file_url/file_reference） | 1 变体（data 是 tagged union） | ContentPart | 🟡 设计差异 | wrapper 合并；或 Rust 合并变体 |
+| **Usage 细分** | ✅ 已完整（no_cache/cache_read/cache_write/text/reasoning/raw） | 有 | Usage | 🟢 已对齐 | commit `2585b3c7` 已补 |
+| **缺变体：File** | GenerateContent/StreamPart 无 File | 有 | GenerateContent, StreamPart | 🔴 待补 | Rust 核心加变体（可做） |
+| **缺变体：Custom** | 无 | 有 | GenerateContent, StreamPart | 🟡 可选 | 低优先级，V4 新增 |
+| **缺变体：ToolApprovalRequest** | 无 | 有 | GenerateContent, StreamPart | 🟡 可选 | 低优先级，V4 新增 |
+| **缺变体：ReasoningFile** | 无 | 有 | GenerateContent, StreamPart | 🟡 可选 | 低优先级，V4 新增 |
 
 ---
 
@@ -426,19 +446,27 @@ class GenerateTextResult {
 
 ---
 
-## 6. 总结
+## 6. 总结（v0.2）
 
 | 维度 | 差异程度 | 说明 |
 |------|:---:|------|
 | **字段命名** | 🟡 | 全部 snake_case vs camelCase，wrapper 统一映射 |
 | **标签方式** | 🟡 | 外部标签 vs 内部标签（GenerateContent/StreamPart），wrapper 转换 |
 | **ToolCall.input** | 🟢 | aimux 用 `JsonValue` 更友好，不改 |
-| **ToolChoice** | 🔴 | 裸字符串 vs 对象格式，wrapper 转换 |
-| **缺字段** | 🟡 | ToolCall/ToolResult/Usage 缺部分字段，可选补到 Rust 核心 |
-| **缺变体** | 🟡 | GenerateContent/StreamPart 缺 4 个变体，可选补 |
+| **ToolCall 字段** | 🟢 | `provider_executed`/`dynamic` 已补，完全对齐（仅剩命名） |
+| **Usage** | 🟢 | `no_cache`/`cache_read`/`cache_write`/`text`/`reasoning`/`raw` 已补，完全对齐（仅剩命名） |
+| **ToolResult** | 🔴 | 缺 `is_error`/`preliminary`/`dynamic`/`tool_name`，字段名 `output` vs `result` |
+| **ToolChoice** | 🟡 | 裸字符串 vs 对象格式，wrapper 转换 |
+| **缺变体** | 🟡 | GenerateContent/StreamPart 缺 File/Custom/ToolApprovalRequest/ReasoningFile |
 | **核心结构** | 🟢 | GenerateResult / Usage / FinishReason / Role 核心字段一致 |
 
-**结论**：aimux 与 AI SDK V4 的核心数据模型**高度一致**（aimux 本就是对标 V4 设计）。差异集中在命名（snake/camel）、标签方式（外部/内部）、少量缺字段——这些都在 wrapper 层解决，不需改 Rust 核心。
+**v0.2 结论**：commit `2585b3c7` 补上 ToolCall、Usage、GenerateContent::ToolResult、StreamPart::ToolResult 的缺失字段后，aimux 与 AI SDK V4 的类型差距已大幅缩小。**真正还能补的差距**：
+
+1. **`ContentPart::ToolResult` 缺字段**（`is_error`/`preliminary`/`dynamic`/`tool_name`）— `GenerateContent` 和 `StreamPart` 的 ToolResult 已有，但用户输入侧的 `ContentPart::ToolResult` 没跟上。可直接在 Rust 核心补，改动小。
+2. **GenerateContent/StreamPart 缺 File 变体** — `ContentPart` 已有 File 变体（4 种），但 `GenerateContent` 和 `StreamPart` 没透传。可补（让 provider 能在生成结果/流里返回 File）。
+3. **命名/标签差异** — 设计选择（Rust serde 默认外部标签 + snake_case），wrapper 层解决，不改 Rust 核心。
+
+Custom/ToolApprovalRequest/ReasoningFile 是 V4 新增的边缘变体，低优先级。**ToolChoice 的裸字符串格式也可不改**（wrapper 可转换，且 Rust enum 序列化更自然）。
 
 ---
 
