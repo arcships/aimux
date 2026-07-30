@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -14,7 +13,8 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::TokenUsage;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 use serde_json::json;
 
@@ -26,16 +26,11 @@ use super::types::{AnthropicResponse, ContentBlock, StreamEvent};
 pub struct AnthropicModel {
     model_id: String,
     config: AnthropicConfig,
-    client: Client,
 }
 
 impl AnthropicModel {
-    pub fn new(model_id: String, config: AnthropicConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: AnthropicConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -91,36 +86,23 @@ impl LanguageModel for AnthropicModel {
             );
         }
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(body.clone()),
+            },
+            self.config.retry_config,
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let data: AnthropicResponse = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: AnthropicResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Build content array.
         let mut content = Vec::new();
@@ -231,40 +213,23 @@ impl LanguageModel for AnthropicModel {
             );
         }
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(body.clone()),
+            },
+            self.config.retry_config,
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect::<HashMap<_, _>>();
-
-        let byte_stream = resp.bytes_stream();
-        let sse_stream = SseStream::new(byte_stream);
+        let response_headers = resp.headers;
+        let sse_stream = SseStream::new(resp.body);
 
         // Per-content-block state, keyed by the Anthropic `index` field. Text
         // blocks track whether a `TextStart` has been emitted; tool_use blocks

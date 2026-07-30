@@ -18,7 +18,7 @@ pub use responses::XaiResponsesModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::load_api_key;
+use aimux_provider_utils::{RetryConfig, load_api_key};
 
 use crate::openai::OpenAIConfig;
 
@@ -56,20 +56,24 @@ impl XAIConfig {
     pub(crate) fn base_url(&self) -> &str {
         &self.0.base_url
     }
+
+    /// Get the retry config.
+    pub(crate) fn retry_config(&self) -> RetryConfig {
+        self.0.retry_config
+    }
 }
 
 /// xAI provider — creates [`XaiModel`] instances pointed at xAI.
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct XAIProvider {
     config: XAIConfig,
-    client: reqwest::Client,
 }
 
 impl XAIProvider {
     pub fn new(config: XAIConfig) -> Self {
-        Self {
-            config,
-            client: reqwest::Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given xAI model id (e.g. `"grok-2"`).
@@ -77,7 +81,6 @@ impl XAIProvider {
         XaiModel::new(
             model_id.to_string(),
             XAIConfig::new(self.config.api_key()).with_base_url(self.config.base_url()),
-            self.client.clone(),
         )
     }
 
@@ -89,7 +92,6 @@ impl XAIProvider {
         XaiResponsesModel::new(
             model_id.to_string(),
             XAIConfig::new(self.config.api_key()).with_base_url(self.config.base_url()),
-            self.client.clone(),
         )
     }
 }

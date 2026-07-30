@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use reqwest::Client;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -30,7 +29,9 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 use aimux_core::result::{GenerateResult, StreamResult};
 
-use aimux_provider_utils::{load_api_key, with_user_agent_suffix, without_trailing_slash};
+use aimux_provider_utils::{
+    RetryConfig, load_api_key, with_user_agent_suffix, without_trailing_slash,
+};
 
 use crate::azure::responses::AzureResponsesModel;
 use crate::openai::model::{execute_generate, execute_stream};
@@ -174,7 +175,6 @@ impl Default for AzureConfig {
 /// Azure OpenAI provider — creates [`AzureModel`] instances for a deployment.
 pub struct AzureProvider {
     config: AzureConfig,
-    client: Client,
 }
 
 impl AzureProvider {
@@ -192,20 +192,13 @@ impl AzureProvider {
                 "Azure OpenAI requires either `resource_name` or `base_url` to be set.".to_string(),
             ));
         }
-        Ok(Self {
-            config,
-            client: Client::new(),
-        })
+        Ok(Self { config })
     }
 
     /// Create a model instance for the given deployment name
     /// (e.g. `"gpt-4o-deployment"`).
     pub fn deployment(&self, deployment: &str) -> AzureModel {
-        AzureModel::new(
-            deployment.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        AzureModel::new(deployment.to_string(), self.config.clone())
     }
 
     /// Alias for [`Self::deployment`] (matches the OpenAI provider's `model`).
@@ -220,11 +213,7 @@ impl AzureProvider {
     ///
     /// Mirrors the TS `createResponsesModel` / `provider.responses()` factory.
     pub fn responses_model(&self, deployment: &str) -> AzureResponsesModel {
-        AzureResponsesModel::new(
-            deployment.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        AzureResponsesModel::new(deployment.to_string(), self.config.clone())
     }
 
     /// Alias for [`Self::responses_model`] (matches the TS `provider.responses`).
@@ -249,16 +238,11 @@ impl Provider for AzureProvider {
 pub struct AzureModel {
     deployment: String,
     config: AzureConfig,
-    client: Client,
 }
 
 impl AzureModel {
-    pub fn new(deployment: String, config: AzureConfig, client: Client) -> Self {
-        Self {
-            deployment,
-            config,
-            client,
-        }
+    pub fn new(deployment: String, config: AzureConfig) -> Self {
+        Self { deployment, config }
     }
 
     /// Build the chat-completions endpoint URL for this deployment.
@@ -357,13 +341,13 @@ impl LanguageModel for AzureModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
         execute_generate(
-            &self.client,
             &self.endpoint(),
             &headers,
             &self.deployment,
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
+            &RetryConfig::default(),
         )
         .await
     }
@@ -371,13 +355,13 @@ impl LanguageModel for AzureModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
         execute_stream(
-            &self.client,
             &self.endpoint(),
             &headers,
             &self.deployment,
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
+            &RetryConfig::default(),
         )
         .await
     }
@@ -394,7 +378,6 @@ mod tests {
             AzureConfig::new()
                 .with_resource_name(resource)
                 .with_api_key("k"),
-            reqwest::Client::new(),
         )
     }
 
@@ -441,7 +424,6 @@ mod tests {
                 .with_base_url("https://other.openai.azure.com/openai")
                 .with_api_key("k")
                 .use_v1_urls(),
-            reqwest::Client::new(),
         );
         assert_eq!(
             m.endpoint(),

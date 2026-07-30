@@ -14,7 +14,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
@@ -24,7 +23,8 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 
 use super::MistralConfig;
@@ -42,16 +42,11 @@ const MISTRAL_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
 pub struct MistralModel {
     model_id: String,
     config: MistralConfig,
-    client: Client,
 }
 
 impl MistralModel {
-    pub fn new(model_id: String, config: MistralConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: MistralConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -218,42 +213,24 @@ impl LanguageModel for MistralModel {
         let body = build_request_body(&self.model_id, options, false);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(body.clone()),
+            },
+            RetryConfig::default(),
+            &MISTRAL_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &MISTRAL_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let data: ChatCompletionResponse = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let response_headers = resp.headers;
+        let data: ChatCompletionResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let choice = data
             .choices
@@ -318,40 +295,23 @@ impl LanguageModel for MistralModel {
         let body = build_request_body(&self.model_id, options, true);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(body.clone()),
+            },
+            RetryConfig::default(),
+            &MISTRAL_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &MISTRAL_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect::<HashMap<_, _>>();
-
-        let byte_stream = resp.bytes_stream();
-        let mut sse_stream = SseStream::new(byte_stream);
+        let response_headers = resp.headers;
+        let mut sse_stream = SseStream::new(resp.body);
 
         // Peek at the first SSE event to detect early errors.
         let first_event = sse_stream.next().await;

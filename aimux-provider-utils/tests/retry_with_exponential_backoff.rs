@@ -193,12 +193,9 @@ async fn uses_rate_limit_header_delay_when_reasonable() {
     ));
     tokio::task::yield_now().await; // run attempt 1, park on 3000ms sleep
 
-    // Just before the 3000ms delay: still 1 attempt.
-    advance_and_yield(Duration::from_millis(2900)).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-
-    // Past the 3000ms delay: attempt 2 fires and succeeds.
-    advance_and_yield(Duration::from_millis(200)).await;
+    // Full Jitter (RFC-0009 §4.2): delay ∈ [0, 3000). Advancing past 3000ms
+    // guarantees the retry fired; it may fire earlier with jitter.
+    advance_and_yield(Duration::from_millis(3000)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 
     let result = handle.await.unwrap().unwrap();
@@ -229,12 +226,8 @@ async fn uses_exponential_backoff_when_delay_too_long() {
     ));
     tokio::task::yield_now().await;
 
-    // Just before the 2000ms exponential delay: still 1 attempt.
-    advance_and_yield(Duration::from_millis(1900)).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-
-    // Past the 2000ms delay: attempt 2 fires.
-    advance_and_yield(Duration::from_millis(200)).await;
+    // Full Jitter: delay ∈ [0, 2000). Advancing past 2000ms guarantees the retry.
+    advance_and_yield(Duration::from_millis(2000)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 
     assert_eq!(handle.await.unwrap().unwrap(), "success");
@@ -262,10 +255,9 @@ async fn falls_back_to_exponential_when_no_rate_limit_headers() {
     ));
     tokio::task::yield_now().await;
 
-    advance_and_yield(Duration::from_millis(1900)).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-
-    advance_and_yield(Duration::from_millis(200)).await;
+    // Full Jitter (RFC-0009 §4.2): delay ∈ [0, 2000). Advancing past 2000ms
+    // guarantees the retry fired; it may fire earlier with jitter.
+    advance_and_yield(Duration::from_millis(2000)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 
     assert_eq!(handle.await.unwrap().unwrap(), "success");
@@ -291,12 +283,8 @@ async fn handles_anthropic_429_with_retry_after_ms() {
     ));
     tokio::task::yield_now().await;
 
-    // Just before the 5000ms header delay: still 1 attempt.
-    advance_and_yield(Duration::from_millis(4900)).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-
-    // Past 5000ms: attempt 2 fires.
-    advance_and_yield(Duration::from_millis(200)).await;
+    // Full Jitter: delay ∈ [0, 5000). Advancing past 5000ms guarantees the retry.
+    advance_and_yield(Duration::from_millis(5000)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 
     assert_eq!(handle.await.unwrap().unwrap(), "success");
@@ -363,10 +351,9 @@ async fn retries_on_gateway_internal_server_error() {
     ));
     tokio::task::yield_now().await;
 
-    advance_and_yield(Duration::from_millis(1900)).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-
-    advance_and_yield(Duration::from_millis(200)).await;
+    // Full Jitter (RFC-0009 §4.2): delay ∈ [0, 2000). Advancing past 2000ms
+    // guarantees the retry fired; it may fire earlier with jitter.
+    advance_and_yield(Duration::from_millis(2000)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 
     assert_eq!(handle.await.unwrap().unwrap(), "success");
@@ -396,10 +383,9 @@ async fn retries_on_gateway_rate_limit_error() {
     ));
     tokio::task::yield_now().await;
 
-    advance_and_yield(Duration::from_millis(1900)).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-
-    advance_and_yield(Duration::from_millis(200)).await;
+    // Full Jitter (RFC-0009 §4.2): delay ∈ [0, 2000). Advancing past 2000ms
+    // guarantees the retry fired; it may fire earlier with jitter.
+    advance_and_yield(Duration::from_millis(2000)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 
     assert_eq!(handle.await.unwrap().unwrap(), "success");
@@ -447,11 +433,8 @@ async fn uses_retry_after_hint_from_wrapped_error() {
     ));
     tokio::task::yield_now().await;
 
-    // Uses the 3000ms hint.
-    advance_and_yield(Duration::from_millis(2900)).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-
-    advance_and_yield(Duration::from_millis(200)).await;
+    // Full Jitter: delay ∈ [0, 3000). Advancing past 3000ms guarantees the retry.
+    advance_and_yield(Duration::from_millis(3000)).await;
     assert_eq!(counter.load(Ordering::SeqCst), 2);
 
     assert_eq!(handle.await.unwrap().unwrap(), "success");

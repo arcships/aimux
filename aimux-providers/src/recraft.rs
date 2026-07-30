@@ -12,7 +12,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -22,8 +21,10 @@ use aimux_core::image_model::{
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
 const ENV_VAR: &str = "RECRAFT_API_TOKEN";
@@ -69,24 +70,16 @@ impl RecraftConfig {
 /// Recraft provider — creates [`RecraftImageModel`] instances.
 pub struct RecraftProvider {
     config: RecraftConfig,
-    client: Client,
 }
 
 impl RecraftProvider {
     pub fn new(config: RecraftConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create an image generation model instance (e.g. `"recraftv3"`).
     pub fn image(&self, model_id: &str) -> RecraftImageModel {
-        RecraftImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        RecraftImageModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -106,16 +99,11 @@ impl Provider for RecraftProvider {
 pub struct RecraftImageModel {
     model_id: String,
     config: RecraftConfig,
-    client: Client,
 }
 
 impl RecraftImageModel {
-    pub fn new(model_id: String, config: RecraftConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: RecraftConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -212,25 +200,13 @@ fn build_generation_body(
     body
 }
 
-/// Build a `reqwest::HeaderMap` from a `HashMap<String, String>`.
-fn build_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMap {
-    headers
-        .iter()
-        .filter_map(|(k, v)| {
-            reqwest::header::HeaderName::try_from(k)
-                .ok()
-                .zip(reqwest::header::HeaderValue::try_from(v).ok())
-        })
-        .collect()
-}
-
 /// Extract images from the OpenAI Images-shaped response.
 ///
 /// - If `data[*].b64_json` is present, returns [`ImageOutputs::Base64`].
 /// - Otherwise, if `data[*].url` is present, each URL is downloaded and
 ///   returned as [`ImageOutputs::Binary`].
 /// - If neither is present, returns an empty [`ImageOutputs::Base64`].
-async fn extract_images(response: &Value, client: &Client) -> Result<ImageOutputs, AiMuxError> {
+async fn extract_images(response: &Value) -> Result<ImageOutputs, AiMuxError> {
     let items = response.get("data").and_then(|d| d.as_array());
 
     let Some(items) = items else {
@@ -259,23 +235,18 @@ async fn extract_images(response: &Value, client: &Client) -> Result<ImageOutput
 
     let mut binaries = Vec::with_capacity(urls.len());
     for url in &urls {
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        if !resp.status().is_success() {
-            return Err(AiMuxError::Provider(format!(
-                "failed to download generated image: HTTP {}",
-                resp.status()
-            )));
-        }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
-        binaries.push(bytes);
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Get,
+                url: url.clone(),
+                headers: vec![],
+                body: HttpBody::Empty,
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+        binaries.push(resp.body.to_vec());
     }
     Ok(ImageOutputs::Binary(binaries))
 }
@@ -311,38 +282,25 @@ impl ImageModel for RecraftImageModel {
         let body = build_generation_body(&self.model_id, options, &recraft_opts);
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map = build_header_map(&headers);
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = self
-            .client
-            .post(self.generations_endpoint())
-            .headers(header_map)
-            .header("Content-Type", "application/json")
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.generations_endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-        let text = resp.text().await.unwrap_or_default();
-        let value: Value = serde_json::from_str(&text)
+        let response_headers = resp.headers;
+        let value: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
 
-        let images = extract_images(&value, &self.client).await?;
+        let images = extract_images(&value).await?;
 
         Ok(ImageResult {
             images,

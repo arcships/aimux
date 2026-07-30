@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use base64::Engine;
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::content::ContentPart;
@@ -35,7 +34,8 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage, Warning,
 };
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream};
 use aimux_stream::SseStream;
 
 use super::HuggingFaceConfig;
@@ -52,16 +52,11 @@ const PROVIDER_NAME: &str = "huggingface";
 pub struct HuggingFaceResponsesModel {
     model_id: String,
     config: HuggingFaceConfig,
-    client: Client,
 }
 
 impl HuggingFaceResponsesModel {
-    pub fn new(model_id: String, config: HuggingFaceConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: HuggingFaceConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn endpoint(&self) -> String {
@@ -83,6 +78,16 @@ impl HuggingFaceResponsesModel {
     }
 }
 
+/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
+///
+/// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
+fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
+    let mut list: Vec<(String, String)> =
+        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    list.push(("Content-Type".to_string(), "application/json".to_string()));
+    list
+}
+
 #[async_trait]
 impl LanguageModel for HuggingFaceResponsesModel {
     fn provider(&self) -> &str {
@@ -98,42 +103,22 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let body = request.body;
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: build_header_list(&headers),
+                body: HttpBody::Json(body.clone()),
+            },
+            self.config.0.retry_config,
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let response: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let response: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Check for an error field in the response body.
         if let Some(error) = response.get("error")
@@ -186,40 +171,20 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let body = request.body;
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: build_header_list(&headers),
+                body: HttpBody::Json(body.clone()),
+            },
+            self.config.0.retry_config,
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect::<HashMap<_, _>>();
-
-        let byte_stream = resp.bytes_stream();
-        let sse_stream = SseStream::new(byte_stream);
+        let response_headers = resp.headers;
+        let sse_stream = SseStream::new(resp.body);
 
         let warnings = request.warnings.clone();
         let stream = async_stream::stream! {

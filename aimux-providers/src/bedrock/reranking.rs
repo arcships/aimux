@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -18,7 +17,8 @@ use aimux_core::reranking_model::{
     RerankingResult,
 };
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::BedrockAuth;
 use super::sigv4::sign_request;
@@ -63,28 +63,23 @@ struct BedrockRerankingResult {
 }
 
 /// An Amazon Bedrock reranking model.
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct BedrockRerankingModel {
     model_id: String,
     base_url: String,
     region: String,
     auth: BedrockAuth,
-    client: Client,
 }
 
 impl BedrockRerankingModel {
-    pub fn new(
-        model_id: String,
-        base_url: String,
-        region: String,
-        auth: BedrockAuth,
-        client: Client,
-    ) -> Self {
+    pub fn new(model_id: String, base_url: String, region: String, auth: BedrockAuth) -> Self {
         Self {
             model_id,
             base_url,
             region,
             auth,
-            client,
         }
     }
 
@@ -107,17 +102,16 @@ impl BedrockRerankingModel {
 
         match &self.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                    ("Authorization".to_string(), format!("Bearer {}", token)),
-                ];
+                let mut headers = vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", token),
+                )];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
             BedrockAuth::SigV4(creds) => {
                 let signed = sign_request(creds, "bedrock", "POST", url, body, &extra_headers);
-                let mut headers =
-                    vec![("Content-Type".to_string(), "application/json".to_string())];
+                let mut headers: Vec<(String, String)> = Vec::new();
                 for (k, v) in &signed.headers {
                     headers.push((k.clone(), v.clone()));
                 }
@@ -207,43 +201,23 @@ impl RerankingModel for BedrockRerankingModel {
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let mut req = self.client.post(&url);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
-
-        let resp = req
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
         // Capture response headers.
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let raw_body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         let data: BedrockRerankingResponse =
             serde_json::from_value(raw_body.clone()).map_err(|e| {

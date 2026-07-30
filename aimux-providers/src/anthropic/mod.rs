@@ -14,8 +14,7 @@ use std::collections::HashMap;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::load_api_key;
-use reqwest::Client;
+use aimux_provider_utils::{RetryConfig, load_api_key, shared_client};
 
 /// The bare (unversioned) Anthropic API URL.
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
@@ -39,6 +38,8 @@ pub struct AnthropicConfig {
     pub name: String,
     /// Extra headers merged into every request.
     pub headers: Option<HashMap<String, String>>,
+    /// 重试配置。默认 `RetryConfig::default()`（max_retries=2）。
+    pub retry_config: RetryConfig,
 }
 
 impl AnthropicConfig {
@@ -52,6 +53,7 @@ impl AnthropicConfig {
             api_version: "2023-06-01".to_string(),
             name: "anthropic.messages".to_string(),
             headers: None,
+            retry_config: RetryConfig::default(),
         }
     }
 
@@ -67,6 +69,12 @@ impl AnthropicConfig {
     /// never doubles the version) and rejects empty strings.
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = normalize_base_url(&url.into());
+        self
+    }
+
+    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
         self
     }
 
@@ -164,6 +172,7 @@ impl AnthropicConfigBuilder {
                 .name
                 .unwrap_or_else(|| "anthropic.messages".to_string()),
             headers: self.headers,
+            retry_config: RetryConfig::default(),
         })
     }
 }
@@ -188,28 +197,22 @@ fn normalize_base_url(url: &str) -> String {
 /// Anthropic provider — creates `AnthropicModel` instances.
 pub struct AnthropicProvider {
     config: AnthropicConfig,
-    client: Client,
 }
 
 impl AnthropicProvider {
     pub fn new(config: AnthropicConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn model(&self, model_id: &str) -> model::AnthropicModel {
-        model::AnthropicModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        model::AnthropicModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Files interface for uploading files to Anthropic.
     pub fn files(&self) -> files::AnthropicFiles {
-        files::AnthropicFiles::new(self.config.clone(), self.client.clone())
+        // `AnthropicFiles` (not yet migrated off reqwest) still holds a client;
+        // hand it the shared pooled client until it migrates.
+        files::AnthropicFiles::new(self.config.clone(), shared_client().clone())
     }
 }
 

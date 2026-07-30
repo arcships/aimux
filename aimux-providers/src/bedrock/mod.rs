@@ -24,7 +24,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::without_trailing_slash;
-use reqwest::Client;
 
 pub use embedding::BedrockEmbeddingModel;
 pub use image::BedrockImageModel;
@@ -140,17 +139,16 @@ impl BedrockProviderConfig {
 }
 
 /// Amazon Bedrock provider — creates [`BedrockModel`] instances.
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct BedrockProvider {
     config: BedrockProviderConfig,
-    client: Client,
 }
 
 impl BedrockProvider {
     pub fn new(config: BedrockProviderConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given Bedrock model id
@@ -162,7 +160,6 @@ impl BedrockProvider {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
             },
-            self.client.clone(),
         )
     }
 
@@ -175,7 +172,6 @@ impl BedrockProvider {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
             },
-            self.client.clone(),
         )
     }
 
@@ -188,7 +184,6 @@ impl BedrockProvider {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
             },
-            self.client.clone(),
         )
     }
 
@@ -208,7 +203,6 @@ impl BedrockProvider {
             reranking_base_url,
             self.config.region.clone(),
             self.config.auth.clone(),
-            self.client.clone(),
         )
     }
 }

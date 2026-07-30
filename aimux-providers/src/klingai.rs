@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -21,8 +20,10 @@ use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoResponse, VideoResult,
 };
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -60,23 +61,15 @@ impl KlingAIConfig {
 
 pub struct KlingAIProvider {
     config: KlingAIConfig,
-    client: Client,
 }
 
 impl KlingAIProvider {
     pub fn new(config: KlingAIConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn video(&self, model_id: &str) -> KlingAIVideoModel {
-        KlingAIVideoModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        KlingAIVideoModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -144,16 +137,11 @@ struct KlingAITaskVideos {
 pub struct KlingAIVideoModel {
     model_id: String,
     config: KlingAIConfig,
-    client: Client,
 }
 
 impl KlingAIVideoModel {
-    pub fn new(model_id: String, config: KlingAIConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: KlingAIConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -271,35 +259,23 @@ impl VideoModel for KlingAIVideoModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map =
-            reqwest::header::HeaderMap::from_iter(headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }));
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit task.
-        let resp = self
-            .client
-            .post(self.submit_endpoint(&mode))
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.submit_endpoint(&mode),
+                headers: header_list.clone(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let task: KlingAITaskResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let task: KlingAITaskResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         if task.code != 0 {
             return Err(AiMuxError::Provider(
@@ -321,32 +297,22 @@ impl VideoModel for KlingAIVideoModel {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            let resp = self
-                .client
-                .get(self.poll_endpoint(&mode, &id, &task_id))
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: self.poll_endpoint(&mode, &id, &task_id),
+                    headers: header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-
-            let text = resp.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
+            response_headers = resp.headers;
 
             let result: KlingAITaskResult =
-                serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if result.code != 0 {
                 return Err(AiMuxError::Provider(

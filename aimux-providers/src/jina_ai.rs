@@ -10,7 +10,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -22,8 +21,10 @@ use aimux_core::reranking_model::{
     RerankingResult,
 };
 use aimux_core::types::Warning;
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 /// Jina AI error response structure: `{ "detail": "...", "code": "..." }`.
 ///
@@ -79,25 +80,17 @@ impl JinaAiConfig {
 /// Jina AI is a rerank-only provider; it does not support language models.
 pub struct JinaAiProvider {
     config: JinaAiConfig,
-    client: Client,
 }
 
 impl JinaAiProvider {
     pub fn new(config: JinaAiConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a reranking model instance for the given model name (e.g.
     /// `"jina-reranker-v2-base-multilingual"` or `"jina-reranker-v3"`).
     pub fn reranking_model(&self, model_id: &str) -> JinaAiRerankingModel {
-        JinaAiRerankingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        JinaAiRerankingModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -189,16 +182,11 @@ struct JinaRerankingResult {
 pub struct JinaAiRerankingModel {
     model_id: String,
     config: JinaAiConfig,
-    client: Client,
 }
 
 impl JinaAiRerankingModel {
-    pub fn new(model_id: String, config: JinaAiConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: JinaAiConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -244,47 +232,28 @@ impl RerankingModel for JinaAiRerankingModel {
         let mut warnings = Vec::new();
         let body = build_request_body(&self.model_id, options, &jina_options, &mut warnings);
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
+        let headers: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
             .collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(header_map)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &JINA_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &JINA_ERROR_STRUCTURE,
+        )
+        .await?;
 
         // Capture response headers.
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let raw_body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let data: JinaRerankingResponse =
             serde_json::from_value(raw_body.clone()).map_err(|e| {

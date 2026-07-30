@@ -18,7 +18,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::without_trailing_slash;
-use reqwest::Client;
 
 mod anthropic_model;
 mod embedding;
@@ -146,17 +145,16 @@ fn build_base_url(project: &str, location: &str, _endpoint: bool) -> String {
 }
 
 /// Google Vertex AI provider — creates [`VertexModel`] instances.
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct VertexProvider {
     config: VertexProviderConfig,
-    client: Client,
 }
 
 impl VertexProvider {
     pub fn new(config: VertexProviderConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given Vertex AI model name
@@ -176,7 +174,6 @@ impl VertexProvider {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
             },
-            self.client.clone(),
         ))
     }
 
@@ -201,7 +198,6 @@ impl VertexProvider {
                 base_url,
                 auth: self.config.auth.clone(),
             },
-            self.client.clone(),
         ))
     }
 
@@ -214,7 +210,6 @@ impl VertexProvider {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
             },
-            self.client.clone(),
         )
     }
 
@@ -227,7 +222,6 @@ impl VertexProvider {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
             },
-            self.client.clone(),
         )
     }
 
@@ -252,7 +246,6 @@ impl VertexProvider {
             location,
             self.config.auth.clone(),
             self.config.base_url.clone(),
-            self.client.clone(),
         ))
     }
 
@@ -276,7 +269,6 @@ impl VertexProvider {
             location,
             self.config.auth.clone(),
             self.config.base_url.clone(),
-            self.client.clone(),
         ))
     }
 }

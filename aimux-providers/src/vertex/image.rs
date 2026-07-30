@@ -10,7 +10,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -20,7 +19,8 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::{VertexAuth, VertexConfig};
 
@@ -34,19 +34,17 @@ fn is_gemini_model(model_id: &str) -> bool {
 }
 
 /// A Google Vertex AI image generation model.
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct VertexImageModel {
     model_id: String,
     config: VertexConfig,
-    client: Client,
 }
 
 impl VertexImageModel {
-    pub fn new(model_id: String, config: VertexConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: VertexConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> Vec<(String, String)> {
@@ -197,40 +195,20 @@ impl VertexImageModel {
         };
 
         let headers = self.build_headers(options.headers.as_ref());
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
 
-        let resp = self
-            .client
-            .post(self.predict_endpoint())
-            .headers(hm)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-        let rb: Value = resp
-            .json()
-            .await
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.predict_endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
+        let rh = resp.headers;
+        let rb: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
 
         let images: Vec<String> = rb
@@ -359,40 +337,20 @@ impl VertexImageModel {
 
         let body = json!({ "contents": [{ "role": "user", "parts": parts }], "generationConfig": Value::Object(gc) });
         let headers = self.build_headers(options.headers.as_ref());
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
 
-        let resp = self
-            .client
-            .post(self.generate_content_endpoint())
-            .headers(hm)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-        let rb: Value = resp
-            .json()
-            .await
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.generate_content_endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
+        let rh = resp.headers;
+        let rb: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
 
         let mut images: Vec<String> = Vec::new();

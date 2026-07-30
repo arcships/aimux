@@ -12,7 +12,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::embedding_model::{
@@ -21,26 +20,25 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::BedrockAuth;
 use super::model::BedrockConfig;
 use super::sigv4::sign_request;
 
 /// An Amazon Bedrock embedding model (e.g. `"amazon.titan-embed-text-v2:0"`).
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct BedrockEmbeddingModel {
     model_id: String,
     config: BedrockConfig,
-    client: Client,
 }
 
 impl BedrockEmbeddingModel {
-    pub fn new(model_id: String, config: BedrockConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: BedrockConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn endpoint(&self) -> String {
@@ -66,17 +64,16 @@ impl BedrockEmbeddingModel {
 
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                    ("Authorization".to_string(), format!("Bearer {}", token)),
-                ];
+                let mut headers = vec![(
+                    "Authorization".to_string(),
+                    format!("Bearer {}", token),
+                )];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
             BedrockAuth::SigV4(creds) => {
                 let signed = sign_request(creds, "bedrock", "POST", url, body, &extra_headers);
-                let mut headers =
-                    vec![("Content-Type".to_string(), "application/json".to_string())];
+                let mut headers: Vec<(String, String)> = Vec::new();
                 for (k, v) in &signed.headers {
                     headers.push((k.clone(), v.clone()));
                 }
@@ -201,43 +198,23 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let mut req = self.client.post(&url);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
-
-        let resp = req
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
         // Capture response headers (needed for token count extraction).
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let raw_value: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_value: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         // Extract embeddings based on response format.
         let embeddings: Vec<Vec<f32>> = if raw_value.get("embedding").is_some() {

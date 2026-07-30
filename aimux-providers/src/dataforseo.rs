@@ -12,7 +12,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use base64::Engine;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -24,8 +23,10 @@ use aimux_core::search_model::{
 };
 use aimux_core::shared::SharedHeaders;
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
-use aimux_provider_utils::without_trailing_slash;
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send, without_trailing_slash,
+};
 
 /// Provider canonical name.
 const PROVIDER_NAME: &str = "dataforseo";
@@ -110,20 +111,16 @@ impl std::fmt::Debug for DataforseoConfig {
 /// DataForSEO is a search-only provider; it does not support language models.
 pub struct DataforseoProvider {
     config: DataforseoConfig,
-    client: Client,
 }
 
 impl DataforseoProvider {
     pub fn new(config: DataforseoConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a search model instance.
     pub fn search_model(&self) -> DataforseoSearchModel {
-        DataforseoSearchModel::new(self.config.clone(), self.client.clone())
+        DataforseoSearchModel::new(self.config.clone())
     }
 }
 
@@ -212,12 +209,11 @@ fn map_result(r: DataforseoOrganic) -> SearchResultItem {
 /// A DataForSEO search model.
 pub struct DataforseoSearchModel {
     config: DataforseoConfig,
-    client: Client,
 }
 
 impl DataforseoSearchModel {
-    pub fn new(config: DataforseoConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: DataforseoConfig) -> Self {
+        Self { config }
     }
 
     /// Build the HTTP Basic `Authorization` header value.
@@ -259,47 +255,28 @@ impl SearchModel for DataforseoSearchModel {
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let depth = resolve_depth(options.max_results);
         let body = build_request_body(&options.query, depth);
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
+        let headers: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
             .collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(header_map)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DATAFORSEO_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &DATAFORSEO_ERROR_STRUCTURE,
+        )
+        .await?;
 
         // Capture response headers.
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let raw_body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let data: DataforseoResponse = serde_json::from_value(raw_body.clone())
             .map_err(|e| AiMuxError::Provider(format!("failed to parse search response: {e}")))?;

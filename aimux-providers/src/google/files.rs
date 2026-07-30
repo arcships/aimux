@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -26,7 +25,16 @@ use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, Uplo
 use aimux_core::shared::FileBytes;
 use aimux_core::types::Warning;
 
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+
 use super::GoogleConfig;
+
+/// Google-specific error structure: `{ "error": { "message": "..." } }`.
+const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
+    message_path: &["error", "message"],
+    type_path: &["error", "status"],
+};
 
 /// Google provider-specific file upload options.
 #[derive(Debug, Clone, Default)]
@@ -101,15 +109,15 @@ struct UploadResponse {
 
 /// A Google Files interface for uploading files.
 ///
-/// Aligned with TS `GoogleFiles`.
+/// Aligned with TS `GoogleFiles`. Does **not** hold an HTTP client — `http::send`
+/// uses the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct GoogleFiles {
     config: GoogleConfig,
-    client: Client,
 }
 
 impl GoogleFiles {
-    pub fn new(config: GoogleConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: GoogleConfig) -> Self {
+        Self { config }
     }
 
     fn build_headers(&self) -> HashMap<String, String> {
@@ -161,85 +169,60 @@ impl Files for GoogleFiles {
             json!({ "file": {} })
         };
 
-        let mut init_headers = reqwest::header::HeaderMap::new();
-        for (k, v) in &resolved_headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k.as_str()),
-                reqwest::header::HeaderValue::try_from(v.as_str()),
-            ) {
-                init_headers.insert(name, val);
-            }
-        }
-        init_headers.insert("X-Goog-Upload-Protocol", "resumable".parse().unwrap());
-        init_headers.insert("X-Goog-Upload-Command", "start".parse().unwrap());
-        init_headers.insert(
-            "X-Goog-Upload-Header-Content-Length",
-            file_bytes.len().to_string().parse().unwrap(),
-        );
-        init_headers.insert(
-            "X-Goog-Upload-Header-Content-Type",
-            media_type.parse().unwrap(),
-        );
-        init_headers.insert("Content-Type", "application/json".parse().unwrap());
+        let mut init_headers: Vec<(String, String)> =
+            resolved_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        init_headers.push(("X-Goog-Upload-Protocol".to_string(), "resumable".to_string()));
+        init_headers.push(("X-Goog-Upload-Command".to_string(), "start".to_string()));
+        init_headers.push((
+            "X-Goog-Upload-Header-Content-Length".to_string(),
+            file_bytes.len().to_string(),
+        ));
+        init_headers.push((
+            "X-Goog-Upload-Header-Content-Type".to_string(),
+            media_type.clone(),
+        ));
+        init_headers.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        let init_resp = self
-            .client
-            .post(self.init_endpoint())
-            .headers(init_headers)
-            .json(&init_body_value)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        if !init_resp.status().is_success() {
-            let status = init_resp.status();
-            let error_body = init_resp.text().await.unwrap_or_default();
-            return Err(AiMuxError::Provider(format!(
-                "Failed to initiate resumable upload: {} {}",
-                status, error_body
-            )));
-        }
+        let init_resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.init_endpoint(),
+                headers: init_headers,
+                body: HttpBody::Json(init_body_value),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
         let upload_url = init_resp
-            .headers()
+            .headers
             .get("x-goog-upload-url")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string())
+            .cloned()
             .ok_or_else(|| {
                 AiMuxError::Provider("No upload URL returned from initiation request".to_string())
             })?;
 
         // Step 2: Upload file data.
-        let mut upload_headers = reqwest::header::HeaderMap::new();
-        upload_headers.insert(
-            "Content-Length",
-            file_bytes.len().to_string().parse().unwrap(),
-        );
-        upload_headers.insert("X-Goog-Upload-Offset", "0".parse().unwrap());
-        upload_headers.insert("X-Goog-Upload-Command", "upload, finalize".parse().unwrap());
+        let upload_headers: Vec<(String, String)> = vec![
+            ("X-Goog-Upload-Offset".to_string(), "0".to_string()),
+            ("X-Goog-Upload-Command".to_string(), "upload, finalize".to_string()),
+        ];
 
-        let upload_resp = self
-            .client
-            .post(&upload_url)
-            .headers(upload_headers)
-            .body(file_bytes.clone())
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let upload_resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: upload_url,
+                headers: upload_headers,
+                body: HttpBody::Bytes(file_bytes, media_type.clone()),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        if !upload_resp.status().is_success() {
-            let status = upload_resp.status();
-            let error_body = upload_resp.text().await.unwrap_or_default();
-            return Err(AiMuxError::Provider(format!(
-                "Failed to upload file data: {} {}",
-                status, error_body
-            )));
-        }
-
-        let upload_result: UploadResponse = upload_resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let upload_result: UploadResponse =
+            serde_json::from_slice(&upload_resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         let mut file = upload_result.file;
 
@@ -247,6 +230,8 @@ impl Files for GoogleFiles {
         let poll_interval_ms = google_options.poll_interval_ms.unwrap_or(2000);
         let poll_timeout_ms = google_options.poll_timeout_ms.unwrap_or(300000);
         let start_time = Instant::now();
+        let poll_header_list: Vec<(String, String)> =
+            resolved_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
         while file.state == "PROCESSING" {
             if start_time.elapsed() > Duration::from_millis(poll_timeout_ms) {
@@ -259,36 +244,20 @@ impl Files for GoogleFiles {
             tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
 
             let poll_url = format!("{}/{}", self.config.base_url, file.name);
-            let mut poll_headers = reqwest::header::HeaderMap::new();
-            for (k, v) in &resolved_headers {
-                if let (Ok(name), Ok(val)) = (
-                    reqwest::header::HeaderName::try_from(k.as_str()),
-                    reqwest::header::HeaderValue::try_from(v.as_str()),
-                ) {
-                    poll_headers.insert(name, val);
-                }
-            }
 
-            let poll_resp = self
-                .client
-                .get(&poll_url)
-                .headers(poll_headers)
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let poll_resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: poll_url,
+                    headers: poll_header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &GOOGLE_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            if !poll_resp.status().is_success() {
-                let status = poll_resp.status();
-                let error_body = poll_resp.text().await.unwrap_or_default();
-                return Err(AiMuxError::Provider(format!(
-                    "Failed to poll file status: {} {}",
-                    status, error_body
-                )));
-            }
-
-            file = poll_resp
-                .json::<GoogleFileResource>()
-                .await
+            file = serde_json::from_slice::<GoogleFileResource>(&poll_resp.body)
                 .map_err(|e| AiMuxError::Http(e.to_string()))?;
         }
 

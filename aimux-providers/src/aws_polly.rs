@@ -17,10 +17,7 @@
 //! `us-east-1`), and the optional `AWS_SESSION_TOKEN` for temporary STS
 //! credentials.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -30,6 +27,9 @@ use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
+
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
 
@@ -59,6 +59,13 @@ const SUPPORTED_OUTPUT_FORMATS: &[&str] = &[
     "alaw",
     "json",
 ];
+
+/// AWS error shape: `{"__type": "...", "message": "..."}` (no `error` wrapper).
+/// Passed to `send` so the http layer extracts the right fields on non-2xx.
+const AWS_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
+    message_path: &["message"],
+    type_path: &["__type"],
+};
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -175,25 +182,17 @@ impl std::fmt::Debug for AwsPollyConfig {
 /// Amazon Polly provider — creates [`AwsPollySpeechModel`] instances.
 pub struct AwsPollyProvider {
     config: AwsPollyConfig,
-    client: Client,
 }
 
 impl AwsPollyProvider {
     pub fn new(config: AwsPollyConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a speech (TTS) model instance for the given model id
     /// (e.g. `"aws_polly/neural"` or `"neural"`).
     pub fn speech(&self, model_id: &str) -> AwsPollySpeechModel {
-        AwsPollySpeechModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        AwsPollySpeechModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -216,16 +215,11 @@ impl Provider for AwsPollyProvider {
 pub struct AwsPollySpeechModel {
     model_id: String,
     config: AwsPollyConfig,
-    client: Client,
 }
 
 impl AwsPollySpeechModel {
-    pub fn new(model_id: String, config: AwsPollyConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: AwsPollyConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn endpoint(&self) -> String {
@@ -251,7 +245,9 @@ impl SpeechModel for AwsPollySpeechModel {
 
         // SigV4 sign the request. User-supplied extra headers are included in
         // the canonical headers; `Content-Type` is added separately (mirrors the
-        // Bedrock provider).
+        // Bedrock provider). The signed body bytes are sent verbatim via
+        // `HttpBody::Bytes` so the `x-amz-content-sha256` hash still matches —
+        // re-serializing the JSON would invalidate the signature.
         let creds = self.config.credentials();
         let mut extra_headers: Vec<(String, String)> = Vec::new();
         if let Some(ref headers) = options.headers {
@@ -268,42 +264,21 @@ impl SpeechModel for AwsPollySpeechModel {
             &extra_headers,
         );
 
-        let mut req = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json");
-        for (k, v) in &signed.headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers: signed.headers,
+                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            },
+            RetryConfig::default(),
+            &AWS_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let resp = req
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let response_headers = resp.headers;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_polly_error(status.as_u16(), &text));
-        }
-
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let audio_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let audio_bytes = resp.body.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -498,6 +473,12 @@ fn parse_polly_provider_options(
 /// AWS errors are JSON objects of the form
 /// `{"__type": "...", "message": "..."}`. Authentication failures surface as
 /// HTTP 401 or 403; both are mapped to [`AiMuxError::Auth`].
+///
+/// Live requests no longer call this — the shared http layer (`send`) maps
+/// non-2xx responses itself via [`AWS_ERROR_STRUCTURE`]. Retained (and
+/// exercised below) for unit-testing the AWS-specific 401/403 → `Auth` mapping,
+/// which the generic handler does not reproduce.
+#[allow(dead_code)]
 fn parse_polly_error(status: u16, body: &str) -> AiMuxError {
     let message = extract_aws_error_message(body);
     match status {
@@ -511,6 +492,10 @@ fn parse_polly_error(status: u16, body: &str) -> AiMuxError {
 }
 
 /// Extract a human-readable message from an AWS error JSON body.
+///
+/// Only used by [`parse_polly_error`] (which is itself test-only after the
+/// migration to the shared http layer), so marked `#[allow(dead_code)]`.
+#[allow(dead_code)]
 fn extract_aws_error_message(body: &str) -> String {
     if let Ok(val) = serde_json::from_str::<Value>(body) {
         if let Some(msg) = val.get("message").and_then(|v| v.as_str()) {

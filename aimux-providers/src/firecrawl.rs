@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -17,8 +16,10 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 const MODEL_ID: &str = "firecrawl-search";
 
@@ -57,19 +58,15 @@ impl FirecrawlConfig {
 /// Firecrawl provider — search-only.
 pub struct FirecrawlProvider {
     config: FirecrawlConfig,
-    client: Client,
 }
 
 impl FirecrawlProvider {
     pub fn new(config: FirecrawlConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn search_model(&self) -> FirecrawlSearchModel {
-        FirecrawlSearchModel::new(self.config.clone(), self.client.clone())
+        FirecrawlSearchModel::new(self.config.clone())
     }
 }
 
@@ -141,12 +138,11 @@ fn map_results(entries: Vec<FirecrawlWebResult>) -> Vec<SearchResultItem> {
 /// Firecrawl search model — implements `SearchModel`.
 pub struct FirecrawlSearchModel {
     config: FirecrawlConfig,
-    client: Client,
 }
 
 impl FirecrawlSearchModel {
-    pub fn new(config: FirecrawlConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: FirecrawlConfig) -> Self {
+        Self { config }
     }
 
     fn endpoint(&self) -> String {
@@ -184,41 +180,20 @@ impl SearchModel for FirecrawlSearchModel {
         let body = build_request_body(options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let mut req = self.client.post(self.endpoint()).json(&body);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &FIRECRAWL_ERROR_STRUCTURE,
+        )
+        .await?;
+        let response_headers = resp.headers;
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &FIRECRAWL_ERROR_STRUCTURE,
-            ));
-        }
-
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let parsed: FirecrawlResponse = serde_json::from_str(&text).map_err(|e| {
+        let parsed: FirecrawlResponse = serde_json::from_slice(&resp.body).map_err(|e| {
             AiMuxError::Provider(format!("Failed to parse Firecrawl response: {e}"))
         })?;
 
@@ -229,7 +204,7 @@ impl SearchModel for FirecrawlSearchModel {
             warnings: Vec::new(),
             response: Some(SearchResponse {
                 headers: Some(response_headers),
-                body: Some(serde_json::from_str(&text).unwrap_or(Value::Null)),
+                body: Some(serde_json::from_slice(&resp.body).unwrap_or(Value::Null)),
             }),
         })
     }

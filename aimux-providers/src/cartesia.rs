@@ -21,7 +21,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -30,8 +29,9 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    load_api_key, response::DEFAULT_ERROR_STRUCTURE, response::parse_provider_error,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send,
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -98,35 +98,23 @@ impl CartesiaConfig {
 /// Cartesia provider — creates `CartesiaSpeechModel` instances.
 pub struct CartesiaProvider {
     config: CartesiaConfig,
-    client: Client,
 }
 
 impl CartesiaProvider {
     pub fn new(config: CartesiaConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a speech (TTS) model instance for the given model name (e.g.
     /// `"sonic-3.5"`).
     pub fn speech(&self, model_id: &str) -> CartesiaSpeechModel {
-        CartesiaSpeechModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        CartesiaSpeechModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a transcription (STT) model instance for the given model name
     /// (e.g. `"best"`). Uses the `/stt` endpoint.
     pub fn transcription(&self, model_id: &str) -> CartesiaTranscriptionModel {
-        CartesiaTranscriptionModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        CartesiaTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -136,16 +124,11 @@ impl CartesiaProvider {
 pub struct CartesiaSpeechModel {
     model_id: String,
     config: CartesiaConfig,
-    client: Client,
 }
 
 impl CartesiaSpeechModel {
-    pub fn new(model_id: String, config: CartesiaConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: CartesiaConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -188,43 +171,21 @@ impl SpeechModel for CartesiaSpeechModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&Value::Object(body.clone()))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers.into_iter().collect(),
+                body: HttpBody::Json(Value::Object(body.clone())),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let audio_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let audio_bytes = resp.body.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -666,16 +627,11 @@ struct CartesiaTranscriptionResponse {
 pub struct CartesiaTranscriptionModel {
     model_id: String,
     config: CartesiaConfig,
-    client: Client,
 }
 
 impl CartesiaTranscriptionModel {
-    pub fn new(model_id: String, config: CartesiaConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: CartesiaConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -787,43 +743,21 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", &content_type)
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .body(body_bytes)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers.into_iter().collect(),
+                body: HttpBody::Bytes(body_bytes, content_type),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let raw_body: Value = if status.is_success() {
-            let text = resp
-                .text()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
-            serde_json::from_str(&text).unwrap_or(Value::Null)
-        } else {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        };
+        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
         let parsed: CartesiaTranscriptionResponse =
             serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;

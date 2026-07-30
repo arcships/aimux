@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -21,8 +20,10 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 /// Fixed model ID for the Linkup search model.
 const MODEL_ID: &str = "linkup-search";
@@ -86,20 +87,16 @@ impl LinkupConfig {
 /// Linkup is a search-only provider; it does not support language models.
 pub struct LinkupProvider {
     config: LinkupConfig,
-    client: Client,
 }
 
 impl LinkupProvider {
     pub fn new(config: LinkupConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a search model instance.
     pub fn search_model(&self) -> LinkupSearchModel {
-        LinkupSearchModel::new(self.config.clone(), self.client.clone())
+        LinkupSearchModel::new(self.config.clone())
     }
 }
 
@@ -181,12 +178,11 @@ fn map_results(entries: Vec<LinkupResult>) -> Vec<SearchResultItem> {
 /// A Linkup search model.
 pub struct LinkupSearchModel {
     config: LinkupConfig,
-    client: Client,
 }
 
 impl LinkupSearchModel {
-    pub fn new(config: LinkupConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: LinkupConfig) -> Self {
+        Self { config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -222,46 +218,28 @@ impl SearchModel for LinkupSearchModel {
         let linkup_options = parse_linkup_options(options.provider_options.as_ref());
         let body = build_request_body(options, &linkup_options);
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
+        let headers: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
             .collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(header_map)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        // Capture response headers.
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw_body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let data: LinkupResponse = serde_json::from_value(raw_body.clone()).map_err(|e| {
             AiMuxError::Provider(format!("failed to parse linkup search response: {e}"))

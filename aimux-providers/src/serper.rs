@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -17,8 +16,10 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 const MODEL_ID: &str = "serper-search";
 
@@ -51,19 +52,15 @@ impl SerperConfig {
 /// Serper provider — search-only.
 pub struct SerperProvider {
     config: SerperConfig,
-    client: Client,
 }
 
 impl SerperProvider {
     pub fn new(config: SerperConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn search_model(&self) -> SerperSearchModel {
-        SerperSearchModel::new(self.config.clone(), self.client.clone())
+        SerperSearchModel::new(self.config.clone())
     }
 }
 
@@ -122,12 +119,11 @@ fn map_results(entries: Vec<SerperOrganicResult>) -> Vec<SearchResultItem> {
 /// Serper search model — implements `SearchModel`.
 pub struct SerperSearchModel {
     config: SerperConfig,
-    client: Client,
 }
 
 impl SerperSearchModel {
-    pub fn new(config: SerperConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: SerperConfig) -> Self {
+        Self { config }
     }
 
     fn endpoint(&self) -> String {
@@ -162,41 +158,20 @@ impl SearchModel for SerperSearchModel {
         let body = build_request_body(options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let mut req = self.client.post(self.endpoint()).json(&body);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+        let response_headers = resp.headers;
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let parsed: SerperResponse = serde_json::from_str(&text)
+        let parsed: SerperResponse = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("Failed to parse Serper response: {e}")))?;
 
         Ok(SearchResult {
@@ -206,7 +181,7 @@ impl SearchModel for SerperSearchModel {
             warnings: Vec::new(),
             response: Some(SearchResponse {
                 headers: Some(response_headers),
-                body: Some(serde_json::from_str(&text).unwrap_or(Value::Null)),
+                body: Some(serde_json::from_slice(&resp.body).unwrap_or(Value::Null)),
             }),
         })
     }

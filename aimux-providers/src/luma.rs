@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -17,8 +16,10 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
 const DEFAULT_MAX_POLL_ATTEMPTS: u64 = 120;
@@ -55,21 +56,13 @@ impl LumaConfig {
 
 pub struct LumaProvider {
     config: LumaConfig,
-    client: Client,
 }
 impl LumaProvider {
     pub fn new(config: LumaConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
     pub fn image(&self, model_id: &str) -> LumaImageModel {
-        LumaImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        LumaImageModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -77,15 +70,10 @@ impl LumaProvider {
 pub struct LumaImageModel {
     model_id: String,
     config: LumaConfig,
-    client: Client,
 }
 impl LumaImageModel {
-    pub fn new(model_id: String, config: LumaConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: LumaConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -299,42 +287,22 @@ impl ImageModel for LumaImageModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit
-        let resp = self
-            .client
-            .post(self.generations_url(None))
-            .headers(hm.clone())
-            .header("Content-Type", "application/json")
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-        let submit_body: Value = resp
-            .json()
-            .await
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.generations_url(None),
+                headers: header_list.clone(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+        let rh = resp.headers;
+        let submit_body: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
 
         let generation_id = submit_body
@@ -346,25 +314,18 @@ impl ImageModel for LumaImageModel {
         // Poll for completion
         let mut image_url = None;
         for _ in 0..max_poll_attempts {
-            let pr = self
-                .client
-                .get(self.generations_url(Some(&generation_id)))
-                .headers(hm.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
-            let ps = pr.status();
-            if !ps.is_success() {
-                let t = pr.text().await.unwrap_or_default();
-                return Err(parse_provider_error(
-                    ps.as_u16(),
-                    &t,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-            let pv: Value = pr
-                .json()
-                .await
+            let pr = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: self.generations_url(Some(&generation_id)),
+                    headers: header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
+            let pv: Value = serde_json::from_slice(&pr.body)
                 .map_err(|e| AiMuxError::Provider(format!("invalid poll JSON: {e}")))?;
 
             let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
@@ -390,23 +351,18 @@ impl ImageModel for LumaImageModel {
         })?;
 
         // Download image
-        let ir = self
-            .client
-            .get(&image_url)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        if !ir.status().is_success() {
-            return Err(AiMuxError::Provider(format!(
-                "download failed: HTTP {}",
-                ir.status()
-            )));
-        }
-        let image_bytes = ir
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let ir = send(
+            HttpRequest {
+                method: HttpMethod::Get,
+                url: image_url,
+                headers: vec![],
+                body: HttpBody::Empty,
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+        let image_bytes = ir.body.to_vec();
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

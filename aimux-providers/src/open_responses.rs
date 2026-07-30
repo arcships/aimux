@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::content::ContentPart;
@@ -28,7 +27,8 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Usage, Warning,
 };
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 
 // == Config ==
@@ -111,20 +111,16 @@ impl OpenResponsesConfig {
 /// Open Responses provider - creates [`OpenResponsesModel`] instances.
 pub struct OpenResponsesProvider {
     config: OpenResponsesConfig,
-    client: Client,
 }
 
 impl OpenResponsesProvider {
     pub fn new(config: OpenResponsesConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given model id.
     pub fn model(&self, model_id: &str) -> OpenResponsesModel {
-        OpenResponsesModel::new(model_id.to_string(), &self.config, self.client.clone())
+        OpenResponsesModel::new(model_id.to_string(), &self.config)
     }
 }
 
@@ -144,11 +140,10 @@ impl Provider for OpenResponsesProvider {
 pub struct OpenResponsesModel {
     model_id: String,
     config: OpenResponsesConfig,
-    client: Client,
 }
 
 impl OpenResponsesModel {
-    pub fn new(model_id: String, config: &OpenResponsesConfig, client: Client) -> Self {
+    pub fn new(model_id: String, config: &OpenResponsesConfig) -> Self {
         Self {
             model_id,
             config: OpenResponsesConfig {
@@ -158,7 +153,6 @@ impl OpenResponsesModel {
                 headers: config.headers.clone(),
                 generate_id: config.generate_id.clone(),
             },
-            client,
         }
     }
 
@@ -193,42 +187,22 @@ impl LanguageModel for OpenResponsesModel {
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.config.provider_options_name);
 
-        let resp = self
-            .client
-            .post(&self.config.url)
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.config.url.clone(),
+                headers: headers.into_iter().collect(),
+                body: HttpBody::Json(body.clone()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Check for response.error first (surfaces before the no-output fallback).
         if let Some(error) = raw.get("error").and_then(|e| e.as_object())
@@ -372,40 +346,21 @@ impl LanguageModel for OpenResponsesModel {
             b
         };
 
-        let resp = self
-            .client
-            .post(&self.config.url)
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&stream_body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.config.url.clone(),
+                headers: headers.into_iter().collect(),
+                body: HttpBody::Json(stream_body),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let byte_stream = resp.bytes_stream();
-        let mut sse_stream = SseStream::new(byte_stream);
+        let mut sse_stream = SseStream::new(resp.body);
 
         // Peek at the first SSE event to detect early errors.
         let first_event = sse_stream.next().await;

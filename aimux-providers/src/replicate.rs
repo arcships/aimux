@@ -6,7 +6,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -15,8 +14,10 @@ use aimux_core::image_model::{
     ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 /// Configuration for the Replicate provider.
 #[derive(Debug, Clone)]
@@ -54,33 +55,21 @@ impl ReplicateConfig {
 /// Replicate provider — creates `ReplicateImageModel` instances.
 pub struct ReplicateProvider {
     config: ReplicateConfig,
-    client: Client,
 }
 
 impl ReplicateProvider {
     pub fn new(config: ReplicateConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn image(&self, model_id: &str) -> ReplicateImageModel {
-        ReplicateImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        ReplicateImageModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a video generation model instance for the given model name
     /// (e.g. `"wan-lab/wan-2.1-t2v-14b"`).
     pub fn video(&self, model_id: &str) -> ReplicateVideoModel {
-        ReplicateVideoModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        ReplicateVideoModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -92,16 +81,11 @@ const MAX_FLUX_2_INPUT_IMAGES: u32 = 8;
 pub struct ReplicateImageModel {
     model_id: String,
     config: ReplicateConfig,
-    client: Client,
 }
 
 impl ReplicateImageModel {
-    pub fn new(model_id: String, config: ReplicateConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: ReplicateConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn is_flux2(&self) -> bool {
@@ -272,42 +256,22 @@ impl ImageModel for ReplicateImageModel {
         };
         headers.insert("prefer".into(), prefer);
 
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .headers(hm)
-            .header("Content-Type", "application/json")
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-        let rb: Value = resp
-            .json()
-            .await
+        let rh = resp.headers;
+        let rb: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
 
         // Extract output (string or array of strings)
@@ -323,24 +287,18 @@ impl ImageModel for ReplicateImageModel {
         // Download images
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for url in &urls {
-            let ir = self
-                .client
-                .get(url)
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
-            if !ir.status().is_success() {
-                return Err(AiMuxError::Provider(format!(
-                    "download failed: HTTP {}",
-                    ir.status()
-                )));
-            }
-            downloaded.push(
-                ir.bytes()
-                    .await
-                    .map_err(|e| AiMuxError::Http(e.to_string()))?
-                    .to_vec(),
-            );
+            let ir = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: url.clone(),
+                    headers: vec![],
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
+            downloaded.push(ir.body.to_vec());
         }
 
         Ok(ImageResult {
@@ -374,16 +332,11 @@ use aimux_core::video_model::{
 pub struct ReplicateVideoModel {
     model_id: String,
     config: ReplicateConfig,
-    client: Client,
 }
 
 impl ReplicateVideoModel {
-    pub fn new(model_id: String, config: ReplicateConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: ReplicateConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -451,37 +404,23 @@ impl VideoModel for ReplicateVideoModel {
         });
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit prediction.
-        let resp = self
-            .client
-            .post(format!("{}/predictions", self.config.base_url))
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: format!("{}/predictions", self.config.base_url),
+                headers: header_list.clone(),
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let prediction: Value = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let prediction: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let prediction_id = prediction
             .get("id")
             .and_then(|v| v.as_str())
@@ -494,33 +433,23 @@ impl VideoModel for ReplicateVideoModel {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            let resp = self
-                .client
-                .get(format!(
-                    "{}/predictions/{}",
-                    self.config.base_url, prediction_id
-                ))
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: format!(
+                        "{}/predictions/{}",
+                        self.config.base_url, prediction_id
+                    ),
+                    headers: header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-            let text = resp.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-
-            raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
+            response_headers = resp.headers;
+            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
             let status_str = raw_body
                 .get("status")
                 .and_then(|v| v.as_str())

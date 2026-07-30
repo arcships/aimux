@@ -65,6 +65,9 @@ aimux-tools = { path = "aimux-tools" }
 # HTTP date parsing (Retry-After header)
 httpdate = "1"
 
+# Random number generation (Full Jitter backoff in retry.rs)
+rand = "0.8"
+
 # Serial test execution (for env-var-mutating tests)
 serial_test = "3"
 

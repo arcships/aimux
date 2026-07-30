@@ -13,7 +13,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -23,7 +22,8 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::VertexAuth;
 
@@ -112,7 +112,6 @@ pub struct VertexTranscriptionModel {
     location: String,
     auth: VertexAuth,
     base_url: String,
-    client: Client,
 }
 
 impl VertexTranscriptionModel {
@@ -122,7 +121,6 @@ impl VertexTranscriptionModel {
         location: String,
         auth: VertexAuth,
         base_url: String,
-        client: Client,
     ) -> Self {
         Self {
             model_id,
@@ -130,7 +128,6 @@ impl VertexTranscriptionModel {
             location,
             auth,
             base_url,
-            client,
         }
     }
 
@@ -246,43 +243,24 @@ impl TranscriptionModel for VertexTranscriptionModel {
         let headers = self.build_headers(options.headers.as_ref());
         let url = self.endpoint(&region);
 
-        let resp = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let header_list: Vec<(String, String)> =
+            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        let status = resp.status();
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers: header_list,
+                body: HttpBody::Json(request_body.clone()),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let raw_body: Value = if status.is_success() {
-            let text = resp
-                .text()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
-            serde_json::from_str(&text).unwrap_or(Value::Null)
-        } else {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        };
+        let response_headers = resp.headers;
+
+        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
         let parsed: GoogleVertexResponse =
             serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;

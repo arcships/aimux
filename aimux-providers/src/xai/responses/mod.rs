@@ -20,7 +20,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -30,7 +29,8 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream};
 use aimux_stream::SseStream;
 
 use super::super::XAIConfig;
@@ -47,19 +47,17 @@ fn generate_source_id() -> String {
 }
 
 /// An xAI Responses language model (Grok).
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct XaiResponsesModel {
     model_id: String,
     config: XAIConfig,
-    client: Client,
 }
 
 impl XaiResponsesModel {
-    pub fn new(model_id: String, config: XAIConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: XAIConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -81,6 +79,16 @@ impl XaiResponsesModel {
     }
 }
 
+/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
+///
+/// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
+fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
+    let mut list: Vec<(String, String)> =
+        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    list.push(("Content-Type".to_string(), "application/json".to_string()));
+    list
+}
+
 #[async_trait]
 impl LanguageModel for XaiResponsesModel {
     fn provider(&self) -> &str {
@@ -97,36 +105,21 @@ impl LanguageModel for XaiResponsesModel {
         let body = request_result.body;
         let provider_tool_names = request_result.provider_tool_names;
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: build_header_list(&headers),
+                body: HttpBody::Json(body.clone()),
+            },
+            self.config.retry_config(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_xai_responses_error(status.as_u16(), &text));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw_text = resp.text().await.unwrap_or_default();
-        let raw_value: Value = serde_json::from_str(&raw_text).unwrap_or(Value::Null);
+        let raw_value: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
         // Check for 200-status error.
         if let Some(error_msg) = raw_value.get("error").and_then(|v| v.as_str()) {
@@ -374,33 +367,19 @@ impl LanguageModel for XaiResponsesModel {
         let warnings = request_result.warnings;
         let provider_tool_names = request_result.provider_tool_names;
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: build_header_list(&headers),
+                body: HttpBody::Json(body.clone()),
+            },
+            self.config.retry_config(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_xai_responses_error(status.as_u16(), &text));
-        }
-
-        let response_headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect::<HashMap<_, _>>();
+        let response_headers = resp.headers;
 
         // Check for JSON error (200-status).
         let content_type = response_headers
@@ -408,8 +387,15 @@ impl LanguageModel for XaiResponsesModel {
             .map(|s| s.as_str())
             .unwrap_or("");
         if content_type.contains("application/json") {
-            let text = resp.text().await.unwrap_or_default();
-            if let Ok(val) = serde_json::from_str::<Value>(&text)
+            // Collect the (non-SSE) JSON body and check for an error object.
+            let mut buf = Vec::new();
+            let mut body_stream = resp.body;
+            while let Some(chunk) = body_stream.next().await {
+                if let Ok(bytes) = chunk {
+                    buf.extend_from_slice(&bytes);
+                }
+            }
+            if let Ok(val) = serde_json::from_slice::<Value>(&buf)
                 && let Some(err_msg) = val.get("error").and_then(|v| v.as_str())
             {
                 return Err(AiMuxError::ApiCall(err_msg.to_string()));
@@ -419,8 +405,7 @@ impl LanguageModel for XaiResponsesModel {
             ));
         }
 
-        let byte_stream = resp.bytes_stream();
-        let sse_stream = SseStream::new(byte_stream);
+        let sse_stream = SseStream::new(resp.body);
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings });
@@ -942,26 +927,4 @@ impl LanguageModel for XaiResponsesModel {
             response_headers: Some(response_headers),
         })
     }
-}
-
-/// Parse an xAI error response into an `AiMuxError`.
-fn parse_xai_responses_error(status: u16, body: &str) -> AiMuxError {
-    if let Ok(val) = serde_json::from_str::<Value>(body) {
-        // Try responses API shape: { code, error }
-        if let (Some(code), Some(error)) = (
-            val.get("code").and_then(|v| v.as_str()),
-            val.get("error").and_then(|v| v.as_str()),
-        ) {
-            let message = format!("{}: {}", code, error);
-            return match status {
-                401 => AiMuxError::Auth(message),
-                429 => AiMuxError::RateLimited {
-                    retry_after_ms: 1000,
-                },
-                404 => AiMuxError::ModelNotFound(message),
-                _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),
-            };
-        }
-    }
-    parse_provider_error(status, body, &DEFAULT_ERROR_STRUCTURE)
 }

@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -21,8 +20,10 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 /// Fixed model ID for the Parallel AI search model.
 const MODEL_ID: &str = "parallel-search";
@@ -61,20 +62,16 @@ impl ParallelAiConfig {
 /// Parallel AI is a search-only provider; it does not support language models.
 pub struct ParallelAiProvider {
     config: ParallelAiConfig,
-    client: Client,
 }
 
 impl ParallelAiProvider {
     pub fn new(config: ParallelAiConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a search model instance.
     pub fn search_model(&self) -> ParallelAiSearchModel {
-        ParallelAiSearchModel::new(self.config.clone(), self.client.clone())
+        ParallelAiSearchModel::new(self.config.clone())
     }
 }
 
@@ -144,12 +141,11 @@ fn map_results(entries: Vec<ParallelAiResult>) -> Vec<SearchResultItem> {
 /// A Parallel AI search model.
 pub struct ParallelAiSearchModel {
     config: ParallelAiConfig,
-    client: Client,
 }
 
 impl ParallelAiSearchModel {
-    pub fn new(config: ParallelAiConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: ParallelAiConfig) -> Self {
+        Self { config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -181,46 +177,27 @@ impl SearchModel for ParallelAiSearchModel {
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let body = build_request_body(options);
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
+        let headers: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
             .collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(header_map)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw_body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let data: ParallelAiResponse = serde_json::from_value(raw_body.clone()).map_err(|e| {
             AiMuxError::Provider(format!("failed to parse parallel_ai search response: {e}"))

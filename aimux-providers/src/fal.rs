@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -19,8 +18,10 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -58,43 +59,27 @@ impl FalConfig {
 
 pub struct FalProvider {
     config: FalConfig,
-    client: Client,
 }
 
 impl FalProvider {
     pub fn new(config: FalConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn transcription(&self, model_id: &str) -> FalTranscriptionModel {
-        FalTranscriptionModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        FalTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a video generation model instance for the given model name
     /// (e.g. `"fal-ai/kling-video"`).
     pub fn video(&self, model_id: &str) -> FalVideoModel {
-        FalVideoModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        FalVideoModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an image generation model instance for the given model name
     /// (e.g. `"fal-ai/flux/schnell"`).
     pub fn image(&self, model_id: &str) -> FalImageModel {
-        FalImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        FalImageModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -136,16 +121,11 @@ fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
 pub struct FalTranscriptionModel {
     model_id: String,
     config: FalConfig,
-    client: Client,
 }
 
 impl FalTranscriptionModel {
-    pub fn new(model_id: String, config: FalConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: FalConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -230,72 +210,60 @@ impl TranscriptionModel for FalTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let header_map =
-            reqwest::header::HeaderMap::from_iter(headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }));
-
         // Submit job.
-        let resp = self
-            .client
-            .post(self.submit_url())
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.submit_url(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let job: FalJobResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let job: FalJobResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Poll for result.
         let raw_body: Value;
         let mut response_headers: HashMap<String, String>;
         loop {
-            let resp = self
-                .client
-                .get(self.poll_url(&job.request_id))
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            // fal returns 400/404 while a queued request is still in progress —
+            // `send` surfaces those as errors, so catch them and keep polling.
+            let resp = match send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: self.poll_url(&job.request_id),
+                    headers: headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await
+            {
+                Ok(resp) => resp,
+                Err(AiMuxError::ModelNotFound(_)) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(AiMuxError::Provider(msg)) if msg.starts_with("HTTP 400") => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-
-            let text = resp.text().await.unwrap_or_default();
-
-            if status.as_u16() == 400 || status.as_u16() == 404 {
-                // "Request is still in progress" — keep polling.
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                continue;
-            }
-
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-
-            raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
+            response_headers = resp.headers;
+            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
             break;
         }
 
@@ -368,16 +336,11 @@ use aimux_core::image_model::{
 pub struct FalImageModel {
     model_id: String,
     config: FalConfig,
-    client: Client,
 }
 
 impl FalImageModel {
-    pub fn new(model_id: String, config: FalConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: FalConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -522,42 +485,24 @@ impl ImageModel for FalImageModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .headers(hm)
-            .header("Content-Type", "application/json")
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-        let rb: Value = resp
-            .json()
-            .await
+        let rh = resp.headers;
+        let rb: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
 
         let target_images: Vec<Value> = if let Some(i) = rb.get("images").and_then(|v| v.as_array())
@@ -572,24 +517,18 @@ impl ImageModel for FalImageModel {
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for img in &target_images {
             if let Some(url) = img.get("url").and_then(|v| v.as_str()) {
-                let ir = self
-                    .client
-                    .get(url)
-                    .send()
-                    .await
-                    .map_err(|e| AiMuxError::Http(e.to_string()))?;
-                if !ir.status().is_success() {
-                    return Err(AiMuxError::Provider(format!(
-                        "download failed: HTTP {}",
-                        ir.status()
-                    )));
-                }
-                downloaded.push(
-                    ir.bytes()
-                        .await
-                        .map_err(|e| AiMuxError::Http(e.to_string()))?
-                        .to_vec(),
-                );
+                let ir = send(
+                    HttpRequest {
+                        method: HttpMethod::Get,
+                        url: url.to_string(),
+                        headers: vec![],
+                        body: HttpBody::Empty,
+                    },
+                    RetryConfig::default(),
+                    &DEFAULT_ERROR_STRUCTURE,
+                )
+                .await?;
+                downloaded.push(ir.body.to_vec());
             }
         }
 
@@ -668,16 +607,11 @@ use aimux_core::video_model::{
 pub struct FalVideoModel {
     model_id: String,
     config: FalConfig,
-    client: Client,
 }
 
 impl FalVideoModel {
-    pub fn new(model_id: String, config: FalConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: FalConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn normalized_model_id(&self) -> String {
@@ -774,70 +708,59 @@ impl VideoModel for FalVideoModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
 
         // Submit.
-        let resp = self
-            .client
-            .post(self.submit_url())
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.submit_url(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let job: FalJobResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let job: FalJobResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Poll.
         let raw_body: Value;
         let mut response_headers: HashMap<String, String>;
         loop {
-            let resp = self
-                .client
-                .get(self.poll_url(&job.request_id))
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = match send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: self.poll_url(&job.request_id),
+                    headers: headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await
+            {
+                Ok(resp) => resp,
+                Err(AiMuxError::ModelNotFound(_)) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(AiMuxError::Provider(msg)) if msg.starts_with("HTTP 400") => {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-            let text = resp.text().await.unwrap_or_default();
-
-            if status.as_u16() == 400 || status.as_u16() == 404 {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                continue;
-            }
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-            raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
+            response_headers = resp.headers;
+            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
             break;
         }
 

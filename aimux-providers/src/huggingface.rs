@@ -18,7 +18,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::load_api_key;
-use reqwest::Client;
 
 use crate::openai::{OpenAIConfig, OpenAIModel};
 
@@ -53,25 +52,17 @@ impl HuggingFaceConfig {
 /// [`responses::HuggingFaceResponsesModel`] (responses) instances pointed at HF.
 pub struct HuggingFaceProvider {
     config: HuggingFaceConfig,
-    client: Client,
 }
 
 impl HuggingFaceProvider {
     pub fn new(config: HuggingFaceConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a chat model instance for the given Hugging Face model id
     /// (e.g. `"meta-llama/Llama-3.3-70B-Instruct"`).
     pub fn model(&self, model_id: &str) -> OpenAIModel {
-        OpenAIModel::new(
-            model_id.to_string(),
-            self.config.0.clone(),
-            self.client.clone(),
-        )
+        OpenAIModel::new(model_id.to_string(), self.config.0.clone())
     }
 
     /// Create a Responses model instance for the given Hugging Face model id.
@@ -83,7 +74,6 @@ impl HuggingFaceProvider {
         responses::HuggingFaceResponsesModel::new(
             model_id.to_string(),
             self.config.clone(),
-            self.client.clone(),
         )
     }
 }

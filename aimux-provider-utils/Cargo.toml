@@ -20,9 +20,11 @@ futures = { workspace = true }
 url = { workspace = true }
 httpdate = { workspace = true }
 chrono = "0.4"
+rand = { workspace = true }
 
 [dev-dependencies]
 aimux-core = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt", "time"] }
 serial_test = { workspace = true }
 httpdate = { workspace = true }
+wiremock = "0.6"

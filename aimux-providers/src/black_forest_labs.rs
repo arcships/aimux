@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -18,8 +17,10 @@ use aimux_core::image_model::{
     ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
 const DEFAULT_POLL_TIMEOUT_MS: u64 = 60000;
@@ -56,21 +57,13 @@ impl BlackForestLabsConfig {
 
 pub struct BlackForestLabsProvider {
     config: BlackForestLabsConfig,
-    client: Client,
 }
 impl BlackForestLabsProvider {
     pub fn new(config: BlackForestLabsConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
     pub fn image(&self, model_id: &str) -> BlackForestLabsImageModel {
-        BlackForestLabsImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        BlackForestLabsImageModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -78,15 +71,10 @@ impl BlackForestLabsProvider {
 pub struct BlackForestLabsImageModel {
     model_id: String,
     config: BlackForestLabsConfig,
-    client: Client,
 }
 impl BlackForestLabsImageModel {
-    pub fn new(model_id: String, config: BlackForestLabsConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: BlackForestLabsConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -283,37 +271,21 @@ impl ImageModel for BlackForestLabsImageModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit
-        let resp = self
-            .client
-            .post(self.submit_endpoint())
-            .headers(hm.clone())
-            .header("Content-Type", "application/json")
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-        let submit_body: Value = resp
-            .json()
-            .await
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.submit_endpoint(),
+                headers: header_list.clone(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+        let submit_body: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
 
         let poll_url = submit_body
@@ -357,25 +329,18 @@ impl ImageModel for BlackForestLabsImageModel {
         let mut result_duration = None;
 
         for _ in 0..max_attempts {
-            let pr = self
-                .client
-                .get(poll_url_with_id.as_str())
-                .headers(hm.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
-            let ps = pr.status();
-            if !ps.is_success() {
-                let t = pr.text().await.unwrap_or_default();
-                return Err(parse_provider_error(
-                    ps.as_u16(),
-                    &t,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-            let pv: Value = pr
-                .json()
-                .await
+            let pr = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: poll_url_with_id.to_string(),
+                    headers: header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
+            let pv: Value = serde_json::from_slice(&pr.body)
                 .map_err(|e| AiMuxError::Provider(format!("invalid poll JSON: {e}")))?;
 
             let poll_status = pv
@@ -409,23 +374,18 @@ impl ImageModel for BlackForestLabsImageModel {
         })?;
 
         // Download image
-        let ir = self
-            .client
-            .get(&image_url)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        if !ir.status().is_success() {
-            return Err(AiMuxError::Provider(format!(
-                "download failed: HTTP {}",
-                ir.status()
-            )));
-        }
-        let image_bytes = ir
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let ir = send(
+            HttpRequest {
+                method: HttpMethod::Get,
+                url: image_url,
+                headers: vec![],
+                body: HttpBody::Empty,
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+        let image_bytes = ir.body.to_vec();
         let download_headers: HashMap<String, String> = HashMap::new();
 
         // Build provider metadata

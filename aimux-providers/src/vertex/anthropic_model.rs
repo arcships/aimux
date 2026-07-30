@@ -18,7 +18,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -28,7 +27,8 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 
 use crate::anthropic::convert::{build_request_body, parse_stop_reason};
@@ -64,19 +64,17 @@ pub struct VertexAnthropicConfig {
 }
 
 /// An Anthropic Claude language model served via Vertex AI `rawPredict`.
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct VertexAnthropicModel {
     model_id: String,
     config: VertexAnthropicConfig,
-    client: Client,
 }
 
 impl VertexAnthropicModel {
-    pub fn new(model_id: String, config: VertexAnthropicConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: VertexAnthropicConfig) -> Self {
+        Self { model_id, config }
     }
 
     /// `…/publishers/anthropic/models/{model}:rawPredict`
@@ -149,39 +147,22 @@ impl LanguageModel for VertexAnthropicModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let anthropic_body = build_request_body(&self.model_id, options, false)?;
         let body = self.wrap_raw_predict_body(anthropic_body);
-        let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.generate_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
 
-        let mut req = self.client.post(&url);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Json(body.clone()),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let resp = req
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
-
-        let data: AnthropicResponse = resp
-            .json()
-            .await
+        let data: AnthropicResponse = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         let mut content = Vec::new();
@@ -265,44 +246,24 @@ impl LanguageModel for VertexAnthropicModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let anthropic_body = build_request_body(&self.model_id, options, true)?;
         let body = self.wrap_raw_predict_body(anthropic_body);
-        let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.stream_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
 
-        let mut req = self.client.post(&url);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Json(body.clone()),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let resp = req
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let response_headers = resp.headers;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect::<HashMap<_, _>>();
-
-        let byte_stream = resp.bytes_stream();
-        let sse_stream = SseStream::new(byte_stream);
+        let sse_stream = SseStream::new(resp.body);
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });

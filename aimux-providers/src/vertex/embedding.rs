@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::embedding_model::{
@@ -20,7 +19,8 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::VertexAuth;
 use super::model::VertexConfig;
@@ -32,19 +32,17 @@ const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
 };
 
 /// A Google Vertex AI embedding model (e.g. `"textembedding-gecko@001"`).
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct VertexEmbeddingModel {
     model_id: String,
     config: VertexConfig,
-    client: Client,
 }
 
 impl VertexEmbeddingModel {
-    pub fn new(model_id: String, config: VertexConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: VertexConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> Vec<(String, String)> {
@@ -102,12 +100,6 @@ impl EmbeddingModel for VertexEmbeddingModel {
         let vertex_options = parse_vertex_provider_options(options.provider_options.as_ref());
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map =
-            reqwest::header::HeaderMap::from_iter(headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }));
 
         if uses_embed_content_endpoint(&self.model_id) {
             // gemini-embedding-2: use :embedContent endpoint (single value).
@@ -149,35 +141,22 @@ impl EmbeddingModel for VertexEmbeddingModel {
                 self.config.base_url, self.model_id
             );
 
-            let resp = self
-                .client
-                .post(&url)
-                .headers(header_map)
-                .json(&Value::Object(body))
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Post,
+                    url,
+                    headers,
+                    body: HttpBody::Json(Value::Object(body)),
+                },
+                RetryConfig::default(),
+                &GOOGLE_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &GOOGLE_ERROR_STRUCTURE,
-                ));
-            }
+            let response_headers = resp.headers;
 
-            let response_headers: HashMap<String, String> = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-
-            let raw_value: Value = resp
-                .json()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let raw_value: Value =
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
             let embedding = raw_value
                 .get("embedding")
@@ -241,35 +220,22 @@ impl EmbeddingModel for VertexEmbeddingModel {
 
         let url = format!("{}/models/{}:predict", self.config.base_url, self.model_id);
 
-        let resp = self
-            .client
-            .post(&url)
-            .headers(header_map)
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw_value: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_value: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         // Batch: response.predictions[].embeddings.values
         let (embeddings, total_tokens): (Vec<Vec<f32>>, u32) = raw_value

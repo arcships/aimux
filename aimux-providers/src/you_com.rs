@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -23,8 +22,10 @@ use aimux_core::search_model::{
 };
 use aimux_core::shared::SharedHeaders;
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 /// Provider canonical name.
 const PROVIDER_NAME: &str = "you_com";
@@ -85,20 +86,16 @@ impl std::fmt::Debug for YouComConfig {
 /// You.com is a search-only provider; it does not support language models.
 pub struct YouComProvider {
     config: YouComConfig,
-    client: Client,
 }
 
 impl YouComProvider {
     pub fn new(config: YouComConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a search model instance.
     pub fn search_model(&self) -> YouComSearchModel {
-        YouComSearchModel::new(self.config.clone(), self.client.clone())
+        YouComSearchModel::new(self.config.clone())
     }
 }
 
@@ -168,12 +165,11 @@ fn map_result(r: YoucomResult) -> SearchResultItem {
 /// A You.com search model.
 pub struct YouComSearchModel {
     config: YouComConfig,
-    client: Client,
 }
 
 impl YouComSearchModel {
-    pub fn new(config: YouComConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: YouComConfig) -> Self {
+        Self { config }
     }
 
     fn build_headers(&self, extra: Option<&SharedHeaders>) -> HashMap<String, String> {
@@ -204,49 +200,34 @@ impl SearchModel for YouComSearchModel {
 
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let count = resolve_count(options.max_results);
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
+        let headers: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
             .collect();
 
-        let resp = self
-            .client
-            .get(self.endpoint())
-            .headers(header_map)
-            .query(&[
-                ("query", options.query.clone()),
-                ("count", count.to_string()),
-            ])
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let mut url = url::Url::parse(&self.endpoint())
+            .map_err(|e| AiMuxError::Provider(format!("invalid you_com endpoint: {e}")))?;
+        url.query_pairs_mut()
+            .append_pair("query", &options.query)
+            .append_pair("count", &count.to_string());
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Get,
+                url: url.to_string(),
+                headers,
+                body: HttpBody::Empty,
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
         // Capture response headers.
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let raw_body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let data: YoucomSearchResponse = serde_json::from_value(raw_body.clone())
             .map_err(|e| AiMuxError::Provider(format!("failed to parse search response: {e}")))?;

@@ -26,7 +26,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -36,8 +35,11 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{with_user_agent_suffix, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream, with_user_agent_suffix,
+    without_trailing_slash,
+};
 use aimux_stream::SseStream;
 
 use crate::azure::{AzureAuth, AzureConfig};
@@ -58,16 +60,11 @@ const AZURE_FILE_ID_PREFIX: &str = "assistant-";
 pub struct AzureResponsesModel {
     deployment: String,
     config: AzureConfig,
-    client: Client,
 }
 
 impl AzureResponsesModel {
-    pub fn new(deployment: String, config: AzureConfig, client: Client) -> Self {
-        Self {
-            deployment,
-            config,
-            client,
-        }
+    pub fn new(deployment: String, config: AzureConfig) -> Self {
+        Self { deployment, config }
     }
 
     /// Build the Responses endpoint URL for this deployment.
@@ -253,42 +250,26 @@ impl LanguageModel for AzureResponsesModel {
 
         let provider_key = provider_key().to_string();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let mut header_list: Vec<(String, String)> =
+            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(body.clone()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let data: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Top-level error field.
         if let Some(err_obj) = data.get("error")
@@ -510,40 +491,25 @@ impl LanguageModel for AzureResponsesModel {
             .and_then(|v| v.as_bool())
             == Some(true);
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let mut header_list: Vec<(String, String)> =
+            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(body.clone()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let response_headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect::<HashMap<_, _>>();
+        let response_headers = resp.headers;
 
-        let byte_stream = resp.bytes_stream();
-        let mut sse_stream = SseStream::new(byte_stream);
+        let mut sse_stream = SseStream::new(resp.body);
 
         // Peek at the first SSE event to detect early errors (before any output).
         let first_event = sse_stream.next().await;

@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -25,8 +24,10 @@ use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
     VideoResponse, VideoResult,
 };
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 const PROVIDER_NAME: &str = "runwayml";
 const DEFAULT_BASE_URL: &str = "https://api.dev.runwayml.com";
@@ -96,24 +97,16 @@ impl RunwaymlConfig {
 
 pub struct RunwaymlProvider {
     config: RunwaymlConfig,
-    client: Client,
 }
 
 impl RunwaymlProvider {
     pub fn new(config: RunwaymlConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a video generation model instance for the given model ID.
     pub fn video(&self, model_id: &str) -> RunwaymlVideoModel {
-        RunwaymlVideoModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        RunwaymlVideoModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -166,16 +159,11 @@ struct RunwaymlTaskDetailsResponse {
 pub struct RunwaymlVideoModel {
     model_id: String,
     config: RunwaymlConfig,
-    client: Client,
 }
 
 impl RunwaymlVideoModel {
-    pub fn new(model_id: String, config: RunwaymlConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: RunwaymlConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -251,12 +239,7 @@ impl VideoModel for RunwaymlVideoModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map =
-            reqwest::header::HeaderMap::from_iter(headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }));
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         let submit_path = if is_image_to_video {
             "/v1/image_to_video"
@@ -266,28 +249,20 @@ impl VideoModel for RunwaymlVideoModel {
         let submit_url = format!("{}{submit_path}", self.config.base_url);
 
         // Submit the task.
-        let resp = self
-            .client
-            .post(submit_url)
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &RUNWAYML_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: submit_url,
+                headers: header_list.clone(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &RUNWAYML_ERROR_STRUCTURE,
+        )
+        .await?;
 
         let task: RunwaymlTaskCreationResponse =
-            serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let task_id = task.id;
 
         // Poll for completion.
@@ -308,31 +283,22 @@ impl VideoModel for RunwaymlVideoModel {
 
             tokio::time::sleep(self.config.poll_interval).await;
 
-            let resp = self
-                .client
-                .get(&poll_url)
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: poll_url.clone(),
+                    headers: header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &RUNWAYML_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-            let text = resp.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &RUNWAYML_ERROR_STRUCTURE,
-                ));
-            }
+            response_headers = resp.headers;
 
             let task_details: RunwaymlTaskDetailsResponse =
-                serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             let status_str = task_details.status.clone().unwrap_or_default();
             match status_str.as_str() {

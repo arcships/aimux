@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -20,7 +19,8 @@ use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoResponse, VideoResult,
 };
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::VertexAuth;
 
@@ -29,13 +29,16 @@ const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
     type_path: &["error", "status"],
 };
 
+/// A Google Vertex AI video generation model.
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct VertexVideoModel {
     model_id: String,
     project: String,
     location: String,
     auth: VertexAuth,
     base_url: String,
-    client: Client,
 }
 
 impl VertexVideoModel {
@@ -45,7 +48,6 @@ impl VertexVideoModel {
         location: String,
         auth: VertexAuth,
         base_url: String,
-        client: Client,
     ) -> Self {
         Self {
             model_id,
@@ -53,7 +55,6 @@ impl VertexVideoModel {
             location,
             auth,
             base_url,
-            client,
         }
     }
 
@@ -145,36 +146,23 @@ impl VideoModel for VertexVideoModel {
         });
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> =
+            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        let resp = self
-            .client
-            .post(self.predict_url())
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.predict_url(),
+                headers: header_list.clone(),
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
-
-        let predict_response: Value = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let predict_response: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let operation_name = predict_response
             .get("name")
             .and_then(|v| v.as_str())
@@ -189,30 +177,20 @@ impl VideoModel for VertexVideoModel {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            let resp = self
-                .client
-                .get(self.operation_url(&operation_name))
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: self.operation_url(&operation_name),
+                    headers: header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &GOOGLE_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-            let text = resp.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &GOOGLE_ERROR_STRUCTURE,
-                ));
-            }
-
-            raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
+            response_headers = resp.headers;
+            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
             if raw_body.get("done").and_then(|v| v.as_bool()) == Some(true) {
                 break;
             }

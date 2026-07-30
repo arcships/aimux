@@ -13,7 +13,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -23,8 +22,10 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -64,23 +65,15 @@ impl DeepgramConfig {
 /// Deepgram provider — creates `DeepgramTranscriptionModel` instances.
 pub struct DeepgramProvider {
     config: DeepgramConfig,
-    client: Client,
 }
 
 impl DeepgramProvider {
     pub fn new(config: DeepgramConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn transcription(&self, model_id: &str) -> DeepgramTranscriptionModel {
-        DeepgramTranscriptionModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        DeepgramTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -186,16 +179,11 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 pub struct DeepgramTranscriptionModel {
     model_id: String,
     config: DeepgramConfig,
-    client: Client,
 }
 
 impl DeepgramTranscriptionModel {
-    pub fn new(model_id: String, config: DeepgramConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: DeepgramConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -291,43 +279,22 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(&url)
-            .header("Content-Type", &options.media_type)
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .body(audio_bytes)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers: headers.into_iter().collect(),
+                body: HttpBody::Bytes(audio_bytes, options.media_type.clone()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let response_headers = resp.headers;
 
-        let raw_body: Value = if status.is_success() {
-            let text = resp
-                .text()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
-            serde_json::from_str(&text).unwrap_or(Value::Null)
-        } else {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        };
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
         let parsed: DeepgramResponse =
             serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;

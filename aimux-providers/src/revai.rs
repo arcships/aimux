@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -21,9 +20,10 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    MultipartForm, load_api_key, media_type_to_extension, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key,
+    media_type_to_extension, send, without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -62,23 +62,15 @@ impl RevaiConfig {
 
 pub struct RevaiProvider {
     config: RevaiConfig,
-    client: Client,
 }
 
 impl RevaiProvider {
     pub fn new(config: RevaiConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn transcription(&self, model_id: &str) -> RevaiTranscriptionModel {
-        RevaiTranscriptionModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        RevaiTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -131,16 +123,11 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 pub struct RevaiTranscriptionModel {
     model_id: String,
     config: RevaiConfig,
-    client: Client,
 }
 
 impl RevaiTranscriptionModel {
-    pub fn new(model_id: String, config: RevaiConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: RevaiConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -208,36 +195,25 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         let (body_bytes, content_type) = form.finish();
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map =
-            reqwest::header::HeaderMap::from_iter(headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }));
 
         // Submit job.
-        let resp = self
-            .client
-            .post(self.jobs_url())
-            .header("Content-Type", &content_type)
-            .headers(header_map.clone())
-            .body(body_bytes)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.jobs_url(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Bytes(body_bytes, content_type),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
         let submit_response: RevaiJobResponse =
-            serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         if submit_response.status.as_deref() == Some("failed") {
             return Err(AiMuxError::Provider(
@@ -255,25 +231,23 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            let resp = self
-                .client
-                .get(self.job_status_url(&job_id))
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: self.job_status_url(&job_id),
+                    headers: headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-
-            let poll: RevaiJobResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let poll: RevaiJobResponse =
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if poll.status.as_deref() == Some("transcribed") {
                 job_status = poll;
@@ -286,31 +260,23 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         let _ = job_status;
 
         // Fetch transcript.
-        let resp = self
-            .client
-            .get(self.transcript_url(&job_id))
-            .headers(header_map.clone())
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Get,
+                url: self.transcript_url(&job_id),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Empty,
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let raw_body: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+        let response_headers = resp.headers;
+        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
         let parsed: RevaiTranscriptResponse =
             serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 

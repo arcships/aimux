@@ -23,7 +23,8 @@
 //!   401 → `AiMuxError::Auth`
 //!   429 → `AiMuxError::RateLimited`
 //!   404 → `AiMuxError::ModelNotFound`
-//!   500 / 529 / other → `AiMuxError::Provider`
+//!   500 / 529 / other → `AiMuxError::ApiCall` (5xx, via send_with_retry;
+//!     retryable) or `AiMuxError::Provider` (other non-retryable 4xx)
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
@@ -34,6 +35,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+use aimux_provider_utils::RetryConfig;
 use futures::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -80,7 +82,9 @@ mod openai_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let config = OpenAIConfig::new("test-api-key")
+            .with_base_url(server.uri())
+            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
         OpenAIProvider::new(config).model("gpt-4o")
     }
 
@@ -177,9 +181,9 @@ mod openai_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Provider(ref m))
+            matches!(result, Err(AiMuxError::ApiCall(ref m))
                 if m.contains("The server had an error processing your request.")),
-            "expected Provider error, got {result:?}"
+            "expected ApiCall error for 5xx, got {result:?}"
         );
     }
 
@@ -220,7 +224,9 @@ mod openai_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let config = OpenAIConfig::new("test-api-key")
+            .with_base_url(server.uri())
+            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
         OpenAIProvider::new(config).model("gpt-4o")
     }
 
@@ -245,8 +251,8 @@ mod openai_stream_errors {
 
         let result = model(&server).do_stream(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Provider(_))),
-            "expected Provider error, got {result:?}"
+            matches!(result, Err(AiMuxError::ApiCall(_))),
+            "expected ApiCall error for 5xx, got {result:?}"
         );
     }
 
@@ -339,7 +345,9 @@ mod anthropic_generate_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
+        let config = AnthropicConfig::new("test-api-key")
+            .with_base_url(server.uri())
+            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
         AnthropicProvider::new(config).model("claude-3-haiku-20240307")
     }
 
@@ -432,8 +440,8 @@ mod anthropic_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Provider(ref m)) if m.contains("Internal server error")),
-            "expected Provider error, got {result:?}"
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.contains("Internal server error")),
+            "expected ApiCall error for 5xx, got {result:?}"
         );
     }
 
@@ -453,8 +461,8 @@ mod anthropic_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Provider(ref m)) if m.contains("Overloaded")),
-            "expected Provider error carrying 'Overloaded', got {result:?}"
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.contains("Overloaded")),
+            "expected ApiCall error carrying 'Overloaded', got {result:?}"
         );
     }
 
@@ -482,7 +490,9 @@ mod anthropic_stream_errors {
     use super::*;
 
     fn model(server: &MockServer) -> impl LanguageModel {
-        let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
+        let config = AnthropicConfig::new("test-api-key")
+            .with_base_url(server.uri())
+            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
         AnthropicProvider::new(config).model("claude-3-haiku-20240307")
     }
 
@@ -501,8 +511,8 @@ mod anthropic_stream_errors {
 
         let result = model(&server).do_stream(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Provider(ref m)) if m.contains("Overloaded")),
-            "expected Provider error carrying 'Overloaded', got {result:?}"
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.contains("Overloaded")),
+            "expected ApiCall error carrying 'Overloaded', got {result:?}"
         );
     }
 

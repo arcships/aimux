@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -21,7 +20,8 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send};
 
 use super::OpenAIConfig;
 
@@ -67,16 +67,11 @@ fn get_max_images_per_call(model_id: &str) -> u32 {
 pub struct OpenAIImageModel {
     model_id: String,
     config: OpenAIConfig,
-    client: Client,
 }
 
 impl OpenAIImageModel {
-    pub fn new(model_id: String, config: OpenAIConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -149,79 +144,48 @@ impl ImageModel for OpenAIImageModel {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let headers = self.build_headers(options.headers.as_ref());
 
-        let header_map = build_header_map(&headers);
-
         let (body_value, response_headers, _response_body) = if options.files.is_some() {
             // ── Edit path: multipart form data ──
             let openai_options = parse_edit_provider_options(&options.provider_options);
             let (form_body, content_type) =
                 build_edit_multipart(&self.model_id, options, &openai_options);
 
-            let req = self
-                .client
-                .post(self.edits_endpoint())
-                .headers(header_map.clone())
-                .header("Content-Type", &content_type)
-                .body(form_body);
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Post,
+                    url: self.edits_endpoint(),
+                    headers: build_header_list(&headers),
+                    // Content-Type is set by the http layer from the `Bytes` body.
+                    body: HttpBody::Bytes(form_body, content_type),
+                },
+                self.config.retry_config,
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-            let status = resp.status();
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-
-            let rh: HashMap<String, String> = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-            let text = resp.text().await.unwrap_or_default();
-            let val: Value = serde_json::from_str(&text)
-                .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
-            (val, rh, None)
+            let val: Value = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            (val, resp.headers, None)
         } else {
             // ── Generation path: JSON body ──
             let openai_options = parse_generation_provider_options(&options.provider_options);
             let body = build_generation_body(&self.model_id, options, &openai_options);
 
-            let resp = self
-                .client
-                .post(self.generations_endpoint())
-                .headers(header_map)
-                .header("Content-Type", "application/json")
-                .json(&Value::Object(body.clone()))
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Post,
+                    url: self.generations_endpoint(),
+                    headers: build_header_list(&headers),
+                    body: HttpBody::Json(Value::Object(body.clone())),
+                },
+                self.config.retry_config,
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-
-            let rh: HashMap<String, String> = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-            let text = resp.text().await.unwrap_or_default();
-            let val: Value = serde_json::from_str(&text)
-                .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
-            (val, rh, Some(Value::Object(body)))
+            let val: Value = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            (val, resp.headers, Some(Value::Object(body)))
         };
 
         let images = extract_images(&body_value);
@@ -244,15 +208,16 @@ impl ImageModel for OpenAIImageModel {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Build a `reqwest::HeaderMap` from a `HashMap<String, String>`.
-fn build_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMap {
+/// Convert a `HashMap<String, String>` into the `Vec<(String, String)>` header
+/// list expected by [`aimux_provider_utils::HttpRequest`].
+///
+/// `Content-Type` is intentionally not added here: the http layer sets it
+/// automatically from the [`HttpBody`] (`Json` → `application/json`,
+/// `Bytes` → the supplied content-type).
+fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
     headers
         .iter()
-        .filter_map(|(k, v)| {
-            reqwest::header::HeaderName::try_from(k)
-                .ok()
-                .zip(reqwest::header::HeaderValue::try_from(v).ok())
-        })
+        .map(|(k, v)| (k.clone(), v.clone()))
         .collect()
 }
 

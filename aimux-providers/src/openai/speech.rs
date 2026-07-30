@@ -13,7 +13,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -22,7 +21,8 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{send, HttpBody, HttpMethod, HttpRequest};
 
 use super::OpenAIConfig;
 
@@ -35,16 +35,11 @@ const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "opus", "aac", "flac", "wav",
 pub struct OpenAISpeechModel {
     model_id: String,
     config: OpenAIConfig,
-    client: Client,
 }
 
 impl OpenAISpeechModel {
-    pub fn new(model_id: String, config: OpenAIConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -93,43 +88,28 @@ impl SpeechModel for OpenAISpeechModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&Value::Object(body.clone()))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers: HashMap<String, String> = resp
-            .headers()
+        let header_list: Vec<(String, String)> = headers
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        let audio_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(Value::Object(body.clone())),
+            },
+            self.config.retry_config,
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+
+        // send() returns Ok only for 2xx responses; non-2xx (incl. 429/5xx
+        // after exhausting retries) is mapped to an AiMuxError internally.
+        let response_headers = resp.headers;
+
+        let audio_bytes = resp.body.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 

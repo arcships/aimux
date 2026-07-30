@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -21,9 +20,10 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    MultipartForm, load_api_key, media_type_to_extension, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key,
+    media_type_to_extension, send, without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -62,23 +62,15 @@ impl GladiaConfig {
 
 pub struct GladiaProvider {
     config: GladiaConfig,
-    client: Client,
 }
 
 impl GladiaProvider {
     pub fn new(config: GladiaConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     pub fn transcription(&self, model_id: &str) -> GladiaTranscriptionModel {
-        GladiaTranscriptionModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        GladiaTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -141,16 +133,11 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
 pub struct GladiaTranscriptionModel {
     model_id: String,
     config: GladiaConfig,
-    client: Client,
 }
 
 impl GladiaTranscriptionModel {
-    pub fn new(model_id: String, config: GladiaConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: GladiaConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -202,39 +189,29 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         let filename = format!("audio.{file_extension}");
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map =
-            reqwest::header::HeaderMap::from_iter(headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }));
 
         // Step 1: Upload audio.
         let mut form = MultipartForm::new();
         form.file("audio", &filename, &options.media_type, &audio_bytes);
         let (body_bytes, content_type) = form.finish();
 
-        let resp = self
-            .client
-            .post(self.upload_url())
-            .header("Content-Type", &content_type)
-            .headers(header_map.clone())
-            .body(body_bytes)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.upload_url(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Bytes(body_bytes, content_type),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let upload: GladiaUploadResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let upload: GladiaUploadResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Step 2: Initiate transcription.
         let mut body = Map::new();
@@ -252,27 +229,23 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             }
         }
 
-        let resp = self
-            .client
-            .post(self.initiate_url())
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.initiate_url(),
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let init: GladiaInitResponse = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let init: GladiaInitResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Step 3: Poll for result.
         let mut raw_body: Value;
@@ -280,31 +253,23 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            let resp = self
-                .client
-                .get(&init.result_url)
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: init.result_url.clone(),
+                    headers: headers
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-
-            let text = resp.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-
-            raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
+            response_headers = resp.headers;
+            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
             let parsed: GladiaResultResponse =
                 serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
 

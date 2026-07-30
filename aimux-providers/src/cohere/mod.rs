@@ -16,8 +16,7 @@ pub use reranking::CohereRerankingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
-use reqwest::Client;
+use aimux_provider_utils::{load_api_key, shared_client, without_trailing_slash};
 
 /// Configuration for the Cohere provider.
 #[derive(Debug, Clone)]
@@ -51,43 +50,37 @@ impl CohereConfig {
 /// Cohere provider — creates `CohereModel` instances.
 pub struct CohereProvider {
     config: CohereConfig,
-    client: Client,
 }
 
 impl CohereProvider {
     pub fn new(config: CohereConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"command-r-plus"`).
     pub fn model(&self, model_id: &str) -> model::CohereModel {
-        model::CohereModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        model::CohereModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a reranking model instance for the given model name (e.g.
     /// `"rerank-english-v3.0"`).
     pub fn reranking_model(&self, model_id: &str) -> reranking::CohereRerankingModel {
+        // `CohereRerankingModel` (not yet migrated off reqwest) still holds a client.
         reranking::CohereRerankingModel::new(
             model_id.to_string(),
             self.config.clone(),
-            self.client.clone(),
+            shared_client().clone(),
         )
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"embed-english-v3.0"`).
     pub fn embedding_model(&self, model_id: &str) -> embedding::CohereEmbeddingModel {
+        // `CohereEmbeddingModel` (not yet migrated off reqwest) still holds a client.
         embedding::CohereEmbeddingModel::new(
             model_id.to_string(),
             self.config.clone(),
-            self.client.clone(),
+            shared_client().clone(),
         )
     }
 }

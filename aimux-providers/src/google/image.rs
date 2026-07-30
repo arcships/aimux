@@ -10,7 +10,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -20,7 +19,8 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::GoogleConfig;
 
@@ -43,25 +43,21 @@ pub struct GoogleImageSettings {
 }
 
 /// A Google image generation model (Imagen or Gemini).
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct GoogleImageModel {
     model_id: String,
     settings: GoogleImageSettings,
     config: GoogleConfig,
-    client: Client,
 }
 
 impl GoogleImageModel {
-    pub fn new(
-        model_id: String,
-        settings: GoogleImageSettings,
-        config: GoogleConfig,
-        client: Client,
-    ) -> Self {
+    pub fn new(model_id: String, settings: GoogleImageSettings, config: GoogleConfig) -> Self {
         Self {
             model_id,
             settings,
             config,
-            client,
         }
     }
 
@@ -175,37 +171,23 @@ impl GoogleImageModel {
         });
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map = build_header_map(&headers);
+        let header_list = build_header_list(&headers);
 
-        let resp = self
-            .client
-            .post(self.predict_endpoint())
-            .headers(header_map)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.predict_endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let response_body: Value = resp
-            .json()
-            .await
+        let response_body: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
 
         let images = extract_imagen_images(&response_body);
@@ -338,37 +320,23 @@ impl GoogleImageModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map = build_header_map(&headers);
+        let header_list = build_header_list(&headers);
 
-        let resp = self
-            .client
-            .post(self.generate_content_endpoint())
-            .headers(header_map)
-            .header("Content-Type", "application/json")
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.generate_content_endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let response_body: Value = resp
-            .json()
-            .await
+        let response_body: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
 
         let (images, provider_metadata, usage) = extract_gemini_result(&response_body);
@@ -412,16 +380,12 @@ impl ImageModel for GoogleImageModel {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Build a `reqwest::HeaderMap` from a `HashMap<String, String>`.
-fn build_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMap {
-    headers
-        .iter()
-        .filter_map(|(k, v)| {
-            reqwest::header::HeaderName::try_from(k)
-                .ok()
-                .zip(reqwest::header::HeaderValue::try_from(v).ok())
-        })
-        .collect()
+/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
+fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
+    let mut list: Vec<(String, String)> =
+        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    list.push(("Content-Type".to_string(), "application/json".to_string()));
+    list
 }
 
 /// Parsed Google image provider options.

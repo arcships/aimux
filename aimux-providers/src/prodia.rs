@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -17,8 +16,10 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 /// Configuration for the Prodia provider.
 #[derive(Debug, Clone)]
@@ -52,29 +53,17 @@ impl ProdiaConfig {
 
 pub struct ProdiaProvider {
     config: ProdiaConfig,
-    client: Client,
 }
 impl ProdiaProvider {
     pub fn new(config: ProdiaConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
     pub fn image(&self, model_id: &str) -> ProdiaImageModel {
-        ProdiaImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        ProdiaImageModel::new(model_id.to_string(), self.config.clone())
     }
     /// Create a video generation model instance.
     pub fn video(&self, model_id: &str) -> ProdiaVideoModel {
-        ProdiaVideoModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        ProdiaVideoModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -82,15 +71,10 @@ impl ProdiaProvider {
 pub struct ProdiaImageModel {
     model_id: String,
     config: ProdiaConfig,
-    client: Client,
 }
 impl ProdiaImageModel {
-    pub fn new(model_id: String, config: ProdiaConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: ProdiaConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -233,39 +217,21 @@ impl ImageModel for ProdiaImageModel {
         let body = json!({ "type": self.model_id, "config": job_config });
 
         let headers = self.build_headers(options.headers.as_ref());
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .headers(hm)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
+        let rh = resp.headers;
         let content_type = rh.get("content-type").cloned().unwrap_or_default();
 
         // Extract boundary
@@ -282,11 +248,7 @@ impl ImageModel for ProdiaImageModel {
                 ))
             })?;
 
-        let body_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let body_bytes = resp.body.to_vec();
 
         // Parse multipart
         let parts = parse_multipart(&body_bytes, &boundary);
@@ -346,16 +308,11 @@ use aimux_core::video_model::{
 pub struct ProdiaVideoModel {
     model_id: String,
     config: ProdiaConfig,
-    client: Client,
 }
 
 impl ProdiaVideoModel {
-    pub fn new(model_id: String, config: ProdiaConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: ProdiaConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -401,37 +358,23 @@ impl VideoModel for ProdiaVideoModel {
         let body = json!({"type": self.model_id, "config": Value::Object(config_obj)});
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit job.
-        let resp = self
-            .client
-            .post(format!("{}/job", self.config.base_url))
-            .header("Content-Type", "application/json")
-            .headers(header_map.clone())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: format!("{}/job", self.config.base_url),
+                headers: header_list.clone(),
+                body: HttpBody::Json(body),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        if !status.is_success() {
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let job: Value = serde_json::from_str(&text).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let job: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let job_id = job
             .get("job")
             .and_then(|v| v.as_str())
@@ -444,30 +387,20 @@ impl VideoModel for ProdiaVideoModel {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-            let resp = self
-                .client
-                .get(format!("{}/job/{}", self.config.base_url, job_id))
-                .headers(header_map.clone())
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url: format!("{}/job/{}", self.config.base_url, job_id),
+                    headers: header_list.clone(),
+                    body: HttpBody::Empty,
+                },
+                RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            response_headers = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-            let text = resp.text().await.unwrap_or_default();
-            if !status.is_success() {
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &DEFAULT_ERROR_STRUCTURE,
-                ));
-            }
-
-            raw_body = serde_json::from_str(&text).unwrap_or(Value::Null);
+            response_headers = resp.headers;
+            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
             let status_str = raw_body
                 .get("status")
                 .and_then(|v| v.as_str())

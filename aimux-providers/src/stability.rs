@@ -12,7 +12,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
@@ -21,8 +20,11 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 use aimux_core::{LanguageModel, Provider};
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
-use aimux_provider_utils::{MultipartForm, load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key, send,
+    without_trailing_slash,
+};
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
 ///
@@ -80,22 +82,14 @@ impl StabilityConfig {
 
 pub struct StabilityProvider {
     config: StabilityConfig,
-    client: Client,
 }
 
 impl StabilityProvider {
     pub fn new(config: StabilityConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
     pub fn image(&self, model_id: &str) -> StabilityImageModel {
-        StabilityImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        StabilityImageModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -114,16 +108,11 @@ impl Provider for StabilityProvider {
 pub struct StabilityImageModel {
     model_id: String,
     config: StabilityConfig,
-    client: Client,
 }
 
 impl StabilityImageModel {
-    pub fn new(model_id: String, config: StabilityConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: StabilityConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -270,62 +259,35 @@ impl ImageModel for StabilityImageModel {
         let (body_bytes, content_type) = form.finish();
 
         let headers = self.build_headers(options.headers.as_ref());
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", &content_type)
-            .headers(hm)
-            .body(body_bytes)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Bytes(body_bytes, content_type),
+            },
+            RetryConfig::default(),
+            &STABILITY_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &STABILITY_ERROR_STRUCTURE,
-            ));
-        }
-
+        let rh = resp.headers;
         let response_content_type = rh.get("content-type").cloned().unwrap_or_default();
 
         // The image is returned either as raw binary (Accept: image/*) or as
         // base64 inside a JSON body (Accept: application/json).
         let image_bytes = if response_content_type.starts_with("application/json") {
-            let body = resp
-                .bytes()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?
-                .to_vec();
-            let v: Value = serde_json::from_slice(&body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let v: Value =
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
             let b64 = v.get("image").and_then(|i| i.as_str()).ok_or_else(|| {
                 AiMuxError::Provider("Stability response missing `image` field".into())
             })?;
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
                 .map_err(|e| AiMuxError::Provider(format!("invalid base64 image: {e}")))?
         } else {
-            resp.bytes()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?
-                .to_vec()
+            resp.body.to_vec()
         };
 
         Ok(ImageResult {

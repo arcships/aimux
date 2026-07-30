@@ -16,8 +16,7 @@ pub use embedding::MistralEmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
-use reqwest::Client;
+use aimux_provider_utils::{load_api_key, shared_client, without_trailing_slash};
 
 /// Configuration for the Mistral provider.
 #[derive(Debug, Clone)]
@@ -51,33 +50,26 @@ impl MistralConfig {
 /// Mistral provider — creates `MistralModel` instances.
 pub struct MistralProvider {
     config: MistralConfig,
-    client: Client,
 }
 
 impl MistralProvider {
     pub fn new(config: MistralConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"mistral-small-latest"`).
     pub fn model(&self, model_id: &str) -> model::MistralModel {
-        model::MistralModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        model::MistralModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"mistral-embed"`).
     pub fn embedding_model(&self, model_id: &str) -> embedding::MistralEmbeddingModel {
+        // `MistralEmbeddingModel` (not yet migrated off reqwest) still holds a client.
         embedding::MistralEmbeddingModel::new(
             model_id.to_string(),
             self.config.clone(),
-            self.client.clone(),
+            shared_client().clone(),
         )
     }
 }

@@ -18,7 +18,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -27,9 +26,8 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::{
-    load_api_key, response::DEFAULT_ERROR_STRUCTURE, response::parse_provider_error,
-};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -77,21 +75,17 @@ impl HumeConfig {
 /// Hume provider — creates `HumeSpeechModel` instances.
 pub struct HumeProvider {
     config: HumeConfig,
-    client: Client,
 }
 
 impl HumeProvider {
     pub fn new(config: HumeConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a speech (TTS) model instance. Hume does not use model IDs for
     /// TTS, so the model ID is always an empty string.
     pub fn speech(&self) -> HumeSpeechModel {
-        HumeSpeechModel::new(self.config.clone(), self.client.clone())
+        HumeSpeechModel::new(self.config.clone())
     }
 }
 
@@ -108,15 +102,13 @@ pub struct HumeSpeechModel {
     /// Hume does not use model IDs for TTS; this is always an empty string.
     model_id: String,
     config: HumeConfig,
-    client: Client,
 }
 
 impl HumeSpeechModel {
-    pub fn new(config: HumeConfig, client: Client) -> Self {
+    pub fn new(config: HumeConfig) -> Self {
         Self {
             model_id: String::new(),
             config,
-            client,
         }
     }
 
@@ -154,45 +146,26 @@ impl SpeechModel for HumeSpeechModel {
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request(options)?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&Value::Object(body.clone()))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+        let headers: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
             .collect();
 
-        let audio_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers,
+                body: HttpBody::Json(Value::Object(body.clone())),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+
+        let response_headers = resp.headers;
+
+        let audio_bytes = resp.body.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 

@@ -16,6 +16,7 @@
 use std::time::{Duration, SystemTime};
 
 use aimux_core::AiMuxError;
+use rand::Rng;
 
 /// Retry a fallible async operation with exponential backoff.
 ///
@@ -104,7 +105,10 @@ where
                 }
 
                 let hint = last_error.retry_after_hint();
-                let delay_ms = get_retry_delay_ms(hint, exponential_delay_ms);
+                let delay_ms = {
+                    let mut rng = rand::thread_rng();
+                    get_retry_delay_ms_with_jitter(hint, exponential_delay_ms, &mut rng)
+                };
                 tokio::time::sleep(Duration::from_millis(delay_ms.max(0) as u64)).await;
 
                 exponential_delay_ms =
@@ -130,6 +134,25 @@ pub fn get_retry_delay_ms(hint: Option<i64>, exponential_delay_ms: i64) -> i64 {
         Some(ms) if ms >= 0 && (ms < 60_000 || ms < exponential_delay_ms) => ms,
         _ => exponential_delay_ms,
     }
+}
+
+/// 在 [`get_retry_delay_ms`] 基础上叠加 Full Jitter（参考 catcher
+/// `DecorrelatedJitter`，即 AWS Full Jitter）。
+///
+/// `delay = random(0, base)`，其中 `base` 仍优先采用 `retry-after` hint，
+/// 回退指数退避。防并发 429 惊群，且不丢 retry-after 语义（RFC-0009 §4.2）。
+///
+/// `base <= 0` 时返回 0（`gen_range(0..0)` 会 panic，此处提前保护）。
+pub fn get_retry_delay_ms_with_jitter(
+    hint: Option<i64>,
+    exponential_delay_ms: i64,
+    rng: &mut impl Rng,
+) -> i64 {
+    let base = get_retry_delay_ms(hint, exponential_delay_ms);
+    if base <= 0 {
+        return 0;
+    }
+    rng.gen_range(0..base)
 }
 
 /// Parse a `retry-after` hint (in milliseconds) from response header values.
@@ -212,6 +235,39 @@ mod tests {
     fn get_delay_uses_hint_when_shorter_than_exponential_even_if_over_60s() {
         // 70000ms hint but exponential is even larger → hint wins.
         assert_eq!(get_retry_delay_ms(Some(70_000), 80_000), 70_000);
+    }
+
+    #[test]
+    fn jitter_returns_zero_when_base_is_zero() {
+        // base == 0 → must return 0 (gen_range(0..0) would panic).
+        let mut rng = rand::thread_rng();
+        assert_eq!(get_retry_delay_ms_with_jitter(None, 0, &mut rng), 0);
+    }
+
+    #[test]
+    fn jitter_returns_zero_when_base_negative() {
+        let mut rng = rand::thread_rng();
+        assert_eq!(get_retry_delay_ms_with_jitter(None, -100, &mut rng), 0);
+    }
+
+    #[test]
+    fn jitter_stays_within_full_jitter_bounds() {
+        // Full Jitter: delay ∈ [0, base). base here = exponential 2000 (no hint).
+        let mut rng = rand::thread_rng();
+        for _ in 0..1000 {
+            let d = get_retry_delay_ms_with_jitter(None, 2000, &mut rng);
+            assert!(d >= 0 && d < 2000, "delay {d} out of [0, 2000)");
+        }
+    }
+
+    #[test]
+    fn jitter_uses_retry_after_hint_as_upper_bound() {
+        // hint 3000 → base 3000 → delay ∈ [0, 3000).
+        let mut rng = rand::thread_rng();
+        for _ in 0..1000 {
+            let d = get_retry_delay_ms_with_jitter(Some(3000), 2000, &mut rng);
+            assert!(d >= 0 && d < 3000, "delay {d} out of [0, 3000)");
+        }
     }
 
     #[test]

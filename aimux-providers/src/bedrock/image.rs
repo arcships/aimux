@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -18,7 +17,8 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::sigv4::sign_request;
 use super::{BedrockAuth, BedrockConfig};
@@ -33,19 +33,17 @@ fn get_max_images_per_call(model_id: &str) -> u32 {
 }
 
 /// An Amazon Bedrock image generation model.
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct BedrockImageModel {
     model_id: String,
     config: BedrockConfig,
-    client: Client,
 }
 
 impl BedrockImageModel {
-    pub fn new(model_id: String, config: BedrockConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: BedrockConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn endpoint(&self) -> String {
@@ -66,16 +64,16 @@ impl BedrockImageModel {
         }
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![
-                    ("Content-Type".into(), "application/json".into()),
-                    ("Authorization".into(), format!("Bearer {}", token)),
-                ];
+                let mut headers = vec![(
+                    "Authorization".into(),
+                    format!("Bearer {}", token),
+                )];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
             BedrockAuth::SigV4(creds) => {
                 let signed = sign_request(creds, "bedrock", "POST", url, body, &extra_headers);
-                let mut headers = vec![("Content-Type".into(), "application/json".into())];
+                let mut headers: Vec<(String, String)> = Vec::new();
                 for (k, v) in &signed.headers {
                     headers.push((k.clone(), v.clone()));
                 }
@@ -283,41 +281,20 @@ impl ImageModel for BedrockImageModel {
         let body_str = serde_json::to_string(&Value::Object(args)).map_err(|e| AiMuxError::Json(e.to_string()))?;
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
-        let hm: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
 
-        let resp = self
-            .client
-            .post(&url)
-            .headers(hm)
-            .header("Content-Type", "application/json")
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-        let status = resp.status();
-        if !status.is_success() {
-            let t = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &t,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-        let rh: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-        let rb: Value = resp
-            .json()
-            .await
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
+        let rh = resp.headers;
+        let rb: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
 
         // Handle moderated/blocked requests

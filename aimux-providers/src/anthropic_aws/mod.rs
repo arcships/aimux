@@ -19,7 +19,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::without_trailing_slash;
-use reqwest::Client;
 
 mod model;
 
@@ -147,15 +146,11 @@ impl AnthropicAwsProviderConfig {
 /// Anthropic-AWS provider — creates [`AnthropicAwsModel`] instances.
 pub struct AnthropicAwsProvider {
     config: AnthropicAwsProviderConfig,
-    client: Client,
 }
 
 impl AnthropicAwsProvider {
     pub fn new(config: AnthropicAwsProviderConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given Anthropic model id
@@ -169,7 +164,6 @@ impl AnthropicAwsProvider {
                 api_version: self.config.api_version.clone(),
                 workspace_id: self.config.workspace_id.clone(),
             },
-            self.client.clone(),
         )
     }
 }

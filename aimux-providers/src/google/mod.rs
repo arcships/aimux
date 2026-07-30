@@ -29,7 +29,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{load_api_key, without_trailing_slash};
-use reqwest::Client;
 
 /// Configuration for the Google Gemini provider.
 #[derive(Debug, Clone)]
@@ -61,41 +60,32 @@ impl GoogleConfig {
 }
 
 /// Google Gemini provider — creates `GoogleModel` instances.
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct GoogleProvider {
     config: GoogleConfig,
-    client: Client,
 }
 
 impl GoogleProvider {
     pub fn new(config: GoogleConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"gemini-2.0-flash"`).
     pub fn model(&self, model_id: &str) -> model::GoogleModel {
-        model::GoogleModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        model::GoogleModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Files interface for uploading files to Google.
     pub fn files(&self) -> files::GoogleFiles {
-        files::GoogleFiles::new(self.config.clone(), self.client.clone())
+        files::GoogleFiles::new(self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"gemini-embedding-001"`).
     pub fn embedding_model(&self, model_id: &str) -> embedding::GoogleEmbeddingModel {
-        embedding::GoogleEmbeddingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        embedding::GoogleEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an image generation model instance for the given model name
@@ -105,18 +95,13 @@ impl GoogleProvider {
             model_id.to_string(),
             image::GoogleImageSettings::default(),
             self.config.clone(),
-            self.client.clone(),
         )
     }
 
     /// Create a video generation model instance for the given model name
     /// (e.g. `"veo-3.0-generate-001"`).
     pub fn video(&self, model_id: &str) -> video::GoogleVideoModel {
-        video::GoogleVideoModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        video::GoogleVideoModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an image generation model instance with custom settings.
@@ -125,12 +110,7 @@ impl GoogleProvider {
         model_id: &str,
         settings: image::GoogleImageSettings,
     ) -> image::GoogleImageModel {
-        image::GoogleImageModel::new(
-            model_id.to_string(),
-            settings,
-            self.config.clone(),
-            self.client.clone(),
-        )
+        image::GoogleImageModel::new(model_id.to_string(), settings, self.config.clone())
     }
 }
 

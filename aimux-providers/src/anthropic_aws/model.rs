@@ -8,7 +8,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -17,7 +16,8 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 
 use crate::anthropic::convert::{build_request_body, parse_stop_reason};
@@ -39,16 +39,11 @@ pub struct AnthropicAwsConfig {
 pub struct AnthropicAwsModel {
     model_id: String,
     config: AnthropicAwsConfig,
-    client: Client,
 }
 
 impl AnthropicAwsModel {
-    pub fn new(model_id: String, config: AnthropicAwsConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: AnthropicAwsConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn endpoint(&self) -> String {
@@ -128,36 +123,23 @@ impl LanguageModel for AnthropicAwsModel {
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let mut req = self.client.post(&url);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
+        // Body is sent as the exact serialized bytes — the SigV4 signature in
+        // `headers` was computed over `body_str`, so `HttpBody::Json` (which
+        // would re-serialize) would invalidate it.
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let resp = req
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let data: AnthropicResponse = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: AnthropicResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let mut content = Vec::new();
         for block in &data.content {
@@ -243,40 +225,20 @@ impl LanguageModel for AnthropicAwsModel {
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let mut req = self.client.post(&url);
-        for (k, v) in &headers {
-            if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::try_from(k),
-                reqwest::header::HeaderValue::try_from(v),
-            ) {
-                req = req.header(name, val);
-            }
-        }
+        let resp = send_stream(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers,
+                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let resp = req
-            .body(body_str)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let response_headers = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect::<HashMap<_, _>>();
-
-        let byte_stream = resp.bytes_stream();
-        let sse_stream = SseStream::new(byte_stream);
+        let response_headers = resp.headers;
+        let sse_stream = SseStream::new(resp.body);
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });

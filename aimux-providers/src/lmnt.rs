@@ -16,7 +16,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -25,8 +24,9 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    load_api_key, response::DEFAULT_ERROR_STRUCTURE, response::parse_provider_error,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send,
 };
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -75,25 +75,17 @@ impl LMNTConfig {
 /// LMNT provider — creates `LMNTSpeechModel` instances.
 pub struct LMNTProvider {
     config: LMNTConfig,
-    client: Client,
 }
 
 impl LMNTProvider {
     pub fn new(config: LMNTConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a speech (TTS) model instance for the given model name (e.g.
     /// `"aurora"`).
     pub fn speech(&self, model_id: &str) -> LMNTSpeechModel {
-        LMNTSpeechModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        LMNTSpeechModel::new(model_id.to_string(), self.config.clone())
     }
 }
 
@@ -109,16 +101,11 @@ const SUPPORTED_OUTPUT_FORMATS: &[&str] = &["mp3", "aac", "mulaw", "raw", "wav"]
 pub struct LMNTSpeechModel {
     model_id: String,
     config: LMNTConfig,
-    client: Client,
 }
 
 impl LMNTSpeechModel {
-    pub fn new(model_id: String, config: LMNTConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: LMNTConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -157,43 +144,21 @@ impl SpeechModel for LMNTSpeechModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&Value::Object(body.clone()))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: headers.into_iter().collect(),
+                body: HttpBody::Json(Value::Object(body.clone())),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let audio_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?
-            .to_vec();
+        let audio_bytes = resp.body.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 

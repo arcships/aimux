@@ -10,7 +10,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::embedding_model::{
@@ -19,7 +18,8 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::GoogleConfig;
 
@@ -30,19 +30,17 @@ const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
 };
 
 /// A Google Gemini embedding model (e.g. `"gemini-embedding-001"`).
+///
+/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// `Client` internally (RFC-0009 §4.1).
 pub struct GoogleEmbeddingModel {
     model_id: String,
     config: GoogleConfig,
-    client: Client,
 }
 
 impl GoogleEmbeddingModel {
-    pub fn new(model_id: String, config: GoogleConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: GoogleConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -55,6 +53,14 @@ impl GoogleEmbeddingModel {
         }
         headers
     }
+}
+
+/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
+fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
+    let mut list: Vec<(String, String)> =
+        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    list.push(("Content-Type".to_string(), "application/json".to_string()));
+    list
 }
 
 #[async_trait]
@@ -82,12 +88,7 @@ impl EmbeddingModel for GoogleEmbeddingModel {
         let google_options = parse_google_provider_options(options.provider_options.as_ref());
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_map =
-            reqwest::header::HeaderMap::from_iter(headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }));
+        let header_list = build_header_list(&headers);
 
         // For single embeddings, use the single endpoint.
         if options.values.len() == 1 {
@@ -119,36 +120,22 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                 self.config.base_url, self.model_id
             );
 
-            let resp = self
-                .client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .headers(header_map)
-                .json(&Value::Object(body))
-                .send()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Post,
+                    url,
+                    headers: header_list,
+                    body: HttpBody::Json(Value::Object(body)),
+                },
+                RetryConfig::default(),
+                &GOOGLE_ERROR_STRUCTURE,
+            )
+            .await?;
 
-            let status = resp.status();
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                return Err(parse_provider_error(
-                    status.as_u16(),
-                    &text,
-                    &GOOGLE_ERROR_STRUCTURE,
-                ));
-            }
+            let response_headers = resp.headers;
 
-            let response_headers: HashMap<String, String> = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
-
-            let raw_value: Value = resp
-                .json()
-                .await
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let raw_value: Value =
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
             // Single embedding: response.embedding.values
             let embedding = raw_value
@@ -213,36 +200,22 @@ impl EmbeddingModel for GoogleEmbeddingModel {
             self.config.base_url, self.model_id
         );
 
-        let resp = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .headers(header_map)
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url,
+                headers: header_list,
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &GOOGLE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw_value: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_value: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         // Batch embeddings: response.embeddings[].values
         let embeddings: Vec<Vec<f32>> = raw_value

@@ -25,8 +25,7 @@ use std::collections::HashMap;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
-use reqwest::Client;
+use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
 
 /// 描述 OpenAI 兼容厂商的差异。
 ///
@@ -108,6 +107,10 @@ pub struct OpenAIConfig {
     /// 厂商能力差异描述。默认 `full()`（支持全部能力）。
     /// 薄封装用 `with_profile()` 设置差异。
     pub profile: OpenAICompatProfile,
+    /// 重试配置。默认 `RetryConfig::default()`（max_retries=2）。
+    /// 测试中可用 `.with_retry_config(RetryConfig { max_retries: 0, .. })`
+    /// 关闭重试（RFC-0009 §4.2）。
+    pub retry_config: RetryConfig,
 }
 
 impl OpenAIConfig {
@@ -121,6 +124,7 @@ impl OpenAIConfig {
             headers: None,
             provider: "openai".to_string(),
             profile: OpenAICompatProfile::full(),
+            retry_config: RetryConfig::default(),
         }
     }
 
@@ -159,6 +163,12 @@ impl OpenAIConfig {
         self
     }
 
+    /// 设置重试配置。传入 `max_retries: 0` 可关闭重试。
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
     /// Create from environment variable `OPENAI_API_KEY`.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "OPENAI_API_KEY", "OpenAI")?;
@@ -167,84 +177,59 @@ impl OpenAIConfig {
 }
 
 /// OpenAI provider — creates `OpenAIModel` instances.
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use
+/// the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIProvider {
     config: OpenAIConfig,
-    client: Client,
 }
 
 impl OpenAIProvider {
     pub fn new(config: OpenAIConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"gpt-4o"`).
     pub fn model(&self, model_id: &str) -> model::OpenAIModel {
-        model::OpenAIModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        model::OpenAIModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Responses API model instance for the given model name (e.g.
     /// `"gpt-4o"`). Uses the `/v1/responses` endpoint instead of
     /// `/v1/chat/completions`.
     pub fn responses_model(&self, model_id: &str) -> responses::OpenAIResponsesModel {
-        responses::OpenAIResponsesModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        responses::OpenAIResponsesModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Files interface for uploading files to OpenAI.
     pub fn files(&self) -> files::OpenAIFiles {
-        files::OpenAIFiles::new(self.config.clone(), self.client.clone())
+        files::OpenAIFiles::new(self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"text-embedding-3-large"`).
     pub fn embedding_model(&self, model_id: &str) -> embedding::OpenAIEmbeddingModel {
-        embedding::OpenAIEmbeddingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        embedding::OpenAIEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a speech (TTS) model instance for the given model name (e.g.
     /// `"tts-1"`). Uses the `/audio/speech` endpoint.
     pub fn speech(&self, model_id: &str) -> speech::OpenAISpeechModel {
-        speech::OpenAISpeechModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        speech::OpenAISpeechModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an image generation model instance for the given model name
     /// (e.g. `"dall-e-3"` or `"gpt-image-1"`). Uses the `/images/generations`
     /// endpoint for generation and `/images/edits` for editing.
     pub fn image(&self, model_id: &str) -> image::OpenAIImageModel {
-        image::OpenAIImageModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        image::OpenAIImageModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a transcription (STT) model instance for the given model name
     /// (e.g. `"whisper-1"` or `"gpt-4o-transcribe"`). Uses the
     /// `/audio/transcriptions` endpoint.
     pub fn transcription(&self, model_id: &str) -> transcription::OpenAITranscriptionModel {
-        transcription::OpenAITranscriptionModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-            self.client.clone(),
-        )
+        transcription::OpenAITranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
 }
 

@@ -12,7 +12,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -22,8 +21,10 @@ use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::response::{ErrorStructure, parse_provider_error};
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+};
 
 /// Fixed model ID for the Google PSE search model.
 const MODEL_ID: &str = "google-pse-search";
@@ -87,20 +88,16 @@ impl GooglePseConfig {
 /// Google PSE is a search-only provider; it does not support language models.
 pub struct GooglePseProvider {
     config: GooglePseConfig,
-    client: Client,
 }
 
 impl GooglePseProvider {
     pub fn new(config: GooglePseConfig) -> Self {
-        Self {
-            config,
-            client: Client::new(),
-        }
+        Self { config }
     }
 
     /// Create a search model instance.
     pub fn search_model(&self) -> GooglePseSearchModel {
-        GooglePseSearchModel::new(self.config.clone(), self.client.clone())
+        GooglePseSearchModel::new(self.config.clone())
     }
 }
 
@@ -170,12 +167,11 @@ fn map_results(entries: Vec<GooglePseItem>) -> Vec<SearchResultItem> {
 /// A Google PSE search model.
 pub struct GooglePseSearchModel {
     config: GooglePseConfig,
-    client: Client,
 }
 
 impl GooglePseSearchModel {
-    pub fn new(config: GooglePseConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: GooglePseConfig) -> Self {
+        Self { config }
     }
 
     fn endpoint(&self) -> String {
@@ -207,60 +203,45 @@ impl SearchModel for GooglePseSearchModel {
 
         // Google PSE authenticates via query parameters; only forward
         // user-supplied extra headers.
-        let header_map: reqwest::header::HeaderMap = options
+        let headers: Vec<(String, String)> = options
             .headers
             .as_ref()
             .map(|extra: &HashMap<String, String>| {
                 extra
                     .iter()
-                    .filter_map(|(k, v)| {
-                        reqwest::header::HeaderName::try_from(k)
-                            .ok()
-                            .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                    })
+                    .map(|(k, v)| (k.clone(), v.clone()))
                     .collect()
             })
             .unwrap_or_default();
 
-        let mut request = self
-            .client
-            .get(self.endpoint())
-            .headers(header_map)
-            .query(&[
-                ("key", self.config.api_key.as_str()),
-                ("cx", cx.as_str()),
-                ("q", options.query.as_str()),
-            ]);
-
-        if let Some(num) = options.max_results {
-            request = request.query(&[("num", num.to_string().as_str())]);
+        let mut url = url::Url::parse(&self.endpoint())
+            .map_err(|e| AiMuxError::Provider(format!("invalid google_pse endpoint: {e}")))?;
+        {
+            let mut qp = url.query_pairs_mut();
+            qp.append_pair("key", &self.config.api_key)
+                .append_pair("cx", &cx)
+                .append_pair("q", &options.query);
+            if let Some(num) = options.max_results {
+                qp.append_pair("num", &num.to_string());
+            }
         }
 
-        let resp = request
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Get,
+                url: url.to_string(),
+                headers,
+                body: HttpBody::Empty,
+            },
+            RetryConfig::default(),
+            &GOOGLE_PSE_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &GOOGLE_PSE_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers = resp.headers;
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw_body: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_body: Value =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let data: GooglePseResponse = serde_json::from_value(raw_body.clone()).map_err(|e| {
             AiMuxError::Provider(format!("failed to parse google_pse search response: {e}"))

@@ -130,6 +130,8 @@ aimux 提供 6 种语言绑定，共享同一个 Rust 核心：
 | [rfc/0005-protocol-conversion.md](rfc/0005-protocol-conversion.md) | 协议转换与适配层设计 |
 | [rfc/0006-provider-development.md](rfc/0006-provider-development.md) | Provider 最小准入、实现路径、核心契约、按需测试与验收规范 |
 | [rfc/0008-multimodal-bindings.md](rfc/0008-multimodal-bindings.md) | 多模态绑定设计 |
+| [rfc/0009-request-resilience.md](rfc/0009-request-resilience.md) | 请求优化 — 参考 catcher 设计（共享 Client / jitter / 超时） |
+| [rfc/0010-perf-benchmark-vs-aisdk.md](rfc/0010-perf-benchmark-vs-aisdk.md) | 请求性能对比 — aimux vs Vercel AI SDK 基准方案（速度 / 结构化开销 / 并发三维度，同进程同 mock） |
 
 ## License
 

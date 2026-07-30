@@ -1,8 +1,9 @@
 //! OpenAI language model — implements `LanguageModel` trait.
 //!
 //! The HTTP request/response handling lives in the free functions
-//! [`execute_generate`] and [`execute_stream`], which take a `Client`, an
-//! endpoint URL, a header map and a model id. This lets other providers that
+//! [`execute_generate`] and [`execute_stream`], which take an endpoint URL, a
+//! header map and a model id. They call `http::send` / `http::send_stream` —
+//! **no `reqwest` types cross this boundary**. This lets other providers that
 //! speak the OpenAI chat-completions wire format (notably Azure OpenAI) reuse
 //! the conversion + streaming logic while supplying their own URL and auth.
 
@@ -10,7 +11,6 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -20,7 +20,8 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 
 use super::OpenAIConfig;
@@ -28,19 +29,17 @@ use super::convert::{build_request_body_with_warnings, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
 /// An OpenAI-compatible language model.
+///
+/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIModel {
     model_id: String,
     config: OpenAIConfig,
-    client: Client,
 }
 
 impl OpenAIModel {
-    pub fn new(model_id: String, config: OpenAIConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: OpenAIConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -149,13 +148,13 @@ impl LanguageModel for OpenAIModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
         execute_generate(
-            &self.client,
             &self.endpoint(),
             &headers,
             &self.model_id,
             options,
             &self.config.provider,
             &self.config.profile,
+            &self.config.retry_config,
         )
         .await
     }
@@ -163,13 +162,13 @@ impl LanguageModel for OpenAIModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
         execute_stream(
-            &self.client,
             &self.endpoint(),
             &headers,
             &self.model_id,
             options,
             &self.config.provider,
             &self.config.profile,
+            &self.config.retry_config,
         )
         .await
     }
@@ -181,60 +180,50 @@ impl LanguageModel for OpenAIModel {
 // are `pub` so that providers speaking the OpenAI wire format (Azure OpenAI)
 // can reuse them with their own endpoint URL and auth headers.
 
+/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
+///
+/// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
+fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
+    let mut list: Vec<(String, String)> =
+        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    list.push(("Content-Type".to_string(), "application/json".to_string()));
+    list
+}
+
 /// Execute a non-streaming OpenAI chat-completion request.
 ///
 /// `endpoint` is the full chat-completions URL; `headers` carries the auth
 /// headers (and any extra/request headers); `model_id` is placed in the
 /// request body's `model` field.
 pub async fn execute_generate(
-    client: &Client,
     endpoint: &str,
     headers: &HashMap<String, String>,
     model_id: &str,
     options: &CallOptions,
     provider: &str,
     profile: &super::OpenAICompatProfile,
+    retry_config: &RetryConfig,
 ) -> Result<GenerateResult, AiMuxError> {
     let request_result =
         build_request_body_with_warnings(model_id, options, false, provider, profile);
     let body = request_result.body;
 
-    let resp = client
-        .post(endpoint)
-        .header("Content-Type", "application/json")
-        .headers(reqwest::header::HeaderMap::from_iter(
-            headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }),
-        ))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| AiMuxError::Http(e.to_string()))?;
+    let resp = send(
+        HttpRequest {
+            method: HttpMethod::Post,
+            url: endpoint.to_string(),
+            headers: build_header_list(headers),
+            body: HttpBody::Json(body.clone()),
+        },
+        *retry_config,
+        &DEFAULT_ERROR_STRUCTURE,
+    )
+    .await?;
 
-    let status = resp.status();
-    if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(parse_provider_error(
-            status.as_u16(),
-            &text,
-            &DEFAULT_ERROR_STRUCTURE,
-        ));
-    }
+    let response_headers = resp.headers;
 
-    // Capture response headers.
-    let response_headers: HashMap<String, String> = resp
-        .headers()
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-        .collect();
-
-    let data: ChatCompletionResponse = resp
-        .json()
-        .await
-        .map_err(|e| AiMuxError::Http(e.to_string()))?;
+    let data: ChatCompletionResponse =
+        serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
 
     let choice = data
         .choices
@@ -350,51 +339,33 @@ pub async fn execute_generate(
 /// headers (and any extra/request headers); `model_id` is placed in the
 /// request body's `model` field.
 pub async fn execute_stream(
-    client: &Client,
     endpoint: &str,
     headers: &HashMap<String, String>,
     model_id: &str,
     options: &CallOptions,
     provider: &str,
     profile: &super::OpenAICompatProfile,
+    retry_config: &RetryConfig,
 ) -> Result<StreamResult, AiMuxError> {
     let request_result =
         build_request_body_with_warnings(model_id, options, true, provider, profile);
     let body = request_result.body;
 
-    let resp = client
-        .post(endpoint)
-        .header("Content-Type", "application/json")
-        .headers(reqwest::header::HeaderMap::from_iter(
-            headers.iter().filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            }),
-        ))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| AiMuxError::Http(e.to_string()))?;
+    let resp = send_stream(
+        HttpRequest {
+            method: HttpMethod::Post,
+            url: endpoint.to_string(),
+            headers: build_header_list(headers),
+            body: HttpBody::Json(body.clone()),
+        },
+        *retry_config,
+        &DEFAULT_ERROR_STRUCTURE,
+    )
+    .await?;
 
-    let status = resp.status();
-    if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(parse_provider_error(
-            status.as_u16(),
-            &text,
-            &DEFAULT_ERROR_STRUCTURE,
-        ));
-    }
+    let response_headers = resp.headers;
 
-    let response_headers = resp
-        .headers()
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-        .collect::<HashMap<_, _>>();
-
-    let byte_stream = resp.bytes_stream();
-    let mut sse_stream = SseStream::new(byte_stream);
+    let mut sse_stream = SseStream::new(resp.body);
 
     // Peek at the first SSE event to detect early errors (before any output).
     // The TS SDK rejects the doStream promise when the very first chunk is an
