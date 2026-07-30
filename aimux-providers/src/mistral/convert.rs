@@ -173,10 +173,10 @@ fn convert_message_to_mistral(msg: &LanguageModelPromptMessage, is_last: bool) -
             .filter_map(|part| match part {
                 ContentPart::ToolResult {
                     tool_call_id,
-                    output,
+                    result,
                     ..
                 } => {
-                    let content = tool_result_to_content(output);
+                    let content = tool_result_to_content(result);
                     Some(json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
@@ -257,13 +257,13 @@ fn convert_part_to_mistral(part: &ContentPart) -> Value {
         }
         ContentPart::ToolResult {
             tool_call_id,
-            output,
+            result,
             ..
         } => {
             json!({
                 "type": "tool_result",
                 "tool_call_id": tool_call_id,
-                "content": output,
+                "content": result,
             })
         }
 

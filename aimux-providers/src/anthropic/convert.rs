@@ -447,10 +447,11 @@ fn convert_part_to_anthropic(
 
         ContentPart::ToolResult {
             tool_call_id,
-            output,
+            result,
             provider_options,
+            ..
         } => {
-            let (content, is_error) = resolve_tool_result_output(output);
+            let (content, is_error) = resolve_tool_result_output(result);
             let mut block = json!({
                 "type": "tool_result",
                 "tool_use_id": tool_call_id,
@@ -466,7 +467,7 @@ fn convert_part_to_anthropic(
                 true,
             ) {
                 Some(v) => Some(v),
-                None => match extract_tool_result_output_provider_options(output) {
+                None => match extract_tool_result_output_provider_options(result) {
                     Some(out_opts) => {
                         validator.get_cache_control(Some(out_opts), "tool result output", true)
                     }

@@ -109,7 +109,21 @@ pub enum ContentPart {
     ToolResult {
         tool_call_id: String,
         /// The tool's output (usually a JSON value or plain text).
-        output: Value,
+        result: Value,
+        /// The name of the tool that produced this result (optional on the
+        /// user-input side; providers that need it can look it up from the
+        /// preceding tool call).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_name: Option<String>,
+        /// Whether the result is an error or error message.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+        /// Whether the result is preliminary (replaces prior, e.g. image previews).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        preliminary: Option<bool>,
+        /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dynamic: Option<bool>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -141,10 +155,14 @@ impl ContentPart {
     }
 
     /// Convenience constructor for a tool-result part (no provider options).
-    pub fn tool_result(tool_call_id: impl Into<String>, output: Value) -> Self {
+    pub fn tool_result(tool_call_id: impl Into<String>, result: Value) -> Self {
         ContentPart::ToolResult {
             tool_call_id: tool_call_id.into(),
-            output,
+            result,
+            tool_name: None,
+            is_error: None,
+            preliminary: None,
+            dynamic: None,
             provider_options: None,
         }
     }

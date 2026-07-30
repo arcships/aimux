@@ -538,6 +538,7 @@ async fn should_handle_mcp_tools_with_annotations() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "mcp_search_test");
             assert_eq!(tool_name, "search");
@@ -1074,6 +1075,7 @@ async fn should_handle_function_call_tool_responses() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "call_123");
             assert_eq!(tool_name, "getWeather");
@@ -1140,7 +1142,7 @@ async fn should_stream_tool_calls() {
     }
 
     match &parts[2] {
-        StreamPart::ToolInputStart { id, tool_name } => {
+        StreamPart::ToolInputStart { id, tool_name, .. } => {
             assert_eq!(id, "call_456");
             assert_eq!(tool_name, "calculator");
         }
@@ -1155,6 +1157,7 @@ async fn should_stream_tool_calls() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "call_456");
             assert_eq!(tool_name, "calculator");
@@ -1165,11 +1168,11 @@ async fn should_stream_tool_calls() {
     match &parts[5] {
         StreamPart::ToolResult {
             tool_call_id,
-            output,
+            result,
             ..
         } => {
             assert_eq!(tool_call_id, "call_456");
-            assert_eq!(output, &json!("8"));
+            assert_eq!(result, &json!("8"));
         }
         other => panic!("expected ToolResult, got {:?}", other),
     }

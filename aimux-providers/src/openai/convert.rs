@@ -568,10 +568,10 @@ fn convert_message_to_openai(
             .filter_map(|part| match part {
                 ContentPart::ToolResult {
                     tool_call_id,
-                    output,
+                    result,
                     ..
                 } => {
-                    let content = tool_result_to_content(output);
+                    let content = tool_result_to_content(result);
                     Some(json!({
                         "role": "tool",
                         "content": content,
@@ -896,13 +896,13 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
         }
         ContentPart::ToolResult {
             tool_call_id,
-            output,
+            result,
             ..
         } => {
             json!({
                 "type": "tool_result",
                 "tool_call_id": tool_call_id,
-                "content": output,
+                "content": result,
             })
         }
     }

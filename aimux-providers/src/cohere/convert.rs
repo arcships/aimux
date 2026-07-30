@@ -251,11 +251,11 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                 for part in &msg.content {
                     if let ContentPart::ToolResult {
                         tool_call_id,
-                        output,
+                        result,
                         ..
                     } = part
                     {
-                        let content = tool_result_to_content(output);
+                        let content = tool_result_to_content(result);
                         messages.push(json!({
                             "role": "tool",
                             "content": content,

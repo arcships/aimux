@@ -366,10 +366,11 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 yield Ok(StreamPart::ToolResult {
                                                     tool_call_id: call_id,
                                                     tool_name: name.clone(),
-                                                    output: Value::String(output.to_string()),
+                                                    result: Value::String(output.to_string()),
                                                     is_error: None,
                                                     preliminary: None,
                                                     dynamic: None,
+                                                    provider_metadata: None,
                                                 });
                                             }
                                         }

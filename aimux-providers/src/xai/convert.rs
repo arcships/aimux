@@ -338,11 +338,11 @@ pub fn convert_to_xai_messages(
                 for part in &msg.content {
                     if let ContentPart::ToolResult {
                         tool_call_id,
-                        output,
+                        result,
                         ..
                     } = part
                     {
-                        let content = match output {
+                        let content = match result {
                             Value::String(s) => s.clone(),
                             other => other.to_string(),
                         };

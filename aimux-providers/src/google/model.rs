@@ -409,10 +409,11 @@ impl LanguageModel for GoogleModel {
                                         yield Ok(StreamPart::ToolResult {
                                             tool_call_id: call_id,
                                             tool_name: String::new(),
-                                            output: json!({ "outcome": outcome, "output": output }),
+                                            result: json!({ "outcome": outcome, "output": output }),
                                             is_error: None,
                                             preliminary: None,
                                             dynamic: None,
+                                            provider_metadata: None,
                                         });
                                     }
                                 } else if let Some(tc) = part.get("toolCall") {
@@ -453,10 +454,11 @@ impl LanguageModel for GoogleModel {
                                     yield Ok(StreamPart::ToolResult {
                                         tool_call_id: id,
                                         tool_name: String::new(),
-                                        output: response,
+                                        result: response,
                                         is_error: None,
                                         preliminary: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
                             }

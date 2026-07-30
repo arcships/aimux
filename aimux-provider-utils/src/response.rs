@@ -59,7 +59,7 @@ pub fn parse_provider_error(status: u16, body: &str, structure: &ErrorStructure)
     }
 
     match status {
-        401 => AiMuxError::Auth(message),
+        401 | 403 => AiMuxError::Auth(message),
         429 => AiMuxError::RateLimited {
             retry_after_ms: 1000,
         },

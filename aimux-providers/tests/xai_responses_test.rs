@@ -1116,6 +1116,7 @@ mod tools {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "ws_123");
                 assert_eq!(tool_name, "web_search");
@@ -1379,6 +1380,7 @@ mod tools {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "fs_123");
                 assert_eq!(tool_name, "file_search");
@@ -1392,6 +1394,7 @@ mod tools {
                 tool_call_id,
                 tool_name,
                 result,
+                ..
             } => {
                 assert_eq!(tool_call_id, "fs_123");
                 assert_eq!(tool_name, "file_search");
@@ -1502,6 +1505,7 @@ mod tools {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "call_123");
                 assert_eq!(tool_name, "weather");
@@ -1917,6 +1921,7 @@ mod do_stream {
             tool_call_id,
             tool_name,
             input,
+            ..
         }) = tool_call
         {
             assert_eq!(tool_call_id, "ws_123");
@@ -1966,7 +1971,7 @@ mod do_stream {
         let parts = collect_stream(result).await;
 
         // Should have tool-input-start, tool-input-delta x2, tool-input-end, tool-call
-        let has_start = parts.iter().any(|p| matches!(p, StreamPart::ToolInputStart { id, tool_name } if id == "call_123" && tool_name == "weather"));
+        let has_start = parts.iter().any(|p| matches!(p, StreamPart::ToolInputStart { id, tool_name, .. } if id == "call_123" && tool_name == "weather"));
         assert!(has_start);
 
         let deltas: Vec<&str> = parts
@@ -1993,6 +1998,7 @@ mod do_stream {
             tool_call_id,
             tool_name,
             input,
+            ..
         }) = tool_call
         {
             assert_eq!(tool_call_id, "call_123");

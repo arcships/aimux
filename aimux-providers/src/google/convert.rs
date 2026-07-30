@@ -198,11 +198,11 @@ fn convert_tool_parts(content: &[ContentPart]) -> Vec<Value> {
     for part in content {
         if let ContentPart::ToolResult {
             tool_call_id,
-            output,
+            result,
             ..
         } = part
         {
-            let content_str = match output {
+            let content_str = match result {
                 Value::String(s) => s.clone(),
                 other => other.to_string(),
             };

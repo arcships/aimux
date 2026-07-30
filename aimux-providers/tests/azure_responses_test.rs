@@ -530,6 +530,7 @@ async fn should_extract_tool_call_content() {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })

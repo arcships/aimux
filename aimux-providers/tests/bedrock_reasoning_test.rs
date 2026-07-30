@@ -110,7 +110,6 @@ fn make_model(server: &MockServer) -> BedrockModel {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("test-token".to_string()),
         },
-        Client::new(),
     )
 }
 

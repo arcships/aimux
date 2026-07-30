@@ -403,6 +403,7 @@ async fn do_generate_extracts_tool_call() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");
@@ -530,6 +531,7 @@ async fn do_stream_emits_tool_call() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });

@@ -416,7 +416,11 @@ fn convert_tool_result_message() {
         role: Role::Tool,
         content: vec![ContentPart::ToolResult {
             tool_call_id: "tool-call-1".to_string(),
-            output: json!({ "test": "This is a tool message" }),
+            result: json!({ "test": "This is a tool message" }),
+            tool_name: None,
+            is_error: None,
+            preliminary: None,
+            dynamic: None,
             provider_options: None,
         }],
         ..Default::default()
@@ -439,7 +443,11 @@ fn convert_tool_result_with_string_output() {
         role: Role::Tool,
         content: vec![ContentPart::ToolResult {
             tool_call_id: "tool-call-1".to_string(),
-            output: json!("plain string result"),
+            result: json!("plain string result"),
+            tool_name: None,
+            is_error: None,
+            preliminary: None,
+            dynamic: None,
             provider_options: None,
         }],
         ..Default::default()
@@ -463,12 +471,20 @@ fn convert_multiple_tool_results() {
         content: vec![
             ContentPart::ToolResult {
                 tool_call_id: "tool-call-1".to_string(),
-                output: json!({ "test": "result 1" }),
+                result: json!({ "test": "result 1" }),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
                 provider_options: None,
             },
             ContentPart::ToolResult {
                 tool_call_id: "tool-call-2".to_string(),
-                output: json!({ "test": "result 2" }),
+                result: json!({ "test": "result 2" }),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
                 provider_options: None,
             },
         ],

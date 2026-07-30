@@ -56,7 +56,7 @@ pub type SharedProviderReference = HashMap<String, String>;
 /// Providers should pass file data through without unnecessary conversion: if
 /// the upstream API returns base64, return [`FileBytes::Base64`]; if it
 /// returns binary, return [`FileBytes::Binary`].
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum FileBytes {
     /// Raw binary bytes.
@@ -68,7 +68,7 @@ pub enum FileBytes {
 /// File data as a tagged discriminated union.
 ///
 /// Aligned with V4 `SharedV4FileData`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub enum FileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.

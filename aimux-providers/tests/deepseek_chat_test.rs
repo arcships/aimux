@@ -405,6 +405,7 @@ async fn should_extract_tool_call_content() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "call_00_9V0vrf86Pc9aelHCJMZqnJBo");
             assert_eq!(tool_name, "weather");
@@ -744,6 +745,7 @@ async fn should_stream_tool_call() {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id, tool_name, input)),
             _ => None,
         })

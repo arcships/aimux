@@ -414,6 +414,7 @@ mod do_generate {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
@@ -807,6 +808,7 @@ mod do_generate {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "");
                 assert_eq!(tool_name, "weather");
@@ -866,6 +868,7 @@ mod do_generate {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "call-2");
                 assert_eq!(tool_name, "calendar");
@@ -1090,7 +1093,7 @@ mod do_stream {
 
         // Verify tool-input-start
         let tool_start = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolInputStart { id, tool_name } if id == "call-1" && tool_name == "weather")
+            matches!(p, StreamPart::ToolInputStart { id, tool_name, .. } if id == "call-1" && tool_name == "weather")
         });
         assert!(tool_start.is_some(), "should have ToolInputStart");
 
@@ -1102,7 +1105,7 @@ mod do_stream {
 
         // Verify tool-call
         let tool_call = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input }
+            matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input, .. }
                 if tool_call_id == "call-1"
                 && tool_name == "weather"
                 && input == &json!({"location": "San Francisco"}))

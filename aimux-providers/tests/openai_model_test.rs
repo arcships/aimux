@@ -611,6 +611,7 @@ mod do_generate {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "call_O17Uplv4lJvD6DVdIvFFeRMw");
                 assert_eq!(tool_name, "test-tool");
@@ -827,7 +828,7 @@ mod do_stream {
 
         // Verify tool-input-start
         let tool_start = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolInputStart { id, tool_name } if id == "call_O17Uplv4lJvD6DVdIvFFeRMw" && tool_name == "test-tool")
+            matches!(p, StreamPart::ToolInputStart { id, tool_name, .. } if id == "call_O17Uplv4lJvD6DVdIvFFeRMw" && tool_name == "test-tool")
         });
         assert!(tool_start.is_some(), "should have ToolInputStart");
 
@@ -860,7 +861,7 @@ mod do_stream {
 
         // Verify tool-call
         let tool_call = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input }
+            matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input, .. }
                 if tool_call_id == "call_O17Uplv4lJvD6DVdIvFFeRMw"
                 && tool_name == "test-tool"
                 && input == &json!({"value": "Sparkle Day"}))
@@ -1015,6 +1016,7 @@ mod do_stream {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(
                     tool_call_id,
@@ -1128,7 +1130,7 @@ mod do_stream {
 
         // Verify tool-input-start
         let tool_start = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolInputStart { id, tool_name }
+            matches!(p, StreamPart::ToolInputStart { id, tool_name, .. }
                 if id == "call_abc123" && tool_name == "test-tool")
         });
         assert!(tool_start.is_some(), "should have ToolInputStart");
@@ -1176,7 +1178,7 @@ mod do_stream {
 
         // Verify tool-input-start
         assert!(parts.iter().any(|p| {
-            matches!(p, StreamPart::ToolInputStart { id, tool_name }
+            matches!(p, StreamPart::ToolInputStart { id, tool_name, .. }
                 if id == "call_O17Uplv4lJvD6DVdIvFFeRMw" && tool_name == "test-tool")
         }));
 

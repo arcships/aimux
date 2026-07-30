@@ -497,11 +497,11 @@ pub fn convert_to_xai_responses_input(
                 for part in &msg.content {
                     if let ContentPart::ToolResult {
                         tool_call_id,
-                        output,
+                        result,
                         ..
                     } = part
                     {
-                        let output_value = match output {
+                        let output_value = match result {
                             Value::String(s) => s.clone(),
                             other => other.to_string(),
                         };

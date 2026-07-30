@@ -472,7 +472,11 @@ fn convert_single_tool_result_message() {
         role: Role::Tool,
         content: vec![ContentPart::ToolResult {
             tool_call_id: "tool-call-1".to_string(),
-            output: json!({ "test": "This is a tool message" }),
+            result: json!({ "test": "This is a tool message" }),
+            tool_name: None,
+            is_error: None,
+            preliminary: None,
+            dynamic: None,
             provider_options: None,
         }],
         ..Default::default()
@@ -497,12 +501,20 @@ fn convert_multiple_tool_result_messages() {
         content: vec![
             ContentPart::ToolResult {
                 tool_call_id: "tool-call-1".to_string(),
-                output: json!({ "test": "This is a tool message" }),
+                result: json!({ "test": "This is a tool message" }),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
                 provider_options: None,
             },
             ContentPart::ToolResult {
                 tool_call_id: "tool-call-2".to_string(),
-                output: json!({ "something": "else" }),
+                result: json!({ "something": "else" }),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
                 provider_options: None,
             },
         ],

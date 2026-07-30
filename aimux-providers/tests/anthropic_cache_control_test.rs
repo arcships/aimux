@@ -341,7 +341,11 @@ mod tool_message {
             Role::Tool,
             vec![ContentPart::ToolResult {
                 tool_call_id: "test".to_string(),
-                output: json!({ "test": "test" }),
+                result: json!({ "test": "test" }),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
                 provider_options: Some(cache_control_opts(json!({ "type": "ephemeral" }))),
             }],
         )]);

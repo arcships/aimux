@@ -14,7 +14,7 @@ use aimux_core::types::TokenUsage;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream};
 use aimux_stream::SseStream;
 use serde_json::json;
 

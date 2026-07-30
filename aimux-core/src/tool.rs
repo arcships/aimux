@@ -121,7 +121,7 @@ pub struct ToolResult {
     /// Must match the corresponding `ToolCall::tool_call_id`.
     pub tool_call_id: String,
     /// The tool's output (usually a JSON-serializable value or plain text).
-    pub output: Value,
+    pub result: Value,
     /// Whether the result is an error or error message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,

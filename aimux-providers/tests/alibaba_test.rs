@@ -288,7 +288,11 @@ async fn converts_tool_call_and_tool_result_messages() {
             role: Role::Tool,
             content: vec![ContentPart::ToolResult {
                 tool_call_id: "call-1".to_string(),
-                output: json!({"temp": 72}),
+                result: json!({"temp": 72}),
+                tool_name: None,
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
                 provider_options: None,
             }],
             ..Default::default()
@@ -503,6 +507,7 @@ async fn do_generate_extracts_tool_call() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "call_abc");
             assert_eq!(tool_name, "get-weather");

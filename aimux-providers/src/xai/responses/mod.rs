@@ -740,10 +740,11 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolResult {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
-                                        output: json!({ "queries": queries, "results": results }),
+                                        result: json!({ "queries": queries, "results": results }),
                                         is_error: None,
                                         preliminary: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
                                 continue;
@@ -795,10 +796,11 @@ impl LanguageModel for XaiResponsesModel {
                                     yield Ok(StreamPart::ToolResult {
                                         tool_call_id: part_id.to_string(),
                                         tool_name,
-                                        output: json!({}),
+                                        result: json!({}),
                                         is_error: None,
                                         preliminary: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
                                 continue;

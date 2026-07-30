@@ -151,6 +151,7 @@ fn stream_tool_calls(parts: &[StreamPart]) -> Vec<(String, String, Value)> {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
@@ -167,9 +168,9 @@ fn stream_tool_results(parts: &[StreamPart]) -> Vec<(String, Value)> {
         .filter_map(|p| match p {
             StreamPart::ToolResult {
                 tool_call_id,
-                output,
+                result,
                 ..
-            } => Some((tool_call_id.clone(), output.clone())),
+            } => Some((tool_call_id.clone(), result.clone())),
             _ => None,
         })
         .collect()
@@ -200,6 +201,7 @@ fn gen_tool_calls(content: &[GenerateContent]) -> Vec<(String, String, Value)> {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })

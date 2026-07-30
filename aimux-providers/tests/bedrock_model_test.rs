@@ -46,7 +46,6 @@ fn make_model(server: &MockServer) -> BedrockModel {
             base_url: server.uri(),
             auth: aimux_providers::bedrock::BedrockAuth::BearerToken("test-token".to_string()),
         },
-        Client::new(),
     )
 }
 
@@ -72,6 +71,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {:?}", item),
     }
@@ -379,6 +379,7 @@ async fn bedrock_stream_tool_call() {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
@@ -423,7 +424,6 @@ async fn bedrock_sigv4_auth() {
                 },
             ),
         },
-        Client::new(),
     );
 
     let result = model

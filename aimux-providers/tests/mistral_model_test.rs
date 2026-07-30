@@ -306,6 +306,7 @@ async fn should_extract_tool_call() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "gSIMJiOkT");
             assert_eq!(tool_name, "weather");
@@ -601,6 +602,7 @@ async fn should_stream_tool_call() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => Some((tool_call_id, tool_name, input)),
         _ => None,
     });
@@ -1211,6 +1213,7 @@ async fn should_extract_multiple_tool_calls() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "call-1");
             assert_eq!(tool_name, "weather");
@@ -1223,6 +1226,7 @@ async fn should_extract_multiple_tool_calls() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => {
             assert_eq!(tool_call_id, "call-2");
             assert_eq!(tool_name, "time");

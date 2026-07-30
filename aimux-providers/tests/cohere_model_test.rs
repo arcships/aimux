@@ -540,6 +540,7 @@ async fn should_stream_tool_call_deltas() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => Some((tool_call_id, tool_name, input)),
         _ => None,
     });
@@ -1453,6 +1454,7 @@ async fn should_stream_empty_tool_call_arguments() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });

@@ -217,10 +217,10 @@ fn push_user_part(part: &ContentPart, content: &mut Vec<Value>, doc_counter: &mu
         }
         ContentPart::ToolResult {
             tool_call_id,
-            output,
+            result,
             ..
         } => {
-            let result_content = resolve_tool_result_output(output, doc_counter);
+            let result_content = resolve_tool_result_output(result, doc_counter);
             content.push(json!({
                 "toolResult": {
                     "toolUseId": tool_call_id,

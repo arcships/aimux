@@ -37,10 +37,12 @@ impl ToolExecutor {
                 call.tool_name
             ))
         })?;
-        let output = handler.execute(&call.input).await?;
+        let result = handler.execute(&call.input).await?;
         Ok(ToolResult {
             tool_call_id: call.tool_call_id.clone(),
-            output,
+            result,
+            is_error: None,
+            preliminary: None,
         })
     }
 

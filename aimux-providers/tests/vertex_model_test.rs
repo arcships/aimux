@@ -48,7 +48,6 @@ fn make_model(server: &MockServer) -> VertexModel {
             base_url: server.uri(),
             auth: VertexAuth::BearerToken("test-token".to_string()),
         },
-        Client::new(),
     )
 }
 
@@ -102,6 +101,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {:?}", item),
     }
@@ -300,7 +300,6 @@ async fn vertex_api_key_auth() {
             base_url: server.uri(),
             auth: VertexAuth::ApiKey("test-api-key".to_string()),
         },
-        Client::new(),
     );
 
     let result = model
@@ -501,6 +500,7 @@ async fn vertex_stream_tool_call() {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
         _ => None,
     });

@@ -351,11 +351,11 @@ pub fn convert_to_responses_input(
                 for part in &msg.content {
                     if let ContentPart::ToolResult {
                         tool_call_id,
-                        output,
+                        result,
                         ..
                     } = part
                     {
-                        let content_value = match output {
+                        let content_value = match result {
                             Value::String(s) => Value::String(s.clone()),
                             other => Value::String(other.to_string()),
                         };

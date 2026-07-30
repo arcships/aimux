@@ -1444,6 +1444,7 @@ mod do_generate_tests {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "call_2866856768160095");
                 assert_eq!(tool_name, "weather");
@@ -1999,6 +2000,7 @@ mod do_stream_tests {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id, tool_name, input)),
             _ => None,
         });

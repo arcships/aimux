@@ -47,7 +47,6 @@ fn make_model(server: &MockServer) -> AnthropicAwsModel {
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
         },
-        Client::new(),
     )
 }
 
@@ -92,6 +91,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {:?}", item),
     }
@@ -377,6 +377,7 @@ async fn anthropic_aws_stream_tool_call() {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })
@@ -406,7 +407,6 @@ async fn anthropic_aws_sigv4_auth() {
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
         },
-        Client::new(),
     );
 
     let result = model

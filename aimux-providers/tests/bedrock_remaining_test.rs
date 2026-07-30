@@ -22,7 +22,6 @@
 use std::collections::HashMap;
 
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 use serial_test::serial;
 use wiremock::matchers::{method, path};
@@ -65,7 +64,6 @@ fn make_model(server: &MockServer) -> BedrockModel {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("test-token".to_string()),
         },
-        Client::new(),
     )
 }
 
@@ -104,6 +102,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {:?}", item),
     }
@@ -592,7 +591,6 @@ async fn arn_model_id_encoded_generate_route() {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("tok".to_string()),
         },
-        Client::new(),
     );
 
     let result = model
@@ -645,7 +643,6 @@ async fn arn_model_id_encoded_stream_route() {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("tok".to_string()),
         },
-        Client::new(),
     );
 
     let result = model
@@ -937,6 +934,7 @@ async fn stream_tool_call_empty_input() {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
             _ => None,
         })

@@ -867,6 +867,7 @@ mod do_generate_response {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "call_abc");
                 assert_eq!(tool_name, "weather");
@@ -1106,7 +1107,7 @@ mod do_stream {
 
         // ToolInputStart uses the call_id from the added item.
         match &parts[2] {
-            StreamPart::ToolInputStart { id, tool_name } => {
+            StreamPart::ToolInputStart { id, tool_name, .. } => {
                 assert_eq!(id, "call_added");
                 assert_eq!(tool_name, "weather");
             }
@@ -1141,6 +1142,7 @@ mod do_stream {
                 tool_call_id,
                 tool_name,
                 input,
+                ..
             } => {
                 assert_eq!(tool_call_id, "call_done");
                 assert_eq!(tool_name, "weather");

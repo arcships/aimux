@@ -62,7 +62,6 @@ fn make_model(server: &MockServer) -> AnthropicModel {
     AnthropicModel::new(
         "claude-3-haiku-20240307".to_string(),
         AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-        Client::new(),
     )
 }
 
@@ -140,6 +139,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             tool_call_id,
             tool_name,
             input,
+            ..
         } => (tool_call_id, tool_name, input),
         _ => panic!("expected ToolCall content, got {:?}", item),
     }
@@ -691,7 +691,7 @@ mod do_generate {
             .do_generate(&default_options(test_prompt()))
             .await
             .expect_err("500 should error");
-        assert!(matches!(err, aimux_core::AiMuxError::Provider(_)));
+        assert!(matches!(err, aimux_core::AiMuxError::ApiCall(_)));
     }
 
     // ── request body options ────────────────────────────────────────────────
@@ -1100,7 +1100,7 @@ mod do_stream {
         // ToolInputStart.
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::ToolInputStart { id, tool_name }
+            StreamPart::ToolInputStart { id, tool_name, .. }
                 if id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs" && tool_name == "test-tool"
         )));
 
@@ -1119,6 +1119,7 @@ mod do_stream {
                     tool_call_id,
                     tool_name,
                     input,
+                    ..
                 } => Some((tool_call_id, tool_name, input)),
                 _ => None,
             })
@@ -1338,6 +1339,7 @@ mod do_stream {
                     tool_call_id,
                     tool_name,
                     input,
+                    ..
                 } => Some((tool_call_id, tool_name, input)),
                 _ => None,
             })
@@ -1418,7 +1420,7 @@ mod do_stream {
         assert!(matches!(err, aimux_core::AiMuxError::Auth(_)));
     }
 
-    /// 500 before streaming → `AiMuxError::Provider`.
+    /// 500 before streaming → `AiMuxError::ApiCall`.
     #[tokio::test]
     async fn should_return_provider_error_on_500_before_streaming() {
         let server = MockServer::start().await;
@@ -1433,7 +1435,7 @@ mod do_stream {
             .do_stream(&default_options(test_prompt()))
             .await
             .expect_err("500 should error before streaming");
-        assert!(matches!(err, aimux_core::AiMuxError::Provider(_)));
+        assert!(matches!(err, aimux_core::AiMuxError::ApiCall(_)));
     }
 
     // ── in-stream error event ───────────────────────────────────────────────

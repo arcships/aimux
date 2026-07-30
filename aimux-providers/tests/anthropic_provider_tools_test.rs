@@ -79,7 +79,6 @@ fn make_model(server: &MockServer) -> AnthropicModel {
     AnthropicModel::new(
         "claude-3-haiku-20240307".to_string(),
         AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-        Client::new(),
     )
 }
 
@@ -88,7 +87,6 @@ fn make_model_with_id(server: &MockServer, model_id: &str) -> AnthropicModel {
     AnthropicModel::new(
         model_id.to_string(),
         AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-        Client::new(),
     )
 }
 

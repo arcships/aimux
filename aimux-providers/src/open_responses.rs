@@ -1013,11 +1013,11 @@ pub fn convert_to_open_responses_input(
                 for part in &msg.content {
                     if let ContentPart::ToolResult {
                         tool_call_id,
-                        output,
+                        result,
                         ..
                     } = part
                     {
-                        let content_value = resolve_tool_result_output(output, &mut warnings);
+                        let content_value = resolve_tool_result_output(result, &mut warnings);
                         input.push(json!({
                             "type": "function_call_output",
                             "call_id": tool_call_id,

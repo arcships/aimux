@@ -77,7 +77,6 @@ fn make_model_with_config(config: AnthropicConfig) -> AnthropicModel {
     AnthropicModel::new(
         "claude-3-haiku-20240307".to_string(),
         config,
-        direct_client(),
     )
 }
 
@@ -354,7 +353,6 @@ fn make_model_with_id(server: &MockServer, model_id: &str) -> AnthropicModel {
     AnthropicModel::new(
         model_id.to_string(),
         AnthropicConfig::new("test-api-key").with_base_url(server.uri()),
-        direct_client(),
     )
 }
 
@@ -632,7 +630,7 @@ async fn sends_tool_change_blocks_and_beta_header() {
     mock_messages_ok(&server, text_response("OK")).await;
 
     let config = AnthropicConfig::new("test-api-key").with_base_url(server.uri());
-    let model = AnthropicModel::new("claude-opus-4-8".to_string(), config, direct_client());
+    let model = AnthropicModel::new("claude-opus-4-8".to_string(), config);
 
     // NOTE: when implemented, `toolChanges` should be carried on the system
     // message's provider options. The current `LanguageModelPromptMessage`
