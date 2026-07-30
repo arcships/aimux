@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{RetryConfig, load_api_key, shared_client};
+use aimux_provider_utils::{RetryConfig, load_api_key};
 
 /// The bare (unversioned) Anthropic API URL.
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
@@ -210,9 +210,7 @@ impl AnthropicProvider {
 
     /// Create a Files interface for uploading files to Anthropic.
     pub fn files(&self) -> files::AnthropicFiles {
-        // `AnthropicFiles` (not yet migrated off reqwest) still holds a client;
-        // hand it the shared pooled client until it migrates.
-        files::AnthropicFiles::new(self.config.clone(), shared_client().clone())
+        files::AnthropicFiles::new(self.config.clone())
     }
 }
 

@@ -11,7 +11,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde_json::{Map, Value, json};
 
 use aimux_core::embedding_model::{
@@ -20,7 +19,8 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use super::VoyageConfig;
 
@@ -28,16 +28,11 @@ use super::VoyageConfig;
 pub struct VoyageEmbeddingModel {
     model_id: String,
     config: VoyageConfig,
-    client: Client,
 }
 
 impl VoyageEmbeddingModel {
-    pub fn new(model_id: String, config: VoyageConfig, client: Client) -> Self {
-        Self {
-            model_id,
-            config,
-            client,
-        }
+    pub fn new(model_id: String, config: VoyageConfig) -> Self {
+        Self { model_id, config }
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
@@ -100,43 +95,30 @@ impl EmbeddingModel for VoyageEmbeddingModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
+        let header_list: Vec<(String, String)> =
+            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .header("Content-Type", "application/json")
-            .headers(reqwest::header::HeaderMap::from_iter(
-                headers.iter().filter_map(|(k, v)| {
-                    reqwest::header::HeaderName::try_from(k)
-                        .ok()
-                        .zip(reqwest::header::HeaderValue::try_from(v).ok())
-                }),
-            ))
-            .json(&Value::Object(body))
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
+        // error internally using the shared error structure. `HttpBody::Json`
+        // sets `Content-Type: application/json`, so it is intentionally not
+        // added to the header list above.
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Json(Value::Object(body)),
+            },
+            RetryConfig::default(),
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
+        let response_headers: HashMap<String, String> = resp.headers.clone();
 
-        let response_headers: HashMap<String, String> = resp
-            .headers()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-            .collect();
-
-        let raw_value: Value = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_value: Value =
+            serde_json::from_slice::<Value>(&resp.body)
+                .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Extract embeddings: sort data by index, then map to embedding arrays.
         let embeddings: Vec<Vec<f32>> = raw_value

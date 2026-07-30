@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -15,7 +14,8 @@ use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
 use aimux_core::shared::FileBytes;
 
-use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
+use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send};
 
 use super::AnthropicConfig;
 
@@ -56,15 +56,15 @@ struct AnthropicFilesResponse {
 
 /// An Anthropic Files interface for uploading files.
 ///
-/// Aligned with TS `AnthropicFiles`.
+/// Aligned with TS `AnthropicFiles`. Does **not** hold an HTTP client —
+/// `http::send` uses the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct AnthropicFiles {
     config: AnthropicConfig,
-    client: Client,
 }
 
 impl AnthropicFiles {
-    pub fn new(config: AnthropicConfig, client: Client) -> Self {
-        Self { config, client }
+    pub fn new(config: AnthropicConfig) -> Self {
+        Self { config }
     }
 
     fn build_headers(&self) -> HashMap<String, String> {
@@ -118,48 +118,34 @@ impl Files for AnthropicFiles {
             None,
         );
 
-        let headers = self.build_headers();
-        let mut header_map: reqwest::header::HeaderMap = headers
-            .iter()
-            .filter_map(|(k, v)| {
-                reqwest::header::HeaderName::try_from(k)
-                    .ok()
-                    .zip(reqwest::header::HeaderValue::try_from(v).ok())
-            })
-            .collect();
-        header_map.insert(
-            reqwest::header::CONTENT_TYPE,
-            reqwest::header::HeaderValue::from_str(&content_type)
-                .map_err(|e| AiMuxError::InvalidArgument(format!("invalid content type: {e}")))?,
+        let mut headers = self.build_headers();
+        headers.insert(
+            "anthropic-beta".to_string(),
+            FILES_BETA_HEADER.to_string(),
         );
-        header_map.insert(
-            "anthropic-beta",
-            reqwest::header::HeaderValue::from_static(FILES_BETA_HEADER),
-        );
+        let header_list: Vec<(String, String)> =
+            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
-        let resp = self
-            .client
-            .post(self.endpoint())
-            .headers(header_map)
-            .body(body)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
+        // error internally using the shared error structure. The multipart body
+        // and its content-type are carried by `HttpBody::Bytes` — the HTTP layer
+        // sets `Content-Type` from it, so it is intentionally not added to the
+        // header list above.
+        let resp = send(
+            HttpRequest {
+                method: HttpMethod::Post,
+                url: self.endpoint(),
+                headers: header_list,
+                body: HttpBody::Bytes(body, content_type),
+            },
+            self.config.retry_config,
+            &DEFAULT_ERROR_STRUCTURE,
+        )
+        .await?;
 
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(parse_provider_error(
-                status.as_u16(),
-                &text,
-                &DEFAULT_ERROR_STRUCTURE,
-            ));
-        }
-
-        let data: AnthropicFilesResponse = resp
-            .json()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: AnthropicFilesResponse =
+            serde_json::from_slice::<AnthropicFilesResponse>(&resp.body)
+                .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Build provider metadata.
         let mut metadata = serde_json::Map::new();

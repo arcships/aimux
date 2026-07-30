@@ -11,7 +11,7 @@ pub use reranking::VoyageRerankingModel;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{load_api_key, shared_client, without_trailing_slash};
+use aimux_provider_utils::{load_api_key, without_trailing_slash};
 
 /// Configuration for the Voyage AI provider.
 #[derive(Debug, Clone)]
@@ -55,22 +55,18 @@ impl VoyageProvider {
     /// Create an embedding model instance for the given model name (e.g.
     /// `"voyage-3.5"`).
     pub fn embedding_model(&self, model_id: &str) -> VoyageEmbeddingModel {
-        // `VoyageEmbeddingModel` (not yet migrated off reqwest) still holds a client.
         VoyageEmbeddingModel::new(
             model_id.to_string(),
             self.config.clone(),
-            shared_client().clone(),
         )
     }
 
     /// Create a reranking model instance for the given model name (e.g.
     /// `"rerank-2.5"`).
     pub fn reranking_model(&self, model_id: &str) -> reranking::VoyageRerankingModel {
-        // `VoyageRerankingModel` (not yet migrated off reqwest) still holds a client.
         reranking::VoyageRerankingModel::new(
             model_id.to_string(),
             self.config.clone(),
-            shared_client().clone(),
         )
     }
 }
