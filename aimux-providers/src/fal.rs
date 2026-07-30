@@ -231,7 +231,7 @@ impl TranscriptionModel for FalTranscriptionModel {
 
         // Poll for result.
         let raw_body: Value;
-        let mut response_headers: HashMap<String, String>;
+        let response_headers: HashMap<String, String>;
         loop {
             // fal returns 400/404 while a queued request is still in progress —
             // `send` surfaces those as errors, so catch them and keep polling.
@@ -730,7 +730,7 @@ impl VideoModel for FalVideoModel {
 
         // Poll.
         let raw_body: Value;
-        let mut response_headers: HashMap<String, String>;
+        let response_headers: HashMap<String, String>;
         loop {
             let resp = match send(
                 HttpRequest {

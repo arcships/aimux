@@ -431,19 +431,19 @@ void main() {
     // Every part is a single-key tagged union with a non-empty tag.
     expect(parts.every((p) => p.type.isNotEmpty), isTrue);
 
-    // The ToolCall part is accessible via typed getters.
-    final toolCall = parts.firstWhere((p) => p.isToolCall);
+    // The ToolCall part is a typed subclass with named fields.
+    final toolCall = parts.whereType<StreamPartToolCall>().first;
     expect(toolCall.type, 'ToolCall');
     expect(toolCall.toolName, 'get_weather');
     expect(toolCall.toolCallId, 'call_xyz');
-    expect(toolCall.toolInput?['location'], 'Tokyo');
+    expect((toolCall.input as Map<String, dynamic>)['location'], 'Tokyo');
 
-    // A Finish part carries typed usage.
-    final finish = parts.firstWhere((p) => p.isFinish);
+    // A Finish part carries typed usage + finish reason.
+    final finish = parts.whereType<StreamPartFinish>().first;
     expect(finish.type, 'Finish');
-    expect(finish.finishUsage, isA<Usage>());
-    expect(finish.finishUsage?.inputTokens.total, 5);
-    expect(finish.finishUsage?.outputTokens.total, 2);
+    expect(finish.usage, isA<Usage>());
+    expect(finish.usage.inputTokens.total, 5);
+    expect(finish.usage.outputTokens.total, 2);
 
     // The request was a streaming POST.
     expect(server.recorded, hasLength(1));

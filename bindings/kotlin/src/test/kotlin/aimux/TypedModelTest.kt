@@ -239,3 +239,253 @@ class TypedModelTest {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Round-trip (de)serialization tests for the typed content / file data classes.
+//
+// These are pure serialization tests — no network, no [MockProviderServer]. Each
+// test builds a typed value, serializes it with [AimuxJson], decodes it back, and
+// asserts the round-tripped value equals the original. They also pin down the
+// wire-format quirks the typed wrappers rely on:
+//   - [GenerateContent.File] carries no `filename` (unlike [ContentPart.File]),
+//   - [GenerateContent.ToolResult] / [ContentPart.ToolResult] use the `result`
+//     field (never `output`) and carry `tool_name` / `is_error` / `preliminary`
+//     / `dynamic`,
+//   - [GenerateContent.Unknown] preserves an unrecognized external tag (forward
+//     compatibility).
+// ─────────────────────────────────────────────────────────────────────────────
+class TypedModelRoundTripTest {
+
+    // ── GenerateContent (externally tagged) ──────────────────────────────
+
+    @Test
+    fun `GenerateContent Text round-trips`() {
+        val original = GenerateContent.Text(text = "hello", providerMetadata = null)
+        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
+    @Test
+    fun `GenerateContent ToolCall round-trips`() {
+        val original = GenerateContent.ToolCall(
+            toolCallId = "call_1",
+            toolName = "get_weather",
+            input = JsonObject(mapOf("location" to JsonPrimitive("Tokyo"))),
+            providerExecuted = false,
+            dynamic = true,
+            providerMetadata = null,
+        )
+        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
+    @Test
+    fun `GenerateContent Source round-trips`() {
+        val original = GenerateContent.Source(
+            id = "src_1",
+            sourceType = "web",
+            url = "https://example.com",
+            title = "Example",
+            providerMetadata = null,
+        )
+        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
+    @Test
+    fun `GenerateContent Reasoning round-trips`() {
+        val original = GenerateContent.Reasoning(text = "thinking...", providerMetadata = null)
+        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
+    @Test
+    fun `GenerateContent File round-trips and omits filename`() {
+        val original = GenerateContent.File(
+            data = FileData.Text("payload"),
+            mediaType = "text/plain",
+            providerMetadata = null,
+        )
+        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        // GenerateContent.File (unlike ContentPart.File) has no `filename` field.
+        assertThat(json).doesNotContain("filename")
+        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
+    @Test
+    fun `GenerateContent ToolResult round-trips using result not output`() {
+        val original = GenerateContent.ToolResult(
+            toolCallId = "call_1",
+            toolName = "get_weather",
+            result = JsonObject(mapOf("temp" to JsonPrimitive("20"))),
+            isError = true,
+            preliminary = true,
+            dynamic = false,
+            providerMetadata = null,
+        )
+        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        // The field is `result`, never `output`.
+        assertThat(json).contains("\"result\"").doesNotContain("\"output\"")
+        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
+    @Test
+    fun `GenerateContent Unknown preserves an unrecognized external tag`() {
+        val payload = JsonObject(mapOf("future" to JsonPrimitive("data")))
+        val original = GenerateContent.Unknown(tag = "FutureVariant", data = payload)
+        val json = AimuxJson.encodeToString(GenerateContent.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(GenerateContent.serializer(), json)
+
+        // The whole value round-trips intact.
+        assertThat(decoded).isEqualTo(original)
+        // The unrecognized variant survives as Unknown and keeps its tag.
+        assertThat(decoded).isInstanceOf(GenerateContent.Unknown::class.java)
+        assertThat((decoded as GenerateContent.Unknown).tag).isEqualTo("FutureVariant")
+        assertThat(decoded.variantTag).isEqualTo("FutureVariant")
+        assertThat(json).contains("\"FutureVariant\"")
+    }
+
+    // ── ContentPart (internally tagged on `type`) ───────────────────────
+
+    @Test
+    fun `ContentPart Text round-trips`() {
+        val original = ContentPart.Text(text = "hi", providerOptions = null)
+        val json = AimuxJson.encodeToString(ContentPart.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(ContentPart.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+        assertThat(json).contains("\"text\"")
+    }
+
+    @Test
+    fun `ContentPart ToolCall round-trips`() {
+        val original = ContentPart.ToolCall(
+            toolCallId = "call_1",
+            toolName = "get_weather",
+            input = JsonObject(mapOf("location" to JsonPrimitive("Tokyo"))),
+            providerOptions = null,
+        )
+        val json = AimuxJson.encodeToString(ContentPart.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(ContentPart.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+        assertThat(json).contains("\"tool_call\"")
+    }
+
+    @Test
+    fun `ContentPart ToolResult round-trips with result not output`() {
+        val original = ContentPart.ToolResult(
+            toolCallId = "call_1",
+            result = JsonObject(mapOf("temp" to JsonPrimitive("20"))),
+            toolName = "get_weather",
+            isError = true,
+            preliminary = true,
+            dynamic = false,
+            providerOptions = null,
+        )
+        val json = AimuxJson.encodeToString(ContentPart.serializer(), original)
+
+        // `result` field, never `output`; carries the full ToolResult field set.
+        assertThat(json).contains("\"result\"").doesNotContain("\"output\"")
+        assertThat(json).contains("\"tool_name\"")
+        assertThat(json).contains("\"is_error\"")
+        assertThat(json).contains("\"preliminary\"")
+        assertThat(json).contains("\"dynamic\"")
+        assertThat(json).contains("\"tool_result\"")
+
+        val decoded = AimuxJson.decodeFromString(ContentPart.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+    }
+
+    // ── FileBytes / FileData (externally tagged) ────────────────────────
+
+    @Test
+    fun `FileBytes Binary round-trips`() {
+        val original = FileBytes.Binary(data = listOf(1, 2, 3, 255))
+        val json = AimuxJson.encodeToString(FileBytes.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(FileBytes.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+        assertThat(json).contains("\"Binary\"")
+    }
+
+    @Test
+    fun `FileBytes Base64 round-trips`() {
+        val original = FileBytes.Base64(data = "aGVsbG8=")
+        val json = AimuxJson.encodeToString(FileBytes.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(FileBytes.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+        assertThat(json).contains("\"Base64\"")
+    }
+
+    @Test
+    fun `FileData Data round-trips`() {
+        val original = FileData.Data(data = FileBytes.Base64("aGVsbG8="))
+        val json = AimuxJson.encodeToString(FileData.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(FileData.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+        assertThat(json).contains("\"Data\"")
+    }
+
+    @Test
+    fun `FileData Url round-trips`() {
+        val original = FileData.Url(url = "https://example.com/file")
+        val json = AimuxJson.encodeToString(FileData.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(FileData.serializer(), json)
+        assertThat(decoded).isEqualTo(original)
+        assertThat(json).contains("\"Url\"")
+    }
+
+    // ── GenerateResult (integration: mixed content variants) ───────────
+
+    @Test
+    fun `GenerateResult round-trips with mixed content variants`() {
+        val original = GenerateResult(
+            content = listOf(
+                GenerateContent.Text(text = "hello"),
+                GenerateContent.ToolCall(
+                    toolCallId = "call_1",
+                    toolName = "get_weather",
+                    input = JsonObject(mapOf("location" to JsonPrimitive("Tokyo"))),
+                ),
+                GenerateContent.ToolResult(
+                    toolCallId = "call_1",
+                    toolName = "get_weather",
+                    result = JsonObject(mapOf("temp" to JsonPrimitive("20"))),
+                    isError = false,
+                ),
+            ),
+            finishReason = FinishReason(unified = FinishReasonUnified.STOP),
+            usage = Usage.of(input = 10, output = 5),
+        )
+        val json = AimuxJson.encodeToString(GenerateResult.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(GenerateResult.serializer(), json)
+
+        // The whole structure round-trips intact.
+        assertThat(decoded).isEqualTo(original)
+
+        // Variant order and tags are preserved.
+        assertThat(decoded.contentVariantTags)
+            .containsExactly("Text", "ToolCall", "ToolResult")
+        assertThat(decoded.hasContentVariant("ToolCall")).isTrue()
+        assertThat(decoded.hasContentVariant("Reasoning")).isFalse()
+
+        // Spot-check the decoded content variants by type and field.
+        assertThat(decoded.content[0]).isInstanceOf(GenerateContent.Text::class.java)
+        assertThat((decoded.content[0] as GenerateContent.Text).text).isEqualTo("hello")
+
+        assertThat(decoded.content[1]).isInstanceOf(GenerateContent.ToolCall::class.java)
+        assertThat((decoded.content[1] as GenerateContent.ToolCall).toolName).isEqualTo("get_weather")
+
+        assertThat(decoded.content[2]).isInstanceOf(GenerateContent.ToolResult::class.java)
+        assertThat((decoded.content[2] as GenerateContent.ToolResult).result.toString())
+            .isEqualTo("""{"temp":"20"}""")
+
+        // The external tags are present on the wire, and there is no `output`.
+        assertThat(json).contains("\"Text\"").contains("\"ToolCall\"").contains("\"ToolResult\"")
+        assertThat(json).contains("\"result\"").doesNotContain("\"output\"")
+    }
+}
