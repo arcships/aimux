@@ -91,7 +91,7 @@ fn ok_converse_body() -> Value {
 
 fn as_text(item: &GenerateContent) -> &str {
     match item {
-        GenerateContent::Text { text } => text,
+        GenerateContent::Text { text, .. } => text,
         _ => panic!("expected Text content, got {:?}", item),
     }
 }

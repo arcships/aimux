@@ -160,7 +160,7 @@ async fn should_extract_text_response() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, "Hello, World!"),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
         other => panic!("expected Text, got {:?}", other),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
@@ -993,7 +993,7 @@ async fn should_extract_content_when_message_content_is_object() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, "Hello from object"),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Hello from object"),
         other => panic!("expected Text, got {:?}", other),
     }
 }
@@ -1042,7 +1042,7 @@ async fn should_extract_text_from_mixed_thinking_and_text() {
     // all text parts into a single Text content (thinking parts are skipped).
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Partial answer.Final answer.");
         }
         other => panic!("expected Text, got {:?}", other),
@@ -1087,7 +1087,7 @@ async fn should_handle_empty_thinking_content() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, "Just the answer."),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Just the answer."),
         other => panic!("expected Text, got {:?}", other),
     }
 }
@@ -1130,7 +1130,7 @@ async fn should_return_raw_text_with_think_tags() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, raw),
+        GenerateContent::Text { text, .. } => assert_eq!(text, raw),
         other => panic!("expected Text, got {:?}", other),
     }
 }

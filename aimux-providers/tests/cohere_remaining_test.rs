@@ -595,7 +595,7 @@ async fn should_extract_reasoning_from_response() {
         other => panic!("expected Reasoning, got {:?}", other),
     }
     match &result.content[1] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(text, "2 + 2 = 4");
         }
         other => panic!("expected Text, got {:?}", other),

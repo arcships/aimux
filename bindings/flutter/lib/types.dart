@@ -207,6 +207,20 @@ class ResponseMetadata {
   Map<String, dynamic> toJson() => _$ResponseMetadataToJson(this);
 }
 
+/// A content item in a `GenerateResult`. Mirrors `GenerateContent.ts`.
+///
+/// Externally-tagged union — each item is a single-key map whose key is the
+/// variant tag and whose value is the variant payload. Kept opaque (`tag` +
+/// raw `data` map) so new variants pass through verbatim; the typed accessors
+/// below are convenience getters for common fields and return `null` when the
+/// field is absent for the current variant.
+///
+/// Known variants: `Text`, `ToolCall`, `Source`, `Reasoning`, `File`,
+/// `ToolResult`. The `ToolResult` variant (provider-executed tool results)
+/// carries its outcome under the `result` field — renamed from `output` in the
+/// Rust core. The `File` variant carries model-generated files (e.g. images or
+/// documents) as a `FileData` tagged union under the `data` key, alongside a
+/// `media_type`.
 class GenerateContent {
   final String tag;
   final Map<String, dynamic> data;
@@ -214,6 +228,19 @@ class GenerateContent {
   String? get text => data['text'] as String?;
   String? get toolCallId => data['tool_call_id'] as String?;
   String? get toolName => data['tool_name'] as String?;
+
+  /// The outcome of a provider-executed tool (`ToolResult` variant), else
+  /// `null`. Mirrors the Rust `result` field (renamed from `output`).
+  Object? get result => data['result'];
+
+  /// The `FileData` payload of a `File` variant (a tagged union covering base64
+  /// data, URL, or provider reference), else `null`.
+  Map<String, dynamic>? get fileData =>
+      data['data'] as Map<String, dynamic>?;
+
+  /// The media type of a `File` variant (e.g. `image/png`), else `null`.
+  String? get fileMediaType => data['media_type'] as String?;
+
   factory GenerateContent.fromJson(Map<String, dynamic> json) {
     final e = json.entries.first;
     return GenerateContent(tag: e.key, data: e.value as Map<String, dynamic>);
@@ -342,6 +369,15 @@ class ModelMessage {
 /// like `{"TextDelta": {"id": "...", "delta": "..."}}`. Rather than model
 /// every variant with json_serializable, we keep the raw map and expose typed
 /// accessors + a `fromJson`/`toJson` factory for the common variants.
+///
+/// Known variants include `TextStart`/`TextDelta`/`TextEnd`, `StreamStart`,
+/// `ToolInputStart`/`ToolInputDelta`/`ToolInputEnd`/`ToolCall`, `ToolResult`
+/// (provider-executed tool results; outcome under the `result` field, renamed
+/// from `output` in the Rust core), `File` (model-generated files, e.g. images
+/// or documents, carried as a `FileData` tagged union under `data` with a
+/// `media_type`), `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `Finish`,
+/// `Error`, `ResponseMetadata`, `Source`, and `Raw`. Unknown tags pass through
+/// unchanged via [type] and [data].
 class StreamPart {
   final Map<String, dynamic> _raw;
 
@@ -352,7 +388,8 @@ class StreamPart {
   Map<String, dynamic> toJson() => Map<String, dynamic>.from(_raw);
 
   /// The union tag — the single top-level key (e.g. `"TextDelta"`,
-  /// `"ToolCall"`, `"Finish"`, `"Error"`), or `''` if the part is empty.
+  /// `"ToolCall"`, `"ToolResult"`, `"File"`, `"Finish"`, `"Error"`), or `''`
+  /// if the part is empty.
   String get type => _raw.isNotEmpty ? _raw.keys.first : '';
 
   /// The inner payload map, or `null` if the part has no payload.
@@ -388,6 +425,27 @@ class StreamPart {
   /// Parsed tool input for `ToolCall` parts, else `null`.
   Map<String, dynamic>? get toolInput =>
       isToolCall ? (data?['input'] as Map<String, dynamic>?) : null;
+
+  /// Whether this is a `ToolResult` part (a provider-executed tool result).
+  bool get isToolResult => type == 'ToolResult';
+
+  /// The result payload of a `ToolResult` part, else `null`. Mirrors the Rust
+  /// `result` field (renamed from `output`).
+  Object? get toolResult => isToolResult ? data?['result'] : null;
+
+  // ── File ──────────────────────────────────────────────────────────────────
+  /// Whether this is a `File` part (a model-generated file, e.g. an image or
+  /// document).
+  bool get isFile => type == 'File';
+
+  /// The `FileData` payload of a `File` part (a tagged union covering base64
+  /// data, URL, or provider reference), else `null`.
+  Map<String, dynamic>? get fileData =>
+      isFile ? (data?['data'] as Map<String, dynamic>?) : null;
+
+  /// The media type of a `File` part (e.g. `image/png`), else `null`.
+  String? get fileMediaType =>
+      isFile ? (data?['media_type'] as String?) : null;
 
   // ── Finish / error ───────────────────────────────────────────────────────
   bool get isFinish => type == 'Finish';

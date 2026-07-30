@@ -164,7 +164,7 @@ async fn should_extract_text_response() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(text, "The capital of France is Paris.");
         }
         other => panic!("expected Text, got {:?}", other),
@@ -1031,7 +1031,7 @@ async fn should_extract_citations_from_response() {
     // 1 text + 3 citation sources.
     assert_eq!(result.content.len(), 4);
     match &result.content[0] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(
                 text,
                 "The key benefits mentioned in this document are:\n\
@@ -1049,6 +1049,7 @@ async fn should_extract_citations_from_response() {
                 source_type,
                 url,
                 title,
+                ..
             } => {
                 assert_eq!(id, &format!("citation-{}", i));
                 assert_eq!(source_type, "document");

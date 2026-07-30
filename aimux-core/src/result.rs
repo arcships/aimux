@@ -19,7 +19,11 @@ use serde_json::Value;
 #[ts(export)]
 pub enum GenerateContent {
     /// Generated text.
-    Text { text: String },
+    Text {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
     /// A tool call requested by the model.
     ToolCall {
         tool_call_id: String,
@@ -42,6 +46,8 @@ pub enum GenerateContent {
         source_type: String,
         url: Option<String>,
         title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
     },
     /// A reasoning / thinking segment produced by the model.
     ///
@@ -59,8 +65,6 @@ pub enum GenerateContent {
     File {
         data: FileData,
         media_type: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },

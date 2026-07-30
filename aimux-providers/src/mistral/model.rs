@@ -245,7 +245,7 @@ impl LanguageModel for MistralModel {
         if let Some(text) = extract_text_content(&choice.message.content)
             && !text.is_empty()
         {
-            content.push(GenerateContent::Text { text });
+            content.push(GenerateContent::Text { text, provider_metadata: None});
         }
 
         // Tool calls.
@@ -407,6 +407,7 @@ impl LanguageModel for MistralModel {
                                         if text_started {
                                             yield Ok(StreamPart::TextEnd {
                                                 id: format!("{}", text_id),
+                                                provider_metadata: None,
                                             });
                                             text_started = false;
                                         }
@@ -450,12 +451,14 @@ impl LanguageModel for MistralModel {
                                         }
                                         yield Ok(StreamPart::TextStart {
                                             id: format!("{}", text_id),
+                                            provider_metadata: None,
                                         });
                                         text_started = true;
                                     }
                                     yield Ok(StreamPart::TextDelta {
                                         id: format!("{}", text_id),
                                         delta: text_delta,
+                                        provider_metadata: None,
                                     });
                                 }
 
@@ -471,17 +474,21 @@ impl LanguageModel for MistralModel {
                                         tool_name: tool_name.clone(),
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
 
                                     if !args.is_empty() {
                                         yield Ok(StreamPart::ToolInputDelta {
                                             id: tool_id.clone(),
                                             delta: args.clone(),
+                                            provider_metadata: None,
                                         });
                                     }
 
                                     yield Ok(StreamPart::ToolInputEnd {
                                         id: tool_id.clone(),
+                                        provider_metadata: None,
                                     });
 
                                     let input: Value = serde_json::from_str(&args)
@@ -492,6 +499,7 @@ impl LanguageModel for MistralModel {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -501,6 +509,7 @@ impl LanguageModel for MistralModel {
                                 if text_started {
                                     yield Ok(StreamPart::TextEnd {
                                         id: format!("{}", text_id),
+                                        provider_metadata: None,
                                     });
                                     text_started = false;
                                 }
@@ -532,6 +541,7 @@ impl LanguageModel for MistralModel {
             if text_started {
                 yield Ok(StreamPart::TextEnd {
                     id: format!("{}", text_id),
+                    provider_metadata: None,
                 });
             }
             if reasoning_started

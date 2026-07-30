@@ -17,11 +17,24 @@ use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
 pub enum StreamPart {
     // ── P0: text ──
     /// Start of a text segment.
-    TextStart { id: String },
+    TextStart {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
     /// A delta of generated text.
-    TextDelta { id: String, delta: String },
+    TextDelta {
+        id: String,
+        delta: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
     /// End of a text segment.
-    TextEnd { id: String },
+    TextEnd {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
 
     // ── P0: stream lifecycle ──
     /// First chunk — carries warnings from the provider.
@@ -46,11 +59,25 @@ pub enum StreamPart {
         /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dynamic: Option<bool>,
+        /// Optional title for the tool call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
     },
     /// A delta of tool call input (partial JSON).
-    ToolInputDelta { id: String, delta: String },
+    ToolInputDelta {
+        id: String,
+        delta: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
     /// End of a tool call's input streaming.
-    ToolInputEnd { id: String },
+    ToolInputEnd {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
+    },
     /// A complete tool call (alternative to the start/delta/end flow).
     ToolCall {
         tool_call_id: String,
@@ -62,6 +89,8 @@ pub enum StreamPart {
         /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dynamic: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
     },
     /// A tool result (provider-executed tools).
     ToolResult {
@@ -90,8 +119,6 @@ pub enum StreamPart {
     File {
         data: FileData,
         media_type: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },
@@ -131,6 +158,8 @@ pub enum StreamPart {
         source_type: String,
         url: Option<String>,
         title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_metadata: Option<ProviderMetadata>,
     },
 
     /// A raw chunk from the provider (for debugging, when `include_raw_chunks` is set).

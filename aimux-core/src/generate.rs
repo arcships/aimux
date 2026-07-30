@@ -176,7 +176,7 @@ pub async fn generate_text(
     let mut tool_calls = Vec::new();
     for content in &result.content {
         match content {
-            GenerateContent::Text { text: t } => text.push_str(t),
+            GenerateContent::Text { text: t, .. } => text.push_str(t),
             GenerateContent::ToolCall {
                 tool_call_id,
                 tool_name,

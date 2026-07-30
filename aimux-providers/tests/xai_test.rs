@@ -1355,7 +1355,7 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::Text { text } => assert_eq!(text, "Hello from object"),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "Hello from object"),
             other => panic!("expected Text, got {:?}", other),
         }
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
@@ -1871,7 +1871,7 @@ mod do_generate {
 
         // Should have text "Hello" (not "prefix ") and reasoning content
         let text = result.content.iter().find_map(|c| match c {
-            GenerateContent::Text { text } => Some(text.clone()),
+            GenerateContent::Text { text, .. } => Some(text.clone()),
             _ => None,
         });
         assert_eq!(text.as_deref(), Some("Hello"));
@@ -2376,7 +2376,7 @@ mod reasoning {
         let has_text = result
             .content
             .iter()
-            .any(|c| matches!(c, GenerateContent::Text { text } if text == "Hello"));
+            .any(|c| matches!(c, GenerateContent::Text { text, .. } if text == "Hello"));
         assert!(has_text, "should have text 'Hello'");
 
         let reasoning = result.content.iter().find_map(|c| match c {

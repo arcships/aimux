@@ -169,7 +169,7 @@ async fn should_generate_text() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Hello! How can I help you today?");
         }
         other => panic!("expected Text, got {:?}", other),
@@ -249,7 +249,7 @@ async fn should_extract_text_from_output_array_when_output_text_missing() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Extracted from output array");
         }
         other => panic!("expected Text, got {:?}", other),
@@ -444,7 +444,7 @@ async fn should_generate_text_and_sources_from_annotations() {
     // content: text + 2 sources
     assert_eq!(result.content.len(), 3);
     match &result.content[0] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Here are some recent articles about AI.");
         }
         other => panic!("expected Text at [0], got {:?}", other),
@@ -547,7 +547,7 @@ async fn should_handle_mcp_tools_with_annotations() {
         other => panic!("expected ToolCall at [0], got {:?}", other),
     }
     match &result.content[1] {
-        GenerateContent::Text { text } => assert_eq!(text, "Based on the search results."),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the search results."),
         other => panic!("expected Text at [1], got {:?}", other),
     }
     match &result.content[2] {
@@ -618,26 +618,26 @@ async fn should_stream_text_deltas() {
     }
 
     match &parts[2] {
-        StreamPart::TextStart { id } => assert_eq!(id, "msg_test"),
+        StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_test"),
         other => panic!("expected TextStart, got {:?}", other),
     }
 
     match &parts[3] {
-        StreamPart::TextDelta { id, delta } => {
+        StreamPart::TextDelta { id, delta, .. } => {
             assert_eq!(id, "msg_test");
             assert_eq!(delta, "Hello,");
         }
         other => panic!("expected TextDelta, got {:?}", other),
     }
     match &parts[4] {
-        StreamPart::TextDelta { id, delta } => {
+        StreamPart::TextDelta { id, delta, .. } => {
             assert_eq!(id, "msg_test");
             assert_eq!(delta, " World!");
         }
         other => panic!("expected TextDelta, got {:?}", other),
     }
     match &parts[5] {
-        StreamPart::TextEnd { id } => assert_eq!(id, "msg_test"),
+        StreamPart::TextEnd { id, .. } => assert_eq!(id, "msg_test"),
         other => panic!("expected TextEnd, got {:?}", other),
     }
     match &parts[6] {
@@ -1084,7 +1084,7 @@ async fn should_handle_function_call_tool_responses() {
         other => panic!("expected ToolCall at [0], got {:?}", other),
     }
     match &result.content[1] {
-        GenerateContent::Text { text } => {
+        GenerateContent::Text { text, .. } => {
             assert_eq!(text, "The weather in New York is 72°F and sunny.");
         }
         other => panic!("expected Text at [1], got {:?}", other),
@@ -1149,7 +1149,7 @@ async fn should_stream_tool_calls() {
         other => panic!("expected ToolInputStart, got {:?}", other),
     }
     match &parts[3] {
-        StreamPart::ToolInputEnd { id } => assert_eq!(id, "call_456"),
+        StreamPart::ToolInputEnd { id, .. } => assert_eq!(id, "call_456"),
         other => panic!("expected ToolInputEnd, got {:?}", other),
     }
     match &parts[4] {
@@ -1396,7 +1396,7 @@ async fn should_handle_reasoning_content_in_responses() {
         other => panic!("expected Reasoning at [0], got {:?}", other),
     }
     match &result.content[1] {
-        GenerateContent::Text { text } => assert_eq!(text, "The answer is 42."),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "The answer is 42."),
         other => panic!("expected Text at [1], got {:?}", other),
     }
 }
@@ -1499,25 +1499,25 @@ async fn should_stream_reasoning_content() {
         other => panic!("expected ReasoningEnd, got {:?}", other),
     }
     match &parts[6] {
-        StreamPart::TextStart { id } => assert_eq!(id, "msg_stream"),
+        StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_stream"),
         other => panic!("expected TextStart, got {:?}", other),
     }
     match &parts[7] {
-        StreamPart::TextDelta { id, delta } => {
+        StreamPart::TextDelta { id, delta, .. } => {
             assert_eq!(id, "msg_stream");
             assert_eq!(delta, "The solution is");
         }
         other => panic!("expected TextDelta, got {:?}", other),
     }
     match &parts[8] {
-        StreamPart::TextDelta { id, delta } => {
+        StreamPart::TextDelta { id, delta, .. } => {
             assert_eq!(id, "msg_stream");
             assert_eq!(delta, " simple.");
         }
         other => panic!("expected TextDelta, got {:?}", other),
     }
     match &parts[9] {
-        StreamPart::TextEnd { id } => assert_eq!(id, "msg_stream"),
+        StreamPart::TextEnd { id, .. } => assert_eq!(id, "msg_stream"),
         other => panic!("expected TextEnd, got {:?}", other),
     }
     match &parts[10] {

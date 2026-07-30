@@ -33,7 +33,7 @@ final class WrapperTests: XCTestCase {
 
         // raw.content carries a typed .text GenerateContent item.
         let textContent = result.raw.content.compactMap { part -> String? in
-            if case .text(let t) = part { return t } else { return nil }
+            if case .text(let t, _) = part { return t } else { return nil }
         }
         XCTAssertEqual(textContent, ["Rust is a systems programming language."])
 
@@ -187,7 +187,7 @@ final class WrapperTests: XCTestCase {
 
         // The text deltas reassemble to "Hello world".
         let text = parts.reduce(into: "") { acc, part in
-            if case .textDelta(_, let delta) = part { acc += delta }
+            if case .textDelta(_, let delta, _) = part { acc += delta }
         }
         XCTAssertEqual(text, "Hello world")
 
@@ -235,7 +235,7 @@ final class WrapperTests: XCTestCase {
 
         // The complete ToolCall part carries the tool name and structured input.
         let toolCall = parts.compactMap { part -> (String, JSONValue)? in
-            if case .toolCall(_, let name, let input, _, _) = part { return (name, input) }
+            if case .toolCall(_, let name, let input, _, _, _) = part { return (name, input) }
             return nil
         }.first
         XCTAssertEqual(toolCall?.0, "get_weather")
@@ -254,7 +254,7 @@ final class WrapperTests: XCTestCase {
         let parts = try await collect(model.streamTextAsync(prompt: .text("Say hello")))
         XCTAssertFalse(parts.isEmpty)
         let text = parts.reduce(into: "") { acc, part in
-            if case .textDelta(_, let delta) = part { acc += delta }
+            if case .textDelta(_, let delta, _) = part { acc += delta }
         }
         XCTAssertEqual(text, "Hello world")
     }

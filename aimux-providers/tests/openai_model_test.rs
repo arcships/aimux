@@ -268,7 +268,7 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::Text { text } => assert_eq!(text, "Hello, World!"),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
             other => panic!("expected Text, got {:?}", other),
         }
     }
@@ -726,7 +726,7 @@ mod do_stream {
 
         // text-start with id "0"
         match &parts[2] {
-            StreamPart::TextStart { id } => assert_eq!(id, "0"),
+            StreamPart::TextStart { id, .. } => assert_eq!(id, "0"),
             other => panic!("expected TextStart, got {:?}", other),
         }
 
@@ -747,7 +747,7 @@ mod do_stream {
             .iter()
             .find(|p| matches!(p, StreamPart::TextEnd { .. }));
         match text_end {
-            Some(StreamPart::TextEnd { id }) => assert_eq!(id, "0"),
+            Some(StreamPart::TextEnd { id, .. }) => assert_eq!(id, "0"),
             other => panic!("expected TextEnd, got {:?}", other),
         }
 
@@ -855,7 +855,7 @@ mod do_stream {
 
         // Verify tool-input-end
         let tool_end = parts.iter().find(|p| {
-            matches!(p, StreamPart::ToolInputEnd { id } if id == "call_O17Uplv4lJvD6DVdIvFFeRMw")
+            matches!(p, StreamPart::ToolInputEnd { id, .. } if id == "call_O17Uplv4lJvD6DVdIvFFeRMw")
         });
         assert!(tool_end.is_some(), "should have ToolInputEnd");
 

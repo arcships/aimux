@@ -220,6 +220,7 @@ impl LanguageModel for XaiResponsesModel {
                         {
                             content.push(GenerateContent::Text {
                                 text: text.to_string(),
+                                provider_metadata: None,
                             });
                         }
                         if let Some(annotations) = cp.get("annotations").and_then(|v| v.as_array())
@@ -238,6 +239,7 @@ impl LanguageModel for XaiResponsesModel {
                                         source_type: "url".to_string(),
                                         url: Some(url.to_string()),
                                         title: Some(title),
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -528,11 +530,12 @@ impl LanguageModel for XaiResponsesModel {
                             let block_id = format!("text-{}", item_id);
                             if !content_blocks.contains_key(&block_id) {
                                 content_blocks.insert(block_id.clone(), false);
-                                yield Ok(StreamPart::TextStart { id: block_id.clone() });
+                                yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});
                             }
                             yield Ok(StreamPart::TextDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
+                                provider_metadata: None,
                             });
                             continue;
                         }
@@ -549,6 +552,7 @@ impl LanguageModel for XaiResponsesModel {
                                             source_type: "url".to_string(),
                                             url: Some(url.to_string()),
                                             title: Some(title),
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -567,6 +571,7 @@ impl LanguageModel for XaiResponsesModel {
                                     source_type: "url".to_string(),
                                     url: Some(url.to_string()),
                                     title: Some(title),
+                                    provider_metadata: None,
                                 });
                             }
                             continue;
@@ -652,6 +657,7 @@ impl LanguageModel for XaiResponsesModel {
                                 yield Ok(StreamPart::ToolInputDelta {
                                     id: tool_call_id.clone(),
                                     delta: delta.to_string(),
+                                    provider_metadata: None,
                                 });
                             }
                             continue;
@@ -710,13 +716,17 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_name: tool_name.clone(),
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: part_id.to_string(),
                                         delta: String::new(),
+                                        provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolInputEnd {
                                         id: part_id.to_string(),
+                                        provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: part_id.to_string(),
@@ -724,6 +734,7 @@ impl LanguageModel for XaiResponsesModel {
                                         input: Value::String(String::new()),
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
 
@@ -775,13 +786,17 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_name: tool_name.clone(),
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: part_id.to_string(),
                                         delta: tool_input.clone(),
+                                        provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolInputEnd {
                                         id: part_id.to_string(),
+                                        provider_metadata: None,
                                     });
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: part_id.to_string(),
@@ -789,6 +804,7 @@ impl LanguageModel for XaiResponsesModel {
                                         input: Value::String(tool_input),
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
 
@@ -820,10 +836,11 @@ impl LanguageModel for XaiResponsesModel {
                                             let block_id = format!("text-{}", part_id);
                                             if !content_blocks.contains_key(&block_id) {
                                                 content_blocks.insert(block_id.clone(), false);
-                                                yield Ok(StreamPart::TextStart { id: block_id.clone() });
+                                                yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});
                                                 yield Ok(StreamPart::TextDelta {
                                                     id: block_id,
                                                     delta: text.to_string(),
+                                                    provider_metadata: None,
                                                 });
                                             }
                                         }
@@ -837,6 +854,7 @@ impl LanguageModel for XaiResponsesModel {
                                                     source_type: "url".to_string(),
                                                     url: Some(url.to_string()),
                                                     title: Some(title),
+                                                    provider_metadata: None,
                                                 });
                                             }
                                         }
@@ -857,6 +875,8 @@ impl LanguageModel for XaiResponsesModel {
                                         tool_name: name.to_string(),
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
                                 } else {
                                     // output_item.done
@@ -865,6 +885,7 @@ impl LanguageModel for XaiResponsesModel {
                                     let arguments = item.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
                                     yield Ok(StreamPart::ToolInputEnd {
                                         id: call_id.to_string(),
+                                        provider_metadata: None,
                                     });
                                     let input: Value = serde_json::from_str(arguments)
                                         .unwrap_or_else(|_| Value::String(arguments.to_string()));
@@ -874,6 +895,7 @@ impl LanguageModel for XaiResponsesModel {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
                                 continue;
@@ -894,7 +916,7 @@ impl LanguageModel for XaiResponsesModel {
             // Close any remaining open text blocks.
             for (block_id, ended) in &content_blocks {
                 if !ended {
-                    yield Ok(StreamPart::TextEnd { id: block_id.clone() });
+                    yield Ok(StreamPart::TextEnd { id: block_id.clone(), provider_metadata: None});
                 }
             }
 

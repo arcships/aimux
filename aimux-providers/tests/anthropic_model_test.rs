@@ -127,7 +127,7 @@ fn text_response(text: &str) -> Value {
 /// Helper to extract the text from a `GenerateContent::Text` item.
 fn as_text(item: &GenerateContent) -> &str {
     match item {
-        GenerateContent::Text { text } => text,
+        GenerateContent::Text { text, .. } => text,
         _ => panic!("expected Text content, got {:?}", item),
     }
 }
@@ -846,25 +846,25 @@ mod do_stream {
             other => panic!("expected ResponseMetadata, got {:?}", other),
         }
         match &parts[2] {
-            StreamPart::TextStart { id } => assert_eq!(id, "0"),
+            StreamPart::TextStart { id, .. } => assert_eq!(id, "0"),
             other => panic!("expected TextStart, got {:?}", other),
         }
         match &parts[3] {
-            StreamPart::TextDelta { id, delta } => {
+            StreamPart::TextDelta { id, delta, .. } => {
                 assert_eq!(id, "0");
                 assert_eq!(delta, "Hello");
             }
             other => panic!("expected TextDelta Hello, got {:?}", other),
         }
         match &parts[4] {
-            StreamPart::TextDelta { id, delta } => {
+            StreamPart::TextDelta { id, delta, .. } => {
                 assert_eq!(id, "0");
                 assert_eq!(delta, "!");
             }
             other => panic!("expected TextDelta !, got {:?}", other),
         }
         match &parts[5] {
-            StreamPart::TextEnd { id } => assert_eq!(id, "0"),
+            StreamPart::TextEnd { id, .. } => assert_eq!(id, "0"),
             other => panic!("expected TextEnd, got {:?}", other),
         }
         match &parts[6] {
@@ -1085,7 +1085,7 @@ mod do_stream {
         let tool_deltas: Vec<String> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::ToolInputDelta { id, delta } => {
+                StreamPart::ToolInputDelta { id, delta, .. } => {
                     assert_eq!(id, "toolu_01DBsB4vvYLnBDzZ5rBSxSLs");
                     Some(delta.clone())
                 }
@@ -1107,7 +1107,7 @@ mod do_stream {
         // ToolInputEnd.
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::ToolInputEnd { id }
+            StreamPart::ToolInputEnd { id, .. }
                 if id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs"
         )));
 
@@ -1276,7 +1276,7 @@ mod do_stream {
         let starts: Vec<String> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::TextStart { id } => Some(id.clone()),
+                StreamPart::TextStart { id, .. } => Some(id.clone()),
                 _ => None,
             })
             .collect();
@@ -1284,7 +1284,7 @@ mod do_stream {
         let ends: Vec<String> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::TextEnd { id } => Some(id.clone()),
+                StreamPart::TextEnd { id, .. } => Some(id.clone()),
                 _ => None,
             })
             .collect();
@@ -1325,11 +1325,11 @@ mod do_stream {
         // Text block: TextStart(0) / TextDelta / TextEnd(0).
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::TextStart { id } if id == "0"
+            StreamPart::TextStart { id, .. } if id == "0"
         )));
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::TextEnd { id } if id == "0"
+            StreamPart::TextEnd { id, .. } if id == "0"
         )));
         // Tool block: ToolInputStart / ToolInputDelta* / ToolInputEnd / ToolCall.
         let tool_call = parts

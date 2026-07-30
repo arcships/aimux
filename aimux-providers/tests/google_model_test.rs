@@ -194,7 +194,7 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::Text { text } => assert_eq!(text, "Hello, World!"),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
             other => panic!("expected Text, got {:?}", other),
         }
     }
@@ -912,7 +912,7 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
-            GenerateContent::Text { text } => assert_eq!(text, "Let me check the weather."),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "Let me check the weather."),
             other => panic!("expected Text, got {:?}", other),
         }
         match &result.content[1] {
@@ -1100,7 +1100,7 @@ mod do_stream {
         // Verify tool-input-end
         let tool_end = parts
             .iter()
-            .find(|p| matches!(p, StreamPart::ToolInputEnd { id } if id == "call-1"));
+            .find(|p| matches!(p, StreamPart::ToolInputEnd { id, .. } if id == "call-1"));
         assert!(tool_end.is_some(), "should have ToolInputEnd");
 
         // Verify tool-call
@@ -1331,8 +1331,8 @@ mod do_stream {
 
         // TextStart id should match TextEnd id
         if let (
-            Some(StreamPart::TextStart { id: start_id }),
-            Some(StreamPart::TextEnd { id: end_id }),
+            Some(StreamPart::TextStart { id: start_id, .. }),
+            Some(StreamPart::TextEnd { id: end_id, .. }),
         ) = (text_start, text_end)
         {
             assert_eq!(start_id, end_id);

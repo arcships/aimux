@@ -1088,6 +1088,7 @@ mod do_generate_tests {
             result.content[1],
             GenerateContent::Text {
                 text: "text content".to_string(),
+                provider_metadata: None,
             }
         );
     }
@@ -1791,6 +1792,7 @@ mod do_generate_tests {
             result.content[0],
             GenerateContent::Text {
                 text: "Dummy PDF file".to_string(),
+                provider_metadata: None,
             }
         );
     }
@@ -1881,25 +1883,25 @@ mod do_stream_tests {
         // TextStart
         assert!(matches!(
             &parts[1],
-            StreamPart::TextStart { id } if id == "msg_1"
+            StreamPart::TextStart { id, .. } if id == "msg_1"
         ));
 
         // TextDelta "Hello"
         assert!(matches!(
             &parts[2],
-            StreamPart::TextDelta { id, delta } if id == "msg_1" && delta == "Hello"
+            StreamPart::TextDelta { id, delta, .. } if id == "msg_1" && delta == "Hello"
         ));
 
         // TextDelta " world"
         assert!(matches!(
             &parts[3],
-            StreamPart::TextDelta { id, delta } if id == "msg_1" && delta == " world"
+            StreamPart::TextDelta { id, delta, .. } if id == "msg_1" && delta == " world"
         ));
 
         // TextEnd
         assert!(matches!(
             &parts[4],
-            StreamPart::TextEnd { id } if id == "msg_1"
+            StreamPart::TextEnd { id, .. } if id == "msg_1"
         ));
 
         // Finish

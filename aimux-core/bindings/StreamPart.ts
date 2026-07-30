@@ -9,7 +9,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A single chunk in the stream returned by `do_stream`.
  */
-export type StreamPart = { "TextStart": { id: string, } } | { "TextDelta": { id: string, delta: string, } } | { "TextEnd": { id: string, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: JsonValue | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string, 
+export type StreamPart = { "TextStart": { id: string, provider_metadata?: JsonValue | null, } } | { "TextDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "TextEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "StreamStart": { warnings: Array<Warning>, } } | { "Finish": { finish_reason: FinishReason, usage: Usage, provider_metadata: JsonValue | null, } } | { "Error": { error: AiMuxError, } } | { "ToolInputStart": { id: string, tool_name: string, 
 /**
  * Whether the tool call will be executed by the provider.
  */
@@ -17,7 +17,11 @@ provider_executed?: boolean | null,
 /**
  * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
  */
-dynamic?: boolean | null, } } | { "ToolInputDelta": { id: string, delta: string, } } | { "ToolInputEnd": { id: string, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
+dynamic?: boolean | null, 
+/**
+ * Optional title for the tool call.
+ */
+title?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
 /**
  * Whether the tool call will be executed by the provider.
  */
@@ -25,7 +29,7 @@ provider_executed?: boolean | null,
 /**
  * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
  */
-dynamic?: boolean | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
+dynamic?: boolean | null, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
 /**
  * Whether the result is an error or error message.
  */
@@ -41,7 +45,7 @@ dynamic?: boolean | null,
 /**
  * Additional provider-specific metadata for the tool result.
  */
-provider_metadata?: JsonValue | null, } } | { "File": { data: FileData, media_type: string, filename?: string | null, provider_metadata?: JsonValue | null, } } | { "ReasoningStart": { id: string, 
+provider_metadata?: JsonValue | null, } } | { "File": { data: FileData, media_type: string, provider_metadata?: JsonValue | null, } } | { "ReasoningStart": { id: string, 
 /**
  * Provider-specific metadata (e.g. xAI `itemId`).
  */
@@ -53,4 +57,4 @@ provider_metadata: JsonValue | null, } } | { "ReasoningEnd": { id: string,
 /**
  * Provider-specific metadata (e.g. xAI `itemId`, `reasoningEncryptedContent`).
  */
-provider_metadata: JsonValue | null, } } | { "ResponseMetadata": { id: string | null, timestamp: string | null, model_id: string | null, } } | { "Source": { id: string, source_type: string, url: string | null, title: string | null, } } | { "Raw": { raw_value: JsonValue, } };
+provider_metadata: JsonValue | null, } } | { "ResponseMetadata": { id: string | null, timestamp: string | null, model_id: string | null, } } | { "Source": { id: string, source_type: string, url: string | null, title: string | null, provider_metadata?: JsonValue | null, } } | { "Raw": { raw_value: JsonValue, } };

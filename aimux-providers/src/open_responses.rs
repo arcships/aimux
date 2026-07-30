@@ -258,6 +258,7 @@ impl LanguageModel for OpenResponsesModel {
                                 if let Some(text) = cp.get("text").and_then(|t| t.as_str()) {
                                     content.push(GenerateContent::Text {
                                         text: text.to_string(),
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -466,7 +467,7 @@ impl LanguageModel for OpenResponsesModel {
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("")
                                                 .to_string();
-                                            yield Ok(StreamPart::TextStart { id });
+                                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                         }
                                         _ => {}
                                     }
@@ -567,6 +568,7 @@ impl LanguageModel for OpenResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                provider_metadata: None,
                                             });
                                             has_tool_calls = true;
                                         }
@@ -588,7 +590,7 @@ impl LanguageModel for OpenResponsesModel {
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("")
                                                 .to_string();
-                                            yield Ok(StreamPart::TextEnd { id });
+                                            yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                                         }
                                         _ => {}
                                     }
@@ -626,7 +628,7 @@ impl LanguageModel for OpenResponsesModel {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
-                                yield Ok(StreamPart::TextDelta { id, delta });
+                                yield Ok(StreamPart::TextDelta { id, delta, provider_metadata: None});
                             }
 
                             // -- Completion events --

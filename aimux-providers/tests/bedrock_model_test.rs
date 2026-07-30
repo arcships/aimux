@@ -60,7 +60,7 @@ async fn mock_converse_json(server: &MockServer, status: u16, body: Value) {
 
 fn as_text(item: &GenerateContent) -> &str {
     match item {
-        GenerateContent::Text { text } => text,
+        GenerateContent::Text { text, .. } => text,
         _ => panic!("expected Text content, got {:?}", item),
     }
 }

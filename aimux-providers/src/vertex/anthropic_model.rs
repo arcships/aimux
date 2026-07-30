@@ -169,7 +169,7 @@ impl LanguageModel for VertexAnthropicModel {
         for block in &data.content {
             match block {
                 ContentBlock::Text { text } => {
-                    content.push(GenerateContent::Text { text: text.clone() });
+                    content.push(GenerateContent::Text { text: text.clone(), provider_metadata: None});
                 }
                 ContentBlock::ToolUse { id, name, input } => {
                     content.push(GenerateContent::ToolCall {
@@ -311,6 +311,8 @@ impl LanguageModel for VertexAnthropicModel {
                                             tool_name: name.clone(),
                                             provider_executed: None,
                                             dynamic: None,
+                                            title: None,
+                                            provider_metadata: None,
                                         });
                                         blocks.insert(index, BlockState::ToolUse {
                                             id,
@@ -335,11 +337,12 @@ impl LanguageModel for VertexAnthropicModel {
                                         _ => None,
                                     };
                                     if let Some(id) = start_id {
-                                        yield Ok(StreamPart::TextStart { id });
+                                        yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                     }
                                     yield Ok(StreamPart::TextDelta {
                                         id: index.to_string(),
                                         delta: text,
+                                        provider_metadata: None,
                                     });
                                 }
                                 if let Some(partial) = delta.partial_json {
@@ -358,6 +361,7 @@ impl LanguageModel for VertexAnthropicModel {
                                         yield Ok(StreamPart::ToolInputDelta {
                                             id,
                                             delta: partial,
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -392,6 +396,7 @@ impl LanguageModel for VertexAnthropicModel {
                                         BlockState::Text { started: true } => {
                                             yield Ok(StreamPart::TextEnd {
                                                 id: index.to_string(),
+                                                provider_metadata: None,
                                             });
                                         }
                                         BlockState::Text { started: false } => {}
@@ -407,7 +412,7 @@ impl LanguageModel for VertexAnthropicModel {
                                             name,
                                             accumulated_json,
                                         } => {
-                                            yield Ok(StreamPart::ToolInputEnd { id: id.clone() });
+                                            yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
                                             let input: serde_json::Value = if accumulated_json
                                                 .is_empty()
                                             {
@@ -422,6 +427,7 @@ impl LanguageModel for VertexAnthropicModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                provider_metadata: None,
                                             });
                                         }
                                     }

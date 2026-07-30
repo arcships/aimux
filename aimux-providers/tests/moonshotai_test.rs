@@ -380,7 +380,7 @@ async fn do_generate_returns_text() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, "Hi"),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Hi"),
         other => panic!("expected Text, got {:?}", other),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);

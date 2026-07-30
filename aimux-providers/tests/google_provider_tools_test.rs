@@ -186,6 +186,7 @@ fn stream_sources(parts: &[StreamPart]) -> Vec<(String, String, Option<String>, 
                 source_type,
                 url,
                 title,
+                ..
             } => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
             _ => None,
         })
@@ -223,6 +224,7 @@ fn gen_sources(
                 source_type,
                 url,
                 title,
+                ..
             } => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
             _ => None,
         })
@@ -755,7 +757,7 @@ mod do_generate {
         // Text part should be present.
         assert!(result.content.iter().any(|c| matches!(
             c,
-            GenerateContent::Text { text } if text == "test response"
+            GenerateContent::Text { text, .. } if text == "test response"
         )));
         // A url source should be extracted (red: not implemented).
         let sources = gen_sources(&result.content);
@@ -1292,7 +1294,7 @@ mod do_generate {
         // Text content is included.
         assert!(result.content.iter().any(|c| matches!(
             c,
-            GenerateContent::Text { text } if text == "{\"answer\": 28, \"explanation\": \"Sum of first 5 primes\"}"
+            GenerateContent::Text { text, .. } if text == "{\"answer\": 28, \"explanation\": \"Sum of first 5 primes\"}"
         )));
         // The code execution tool call should be present (red: not parsed).
         assert!(
@@ -1411,7 +1413,7 @@ mod do_generate {
         // Text is present.
         assert!(result.content.iter().any(|c| matches!(
             c,
-            GenerateContent::Text { text } if text == "The weather in San Francisco is sunny."
+            GenerateContent::Text { text, .. } if text == "The weather in San Francisco is sunny."
         )));
         // Server tool call with toolName "server:GOOGLE_SEARCH_WEB" (red).
         assert!(

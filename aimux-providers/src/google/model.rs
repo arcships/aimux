@@ -307,6 +307,7 @@ impl LanguageModel for GoogleModel {
                                 source_type,
                                 id,
                                 title,
+                                provider_metadata: None,
                             } = src
                                 && emitted_source_urls.insert(url.clone()) {
                                     yield Ok(StreamPart::Source {
@@ -314,6 +315,7 @@ impl LanguageModel for GoogleModel {
                                         source_type,
                                         url: Some(url),
                                         title,
+                                        provider_metadata: None,
                                     });
                                 }
                         }
@@ -329,12 +331,13 @@ impl LanguageModel for GoogleModel {
                                             let id = format!("{}", block_counter);
                                             block_counter += 1;
                                             text_id = Some(id.clone());
-                                            yield Ok(StreamPart::TextStart { id });
+                                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                         }
                                         if let Some(id) = &text_id {
                                             yield Ok(StreamPart::TextDelta {
                                                 id: id.clone(),
                                                 delta: text.to_string(),
+                                                provider_metadata: None,
                                             });
                                         }
                                     }
@@ -358,19 +361,23 @@ impl LanguageModel for GoogleModel {
                                         tool_name: name.to_string(),
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
                                     let args_str = args.to_string();
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: id.clone(),
                                         delta: args_str,
+                                        provider_metadata: None,
                                     });
-                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone() });
+                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
                                         input: args,
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                     has_tool_calls = true;
                                 } else if let Some(ec) = part.get("executableCode") {
@@ -390,6 +397,7 @@ impl LanguageModel for GoogleModel {
                                             input: ec.clone(),
                                             provider_executed: None,
                                             dynamic: None,
+                                            provider_metadata: None,
                                         });
                                         // provider-executed → does NOT set has_tool_calls
                                     }
@@ -436,6 +444,7 @@ impl LanguageModel for GoogleModel {
                                         input: args,
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                     // provider-executed → does NOT set has_tool_calls
                                 } else if let Some(tr) = part.get("toolResponse") {
@@ -467,7 +476,7 @@ impl LanguageModel for GoogleModel {
                         if let Some(reason) = candidate.finish_reason.as_deref() {
                             // Close any open text segment.
                             if let Some(id) = text_id.take() {
-                                yield Ok(StreamPart::TextEnd { id });
+                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                             }
                             // Snapshot the finishReason-chunk metadata.
                             if let Some(sr) = &candidate.safety_ratings {
@@ -493,7 +502,7 @@ impl LanguageModel for GoogleModel {
 
             // Close any remaining open text segment.
             if let Some(id) = text_id.take() {
-                yield Ok(StreamPart::TextEnd { id });
+                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
 
             let provider_metadata = Some(serde_json::json!({
@@ -557,6 +566,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 if !text.is_empty() {
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
+                        provider_metadata: None,
                     });
                 }
             } else if let Some(fc) = part.get("functionCall") {

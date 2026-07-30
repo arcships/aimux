@@ -236,7 +236,7 @@ pub async fn execute_generate(
     if let Some(text) = choice.message.content
         && !text.is_empty()
     {
-        content.push(GenerateContent::Text { text });
+        content.push(GenerateContent::Text { text, provider_metadata: None});
     }
     // Reasoning: prefer reasoning_content over reasoning (DeepSeek/阿里通义).
     let reasoning_text = choice
@@ -283,6 +283,7 @@ pub async fn execute_generate(
                         .get("title")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
+                        provider_metadata: None,
                 });
             }
         }
@@ -516,11 +517,13 @@ pub async fn execute_stream(
                                 text_started = true;
                                 yield Ok(StreamPart::TextStart {
                                     id: format!("{}", text_id),
+                                    provider_metadata: None,
                                 });
                             }
                             yield Ok(StreamPart::TextDelta {
                                 id: format!("{}", text_id),
                                 delta: content,
+                                provider_metadata: None,
                             });
                         }
 
@@ -557,6 +560,8 @@ pub async fn execute_stream(
                                         tool_name: name,
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
                                 }
 
@@ -573,6 +578,7 @@ pub async fn execute_stream(
                                             yield Ok(StreamPart::ToolInputDelta {
                                                 id: acc.id.clone(),
                                                 delta: args,
+                                                provider_metadata: None,
                                             });
                                         }
                             }
@@ -593,6 +599,7 @@ pub async fn execute_stream(
                             if text_started {
                                 yield Ok(StreamPart::TextEnd {
                                     id: format!("{}", text_id),
+                                    provider_metadata: None,
                                 });
                                 text_started = false;
                             }
@@ -602,6 +609,7 @@ pub async fn execute_stream(
                                 if let Some(acc) = tool_calls.get(&idx) {
                                     yield Ok(StreamPart::ToolInputEnd {
                                         id: acc.id.clone(),
+                                        provider_metadata: None,
                                     });
                                     let args = &acc.arguments;
                                     let input: Value = serde_json::from_str(args)
@@ -612,6 +620,7 @@ pub async fn execute_stream(
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -644,6 +653,7 @@ pub async fn execute_stream(
         if text_started {
             yield Ok(StreamPart::TextEnd {
                 id: format!("{}", text_id),
+                provider_metadata: None,
             });
         }
 
@@ -652,6 +662,7 @@ pub async fn execute_stream(
             if let Some(acc) = tool_calls.get(&idx) {
                 yield Ok(StreamPart::ToolInputEnd {
                     id: acc.id.clone(),
+                    provider_metadata: None,
                 });
                 let args = &acc.arguments;
                 let input: Value = serde_json::from_str(args)
@@ -662,6 +673,7 @@ pub async fn execute_stream(
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    provider_metadata: None,
                 });
             }
         }

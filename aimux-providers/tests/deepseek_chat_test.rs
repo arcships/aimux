@@ -316,7 +316,7 @@ async fn should_extract_text_content() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert!(
+        GenerateContent::Text { text, .. } => assert!(
             text.contains("Gratitude of Small Things Day"),
             "expected the fixture text, got: {}",
             text
@@ -540,7 +540,7 @@ async fn should_extract_json_response_text_content() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert!(
+        GenerateContent::Text { text, .. } => assert!(
             text.contains("San Francisco"),
             "expected JSON content with 'San Francisco', got: {}",
             text

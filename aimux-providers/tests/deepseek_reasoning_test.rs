@@ -241,7 +241,7 @@ async fn should_prefer_reasoning_content_over_reasoning_field_when_both_provided
         "expected [Text, Reasoning] — reasoning_content should be extracted"
     );
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, "Hello, World!"),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
         other => panic!("expected Text, got {:?}", other),
     }
     match &result.content[1] {
@@ -303,7 +303,7 @@ async fn should_extract_reasoning_from_reasoning_field_when_reasoning_content_no
         "empty reasoning_content should not yield a reasoning part"
     );
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, "Hello, World!"),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
         other => panic!("expected Text only, got {:?}", other),
     }
 }
@@ -363,7 +363,7 @@ async fn should_extract_reasoning_content_and_text_from_deepseek_reasoning_fixtu
         "expected [Text, Reasoning] from the reasoning fixture"
     );
     match &result.content[0] {
-        GenerateContent::Text { text } => assert!(
+        GenerateContent::Text { text, .. } => assert!(
             text.contains("strawberry"),
             "expected the fixture text, got: {}",
             text

@@ -1013,6 +1013,7 @@ pub fn extract_sources(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                    provider_metadata: None,
             });
         } else if let Some(image) = chunk.get("image") {
             sources.push(GenerateContent::Source {
@@ -1026,6 +1027,7 @@ pub fn extract_sources(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                    provider_metadata: None,
             });
         } else if let Some(rc) = chunk.get("retrievedContext") {
             let uri = rc.get("uri").and_then(|v| v.as_str());
@@ -1038,6 +1040,7 @@ pub fn extract_sources(
                         source_type: "url".to_string(),
                         url: Some(uri.to_string()),
                         title: title.map(|s| s.to_string()),
+                        provider_metadata: None,
                     });
                 } else {
                     // Document with a file path (gs://, etc.).
@@ -1046,6 +1049,7 @@ pub fn extract_sources(
                         source_type: "document".to_string(),
                         url: None,
                         title: Some(title.unwrap_or("Unknown Document").to_string()),
+                        provider_metadata: None,
                     });
                 }
             } else if file_search_store.is_some() {
@@ -1055,6 +1059,7 @@ pub fn extract_sources(
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title.unwrap_or("Unknown Document").to_string()),
+                    provider_metadata: None,
                 });
             }
             // else: no uri and no fileSearchStore → no source.
@@ -1069,6 +1074,7 @@ pub fn extract_sources(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                    provider_metadata: None,
             });
         }
     }

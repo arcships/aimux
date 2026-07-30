@@ -269,7 +269,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("")
                                                     .to_string();
-                                                yield Ok(StreamPart::TextStart { id });
+                                                yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                             }
                                         }
                                         "function_call" => {
@@ -288,6 +288,8 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 tool_name: name,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                title: None,
+                                                provider_metadata: None,
                                             });
                                         }
                                         "reasoning" => {
@@ -326,7 +328,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("")
                                                     .to_string();
-                                                yield Ok(StreamPart::TextEnd { id });
+                                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                                             }
                                         }
                                         "function_call" => {
@@ -351,6 +353,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
 
                                             yield Ok(StreamPart::ToolInputEnd {
                                                 id: call_id.clone(),
+                                                provider_metadata: None,
                                             });
                                             yield Ok(StreamPart::ToolCall {
                                                 tool_call_id: call_id.clone(),
@@ -358,6 +361,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                provider_metadata: None,
                                             });
 
                                             if let Some(output) =
@@ -390,7 +394,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
-                                yield Ok(StreamPart::TextDelta { id: item_id, delta });
+                                yield Ok(StreamPart::TextDelta { id: item_id, delta, provider_metadata: None});
                             }
 
                             "response.reasoning_text.delta" => {
@@ -1009,6 +1013,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     let text = cp.get("text").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
+                        provider_metadata: None,
                     });
 
                     // Process annotations → source parts.
@@ -1021,6 +1026,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                                 source_type: "url".to_string(),
                                 url: Some(url.to_string()),
                                 title: title.map(|s| s.to_string()),
+                                provider_metadata: None,
                             });
                             source_id_counter += 1;
                         }

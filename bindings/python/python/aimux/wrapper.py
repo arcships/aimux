@@ -38,6 +38,8 @@ __all__ = [
     "ResponseFormat",
     "StreamPart",
     "GenerateContent",
+    "FileData",
+    "FileBytes",
     "Warning",
     "AiMuxError",
     # models
@@ -213,11 +215,116 @@ class Warning(RootModel[_WarningUnion]):
         return _external_tag_serializer(handler(self))
 
 
+# ── FileBytes / FileData ────────────────────────────────────────────────────
+#
+# ``FileBytes`` and ``FileData`` are externally tagged Rust enums.
+# ``FileData``'s variants are struct variants (dict payloads), so it reuses the
+# shared ``_external_tag_before`` / ``_external_tag_serializer`` helpers.
+# ``FileBytes`` are newtype variants whose payload is *not* a dict
+# (``{"Binary": [1, 2, 3]}`` / ``{"Base64": "..."}``), so it has a dedicated
+# before-validator / serializer.
+
+class _FileBytesBinary(BaseModel):
+    type: Literal["Binary"]
+    data: List[int]
+
+
+class _FileBytesBase64(BaseModel):
+    type: Literal["Base64"]
+    data: str
+
+
+_FileBytesUnion = Annotated[
+    Union[
+        _FileBytesBinary,
+        _FileBytesBase64,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class FileBytes(RootModel[_FileBytesUnion]):
+    """Raw bytes or a base64-encoded string (Rust ``FileBytes``).
+
+    Wire form: ``{"Binary": [1, 2, 3]}`` / ``{"Base64": "..."}``.
+    """
+
+    root: _FileBytesUnion
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ext_to_int(cls, data: Any) -> Any:
+        # {"Binary": [1, 2, 3]} → {"type": "Binary", "data": [1, 2, 3]}
+        # {"Base64": "x"}         → {"type": "Base64", "data": "x"}
+        if isinstance(data, dict) and len(data) == 1:
+            (tag, payload), = data.items()
+            return {"type": tag, "data": payload}
+        return data
+
+    @model_serializer(mode="wrap")
+    def _int_to_ext(self, handler):  # type: ignore[no-untyped-def]
+        out = handler(self)
+        if isinstance(out, dict) and "type" in out and "data" in out:
+            return {out["type"]: out["data"]}
+        return out
+
+
+class _FileDataData(BaseModel):
+    type: Literal["Data"]
+    data: FileBytes
+
+
+class _FileDataUrl(BaseModel):
+    type: Literal["Url"]
+    url: str
+
+
+class _FileDataReference(BaseModel):
+    type: Literal["Reference"]
+    reference: Dict[str, str]
+
+
+class _FileDataText(BaseModel):
+    type: Literal["Text"]
+    text: str
+
+
+_FileDataUnion = Annotated[
+    Union[
+        _FileDataData,
+        _FileDataUrl,
+        _FileDataReference,
+        _FileDataText,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class FileData(RootModel[_FileDataUnion]):
+    """File data as a tagged union (Rust ``FileData``).
+
+    Wire form: ``{"Data": {"data": <FileBytes>}}``, ``{"Url": {"url": "..."}}``,
+    ``{"Reference": {"reference": {...}}}``, ``{"Text": {"text": "..."}}``.
+    """
+
+    root: _FileDataUnion
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ext_to_int(cls, data: Any) -> Any:
+        return _external_tag_before(data)
+
+    @model_serializer(mode="wrap")
+    def _int_to_ext(self, handler):  # type: ignore[no-untyped-def]
+        return _external_tag_serializer(handler(self))
+
+
 # ── GenerateContent ─────────────────────────────────────────────────────────
 
 class _ContentText(BaseModel):
     type: Literal["Text"]
     text: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _ContentToolCall(BaseModel):
@@ -236,12 +343,20 @@ class _ContentSource(BaseModel):
     source_type: str
     url: Optional[str] = None
     title: Optional[str] = None
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _ContentReasoning(BaseModel):
     type: Literal["Reasoning"]
     text: str
     provider_metadata: Optional[Any] = None
+
+
+class _ContentFile(BaseModel):
+    type: Literal["File"]
+    data: FileData
+    media_type: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _ContentToolResult(BaseModel):
@@ -261,6 +376,7 @@ _GenerateContentUnion = Annotated[
         _ContentToolCall,
         _ContentSource,
         _ContentReasoning,
+        _ContentFile,
         _ContentToolResult,
     ],
     Field(discriminator="type"),
@@ -287,17 +403,20 @@ class GenerateContent(RootModel[_GenerateContentUnion]):
 class _SPTextStart(BaseModel):
     type: Literal["TextStart"]
     id: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPTextDelta(BaseModel):
     type: Literal["TextDelta"]
     id: str
     delta: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPTextEnd(BaseModel):
     type: Literal["TextEnd"]
     id: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPStreamStart(BaseModel):
@@ -323,17 +442,21 @@ class _SPToolInputStart(BaseModel):
     tool_name: str
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
+    title: Optional[str] = None
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPToolInputDelta(BaseModel):
     type: Literal["ToolInputDelta"]
     id: str
     delta: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPToolInputEnd(BaseModel):
     type: Literal["ToolInputEnd"]
     id: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPToolCall(BaseModel):
@@ -343,16 +466,18 @@ class _SPToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPToolResult(BaseModel):
     type: Literal["ToolResult"]
     tool_call_id: str
     tool_name: str
-    output: Any
+    result: Any
     is_error: Optional[bool] = None
     preliminary: Optional[bool] = None
     dynamic: Optional[bool] = None
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPReasoningStart(BaseModel):
@@ -387,11 +512,19 @@ class _SPSource(BaseModel):
     source_type: str
     url: Optional[str] = None
     title: Optional[str] = None
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 class _SPRaw(BaseModel):
     type: Literal["Raw"]
     raw_value: Any
+
+
+class _SPFile(BaseModel):
+    type: Literal["File"]
+    data: FileData
+    media_type: str
+    provider_metadata: Optional[Dict[str, Any]] = None
 
 
 _StreamPartUnion = Annotated[
@@ -407,6 +540,7 @@ _StreamPartUnion = Annotated[
         _SPToolInputEnd,
         _SPToolCall,
         _SPToolResult,
+        _SPFile,
         _SPReasoningStart,
         _SPReasoningDelta,
         _SPReasoningEnd,
@@ -576,7 +710,11 @@ class _ToolCallContentPart(BaseModel):
 class _ToolResultContentPart(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool_call_id: str
-    output: Any
+    result: Any
+    tool_name: Optional[str] = None
+    is_error: Optional[bool] = None
+    preliminary: Optional[bool] = None
+    dynamic: Optional[bool] = None
     provider_options: Optional[Any] = None
 
 

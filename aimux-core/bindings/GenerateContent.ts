@@ -5,7 +5,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A content item in the generation result.
  */
-export type GenerateContent = { "Text": { text: string, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
+export type GenerateContent = { "Text": { text: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
 /**
  * Whether the tool call will be executed by the provider.
  * If false/unset, the tool call is executed by the client.
@@ -18,7 +18,7 @@ dynamic?: boolean | null,
 /**
  * Additional provider-specific metadata for the tool call.
  */
-provider_metadata?: JsonValue | null, } } | { "Source": { id: string, source_type: string, url: string | null, title: string | null, } } | { "Reasoning": { text: string, provider_metadata: JsonValue | null, } } | { "File": { data: FileData, media_type: string, filename?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
+provider_metadata?: JsonValue | null, } } | { "Source": { id: string, source_type: string, url: string | null, title: string | null, provider_metadata?: JsonValue | null, } } | { "Reasoning": { text: string, provider_metadata: JsonValue | null, } } | { "File": { data: FileData, media_type: string, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
 /**
  * Whether the result is an error or error message.
  */

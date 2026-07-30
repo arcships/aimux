@@ -283,12 +283,13 @@ impl LanguageModel for VertexModel {
                                             let id = format!("{}", block_counter);
                                             block_counter += 1;
                                             text_id = Some(id.clone());
-                                            yield Ok(StreamPart::TextStart { id });
+                                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                         }
                                         if let Some(id) = &text_id {
                                             yield Ok(StreamPart::TextDelta {
                                                 id: id.clone(),
                                                 delta: text.to_string(),
+                                                provider_metadata: None,
                                             });
                                         }
                                     }
@@ -310,19 +311,23 @@ impl LanguageModel for VertexModel {
                                         tool_name: name.to_string(),
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
                                     let args_str = args.to_string();
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: id.clone(),
                                         delta: args_str,
+                                        provider_metadata: None,
                                     });
-                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone() });
+                                    yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
                                         input: args,
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                     has_tool_calls = true;
                                 }
@@ -331,7 +336,7 @@ impl LanguageModel for VertexModel {
 
                         if let Some(reason) = candidate.finish_reason.as_deref() {
                             if let Some(id) = text_id.take() {
-                                yield Ok(StreamPart::TextEnd { id });
+                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                             }
                             final_finish_reason =
                                 Some(parse_finish_reason(reason, has_tool_calls));
@@ -348,7 +353,7 @@ impl LanguageModel for VertexModel {
             }
 
             if let Some(id) = text_id.take() {
-                yield Ok(StreamPart::TextEnd { id });
+                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
 
             let provider_metadata = Some(serde_json::json!({ "googleVertex": {} }));
@@ -394,6 +399,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
             if !text.is_empty() {
                 content.push(GenerateContent::Text {
                     text: text.to_string(),
+                    provider_metadata: None,
                 });
             }
         } else if let Some(fc) = part.get("functionCall") {

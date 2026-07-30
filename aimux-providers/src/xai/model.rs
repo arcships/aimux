@@ -150,7 +150,7 @@ impl LanguageModel for XaiModel {
                 text = String::new();
             }
             if !text.is_empty() {
-                content.push(GenerateContent::Text { text });
+                content.push(GenerateContent::Text { text, provider_metadata: None});
             }
         }
 
@@ -188,6 +188,7 @@ impl LanguageModel for XaiModel {
                     source_type: "url".to_string(),
                     url: Some(url.clone()),
                     title: None,
+                    provider_metadata: None,
                 });
             }
         }
@@ -387,6 +388,7 @@ impl LanguageModel for XaiModel {
                                     source_type: "url".to_string(),
                                     url: Some(url.clone()),
                                     title: None,
+                                    provider_metadata: None,
                                 });
                             }
                         }
@@ -434,11 +436,13 @@ impl LanguageModel for XaiModel {
                                         content_blocks.insert(block_id.clone(), false);
                                         yield Ok(StreamPart::TextStart {
                                             id: block_id.clone(),
+                                            provider_metadata: None,
                                         });
                                     }
                                     yield Ok(StreamPart::TextDelta {
                                         id: block_id,
                                         delta: text_content.clone(),
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -503,6 +507,8 @@ impl LanguageModel for XaiModel {
                                             tool_name: name,
                                             provider_executed: None,
                                             dynamic: None,
+                                            title: None,
+                                            provider_metadata: None,
                                         });
                                     }
 
@@ -514,6 +520,7 @@ impl LanguageModel for XaiModel {
                                         yield Ok(StreamPart::ToolInputDelta {
                                             id: id.clone(),
                                             delta: args,
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -528,6 +535,7 @@ impl LanguageModel for XaiModel {
                                     if let Some((id, name, args)) = tool_calls.get(&idx) {
                                         yield Ok(StreamPart::ToolInputEnd {
                                             id: id.clone(),
+                                            provider_metadata: None,
                                         });
                                         let input: Value = serde_json::from_str(args)
                                             .unwrap_or_else(|_| Value::String(args.clone()));
@@ -537,6 +545,7 @@ impl LanguageModel for XaiModel {
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -566,6 +575,7 @@ impl LanguageModel for XaiModel {
                     } else {
                         yield Ok(StreamPart::TextEnd {
                             id: block_id.clone(),
+                            provider_metadata: None,
                         });
                     }
                 }
@@ -576,6 +586,7 @@ impl LanguageModel for XaiModel {
                 if let Some((id, name, args)) = tool_calls.get(&idx) {
                     yield Ok(StreamPart::ToolInputEnd {
                         id: id.clone(),
+                        provider_metadata: None,
                     });
                     let input: Value = serde_json::from_str(args)
                         .unwrap_or_else(|_| Value::String(args.clone()));
@@ -585,6 +596,7 @@ impl LanguageModel for XaiModel {
                         input,
                         provider_executed: None,
                         dynamic: None,
+                        provider_metadata: None,
                     });
                 }
             }

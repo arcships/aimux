@@ -150,7 +150,7 @@ mod do_generate_extended {
         // Should have Text content + Source content
         assert!(result.content.len() >= 2);
         match &result.content[0] {
-            GenerateContent::Text { text } => {
+            GenerateContent::Text { text, .. } => {
                 assert_eq!(
                     text,
                     "Based on the search results [doc1], I found information."

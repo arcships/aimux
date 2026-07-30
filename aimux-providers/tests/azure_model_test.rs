@@ -436,7 +436,7 @@ async fn should_extract_text_response() {
 
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
-        GenerateContent::Text { text } => assert_eq!(text, "Hello, World!"),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
         other => panic!("expected Text, got {:?}", other),
     }
     // Finish reason + response metadata.

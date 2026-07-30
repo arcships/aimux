@@ -276,6 +276,8 @@ impl LanguageModel for BedrockModel {
                                     tool_name: name.clone(),
                                     provider_executed: None,
                                     dynamic: None,
+                                    title: None,
+                                    provider_metadata: None,
                                 });
                                 tool_blocks.insert(idx, (id, name, String::new()));
                             } else {
@@ -283,13 +285,13 @@ impl LanguageModel for BedrockModel {
                                 block_counter = idx + 1;
                                 let id = idx.to_string();
                                 text_id = Some(id.clone());
-                                yield Ok(StreamPart::TextStart { id });
+                                yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                             }
                         } else {
                             // Default: text block.
                             let id = idx.to_string();
                             text_id = Some(id.clone());
-                            yield Ok(StreamPart::TextStart { id });
+                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                         }
                     }
                     "contentBlockDelta" => {
@@ -305,12 +307,13 @@ impl LanguageModel for BedrockModel {
                                     if text_id.is_none() {
                                         let id = idx.to_string();
                                         text_id = Some(id.clone());
-                                        yield Ok(StreamPart::TextStart { id });
+                                        yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                     }
                                     if let Some(id) = &text_id {
                                         yield Ok(StreamPart::TextDelta {
                                             id: id.clone(),
                                             delta: text.to_string(),
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -325,6 +328,7 @@ impl LanguageModel for BedrockModel {
                                             yield Ok(StreamPart::ToolInputDelta {
                                                 id,
                                                 delta: partial_str.to_string(),
+                                                provider_metadata: None,
                                             });
                                         }
                             // Reasoning delta — `reasoningContent.text` carries
@@ -358,7 +362,7 @@ impl LanguageModel for BedrockModel {
                             .unwrap_or(0) as usize;
 
                         if let Some((id, name, acc)) = tool_blocks.remove(&idx) {
-                            yield Ok(StreamPart::ToolInputEnd { id: id.clone() });
+                            yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
                             let input: serde_json::Value = if acc.is_empty() {
                                 serde_json::json!({})
                             } else {
@@ -370,6 +374,7 @@ impl LanguageModel for BedrockModel {
                                 input,
                                 provider_executed: None,
                                 dynamic: None,
+                                provider_metadata: None,
                             });
                         } else if reasoning_id.is_some() {
                             let id = idx.to_string();
@@ -383,7 +388,7 @@ impl LanguageModel for BedrockModel {
                             // Only end if this is the current text block.
                             let id = idx.to_string();
                             if text_id.as_deref() == Some(id.as_str()) {
-                                yield Ok(StreamPart::TextEnd { id });
+                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                                 text_id = None;
                             }
                         }
@@ -393,7 +398,7 @@ impl LanguageModel for BedrockModel {
                             payload.get("stopReason").and_then(|v| v.as_str())
                         {
                             if let Some(id) = text_id.take() {
-                                yield Ok(StreamPart::TextEnd { id });
+                                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                             }
                             if let Some(id) = reasoning_id.take() {
                                 yield Ok(StreamPart::ReasoningEnd { id,
@@ -416,7 +421,7 @@ impl LanguageModel for BedrockModel {
 
             // Close any remaining text block.
             if let Some(id) = text_id.take() {
-                yield Ok(StreamPart::TextEnd { id });
+                yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
             // Close any remaining reasoning block.
             if let Some(id) = reasoning_id.take() {
@@ -455,7 +460,7 @@ impl LanguageModel for BedrockModel {
 /// text and `redactedData` under both metadata keys.
 fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateContent>) {
     if let Some(text) = &block.text {
-        content.push(GenerateContent::Text { text: text.clone() });
+        content.push(GenerateContent::Text { text: text.clone(), provider_metadata: None});
     }
     if let Some(tool_use) = &block.tool_use {
         content.push(GenerateContent::ToolCall {

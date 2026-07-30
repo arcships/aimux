@@ -128,7 +128,7 @@ mod do_generate {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::Text { text } => assert_eq!(text, "hello world"),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "hello world"),
             other => panic!("expected Text, got {:?}", other),
         }
     }
@@ -369,7 +369,7 @@ mod reasoning {
             other => panic!("expected Reasoning, got {:?}", other),
         }
         match &result.content[1] {
-            GenerateContent::Text { text } => assert_eq!(text, "The answer is 42."),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "The answer is 42."),
             other => panic!("expected Text, got {:?}", other),
         }
     }
@@ -1406,7 +1406,7 @@ mod tools {
         }
         // Text
         match &result.content[2] {
-            GenerateContent::Text { text } => assert_eq!(text, "Based on the documents..."),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the documents..."),
             other => panic!("expected Text, got {:?}", other),
         }
     }
@@ -1615,7 +1615,7 @@ mod citations {
         assert_eq!(result.content.len(), 3);
         // Text
         match &result.content[0] {
-            GenerateContent::Text { text } => assert_eq!(text, "based on research"),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "based on research"),
             other => panic!("expected Text, got {:?}", other),
         }
         // Source 1
@@ -1977,7 +1977,7 @@ mod do_stream {
         let deltas: Vec<&str> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::ToolInputDelta { id, delta } if id == "call_123" => {
+                StreamPart::ToolInputDelta { id, delta, .. } if id == "call_123" => {
                     Some(delta.as_str())
                 }
                 _ => None,
@@ -1987,7 +1987,7 @@ mod do_stream {
 
         let has_end = parts
             .iter()
-            .any(|p| matches!(p, StreamPart::ToolInputEnd { id } if id == "call_123"));
+            .any(|p| matches!(p, StreamPart::ToolInputEnd { id, .. } if id == "call_123"));
         assert!(has_end);
 
         let tool_call = parts

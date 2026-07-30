@@ -707,7 +707,7 @@ mod do_generate_response {
 
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
-            GenerateContent::Text { text } => assert_eq!(text, "answer text"),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "answer text"),
             other => panic!("expected Text, got {:?}", other),
         }
     }
@@ -936,7 +936,7 @@ mod do_generate_response {
             other => panic!("expected Reasoning, got {:?}", other),
         }
         match &result.content[1] {
-            GenerateContent::Text { text } => assert_eq!(text, "answer"),
+            GenerateContent::Text { text, .. } => assert_eq!(text, "answer"),
             other => panic!("expected Text, got {:?}", other),
         }
         assert_eq!(result.usage.output_tokens.reasoning, Some(15));
@@ -1012,12 +1012,12 @@ mod do_stream {
         }
 
         match &parts[2] {
-            StreamPart::TextStart { id } => assert_eq!(id, "msg_1"),
+            StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_1"),
             other => panic!("expected TextStart, got {:?}", other),
         }
 
         match &parts[3] {
-            StreamPart::TextDelta { id, delta } => {
+            StreamPart::TextDelta { id, delta, .. } => {
                 assert_eq!(id, "msg_1");
                 assert_eq!(delta, "Hello,");
             }
@@ -1025,7 +1025,7 @@ mod do_stream {
         }
 
         match &parts[4] {
-            StreamPart::TextDelta { id, delta } => {
+            StreamPart::TextDelta { id, delta, .. } => {
                 assert_eq!(id, "msg_1");
                 assert_eq!(delta, " World!");
             }
@@ -1033,7 +1033,7 @@ mod do_stream {
         }
 
         match &parts[5] {
-            StreamPart::TextEnd { id } => assert_eq!(id, "msg_1"),
+            StreamPart::TextEnd { id, .. } => assert_eq!(id, "msg_1"),
             other => panic!("expected TextEnd, got {:?}", other),
         }
 
@@ -1116,14 +1116,14 @@ mod do_stream {
 
         // ToolInputDelta uses the ongoing tool call's id (from added item).
         match &parts[3] {
-            StreamPart::ToolInputDelta { id, delta } => {
+            StreamPart::ToolInputDelta { id, delta, .. } => {
                 assert_eq!(id, "call_added");
                 assert!(delta.contains("location"));
             }
             other => panic!("expected ToolInputDelta, got {:?}", other),
         }
         match &parts[4] {
-            StreamPart::ToolInputDelta { id, delta } => {
+            StreamPart::ToolInputDelta { id, delta, .. } => {
                 assert_eq!(id, "call_added");
                 assert!(delta.contains("Rome"));
             }
@@ -1132,7 +1132,7 @@ mod do_stream {
 
         // ToolInputEnd uses the call_id from the done item.
         match &parts[5] {
-            StreamPart::ToolInputEnd { id } => assert_eq!(id, "call_done"),
+            StreamPart::ToolInputEnd { id, .. } => assert_eq!(id, "call_done"),
             other => panic!("expected ToolInputEnd, got {:?}", other),
         }
 

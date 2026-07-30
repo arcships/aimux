@@ -115,7 +115,7 @@ fn generate_text_options_default_wire_format() {
 
 #[test]
 fn stream_part_text_delta_wire_format() {
-    let part = StreamPart::TextDelta { id: "tx1".into(), delta: "Hello".into() };
+    let part = StreamPart::TextDelta { id: "tx1".into(), delta: "Hello".into(), provider_metadata: None };
     let json = serde_json::to_string(&part).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
     assert!(val.get("TextDelta").is_some(), "expected TextDelta variant, got {json}");

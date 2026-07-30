@@ -124,7 +124,7 @@ class TestStreamText:
         assert sp.root.type == "TextDelta"
         assert sp.root.delta == "Hello"
         # Round-trips back to the external-tag dict form.
-        assert sp.model_dump() == first_delta
+        assert sp.model_dump(exclude_none=True) == first_delta
 
 
 # ── options: tools / tool_choice reach the provider ──────────────────────────
@@ -299,7 +299,7 @@ class TestToolCallRoundTrip:
                         {
                             "type": "tool_result",
                             "tool_call_id": "call_abc",
-                            "output": {"temperature": 22, "condition": "sunny"},
+                            "result": {"temperature": 22, "condition": "sunny"},
                         }
                     ],
                 ),

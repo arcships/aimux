@@ -179,7 +179,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                     .unwrap_or("")
                                     .to_string();
                                 if !text.is_empty() {
-                                    content.push(GenerateContent::Text { text });
+                                    content.push(GenerateContent::Text { text, provider_metadata: None});
                                 }
                             }
                             // Annotations (url_citation → Source).
@@ -201,6 +201,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 .get("title")
                                                 .and_then(|v| v.as_str())
                                                 .map(|s| s.to_string()),
+                                                provider_metadata: None,
                                         });
                                     }
                                 }
@@ -486,7 +487,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("")
                                                 .to_string();
-                                            yield Ok(StreamPart::TextStart { id });
+                                            yield Ok(StreamPart::TextStart { id, provider_metadata: None});
                                         }
                                         "function_call" => {
                                             let call_id = item
@@ -511,6 +512,8 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 tool_name: name,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                title: None,
+                                                provider_metadata: None,
                                             });
                                         }
                                         "custom_tool_call" => {
@@ -536,6 +539,8 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 tool_name: name,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                title: None,
+                                                provider_metadata: None,
                                             });
                                         }
                                         "reasoning" => {
@@ -580,7 +585,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
-                                yield Ok(StreamPart::TextDelta { id, delta });
+                                yield Ok(StreamPart::TextDelta { id, delta, provider_metadata: None});
                             }
 
                             // ── function_call_arguments.delta → ToolInputDelta ────────
@@ -599,6 +604,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                     yield Ok(StreamPart::ToolInputDelta {
                                         id: tc.tool_call_id.clone(),
                                         delta,
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -713,7 +719,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("")
                                                 .to_string();
-                                            yield Ok(StreamPart::TextEnd { id });
+                                            yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                                         }
                                         "function_call" => {
                                             has_function_call = true;
@@ -735,6 +741,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 .to_string();
                                             yield Ok(StreamPart::ToolInputEnd {
                                                 id: call_id.clone(),
+                                                provider_metadata: None,
                                             });
                                             let input: Value = serde_json::from_str(&arguments)
                                                 .unwrap_or_else(|_| {
@@ -746,6 +753,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                provider_metadata: None,
                                             });
                                         }
                                         "custom_tool_call" => {
@@ -767,6 +775,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 .unwrap_or("{}");
                                             yield Ok(StreamPart::ToolInputEnd {
                                                 id: call_id.clone(),
+                                                provider_metadata: None,
                                             });
                                             let input: Value = serde_json::from_str(input_str)
                                                 .unwrap_or_else(|_| {
@@ -778,6 +787,7 @@ impl LanguageModel for OpenAIResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                provider_metadata: None,
                                             });
                                         }
                                         "reasoning" => {

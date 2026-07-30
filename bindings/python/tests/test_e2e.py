@@ -493,7 +493,7 @@ class TestStructuredContent:
                 ]},
                 {"role": "tool", "content": [
                     {"type": "tool_result", "tool_call_id": "call_abc",
-                     "output": {"temperature": 22, "condition": "sunny"}},
+                     "result": {"temperature": 22, "condition": "sunny"}},
                 ]},
             ]
 

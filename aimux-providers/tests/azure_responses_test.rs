@@ -498,7 +498,7 @@ async fn should_extract_text_content() {
         .content
         .iter()
         .filter_map(|c| match c {
-            GenerateContent::Text { text } => Some(text.as_str()),
+            GenerateContent::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect();
@@ -872,7 +872,7 @@ async fn should_stream_text_content() {
     // TextStart
     assert!(matches!(
         &parts[2],
-        StreamPart::TextStart { id } if id == "msg_1"
+        StreamPart::TextStart { id, .. } if id == "msg_1"
     ));
 
     // TextDelta "Hello" + " world"
@@ -882,7 +882,7 @@ async fn should_stream_text_content() {
     // TextEnd
     assert!(matches!(
         parts.iter().find(|p| matches!(p, StreamPart::TextEnd { .. })),
-        Some(StreamPart::TextEnd { id }) if id == "msg_1"
+        Some(StreamPart::TextEnd { id, .. }) if id == "msg_1"
     ));
 
     // Finish

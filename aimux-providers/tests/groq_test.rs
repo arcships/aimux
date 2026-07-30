@@ -1027,7 +1027,7 @@ mod do_generate {
             .unwrap();
 
         let text = result.content.iter().find_map(|c| match c {
-            GenerateContent::Text { text } => Some(text.clone()),
+            GenerateContent::Text { text, .. } => Some(text.clone()),
             _ => None,
         });
         assert!(text.is_some());

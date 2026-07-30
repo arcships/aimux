@@ -138,7 +138,7 @@ impl LanguageModel for CohereModel {
                 match item {
                     super::types::ContentItem::Text { text } => {
                         if !text.is_empty() {
-                            content.push(GenerateContent::Text { text: text.clone() });
+                            content.push(GenerateContent::Text { text: text.clone(), provider_metadata: None});
                         }
                     }
                     super::types::ContentItem::Thinking { thinking } => {
@@ -180,6 +180,7 @@ impl LanguageModel for CohereModel {
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
+                    provider_metadata: None,
                 });
             }
         }
@@ -304,6 +305,7 @@ impl LanguageModel for CohereModel {
                                 } else {
                                     yield Ok(StreamPart::TextStart {
                                         id: format!("{}", idx),
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -334,6 +336,7 @@ impl LanguageModel for CohereModel {
                                         yield Ok(StreamPart::TextDelta {
                                             id: format!("{}", idx),
                                             delta: text.to_string(),
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -350,6 +353,7 @@ impl LanguageModel for CohereModel {
                                 } else {
                                     yield Ok(StreamPart::TextEnd {
                                         id: format!("{}", idx),
+                                        provider_metadata: None,
                                     });
                                 }
                             }
@@ -396,12 +400,15 @@ impl LanguageModel for CohereModel {
                                         tool_name: name,
                                         provider_executed: None,
                                         dynamic: None,
+                                        title: None,
+                                        provider_metadata: None,
                                     });
 
                                     if !initial_args.is_empty() {
                                         yield Ok(StreamPart::ToolInputDelta {
                                             id,
                                             delta: initial_args,
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -424,6 +431,7 @@ impl LanguageModel for CohereModel {
                                         yield Ok(StreamPart::ToolInputDelta {
                                             id: ptc.id.clone(),
                                             delta: args_delta.to_string(),
+                                            provider_metadata: None,
                                         });
                                     }
                                 }
@@ -433,6 +441,7 @@ impl LanguageModel for CohereModel {
                                 if let Some(ptc) = pending_tool_call.take() {
                                     yield Ok(StreamPart::ToolInputEnd {
                                         id: ptc.id.clone(),
+                                        provider_metadata: None,
                                     });
 
                                     let trimmed = ptc.arguments.trim();
@@ -451,6 +460,7 @@ impl LanguageModel for CohereModel {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
+                                        provider_metadata: None,
                                     });
                                 }
                             }
