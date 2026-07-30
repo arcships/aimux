@@ -155,15 +155,16 @@ interface GenerateTextResult {
 
 ### 结构化 content（`raw.content`）
 
-`result.raw.content` 是 `GenerateContent` 数组，包含 5 种变体：
+`result.raw.content` 是 `GenerateContent` 数组，包含 6 种变体：
 
 | 变体 | 字段 | 说明 |
 |------|------|------|
 | `Text` | `text` | 生成的文本 |
-| `ToolCall` | `tool_call_id`, `tool_name`, `input` | 模型请求的工具调用 |
+| `ToolCall` | `tool_call_id`, `tool_name`, `input`, `provider_executed?`, `dynamic?`, `provider_metadata?` | 模型请求的工具调用 |
 | `Source` | `id`, `source_type`, `url?`, `title?` | 引用/来源 |
 | `Reasoning` | `text`, `provider_metadata?` | 推理/思考段 |
-| `ToolResult` | `tool_call_id`, `tool_name`, `result` | provider 执行的工具结果 |
+| `File` | `data: FileData`, `media_type`, `filename?`, `provider_metadata?` | 模型生成的文件 |
+| `ToolResult` | `tool_call_id`, `tool_name`, `result`, `is_error?`, `preliminary?`, `dynamic?`, `provider_metadata?` | provider 执行的工具结果 |
 
 ```typescript
 // 访问结构化 content

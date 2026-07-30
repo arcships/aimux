@@ -99,7 +99,7 @@ Rust 核心类型变更：`ToolCall`/`ToolResult`/`StreamPart`/`GenerateContent`
 | # | 问题 | 位置 | 说明 |
 |---|------|------|------|
 | L1 | ~~**Dart `GenerateTextResult.raw` 是 `Map` 而非 `GenerateResult` 类型**~~ ✅ 已修 | [types.dart](bindings/flutter/lib/types.dart) | 2026-07-29 已建 `GenerateResult`/`GenerateContent`/`ResponseMetadata` 类型。 |
-| L2 | **Kotlin `ToolResult` struct 缺 `tool_name` 字段** | [tool.rs:120-131](aimux-core/src/tool.rs#L120) vs [Types.kt](bindings/kotlin/src/main/kotlin/aimux/Types.kt) | Rust `tool::ToolResult` 结构体本身不含 `tool_name`（只在 `GenerateContent::ToolResult` 变体里有）。这不是 wrapper 的 bug——是 Rust 核心结构体的设计。 |
+| L2 | **Kotlin `ToolResult` struct 缺 `tool_name` 字段** | [tool.rs:120-131](aimux-core/src/tool.rs#L120) vs [Types.kt](bindings/kotlin/src/main/kotlin/aimux/Types.kt) | Rust `tool::ToolResult` 结构体本身不含 `tool_name`（只在 `GenerateContent::ToolResult` 变体里有）。`output` 已重命名为 `result`（commit `af50905f`）。这不是 wrapper 的 bug——是 Rust 核心结构体的设计。 |
 | L3 | **Node wrapper `seed` 字段是 `bigint`** | [GenerateTextOptions.ts](aimux-core/bindings/GenerateTextOptions.ts) | `JSON.stringify` 对 `bigint` 会抛异常。如果用户传 `seed` 会 crash。这是 ts-rs 类型映射的固有限制（Rust `u64` → TS `bigint`）。 |
 | L4 | **Python `AiMuxError` 用 `Any`** | [wrapper.py:83](bindings/python/python/aimux/wrapper.py#L83) | `AiMuxError` 是 Rust 混合 newtype/struct 外部标签 enum，Python 侧用 `Any` 而非 discriminated union。`StreamPart.Error.error` 因此是 `Any`。 |
 

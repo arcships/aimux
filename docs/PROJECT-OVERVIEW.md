@@ -123,9 +123,11 @@ aimux 的类型设计本就对齐 Vercel AI SDK V4，核心结构高度一致：
 | 维度 | 一致性 | 说明 |
 |------|:---:|------|
 | `GenerateResult` | ✅ | 核心字段一致（content/finish_reason/usage/response） |
-| `StreamPart` | ✅ | aimux 17 变体 vs V4 ~21 变体，核心路径对齐 |
+| `StreamPart` | ✅ | aimux 18 变体 vs V4 ~21 变体，核心路径对齐 |
 | `Role` | ✅ | 完全一致（system/user/assistant/tool） |
 | `FinishReason` | ✅ | 基本一致（unified + raw 双字段） |
+| `ToolResult` | ✅ | 字段全对齐（result/is_error/preliminary/dynamic/tool_name） |
+| `File 变体` | ✅ | GenerateContent/StreamPart 均有 File 变体 |
 | `ToolChoice` | 🟡 | 格式不同（裸字符串 vs 对象），wrapper 可转换 |
 | 命名 | 🟡 | snake_case vs camelCase，wrapper 统一映射 |
 
