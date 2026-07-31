@@ -52,7 +52,6 @@
 | [result.rs:56](../aimux-core/src/result.rs#L56) `Pin<Box<dyn Stream<Item=Result<StreamPart,AiMuxError>>+Send>>` | Stream trait object | **头号难题**。Rust 的 `Stream` 无法直接传给 JS/Swift/Kotlin，各语言异步模型完全不同 |
 | [language_model.rs:25](../aimux-core/src/language_model.rs#L25) `LanguageModel` trait + `Box<dyn LanguageModel>` | trait object 动态分发 | FFI 不能传 `&dyn`，需用 opaque handle + 注册表 |
 | [generate.rs:154](../aimux-core/src/generate.rs#L154) `impl Into<ModelPrompt>` | 泛型入参 | FFI 只能传具体类型 |
-| [aimux-macros](../aimux-macros/src/lib.rs) `#[tool]` proc-macro | Rust 编译期宏 | 无法跨语言，工具定义需改成数据描述 |
 
 > **注**：providers 硬绑 `reqwest` + `tokio` 原列于此表（"移动端会与原生 HTTP 栈重复，增大二进制"）。v0.2 已删除该判断——reqwest+rustls 跨平台够用，不构成 FFI 障碍，详见 §4.5。
 
@@ -69,8 +68,6 @@ aimux/                         # Cargo workspace 只管 Rust crate
 ├── aimux-provider-utils/      # 重试/退避/key 加载（纯逻辑）
 ├── aimux-providers/           # 172 provider 引擎（硬绑 reqwest+tokio，全部绑定共用，不动）
 ├── aimux-ffi/                 # 【新增】C ABI 缝：opaque handle + 流 push 回调（C ABI 路径用）
-├── aimux-macros/              # #[tool] Rust 语法糖（保留）
-├── aimux-tools/               # 工具调用（Rust 侧）
 ├── Cargo.toml
 └── bindings/                  # 各语言薄绑定，各自独立构建系统，不进 cargo workspace
     ├── python/                # PyO3 + maturin   ── 直吃 aimux-providers（原生路径）
@@ -150,7 +147,7 @@ fn drop_handle(handle: u64);                                     // 析构
 - `FunctionTool`（[tool.rs:10](../aimux-core/src/tool.rs#L10)）：`name` + `input_schema: Value`（JSON Schema）+ 已 `#[derive(Serialize, Deserialize)]` ✅
 - `ToolCall` / `ToolResult`（[tool.rs:96](../aimux-core/src/tool.rs#L96) / [:107](../aimux-core/src/tool.rs#L107)）：已 serde ✅
 
-`#[tool]` 宏（[aimux-macros](../aimux-macros/src/lib.rs)）+ `ToolExecutor`（[tool_executor.rs](../aimux-tools/src/tool_executor.rs)）是 **Rust 侧便利工具**，只给 Rust 用户用。aimux 本身**不做 agent loop**（见 [README](../README.md)），不执行工具——工具执行是用户层的事。
+
 
 跨语言时无需任何改造：外语用户用对象构造 `FunctionTool` 传入，收到 `ToolCall` 后**在外语侧自己执行**，再把 `ToolResult` 喂回下一轮。全链路都是已序列化的数据，不碰 Rust 宏。
 
@@ -243,7 +240,7 @@ Ruby / PHP / Elixir / Perl / Lua —— AI 场景份额低，维护成本 > 收�
 |---|------|---------|--------|------|
 | 1 | `aimux-ffi` 流式 push 回调抽象（仅 C ABI 路径用；~~pull + push 双模式~~ → v0.2.1 改为只做 push） | §4.1 | 低（第三梯队，不阻塞 Node） | ✅ 完成 |
 | 2 | `Box<dyn LanguageModel/Provider>` → opaque handle + 注册表 | §4.2 | 高 | ✅ 完成 |
-| 3 | ~~工具定义从 `#[tool]` 宏改为数据描述~~ — **已就绪，无需改造**（§4.3）；✅ `ToolChoice` serde 已补且对齐 AISDK wire format（v0.2.1 完成） | §4.3 | ✅ 完成 | ✅ 完成 |
+ ✅ 完成 |
 | 4 | 跨边界类型全量加 `#[derive(Serialize, Deserialize)]` + 版本字段；同时加 `ts-rs` 派生，为 Node 绑定自动生成 `.d.ts` | §4.4 / §9-7 | 高 | ✅ 完成 |
 
 > ~~第 5 项「抽象 HttpTransport trait」~~ — **v0.2 删除**，见 §4.5。
@@ -295,6 +292,8 @@ Ruby / PHP / Elixir / Perl / Lua —— AI 场景份额低，维护成本 > 收�
    - **v0.5 补充：UniFFI 不采用**。aimux-ffi 只有 6 个 C 函数，手写 Swift/Kotlin 包装各 ~150 行，UniFFI 的 codegen 杠杆不成立；且 UniFFI 有自己的 FFI 层无法复用 aimux-ffi。详见 §5.5。
 4. ~~**HTTP 栈策略**：移动端是否必须支持注入原生 HTTP~~ — **v0.2 已决**：不抽象，接受 Rust 内置 reqwest（§4.5 已删除）。
 5. ~~**流式传输模式**：pull / push 双模式都做，还是先做一种？~~ — **v0.2.1 已决**：只做 push（回调）。C ABI 同步函数无法 await async stream，pull 必然阻塞（主线程卡死）。只影响 aimux-ffi（Swift/Kotlin/C），Node 等原生绑定不受影响（§4.1）。
+> **注：aimux-tools 和 aimux-macros 已于 2026-07-31 删除**，以下工具相关内容已过时，仅保留历史记录。
+
 6. ~~**工具定义改造时机**：`#[tool]` 宏改造为数据描述，是 review 期就做，还是等第一个绑定落地时再改？~~ — **v0.2.1 已决：伪问题，无需改造**。核对代码发现 `FunctionTool`/`ToolCall`/`ToolResult` 已是语言无关数据描述且已 serde（§4.3）。`#[tool]` 宏 + `ToolExecutor` 是 Rust 侧便利工具，aimux 不做 agent loop、不执行工具，外语侧自行执行。仅 `ToolChoice` 缺 serde，补 derive 即可。
 7. **Node 绑定的 TS 类型生成**：用 `ts-rs` / `specta` 从 Rust serde 派生自动生成 `.d.ts`，还是手写 TS 类型？
    - **v0.2.1 已决**：自动生成。手写类型迟早与 Rust 核心漂移，对旗舰绑定是硬伤。`ts-rs` 或 `specta` 二选一，在 §6 前置改造阶段为跨边界类型加派生。

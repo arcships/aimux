@@ -1,3 +1,5 @@
+> **注：aimux-tools 和 aimux-macros 已于 2026-07-31 删除。文中相关整改建议已过时，仅保留历史记录。**
+
 ﻿# aimux 架构与规范层整改方案
 
 > ⚠️ **此文档为 2026-07-27 的历史快照。** 部分整改项已完成，provider 数已从 23 增至 221。
@@ -15,7 +17,7 @@
 | ⛔ 现在编译不过（E0061，convert.rs 9→4 参数） | 当前 HEAD `f52b2dc`（领先评审依据的 `fc297b6` 三个提交），`cargo check --workspace` 通过，`cargo test --workspace` 全部 0 failed。convert.rs:267 函数定义实为 9 参数，与调用处匹配 | **指控对当前状态不成立**。但"无 CI 导致半完成重构曾入库"的制度性问题成立 |
 | 四个 HTTP helper 全零调用 | `with_user_agent_suffix` 被 Azure 实际使用（azure/model.rs:326）；`post_json_to_api`/`handle_fetch_error`/`combine_headers` 三个确为零调用 | **3/4 成立**。死代码根因不是"忘接"，而是 helper 能力低于 provider 真实需求 |
 | AbortSignal 约 175 行 | 实际 234 行（util.rs:502-735） | 行数低估，缺陷与零调用结论成立 |
-| `#[tool]` 宏"建了架子没通电" | 三层不是"没闭环"，而是**完全断开**：声明侧（FunctionTool/ToolSet）与执行侧（ToolFn/ToolExecutor）互不引用，ToolExecutor 连 generate_text 都没接入；宏生成的 execute 代码**根本无法编译**（裸 Value 喂多参函数 + 返回类型不匹配 + Result 模式匹配 String） | **比评审更严重**。宏的 doctest 标 `ignore`，零测试 |
+
 | CallOptions "14 字段全 None" | 实际 15 字段：1 个 prompt（必需）+ 1 个 tool_choice（非 Option，有 Default）+ 13 个 Option | 痛点属实，措辞略不精确 |
 | 8 个文件超 500 行、2 个超千行 | 实际 **12 个**超 500 行、**3 个**超千行（漏报 google/convert.rs 1034 行）；anthropic/convert.rs 实 1493 行非 1310 | **比评审更严重** |
 | 7 处 #[allow] | 实际 **13 处**（src 9 + test 4） | 少计，问题更普遍 |
@@ -96,9 +98,9 @@ CallOptions.tools           generate_text 未接入         description 被丢�
                                                         无 schema 生成
 ```
 
-- `ToolFn` trait（tool_executor.rs:11）只有 `name()` + `execute(&Value) -> Value`，**缺 `definition()`/`schema()`**，无法自我声明。
-- `ToolExecutor` 在 aimux-core 中零引用，`generate_text`/`stream_text` 不接收它——即便模型返回 tool call 也无执行回路。
-- `#[tool]` 宏生成的 `execute` 把裸 `serde_json::Value` 喂给多参函数（lib.rs:51），既无法编译，`description` 也被丢弃（lib.rs:34 `_description`）。doctest 标 `ignore`，零测试。
+
+
+
 
 #### 根因
 

@@ -5,8 +5,7 @@ members = [
     "aimux-provider-utils",
     "aimux-providers",
     "aimux-stream",
-    "aimux-tools",
-    "aimux-macros", "scripts/fix_tool",
+    "scripts/fix_tool",
 ]
 resolver = "2"
 
@@ -72,7 +71,6 @@ aimux-core = { path = "aimux-core" }
 aimux-providers = { path = "aimux-providers" }
 aimux-stream = { path = "aimux-stream" }
 aimux-provider-utils = { path = "aimux-provider-utils" }
-aimux-tools = { path = "aimux-tools" }
 
 # HTTP date parsing (Retry-After header)
 httpdate = "1"

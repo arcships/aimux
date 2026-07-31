@@ -1,3 +1,5 @@
+> **注：aimux-tools 和 aimux-macros 已于 2026-07-31 删除。文中相关分析已过时，仅保留历史记录。**
+
 ﻿# aimux 代码质量评估报告
 
 > ⚠️ **此文档为 2026-07-27 的历史快照。** provider 数已从 23 增至 221，部分结论可能已过时。
@@ -124,7 +126,7 @@ error[E0061]: this function takes 4 arguments but 9 arguments were supplied
 
 结果：三个抽象各说各话，用户没法用一个 `#[tool]` 函数同时拿到"发给模型的 schema"和"可执行 handler"。
 
-> **建议**：`#[tool]` 宏需要重写，用 `syn::parse::Parse` 解析属性，生成同时实现 `ToolFn` 和产出 `FunctionTool` 声明的代码。
+
 
 ### 🟡 P1：几个真实缺陷
 

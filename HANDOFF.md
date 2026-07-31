@@ -1,3 +1,5 @@
+> **注：aimux-tools 和 aimux-macros 已于 2026-07-31 删除。文中相关内容已过时，仅保留历史记录。**
+
 ﻿# Handoff: aimux 后续工作
 
 > ⚠️ **此文档已被 [HANDOFF_V2.md](HANDOFF_V2.md) 取代。** 以下数据为 2026-07-26 的快照，仅供参考。
@@ -25,8 +27,6 @@ aimux-core          — LanguageModel trait, 用户面 API, V4 类型
 aimux-provider-utils — API key, HTTP, headers, URL, retry, error parsing
 aimux-providers     — 23 个 provider 实现
 aimux-stream        — SSE 解析, NDJSON, StreamingToolCallTracker, extract_lines
-aimux-tools         — ToolSet, ToolExecutor
-aimux-macros        — #[tool] proc-macro (placeholder)
 ```
 
 ---
@@ -43,9 +43,7 @@ aimux-macros        — #[tool] proc-macro (placeholder)
 
 **需要做**：
 - 在 `aimux-core` 或新 `aimux-agent` crate 中实现 `ToolLoopAgent`
-- Agent 持有 model + tools + stop_condition，内部调 `generate_text` + `ToolExecutor` + 循环
-- `StopCondition` trait + `is_step_count(n)` / `has_tool_call(name)` 工厂
-- 循环：调 `do_generate` → 解析 tool_calls → 用 `ToolExecutor` 执行 → 把结果喂回 → 继续直到 stop condition
+
 - `stream_text` 版本用 stitchable stream（顺序合并多个 step 流）
 - 参考：`docs/04-core-mechanisms.md` 第 1 节 + 第 4 节，TS 源 `agent/tool-loop-agent.ts`
 
@@ -262,7 +260,7 @@ aimux-macros        — #[tool] proc-macro (placeholder)
 
 5. **Windows 应用控制策略**：偶尔阻止测试 .exe 执行（os error 4551），删除 `target/debug/deps/*.exe` 重建即可。非代码问题。
 
-6. **`aimux-macros`**：`#[tool]` 宏是 placeholder，未真正使用 `aimux-tools` 的 `ToolFn` trait。
+
 
 7. **Anthropic provider tools 剩余 11 个 ignored 测试**：需要 `providerMetadata` on `GenerateResult`、container.skills 处理、fixture 数据。属深层功能，不影响核心 provider tools 请求/响应。
 

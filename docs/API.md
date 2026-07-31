@@ -741,7 +741,6 @@ if (result.tool_calls.length > 0) {
 ```
 
 ```rust
-// Rust — 使用 #[tool] 宏（语法糖）或直接构造 FunctionTool
 use aimux_core::tool::FunctionTool;
 use serde_json::json;
 

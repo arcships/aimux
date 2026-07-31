@@ -30,9 +30,9 @@
 | 层面 | 现状 | 目标 |
 |------|------|------|
 | 仓库名 / 根目录 | `aimux` | `aimux` |
-| crate 名（6 个） | `aimux-core` 等 | `aimux-core` / `aimux-stream` / `aimux-tools` / `aimux-macros` / `aimux-providers` / `aimux-provider-utils` |
+| crate 名（6 个） | `aimux-core` 等 | `aimux-core` / `aimux-stream` / `aimux-providers` / `aimux-provider-utils` |
 | 目录名（6 个） | `aimux-core/` 等 | `aimux-core/` 等 |
-| 代码标识符（下划线） | `aimux_core` / `aimux_providers` / `aimux_tools` / `aimux_macros` / `aimux_stream` / `aimux_provider_utils` | `aimux_core` / `aimux_providers` / `aimux_tools` / `aimux_macros` / `aimux_stream` / `aimux_provider_utils` |
+| 代码标识符（下划线） | `aimux_core` / `aimux_providers` / `aimux_stream` / `aimux_provider_utils` | `aimux_core` / `aimux_providers` / `aimux_stream` / `aimux_provider_utils` |
 | 核心错误类型 | `AiMuxError`（遍布 25+ 文件） | `AiMuxError` |
 | 测试环境变量 | `AISDK_TEST_LOAD_API_KEY_VAR` | `AIMUX_TEST_LOAD_API_KEY_VAR` |
 | 品牌定位 | 「对标 Vercel AI SDK / 高性能替代方案」 | 「受 Vercel AI SDK 启发的 Rust 实现」 |
@@ -44,8 +44,6 @@
 ```
 aimux-core/          → aimux-core/
 aimux-stream/        → aimux-stream/
-aimux-tools/         → aimux-tools/
-aimux-macros/        → aimux-macros/
 aimux-providers/     → aimux-providers/
 aimux-provider-utils/→ aimux-provider-utils/
 ```
@@ -69,6 +67,8 @@ aimux-provider-utils/→ aimux-provider-utils/
 - `use aimux_core::` → `use aimux_core::`（含全路径形式 `aimux_core::error::AiMuxError`）
 - `aimux_providers::` / `aimux_tools::` / `aimux_macros::` 同理
 - `AiMuxError` → `AiMuxError`（核心改动，25+ 文件，含 enum 定义、impl、所有 use 和引用）
+> **注：aimux-tools 和 aimux-macros 已于 2026-07-31 删除**，以下工具相关内容已过时，仅保留历史记录。
+
 - `aimux-macros/src/lib.rs` 的 `quote!` 宏里**生成代码**引用 `aimux_tools::ToolFn` 和 `aimux_core::error::AiMuxError`——必须同步改，否则用户用 `#[tool]` 宏展开后编译失败
 - 各 lib.rs 顶部 `//! # aimux-core` 等 crate 文档注释
 

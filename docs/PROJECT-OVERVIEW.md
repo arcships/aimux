@@ -154,8 +154,6 @@ aimux/
 │   └── 145 OpenAI 兼容       #   薄封装，共享请求路径
 ├── aimux-stream             # SSE / NDJSON 流式解析
 ├── aimux-provider-utils     # HTTP 工具：重试、退避、错误解析、API Key 加载
-├── aimux-tools              # 工具调用：ToolSet、ToolExecutor
-├── aimux-macros             # 过程宏：#[tool] 属性宏
 ├── aimux-ffi                # C ABI（FFI 基础设施，所有绑定共享）
 └── bindings/                # 6 语言绑定
     ├── node/                #   napi-rs v3 + 类型化 TS wrapper

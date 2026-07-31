@@ -24,8 +24,6 @@ aimux/
 ├── aimux-providers      # 172 个厂商实现
 ├── aimux-stream         # SSE / NDJSON 流式解析
 ├── aimux-provider-utils # HTTP 工具：重试、退避、错误解析、API Key 加载
-├── aimux-tools          # 工具调用：ToolSet、ToolExecutor
-└── aimux-macros         # 过程宏：#[tool] 属性宏
 ```
 
 ## 快速开始

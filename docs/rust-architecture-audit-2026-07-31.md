@@ -2,7 +2,7 @@
 
 > 审核日期：2026-07-31  
 > 最终审查快照：`7951eda9`（`master`，相对 `origin/master` 领先 1 个提交）  
-> 审核范围：主 Rust workspace 的 `aimux-core`、`aimux-provider-utils`、`aimux-stream`、`aimux-providers`、`aimux-tools`、`aimux-macros`、`aimux-ffi`，以及根 Cargo 配置；对 workspace 外的 Node/Python Rust 绑定仅审查其边界关系，不审核非 Rust 业务代码。  
+> 审核范围：主 Rust workspace 的 `aimux-core`、`aimux-provider-utils`、`aimux-stream`、`aimux-providers`、`aimux-ffi`（`aimux-tools` 和 `aimux-macros` 已于 2026-07-31 删除，详见末尾注记），以及根 Cargo 配置；对 workspace 外的 Node/Python Rust 绑定仅审查其边界关系，不审核非 Rust 业务代码。  
 > 审核维度：架构整洁度、抽象程度、冗余度、边界稳定性、可扩展性、可验证性。  
 > 方法：源码走查、crate 依赖分析、重复结构统计、代表性 provider 抽样、编译/格式/lint/全量测试、独立宏编译复现，并由 5 个并行审查视角交叉复核。  
 > 说明：审核进行期间仓库被外部流程更新并提交了 `7951eda9`；本报告的最终检查与结论均以该提交为准，未回退或修改该提交。
@@ -532,3 +532,9 @@ aimux 不是“架构失败”，而是一个**成功扩张后尚未完成第二
 - 在此之前继续增加 provider，只会进一步放大 325 模块单体、机械注册、无效 profile 和契约迁移成本。
 
 **最优先的工作不是再接入更多厂商，而是恢复绿色基线、消除 panic/流式损坏、修复工具宏，并把薄封装迁移到声明式 provider catalog。**
+
+---
+
+## 附录：后续删除
+
+2026-07-31：基于本报告的发现（P0-01 `#[tool]` 宏不可用、P2-04 ToolSet/Executor 问题），确认 `aimux-tools` 和 `aimux-macros` 两个 crate 在项目内零消费、零引用，且与"不做 agent loop"的项目定位矛盾。已将两个 crate 及其相关文档引用全部删除。
