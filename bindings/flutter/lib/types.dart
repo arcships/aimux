@@ -23,6 +23,54 @@ import 'package:json_annotation/json_annotation.dart';
 part 'types.g.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Shared enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  system('system'),
+  user('user'),
+  assistant('assistant'),
+  tool('tool');
+
+  const Role(this.wireValue);
+  final String wireValue;
+  static Role fromJson(String value) =>
+      Role.values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
+enum FinishReasonUnified {
+  stop('stop'),
+  length('length'),
+  contentFilter('content-filter'),
+  toolCalls('tool-calls'),
+  error('error'),
+  other('other');
+
+  const FinishReasonUnified(this.wireValue);
+  final String wireValue;
+  static FinishReasonUnified fromJson(String value) =>
+      FinishReasonUnified.values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
+enum ReasoningEffort {
+  providerDefault('provider-default'),
+  none('none'),
+  minimal('minimal'),
+  low('low'),
+  medium('medium'),
+  high('high'),
+  xhigh('xhigh');
+
+  const ReasoningEffort(this.wireValue);
+  final String wireValue;
+  static ReasoningEffort fromJson(String value) =>
+      ReasoningEffort.values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Token usage
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -529,6 +577,7 @@ class GenerateTextResult {
   @JsonKey(name: 'finish_reason')
   final FinishReason finishReason;
   final Usage usage;
+  final List<Map<String, dynamic>> warnings;
   final GenerateResult raw;
 
   GenerateTextResult({
@@ -536,6 +585,7 @@ class GenerateTextResult {
     required this.toolCalls,
     required this.finishReason,
     required this.usage,
+    this.warnings = const [],
     required this.raw,
   });
 
@@ -551,34 +601,87 @@ class GenerateTextOptions {
   @JsonKey(name: 'max_output_tokens')
   final int? maxOutputTokens;
   final double? temperature;
+  @JsonKey(name: 'stop_sequences')
+  final List<String>? stopSequences;
+  @JsonKey(name: 'top_p')
+  final double? topP;
+  @JsonKey(name: 'top_k')
+  final double? topK;
+  @JsonKey(name: 'presence_penalty')
+  final double? presencePenalty;
+  @JsonKey(name: 'frequency_penalty')
+  final double? frequencyPenalty;
+  @JsonKey(name: 'response_format')
+  final Map<String, dynamic>? responseFormat;
+  final int? seed;
   final List<Tool>? tools;
   @JsonKey(name: 'tool_choice')
   final ToolChoice? toolChoice;
+  final Map<String, String>? headers;
+  @JsonKey(name: 'provider_options')
+  final Map<String, dynamic>? providerOptions;
+  final ReasoningEffort? reasoning;
+  final String? instructions;
 
   GenerateTextOptions({
     this.maxOutputTokens,
     this.temperature,
+    this.stopSequences,
+    this.topP,
+    this.topK,
+    this.presencePenalty,
+    this.frequencyPenalty,
+    this.responseFormat,
+    this.seed,
     this.tools,
     this.toolChoice,
+    this.headers,
+    this.providerOptions,
+    this.reasoning,
+    this.instructions,
   });
 
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
     return GenerateTextOptions(
       maxOutputTokens: json['max_output_tokens'] as int?,
       temperature: (json['temperature'] as num?)?.toDouble(),
+      stopSequences: (json['stop_sequences'] as List<dynamic>?)?.cast<String>(),
+      topP: (json['top_p'] as num?)?.toDouble(),
+      topK: (json['top_k'] as num?)?.toDouble(),
+      presencePenalty: (json['presence_penalty'] as num?)?.toDouble(),
+      frequencyPenalty: (json['frequency_penalty'] as num?)?.toDouble(),
+      responseFormat: json['response_format'] as Map<String, dynamic>?,
+      seed: json['seed'] as int?,
       tools: (json['tools'] as List<dynamic>?)
           ?.map((e) => Tool.fromJson(e as Map<String, dynamic>))
           .toList(),
       toolChoice: json['tool_choice'] != null
           ? ToolChoice.fromJson(json['tool_choice'])
           : null,
+      headers: (json['headers'] as Map<String, dynamic>?)?.cast<String, String>(),
+      providerOptions: json['provider_options'] as Map<String, dynamic>?,
+      reasoning: json['reasoning'] != null
+          ? ReasoningEffort.fromJson(json['reasoning'] as String)
+          : null,
+      instructions: json['instructions'] as String?,
     );
   }
   Map<String, dynamic> toJson() => {
         if (maxOutputTokens != null) 'max_output_tokens': maxOutputTokens,
         if (temperature != null) 'temperature': temperature,
+        if (stopSequences != null) 'stop_sequences': stopSequences,
+        if (topP != null) 'top_p': topP,
+        if (topK != null) 'top_k': topK,
+        if (presencePenalty != null) 'presence_penalty': presencePenalty,
+        if (frequencyPenalty != null) 'frequency_penalty': frequencyPenalty,
+        if (responseFormat != null) 'response_format': responseFormat,
+        if (seed != null) 'seed': seed,
         if (tools != null) 'tools': tools!.map((t) => t.toJson()).toList(),
         if (toolChoice != null) 'tool_choice': toolChoice!.toJson(),
+        if (headers != null) 'headers': headers,
+        if (providerOptions != null) 'provider_options': providerOptions,
+        if (reasoning != null) 'reasoning': reasoning!.toJson(),
+        if (instructions != null) 'instructions': instructions,
       };
 }
 

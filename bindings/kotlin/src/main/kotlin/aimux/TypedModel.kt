@@ -17,7 +17,6 @@
 package aimux
 
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.Closeable
@@ -148,10 +147,11 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
             promptJson = promptJson,
             optsJson = optsJson,
             onPart = { partJson ->
-                val part = runCatching {
-                    AimuxJson.decodeFromString(StreamPartSerializer, partJson)
-                }.getOrElse { StreamPart.Unknown("<parse-error>", JsonPrimitive(partJson)) }
-                onPart(part)
+                try {
+                    onPart(AimuxJson.decodeFromString(StreamPartSerializer, partJson))
+                } catch (error: Exception) {
+                    onError("failed to decode StreamPart: ${error.message ?: error::class.simpleName}")
+                }
             },
             onDone = onDone,
             onError = onError,

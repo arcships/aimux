@@ -34,6 +34,7 @@ use aimux_core::message::ModelPrompt;
 use aimux_core::provider::Provider;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::cohere::{CohereConfig, CohereProvider};
+use aimux_providers::deepseek::{DeepSeekConfig, DeepSeekProvider};
 use aimux_providers::google::{GoogleConfig, GoogleProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
@@ -281,6 +282,20 @@ pub extern "C" fn aimux_anthropic_new_with_base(
     }
 }
 
+/// Create a DeepSeek language model instance. Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_deepseek_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) {
+        (Some(k), Some(m)) => (k, m),
+        _ => return 0,
+    };
+    let provider = DeepSeekProvider::new(DeepSeekConfig::new(api_key));
+    match provider.language_model(&model_id) {
+        Ok(model) => intern_model(Arc::from(model)),
+        Err(_) => 0,
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // C ABI: non-streaming generation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -455,6 +470,29 @@ pub extern "C" fn aimux_openai_embedding_new(api_key: *const c_char, model_id: *
     intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_embedding_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let mut config = OpenAIConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) { config = config.with_base_url(url); }
+    let model = OpenAIProvider::new(config).embedding_model(&model_id);
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_cohere_embedding_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_google_embedding_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+}
+
 /// Generate embeddings. `values_json` is a JSON array of strings.
 /// Returns EmbeddingResult JSON (caller must free).
 #[unsafe(no_mangle)]
@@ -505,6 +543,15 @@ pub extern "C" fn aimux_openai_speech_new(api_key: *const c_char, model_id: *con
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_speech_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let mut config = OpenAIConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) { config = config.with_base_url(url); }
+    let model = OpenAIProvider::new(config).speech(&model_id);
+    intern_handle(ModelHandle::Speech(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn aimux_speech_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Speech(m)) => m,
@@ -541,6 +588,22 @@ pub extern "C" fn aimux_openai_image_new(api_key: *const c_char, model_id: *cons
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_image_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let mut config = OpenAIConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) { config = config.with_base_url(url); }
+    let model = OpenAIProvider::new(config).image(&model_id);
+    intern_handle(ModelHandle::Image(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_google_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
+    intern_handle(ModelHandle::Image(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn aimux_image_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Image(m)) => m,
@@ -573,6 +636,15 @@ pub extern "C" fn aimux_openai_transcription_new(api_key: *const c_char, model_i
     };
     let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
     let model = provider.transcription(&model_id);
+    intern_handle(ModelHandle::Transcription(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_transcription_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let mut config = OpenAIConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) { config = config.with_base_url(url); }
+    let model = OpenAIProvider::new(config).transcription(&model_id);
     intern_handle(ModelHandle::Transcription(Arc::new(model)))
 }
 
@@ -618,6 +690,15 @@ pub extern "C" fn aimux_openai_files_new(api_key: *const c_char) -> u64 {
     };
     let provider = OpenAIProvider::new(OpenAIConfig::new(api_key));
     let files = provider.files();
+    intern_handle(ModelHandle::Files(Arc::new(files)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_openai_files_new_with_base(api_key: *const c_char, base_url: *const c_char) -> u64 {
+    let api_key = match cstr_to_string(api_key) { Some(s) => s, None => return 0 };
+    let mut config = OpenAIConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) { config = config.with_base_url(url); }
+    let files = OpenAIProvider::new(config).files();
     intern_handle(ModelHandle::Files(Arc::new(files)))
 }
 
@@ -669,6 +750,15 @@ pub extern "C" fn aimux_cohere_reranking_new(api_key: *const c_char, model_id: *
     intern_handle(ModelHandle::Reranking(Arc::new(model)))
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_cohere_reranking_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let mut config = CohereConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) { config = config.with_base_url(url); }
+    let model = CohereProvider::new(config).reranking_model(&model_id);
+    intern_handle(ModelHandle::Reranking(Arc::new(model)))
+}
+
 /// Rerank documents. `opts_json` is JSON-serialized `RerankingCallOptions`
 /// (must contain `query` and `documents`). Returns `RerankingResult` JSON
 /// (caller must free), or `{"error":"..."}` on failure.
@@ -710,6 +800,15 @@ pub extern "C" fn aimux_google_video_new(api_key: *const c_char, model_id: *cons
     intern_handle(ModelHandle::Video(Arc::new(model)))
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_google_video_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
+    let (api_key, model_id) = match (cstr_to_string(api_key), cstr_to_string(model_id)) { (Some(k), Some(m)) => (k, m), _ => return 0 };
+    let mut config = GoogleConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) { config = config.with_base_url(url); }
+    let model = GoogleProvider::new(config).video(&model_id);
+    intern_handle(ModelHandle::Video(Arc::new(model)))
+}
+
 /// Generate video. `opts_json` is JSON-serialized `VideoCallOptions`
 /// (must contain `prompt`). Returns `VideoResult` JSON (caller must free),
 /// or `{"error":"..."}` on failure.
@@ -748,6 +847,24 @@ pub extern "C" fn aimux_tavily_search_new(api_key: *const c_char, _model_id: *co
     };
     let provider = TavilyProvider::new(TavilyConfig::new(api_key));
     let model = provider.search_model();
+    intern_handle(ModelHandle::Search(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_tavily_search_new_with_base(
+    api_key: *const c_char,
+    _model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let api_key = match cstr_to_string(api_key) {
+        Some(s) => s,
+        None => return 0,
+    };
+    let mut config = TavilyConfig::new(api_key);
+    if let Some(url) = cstr_to_string(base_url).filter(|url| !url.is_empty()) {
+        config = config.with_base_url(url);
+    }
+    let model = TavilyProvider::new(config).search_model();
     intern_handle(ModelHandle::Search(Arc::new(model)))
 }
 

@@ -10,6 +10,12 @@
 
 #include "aimux-ffi.h"
 
+namespace {
+thread_local const std::function<void(const std::string &)> *current_on_part = nullptr;
+thread_local const std::function<void()> *current_on_done = nullptr;
+thread_local const std::function<void(const std::string &)> *current_on_error = nullptr;
+}
+
 // RAII wrapper for model handle
 class AimuxModel {
 public:
@@ -63,20 +69,28 @@ public:
                      const std::string &opts_json = "") {
         const char *opts = opts_json.empty() ? nullptr : opts_json.c_str();
 
-        // Wrap lambdas into C function pointers via static trampolines.
-        // (In production, use a thread-local or context-pointer pattern.)
-        auto part_cb = [](const char *json) {
-            printf("PART: %s\n", json);
-        };
-        auto done_cb = []() {
-            printf("[done]\n");
-        };
-        auto err_cb = [](const char *json) {
-            fprintf(stderr, "ERROR: %s\n", json);
-        };
+        // The C ABI has no user-data pointer. Since the call is synchronous and
+        // callbacks run on the invoking thread, thread-local trampolines safely
+        // isolate concurrent streams while forwarding the caller's callbacks.
+        current_on_part = &on_part;
+        current_on_done = &on_done;
+        current_on_error = &on_error;
 
-        aimux_stream_text(handle_, prompt_json.c_str(), opts,
-                          part_cb, done_cb, err_cb);
+        aimux_stream_text(
+            handle_, prompt_json.c_str(), opts,
+            [](const char *json) {
+                if (current_on_part && *current_on_part) (*current_on_part)(json);
+            },
+            []() {
+                if (current_on_done && *current_on_done) (*current_on_done)();
+            },
+            [](const char *json) {
+                if (current_on_error && *current_on_error) (*current_on_error)(json);
+            });
+
+        current_on_part = nullptr;
+        current_on_done = nullptr;
+        current_on_error = nullptr;
     }
 
 private:

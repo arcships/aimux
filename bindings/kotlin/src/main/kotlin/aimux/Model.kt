@@ -12,6 +12,7 @@ import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicLong
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JNA interface — direct mapping to the C ABI.
@@ -57,12 +58,18 @@ internal object FFI {
  * }
  * ```
  */
-class Model private constructor(private val handle: Long) : Closeable {
+class Model private constructor(handle: Long) : Closeable {
+    private val handle = AtomicLong(handle)
 
     override fun close() {
-        if (handle != 0L) {
-            FFI.lib.aimux_drop_handle(handle)
+        val h = handle.getAndSet(0L)
+        if (h != 0L) {
+            FFI.lib.aimux_drop_handle(h)
         }
+    }
+
+    private fun requireHandle(): Long = handle.get().also {
+        check(it != 0L) { "Model is closed" }
     }
 
     protected fun finalize() {
@@ -111,7 +118,7 @@ class Model private constructor(private val handle: Long) : Closeable {
      * @return JSON-serialized GenerateTextResult (or {"error":"..."} on failure).
      */
     fun generateText(promptJson: String, optsJson: String? = null): String {
-        val ptr = FFI.lib.aimux_generate_text(handle, promptJson, optsJson)
+        val ptr = FFI.lib.aimux_generate_text(requireHandle(), promptJson, optsJson)
             ?: throw RuntimeException("generate_text returned null")
 
         try {
@@ -163,7 +170,7 @@ class Model private constructor(private val handle: Long) : Closeable {
             }
         }
 
-        FFI.lib.aimux_stream_text(handle, promptJson, optsJson, partCb, doneCb, errCb)
+        FFI.lib.aimux_stream_text(requireHandle(), promptJson, optsJson, partCb, doneCb, errCb)
     }
 
     /**

@@ -151,12 +151,13 @@ public final class Model: @unchecked Sendable {
             onError: onError
         )
 
-        // Box the context so C can pass it back through callbacks.
-        // We use Unmanaged to pass the pointer through the void* context.
-        // For simplicity in this PoC, we use global state since aimux_stream_text
-        // is synchronous (blocks until done).
-
+        // The C ABI has no user-data parameter, so keep the context in the
+        // invoking thread's dictionary. aimux_stream_text is synchronous and
+        // invokes callbacks on that same thread, while concurrent streams on
+        // other threads receive independent contexts.
+        let previousContext = StreamContext.current
         StreamContext.current = context
+        defer { StreamContext.current = previousContext }
 
         aimux_stream_text(
             handle,
@@ -178,9 +179,6 @@ public final class Model: @unchecked Sendable {
                 }
             }
         )
-
-        // Clear the global context after the synchronous call completes.
-        StreamContext.current = nil
     }
 
     /// Stream text as an AsyncSequence of StreamPart JSON strings.
@@ -191,8 +189,8 @@ public final class Model: @unchecked Sendable {
     ///     print(part)
     /// }
     /// ```
-    public func streamTextAsync(prompt: String, options: String? = nil) -> AsyncStream<String> {
-        AsyncStream { continuation in
+    public func streamTextAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
             self.streamText(
                 prompt: prompt,
                 options: options,
@@ -203,7 +201,7 @@ public final class Model: @unchecked Sendable {
                     continuation.finish()
                 },
                 onError: { err in
-                    continuation.finish()
+                    continuation.finish(throwing: AimuxError.streamError(err))
                 }
             )
         }
@@ -215,8 +213,8 @@ public final class Model: @unchecked Sendable {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Holds the Swift closures for stream callbacks.
-/// Uses a static property because C function pointers can't capture state.
-/// This is safe because `aimux_stream_text` is synchronous (blocks the caller).
+/// The current context is stored per thread because the C ABI cannot pass
+/// user-data through its callback function pointers.
 private final class StreamContext {
     let onPart: (String) -> Void
     let onDone: () -> Void
@@ -230,9 +228,19 @@ private final class StreamContext {
         self.onError = onError
     }
 
-    /// Current active context (set during streamText, cleared after).
-    /// Safe because aimux_stream_text is synchronous.
-    static var current: StreamContext?
+    private static let threadKey = "org.aimux.swift.stream-context"
+
+    /// Current active context for the invoking thread.
+    static var current: StreamContext? {
+        get { Thread.current.threadDictionary[threadKey] as? StreamContext }
+        set {
+            if let newValue {
+                Thread.current.threadDictionary[threadKey] = newValue
+            } else {
+                Thread.current.threadDictionary.removeObject(forKey: threadKey)
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

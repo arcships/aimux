@@ -882,6 +882,8 @@ public struct GenerateTextResult: Codable, Equatable {
     public var finishReason: FinishReason
     /// Token usage.
     public var usage: Usage
+    /// Warnings produced while generating the response.
+    public var warnings: [Warning]
     /// Raw provider result (for advanced use).
     public var raw: GenerateResult
 
@@ -889,13 +891,13 @@ public struct GenerateTextResult: Codable, Equatable {
         case text
         case toolCalls = "tool_calls"
         case finishReason = "finish_reason"
-        case usage, raw
+        case usage, warnings, raw
     }
 
     public init(text: String, toolCalls: [ToolCall], finishReason: FinishReason,
-                usage: Usage, raw: GenerateResult) {
+                usage: Usage, warnings: [Warning] = [], raw: GenerateResult) {
         self.text = text; self.toolCalls = toolCalls; self.finishReason = finishReason
-        self.usage = usage; self.raw = raw
+        self.usage = usage; self.warnings = warnings; self.raw = raw
     }
 }
 
@@ -1241,18 +1243,18 @@ public extension Model {
 
     /// Stream text as an `AsyncSequence` of typed `StreamPart`s.
     ///
-    /// The stream finishes on normal completion or on error (the error message
-    /// is swallowed; callers wanting error detail should use the callback form).
+    /// The stream finishes on normal completion and throws `AimuxError.streamError`
+    /// when the native stream or typed decoding reports an error.
     func streamTextAsync(
         prompt: ModelPrompt,
         options: GenerateTextOptions? = nil
-    ) -> AsyncStream<StreamPart> {
-        AsyncStream { continuation in
+    ) -> AsyncThrowingStream<StreamPart, Error> {
+        AsyncThrowingStream { continuation in
             self.streamText(
                 prompt: prompt, options: options,
                 onPart: { continuation.yield($0) },
                 onDone: { continuation.finish() },
-                onError: { _ in continuation.finish() }
+                onError: { continuation.finish(throwing: AimuxError.streamError($0)) }
             )
         }
     }

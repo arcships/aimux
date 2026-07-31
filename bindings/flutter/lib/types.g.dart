@@ -110,6 +110,9 @@ GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
       finishReason:
           FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
       usage: Usage.fromJson(json['usage'] as Map<String, dynamic>),
+      warnings: (json['warnings'] as List<dynamic>? ?? const [])
+          .map((e) => e as Map<String, dynamic>)
+          .toList(),
       raw: GenerateResult.fromJson(json['raw'] as Map<String, dynamic>),
     );
 
@@ -119,6 +122,7 @@ Map<String, dynamic> _$GenerateTextResultToJson(GenerateTextResult instance) =>
       'tool_calls': instance.toolCalls,
       'finish_reason': instance.finishReason,
       'usage': instance.usage,
+      'warnings': instance.warnings,
       'raw': instance.raw,
     };
 
