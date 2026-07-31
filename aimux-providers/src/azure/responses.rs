@@ -1,4 +1,4 @@
-﻿//! Azure OpenAI Responses API language model.
+//! Azure OpenAI Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the Azure OpenAI
 //! `/responses` endpoint. Azure speaks the same Responses API wire format as
@@ -256,6 +256,8 @@ impl LanguageModel for AzureResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -302,6 +304,8 @@ impl LanguageModel for AzureResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! OpenAI Files — implements the `Files` trait for uploading files to the
+//! OpenAI Files — implements the `Files` trait for uploading files to the
 //! OpenAI API.
 //!
 //! Aligned with Vercel AI SDK `OpenAIFiles`
@@ -154,8 +154,10 @@ impl Files for OpenAIFiles {
         );
 
         let headers = self.build_headers();
-        let header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. The multipart body
@@ -168,15 +170,16 @@ impl Files for OpenAIFiles {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Bytes(body, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
         )
         .await?;
 
-        let data: OpenAIFilesResponse =
-            serde_json::from_slice::<OpenAIFilesResponse>(&resp.body)
-                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let data: OpenAIFilesResponse = serde_json::from_slice::<OpenAIFilesResponse>(&resp.body)
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Build provider metadata.
         let mut metadata = serde_json::Map::new();

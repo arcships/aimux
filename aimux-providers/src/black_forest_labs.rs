@@ -1,4 +1,4 @@
-﻿//! Black Forest Labs image provider.
+//! Black Forest Labs image provider.
 //!
 //! Aligned with Vercel AI SDK `BlackForestLabsImageModel`
 //! (`reference/ai/packages/black-forest-labs/src/black-forest-labs-image-model.ts`).
@@ -280,6 +280,8 @@ impl ImageModel for BlackForestLabsImageModel {
                 url: self.submit_endpoint(),
                 headers: header_list.clone(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -335,6 +337,8 @@ impl ImageModel for BlackForestLabsImageModel {
                     url: poll_url_with_id.to_string(),
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -380,6 +384,8 @@ impl ImageModel for BlackForestLabsImageModel {
                 url: image_url,
                 headers: vec![],
                 body: HttpBody::Empty,
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

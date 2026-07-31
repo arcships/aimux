@@ -23,7 +23,7 @@ use futures::StreamExt;
 use serde_json::Value;
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
-use aimux_core::generate::{generate_text, stream_text, GenerateTextOptions};
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::message::ModelMessage;
 use aimux_core::stream_part::StreamPart;
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
@@ -53,7 +53,11 @@ fn load_all_cassettes() -> Vec<Cassette> {
         if !provider_dir.is_dir() {
             continue;
         }
-        let provider_name = provider_dir.file_name().unwrap().to_string_lossy().to_string();
+        let provider_name = provider_dir
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
 
         for file_entry in fs::read_dir(&provider_dir).expect("provider dir") {
             let file_path = file_entry.expect("file entry").path();
@@ -112,7 +116,10 @@ fn load_all_cassettes() -> Vec<Cassette> {
 /// Extract the model from a cassette's request body (if present).
 fn extract_model(cass: &Cassette) -> Option<String> {
     // Some providers put model in the body, some in the URL path
-    cass.req_body.get("model").and_then(|v| v.as_str()).map(String::from)
+    cass.req_body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(String::from)
 }
 
 /// Extract a simple prompt from the cassette's request body messages.
@@ -171,7 +178,9 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
 
     // Build headers for the mock
     let req_path = cass.req_path.clone();
-    let resp_headers: Vec<(String, String)> = cass.resp_headers.iter()
+    let resp_headers: Vec<(String, String)> = cass
+        .resp_headers
+        .iter()
         .filter_map(|(k, v)| v.as_str().map(|vs| (k.clone(), vs.to_string())))
         .collect();
     let mut mock = Mock::given(wiremock::matchers::method("POST"))
@@ -204,9 +213,7 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
         return Ok(());
     }
 
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key").with_base_url(base_url),
-    );
+    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.model(&model_id);
 
     let prompt = extract_prompt(cass);
@@ -231,8 +238,12 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
                 // Some cassettes are error responses (4xx) — acceptable if the
                 // error is a proper AiMuxError, not a panic.
                 let msg = format!("{e}");
-                if msg.contains("404") || msg.contains("400") || msg.contains("401")
-                    || msg.contains("429") || msg.contains("500") {
+                if msg.contains("404")
+                    || msg.contains("400")
+                    || msg.contains("401")
+                    || msg.contains("429")
+                    || msg.contains("500")
+                {
                     // Expected for error cassettes
                 } else {
                     return Err(format!("stream_text unexpected error: {e}"));
@@ -250,8 +261,12 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
             }
             Err(e) => {
                 let msg = format!("{e}");
-                if msg.contains("404") || msg.contains("400") || msg.contains("401")
-                    || msg.contains("429") || msg.contains("500") {
+                if msg.contains("404")
+                    || msg.contains("400")
+                    || msg.contains("401")
+                    || msg.contains("429")
+                    || msg.contains("500")
+                {
                     // Expected for error cassettes
                 } else {
                     return Err(format!("generate_text unexpected error: {e}"));

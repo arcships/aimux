@@ -188,6 +188,8 @@ impl SearchModel for TavilySearchModel {
                 url: self.endpoint(),
                 headers,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &TAVILY_ERROR_STRUCTURE,

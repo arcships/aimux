@@ -217,6 +217,8 @@ impl SearchModel for YouComSearchModel {
                 url: url.to_string(),
                 headers,
                 body: HttpBody::Empty,
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! Deepgram transcription (STT) provider.
+//! Deepgram transcription (STT) provider.
 //!
 //! Aligned with Vercel AI SDK `createDeepgram` / `DeepgramTranscriptionModel`
 //! (`reference/ai/packages/deepgram/src/deepgram-transcription-model.ts`).
@@ -285,6 +285,8 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
                 url,
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Bytes(audio_bytes, options.media_type.clone()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -293,11 +295,10 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
 
         let response_headers = resp.headers;
 
-        let raw_body: Value =
-            serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
+        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: DeepgramResponse =
-            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: DeepgramResponse = serde_json::from_value(raw_body.clone())
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let channel = parsed
             .results

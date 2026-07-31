@@ -1,4 +1,4 @@
-﻿//! Open Responses provider - a generic Responses API wrapper.
+//! Open Responses provider - a generic Responses API wrapper.
 //!
 //! Works with any OpenAI Responses-compatible API endpoint (LM Studio,
 //! OpenAI, etc.). Unlike the OpenAI Chat Completions provider, this speaks
@@ -193,6 +193,8 @@ impl LanguageModel for OpenResponsesModel {
                 url: self.config.url.clone(),
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -353,6 +355,8 @@ impl LanguageModel for OpenResponsesModel {
                 url: self.config.url.clone(),
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Json(stream_body),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! Cohere language model — implements `LanguageModel` trait.
+//! Cohere language model — implements `LanguageModel` trait.
 //!
 //! Mirrors the TS `cohere-chat-language-model.ts`. Cohere uses its own message
 //! format (not OpenAI-compatible) and streams named SSE events
@@ -119,6 +119,8 @@ impl LanguageModel for CohereModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &COHERE_ERROR_STRUCTURE,
@@ -138,7 +140,10 @@ impl LanguageModel for CohereModel {
                 match item {
                     super::types::ContentItem::Text { text } => {
                         if !text.is_empty() {
-                            content.push(GenerateContent::Text { text: text.clone(), provider_metadata: None});
+                            content.push(GenerateContent::Text {
+                                text: text.clone(),
+                                provider_metadata: None,
+                            });
                         }
                     }
                     super::types::ContentItem::Thinking { thinking } => {
@@ -236,6 +241,8 @@ impl LanguageModel for CohereModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &COHERE_ERROR_STRUCTURE,

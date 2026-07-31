@@ -1,4 +1,4 @@
-﻿//! Luma image provider.
+//! Luma image provider.
 //!
 //! Aligned with Vercel AI SDK `LumaImageModel`
 //! (`reference/ai/packages/luma/src/luma-image-model.ts`).
@@ -296,6 +296,8 @@ impl ImageModel for LumaImageModel {
                 url: self.generations_url(None),
                 headers: header_list.clone(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -320,6 +322,8 @@ impl ImageModel for LumaImageModel {
                     url: self.generations_url(Some(&generation_id)),
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -357,6 +361,8 @@ impl ImageModel for LumaImageModel {
                 url: image_url,
                 headers: vec![],
                 body: HttpBody::Empty,
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

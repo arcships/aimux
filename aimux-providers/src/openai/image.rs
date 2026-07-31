@@ -1,4 +1,4 @@
-﻿//! OpenAI image model — implements the `ImageModel` trait.
+//! OpenAI image model — implements the `ImageModel` trait.
 //!
 //! Aligned with Vercel AI SDK `OpenAIImageModel`
 //! (`reference/ai/packages/openai/src/image/openai-image-model.ts`).
@@ -157,14 +157,16 @@ impl ImageModel for OpenAIImageModel {
                     headers: build_header_list(&headers),
                     // Content-Type is set by the http layer from the `Bytes` body.
                     body: HttpBody::Bytes(form_body, content_type),
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 self.config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
             )
             .await?;
 
-            let val: Value = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let val: Value =
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
             (val, resp.headers, None)
         } else {
             // ── Generation path: JSON body ──
@@ -177,14 +179,16 @@ impl ImageModel for OpenAIImageModel {
                     url: self.generations_endpoint(),
                     headers: build_header_list(&headers),
                     body: HttpBody::Json(Value::Object(body.clone())),
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 self.config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
             )
             .await?;
 
-            let val: Value = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let val: Value =
+                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
             (val, resp.headers, Some(Value::Object(body)))
         };
 

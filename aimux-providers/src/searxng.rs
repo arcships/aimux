@@ -21,8 +21,8 @@ use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 use aimux_provider_utils::without_trailing_slash;
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 /// Fixed model ID for the SearXNG search model.
 const MODEL_ID: &str = "searxng-search";
@@ -158,10 +158,7 @@ impl SearchModel for SearxngSearchModel {
             .headers
             .as_ref()
             .map(|extra: &HashMap<String, String>| {
-                extra
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect()
+                extra.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
             })
             .unwrap_or_default();
 
@@ -177,6 +174,8 @@ impl SearchModel for SearxngSearchModel {
                 url: url.to_string(),
                 headers,
                 body: HttpBody::Empty,
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

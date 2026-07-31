@@ -1,4 +1,4 @@
-﻿//! Hugging Face Responses API language model.
+//! Hugging Face Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the Hugging Face Responses
 //! API (`POST /responses`). This is the lightest Responses implementation in
@@ -100,6 +100,8 @@ impl LanguageModel for HuggingFaceResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.0.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
@@ -168,6 +170,8 @@ impl LanguageModel for HuggingFaceResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.0.retry_config,
             &DEFAULT_ERROR_STRUCTURE,

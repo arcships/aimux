@@ -188,6 +188,8 @@ impl SearchModel for ParallelAiSearchModel {
                 url: self.endpoint(),
                 headers,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

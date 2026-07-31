@@ -1,4 +1,4 @@
-﻿//! Cohere provider.
+//! Cohere provider.
 //!
 //! Implements Cohere's v2 chat API with its own message format (not
 //! OpenAI-compatible). Supports text generation, streaming, tool calls,
@@ -65,19 +65,13 @@ impl CohereProvider {
     /// Create a reranking model instance for the given model name (e.g.
     /// `"rerank-english-v3.0"`).
     pub fn reranking_model(&self, model_id: &str) -> reranking::CohereRerankingModel {
-        reranking::CohereRerankingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-        )
+        reranking::CohereRerankingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"embed-english-v3.0"`).
     pub fn embedding_model(&self, model_id: &str) -> embedding::CohereEmbeddingModel {
-        embedding::CohereEmbeddingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-        )
+        embedding::CohereEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 }
 

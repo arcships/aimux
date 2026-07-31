@@ -1,4 +1,4 @@
-﻿//! LMNT speech (TTS) provider.
+//! LMNT speech (TTS) provider.
 //!
 //! Aligned with Vercel AI SDK `createLMNT`
 //! (`reference/ai/packages/lmnt/src/lmnt-provider.ts`) and `LMNTSpeechModel`
@@ -25,9 +25,7 @@ use aimux_core::speech_model::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send,
-};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -150,6 +148,8 @@ impl SpeechModel for LMNTSpeechModel {
                 url: self.endpoint(),
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Json(Value::Object(body.clone())),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

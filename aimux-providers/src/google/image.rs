@@ -1,4 +1,4 @@
-﻿//! Google image model — implements the `ImageModel` trait.
+//! Google image model — implements the `ImageModel` trait.
 //!
 //! Aligned with Vercel AI SDK `GoogleImageModel`
 //! (`reference/ai/packages/google/src/google-image-model.ts`).
@@ -179,6 +179,8 @@ impl GoogleImageModel {
                 url: self.predict_endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -328,6 +330,8 @@ impl GoogleImageModel {
                 url: self.generate_content_endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -382,8 +386,10 @@ impl ImageModel for GoogleImageModel {
 
 /// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
 fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> =
-        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut list: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     list.push(("Content-Type".to_string(), "application/json".to_string()));
     list
 }

@@ -137,7 +137,10 @@ pub struct ToolResult {
 /// This is a mixed tagged/untagged shape (unit variants as bare strings,
 /// `Tool` variant as a tagged object), so serde is implemented by hand.
 #[derive(Debug, Clone, Default, PartialEq, TS)]
-#[ts(export, type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }")]
+#[ts(
+    export,
+    type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }"
+)]
 pub enum ToolChoice {
     /// Model decides whether to call a tool (default).
     #[default]

@@ -1,4 +1,4 @@
-﻿//! Cohere embedding model — implements the `EmbeddingModel` trait.
+//! Cohere embedding model — implements the `EmbeddingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `CohereEmbeddingModel`
 //! (`reference/ai/packages/cohere/src/cohere-embedding-model.ts`).
@@ -97,8 +97,10 @@ impl EmbeddingModel for CohereEmbeddingModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let mut header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
         let resp = send(
@@ -107,6 +109,8 @@ impl EmbeddingModel for CohereEmbeddingModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

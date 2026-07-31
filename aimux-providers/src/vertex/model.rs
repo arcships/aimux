@@ -1,4 +1,4 @@
-﻿//! Google Vertex AI language model — implements `LanguageModel`.
+//! Google Vertex AI language model — implements `LanguageModel`.
 //!
 //! Reuses the shared [`crate::google::convert`] message conversion logic and
 //! [`crate::google::types`] response types. Only the endpoint construction and
@@ -134,6 +134,8 @@ impl LanguageModel for VertexModel {
                 url: self.generate_endpoint(),
                 headers,
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -142,8 +144,8 @@ impl LanguageModel for VertexModel {
 
         let response_headers = resp.headers;
 
-        let data: GenerateContentResponse = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: GenerateContentResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         let candidate = data
             .candidates
@@ -202,6 +204,8 @@ impl LanguageModel for VertexModel {
                 url: self.stream_endpoint(),
                 headers,
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! Amazon Bedrock language model — implements `LanguageModel`.
+//! Amazon Bedrock language model — implements `LanguageModel`.
 //!
 //! Uses the Bedrock Converse API (`/model/{model-id}/converse` and
 //! `/model/{model-id}/converse-stream`), which provides a unified interface
@@ -79,10 +79,7 @@ impl BedrockModel {
 
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![(
-                    "Authorization".to_string(),
-                    format!("Bearer {}", token),
-                )];
+                let mut headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -120,6 +117,8 @@ impl LanguageModel for BedrockModel {
                 url,
                 headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -128,8 +127,8 @@ impl LanguageModel for BedrockModel {
 
         let response_headers = resp.headers;
 
-        let data: BedrockConverseResponse = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: BedrockConverseResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         // Extract content from response.output.message.content
         let mut content = Vec::new();
@@ -185,6 +184,8 @@ impl LanguageModel for BedrockModel {
                 url,
                 headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -460,7 +461,10 @@ impl LanguageModel for BedrockModel {
 /// text and `redactedData` under both metadata keys.
 fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateContent>) {
     if let Some(text) = &block.text {
-        content.push(GenerateContent::Text { text: text.clone(), provider_metadata: None});
+        content.push(GenerateContent::Text {
+            text: text.clone(),
+            provider_metadata: None,
+        });
     }
     if let Some(tool_use) = &block.tool_use {
         content.push(GenerateContent::ToolCall {

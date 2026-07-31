@@ -1,4 +1,4 @@
-﻿//! Mistral embedding model — implements the `EmbeddingModel` trait.
+//! Mistral embedding model — implements the `EmbeddingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `MistralEmbeddingModel`
 //! (`reference/ai/packages/mistral/src/mistral-embedding-model.ts`).
@@ -91,8 +91,10 @@ impl EmbeddingModel for MistralEmbeddingModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let mut header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
         let resp = send(
@@ -101,6 +103,8 @@ impl EmbeddingModel for MistralEmbeddingModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

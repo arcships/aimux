@@ -10,8 +10,14 @@ use serde_json::json;
 
 #[test]
 fn serialize_unit_variants_as_bare_strings() {
-    assert_eq!(serde_json::to_value(ToolChoice::Auto).unwrap(), json!("auto"));
-    assert_eq!(serde_json::to_value(ToolChoice::None).unwrap(), json!("none"));
+    assert_eq!(
+        serde_json::to_value(ToolChoice::Auto).unwrap(),
+        json!("auto")
+    );
+    assert_eq!(
+        serde_json::to_value(ToolChoice::None).unwrap(),
+        json!("none")
+    );
     assert_eq!(
         serde_json::to_value(ToolChoice::Required).unwrap(),
         json!("required")

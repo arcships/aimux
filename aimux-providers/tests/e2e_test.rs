@@ -1,4 +1,4 @@
-﻿//! End-to-end tests: verify generate_text / stream_text user-facing API
+//! End-to-end tests: verify generate_text / stream_text user-facing API
 //! works with both OpenAI and Anthropic providers via wiremock.
 
 use aimux_core::content::ContentPart;
@@ -522,17 +522,19 @@ async fn e2e_openai_tool_call_round_trip() {
     let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(server.uri()));
     let model = provider.model("gpt-4o");
 
-    let weather_tool = || Tool::Function(
-        FunctionTool::new(
-            "get_weather",
-            json!({
-                "type": "object",
-                "properties": {"location": {"type": "string"}},
-                "required": ["location"]
-            }),
+    let weather_tool = || {
+        Tool::Function(
+            FunctionTool::new(
+                "get_weather",
+                json!({
+                    "type": "object",
+                    "properties": {"location": {"type": "string"}},
+                    "required": ["location"]
+                }),
+            )
+            .with_description("Get weather for a location"),
         )
-        .with_description("Get weather for a location"),
-    );
+    };
 
     // Step 1: first call — model requests a tool call.
     let result1 = generate_text(
@@ -546,7 +548,10 @@ async fn e2e_openai_tool_call_round_trip() {
     .await
     .expect("first generate_text should succeed");
 
-    assert_eq!(result1.finish_reason.unified, FinishReasonUnified::ToolCalls);
+    assert_eq!(
+        result1.finish_reason.unified,
+        FinishReasonUnified::ToolCalls
+    );
     assert_eq!(result1.tool_calls.len(), 1);
     assert_eq!(result1.tool_calls[0].tool_name, "get_weather");
     assert_eq!(result1.tool_calls[0].input["location"], "Tokyo");
@@ -598,9 +603,7 @@ async fn e2e_openai_tool_call_round_trip() {
     let body: serde_json::Value =
         serde_json::from_slice(&requests[1].body).expect("second request body is JSON");
 
-    let msgs = body["messages"]
-        .as_array()
-        .expect("messages is an array");
+    let msgs = body["messages"].as_array().expect("messages is an array");
     // user, assistant(tool_calls), tool(result)
     assert_eq!(msgs.len(), 3, "expected 3 messages in second request");
     assert_eq!(msgs[0]["role"], "user");
@@ -649,10 +652,9 @@ async fn e2e_openai_multi_turn_dialog() {
         ModelMessage::user("And what is its population?"),
     ];
 
-    let result =
-        generate_text(&model, messages, GenerateTextOptions::default())
-            .await
-            .expect("generate_text should succeed");
+    let result = generate_text(&model, messages, GenerateTextOptions::default())
+        .await
+        .expect("generate_text should succeed");
 
     assert_eq!(result.text, "Tokyo has about 14 million people.");
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
@@ -666,19 +668,14 @@ async fn e2e_openai_multi_turn_dialog() {
     let body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("request body is JSON");
 
-    let msgs = body["messages"]
-        .as_array()
-        .expect("messages is an array");
+    let msgs = body["messages"].as_array().expect("messages is an array");
     assert_eq!(
         msgs.len(),
         4,
         "expected 4 messages (system + user + assistant + user)"
     );
     assert_eq!(msgs[0]["role"], "system");
-    assert_eq!(
-        msgs[0]["content"],
-        "You are a helpful geography assistant."
-    );
+    assert_eq!(msgs[0]["content"], "You are a helpful geography assistant.");
     assert_eq!(msgs[1]["role"], "user");
     assert_eq!(msgs[2]["role"], "assistant");
     assert_eq!(msgs[2]["content"], "The capital of Japan is Tokyo.");
@@ -840,9 +837,7 @@ async fn e2e_openai_stream_tool_calls() {
     // If a complete ToolCall part exists, verify its fields
     let tool_call = parts.iter().find_map(|p| match p {
         StreamPart::ToolCall {
-            tool_name,
-            input,
-            ..
+            tool_name, input, ..
         } => Some((tool_name, input)),
         _ => None,
     });

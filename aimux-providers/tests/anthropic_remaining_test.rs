@@ -1,4 +1,4 @@
-﻿//! Remaining Anthropic provider tests — ported from the TS SDK suite.
+//! Remaining Anthropic provider tests — ported from the TS SDK suite.
 //!
 //! Covers the TS tests not already exercised by the existing six Anthropic
 //! test files (`anthropic_model_test.rs`, `anthropic_convert_test.rs`,
@@ -74,10 +74,7 @@ fn direct_client() -> Client {
 
 /// Build an `AnthropicModel` backed by `config` (model id `claude-3-haiku-20240307`).
 fn make_model_with_config(config: AnthropicConfig) -> AnthropicModel {
-    AnthropicModel::new(
-        "claude-3-haiku-20240307".to_string(),
-        config,
-    )
+    AnthropicModel::new("claude-3-haiku-20240307".to_string(), config)
 }
 
 /// A minimal Anthropic text response body (mirrors the TS `anthropic-text` fixture).

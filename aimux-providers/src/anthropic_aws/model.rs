@@ -1,4 +1,4 @@
-﻿//! Anthropic-AWS language model — implements `LanguageModel`.
+//! Anthropic-AWS language model — implements `LanguageModel`.
 //!
 //! Reuses the shared [`crate::anthropic::convert`] message conversion logic,
 //! [`crate::anthropic::types`] response types, and the shared streaming /
@@ -65,10 +65,7 @@ impl AnthropicAwsModel {
             let body_str = std::str::from_utf8(body).unwrap_or_default();
             let mut base_headers = vec![
                 ("Content-Type".to_string(), "application/json".to_string()),
-                (
-                    "anthropic-version".to_string(),
-                    api_version.clone(),
-                ),
+                ("anthropic-version".to_string(), api_version.clone()),
             ];
 
             if let Some(ref ws) = workspace_id {

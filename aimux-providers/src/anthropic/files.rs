@@ -1,4 +1,4 @@
-﻿//! Anthropic Files — implements the `Files` trait for uploading files to the
+//! Anthropic Files — implements the `Files` trait for uploading files to the
 //! Anthropic API.
 //!
 //! Aligned with Vercel AI SDK `AnthropicFiles`
@@ -119,12 +119,11 @@ impl Files for AnthropicFiles {
         );
 
         let mut headers = self.build_headers();
-        headers.insert(
-            "anthropic-beta".to_string(),
-            FILES_BETA_HEADER.to_string(),
-        );
-        let header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        headers.insert("anthropic-beta".to_string(), FILES_BETA_HEADER.to_string());
+        let header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. The multipart body
@@ -137,6 +136,8 @@ impl Files for AnthropicFiles {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Bytes(body, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,

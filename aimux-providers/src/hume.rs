@@ -1,4 +1,4 @@
-﻿//! Hume speech (TTS) provider.
+//! Hume speech (TTS) provider.
 //!
 //! Aligned with Vercel AI SDK `createHume`
 //! (`reference/ai/packages/hume/src/hume-provider.ts`) and `HumeSpeechModel`
@@ -157,6 +157,8 @@ impl SpeechModel for HumeSpeechModel {
                 url: self.endpoint(),
                 headers,
                 body: HttpBody::Json(Value::Object(body.clone())),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

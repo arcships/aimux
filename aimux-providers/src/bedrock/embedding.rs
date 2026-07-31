@@ -1,4 +1,4 @@
-﻿//! Amazon Bedrock embedding model — implements the `EmbeddingModel` trait.
+//! Amazon Bedrock embedding model — implements the `EmbeddingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `AmazonBedrockEmbeddingModel`
 //! (`reference/ai/packages/amazon-bedrock/src/amazon-bedrock-embedding-model.ts`).
@@ -64,10 +64,7 @@ impl BedrockEmbeddingModel {
 
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![(
-                    "Authorization".to_string(),
-                    format!("Bearer {}", token),
-                )];
+                let mut headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -204,6 +201,8 @@ impl EmbeddingModel for BedrockEmbeddingModel {
                 url,
                 headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

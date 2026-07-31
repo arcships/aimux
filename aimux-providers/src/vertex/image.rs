@@ -1,4 +1,4 @@
-﻿//! Google Vertex AI image model — implements the `ImageModel` trait.
+//! Google Vertex AI image model — implements the `ImageModel` trait.
 //!
 //! Aligned with Vercel AI SDK `GoogleVertexImageModel`
 //! (`reference/ai/packages/google-vertex/src/google-vertex-image-model.ts`).
@@ -202,6 +202,8 @@ impl VertexImageModel {
                 url: self.predict_endpoint(),
                 headers,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -344,6 +346,8 @@ impl VertexImageModel {
                 url: self.generate_content_endpoint(),
                 headers,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

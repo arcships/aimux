@@ -266,6 +266,8 @@ impl SearchModel for DataforseoSearchModel {
                 url: self.endpoint(),
                 headers,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DATAFORSEO_ERROR_STRUCTURE,

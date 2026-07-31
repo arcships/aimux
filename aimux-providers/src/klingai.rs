@@ -1,4 +1,4 @@
-﻿//! KlingAI video generation provider.
+//! KlingAI video generation provider.
 //!
 //! Aligned with Vercel AI SDK `createKlingAI` / `KlingAIVideoModel`
 //! (`reference/ai/packages/klingai/src/klingai-video-model.ts`).
@@ -268,6 +268,8 @@ impl VideoModel for KlingAIVideoModel {
                 url: self.submit_endpoint(&mode),
                 headers: header_list.clone(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -303,6 +305,8 @@ impl VideoModel for KlingAIVideoModel {
                     url: self.poll_endpoint(&mode, &id, &task_id),
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! OpenAI Responses API language model.
+//! OpenAI Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the `/v1/responses`
 //! endpoint. The Responses API uses a different request/response format from
@@ -121,6 +121,8 @@ impl LanguageModel for OpenAIResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
@@ -164,6 +166,8 @@ impl LanguageModel for OpenAIResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,

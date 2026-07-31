@@ -1,4 +1,4 @@
-﻿//! Google video generation model — implements `VideoModel`.
+//! Google video generation model — implements `VideoModel`.
 //!
 //! Aligned with Vercel AI SDK `GoogleVideoModel`
 //! (`reference/ai/packages/google/src/google-video-model.ts`).
@@ -111,8 +111,10 @@ impl VideoModel for GoogleVideoModel {
         });
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         let url = self.predict_url();
 
@@ -122,6 +124,8 @@ impl VideoModel for GoogleVideoModel {
                 url,
                 headers: header_list.clone(),
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -151,6 +155,8 @@ impl VideoModel for GoogleVideoModel {
                     url: poll_url,
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &GOOGLE_ERROR_STRUCTURE,

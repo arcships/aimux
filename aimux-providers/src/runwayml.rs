@@ -255,6 +255,8 @@ impl VideoModel for RunwaymlVideoModel {
                 url: submit_url,
                 headers: header_list.clone(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &RUNWAYML_ERROR_STRUCTURE,
@@ -289,6 +291,8 @@ impl VideoModel for RunwaymlVideoModel {
                     url: poll_url.clone(),
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &RUNWAYML_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! Fal transcription (STT) provider.
+//! Fal transcription (STT) provider.
 //!
 //! Aligned with Vercel AI SDK `createFal` / `FalTranscriptionModel`
 //! (`reference/ai/packages/fal/src/fal-transcription-model.ts`).
@@ -220,6 +220,8 @@ impl TranscriptionModel for FalTranscriptionModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -244,6 +246,8 @@ impl TranscriptionModel for FalTranscriptionModel {
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -267,8 +271,8 @@ impl TranscriptionModel for FalTranscriptionModel {
             break;
         }
 
-        let parsed: FalTranscriptionResponse =
-            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: FalTranscriptionResponse = serde_json::from_value(raw_body.clone())
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .chunks
@@ -495,6 +499,8 @@ impl ImageModel for FalImageModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -523,6 +529,8 @@ impl ImageModel for FalImageModel {
                         url: url.to_string(),
                         headers: vec![],
                         body: HttpBody::Empty,
+
+                        abort_signal: options.abort_signal.clone(),
                     },
                     RetryConfig::default(),
                     &DEFAULT_ERROR_STRUCTURE,
@@ -719,6 +727,8 @@ impl VideoModel for FalVideoModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -741,6 +751,8 @@ impl VideoModel for FalVideoModel {
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

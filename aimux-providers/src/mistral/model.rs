@@ -1,4 +1,4 @@
-﻿//! Mistral language model — implements `LanguageModel` trait.
+//! Mistral language model — implements `LanguageModel` trait.
 //!
 //! Mirrors the TS `mistral-chat-language-model.ts`. Key differences from the
 //! OpenAI model:
@@ -222,6 +222,8 @@ impl LanguageModel for MistralModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &MISTRAL_ERROR_STRUCTURE,
@@ -245,7 +247,10 @@ impl LanguageModel for MistralModel {
         if let Some(text) = extract_text_content(&choice.message.content)
             && !text.is_empty()
         {
-            content.push(GenerateContent::Text { text, provider_metadata: None});
+            content.push(GenerateContent::Text {
+                text,
+                provider_metadata: None,
+            });
         }
 
         // Tool calls.
@@ -304,6 +309,8 @@ impl LanguageModel for MistralModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &MISTRAL_ERROR_STRUCTURE,

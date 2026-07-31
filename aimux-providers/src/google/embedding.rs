@@ -1,4 +1,4 @@
-﻿//! Google Gemini embedding model — implements the `EmbeddingModel` trait.
+//! Google Gemini embedding model — implements the `EmbeddingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `GoogleEmbeddingModel`
 //! (`reference/ai/packages/google/src/google-embedding-model.ts`).
@@ -57,8 +57,10 @@ impl GoogleEmbeddingModel {
 
 /// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
 fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> =
-        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut list: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     list.push(("Content-Type".to_string(), "application/json".to_string()));
     list
 }
@@ -126,6 +128,8 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                     url,
                     headers: header_list,
                     body: HttpBody::Json(Value::Object(body)),
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &GOOGLE_ERROR_STRUCTURE,
@@ -206,6 +210,8 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                 url,
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

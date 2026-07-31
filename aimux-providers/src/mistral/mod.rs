@@ -1,4 +1,4 @@
-﻿//! Mistral AI provider.
+//! Mistral AI provider.
 //!
 //! OpenAI-compatible chat completions API with Mistral-specific differences:
 //! - Tool choice uses `"any"` instead of `"required"`
@@ -65,10 +65,7 @@ impl MistralProvider {
     /// Create an embedding model instance for the given model name (e.g.
     /// `"mistral-embed"`).
     pub fn embedding_model(&self, model_id: &str) -> embedding::MistralEmbeddingModel {
-        embedding::MistralEmbeddingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-        )
+        embedding::MistralEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 }
 

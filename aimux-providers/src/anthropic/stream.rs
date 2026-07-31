@@ -22,8 +22,8 @@ use futures::StreamExt;
 use aimux_core::error::AiMuxError;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
 use aimux_core::types::Warning;
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
@@ -74,6 +74,8 @@ fn build_anthropic_request(
         url: endpoint.to_string(),
         headers,
         body: http_body,
+
+        abort_signal: None,
     })
 }
 

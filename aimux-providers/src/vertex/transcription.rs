@@ -1,4 +1,4 @@
-﻿//! Google Vertex AI transcription (STT) model — implements `TranscriptionModel`.
+//! Google Vertex AI transcription (STT) model — implements `TranscriptionModel`.
 //!
 //! Aligned with Vercel AI SDK `GoogleVertexTranscriptionModel`
 //! (`reference/ai/packages/google-vertex/src/google-vertex-transcription-model.ts`).
@@ -243,8 +243,10 @@ impl TranscriptionModel for VertexTranscriptionModel {
         let headers = self.build_headers(options.headers.as_ref());
         let url = self.endpoint(&region);
 
-        let header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         let resp = send(
             HttpRequest {
@@ -252,6 +254,8 @@ impl TranscriptionModel for VertexTranscriptionModel {
                 url,
                 headers: header_list,
                 body: HttpBody::Json(request_body.clone()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -262,8 +266,8 @@ impl TranscriptionModel for VertexTranscriptionModel {
 
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: GoogleVertexResponse =
-            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: GoogleVertexResponse = serde_json::from_value(raw_body.clone())
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let results = parsed.results.unwrap_or_default();
 

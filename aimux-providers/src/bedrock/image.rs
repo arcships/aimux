@@ -1,4 +1,4 @@
-﻿//! Amazon Bedrock image model — implements the `ImageModel` trait.
+//! Amazon Bedrock image model — implements the `ImageModel` trait.
 //!
 //! Aligned with Vercel AI SDK `AmazonBedrockImageModel`
 //! (`reference/ai/packages/amazon-bedrock/src/amazon-bedrock-image-model.ts`).
@@ -64,10 +64,7 @@ impl BedrockImageModel {
         }
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![(
-                    "Authorization".into(),
-                    format!("Bearer {}", token),
-                )];
+                let mut headers = vec![("Authorization".into(), format!("Bearer {}", token))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -278,7 +275,8 @@ impl ImageModel for BedrockImageModel {
             });
         }
 
-        let body_str = serde_json::to_string(&Value::Object(args)).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let body_str = serde_json::to_string(&Value::Object(args))
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
@@ -288,6 +286,8 @@ impl ImageModel for BedrockImageModel {
                 url,
                 headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

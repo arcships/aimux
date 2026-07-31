@@ -1,4 +1,4 @@
-﻿//! Voyage AI provider.
+//! Voyage AI provider.
 //!
 //! Implements the `EmbeddingModel` trait against the Voyage AI API
 //! (`api.voyageai.com/v1/embeddings`).
@@ -55,19 +55,13 @@ impl VoyageProvider {
     /// Create an embedding model instance for the given model name (e.g.
     /// `"voyage-3.5"`).
     pub fn embedding_model(&self, model_id: &str) -> VoyageEmbeddingModel {
-        VoyageEmbeddingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-        )
+        VoyageEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a reranking model instance for the given model name (e.g.
     /// `"rerank-2.5"`).
     pub fn reranking_model(&self, model_id: &str) -> reranking::VoyageRerankingModel {
-        reranking::VoyageRerankingModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-        )
+        reranking::VoyageRerankingModel::new(model_id.to_string(), self.config.clone())
     }
 }
 

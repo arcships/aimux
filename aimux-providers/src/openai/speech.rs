@@ -1,4 +1,4 @@
-﻿//! OpenAI speech (TTS) model — implements the `SpeechModel` trait.
+//! OpenAI speech (TTS) model — implements the `SpeechModel` trait.
 //!
 //! Aligned with Vercel AI SDK `OpenAISpeechModel`
 //! (`reference/ai/packages/openai/src/speech/openai-speech-model.ts`).
@@ -22,7 +22,7 @@ use aimux_core::speech_model::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{send, HttpBody, HttpMethod, HttpRequest};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send};
 
 use super::OpenAIConfig;
 
@@ -99,6 +99,8 @@ impl SpeechModel for OpenAISpeechModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body.clone())),
+
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,

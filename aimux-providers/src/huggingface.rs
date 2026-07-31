@@ -1,4 +1,4 @@
-﻿//! Hugging Face provider — a thin OpenAI-compatible wrapper.
+//! Hugging Face provider — a thin OpenAI-compatible wrapper.
 //!
 //! Hugging Face exposes an OpenAI-compatible Chat Completions API through its
 //! router at `https://router.huggingface.co/v1`. The TS SDK configures this base
@@ -71,10 +71,7 @@ impl HuggingFaceProvider {
     /// it supports function tools only (no built-in tools), and uses the
     /// `text.format` field for structured output.
     pub fn responses_model(&self, model_id: &str) -> responses::HuggingFaceResponsesModel {
-        responses::HuggingFaceResponsesModel::new(
-            model_id.to_string(),
-            self.config.clone(),
-        )
+        responses::HuggingFaceResponsesModel::new(model_id.to_string(), self.config.clone())
     }
 }
 

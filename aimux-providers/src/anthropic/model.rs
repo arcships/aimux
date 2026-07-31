@@ -1,4 +1,4 @@
-﻿//! Anthropic language model — implements `LanguageModel` trait.
+//! Anthropic language model — implements `LanguageModel` trait.
 //!
 //! The request body building, HTTP send and response/SSE parsing live in the
 //! shared [`super::stream`] core; this module only wires the standard Anthropic
@@ -49,10 +49,7 @@ impl AnthropicModel {
         let extra = extra.cloned();
         move |_body: &[u8], _url: &str| -> Result<Vec<(String, String)>, AiMuxError> {
             let mut headers: HashMap<String, String> = HashMap::new();
-            headers.insert(
-                "anthropic-version".to_string(),
-                api_version.clone(),
-            );
+            headers.insert("anthropic-version".to_string(), api_version.clone());
             // Auth: prefer bearer token, fall back to x-api-key.
             if let Some(token) = &auth_token {
                 headers.insert("authorization".to_string(), format!("Bearer {token}"));

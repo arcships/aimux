@@ -1,4 +1,4 @@
-﻿//! AssemblyAI transcription (STT) provider.
+//! AssemblyAI transcription (STT) provider.
 //!
 //! Aligned with Vercel AI SDK `createAssemblyAI` / `AssemblyAITranscriptionModel`
 //! (`reference/ai/packages/assemblyai/src/assemblyai-transcription-model.ts`).
@@ -200,6 +200,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                 url: self.upload_url(),
                 headers: header_list.clone(),
                 body: HttpBody::Bytes(audio_bytes, "application/octet-stream".to_string()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -244,6 +246,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                 url: self.transcript_url(),
                 headers: header_list.clone(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -265,6 +269,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                     url: self.transcript_status_url(&submit.id),
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -274,8 +280,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
             response_headers = resp.headers;
 
             raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-            let parsed: AssemblyAITranscriptResponse =
-                serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let parsed: AssemblyAITranscriptResponse = serde_json::from_value(raw_body.clone())
+                .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if parsed.status == "completed" {
                 // Build segments from words (timestamps are in milliseconds).

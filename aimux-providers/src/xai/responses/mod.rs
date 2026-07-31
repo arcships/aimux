@@ -1,4 +1,4 @@
-﻿//! xAI Responses API language model.
+//! xAI Responses API language model.
 //!
 //! Implements `LanguageModel` against xAI's `/responses` endpoint.
 //! Mirrors the TS `XaiResponsesLanguageModel`.
@@ -102,6 +102,8 @@ impl LanguageModel for XaiResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -366,6 +368,8 @@ impl LanguageModel for XaiResponsesModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! Voyage embedding model — implements the `EmbeddingModel` trait.
+//! Voyage embedding model — implements the `EmbeddingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `VoyageEmbeddingModel`
 //! (`reference/ai/packages/voyage/src/voyage-embedding-model.ts`).
@@ -95,8 +95,10 @@ impl EmbeddingModel for VoyageEmbeddingModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
         // error internally using the shared error structure. `HttpBody::Json`
@@ -108,6 +110,8 @@ impl EmbeddingModel for VoyageEmbeddingModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -116,9 +120,8 @@ impl EmbeddingModel for VoyageEmbeddingModel {
 
         let response_headers: HashMap<String, String> = resp.headers.clone();
 
-        let raw_value: Value =
-            serde_json::from_slice::<Value>(&resp.body)
-                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_value: Value = serde_json::from_slice::<Value>(&resp.body)
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Extract embeddings: sort data by index, then map to embedding arrays.
         let embeddings: Vec<Vec<f32>> = raw_value

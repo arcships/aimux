@@ -186,6 +186,8 @@ impl SearchModel for FirecrawlSearchModel {
                 url: self.endpoint(),
                 headers,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &FIRECRAWL_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! Conversion between `LanguageModelPrompt` and Google Gemini API format.
+//! Conversion between `LanguageModelPrompt` and Google Gemini API format.
 //!
 //! Mirrors the TS SDK's `convert-to-google-messages.ts` and the request-body
 //! construction inside `google-language-model.ts`'s `getArgs`. The Gemini
@@ -1013,7 +1013,7 @@ pub fn extract_sources(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                    provider_metadata: None,
+                provider_metadata: None,
             });
         } else if let Some(image) = chunk.get("image") {
             sources.push(GenerateContent::Source {
@@ -1027,7 +1027,7 @@ pub fn extract_sources(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                    provider_metadata: None,
+                provider_metadata: None,
             });
         } else if let Some(rc) = chunk.get("retrievedContext") {
             let uri = rc.get("uri").and_then(|v| v.as_str());
@@ -1074,7 +1074,7 @@ pub fn extract_sources(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                    provider_metadata: None,
+                provider_metadata: None,
             });
         }
     }

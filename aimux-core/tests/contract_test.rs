@@ -4,10 +4,10 @@
 //! matches the expected wire format. The same fixtures are used by Node/Python
 //! tests to ensure cross-language consistency.
 
+use aimux_core::generate::GenerateTextOptions;
 use aimux_core::message::{ModelMessage, Role};
 use aimux_core::options::ToolChoice;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::generate::GenerateTextOptions;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 use serde_json::Value;
 
@@ -36,10 +36,16 @@ fn load_fixtures() -> Vec<Fixture> {
 
 /// Assert that a Rust value serializes to the expected JSON.
 fn assert_serialize<T: serde::Serialize>(value: &T, expected_json: &str, name: &str) {
-    let actual = serde_json::to_string(value).unwrap_or_else(|e| panic!("{name}: serialize failed: {e}"));
-    let actual_val: Value = serde_json::from_str(&actual).unwrap_or_else(|e| panic!("{name}: actual is not valid JSON: {e}"));
-    let expected_val: Value = serde_json::from_str(expected_json).unwrap_or_else(|e| panic!("{name}: expected is not valid JSON: {e}"));
-    assert_eq!(actual_val, expected_val, "fixture '{name}': serialization mismatch\n  expected: {expected_json}\n  actual:   {actual}");
+    let actual =
+        serde_json::to_string(value).unwrap_or_else(|e| panic!("{name}: serialize failed: {e}"));
+    let actual_val: Value = serde_json::from_str(&actual)
+        .unwrap_or_else(|e| panic!("{name}: actual is not valid JSON: {e}"));
+    let expected_val: Value = serde_json::from_str(expected_json)
+        .unwrap_or_else(|e| panic!("{name}: expected is not valid JSON: {e}"));
+    assert_eq!(
+        actual_val, expected_val,
+        "fixture '{name}': serialization mismatch\n  expected: {expected_json}\n  actual:   {actual}"
+    );
 }
 
 /// Assert that expected JSON deserializes to a Rust value that re-serializes
@@ -50,7 +56,8 @@ fn assert_roundtrip<T: serde::Serialize + serde::de::DeserializeOwned>(
     name: &str,
     parse: impl Fn(&Value) -> Option<T>,
 ) {
-    let expected_val: Value = serde_json::from_str(expected_json).expect("expected is not valid JSON");
+    let expected_val: Value =
+        serde_json::from_str(expected_json).expect("expected is not valid JSON");
     // We can't always construct the exact Rust value from the fixture,
     // so we verify round-trip: deserialize → re-serialize → compare.
     let roundtripped = match expected_json {
@@ -66,7 +73,10 @@ fn assert_roundtrip<T: serde::Serialize + serde::de::DeserializeOwned>(
         }
     };
     let rt_val: Value = serde_json::from_str(&roundtripped).unwrap();
-    assert_eq!(rt_val, expected_val, "fixture '{name}': round-trip mismatch");
+    assert_eq!(
+        rt_val, expected_val,
+        "fixture '{name}': round-trip mismatch"
+    );
     // Suppress unused warning
     let _ = parse;
 }
@@ -75,9 +85,15 @@ fn assert_roundtrip<T: serde::Serialize + serde::de::DeserializeOwned>(
 fn tool_choice_wire_format() {
     assert_serialize(&ToolChoice::Auto, "\"auto\"", "tool_choice_auto");
     assert_serialize(&ToolChoice::None, "\"none\"", "tool_choice_none");
-    assert_serialize(&ToolChoice::Required, "\"required\"", "tool_choice_required");
     assert_serialize(
-        &ToolChoice::Tool { tool_name: "get_weather".into() },
+        &ToolChoice::Required,
+        "\"required\"",
+        "tool_choice_required",
+    );
+    assert_serialize(
+        &ToolChoice::Tool {
+            tool_name: "get_weather".into(),
+        },
         "{\"type\":\"tool\",\"toolName\":\"get_weather\"}",
         "tool_choice_tool",
     );
@@ -91,7 +107,11 @@ fn role_wire_format() {
 
 #[test]
 fn finish_reason_unified_wire_format() {
-    assert_serialize(&FinishReasonUnified::Stop, "\"stop\"", "finish_reason_unified_stop");
+    assert_serialize(
+        &FinishReasonUnified::Stop,
+        "\"stop\"",
+        "finish_reason_unified_stop",
+    );
 }
 
 #[test]
@@ -104,7 +124,10 @@ fn generate_text_options_default_wire_format() {
     let opts = GenerateTextOptions::default();
     let json = serde_json::to_string(&opts).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
-    assert!(val.is_object(), "GenerateTextOptions should serialize to object");
+    assert!(
+        val.is_object(),
+        "GenerateTextOptions should serialize to object"
+    );
     // All fields should be null for default
     if let Value::Object(obj) = &val {
         for (_, v) in obj {
@@ -115,10 +138,17 @@ fn generate_text_options_default_wire_format() {
 
 #[test]
 fn stream_part_text_delta_wire_format() {
-    let part = StreamPart::TextDelta { id: "tx1".into(), delta: "Hello".into(), provider_metadata: None };
+    let part = StreamPart::TextDelta {
+        id: "tx1".into(),
+        delta: "Hello".into(),
+        provider_metadata: None,
+    };
     let json = serde_json::to_string(&part).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
-    assert!(val.get("TextDelta").is_some(), "expected TextDelta variant, got {json}");
+    assert!(
+        val.get("TextDelta").is_some(),
+        "expected TextDelta variant, got {json}"
+    );
 }
 
 #[test]
@@ -126,7 +156,10 @@ fn stream_part_stream_start_wire_format() {
     let part = StreamPart::StreamStart { warnings: vec![] };
     let json = serde_json::to_string(&part).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
-    assert!(val.get("StreamStart").is_some(), "expected StreamStart variant, got {json}");
+    assert!(
+        val.get("StreamStart").is_some(),
+        "expected StreamStart variant, got {json}"
+    );
 }
 
 #[test]

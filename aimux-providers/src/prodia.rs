@@ -1,4 +1,4 @@
-﻿//! Prodia image provider.
+//! Prodia image provider.
 //!
 //! Aligned with Vercel AI SDK `ProdiaImageModel`
 //! (`reference/ai/packages/prodia/src/prodia-image-model.ts`).
@@ -225,6 +225,8 @@ impl ImageModel for ProdiaImageModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -367,6 +369,8 @@ impl VideoModel for ProdiaVideoModel {
                 url: format!("{}/job", self.config.base_url),
                 headers: header_list.clone(),
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -393,6 +397,8 @@ impl VideoModel for ProdiaVideoModel {
                     url: format!("{}/job/{}", self.config.base_url, job_id),
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

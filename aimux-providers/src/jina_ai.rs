@@ -243,6 +243,8 @@ impl RerankingModel for JinaAiRerankingModel {
                 url: self.endpoint(),
                 headers,
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &JINA_ERROR_STRUCTURE,

@@ -1,4 +1,4 @@
-﻿//! Replicate image provider.
+//! Replicate image provider.
 //!
 //! Aligned with Vercel AI SDK `ReplicateImageModel`
 //! (`reference/ai/packages/replicate/src/replicate-image-model.ts`).
@@ -264,6 +264,8 @@ impl ImageModel for ReplicateImageModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -293,6 +295,8 @@ impl ImageModel for ReplicateImageModel {
                     url: url.clone(),
                     headers: vec![],
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -413,6 +417,8 @@ impl VideoModel for ReplicateVideoModel {
                 url: format!("{}/predictions", self.config.base_url),
                 headers: header_list.clone(),
                 body: HttpBody::Json(body),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -436,12 +442,11 @@ impl VideoModel for ReplicateVideoModel {
             let resp = send(
                 HttpRequest {
                     method: HttpMethod::Get,
-                    url: format!(
-                        "{}/predictions/{}",
-                        self.config.base_url, prediction_id
-                    ),
+                    url: format!("{}/predictions/{}", self.config.base_url, prediction_id),
                     headers: header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

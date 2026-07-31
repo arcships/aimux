@@ -1,4 +1,4 @@
-﻿//! Google Vertex AI embedding model — implements the `EmbeddingModel` trait.
+//! Google Vertex AI embedding model — implements the `EmbeddingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `GoogleVertexEmbeddingModel`
 //! (`reference/ai/packages/google-vertex/src/google-vertex-embedding-model.ts`).
@@ -147,6 +147,8 @@ impl EmbeddingModel for VertexEmbeddingModel {
                     url,
                     headers,
                     body: HttpBody::Json(Value::Object(body)),
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &GOOGLE_ERROR_STRUCTURE,
@@ -226,6 +228,8 @@ impl EmbeddingModel for VertexEmbeddingModel {
                 url,
                 headers,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

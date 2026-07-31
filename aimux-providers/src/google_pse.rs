@@ -207,10 +207,7 @@ impl SearchModel for GooglePseSearchModel {
             .headers
             .as_ref()
             .map(|extra: &HashMap<String, String>| {
-                extra
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect()
+                extra.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
             })
             .unwrap_or_default();
 
@@ -232,6 +229,8 @@ impl SearchModel for GooglePseSearchModel {
                 url: url.to_string(),
                 headers,
                 body: HttpBody::Empty,
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_PSE_ERROR_STRUCTURE,

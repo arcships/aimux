@@ -1,4 +1,4 @@
-﻿//! Cohere Reranking — implements the `RerankingModel` trait.
+//! Cohere Reranking — implements the `RerankingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `CohereRerankingModel`
 //! (`reference/ai/packages/cohere/src/reranking/cohere-reranking-model.ts`).
@@ -134,8 +134,10 @@ impl RerankingModel for CohereRerankingModel {
         }
 
         let headers = self.build_headers(options.headers.as_ref());
-        let mut header_list: Vec<(String, String)> =
-            headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut header_list: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
         let resp = send(
@@ -144,6 +146,8 @@ impl RerankingModel for CohereRerankingModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

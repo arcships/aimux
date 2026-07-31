@@ -1,4 +1,4 @@
-﻿//! Amazon Bedrock Reranking — implements the `RerankingModel` trait.
+//! Amazon Bedrock Reranking — implements the `RerankingModel` trait.
 //!
 //! Aligned with Vercel AI SDK `AmazonBedrockRerankingModel`
 //! (`reference/ai/packages/amazon-bedrock/src/reranking/amazon-bedrock-reranking-model.ts`).
@@ -102,10 +102,7 @@ impl BedrockRerankingModel {
 
         match &self.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![(
-                    "Authorization".to_string(),
-                    format!("Bearer {}", token),
-                )];
+                let mut headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -207,6 +204,8 @@ impl RerankingModel for BedrockRerankingModel {
                 url,
                 headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

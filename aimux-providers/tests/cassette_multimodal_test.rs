@@ -14,8 +14,8 @@ use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
 use aimux_core::image_model::{ImageCallOptions, ImageModel};
-use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_core::shared::FileBytes;
+use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 
 const CASSETTE_DIR: &str = "tests/cassettes";
@@ -63,13 +63,10 @@ async fn mount_single(cass: &Value) -> (MockServer, String) {
 
 #[tokio::test]
 async fn cassette_openai_embedding_query() {
-    let cass = load_cassette("openai", "TestOpenAI.test_query.json")
-        .expect("cassette should load");
+    let cass = load_cassette("openai", "TestOpenAI.test_query.json").expect("cassette should load");
     let (server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key").with_base_url(base_url),
-    );
+    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("text-embedding-3-small");
 
     let opts = EmbeddingCallOptions::new("hello");
@@ -86,13 +83,11 @@ async fn cassette_openai_embedding_query() {
 
 #[tokio::test]
 async fn cassette_openai_embedding_documents() {
-    let cass = load_cassette("openai", "TestOpenAI.test_documents.json")
-        .expect("cassette should load");
+    let cass =
+        load_cassette("openai", "TestOpenAI.test_documents.json").expect("cassette should load");
     let (server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key").with_base_url(base_url),
-    );
+    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("text-embedding-3-small");
 
     let opts = EmbeddingCallOptions {
@@ -111,13 +106,11 @@ async fn cassette_openai_embedding_documents() {
 
 #[tokio::test]
 async fn cassette_openai_embedding_error() {
-    let cass = load_cassette("openai", "TestOpenAI.test_embed_error.json")
-        .expect("cassette should load");
+    let cass =
+        load_cassette("openai", "TestOpenAI.test_embed_error.json").expect("cassette should load");
     let (server, base_url) = mount_single(&cass).await;
 
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key").with_base_url(base_url),
-    );
+    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("nonexistent");
 
     let opts = EmbeddingCallOptions::new("hello");
@@ -130,8 +123,7 @@ async fn cassette_openai_embedding_error() {
 
 #[tokio::test]
 async fn cassette_cohere_embedding_query() {
-    let cass = load_cassette("cohere", "TestCohere.test_query.json")
-        .expect("cassette should load");
+    let cass = load_cassette("cohere", "TestCohere.test_query.json").expect("cassette should load");
 
     let server = MockServer::start().await;
     let req_path = cass["request"]["path"].as_str().unwrap_or("/");
@@ -139,14 +131,20 @@ async fn cassette_cohere_embedding_query() {
     let resp_body = cass["response"]["body"].as_str().unwrap_or("").to_string();
     let headers: Vec<(String, String)> = cass["response"]["headers"]
         .as_object()
-        .map(|m| m.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect())
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
         .unwrap_or_default();
 
     Mock::given(wiremock::matchers::method("POST"))
         .and(wiremock::matchers::path(req_path))
         .respond_with(move |_req: &Request| {
             let mut t = ResponseTemplate::new(resp_status);
-            for (k, v) in &headers { t = t.insert_header(k, v); }
+            for (k, v) in &headers {
+                t = t.insert_header(k, v);
+            }
             t.set_body_string(resp_body.clone())
         })
         .mount(&server)
@@ -156,9 +154,7 @@ async fn cassette_cohere_embedding_query() {
     let base_url = format!("{}/v2", server.uri());
 
     use aimux_providers::cohere::{CohereConfig, CohereProvider};
-    let provider = CohereProvider::new(
-        CohereConfig::new("test-key").with_base_url(base_url),
-    );
+    let provider = CohereProvider::new(CohereConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("embed-english-v3.0");
 
     let opts = EmbeddingCallOptions::new("hello");
@@ -179,7 +175,9 @@ async fn cassette_openai_files_upload() {
     let mut found = None;
     for entry in fs::read_dir(&dir).unwrap() {
         let f = entry.unwrap().path();
-        if f.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
+        if f.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
         let content = fs::read_to_string(&f).unwrap();
         let cass: Value = serde_json::from_str(&content).unwrap();
         if cass["request"]["path"].as_str() == Some("/v1/files")
@@ -207,13 +205,13 @@ async fn cassette_openai_files_upload() {
         .await;
 
     let base_url = format!("{}/v1", server.uri());
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key").with_base_url(base_url),
-    );
+    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let files = provider.files();
 
     let opts = UploadFileCallOptions::new(
-        UploadFileData::Data { data: FileBytes::Base64("dGVzdA==".into()) },
+        UploadFileData::Data {
+            data: FileBytes::Base64("dGVzdA==".into()),
+        },
         "application/pdf",
     );
 
@@ -234,8 +232,7 @@ async fn cassette_openai_files_upload() {
 
 #[tokio::test]
 async fn cassette_xai_image_generation() {
-    let cass = load_cassette("xai", "image_generation_smoke.json")
-        .expect("cassette should load");
+    let cass = load_cassette("xai", "image_generation_smoke.json").expect("cassette should load");
 
     let server = MockServer::start().await;
     let req_path = cass["request"]["path"].as_str().unwrap_or("/");
@@ -273,7 +270,10 @@ async fn cassette_xai_image_generation() {
         headers: None,
     };
 
-    let result = model.do_generate(&opts).await.expect("image generate should succeed");
+    let result = model
+        .do_generate(&opts)
+        .await
+        .expect("image generate should succeed");
 
     match &result.images {
         aimux_core::image_model::ImageOutputs::Base64(v) => {
@@ -291,8 +291,8 @@ async fn cassette_xai_image_generation() {
 
 #[tokio::test]
 async fn cassette_transcription() {
-    let cass = load_cassette("openrouter", "transcription_smoke.json")
-        .expect("cassette should load");
+    let cass =
+        load_cassette("openrouter", "transcription_smoke.json").expect("cassette should load");
 
     let server = MockServer::start().await;
     let req_path = cass["request"]["path"].as_str().unwrap_or("/");
@@ -309,23 +309,26 @@ async fn cassette_transcription() {
 
     // OpenRouter is OpenAI-compatible
     let base_url = format!("{}/api/v1", server.uri());
-    let provider = OpenAIProvider::new(
-        OpenAIConfig::new("test-key").with_base_url(base_url),
-    );
+    let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.transcription("whisper-1");
 
     use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};
-    let opts = TranscriptionCallOptions::new(
-        AudioInput::Base64("dGVzdCBhdWRpbw==".into()),
-        "audio/mp3",
-    );
+    let opts =
+        TranscriptionCallOptions::new(AudioInput::Base64("dGVzdCBhdWRpbw==".into()), "audio/mp3");
 
-    let result = model.do_generate(&opts).await.expect("transcription should succeed");
+    let result = model
+        .do_generate(&opts)
+        .await
+        .expect("transcription should succeed");
     assert!(
         !r_text_empty(&result),
         "transcription text should be non-empty"
     );
-    assert!(result.text.contains("sun"), "expected 'sun' in transcription, got: {}", result.text);
+    assert!(
+        result.text.contains("sun"),
+        "expected 'sun' in transcription, got: {}",
+        result.text
+    );
 }
 
 fn r_text_empty(r: &aimux_core::transcription_model::TranscriptionResult) -> bool {

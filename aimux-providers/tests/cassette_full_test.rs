@@ -14,7 +14,7 @@ use common::replay;
 use futures::StreamExt;
 use wiremock::MockServer;
 
-use aimux_core::generate::{generate_text, stream_text, GenerateTextOptions};
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::stream_part::StreamPart;
 use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 
@@ -78,122 +78,266 @@ async fn replay_openai_compat(
 
 #[tokio::test]
 async fn replay_openai() {
-    replay_openai_compat("tests/cassettes/openai", "gpt-4o", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/openai",
+        "gpt-4o",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_deepseek() {
-    replay_openai_compat("tests/cassettes/deepseek", "deepseek-chat", "", OpenAICompatProfile::deepseek()).await;
+    replay_openai_compat(
+        "tests/cassettes/deepseek",
+        "deepseek-chat",
+        "",
+        OpenAICompatProfile::deepseek(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_groq() {
-    replay_openai_compat("tests/cassettes/groq", "llama-3.3-70b-versatile", "openai/v1", OpenAICompatProfile::groq()).await;
+    replay_openai_compat(
+        "tests/cassettes/groq",
+        "llama-3.3-70b-versatile",
+        "openai/v1",
+        OpenAICompatProfile::groq(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_mistral() {
-    replay_openai_compat("tests/cassettes/mistral", "ministral-8b-latest", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/mistral",
+        "ministral-8b-latest",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_perplexity() {
-    replay_openai_compat("tests/cassettes/perplexity", "sonar", "", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/perplexity",
+        "sonar",
+        "",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_cerebras() {
-    replay_openai_compat("tests/cassettes/cerebras", "llama3.3-70b", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/cerebras",
+        "llama3.3-70b",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_fireworks() {
-    replay_openai_compat("tests/cassettes/fireworks", "llama-v3p1-8b-instruct", "inference/v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/fireworks",
+        "llama-v3p1-8b-instruct",
+        "inference/v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_togetherai() {
-    replay_openai_compat("tests/cassettes/togetherai", "meta-llama/Llama-3.1-8B-Instruct-Turbo", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/togetherai",
+        "meta-llama/Llama-3.1-8B-Instruct-Turbo",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_moonshotai() {
-    replay_openai_compat("tests/cassettes/moonshotai", "moonshot-v1-8k", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/moonshotai",
+        "moonshot-v1-8k",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_copilot() {
-    replay_openai_compat("tests/cassettes/copilot", "gpt-4o", "", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/copilot",
+        "gpt-4o",
+        "",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_baseten() {
-    replay_openai_compat("tests/cassettes/baseten", "meta-llama/Llama-3.1-8B-Instruct", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/baseten",
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_deepinfra() {
-    replay_openai_compat("tests/cassettes/deepinfra", "meta-llama/Llama-3.1-8B-Instruct", "v1/openai", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/deepinfra",
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "v1/openai",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_doubleword() {
-    replay_openai_compat("tests/cassettes/doubleword", "Qwen/Qwen3.5-9B", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/doubleword",
+        "Qwen/Qwen3.5-9B",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_github() {
-    replay_openai_compat("tests/cassettes/github", "gpt-4o", "", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/github",
+        "gpt-4o",
+        "",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_llamafile() {
-    replay_openai_compat("tests/cassettes/llamafile", "llama3.2:latest", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/llamafile",
+        "llama3.2:latest",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_lmstudio() {
-    replay_openai_compat("tests/cassettes/lmstudio", "llama-3.2-3b-instruct", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/lmstudio",
+        "llama-3.2-3b-instruct",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_mistralrs() {
-    replay_openai_compat("tests/cassettes/mistralrs", "Qwen/Qwen3-4B", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/mistralrs",
+        "Qwen/Qwen3-4B",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_ollama() {
-    replay_openai_compat("tests/cassettes/ollama", "qwen3:4b", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/ollama",
+        "qwen3:4b",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_sambanova() {
-    replay_openai_compat("tests/cassettes/sambanova", "Meta-Llama-3.1-8B-Instruct", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/sambanova",
+        "Meta-Llama-3.1-8B-Instruct",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_siliconflow() {
-    replay_openai_compat("tests/cassettes/siliconflow", "Qwen/Qwen2.5-7B-Instruct", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/siliconflow",
+        "Qwen/Qwen2.5-7B-Instruct",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_vercel() {
-    replay_openai_compat("tests/cassettes/vercel", "gpt-4o", "v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/vercel",
+        "gpt-4o",
+        "v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_zai() {
-    replay_openai_compat("tests/cassettes/zai", "glm-4.7", "api/paas/v4", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/zai",
+        "glm-4.7",
+        "api/paas/v4",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_alibaba() {
-    replay_openai_compat("tests/cassettes/alibaba", "qwen-plus", "compatible-mode/v1", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/alibaba",
+        "qwen-plus",
+        "compatible-mode/v1",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn replay_bytedance() {
-    replay_openai_compat("tests/cassettes/bytedance", "doubao-pro-32k", "api/v3", OpenAICompatProfile::full()).await;
+    replay_openai_compat(
+        "tests/cassettes/bytedance",
+        "doubao-pro-32k",
+        "api/v3",
+        OpenAICompatProfile::full(),
+    )
+    .await;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -319,10 +463,7 @@ async fn replay_cohere() {
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await
         .expect("cohere: generate_text should succeed");
-    assert!(
-        !result.text.is_empty(),
-        "cohere: expected non-empty text"
-    );
+    assert!(!result.text.is_empty(), "cohere: expected non-empty text");
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

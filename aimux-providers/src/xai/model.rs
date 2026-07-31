@@ -1,4 +1,4 @@
-﻿//! xAI language model — implements `LanguageModel` trait.
+//! xAI language model — implements `LanguageModel` trait.
 //!
 //! Mirrors the TS `XaiChatLanguageModel`. Unlike the thin OpenAI-compatible
 //! wrappers, xAI has enough provider-specific behaviour (reasoning content,
@@ -75,8 +75,10 @@ impl XaiModel {
 ///
 /// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
 fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> =
-        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut list: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     list.push(("Content-Type".to_string(), "application/json".to_string()));
     list
 }
@@ -102,6 +104,8 @@ impl LanguageModel for XaiModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -150,7 +154,10 @@ impl LanguageModel for XaiModel {
                 text = String::new();
             }
             if !text.is_empty() {
-                content.push(GenerateContent::Text { text, provider_metadata: None});
+                content.push(GenerateContent::Text {
+                    text,
+                    provider_metadata: None,
+                });
             }
         }
 
@@ -253,6 +260,8 @@ impl LanguageModel for XaiModel {
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,

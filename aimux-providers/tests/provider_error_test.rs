@@ -1,4 +1,4 @@
-﻿//! Provider error-handling integration tests (wiremock).
+//! Provider error-handling integration tests (wiremock).
 //!
 //! Translates the error scenarios from:
 //! - `packages/openai/src/chat/openai-chat-language-model.test.ts`
@@ -33,9 +33,9 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
+use aimux_provider_utils::RetryConfig;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
-use aimux_provider_utils::RetryConfig;
 use futures::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -84,7 +84,10 @@ mod openai_generate_errors {
     fn model(server: &MockServer) -> impl LanguageModel {
         let config = OpenAIConfig::new("test-api-key")
             .with_base_url(server.uri())
-            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
+            .with_retry_config(RetryConfig {
+                max_retries: 0,
+                ..Default::default()
+            });
         OpenAIProvider::new(config).model("gpt-4o")
     }
 
@@ -226,7 +229,10 @@ mod openai_stream_errors {
     fn model(server: &MockServer) -> impl LanguageModel {
         let config = OpenAIConfig::new("test-api-key")
             .with_base_url(server.uri())
-            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
+            .with_retry_config(RetryConfig {
+                max_retries: 0,
+                ..Default::default()
+            });
         OpenAIProvider::new(config).model("gpt-4o")
     }
 
@@ -347,7 +353,10 @@ mod anthropic_generate_errors {
     fn model(server: &MockServer) -> impl LanguageModel {
         let config = AnthropicConfig::new("test-api-key")
             .with_base_url(server.uri())
-            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
+            .with_retry_config(RetryConfig {
+                max_retries: 0,
+                ..Default::default()
+            });
         AnthropicProvider::new(config).model("claude-3-haiku-20240307")
     }
 
@@ -492,7 +501,10 @@ mod anthropic_stream_errors {
     fn model(server: &MockServer) -> impl LanguageModel {
         let config = AnthropicConfig::new("test-api-key")
             .with_base_url(server.uri())
-            .with_retry_config(RetryConfig { max_retries: 0, ..Default::default() });
+            .with_retry_config(RetryConfig {
+                max_retries: 0,
+                ..Default::default()
+            });
         AnthropicProvider::new(config).model("claude-3-haiku-20240307")
     }
 
