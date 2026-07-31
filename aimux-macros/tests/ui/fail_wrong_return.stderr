@@ -1,0 +1,13 @@
+error: #[tool] return type must be `Result<serde_json::Value, E>`
+ --> tests/ui/fail_wrong_return.rs:5:39
+  |
+5 | async fn wrong_return(args: Value) -> Value {
+  |                                       ^^^^^
+
+warning: unused import: `serde_json::Value`
+ --> tests/ui/fail_wrong_return.rs:2:5
+  |
+2 | use serde_json::Value;
+  |     ^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

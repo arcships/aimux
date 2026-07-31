@@ -27,7 +27,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
 use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 
@@ -160,16 +160,20 @@ impl LanguageModel for VertexAnthropicModel {
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
         )
-        .await?;
+        .await
+        .map_err(api_call_to_provider_error)?;
 
-        let data: AnthropicResponse = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: AnthropicResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         let mut content = Vec::new();
         for block in &data.content {
             match block {
                 ContentBlock::Text { text } => {
-                    content.push(GenerateContent::Text { text: text.clone(), provider_metadata: None});
+                    content.push(GenerateContent::Text {
+                        text: text.clone(),
+                        provider_metadata: None,
+                    });
                 }
                 ContentBlock::ToolUse { id, name, input } => {
                     content.push(GenerateContent::ToolCall {

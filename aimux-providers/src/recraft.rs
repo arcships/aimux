@@ -21,7 +21,7 @@ use aimux_core::image_model::{
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, api_call_to_provider_error};
 use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
 };
@@ -294,7 +294,8 @@ impl ImageModel for RecraftImageModel {
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
         )
-        .await?;
+        .await
+        .map_err(api_call_to_provider_error)?;
 
         let response_headers = resp.headers;
         let value: Value = serde_json::from_slice(&resp.body)

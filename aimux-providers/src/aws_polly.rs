@@ -28,7 +28,7 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::response::{ErrorStructure, provider_403_to_auth};
 use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
@@ -239,8 +239,8 @@ impl SpeechModel for AwsPollySpeechModel {
 
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request(options, &self.model_id);
-        let body_str =
-            serde_json::to_string(&Value::Object(body.clone())).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let body_str = serde_json::to_string(&Value::Object(body.clone()))
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
         let url = self.endpoint();
 
         // SigV4 sign the request. User-supplied extra headers are included in
@@ -274,7 +274,8 @@ impl SpeechModel for AwsPollySpeechModel {
             RetryConfig::default(),
             &AWS_ERROR_STRUCTURE,
         )
-        .await?;
+        .await
+        .map_err(provider_403_to_auth)?;
 
         let response_headers = resp.headers;
 

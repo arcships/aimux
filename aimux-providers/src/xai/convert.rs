@@ -365,12 +365,7 @@ fn convert_user_part(part: &ContentPart, _index: usize) -> Result<Value, AiMuxEr
         } => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            Ok(convert_image_part(
-                media_type,
-                Some(&b64),
-                None,
-                provider_options,
-            ))
+            convert_image_part(media_type, Some(&b64), None, provider_options)
         }
         ContentPart::File {
             data,
@@ -380,34 +375,19 @@ fn convert_user_part(part: &ContentPart, _index: usize) -> Result<Value, AiMuxEr
         } => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(data);
-            Ok(convert_image_part(
-                media_type,
-                Some(&b64),
-                None,
-                provider_options,
-            ))
+            convert_image_part(media_type, Some(&b64), None, provider_options)
         }
         ContentPart::FileBase64 {
             data,
             media_type,
             provider_options,
             ..
-        } => Ok(convert_image_part(
-            media_type,
-            Some(data),
-            None,
-            provider_options,
-        )),
+        } => convert_image_part(media_type, Some(data), None, provider_options),
         ContentPart::FileUrl {
             url,
             media_type,
             provider_options,
-        } => Ok(convert_image_part(
-            media_type,
-            None,
-            Some(url),
-            provider_options,
-        )),
+        } => convert_image_part(media_type, None, Some(url), provider_options),
         ContentPart::FileReference {
             media_type,
             reference,
@@ -429,10 +409,13 @@ fn convert_image_part(
     b64_data: Option<&str>,
     url: Option<&str>,
     provider_options: &Option<Value>,
-) -> Value {
+) -> Result<Value, AiMuxError> {
     let top_level = get_top_level_media_type(media_type);
     if top_level != "image" {
-        panic!("file part media type {}", media_type);
+        return Err(AiMuxError::Unsupported(format!(
+            "file part media type {}",
+            media_type
+        )));
     }
     let image_url = if let Some(url_str) = url {
         json!({ "url": url_str })
@@ -446,7 +429,7 @@ fn convert_image_part(
     if let Some(detail) = get_image_detail(provider_options) {
         image_url_obj["detail"] = detail;
     }
-    json!({ "type": "image_url", "image_url": image_url_obj })
+    Ok(json!({ "type": "image_url", "image_url": image_url_obj }))
 }
 
 // ── Request body ─────────────────────────────────────────────────────────────

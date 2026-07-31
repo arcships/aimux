@@ -1,4 +1,4 @@
-﻿//! Independent SSE parsing tests.
+//! Independent SSE parsing tests.
 //!
 //! The TS SDK has no standalone SSE parser tests — `parseJsonEventStream` is
 //! only exercised indirectly through provider tests. These tests fill that gap,
@@ -265,4 +265,92 @@ async fn mixed_lf_and_crlf_events() {
     assert_eq!(events.len(), 2);
     assert_eq!(data(events[0].as_ref().unwrap()), "lf");
     assert_eq!(data(events[1].as_ref().unwrap()), "crlf");
+}
+
+// ── cross-chunk UTF-8 reassembly (P0-03) ─────────────────────────────────
+
+/// Like [`collect_events`] but takes raw byte chunks, so a chunk that ends in
+/// the middle of a multi-byte UTF-8 sequence (not representable as a `&str`)
+/// can be fed in.
+async fn collect_events_bytes(chunks: Vec<Vec<u8>>) -> Vec<Result<SseEvent, SseError>> {
+    let items: Vec<Result<Bytes, std::io::Error>> =
+        chunks.into_iter().map(|c| Ok(Bytes::from(c))).collect();
+    let stream = SseStream::new(stream::iter(items));
+    stream.collect::<Vec<_>>().await
+}
+
+#[tokio::test]
+async fn chinese_sse_event_split_at_every_byte_boundary() {
+    // A Chinese SSE event whose data contains multi-byte UTF-8. Splitting the
+    // full event at *every* byte position must still reassemble to the intact
+    // text. The old per-chunk `String::from_utf8_lossy` decoder would corrupt
+    // a code point split across two chunks into two U+FFFDs.
+    let payload = "data: 你好世界\n\n";
+    let bytes = payload.as_bytes();
+    for split in 1..bytes.len() {
+        let (a, b) = bytes.split_at(split);
+        let events = collect_events_bytes(vec![a.to_vec(), b.to_vec()]).await;
+        assert_eq!(
+            events.len(),
+            1,
+            "split at byte {} produced {} results",
+            split,
+            events.len()
+        );
+        let event = events[0]
+            .as_ref()
+            .unwrap_or_else(|e| panic!("split at byte {} errored: {:?}", split, e));
+        assert_eq!(
+            event.data, "你好世界",
+            "split at byte {} corrupted the data",
+            split
+        );
+    }
+}
+
+#[tokio::test]
+async fn invalid_utf8_frame_returns_utf8_error() {
+    // `data: ` followed by 0xE4 0xBD — the first two bytes of `你` (U+4F60 =
+    // E4 BD A0) without the trailing byte — is an incomplete UTF-8 sequence.
+    // Strict decoding of the complete frame surfaces a `Utf8` error instead
+    // of silently producing a replacement char.
+    let chunk = vec![b'd', b'a', b't', b'a', b':', b' ', 0xE4, 0xBD, b'\n', b'\n'];
+    let events = collect_events_bytes(vec![chunk]).await;
+    assert_eq!(events.len(), 1, "expected exactly one result");
+    match &events[0] {
+        Err(SseError::Utf8(_)) => {}
+        other => panic!("expected SseError::Utf8, got {:?}", other),
+    }
+}
+
+// ── bounded buffers (P1-10) ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn oversized_frame_returns_frame_too_large() {
+    // A complete event whose frame (`data: hello world`) exceeds the 10-byte
+    // limit is rejected; the frame+terminator is dropped so the stream ends.
+    let stream = SseStream::with_max_event_size(
+        stream::iter(vec![Ok::<_, std::io::Error>(Bytes::from_static(
+            b"data: hello world\n\n",
+        ))]),
+        10,
+    );
+    let results: Vec<_> = stream.collect().await;
+    assert_eq!(results.len(), 1);
+    assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
+}
+
+#[tokio::test]
+async fn buffer_growing_past_limit_without_terminator_returns_frame_too_large() {
+    // No terminator ever arrives, so the buffer would grow unboundedly; the
+    // limit trips instead (previously this allocated forever).
+    let stream = SseStream::with_max_event_size(
+        stream::iter(vec![Ok::<_, std::io::Error>(Bytes::from_static(
+            b"data: no terminator here",
+        ))]),
+        10,
+    );
+    let results: Vec<_> = stream.collect().await;
+    assert_eq!(results.len(), 1);
+    assert!(matches!(results[0], Err(SseError::FrameTooLarge)));
 }

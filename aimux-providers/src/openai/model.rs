@@ -25,7 +25,7 @@ use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send,
 use aimux_stream::SseStream;
 
 use super::OpenAIConfig;
-use super::convert::{build_request_body_with_warnings, parse_finish_reason};
+use super::convert::{build_request_body_with_warnings_fallible, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
 /// An OpenAI-compatible language model.
@@ -184,8 +184,10 @@ impl LanguageModel for OpenAIModel {
 ///
 /// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
 fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> =
-        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut list: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     list.push(("Content-Type".to_string(), "application/json".to_string()));
     list
 }
@@ -205,7 +207,7 @@ pub async fn execute_generate(
     retry_config: &RetryConfig,
 ) -> Result<GenerateResult, AiMuxError> {
     let request_result =
-        build_request_body_with_warnings(model_id, options, false, provider, profile);
+        build_request_body_with_warnings_fallible(model_id, options, false, provider, profile)?;
     let body = request_result.body;
 
     let resp = send(
@@ -236,7 +238,10 @@ pub async fn execute_generate(
     if let Some(text) = choice.message.content
         && !text.is_empty()
     {
-        content.push(GenerateContent::Text { text, provider_metadata: None});
+        content.push(GenerateContent::Text {
+            text,
+            provider_metadata: None,
+        });
     }
     // Reasoning: prefer reasoning_content over reasoning (DeepSeek/阿里通义).
     let reasoning_text = choice
@@ -283,7 +288,7 @@ pub async fn execute_generate(
                         .get("title")
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
-                        provider_metadata: None,
+                    provider_metadata: None,
                 });
             }
         }
@@ -349,7 +354,7 @@ pub async fn execute_stream(
     retry_config: &RetryConfig,
 ) -> Result<StreamResult, AiMuxError> {
     let request_result =
-        build_request_body_with_warnings(model_id, options, true, provider, profile);
+        build_request_body_with_warnings_fallible(model_id, options, true, provider, profile)?;
     let body = request_result.body;
 
     let resp = send_stream(

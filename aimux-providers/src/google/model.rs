@@ -1,4 +1,4 @@
-﻿//! Google Gemini language model — implements `LanguageModel`.
+//! Google Gemini language model — implements `LanguageModel`.
 
 use std::collections::HashMap;
 
@@ -13,7 +13,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
 use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
 use aimux_stream::SseStream;
 
@@ -89,8 +89,10 @@ impl GoogleModel {
 ///
 /// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
 fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> =
-        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let mut list: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     list.push(("Content-Type".to_string(), "application/json".to_string()));
     list
 }
@@ -119,12 +121,13 @@ impl LanguageModel for GoogleModel {
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
         )
-        .await?;
+        .await
+        .map_err(api_call_to_provider_error)?;
 
         let response_headers = resp.headers;
 
-        let data: GenerateContentResponse = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let data: GenerateContentResponse =
+            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         let candidate = data
             .candidates
@@ -192,7 +195,8 @@ impl LanguageModel for GoogleModel {
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
         )
-        .await?;
+        .await
+        .map_err(api_call_to_provider_error)?;
 
         let response_headers = resp.headers;
 

@@ -1,6 +1,7 @@
 //! Conversion between `LanguageModelPrompt` and OpenAI API format.
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
@@ -330,7 +331,17 @@ fn prepare_tools_groq(
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array.
 pub fn convert_prompt_to_openai_messages(prompt: &LanguageModelPrompt) -> Vec<Value> {
-    convert_prompt_to_openai_messages_with_mode(prompt, SystemMessageMode::System)
+    convert_prompt_to_openai_messages_with_mode_fallible(prompt, SystemMessageMode::System)
+        .expect("convert_prompt_to_openai_messages: conversion failed")
+}
+
+/// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
+/// message mode.
+pub fn convert_prompt_to_openai_messages_with_mode_fallible(
+    prompt: &LanguageModelPrompt,
+    system_message_mode: SystemMessageMode,
+) -> Result<Vec<Value>, AiMuxError> {
+    convert_prompt_to_openai_messages_with_provider(prompt, system_message_mode, "openai")
 }
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
@@ -339,7 +350,8 @@ pub fn convert_prompt_to_openai_messages_with_mode(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
 ) -> Vec<Value> {
-    convert_prompt_to_openai_messages_with_provider(prompt, system_message_mode, "openai")
+    convert_prompt_to_openai_messages_with_mode_fallible(prompt, system_message_mode)
+        .expect("convert_prompt_to_openai_messages_with_mode: conversion failed")
 }
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
@@ -348,14 +360,16 @@ pub fn convert_prompt_to_openai_messages_with_provider(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
     provider: &str,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, AiMuxError> {
     let mut result = Vec::new();
     for msg in prompt {
-        for value in convert_message_to_openai(msg, system_message_mode, provider) {
-            result.push(value);
-        }
+        result.extend(convert_message_to_openai(
+            msg,
+            system_message_mode,
+            provider,
+        )?);
     }
-    result
+    Ok(result)
 }
 
 /// Get the prompt cache breakpoint from provider options.
@@ -539,7 +553,7 @@ fn convert_message_to_openai(
     msg: &LanguageModelPromptMessage,
     system_message_mode: SystemMessageMode,
     provider: &str,
-) -> Vec<Value> {
+) -> Result<Vec<Value>, AiMuxError> {
     let role = match msg.role {
         Role::System => "system",
         Role::User => "user",
@@ -550,19 +564,19 @@ fn convert_message_to_openai(
     // System messages: respect systemMessageMode.
     if msg.role == Role::System {
         match system_message_mode {
-            SystemMessageMode::Remove => return vec![],
+            SystemMessageMode::Remove => return Ok(vec![]),
             SystemMessageMode::Developer => {
-                return convert_system_message(msg, "developer");
+                return Ok(convert_system_message(msg, "developer"));
             }
             SystemMessageMode::System => {
-                return convert_system_message(msg, "system");
+                return Ok(convert_system_message(msg, "system"));
             }
         }
     }
 
     // Tool-role messages: each ToolResult part becomes its own OpenAI message.
     if msg.role == Role::Tool {
-        return msg
+        let messages = msg
             .content
             .iter()
             .filter_map(|part| match part {
@@ -581,6 +595,7 @@ fn convert_message_to_openai(
                 _ => None,
             })
             .collect();
+        return Ok(messages);
     }
 
     // Assistant messages with tool calls
@@ -652,7 +667,7 @@ fn convert_message_to_openai(
         if !tool_calls_json.is_empty() {
             msg_obj["tool_calls"] = json!(tool_calls_json);
         }
-        return vec![msg_obj];
+        return Ok(vec![msg_obj]);
     }
 
     if msg.role == Role::Assistant && has_tool_calls {
@@ -700,11 +715,11 @@ fn convert_message_to_openai(
             Value::String(text)
         };
 
-        return vec![json!({
+        return Ok(vec![json!({
             "role": "assistant",
             "content": content,
             "tool_calls": tool_calls_json,
-        })];
+        })]);
     }
 
     // Default: when every part is text (without providerOptions), collapse to string.
@@ -728,15 +743,15 @@ fn convert_message_to_openai(
             })
             .collect::<Vec<_>>()
             .join("");
-        vec![json!({ "role": role, "content": text })]
+        Ok(vec![json!({ "role": role, "content": text })])
     } else {
         let parts: Vec<Value> = msg
             .content
             .iter()
             .enumerate()
             .map(|(i, part)| convert_part_to_openai(part, i))
-            .collect();
-        vec![json!({ "role": role, "content": parts })]
+            .collect::<Result<_, _>>()?;
+        Ok(vec![json!({ "role": role, "content": parts })])
     }
 }
 
@@ -782,7 +797,7 @@ fn tool_result_to_content(output: &Value) -> Value {
 }
 
 /// Convert a content part to the OpenAI format.
-fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
+fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiMuxError> {
     match part {
         ContentPart::Text {
             text,
@@ -793,7 +808,7 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
             if let Some(b) = bpt {
                 p["prompt_cache_breakpoint"] = b;
             }
-            p
+            Ok(p)
         }
         ContentPart::Image {
             image,
@@ -811,7 +826,7 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
                 provider_options,
                 index,
             )
-            .unwrap_or_else(|e| panic!("{}", e))
+            .map_err(AiMuxError::InvalidArgument)
         }
         ContentPart::File {
             data,
@@ -830,7 +845,7 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
                 provider_options,
                 index,
             )
-            .unwrap_or_else(|e| panic!("{}", e))
+            .map_err(AiMuxError::InvalidArgument)
         }
         ContentPart::FileBase64 {
             data,
@@ -846,7 +861,7 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
             provider_options,
             index,
         )
-        .unwrap_or_else(|e| panic!("{}", e)),
+        .map_err(AiMuxError::InvalidArgument),
         ContentPart::FileUrl {
             url,
             media_type,
@@ -860,7 +875,7 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
             provider_options,
             index,
         )
-        .unwrap_or_else(|e| panic!("{}", e)),
+        .map_err(AiMuxError::InvalidArgument),
         ContentPart::FileReference {
             media_type,
             reference,
@@ -875,8 +890,8 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
             provider_options,
             index,
         )
-        .unwrap_or_else(|e| panic!("{}", e)),
-        ContentPart::Reasoning { .. } => Value::Null,
+        .map_err(AiMuxError::InvalidArgument),
+        ContentPart::Reasoning { .. } => Ok(Value::Null),
         // These variants are handled by `convert_message_to_openai` for
         // assistant/tool roles; kept here as a defensive fallback.
         ContentPart::ToolCall {
@@ -884,27 +899,23 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Value {
             tool_name,
             input,
             ..
-        } => {
-            json!({
-                "type": "tool_call",
-                "id": tool_call_id,
-                "function": {
-                    "name": tool_name,
-                    "arguments": input.to_string(),
-                }
-            })
-        }
+        } => Ok(json!({
+            "type": "tool_call",
+            "id": tool_call_id,
+            "function": {
+                "name": tool_name,
+                "arguments": input.to_string(),
+            }
+        })),
         ContentPart::ToolResult {
             tool_call_id,
             result,
             ..
-        } => {
-            json!({
-                "type": "tool_result",
-                "tool_call_id": tool_call_id,
-                "content": result,
-            })
-        }
+        } => Ok(json!({
+            "type": "tool_result",
+            "tool_call_id": tool_call_id,
+            "content": result,
+        })),
     }
 }
 
@@ -946,13 +957,13 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
 /// `provider` controls provider-specific behaviour (e.g. groq reads provider
 /// options from the `"groq"` key and applies a reasoning-effort map).
 /// `profile` declares provider capability differences (top_k, tools, etc.).
-pub fn build_request_body_with_warnings(
+pub fn build_request_body_with_warnings_fallible(
     model_id: &str,
     options: &CallOptions,
     stream: bool,
     provider: &str,
     profile: &OpenAICompatProfile,
-) -> RequestBodyResult {
+) -> Result<RequestBodyResult, AiMuxError> {
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
 
@@ -1030,7 +1041,7 @@ pub fn build_request_body_with_warnings(
         &options.prompt,
         system_message_mode,
         provider,
-    );
+    )?;
 
     let mut body = json!({
         "model": model_id,
@@ -1341,7 +1352,22 @@ pub fn build_request_body_with_warnings(
         }
     }
 
-    RequestBodyResult { body, warnings }
+    Ok(RequestBodyResult { body, warnings })
+}
+
+/// Convert `CallOptions` to an OpenAI request body, returning warnings.
+pub fn build_request_body_with_warnings(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+    provider: &str,
+    profile: &OpenAICompatProfile,
+) -> RequestBodyResult {
+    build_request_body_with_warnings_fallible(model_id, options, stream, provider, profile)
+        .unwrap_or_else(|_| RequestBodyResult {
+            body: Value::Null,
+            warnings: Vec::new(),
+        })
 }
 
 /// DeepSeek 请求体后处理：追加 `thinking` 字段，重映射 `reasoning_effort`。

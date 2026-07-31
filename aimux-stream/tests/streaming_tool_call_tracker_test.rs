@@ -674,3 +674,53 @@ fn use_custom_generate_id_for_tool_call_ids_when_id_missing_in_fallback() {
     // The custom generator must not have been invoked.
     assert_eq!(CALLS.load(Ordering::SeqCst), 0);
 }
+
+// == index bound (P1-10) ==================================================
+
+#[test]
+fn reject_tool_call_index_above_max_index() {
+    // A remote `index` far above the cap must not resize `tool_calls` to a
+    // huge vector; it returns `IndexOutOfRange`.
+    let mut tracker = new_tracker().with_max_index(4);
+
+    // index == max_index is accepted (boundary).
+    tracker
+        .process_delta(
+            &d().index(4)
+                .id("call_4")
+                .tool_type("function")
+                .function_name("fn")
+                .arguments(""),
+        )
+        .unwrap();
+
+    // index == max_index + 1 is rejected.
+    let err = tracker
+        .process_delta(
+            &d().index(5)
+                .id("call_5")
+                .tool_type("function")
+                .function_name("fn")
+                .arguments(""),
+        )
+        .unwrap_err();
+    assert_eq!(err, TrackerError::IndexOutOfRange);
+    assert_eq!(err.to_string(), "Tool call index out of range");
+}
+
+#[test]
+fn default_max_index_rejects_huge_index() {
+    // The default cap (1024) rejects an absurd index that would otherwise
+    // resize `tool_calls` to index+1 slots.
+    let mut tracker = new_tracker();
+    let err = tracker
+        .process_delta(
+            &d().index(1_000_000)
+                .id("call_x")
+                .tool_type("function")
+                .function_name("fn")
+                .arguments(""),
+        )
+        .unwrap_err();
+    assert_eq!(err, TrackerError::IndexOutOfRange);
+}

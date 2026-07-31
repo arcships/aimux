@@ -63,10 +63,10 @@ pub struct AnthropicPromptConversion {
 /// `send_reasoning` controls whether assistant `Reasoning` parts are converted
 /// into Anthropic `thinking` blocks (when `true`) or dropped with a warning
 /// (when `false`).
-pub fn convert_prompt_to_anthropic_full(
+pub fn convert_prompt_to_anthropic_full_fallible(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
-) -> AnthropicPromptConversion {
+) -> Result<AnthropicPromptConversion, AiMuxError> {
     let mut system: Vec<Value> = Vec::new();
     let mut messages: Vec<Value> = Vec::new();
     let mut betas: BTreeSet<String> = BTreeSet::new();
@@ -170,7 +170,7 @@ pub fn convert_prompt_to_anthropic_full(
                         msg.provider_options.as_ref(),
                         part_ctx,
                         msg_ctx,
-                    ) {
+                    )? {
                         acc.push(block);
                     }
                 }
@@ -194,7 +194,7 @@ pub fn convert_prompt_to_anthropic_full(
                         msg.provider_options.as_ref(),
                         "assistant message part",
                         "assistant message",
-                    ) {
+                    )? {
                         acc.push(block);
                     }
                 }
@@ -226,12 +226,21 @@ pub fn convert_prompt_to_anthropic_full(
     } else {
         Some(system)
     };
-    AnthropicPromptConversion {
+    Ok(AnthropicPromptConversion {
         system: system_opt,
         messages,
         betas,
         warnings,
-    }
+    })
+}
+
+/// Convert a prompt into the full Anthropic shape.
+pub fn convert_prompt_to_anthropic_full(
+    prompt: &LanguageModelPrompt,
+    send_reasoning: bool,
+) -> AnthropicPromptConversion {
+    convert_prompt_to_anthropic_full_fallible(prompt, send_reasoning)
+        .expect("convert_prompt_to_anthropic_full: conversion failed")
 }
 
 /// Convert a prompt into the Anthropic `system` + `messages` shape.
@@ -245,8 +254,10 @@ pub fn convert_prompt_to_anthropic_full(
 pub fn convert_prompt_to_anthropic(
     prompt: &LanguageModelPrompt,
 ) -> (Option<Vec<Value>>, Vec<Value>) {
-    let result = convert_prompt_to_anthropic_full(prompt, false);
-    (result.system, result.messages)
+    match convert_prompt_to_anthropic_full_fallible(prompt, false) {
+        Ok(result) => (result.system, result.messages),
+        Err(e) => panic!("{}", e),
+    }
 }
 
 /// Return the top-level media type (the segment before the first `/`).
@@ -275,7 +286,7 @@ fn convert_part_to_anthropic(
     message_provider_options: Option<&Value>,
     part_context_type: &str,
     message_context_type: &str,
-) -> Option<Value> {
+) -> Result<Option<Value>, AiMuxError> {
     // Resolve cache_control = part-level ?? (is_last_part ? message-level).
     let resolve_cc =
         |validator: &mut CacheControlValidator, part_opts: Option<&Value>| match validator
@@ -306,7 +317,7 @@ fn convert_part_to_anthropic(
         }
     };
 
-    Some(match part {
+    Ok(Some(match part {
         ContentPart::Text {
             text,
             provider_options,
@@ -342,8 +353,8 @@ fn convert_part_to_anthropic(
             filename,
             provider_options,
         } => {
-            let full = resolve_full_media_type(media_type, data);
-            let block = route_file_bytes(&full, data, filename.as_deref(), betas);
+            let full = resolve_full_media_type(media_type, data)?;
+            let block = route_file_bytes(&full, data, filename.as_deref(), betas)?;
             let cc = resolve_cc(validator, provider_options.as_ref());
             apply_cc(block, cc)
         }
@@ -358,8 +369,8 @@ fn convert_part_to_anthropic(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(data)
                 .unwrap_or_default();
-            let full = resolve_full_media_type(media_type, &bytes);
-            let block = route_file_base64(&full, data, &bytes, filename.as_deref(), betas);
+            let full = resolve_full_media_type(media_type, &bytes)?;
+            let block = route_file_base64(&full, data, &bytes, filename.as_deref(), betas)?;
             let cc = resolve_cc(validator, provider_options.as_ref());
             apply_cc(block, cc)
         }
@@ -369,7 +380,7 @@ fn convert_part_to_anthropic(
             media_type,
             provider_options,
         } => {
-            let block = route_file_url(media_type, url, betas);
+            let block = route_file_url(media_type, url, betas)?;
             let cc = resolve_cc(validator, provider_options.as_ref());
             apply_cc(block, cc)
         }
@@ -380,7 +391,7 @@ fn convert_part_to_anthropic(
             provider_options,
             ..
         } => {
-            let file_id = resolve_anthropic_reference(reference);
+            let file_id = resolve_anthropic_reference(reference)?;
             betas.insert(BETA_FILES_API.to_string());
             let container_upload = provider_options
                 .as_ref()
@@ -409,14 +420,14 @@ fn convert_part_to_anthropic(
             signature,
             provider_options,
         } => {
-            return convert_reasoning_part(
+            return Ok(convert_reasoning_part(
                 text,
                 signature.as_deref(),
                 provider_options.as_ref(),
                 send_reasoning,
                 warnings,
                 validator,
-            );
+            ));
         }
 
         ContentPart::ToolCall {
@@ -486,7 +497,7 @@ fn convert_part_to_anthropic(
             };
             apply_cc(block, cc)
         }
-    })
+    }))
 }
 
 /// Extract provider_options from a tool-result `output` value, mirroring the TS
@@ -522,15 +533,15 @@ fn route_file_bytes(
     bytes: &[u8],
     title: Option<&str>,
     betas: &mut BTreeSet<String>,
-) -> Value {
+) -> Result<Value, AiMuxError> {
     use base64::Engine;
     match top_level_media_type(full_media_type) {
         "image" => {
             let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-            json!({
+            Ok(json!({
                 "type": "image",
                 "source": { "type": "base64", "media_type": full_media_type, "data": b64 }
-            })
+            }))
         }
         "application" if full_media_type == "application/pdf" => {
             betas.insert(BETA_PDFS.to_string());
@@ -542,7 +553,7 @@ fn route_file_bytes(
             if let Some(t) = title {
                 block["title"] = json!(t);
             }
-            block
+            Ok(block)
         }
         "text" if full_media_type == "text/plain" => {
             let text = String::from_utf8_lossy(bytes).into_owned();
@@ -553,9 +564,12 @@ fn route_file_bytes(
             if let Some(t) = title {
                 block["title"] = json!(t);
             }
-            block
+            Ok(block)
         }
-        _ => panic!("unsupported functionality: media type: {}", full_media_type),
+        _ => Err(AiMuxError::Unsupported(format!(
+            "media type: {}",
+            full_media_type
+        ))),
     }
 }
 
@@ -569,14 +583,12 @@ fn route_file_base64(
     bytes: &[u8],
     title: Option<&str>,
     betas: &mut BTreeSet<String>,
-) -> Value {
+) -> Result<Value, AiMuxError> {
     match top_level_media_type(full_media_type) {
-        "image" => {
-            json!({
-                "type": "image",
-                "source": { "type": "base64", "media_type": full_media_type, "data": b64 }
-            })
-        }
+        "image" => Ok(json!({
+            "type": "image",
+            "source": { "type": "base64", "media_type": full_media_type, "data": b64 }
+        })),
         "application" if full_media_type == "application/pdf" => {
             betas.insert(BETA_PDFS.to_string());
             let mut block = json!({
@@ -586,7 +598,7 @@ fn route_file_base64(
             if let Some(t) = title {
                 block["title"] = json!(t);
             }
-            block
+            Ok(block)
         }
         "text" if full_media_type == "text/plain" => {
             let text = String::from_utf8_lossy(bytes).into_owned();
@@ -597,9 +609,12 @@ fn route_file_base64(
             if let Some(t) = title {
                 block["title"] = json!(t);
             }
-            block
+            Ok(block)
         }
-        _ => panic!("unsupported functionality: media type: {}", full_media_type),
+        _ => Err(AiMuxError::Unsupported(format!(
+            "media type: {}",
+            full_media_type
+        ))),
     }
 }
 
@@ -607,19 +622,24 @@ fn route_file_base64(
 /// (possibly top-level-only) media type, matching the TS SDK which only checks
 /// `mediaType === 'application/pdf'` / `mediaType === 'text/plain'` and the
 /// top-level segment for images.
-fn route_file_url(media_type: &str, url: &str, betas: &mut BTreeSet<String>) -> Value {
+fn route_file_url(
+    media_type: &str,
+    url: &str,
+    betas: &mut BTreeSet<String>,
+) -> Result<Value, AiMuxError> {
     match top_level_media_type(media_type) {
-        "image" => {
-            json!({ "type": "image", "source": { "type": "url", "url": url } })
-        }
+        "image" => Ok(json!({ "type": "image", "source": { "type": "url", "url": url } })),
         "application" if media_type == "application/pdf" => {
             betas.insert(BETA_PDFS.to_string());
-            json!({ "type": "document", "source": { "type": "url", "url": url } })
+            Ok(json!({ "type": "document", "source": { "type": "url", "url": url } }))
         }
         "text" if media_type == "text/plain" => {
-            json!({ "type": "document", "source": { "type": "url", "url": url } })
+            Ok(json!({ "type": "document", "source": { "type": "url", "url": url } }))
         }
-        _ => panic!("unsupported functionality: media type: {}", media_type),
+        _ => Err(AiMuxError::Unsupported(format!(
+            "media type: {}",
+            media_type
+        ))),
     }
 }
 
@@ -676,17 +696,17 @@ fn detect_document_media_type(bytes: &[u8]) -> Option<&'static str> {
 /// Resolve a file part's media type to a full `type/subtype` form, mirroring
 /// the TS `resolveFullMediaType`. When the media type is already a full type it
 /// is returned as-is; otherwise the subtype is sniffed from the inline bytes.
-fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> String {
+fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiMuxError> {
     if is_full_media_type(media_type) {
-        return media_type.to_string();
+        return Ok(media_type.to_string());
     }
     let top = top_level_media_type(media_type);
     match detect_media_type(bytes, top) {
-        Some(detected) => detected.to_string(),
-        None => panic!(
-            "unsupported functionality: file of media type \"{}\" must specify subtype since it could not be auto-detected",
+        Some(detected) => Ok(detected.to_string()),
+        None => Err(AiMuxError::Unsupported(format!(
+            "file of media type \"{}\" must specify subtype since it could not be auto-detected",
             media_type
-        ),
+        ))),
     }
 }
 
@@ -747,18 +767,18 @@ fn convert_reasoning_part(
 /// Resolve the Anthropic file id from a provider-reference object, mirroring the
 /// TS `resolveProviderReference`. Panics when no `anthropic` key is present,
 /// matching the TS `UnsupportedFunctionalityError`.
-fn resolve_anthropic_reference(reference: &Value) -> String {
+fn resolve_anthropic_reference(reference: &Value) -> Result<String, AiMuxError> {
     if let Some(id) = reference.get("anthropic").and_then(|v| v.as_str()) {
-        return id.to_string();
+        return Ok(id.to_string());
     }
     let providers: Vec<&str> = reference
         .as_object()
         .map(|o| o.keys().map(String::as_str).collect())
         .unwrap_or_default();
-    panic!(
+    Err(AiMuxError::InvalidArgument(format!(
         "No provider reference found for provider 'anthropic'. Available providers: {}",
         providers.join(", ")
-    );
+    )))
 }
 
 /// Resolve a `ContentPart::ToolResult` `output` value into the Anthropic
@@ -1239,7 +1259,11 @@ pub fn build_request_body_with_warnings(
 
     let max_tokens = options.max_output_tokens.unwrap_or(caps.max_output_tokens);
 
-    let (system, messages) = convert_prompt_to_anthropic(&options.prompt);
+    let conversion = convert_prompt_to_anthropic_full_fallible(&options.prompt, false)?;
+    let system = conversion.system;
+    let messages = conversion.messages;
+    betas.extend(conversion.betas);
+    warnings.extend(conversion.warnings);
 
     let mut body = json!({
         "model": model_id,

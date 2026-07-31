@@ -1,4 +1,4 @@
-﻿//! # aimux-provider-utils
+//! # aimux-provider-utils
 //!
 //! Shared utilities for provider implementations.
 //!
@@ -16,11 +16,14 @@ pub mod url;
 pub use api_key::load_api_key;
 pub use headers::with_user_agent_suffix;
 pub use http::{
-    HttpBody, HttpMethod, HttpRequest, HttpResponse, HttpStreamResponse, PoolConfig,
-    TimeoutConfig, send, send_stream, shared_client, shared_streaming_client,
+    HttpBody, HttpMethod, HttpRequest, HttpResponse, HttpStreamResponse, PoolConfig, TimeoutConfig,
+    send, send_stream, shared_client, shared_streaming_client,
 };
 pub use multipart::{MultipartForm, media_type_to_extension};
-pub use response::{DEFAULT_ERROR_STRUCTURE, ErrorStructure, parse_provider_error};
+pub use response::{
+    DEFAULT_ERROR_STRUCTURE, ErrorStructure, api_call_to_provider_error, parse_provider_error,
+    provider_403_to_auth,
+};
 pub use retry::{
     RetryConfig, get_retry_delay_ms, get_retry_delay_ms_with_jitter, parse_retry_after,
     retry_with_exponential_backoff, retry_with_exponential_backoff_respecting_retry_headers,

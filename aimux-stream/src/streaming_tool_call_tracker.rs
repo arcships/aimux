@@ -16,6 +16,9 @@
 use serde_json::Value;
 use thiserror::Error;
 
+/// Default upper bound accepted for a tool call `index`.
+const DEFAULT_MAX_INDEX: usize = 1024;
+
 /// The `function` sub-object of a streaming tool call delta.
 #[derive(Debug, Clone, Default)]
 pub struct StreamingToolCallFunction {
@@ -125,6 +128,8 @@ pub enum TrackerError {
     MissingFunctionName,
     #[error("Expected 'function' type.")]
     InvalidType,
+    #[error("Tool call index out of range")]
+    IndexOutOfRange,
 }
 
 struct TrackedToolCall<M> {
@@ -162,6 +167,10 @@ pub struct StreamingToolCallTracker<M = ()> {
     #[allow(dead_code)]
     generate_id: Box<dyn Fn() -> String>,
     type_validation: TypeValidation,
+    /// Upper bound accepted for a tool call `index`. Guards against a remote
+    /// index resizing `tool_calls` to a huge vector. Defaults to
+    /// [`DEFAULT_MAX_INDEX`] (1024).
+    max_index: usize,
     extract_metadata: Option<ExtractMetadataFn<M>>,
     build_provider_metadata: Option<BuildMetadataFn<M>>,
 }
@@ -180,6 +189,7 @@ impl<M> StreamingToolCallTracker<M> {
             parts: Vec::new(),
             generate_id: Box::new(|| "generated".to_string()),
             type_validation: TypeValidation::None,
+            max_index: DEFAULT_MAX_INDEX,
             extract_metadata: None,
             build_provider_metadata: None,
         }
@@ -194,6 +204,15 @@ impl<M> StreamingToolCallTracker<M> {
     /// Set the `type` validation mode (the TS `typeValidation` option).
     pub fn with_type_validation(mut self, v: TypeValidation) -> Self {
         self.type_validation = v;
+        self
+    }
+
+    /// Set the maximum accepted tool call `index` (defaults to 1024). A delta
+    /// whose resolved `index` exceeds `max_index` returns
+    /// [`TrackerError::IndexOutOfRange`] instead of resizing `tool_calls` to
+    /// `index + 1` slots.
+    pub fn with_max_index(mut self, max_index: usize) -> Self {
+        self.max_index = max_index;
         self
     }
 
@@ -223,6 +242,10 @@ impl<M> StreamingToolCallTracker<M> {
     /// into the internal buffer.
     pub fn process_delta(&mut self, delta: &StreamingToolCallDelta) -> Result<(), TrackerError> {
         let index = delta.index.unwrap_or(self.tool_calls.len());
+        // Guard against a remote `index` resizing `tool_calls` to a huge vector.
+        if index > self.max_index {
+            return Err(TrackerError::IndexOutOfRange);
+        }
         let is_new = self
             .tool_calls
             .get(index)
