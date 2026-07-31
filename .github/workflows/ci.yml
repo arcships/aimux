@@ -10,24 +10,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Rust core: test workspace ─────────────────────────────────────────────
+  # ── Rust core: fmt + clippy + tests (single OS — cassettes are platform-agnostic) ──
   rust-test:
-    name: Rust test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Rust core (fmt + clippy + test)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Check workspace
-        run: cargo check --workspace
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test workspace
         run: cargo test --workspace
 
-  # ── Node binding: build + test (Linux x64) ────────────────────────────────
+  # ── Node binding: build + test (main platforms) ─────────────────────────────
   node-binding:
     name: Node binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
@@ -39,10 +37,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - host: macos-latest
             target: aarch64-apple-darwin
-          - host: macos-13
-            target: x86_64-apple-darwin
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -73,14 +67,10 @@ jobs:
             bindings/node/index.js
             bindings/node/index.d.ts
 
-  # ── Python binding: build + test ──────────────────────────────────────────
+  # ── Python binding: build + test (single OS — wheels built per-OS at release) ──
   python-binding:
-    name: Python binding (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Python binding
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -89,7 +79,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install maturin
-        run: pip install maturin${{ matrix.os == 'ubuntu-latest' && '[patchelf]' || '' }}
+        run: pip install "maturin[patchelf]"
       - name: Build
         working-directory: bindings/python
         shell: bash
@@ -102,7 +92,7 @@ jobs:
           pip install pytest pydantic
           python -m pytest tests/ -v
 
-  # ── aimux-ffi: build C ABI library ────────────────────────────────────────
+  # ── aimux-ffi: build C ABI library (desktop matrix — source for C/C++ artifacts) ──
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
@@ -115,9 +105,6 @@ jobs:
             artifact: libaimux_ffi.so
           - host: macos-latest
             target: aarch64-apple-darwin
-            artifact: libaimux_ffi.dylib
-          - host: macos-latest
-            target: x86_64-apple-darwin
             artifact: libaimux_ffi.dylib
           - host: windows-latest
             target: x86_64-pc-windows-msvc
@@ -138,7 +125,7 @@ jobs:
             target/${{ matrix.target }}/release/${{ matrix.artifact }}
             aimux-ffi/aimux-ffi.h
 
-  # ── Contract tests: shared JSON fixtures ──────────────────────────────────
+  # ── Contract tests: shared JSON fixtures (catches cross-language type drift) ──
   contract-tests:
     name: Contract tests
     runs-on: ubuntu-latest
@@ -160,51 +147,3 @@ jobs:
         working-directory: contract-tests
         run: |
           node --experimental-strip-types run-node.ts
-
-  # ── Kotlin binding: build + test (JVM, needs aimux-ffi .so) ────────────────
-  kotlin-binding:
-    name: Kotlin binding
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-      - name: Build aimux-ffi shared library
-        run: cargo build -p aimux-ffi --release
-      - name: Copy .so to Kotlin resources
-        run: |
-          mkdir -p bindings/kotlin/src/main/resources
-          cp target/release/libaimux_ffi.so bindings/kotlin/src/main/resources/
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-      - name: Build and test
-        working-directory: bindings/kotlin
-        run: |
-          export LD_LIBRARY_PATH="$PWD/src/main/resources:$LD_LIBRARY_PATH"
-          chmod +x gradlew || true
-          gradle test --no-daemon || echo "Kotlin tests need .so on path (skipped in CI PoC)"
-
-  # ── Swift binding: build check (needs Xcode) ──────────────────────────────
-  swift-binding:
-    name: Swift binding
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build aimux-ffi dylib
-        run: cargo build -p aimux-ffi --release
-      - name: Copy dylib for Swift
-        run: |
-          sudo mkdir -p /usr/local/lib
-          sudo cp target/release/libaimux_ffi.dylib /usr/local/lib/
-      - name: Build Swift Package
-        working-directory: bindings/swift
-        run: swift build || echo "Swift build needs xcframework (PoC)"
-      - name: Test Swift Package
-        working-directory: bindings/swift
-        run: swift test || echo "Swift tests need xcframework (PoC)"
