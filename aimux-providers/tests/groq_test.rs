@@ -373,7 +373,6 @@ mod convert_messages {
     /// TS: "should throw for file parts with provider references"
     /// Groq does not support provider file references.
     #[tokio::test]
-    #[should_panic(expected = "No provider reference found")]
     async fn file_reference_unsupported() {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
@@ -389,9 +388,15 @@ mod convert_messages {
             )],
             ..Default::default()
         }];
-        // The OpenAI converter resolves provider references looking for "openai"
-        // key; groq references will produce a panic.
-        let _ = model.do_generate(&default_options(prompt)).await;
+        // Groq references don't contain an "openai" key, so the converter
+        // returns an InvalidArgument error instead of panicking.
+        let result = model.do_generate(&default_options(prompt)).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("No provider reference found"),
+            "error should mention 'No provider reference found': {err}"
+        );
     }
 }
 
