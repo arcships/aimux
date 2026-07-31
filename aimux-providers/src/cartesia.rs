@@ -1,4 +1,4 @@
-﻿//! Cartesia speech (TTS) provider.
+//! Cartesia speech (TTS) provider.
 //!
 //! Aligned with Vercel AI SDK `createCartesia`
 //! (`reference/ai/packages/cartesia/src/cartesia-provider.ts`) and
@@ -30,9 +30,7 @@ use aimux_core::speech_model::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send,
-};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -177,6 +175,8 @@ impl SpeechModel for CartesiaSpeechModel {
                 url: self.endpoint(),
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Json(Value::Object(body.clone())),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -727,15 +727,15 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
         let filename = format!("audio.{file_extension}");
 
         let mut form = MultipartForm::new();
-        form.text("model", &self.model_id);
-        form.file("file", &filename, &options.media_type, &audio_bytes);
+        form.text("model", &self.model_id)?;
+        form.file("file", &filename, &options.media_type, &audio_bytes)?;
 
         if let Some(ref lang) = language {
-            form.text("language", lang);
+            form.text("language", lang)?;
         }
         if let Some(ref tg) = timestamp_granularities {
             for g in tg {
-                form.text("timestamp_granularities[]", g);
+                form.text("timestamp_granularities[]", g)?;
             }
         }
 
@@ -749,6 +749,8 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
                 url: self.endpoint(),
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Bytes(body_bytes, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -759,8 +761,8 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
 
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: CartesiaTranscriptionResponse =
-            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: CartesiaTranscriptionResponse = serde_json::from_value(raw_body.clone())
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .words

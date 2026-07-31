@@ -1,4 +1,4 @@
-﻿//! ElevenLabs speech (TTS) provider.
+//! ElevenLabs speech (TTS) provider.
 //!
 //! Aligned with Vercel AI SDK `createElevenLabs`
 //! (`reference/ai/packages/elevenlabs/src/elevenlabs-provider.ts`) and
@@ -25,9 +25,7 @@ use aimux_core::speech_model::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send,
-};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -169,6 +167,8 @@ impl SpeechModel for ElevenLabsSpeechModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(Value::Object(body.clone())),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -586,31 +586,31 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         let filename = format!("audio.{file_extension}");
 
         let mut form = MultipartForm::new();
-        form.text("model_id", &self.model_id);
-        form.file("file", &filename, &options.media_type, &audio_bytes);
-        form.text("diarize", "true");
+        form.text("model_id", &self.model_id)?;
+        form.file("file", &filename, &options.media_type, &audio_bytes)?;
+        form.text("diarize", "true")?;
 
         // Parse provider options.
         if let Some(ref po) = options.provider_options
             && let Some(el) = po.get("elevenlabs")
         {
             if let Some(v) = el.get("diarize").and_then(|v| v.as_bool()) {
-                form.text("diarize", &v.to_string());
+                form.text("diarize", &v.to_string())?;
             }
             if let Some(v) = el.get("languageCode").and_then(|v| v.as_str()) {
-                form.text("language_code", v);
+                form.text("language_code", v)?;
             }
             if let Some(v) = el.get("tagAudioEvents").and_then(|v| v.as_bool()) {
-                form.text("tag_audio_events", &v.to_string());
+                form.text("tag_audio_events", &v.to_string())?;
             }
             if let Some(v) = el.get("numSpeakers").and_then(|v| v.as_u64()) {
-                form.text("num_speakers", &v.to_string());
+                form.text("num_speakers", &v.to_string())?;
             }
             if let Some(v) = el.get("timestampsGranularity").and_then(|v| v.as_str()) {
-                form.text("timestamps_granularity", v);
+                form.text("timestamps_granularity", v)?;
             }
             if let Some(v) = el.get("fileFormat").and_then(|v| v.as_str()) {
-                form.text("file_format", v);
+                form.text("file_format", v)?;
             }
         }
 
@@ -627,6 +627,8 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Bytes(body_bytes, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -636,8 +638,8 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         let response_headers = resp.headers;
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: ElevenLabsTranscriptionResponse =
-            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: ElevenLabsTranscriptionResponse = serde_json::from_value(raw_body.clone())
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .words

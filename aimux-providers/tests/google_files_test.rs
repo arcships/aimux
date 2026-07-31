@@ -49,6 +49,7 @@ fn upload_options() -> UploadFileCallOptions {
         media_type: "application/octet-stream".to_string(),
         filename: None,
         provider_options: None,
+        abort_signal: None,
     }
 }
 
@@ -99,6 +100,7 @@ async fn should_send_correct_headers_for_resumable_upload_initiation() {
             data: FileBytes::Binary(vec![1, 2, 3]),
         },
         media_type: "application/pdf".to_string(),
+        abort_signal: None,
         ..upload_options()
     };
     files.upload_file(&opts).await.unwrap();
@@ -162,6 +164,7 @@ async fn should_include_display_name_in_initiation_body_when_provided() {
         media_type: "text/plain".to_string(),
         filename: None,
         provider_options: Some(po),
+    abort_signal: None,
     };
     files.upload_file(&opts).await.unwrap();
 
@@ -199,6 +202,7 @@ async fn should_send_file_data_to_upload_url_with_correct_headers() {
         data: UploadFileData::Data {
             data: FileBytes::Binary(vec![10, 20, 30]),
         },
+        abort_signal: None,
         ..upload_options()
     };
     files.upload_file(&opts).await.unwrap();
@@ -319,6 +323,7 @@ async fn should_handle_base64_string_data() {
         data: UploadFileData::Data {
             data: FileBytes::Base64("aGVsbG8=".to_string()),
         },
+        abort_signal: None,
         ..upload_options()
     };
     let result = files.upload_file(&opts).await.unwrap();
@@ -486,6 +491,7 @@ async fn should_accept_valid_provider_options() {
         media_type: "text/plain".to_string(),
         filename: None,
         provider_options: Some(po),
+    abort_signal: None,
     };
 
     let result = files.upload_file(&opts).await.unwrap();
@@ -526,6 +532,7 @@ async fn should_pass_through_unknown_properties() {
         media_type: "text/plain".to_string(),
         filename: None,
         provider_options: Some(po),
+    abort_signal: None,
     };
 
     let result = files.upload_file(&opts).await.unwrap();

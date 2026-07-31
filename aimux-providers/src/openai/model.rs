@@ -216,6 +216,8 @@ pub async fn execute_generate(
             url: endpoint.to_string(),
             headers: build_header_list(headers),
             body: HttpBody::Json(body.clone()),
+
+            abort_signal: None,
         },
         *retry_config,
         &DEFAULT_ERROR_STRUCTURE,
@@ -363,6 +365,8 @@ pub async fn execute_stream(
             url: endpoint.to_string(),
             headers: build_header_list(headers),
             body: HttpBody::Json(body.clone()),
+
+            abort_signal: None,
         },
         *retry_config,
         &DEFAULT_ERROR_STRUCTURE,
@@ -383,6 +387,12 @@ pub async fn execute_stream(
     {
         return Err(stream_error_to_ai_error(err_obj));
     }
+
+    // Capture the provider's stream usage key before entering the async stream
+    // block (the borrowed `profile` cannot be moved into the generator).
+    // Some(key) → read streaming usage from `chunk[key].usage`;
+    // None → read from the top-level `usage`.
+    let stream_usage_key = profile.stream_usage_key;
 
     let stream = async_stream::stream! {
         // First part: StreamStart.
@@ -441,6 +451,21 @@ pub async fn execute_stream(
                         break;
                     }
 
+                    // Extract streaming usage based on profile.stream_usage_key
+                    // (captured before the stream block). Some(key) reads usage
+                    // from the provider-specific sub-object `key` (e.g. Groq's
+                    // "x_groq"); None reads the top-level "usage". This is done
+                    // from the raw JSON chunk before it is consumed below.
+                    let chunk_usage: Option<UsageResponse> = match stream_usage_key {
+                        Some(key) => parsed
+                            .get(key)
+                            .and_then(|v| v.get("usage"))
+                            .and_then(|u| serde_json::from_value(u.clone()).ok()),
+                        None => parsed
+                            .get("usage")
+                            .and_then(|u| serde_json::from_value(u.clone()).ok()),
+                    };
+
                     // Parse as StreamChunk.
                     let chunk: StreamChunk = match serde_json::from_value(parsed) {
                         Ok(c) => c,
@@ -465,14 +490,8 @@ pub async fn execute_stream(
                         });
                     }
 
-                    // Update usage (check both top-level usage and x_groq.usage).
-                    if let Some(usage) = &chunk.usage {
-                        final_usage = convert_usage(usage);
-                        final_usage_raw = Some(usage.clone());
-                    }
-                    if let Some(ref xg) = chunk.x_groq
-                        && let Some(usage) = &xg.usage
-                    {
+                    // Update usage based on profile.stream_usage_key.
+                    if let Some(usage) = &chunk_usage {
                         final_usage = convert_usage(usage);
                         final_usage_raw = Some(usage.clone());
                     }

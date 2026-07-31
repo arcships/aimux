@@ -12,7 +12,8 @@ use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
-    FileBytes, SharedProviderMetadata, SharedProviderOptions, SharedProviderReference, Warning,
+    AbortSignal, FileBytes, SharedProviderMetadata, SharedProviderOptions, SharedProviderReference,
+    Warning,
 };
 
 /// File data accepted by [`Files::upload_file`].
@@ -46,6 +47,11 @@ pub struct UploadFileCallOptions {
 
     /// Additional provider-specific options, keyed by provider name.
     pub provider_options: Option<SharedProviderOptions>,
+
+    /// Abort signal for cancelling the upload operation.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub abort_signal: Option<AbortSignal>,
 }
 
 impl UploadFileCallOptions {
@@ -56,6 +62,7 @@ impl UploadFileCallOptions {
             media_type: media_type.into(),
             filename: None,
             provider_options: None,
+            abort_signal: None,
         }
     }
 }

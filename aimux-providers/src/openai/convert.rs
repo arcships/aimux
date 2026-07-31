@@ -1161,7 +1161,19 @@ pub fn build_request_body_with_warnings_fallible(
     }
 
     // Response format
-    if let Some(ref rf) = options.response_format {
+    if !profile.supports_response_format {
+        // Provider does not support response_format: drop it and warn when the
+        // caller requested a (non-default) format. `Text` is the no-op default
+        // and needs no warning.
+        if let Some(ref rf) = options.response_format
+            && !matches!(rf, ResponseFormat::Text)
+        {
+            warnings.push(Warning::Unsupported {
+                feature: "responseFormat".to_string(),
+                details: Some("response_format is not supported by this provider".to_string()),
+            });
+        }
+    } else if let Some(ref rf) = options.response_format {
         match rf {
             ResponseFormat::Text => {}
             ResponseFormat::Json {
@@ -1317,8 +1329,24 @@ pub fn build_request_body_with_warnings_fallible(
             .collect()
     });
 
+    // When the provider profile declares no tool support, drop tools/tool_choice
+    // entirely and warn if the caller supplied any.
+    let supports_tools = profile.supports_tools;
+    if !supports_tools && options.tools.as_ref().is_some_and(|t| !t.is_empty()) {
+        warnings.push(Warning::Unsupported {
+            feature: "tools".to_string(),
+            details: Some("tools are not supported by this provider".to_string()),
+        });
+    }
+
     // Groq: handle provider-defined tools (browser_search) alongside function tools.
-    let prepared = if provider == "groq" {
+    let prepared = if !supports_tools {
+        PreparedTools {
+            tools: None,
+            tool_choice: None,
+            tool_warnings: Vec::new(),
+        }
+    } else if provider == "groq" {
         prepare_tools_groq(
             &function_tools,
             options.tools.as_ref(),

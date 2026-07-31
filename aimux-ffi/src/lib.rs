@@ -30,17 +30,17 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::de::DeserializeOwned;
 
-use aimux_core::generate::{generate_text, stream_text, GenerateTextOptions};
+use aimux_core::AiMuxError;
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::provider::Provider;
-use aimux_core::AiMuxError;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::cohere::{CohereConfig, CohereProvider};
-use aimux_providers::{DeepSeekConfig, DeepSeekProvider};
 use aimux_providers::google::{GoogleConfig, GoogleProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
+use aimux_providers::{DeepSeekConfig, DeepSeekProvider};
 
 use futures::StreamExt;
 use tokio::runtime::Runtime;
@@ -248,7 +248,9 @@ fn parse_json_arg<T: DeserializeOwned>(json: *const c_char, name: &str) -> Resul
 /// Returns `0` on failure (null arguments or invalid model id).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     OpenAIProvider::new(OpenAIConfig::new(api_key))
         .language_model(&model_id)
         .map(|m| intern_model(Arc::from(m)))
@@ -265,9 +267,13 @@ pub extern "C" fn aimux_openai_new_with_base(
     model_id: *const c_char,
     base_url: *const c_char,
 ) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     OpenAIProvider::new(config)
         .language_model(&model_id)
         .map(|m| intern_model(Arc::from(m)))
@@ -279,7 +285,9 @@ pub extern "C" fn aimux_openai_new_with_base(
 /// Returns `0` on failure (null arguments or invalid model id).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_anthropic_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     AnthropicProvider::new(AnthropicConfig::new(api_key))
         .language_model(&model_id)
         .map(|m| intern_model(Arc::from(m)))
@@ -296,9 +304,13 @@ pub extern "C" fn aimux_anthropic_new_with_base(
     model_id: *const c_char,
     base_url: *const c_char,
 ) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = AnthropicConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     AnthropicProvider::new(config)
         .language_model(&model_id)
         .map(|m| intern_model(Arc::from(m)))
@@ -308,7 +320,9 @@ pub extern "C" fn aimux_anthropic_new_with_base(
 /// Create a DeepSeek language model instance. Returns `0` on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_deepseek_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     DeepSeekProvider::new(DeepSeekConfig::new(api_key))
         .language_model(&model_id)
         .map(|m| intern_model(Arc::from(m)))
@@ -349,7 +363,9 @@ pub extern "C" fn aimux_generate_text(
         },
         None => GenerateTextOptions::default(),
     };
-    run_and_serialize("generate_text", async move { generate_text(&*model, prompt, opts).await })
+    run_and_serialize("generate_text", async move {
+        generate_text(&*model, prompt, opts).await
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -469,31 +485,54 @@ pub unsafe extern "C" fn aimux_free_string(ptr: *mut c_char) {
 
 /// Create an OpenAI embedding model instance. Returns 0 on failure.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_embedding_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_openai_embedding_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).embedding_model(&model_id);
     intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_embedding_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_openai_embedding_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let model = OpenAIProvider::new(config).embedding_model(&model_id);
     intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_cohere_embedding_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_cohere_embedding_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
     intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_google_embedding_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_google_embedding_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
     intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
@@ -501,7 +540,11 @@ pub extern "C" fn aimux_google_embedding_new(api_key: *const c_char, model_id: *
 /// Generate embeddings. `values_json` is a JSON array of strings.
 /// Returns EmbeddingResult JSON (caller must free).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_embed(handle: u64, values_json: *const c_char, opts_json: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_embed(
+    handle: u64,
+    values_json: *const c_char,
+    opts_json: *const c_char,
+) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Embedding(m)) => m,
         _ => return error_json_raw("invalid embedding handle"),
@@ -533,16 +576,26 @@ pub extern "C" fn aimux_embed(handle: u64, values_json: *const c_char, opts_json
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_speech_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).speech(&model_id);
     intern_handle(ModelHandle::Speech(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_speech_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_openai_speech_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let model = OpenAIProvider::new(config).speech(&model_id);
     intern_handle(ModelHandle::Speech(Arc::new(model)))
 }
@@ -567,23 +620,35 @@ pub extern "C" fn aimux_speech_generate(handle: u64, opts_json: *const c_char) -
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).image(&model_id);
     intern_handle(ModelHandle::Image(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_image_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_openai_image_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let model = OpenAIProvider::new(config).image(&model_id);
     intern_handle(ModelHandle::Image(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
     intern_handle(ModelHandle::Image(Arc::new(model)))
 }
@@ -607,17 +672,30 @@ pub extern "C" fn aimux_image_generate(handle: u64, opts_json: *const c_char) ->
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_transcription_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_openai_transcription_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).transcription(&model_id);
     intern_handle(ModelHandle::Transcription(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_transcription_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_openai_transcription_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let model = OpenAIProvider::new(config).transcription(&model_id);
     intern_handle(ModelHandle::Transcription(Arc::new(model)))
 }
@@ -645,7 +723,10 @@ pub extern "C" fn aimux_transcription_generate(
         aimux_core::transcription_model::AudioInput::Base64(audio_base64),
         media_type,
     );
-    run_and_serialize("transcription", async move { model.do_generate(&opts).await })
+    run_and_serialize(
+        "transcription",
+        async move { model.do_generate(&opts).await },
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -654,16 +735,25 @@ pub extern "C" fn aimux_transcription_generate(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_files_new(api_key: *const c_char) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else { return 0 };
+    let Some(api_key) = cstr_to_string(api_key) else {
+        return 0;
+    };
     let files = OpenAIProvider::new(OpenAIConfig::new(api_key)).files();
     intern_handle(ModelHandle::Files(Arc::new(files)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_files_new_with_base(api_key: *const c_char, base_url: *const c_char) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else { return 0 };
+pub extern "C" fn aimux_openai_files_new_with_base(
+    api_key: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some(api_key) = cstr_to_string(api_key) else {
+        return 0;
+    };
     let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let files = OpenAIProvider::new(config).files();
     intern_handle(ModelHandle::Files(Arc::new(files)))
 }
@@ -702,17 +792,30 @@ pub extern "C" fn aimux_file_upload(
 
 /// Create a Cohere reranking model instance. Returns 0 on failure.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_cohere_reranking_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_cohere_reranking_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = CohereProvider::new(CohereConfig::new(api_key)).reranking_model(&model_id);
     intern_handle(ModelHandle::Reranking(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_cohere_reranking_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_cohere_reranking_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = CohereConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let model = CohereProvider::new(config).reranking_model(&model_id);
     intern_handle(ModelHandle::Reranking(Arc::new(model)))
 }
@@ -741,16 +844,26 @@ pub extern "C" fn aimux_rerank(handle: u64, opts_json: *const c_char) -> *mut c_
 /// Create a Google video model instance. Returns 0 on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_video_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).video(&model_id);
     intern_handle(ModelHandle::Video(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_google_video_new_with_base(api_key: *const c_char, model_id: *const c_char, base_url: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else { return 0 };
+pub extern "C" fn aimux_google_video_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
     let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let model = GoogleProvider::new(config).video(&model_id);
     intern_handle(ModelHandle::Video(Arc::new(model)))
 }
@@ -780,7 +893,9 @@ pub extern "C" fn aimux_video_generate(handle: u64, opts_json: *const c_char) ->
 /// symmetry but ignored (Tavily uses a fixed endpoint). Returns 0 on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_tavily_search_new(api_key: *const c_char, _model_id: *const c_char) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else { return 0 };
+    let Some(api_key) = cstr_to_string(api_key) else {
+        return 0;
+    };
     let model = TavilyProvider::new(TavilyConfig::new(api_key)).search_model();
     intern_handle(ModelHandle::Search(Arc::new(model)))
 }
@@ -791,9 +906,13 @@ pub extern "C" fn aimux_tavily_search_new_with_base(
     _model_id: *const c_char,
     base_url: *const c_char,
 ) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else { return 0 };
+    let Some(api_key) = cstr_to_string(api_key) else {
+        return 0;
+    };
     let mut config = TavilyConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) { config = config.with_base_url(url); }
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
     let model = TavilyProvider::new(config).search_model();
     intern_handle(ModelHandle::Search(Arc::new(model)))
 }

@@ -1,4 +1,4 @@
-﻿//! Rev.ai transcription (STT) provider.
+//! Rev.ai transcription (STT) provider.
 //!
 //! Aligned with Vercel AI SDK `createRevai` / `RevaiTranscriptionModel`
 //! (`reference/ai/packages/revai/src/revai-transcription-model.ts`).
@@ -190,8 +190,8 @@ impl TranscriptionModel for RevaiTranscriptionModel {
 
         // Build multipart form.
         let mut form = MultipartForm::new();
-        form.file("media", &filename, &options.media_type, &audio_bytes);
-        form.text("config", &config);
+        form.file("media", &filename, &options.media_type, &audio_bytes)?;
+        form.text("config", &config)?;
         let (body_bytes, content_type) = form.finish();
 
         let headers = self.build_headers(options.headers.as_ref());
@@ -206,6 +206,8 @@ impl TranscriptionModel for RevaiTranscriptionModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Bytes(body_bytes, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -240,6 +242,8 @@ impl TranscriptionModel for RevaiTranscriptionModel {
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -269,6 +273,8 @@ impl TranscriptionModel for RevaiTranscriptionModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Empty,
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -277,8 +283,8 @@ impl TranscriptionModel for RevaiTranscriptionModel {
 
         let response_headers = resp.headers;
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-        let parsed: RevaiTranscriptResponse =
-            serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: RevaiTranscriptResponse = serde_json::from_value(raw_body.clone())
+            .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
         // Process monologues to extract segments and text.
         let mut segments: Vec<TranscriptionSegment> = Vec::new();

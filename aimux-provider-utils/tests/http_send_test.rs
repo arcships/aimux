@@ -13,8 +13,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::AiMuxError;
 use aimux_provider_utils::{
-    DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, RetryConfig, send,
-    send_stream,
+    DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream,
 };
 
 /// Short config for tests: 1ms initial delay (jitter → 0ms effective),
@@ -34,6 +33,7 @@ fn json_post(url: &str) -> HttpRequest {
         url: url.to_string(),
         headers: vec![("Content-Type".to_string(), "application/json".to_string())],
         body: HttpBody::Json(serde_json::json!({"q": "hi"})),
+        abort_signal: None,
     }
 }
 

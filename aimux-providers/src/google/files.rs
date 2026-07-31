@@ -1,4 +1,4 @@
-﻿//! Google Files — implements the `Files` trait for uploading files to the
+//! Google Files — implements the `Files` trait for uploading files to the
 //! Google Generative Language API.
 //!
 //! Aligned with Vercel AI SDK `GoogleFiles`
@@ -169,9 +169,14 @@ impl Files for GoogleFiles {
             json!({ "file": {} })
         };
 
-        let mut init_headers: Vec<(String, String)> =
-            resolved_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        init_headers.push(("X-Goog-Upload-Protocol".to_string(), "resumable".to_string()));
+        let mut init_headers: Vec<(String, String)> = resolved_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        init_headers.push((
+            "X-Goog-Upload-Protocol".to_string(),
+            "resumable".to_string(),
+        ));
         init_headers.push(("X-Goog-Upload-Command".to_string(), "start".to_string()));
         init_headers.push((
             "X-Goog-Upload-Header-Content-Length".to_string(),
@@ -189,6 +194,8 @@ impl Files for GoogleFiles {
                 url: self.init_endpoint(),
                 headers: init_headers,
                 body: HttpBody::Json(init_body_value),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -207,7 +214,10 @@ impl Files for GoogleFiles {
         // Step 2: Upload file data.
         let upload_headers: Vec<(String, String)> = vec![
             ("X-Goog-Upload-Offset".to_string(), "0".to_string()),
-            ("X-Goog-Upload-Command".to_string(), "upload, finalize".to_string()),
+            (
+                "X-Goog-Upload-Command".to_string(),
+                "upload, finalize".to_string(),
+            ),
         ];
 
         let upload_resp = send(
@@ -216,6 +226,8 @@ impl Files for GoogleFiles {
                 url: upload_url,
                 headers: upload_headers,
                 body: HttpBody::Bytes(file_bytes, media_type.clone()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -223,8 +235,8 @@ impl Files for GoogleFiles {
         .await
         .map_err(|e| AiMuxError::Provider(format!("Failed to upload file data: {e}")))?;
 
-        let upload_result: UploadResponse =
-            serde_json::from_slice(&upload_resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let upload_result: UploadResponse = serde_json::from_slice(&upload_resp.body)
+            .map_err(|e| AiMuxError::Http(e.to_string()))?;
 
         let mut file = upload_result.file;
 
@@ -232,8 +244,10 @@ impl Files for GoogleFiles {
         let poll_interval_ms = google_options.poll_interval_ms.unwrap_or(2000);
         let poll_timeout_ms = google_options.poll_timeout_ms.unwrap_or(300000);
         let start_time = Instant::now();
-        let poll_header_list: Vec<(String, String)> =
-            resolved_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let poll_header_list: Vec<(String, String)> = resolved_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         while file.state == "PROCESSING" {
             if start_time.elapsed() > Duration::from_millis(poll_timeout_ms) {
@@ -244,6 +258,11 @@ impl Files for GoogleFiles {
             }
 
             tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
+            if let Some(signal) = &options.abort_signal {
+                if signal.is_aborted() {
+                    return Err(AiMuxError::Other("file upload polling aborted".to_string()));
+                }
+            }
 
             let poll_url = format!("{}/{}", self.config.base_url, file.name);
 
@@ -253,6 +272,8 @@ impl Files for GoogleFiles {
                     url: poll_url,
                     headers: poll_header_list.clone(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &GOOGLE_ERROR_STRUCTURE,

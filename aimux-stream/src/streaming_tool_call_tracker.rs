@@ -161,10 +161,8 @@ type BuildMetadataFn<M> = Box<dyn Fn(Option<&M>) -> Option<M>>;
 pub struct StreamingToolCallTracker<M = ()> {
     tool_calls: Vec<Option<TrackedToolCall<M>>>,
     parts: Vec<ToolCallStreamPart<M>>,
-    // Mirrors the TS `generateId` option. Kept for API parity — it is the
-    // fallback in `toolCall.id ?? generateId()`, but `id` is required at
-    // creation so this is currently unreachable.
-    #[allow(dead_code)]
+    // The TS `generateId` option: fallback for `toolCall.id ?? generateId()`
+    // when an incoming tool-call delta omits its id.
     generate_id: Box<dyn Fn() -> String>,
     type_validation: TypeValidation,
     /// Upper bound accepted for a tool call `index`. Guards against a remote
@@ -304,7 +302,7 @@ impl<M> StreamingToolCallTracker<M> {
             TypeValidation::None => {}
         }
 
-        let id = delta.id.clone().ok_or(TrackerError::MissingId)?;
+        let id = delta.id.clone().unwrap_or_else(|| (self.generate_id)());
         let function_name = delta
             .function
             .as_ref()

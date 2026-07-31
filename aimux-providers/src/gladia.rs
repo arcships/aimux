@@ -1,4 +1,4 @@
-﻿//! Gladia transcription (STT) provider.
+//! Gladia transcription (STT) provider.
 //!
 //! Aligned with Vercel AI SDK `createGladia` / `GladiaTranscriptionModel`
 //! (`reference/ai/packages/gladia/src/gladia-transcription-model.ts`).
@@ -192,7 +192,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
         // Step 1: Upload audio.
         let mut form = MultipartForm::new();
-        form.file("audio", &filename, &options.media_type, &audio_bytes);
+        form.file("audio", &filename, &options.media_type, &audio_bytes)?;
         let (body_bytes, content_type) = form.finish();
 
         let resp = send(
@@ -204,6 +204,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Bytes(body_bytes, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -238,6 +240,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -262,6 +266,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
                     body: HttpBody::Empty,
+
+                    abort_signal: options.abort_signal.clone(),
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -270,8 +276,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
 
             response_headers = resp.headers;
             raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-            let parsed: GladiaResultResponse =
-                serde_json::from_value(raw_body.clone()).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let parsed: GladiaResultResponse = serde_json::from_value(raw_body.clone())
+                .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
             if parsed.status == "done" {
                 let result = parsed.result.ok_or_else(|| {

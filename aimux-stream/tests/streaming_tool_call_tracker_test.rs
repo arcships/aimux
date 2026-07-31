@@ -350,14 +350,21 @@ fn use_index_fallback_when_index_not_provided() {
 }
 
 #[test]
-fn throw_when_id_missing() {
-    // TS: "should throw when id is missing"
+fn generate_id_when_id_missing() {
+    // TS: id is missing → `toolCall.id ?? generateId()` generates a fallback id
+    // instead of throwing. The default generator returns "generated".
     let mut tracker = new_tracker();
-    let err = tracker
+    tracker
         .process_delta(&d().index(0).tool_type("function").function_name("fn"))
-        .unwrap_err();
-    assert_eq!(err, TrackerError::MissingId);
-    assert_eq!(err.to_string(), "Expected 'id' to be a string.");
+        .unwrap();
+
+    assert_eq!(
+        tracker.parts(),
+        &[ToolCallStreamPart::ToolInputStart {
+            id: "generated".into(),
+            tool_name: "fn".into(),
+        }]
+    );
 }
 
 #[test]
@@ -673,6 +680,60 @@ fn use_custom_generate_id_for_tool_call_ids_when_id_missing_in_fallback() {
     assert_eq!(tool_call_id(tool_call), "call_1");
     // The custom generator must not have been invoked.
     assert_eq!(CALLS.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn use_custom_generate_id_when_id_is_missing() {
+    // P2-05: when a tool-call delta omits its id, the configured `generateId`
+    // fallback is invoked (TS `toolCall.id ?? generateId()`). The generated id
+    // is used for the emitted ToolInputStart and the finalized ToolCall.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    let mut tracker = StreamingToolCallTracker::<()>::new().with_generate_id(|| {
+        CALLS.fetch_add(1, Ordering::SeqCst);
+        "custom-id".to_string()
+    });
+
+    // No `.id(...)` — the generator must fill it in.
+    tracker
+        .process_delta(
+            &d().index(0)
+                .tool_type("function")
+                .function_name("fn")
+                .arguments("{\"key\": \"val"),
+        )
+        .unwrap();
+
+    // The generator was invoked exactly once for the missing id.
+    assert_eq!(CALLS.load(Ordering::SeqCst), 1);
+
+    // The emitted start part carries the generated id.
+    assert_eq!(
+        tracker.parts(),
+        &[
+            ToolCallStreamPart::ToolInputStart {
+                id: "custom-id".into(),
+                tool_name: "fn".into(),
+            },
+            ToolCallStreamPart::ToolInputDelta {
+                id: "custom-id".into(),
+                delta: "{\"key\": \"val".into(),
+            },
+        ]
+    );
+
+    tracker.clear_parts();
+    tracker.flush();
+
+    let tool_call = tracker
+        .parts()
+        .iter()
+        .find(|p| matches!(p, ToolCallStreamPart::ToolCall { .. }))
+        .unwrap();
+    assert_eq!(tool_call_id(tool_call), "custom-id");
+    // No additional generator invocations during flush.
+    assert_eq!(CALLS.load(Ordering::SeqCst), 1);
 }
 
 // == index bound (P1-10) ==================================================

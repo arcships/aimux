@@ -206,7 +206,10 @@ fn build_generation_body(
 /// - Otherwise, if `data[*].url` is present, each URL is downloaded and
 ///   returned as [`ImageOutputs::Binary`].
 /// - If neither is present, returns an empty [`ImageOutputs::Base64`].
-async fn extract_images(response: &Value) -> Result<ImageOutputs, AiMuxError> {
+async fn extract_images(
+    response: &Value,
+    abort_signal: Option<aimux_core::shared::AbortSignal>,
+) -> Result<ImageOutputs, AiMuxError> {
     let items = response.get("data").and_then(|d| d.as_array());
 
     let Some(items) = items else {
@@ -241,6 +244,8 @@ async fn extract_images(response: &Value) -> Result<ImageOutputs, AiMuxError> {
                 url: url.clone(),
                 headers: vec![],
                 body: HttpBody::Empty,
+
+                abort_signal: abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -290,6 +295,8 @@ impl ImageModel for RecraftImageModel {
                 url: self.generations_endpoint(),
                 headers: header_list,
                 body: HttpBody::Json(Value::Object(body)),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -301,7 +308,7 @@ impl ImageModel for RecraftImageModel {
         let value: Value = serde_json::from_slice(&resp.body)
             .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
 
-        let images = extract_images(&value).await?;
+        let images = extract_images(&value, options.abort_signal.clone()).await?;
 
         Ok(ImageResult {
             images,

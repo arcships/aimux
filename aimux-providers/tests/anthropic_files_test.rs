@@ -41,6 +41,7 @@ fn upload_options() -> UploadFileCallOptions {
         media_type: "application/octet-stream".to_string(),
         filename: None,
         provider_options: None,
+        abort_signal: None,
     }
 }
 
@@ -281,6 +282,7 @@ async fn handles_base64_string_data() {
         media_type: "application/octet-stream".to_string(),
         filename: None,
         provider_options: None,
+    abort_signal: None,
     };
 
     let result = files.upload_file(&opts).await.unwrap();

@@ -23,6 +23,7 @@ use futures::stream::{BoxStream, StreamExt};
 use reqwest::Client;
 
 use aimux_core::AiMuxError;
+use aimux_core::shared::AbortSignal;
 
 use crate::response::{ErrorStructure, parse_provider_error};
 use crate::retry::{RetryConfig, get_retry_delay_ms_with_jitter, parse_retry_after};
@@ -102,8 +103,7 @@ pub fn shared_client() -> &'static Client {
 
 /// 获取（或惰性初始化）流式共享 reqwest Client（无整体超时，流式用）。
 pub fn shared_streaming_client() -> &'static Client {
-    SHARED_STREAMING
-        .get_or_init(|| build_client(PoolConfig::default(), TimeoutConfig::streaming()))
+    SHARED_STREAMING.get_or_init(|| build_client(PoolConfig::default(), TimeoutConfig::streaming()))
 }
 
 /// 用给定配置构建一个 reqwest Client。
@@ -157,6 +157,8 @@ pub struct HttpRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: HttpBody,
+    /// Optional signal used to cancel the request while it is connecting.
+    pub abort_signal: Option<AbortSignal>,
 }
 
 /// HTTP 响应（非流式，纯数据）。
@@ -202,7 +204,10 @@ pub async fn send(
 
     let status = resp.status().as_u16();
     let headers = collect_headers(resp.headers());
-    let body = resp.bytes().await.map_err(|e| AiMuxError::Http(e.to_string()))?;
+    let body = resp
+        .bytes()
+        .await
+        .map_err(|e| AiMuxError::Http(e.to_string()))?;
 
     Ok(HttpResponse {
         status,
@@ -251,10 +256,7 @@ async fn send_with_retry_raw(
     let mut exponential_delay_ms = retry_config.initial_delay.as_millis() as i64;
 
     for attempt in 0..=retry_config.max_retries {
-        let resp = build_request_builder(client, request)
-            .send()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()));
+        let resp = send_request(client, request).await;
 
         match resp {
             Ok(resp) if resp.status().is_success() => return Ok(resp),
@@ -278,8 +280,7 @@ async fn send_with_retry_raw(
                 } else if resp.status().is_server_error() {
                     // 5xx: 可重试。
                     let body = resp.text().await.unwrap_or_default();
-                    last_error =
-                        AiMuxError::ApiCall(format!("HTTP {}: {}", status_code, body));
+                    last_error = AiMuxError::ApiCall(format!("HTTP {}: {}", status_code, body));
                 } else {
                     // 非 4xx 非 5xx：不可重试，立即返回。
                     let body = resp.text().await.unwrap_or_default();
@@ -308,10 +309,49 @@ async fn send_with_retry_raw(
     Err(last_error)
 }
 
+/// Wait until `signal` has been aborted without blocking the executor.
+async fn abort_wait(signal: &AbortSignal) {
+    while !signal.is_aborted() {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Send one HTTP attempt, cancelling the in-flight connection if requested.
+async fn send_request(
+    client: &Client,
+    request: &HttpRequest,
+) -> Result<reqwest::Response, AiMuxError> {
+    if let Some(signal) = &request.abort_signal {
+        if signal.is_aborted() {
+            return Err(AiMuxError::Other(
+                "request aborted before sending".to_string(),
+            ));
+        }
+
+        let response = build_request_builder(client, request)?.send();
+        tokio::select! {
+            result = response => result.map_err(|e| AiMuxError::Http(e.to_string())),
+            _ = abort_wait(signal) => Err(AiMuxError::Other("request aborted".to_string())),
+        }
+    } else {
+        build_request_builder(client, request)?
+            .send()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))
+    }
+}
+
 /// 把纯数据的 [`HttpRequest`] 转成 `reqwest::RequestBuilder`。
 ///
 /// 每次重试调用一次。`request` 以引用传入，不消费——支持重试重建。
-fn build_request_builder(client: &Client, request: &HttpRequest) -> reqwest::RequestBuilder {
+///
+/// 若任一 header 的 name/value 无法转成合法的 reqwest header（含非法字节），
+/// 返回 [`AiMuxError::InvalidArgument`]——这通常意味着鉴权 header 等关键
+/// header 被丢弃，调用者必须感知，而不是静默跳过。
+fn build_request_builder(
+    client: &Client,
+    request: &HttpRequest,
+) -> Result<reqwest::RequestBuilder, AiMuxError> {
     let mut builder = match request.method {
         HttpMethod::Get => client.get(&request.url),
         HttpMethod::Post => client.post(&request.url),
@@ -320,20 +360,21 @@ fn build_request_builder(client: &Client, request: &HttpRequest) -> reqwest::Req
         HttpMethod::Patch => client.patch(&request.url),
     };
     for (name, value) in &request.headers {
-        if let (Ok(name), Ok(value)) = (
-            reqwest::header::HeaderName::try_from(name),
-            reqwest::header::HeaderValue::try_from(value),
-        ) {
-            builder = builder.header(name, value);
-        }
+        let header_name = reqwest::header::HeaderName::try_from(name)
+            .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header name: {name}")))?;
+        let header_value = reqwest::header::HeaderValue::try_from(value).map_err(|_| {
+            AiMuxError::InvalidArgument(format!("invalid header value for {name}: {value}"))
+        })?;
+        builder = builder.header(header_name, header_value);
     }
-    match &request.body {
+    let builder = match &request.body {
         HttpBody::Json(value) => builder.json(value),
         HttpBody::Bytes(bytes, content_type) => builder
             .header("Content-Type", content_type)
             .body(bytes.clone()),
         HttpBody::Empty => builder,
-    }
+    };
+    Ok(builder)
 }
 
 /// 从 `reqwest::header::HeaderMap` 提取 `HashMap<String, String>`。
@@ -364,10 +405,7 @@ mod tests {
 
     #[test]
     fn shared_and_streaming_are_distinct() {
-        assert!(!std::ptr::eq(
-            shared_client(),
-            shared_streaming_client()
-        ));
+        assert!(!std::ptr::eq(shared_client(), shared_streaming_client()));
     }
 
     #[test]
@@ -391,8 +429,66 @@ mod tests {
             url: "https://example.com".to_string(),
             headers: vec![("Authorization".to_string(), "Bearer x".to_string())],
             body: HttpBody::Json(serde_json::json!({"q": "hi"})),
+
+            abort_signal: None,
         };
         let _clone = req.clone();
         assert_eq!(req.method, HttpMethod::Post);
+    }
+
+    #[test]
+    fn build_request_builder_rejects_invalid_header_name() {
+        // A header name containing a space/CR is not a valid token and must be
+        // rejected rather than silently dropped (the header could be an auth
+        // header, which the caller must know about).
+        let client = Client::new();
+        let req = HttpRequest {
+            method: HttpMethod::Get,
+            url: "https://example.com".to_string(),
+            headers: vec![("Invalid Header\r\n".to_string(), "secret".to_string())],
+            body: HttpBody::Empty,
+
+            abort_signal: None,
+        };
+        let err = build_request_builder(&client, &req).unwrap_err();
+        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "got {err:?}");
+        assert!(err.to_string().contains("invalid header name"));
+    }
+
+    #[test]
+    fn build_request_builder_rejects_invalid_header_value() {
+        // A header value containing a raw CR is invalid and must be rejected.
+        let client = Client::new();
+        let req = HttpRequest {
+            method: HttpMethod::Get,
+            url: "https://example.com".to_string(),
+            headers: vec![(
+                "Authorization".to_string(),
+                "Bearer evil\r\nX-Injected: yes".to_string(),
+            )],
+            body: HttpBody::Empty,
+
+            abort_signal: None,
+        };
+        let err = build_request_builder(&client, &req).unwrap_err();
+        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "got {err:?}");
+        assert!(err.to_string().contains("invalid header value"));
+    }
+
+    #[test]
+    fn build_request_builder_accepts_valid_headers() {
+        let client = Client::new();
+        let req = HttpRequest {
+            method: HttpMethod::Post,
+            url: "https://example.com".to_string(),
+            headers: vec![
+                ("Authorization".to_string(), "Bearer token".to_string()),
+                ("X-Custom".to_string(), "value".to_string()),
+            ],
+            body: HttpBody::Json(serde_json::json!({"q": "hi"})),
+
+            abort_signal: None,
+        };
+        assert!(build_request_builder(&client, &req).is_ok());
     }
 }

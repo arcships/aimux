@@ -117,6 +117,8 @@ impl LanguageModel for GoogleModel {
                 url: self.generate_endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -191,6 +193,8 @@ impl LanguageModel for GoogleModel {
                 url: self.stream_endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

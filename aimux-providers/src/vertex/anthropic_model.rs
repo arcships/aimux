@@ -156,6 +156,8 @@ impl LanguageModel for VertexAnthropicModel {
                 url,
                 headers,
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -259,6 +261,8 @@ impl LanguageModel for VertexAnthropicModel {
                 url,
                 headers,
                 body: HttpBody::Json(body.clone()),
+
+                abort_signal: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

@@ -221,21 +221,21 @@ impl ImageModel for StabilityImageModel {
         // Build the multipart/form-data body.
         let mut form = MultipartForm::new();
         if let Some(ref p) = options.prompt {
-            form.text("prompt", p);
+            form.text("prompt", p)?;
         }
         if let Some(neg) = stability_opts
             .and_then(|o| o.get("negative_prompt"))
             .and_then(|v| v.as_str())
         {
-            form.text("negative_prompt", neg);
+            form.text("negative_prompt", neg)?;
         }
         if let Some(ref ar) = aspect_ratio {
-            form.text("aspect_ratio", ar);
+            form.text("aspect_ratio", ar)?;
         }
         if let Some(seed) = seed {
-            form.text("seed", &seed.to_string());
+            form.text("seed", &seed.to_string())?;
         }
-        form.text("output_format", output_format);
+        form.text("output_format", output_format)?;
 
         // Forward remaining stability provider options as scalar form fields.
         if let Some(stab) = stability_opts.and_then(|v| v.as_object()) {
@@ -252,7 +252,7 @@ impl ImageModel for StabilityImageModel {
                     // Skip complex values; multipart scalar fields only.
                     _ => continue,
                 };
-                form.text(k, &text);
+                form.text(k, &text)?;
             }
         }
 
@@ -267,6 +267,8 @@ impl ImageModel for StabilityImageModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Bytes(body_bytes, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &STABILITY_ERROR_STRUCTURE,

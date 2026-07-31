@@ -270,6 +270,8 @@ impl SpeechModel for AwsPollySpeechModel {
                 url,
                 headers: signed.headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &AWS_ERROR_STRUCTURE,

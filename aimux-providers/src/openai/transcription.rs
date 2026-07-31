@@ -1,4 +1,4 @@
-﻿//! OpenAI transcription (STT) model — implements the `TranscriptionModel` trait.
+//! OpenAI transcription (STT) model — implements the `TranscriptionModel` trait.
 //!
 //! Aligned with Vercel AI SDK `OpenAITranscriptionModel`
 //! (`reference/ai/packages/openai/src/transcription/openai-transcription-model.ts`).
@@ -283,12 +283,12 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         let filename = format!("audio.{file_extension}");
 
         let mut form = MultipartForm::new();
-        form.text("model", &self.model_id);
-        form.file("file", &filename, &options.media_type, &audio_bytes);
+        form.text("model", &self.model_id)?;
+        form.file("file", &filename, &options.media_type, &audio_bytes)?;
 
         // whisper-1 defaults to verbose_json to get segments.
         if self.model_id == "whisper-1" {
-            form.text("response_format", "verbose_json");
+            form.text("response_format", "verbose_json")?;
         }
 
         // Provider-specific options.
@@ -302,33 +302,33 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             } else {
                 "verbose_json"
             };
-            form.text("response_format", response_format);
+            form.text("response_format", response_format)?;
         }
 
         if let Some(ref include) = openai_options.include {
             for item in include {
-                form.text("include[]", item);
+                form.text("include[]", item)?;
             }
         }
         if let Some(ref language) = openai_options.language {
-            form.text("language", language);
+            form.text("language", language)?;
         }
         if let Some(ref prompt) = openai_options.prompt {
-            form.text("prompt", prompt);
+            form.text("prompt", prompt)?;
         }
         if let Some(temperature) = openai_options.temperature {
-            form.text("temperature", &temperature.to_string());
+            form.text("temperature", &temperature.to_string())?;
         }
         if let Some(ref tg) = openai_options.timestamp_granularities {
             for item in tg {
-                form.text("timestamp_granularities[]", item);
+                form.text("timestamp_granularities[]", item)?;
             }
         }
 
         // Temperature default is 0 when provider options are present (matching
         // the TS schema's `.default(0)`).
         if options.provider_options.is_some() && openai_options.temperature.is_none() {
-            form.text("temperature", "0");
+            form.text("temperature", "0")?;
         }
 
         let (body_bytes, content_type) = form.finish();
@@ -342,6 +342,8 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                 url: self.endpoint(),
                 headers: header_list,
                 body: HttpBody::Bytes(body_bytes, content_type),
+
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
