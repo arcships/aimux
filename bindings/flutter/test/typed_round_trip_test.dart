@@ -113,7 +113,7 @@ void main() {
 
     test('File variant — no filename field', () {
       final original = GenerateContentFile(
-        data: {'base64': 'aGVsbG8='},
+        data: FileDataUrl(url: 'https://example.com/img.png'),
         mediaType: 'image/png',
         providerMetadata: null,
       );
@@ -132,7 +132,8 @@ void main() {
       expect(decoded, isA<GenerateContentFile>());
       expect(decoded.tag, 'File');
       final f = decoded as GenerateContentFile;
-      expect(f.data, {'base64': 'aGVsbG8='});
+      expect(f.data, isA<FileDataUrl>());
+      expect((f.data as FileDataUrl).url, 'https://example.com/img.png');
       expect(f.mediaType, 'image/png');
     });
 
@@ -381,7 +382,7 @@ void main() {
     // ── File ──
     test('File variant — no filename field', () {
       final original = StreamPartFile(
-        data: {'base64': 'aGVsbG8='},
+        data: FileDataUrl(url: 'https://example.com/img.png'),
         mediaType: 'image/png',
         providerMetadata: null,
       );
@@ -397,7 +398,8 @@ void main() {
       expect(decoded, isA<StreamPartFile>());
       expect(decoded.type, 'File');
       final f = decoded as StreamPartFile;
-      expect(f.data, {'base64': 'aGVsbG8='});
+      expect(f.data, isA<FileDataUrl>());
+      expect((f.data as FileDataUrl).url, 'https://example.com/img.png');
       expect(f.mediaType, 'image/png');
     });
 
