@@ -79,12 +79,12 @@ func ToolChoiceTool(name string) ToolChoice {
 
 // TokenUsage is token usage detail with cache breakdown.
 type TokenUsage struct {
-	Total      *int64 `json:"total,omitempty"`
-	NoCache    *int64 `json:"no_cache,omitempty"`
-	CacheRead  *int64 `json:"cache_read,omitempty"`
-	CacheWrite *int64 `json:"cache_write,omitempty"`
-	Text       *int64 `json:"text,omitempty"`
-	Reasoning  *int64 `json:"reasoning,omitempty"`
+	Total      *uint32 `json:"total,omitempty"`
+	NoCache    *uint32 `json:"no_cache,omitempty"`
+	CacheRead  *uint32 `json:"cache_read,omitempty"`
+	CacheWrite *uint32 `json:"cache_write,omitempty"`
+	Text       *uint32 `json:"text,omitempty"`
+	Reasoning  *uint32 `json:"reasoning,omitempty"`
 }
 
 // Usage is token usage statistics.
@@ -97,7 +97,7 @@ type Usage struct {
 // FinishReason is the finish reason.
 type FinishReason struct {
 	Unified FinishReasonUnified `json:"unified,omitempty"`
-	Raw     json.RawMessage     `json:"raw,omitempty"`
+	Raw     *string             `json:"raw,omitempty"`
 }
 
 // ToolCall represents a tool call requested by the model.
@@ -118,10 +118,9 @@ type ContentPart = json.RawMessage
 // ResponseMetadata describes the provider HTTP response.
 // Mirrors Kotlin ResponseMetadata (Types.kt:141-146).
 type ResponseMetadata struct {
-	ID          string          `json:"id,omitempty"`
-	Timestamp   json.RawMessage `json:"timestamp,omitempty"`
-	ModelID     string          `json:"model_id,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
+	ID        *string `json:"id,omitempty"`
+	Timestamp *string `json:"timestamp,omitempty"`
+	ModelID   *string `json:"model_id,omitempty"`
 }
 
 // GenerateResult is the raw provider result.
@@ -189,15 +188,15 @@ func MarshalMessages(msgs []ModelMessage) (string, error) {
 // All fields are optional (pointer types) to match the engine's schema.
 // Mirrors Kotlin GenerateTextOptions (Types.kt:561-579).
 type GenerateTextOptions struct {
-	MaxOutputTokens  *int              `json:"max_output_tokens,omitempty"`
+	MaxOutputTokens  *uint32           `json:"max_output_tokens,omitempty"`
 	Temperature       *float64          `json:"temperature,omitempty"`
 	StopSequences     []string          `json:"stop_sequences,omitempty"`
 	TopP              *float64          `json:"top_p,omitempty"`
-	TopK              *int              `json:"top_k,omitempty"`
+	TopK              *float64          `json:"top_k,omitempty"`
 	PresencePenalty   *float64          `json:"presence_penalty,omitempty"`
 	FrequencyPenalty  *float64          `json:"frequency_penalty,omitempty"`
 	ResponseFormat    json.RawMessage   `json:"response_format,omitempty"`
-	Seed              *int64            `json:"seed,omitempty"`
+	Seed              *uint64           `json:"seed,omitempty"`
 	Tools             []Tool            `json:"tools,omitempty"`
 	ToolChoice        ToolChoice        `json:"tool_choice,omitempty"`
 	Headers           map[string]string `json:"headers,omitempty"`
@@ -245,7 +244,13 @@ func ParseStreamPart(jsonStr string) (*StreamPart, error) {
 	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
 		return nil, fmt.Errorf("aimux: failed to parse StreamPart: %w", err)
 	}
-	// Externally-tagged: the map should have exactly one key.
+	// Externally-tagged: the map must have exactly one key.
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("aimux: StreamPart has no variant tag: %s", jsonStr)
+	}
+	if len(raw) > 1 {
+		return nil, fmt.Errorf("aimux: StreamPart has multiple variant tags (%d), expected 1: %s", len(raw), jsonStr)
+	}
 	for tag, payload := range raw {
 		return &StreamPart{Tag: tag, Payload: payload}, nil
 	}

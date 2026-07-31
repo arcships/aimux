@@ -18,6 +18,7 @@ package aimux
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,8 +53,10 @@ func newMockServer() *mockProviderServer {
 }
 
 func (s *mockProviderServer) handle(w http.ResponseWriter, r *http.Request) {
-	body := make([]byte, r.ContentLength)
-	r.Body.Read(body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		body = nil
+	}
 
 	s.mu.Lock()
 	s.lastRequestBody = string(body)

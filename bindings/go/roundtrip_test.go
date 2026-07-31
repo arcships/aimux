@@ -213,7 +213,7 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 
 func TestGenerateTextOptionsRoundTrip(t *testing.T) {
 	temp := 0.7
-	topK := 40
+	topK := 40.0
 	reasoning := ReasoningHigh
 	instr := "Be concise"
 	original := GenerateTextOptions{
@@ -279,8 +279,8 @@ func TestGenerateTextResultRoundTrip(t *testing.T) {
 			{ToolCallID: "call_1", ToolName: "get_weather"},
 		},
 		Usage: Usage{
-			InputTokens:  TokenUsage{Total: i64ptr(10)},
-			OutputTokens: TokenUsage{Total: i64ptr(5)},
+			InputTokens:  TokenUsage{Total: u32ptr(10)},
+			OutputTokens: TokenUsage{Total: u32ptr(5)},
 		},
 		Raw: GenerateResult{
 			Content: []ContentPart{json.RawMessage(`{"Text":{"text":"hello"}}`)},
@@ -327,8 +327,8 @@ func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
 
 func TestUsageRoundTrip(t *testing.T) {
 	original := Usage{
-		InputTokens:  TokenUsage{Total: i64ptr(100), CacheRead: i64ptr(50)},
-		OutputTokens: TokenUsage{Total: i64ptr(20), Reasoning: i64ptr(5)},
+		InputTokens:  TokenUsage{Total: u32ptr(100), CacheRead: u32ptr(50)},
+		OutputTokens: TokenUsage{Total: u32ptr(20), Reasoning: u32ptr(5)},
 	}
 	b, _ := json.Marshal(original)
 	s := string(b)
@@ -381,9 +381,31 @@ func TestParseTextDeltaPayload(t *testing.T) {
 	}
 }
 
+// TestParseStreamPartRejectsInvalid validates the externally-tagged union
+// enforcement: zero keys or multiple keys must produce an error.
+func TestParseStreamPartRejectsInvalid(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+	}{
+		{"empty_object", `{}`},
+		{"multiple_keys", `{"TextDelta":{"delta":"a"},"Finish":{}}`},
+		{"not_object", `[]`},
+		{"invalid_json", `{`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ParseStreamPart(c.json)
+			if err == nil {
+				t.Errorf("expected error for %s, got nil", c.name)
+			}
+		})
+	}
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-func i64ptr(v int64) *int64 { return &v }
+func u32ptr(v uint32) *uint32 { return &v }
 
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (func() bool {

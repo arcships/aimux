@@ -152,7 +152,7 @@ func TestWireFormatConsistency(t *testing.T) {
 				}
 
 			default:
-				t.Skipf("unsupported fixture type: %s", tc.Type)
+				t.Fatalf("unsupported fixture type: %s (add Go support for this wire type)", tc.Type)
 			}
 		})
 	}

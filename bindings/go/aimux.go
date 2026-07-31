@@ -54,11 +54,12 @@ static void do_stream(uint64_t handle, const char* prompt, const char* opts, int
 import "C"
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"unsafe"
 )
 
@@ -68,50 +69,102 @@ import (
 //
 // It implements io.Closer — you MUST call Close (or use defer) to release the
 // native handle and avoid memory leaks.
+//
+// Concurrency: Model is safe for concurrent use. GenerateText and StreamText
+// acquire a read lock; Close acquires a write lock and waits for in-flight
+// calls to finish before dropping the native handle.
 type Model struct {
+	mu     sync.RWMutex
 	handle uint64
-	closed atomic.Bool
+	closed bool
 }
 
 // Close releases the native handle. Safe to call multiple times.
+// It blocks until in-flight GenerateText/StreamText calls finish.
 func (m *Model) Close() error {
-	if m.closed.Swap(true) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
 		return nil
 	}
+	m.closed = true
 	if m.handle != 0 {
 		C.aimux_drop_handle(C.uint64_t(m.handle))
 		m.handle = 0
 	}
+	runtime.SetFinalizer(m, nil)
 	return nil
+}
+
+// acquireHandle returns the native handle under a read lock, or an error if
+// the model is closed. The caller must call the returned release func when
+// done with the handle (deferred after the FFI call returns).
+func (m *Model) acquireHandle() (uint64, func(), error) {
+	m.mu.RLock()
+	if m.closed {
+		m.mu.RUnlock()
+		return 0, nil, errors.New("aimux: model already closed")
+	}
+	h := m.handle
+	return h, m.mu.RUnlock, nil
 }
 
 // ── Provider constructors ───────────────────────────────────────────────────
 
-// OpenAI creates an OpenAI model instance.
+// NewOpenAI creates an OpenAI model instance.
 //
-//	model := aimux.OpenAI("sk-...", "gpt-4o")
-//	defer model.Close()
-func OpenAI(apiKey, modelID string) *Model {
+//	m, err := aimux.NewOpenAI("sk-...", "gpt-4o")
+//	if err != nil { ... }
+//	defer m.Close()
+func NewOpenAI(apiKey, modelID string) (*Model, error) {
 	return newModel(apiKey, modelID, "", false)
 }
 
-// OpenAIWithBase creates an OpenAI model with a custom base URL
+// NewOpenAIWithBase creates an OpenAI model with a custom base URL
 // (for Ollama, OpenRouter, local proxies, etc.).
-func OpenAIWithBase(apiKey, modelID, baseURL string) *Model {
+func NewOpenAIWithBase(apiKey, modelID, baseURL string) (*Model, error) {
 	return newModel(apiKey, modelID, baseURL, false)
 }
 
-// Anthropic creates an Anthropic model instance.
-func Anthropic(apiKey, modelID string) *Model {
+// NewAnthropic creates an Anthropic model instance.
+func NewAnthropic(apiKey, modelID string) (*Model, error) {
 	return newModel(apiKey, modelID, "", true)
 }
 
-// AnthropicWithBase creates an Anthropic model with a custom base URL.
-func AnthropicWithBase(apiKey, modelID, baseURL string) *Model {
+// NewAnthropicWithBase creates an Anthropic model with a custom base URL.
+func NewAnthropicWithBase(apiKey, modelID, baseURL string) (*Model, error) {
 	return newModel(apiKey, modelID, baseURL, true)
 }
 
-func newModel(apiKey, modelID, baseURL string, anthropic bool) *Model {
+// OpenAI creates an OpenAI model instance, panicking on failure.
+// Prefer NewOpenAI for explicit error handling.
+func OpenAI(apiKey, modelID string) *Model {
+	return mustNew(NewOpenAI(apiKey, modelID))
+}
+
+// OpenAIWithBase creates an OpenAI model with a custom base URL, panicking on failure.
+func OpenAIWithBase(apiKey, modelID, baseURL string) *Model {
+	return mustNew(NewOpenAIWithBase(apiKey, modelID, baseURL))
+}
+
+// Anthropic creates an Anthropic model instance, panicking on failure.
+func Anthropic(apiKey, modelID string) *Model {
+	return mustNew(NewAnthropic(apiKey, modelID))
+}
+
+// AnthropicWithBase creates an Anthropic model with a custom base URL, panicking on failure.
+func AnthropicWithBase(apiKey, modelID, baseURL string) *Model {
+	return mustNew(NewAnthropicWithBase(apiKey, modelID, baseURL))
+}
+
+func mustNew(m *Model, err error) *Model {
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+func newModel(apiKey, modelID, baseURL string, anthropic bool) (*Model, error) {
 	m := &Model{}
 	cKey := C.CString(apiKey)
 	cModel := C.CString(modelID)
@@ -135,14 +188,13 @@ func newModel(apiKey, modelID, baseURL string, anthropic bool) *Model {
 		}
 	}
 	if h == 0 {
-		// Should not happen with fake keys (provider constructs lazily).
-		panic("aimux: failed to create model (handle=0)")
+		return nil, errors.New("aimux: failed to create model (handle=0)")
 	}
 	m.handle = uint64(h)
 
 	// Set finalizer as a safety net; callers should still use Close().
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
-	return m
+	return m, nil
 }
 
 // ── Non-streaming generation ────────────────────────────────────────────────
@@ -156,11 +208,13 @@ func newModel(apiKey, modelID, baseURL string, anthropic bool) *Model {
 //
 // Returns the JSON-serialized GenerateTextResult, or an error if the FFI call failed.
 //
-//	result, err := model.GenerateText(`"What is Rust?"`)
+//	result, err := model.GenerateText(`"What is Rust?"`, "")
 func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
-	if m.closed.Load() {
-		return "", errors.New("aimux: model already closed")
+	handle, release, err := m.acquireHandle()
+	if err != nil {
+		return "", err
 	}
+	defer release()
 
 	cPrompt := C.CString(promptJson)
 	defer C.free(unsafe.Pointer(cPrompt))
@@ -171,18 +225,32 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	ptr := C.aimux_generate_text(C.uint64_t(m.handle), cPrompt, cOpts)
+	ptr := C.aimux_generate_text(C.uint64_t(handle), cPrompt, cOpts)
 	if ptr == nil {
 		return "", errors.New("aimux: generate_text returned null")
 	}
 	defer C.aimux_free_string(ptr)
 
 	result := C.GoString(ptr)
-	if len(result) > 10 && result[:9] == `{"error"` {
-		// Error response from the engine.
-		return "", fmt.Errorf("aimux: %s", result)
+	if msg := extractError(result); msg != "" {
+		return "", fmt.Errorf("aimux: %s", msg)
 	}
 	return result, nil
+}
+
+// extractError checks if the JSON result is an error envelope
+// ({"error":"..."}) and returns the error message, or "" if not an error.
+func extractError(result string) string {
+	var envelope struct {
+		Error *string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result), &envelope); err != nil {
+		return "" // not valid JSON — let the caller handle it
+	}
+	if envelope.Error != nil {
+		return *envelope.Error
+	}
+	return ""
 }
 
 // ── Streaming generation ─────────────────────────────────────────────────────
@@ -234,6 +302,10 @@ func (e *streamEntry) closeParts() {
 
 // Stream is a handle to an in-progress or completed stream.
 // Consume parts via the Parts() channel; check Err() after the channel closes.
+//
+// The channel is buffered (256). If the caller stops consuming, the native
+// stream will block on the 257th part — always drain the channel or use
+// StreamTextContext with a context to cancel.
 type Stream struct {
 	parts <-chan string
 	entry *streamEntry
@@ -255,32 +327,37 @@ func (s *Stream) Err() error {
 //
 // It returns immediately with a *Stream. Consume parts via stream.Parts():
 //
-//	stream := model.StreamText(`"Write a haiku"`)
+//	stream := model.StreamText(`"Write a haiku"`, "")
 //	for part := range stream.Parts() {
 //	    fmt.Println(part) // StreamPart JSON
 //	}
 //	if err := stream.Err(); err != nil {
 //	    log.Fatal(err)
 //	}
+//
+// You MUST drain the Parts() channel (or cancel via StreamTextContext).
+// If you stop reading, the native callback blocks once the 256-part buffer
+// fills, stalling the stream goroutine and the model.
 func (m *Model) StreamText(promptJson, optsJson string) *Stream {
 	entry, id := registerStream()
-	handle := m.handle // snapshot in calling goroutine to avoid data race with Close
 
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		defer unregisterStream(id)
+		// Safety net: ensure the channel is always closed even if the
+		// native layer never fires on_done/on_error (defensive against
+		// future bugs or panic edges in the FFI layer).
+		defer entry.closeParts()
 
-		if m.closed.Load() {
-			e := lookupStream(int64(id))
-			if e != nil {
-				e.mu.Lock()
-				e.err = errors.New("aimux: model already closed")
-				e.mu.Unlock()
-				e.closeParts()
-			}
+		handle, release, err := m.acquireHandle()
+		if err != nil {
+			entry.mu.Lock()
+			entry.err = err
+			entry.mu.Unlock()
 			return
 		}
+		defer release()
 
 		cPrompt := C.CString(promptJson)
 		defer C.free(unsafe.Pointer(cPrompt))
@@ -305,6 +382,9 @@ func goStreamPart(id C.int64_t, json *C.char) {
 	if e == nil {
 		return
 	}
+	if json == nil {
+		return
+	}
 	e.parts <- C.GoString(json)
 }
 
@@ -323,8 +403,19 @@ func goStreamError(id C.int64_t, err *C.char) {
 	if e == nil {
 		return
 	}
+	msg := "unknown stream error"
+	if err != nil {
+		msg = C.GoString(err)
+		// Extract the error message from the JSON envelope if present.
+		if extracted := extractError(msg); extracted != "" {
+			msg = extracted
+		}
+	}
 	e.mu.Lock()
-	e.err = errors.New(C.GoString(err))
+	e.err = errors.New(msg)
 	e.mu.Unlock()
 	e.closeParts()
 }
+
+// Ensure io.Closer interface is satisfied.
+var _ io.Closer = (*Model)(nil)
