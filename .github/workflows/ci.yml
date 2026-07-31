@@ -95,7 +95,9 @@ jobs:
           pip install --force-reinstall target/wheels/*.whl
       - name: Test
         working-directory: bindings/python
-        run: python -m pytest tests/ -v
+        run: |
+          pip install pytest
+          python -m pytest tests/ -v
 
   # ── aimux-ffi: build C ABI library ────────────────────────────────────────
   ffi-build:
@@ -195,8 +197,8 @@ jobs:
         run: cargo build -p aimux-ffi --release
       - name: Copy dylib for Swift
         run: |
-          mkdir -p /usr/local/lib
-          cp target/release/libaimux_ffi.dylib /usr/local/lib/
+          sudo mkdir -p /usr/local/lib
+          sudo cp target/release/libaimux_ffi.dylib /usr/local/lib/
       - name: Build Swift Package
         working-directory: bindings/swift
         run: swift build || echo "Swift build needs xcframework (PoC)"
