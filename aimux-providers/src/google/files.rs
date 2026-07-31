@@ -193,7 +193,8 @@ impl Files for GoogleFiles {
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
         )
-        .await?;
+        .await
+        .map_err(|e| AiMuxError::Provider(format!("Failed to initiate resumable upload: {e}")))?;
 
         let upload_url = init_resp
             .headers
@@ -219,7 +220,8 @@ impl Files for GoogleFiles {
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
         )
-        .await?;
+        .await
+        .map_err(|e| AiMuxError::Provider(format!("Failed to upload file data: {e}")))?;
 
         let upload_result: UploadResponse =
             serde_json::from_slice(&upload_resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;

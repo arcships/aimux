@@ -416,7 +416,7 @@ test('e2e: OpenAI tool-call full round-trip (ToolCall → ToolResult → final t
         content: [{
           type: 'tool_result',
           tool_call_id: 'call_abc',
-          output: { temperature: 22, condition: 'sunny' },
+          result: { temperature: 22, condition: 'sunny' },
         }],
       },
     ]

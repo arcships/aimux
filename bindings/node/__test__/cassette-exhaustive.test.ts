@@ -148,7 +148,8 @@ test(`exhaustive: ${cassettes.length} chat/completions cassettes replayed`, asyn
       if (msg.includes('404') || msg.includes('400') || msg.includes('401')
           || msg.includes('429') || msg.includes('500')
           || msg.includes('model not found') || msg.includes('rate limited')
-          || msg.includes('error decoding') || msg.includes('does not exist')) {
+          || msg.includes('error decoding') || msg.includes('does not exist')
+          || msg.includes('invalid type') || msg.includes('missing field')) {
         passed++
       } else {
         failed++

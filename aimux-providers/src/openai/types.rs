@@ -54,6 +54,7 @@ pub struct ToolCallResponse {
 #[derive(Debug, Deserialize)]
 pub struct FunctionCallResponse {
     pub name: String,
+    #[serde(default)]
     pub arguments: String,
 }
 
