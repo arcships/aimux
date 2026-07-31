@@ -58,7 +58,7 @@ impl Model {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("[{}] serialize result: {e}", e.error_type()))),
+                .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize result: {e}"))),
             Err(e) => Err(PyRuntimeError::new_err(format!("[{}] {e}", e.error_type()))),
         }
     }
@@ -244,7 +244,7 @@ where
 
 fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] invalid prompt JSON: {e}", e.error_type())))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("[Json] invalid prompt JSON: {e}")))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -252,7 +252,7 @@ fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] invalid prompt: {e}", e.error_type())))
+        .map_err(|e| PyRuntimeError::new_err(format!("[Json] invalid prompt: {e}")))
 }
 
 fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
@@ -264,7 +264,7 @@ fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
                 return Ok(GenerateTextOptions::default());
             }
             serde_json::from_str(s)
-                .map_err(|e| PyRuntimeError::new_err(format!("[{}] invalid options JSON: {e}", e.error_type())))
+                .map_err(|e| PyRuntimeError::new_err(format!("[Json] invalid options JSON: {e}")))
         }
     }
 }

@@ -86,7 +86,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install maturin
-        run: pip install maturin[patchelf]
+        run: pip install maturin ${{ matrix.os == 'ubuntu-latest' && '[patchelf]' || '' }}
       - name: Build
         working-directory: bindings/python
         run: maturin develop

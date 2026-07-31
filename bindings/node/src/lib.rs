@@ -52,7 +52,7 @@ impl Model {
             .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
 
         serde_json::to_string(&result)
-            .map_err(|e| Error::from_reason(format!("[{}] serialize result: {e}", e.error_type())))
+            .map_err(|e| Error::from_reason(format!("[Json] serialize result: {e}")))
     }
 
     /// Stream text from the model.
@@ -74,7 +74,7 @@ impl Model {
             let prompt = match parse_prompt(&prompt) {
                 Ok(p) => p,
                 Err(e) => {
-                    let _ = tx.send(Err(format!("[{}] invalid prompt: {e}", e.error_type()))).await;
+                    let _ = tx.send(Err(format!("[InvalidPrompt] invalid prompt: {e}"))).await;
                     return;
                 }
             };
@@ -235,7 +235,7 @@ pub async fn deepseek(
 
 fn parse_prompt(json: &str) -> Result<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| Error::from_reason(format!("[{}] invalid prompt JSON: {e}", e.error_type())))?;
+        .map_err(|e| Error::from_reason(format!("[Json] invalid prompt JSON: {e}")))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -243,7 +243,7 @@ fn parse_prompt(json: &str) -> Result<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| Error::from_reason(format!("[{}] invalid prompt: {e}", e.error_type())))
+        .map_err(|e| Error::from_reason(format!("[Json] invalid prompt: {e}")))
 }
 
 fn parse_opts(json: Option<&str>) -> Result<GenerateTextOptions> {
@@ -255,7 +255,7 @@ fn parse_opts(json: Option<&str>) -> Result<GenerateTextOptions> {
                 return Ok(GenerateTextOptions::default());
             }
             serde_json::from_str(s)
-                .map_err(|e| Error::from_reason(format!("[{}] invalid options JSON: {e}", e.error_type())))
+                .map_err(|e| Error::from_reason(format!("[Json] invalid options JSON: {e}")))
         }
     }
 }
