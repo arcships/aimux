@@ -891,9 +891,10 @@ C ABI 边界为 Swift / Kotlin / Flutter / C++ 提供 FFI 接口。所有函数�
 | **Swift** | C ABI（CAimuxFFI） | ✅ `baseUrl:` 参数 | `try Model.openai(apiKey: key, modelId: model, baseUrl: url)` |
 | **Kotlin** | C ABI（JNA） | ✅ 第 3 参数 | `Model.openai(key, model, baseUrl)` |
 | **Flutter/Dart** | C ABI（dart:ffi） | ✅ `baseUrl:` 命名参数 | `Model.openai(key, model, baseUrl: url)` |
+| **Go** | C ABI（cgo 静态链接） | ✅ `OpenAIWithBase` | `aimux.OpenAIWithBase(key, model, url)` |
 | **C/C++** | C ABI（直接链接） | ✅ `_with_base` 函数 | `aimux_openai_new_with_base(key, model, url)` |
 
-> Node/Python 绑定绕过 C ABI 直接调 `aimux-providers`；Swift/Kotlin/Flutter/C 通过 `aimux-ffi` C ABI。
+> Node/Python 绑定绕过 C ABI 直接调 `aimux-providers`；Swift/Kotlin/Flutter/Go/C 通过 `aimux-ffi` C ABI。Go 走 cgo 静态链接 `libaimux_ffi.a`，产物为单 binary（详见 [RFC-0011](../rfc/0011-golang-bindings.md)）。
 
 ### Swift
 
@@ -930,6 +931,22 @@ await for (final part in stream) {
   if (part.containsKey('TextDelta')) print(part['TextDelta']['delta']);
 }
 ```
+
+### Go
+
+```go
+// cgo 静态链接 libaimux_ffi.a，产物为单 binary（Rust 核心编进可执行文件）
+model := aimux.OpenAIWithBase("sk-...", "gpt-4o", "http://localhost:3000")
+defer model.Close()
+result := model.GenerateText(`"What is Rust?"`)
+// 流式
+stream := model.StreamText(`"Write a haiku"`)
+for part := range stream {
+    fmt.Println(part) // StreamPart JSON
+}
+```
+
+> Go 绑定设计见 [RFC-0011](../rfc/0011-golang-bindings.md)。
 
 ---
 

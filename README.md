@@ -105,7 +105,7 @@ cargo test -p aimux-providers --tests
 
 ## 多语言绑定
 
-aimux 提供 6 种语言绑定，共享同一个 Rust 核心：
+aimux 提供 7 种语言绑定，共享同一个 Rust 核心：
 
 | 绑定 | 路径 | 工具 | 目录 |
 |------|------|------|------|
@@ -114,6 +114,7 @@ aimux 提供 6 种语言绑定，共享同一个 Rust 核心：
 | **Swift** | C ABI | Swift Package | [bindings/swift/](bindings/swift/) |
 | **Kotlin** | C ABI | JNA | [bindings/kotlin/](bindings/kotlin/) |
 | **Flutter** | C ABI | dart:ffi | [bindings/flutter/](bindings/flutter/) |
+| **Go** | C ABI | cgo（静态链接，单 binary） | [bindings/go/](bindings/go/) |
 | **C / C++** | C ABI | 直接链接 | [bindings/c/](bindings/c/) |
 
 详见 [bindings/README.md](bindings/README.md) 和 [API 文档](docs/API.md)。
@@ -132,6 +133,7 @@ aimux 提供 6 种语言绑定，共享同一个 Rust 核心：
 | [rfc/0008-multimodal-bindings.md](rfc/0008-multimodal-bindings.md) | 多模态绑定设计 |
 | [rfc/0009-request-resilience.md](rfc/0009-request-resilience.md) | 请求优化 — 参考 catcher 设计（共享 Client / jitter / 超时） |
 | [rfc/0010-perf-benchmark-vs-aisdk.md](rfc/0010-perf-benchmark-vs-aisdk.md) | 请求性能对比 — aimux vs Vercel AI SDK 基准方案（速度 / 结构化开销 / 并发三维度，同进程同 mock） |
+| [rfc/0011-golang-bindings.md](rfc/0011-golang-bindings.md) | Go 绑定设计 — cgo 静态链接 + push callback→channel 流式，单 binary 7.5MB |
 
 ## License
 

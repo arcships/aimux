@@ -196,7 +196,7 @@ fn drop_handle(handle: u64);                                     // 析构
 
 | 语言 | 工具 | 摩擦点 |
 |------|------|--------|
-| **Go** | `cgo` + C ABI，或 gRPC sidecar | CGo 跨边界有损耗；Go 无 async，需 goroutine + channel 转 Rust Stream；SDK 形态下 gRPC sidecar 偏重 |
+| ~~**Go**~~ → 升级为独立 RFC-0011 执行 | `cgo` + C ABI | 原列"CGo 有损耗 / Go 无 async / gRPC sidecar 偏重"——RFC-0011 重新评估后三条全部化解（cgo 开销对网络 IO 可忽略；aimux-ffi push-callback 天然映射 Go CSP；不采用 gRPC sidecar）。详见 [RFC-0011](0011-golang-bindings.md) |
 | **Java / Scala** | `UniFFI`（与 Kotlin 共用）或手写 JNI | 企业市场、Spark 内调 LLM；JVM GC 需 `Closeable` 显式释放 |
 | **C# / .NET** | `UniFFI` 或 `P/Invoke` | Windows 生态、Unity；`IAsyncEnumerable<T>` 需手动接一层 |
 
@@ -312,3 +312,4 @@ Ruby / PHP / Elixir / Perl / Lua —— AI 场景份额低，维护成本 > 收�
 | 2026-07-29 | v0.4 | **阶段 2 + 3(Python) + 4 落地**：阶段 2 — aimux-ffi C 头文件（aimux-ffi.h）+ GitHub Actions CI 矩阵（Rust test / Node binding / Python binding / ffi build / contract tests，跨 Linux/macOS/Windows）；阶段 3 — Python 绑定完成（PyO3 原生路径，6/6 测试通过）；阶段 4 — C/C++ 绑定示例（RAII wrapper）+ 契约测试框架（共享 13 个 JSON wire-format 夹具，Rust 9/9 + Node 16/16 双端验证） |
 | 2026-07-29 | v0.5 | **阶段 3 移动端绑定全部落地**：Swift（Swift Package + module.modulemap，C ABI 路径，ARC 管理 handle，AsyncSequence 流式）；Kotlin（JNA 包装 C ABI，Closeable 显式释放，Sequence 流式）；Flutter（flutter_rust_bridge v2 原生路径，handle 注册表 + channel 流式）。全部编译通过。CI 矩阵新增 Swift/Kotlin 构建 job。bindings/README.md 汇总 6 语言绑定。RFC-0001 全部阶段完成 |
 | 2026-07-29 | v0.5.1 | **Flutter 路径修正**：调研后否决 flutter_rust_bridge（StreamSink 不公开导出需 codegen；JSON 边界下类型映射优势不成立），否决 UniFFI/Rinf/membrane（同理）。Flutter 改为 dart:ffi 手写调 aimux-ffi（C ABI 路径），和 Swift/Kotlin 统一。纯 Dart 无 Rust crate，零额外工具链。§3.2/§5.1/§5.5 同步更新 |
+| 2026-07-31 | v0.6 | **Go 升级为独立 RFC 执行**：§5.3 原"Go 第三梯队（CGo 摩擦）"三条担忧经 [RFC-0011](0011-golang-bindings.md) 重新评估后全部化解（cgo 开销对网络 IO 可忽略；aimux-ffi push-callback 天然映射 Go CSP/goroutine+channel；不采用 gRPC sidecar）。Go 升级为立即执行的下一个绑定，单 binary 实测 7.5MB |

@@ -15,7 +15,7 @@ aimux 的多语言绑定。所有绑定共享同一个 Rust 核心（aimux-core 
 | **Swift** | C ABI | Swift Package (module.modulemap) | ✅ PoC | [swift/](swift/) |
 | **Kotlin** | C ABI | JNA | ✅ PoC | [kotlin/](kotlin/) |
 | **Flutter** | C ABI | dart:ffi 手写 | ✅ PoC | [flutter/](flutter/) |
-| **C / C++** | C ABI | 直接链接 aimux-ffi.h | ✅ PoC | [c/](c/) |
+| **Go** | C ABI | cgo（静态链接 `libaimux_ffi.a`） | ✅ PoC | [go/](go/) |
 | **C / C++** | C ABI | 直接链接 aimux-ffi.h | ✅ PoC | [c/](c/) |
 
 ## 构建
@@ -84,6 +84,17 @@ gcc -o example bindings/c/example.c \
 g++ -std=c++17 -o example_cpp bindings/c/example.cpp \
     -I aimux-ffi -L target/release -laimux_ffi -lpthread -ldl -lm
 ```
+
+### Go
+```bash
+# 先构建 aimux-ffi（需 release profile 优化后的 libaimux_ffi.a）
+cargo build -p aimux-ffi --release
+
+cd bindings/go
+go test ./...
+```
+
+Go 绑定通过 cgo 静态链接 `libaimux_ffi.a`，产物是**单 binary**（Rust 核心编进可执行文件，无需分发 `.so`）。详见 [RFC-0011](../rfc/0011-golang-bindings.md)。
 
 ## 契约测试
 
