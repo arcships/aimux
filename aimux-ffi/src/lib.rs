@@ -21,6 +21,10 @@
 //! operation completes. Callbacks execute on the same thread/call-stack that
 //! invoked the FFI function, so they must not re-enter the FFI layer (doing so
 //! would deadlock the runtime).
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+// `extern "C"` entry points dereference raw pointers (`*const c_char`) by
+// design: the C ABI contract requires callers to pass valid pointers (see
+// memory-ownership docs above), so the functions are safe only on the C side.
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
@@ -183,21 +187,27 @@ fn into_cstring_raw(s: String) -> *mut c_char {
 ///
 /// Output: `{"error":"<message>","error_type":"<variant>","status_code":<u16|null>}`
 fn error_json_raw(msg: impl std::fmt::Display) -> *mut c_char {
-    into_cstring_raw(serde_json::json!({
-        "error": msg.to_string(),
-        "error_type": "Other",
-        "status_code": null,
-    }).to_string())
+    into_cstring_raw(
+        serde_json::json!({
+            "error": msg.to_string(),
+            "error_type": "Other",
+            "status_code": null,
+        })
+        .to_string(),
+    )
 }
 
 /// Build an error JSON string from an `AiMuxError`, preserving the variant
 /// name and HTTP status code for programmatic use by bindings.
 fn error_json_from(err: &AiMuxError) -> *mut c_char {
-    into_cstring_raw(serde_json::json!({
-        "error": err.to_string(),
-        "error_type": err.error_type(),
-        "status_code": err.status_code(),
-    }).to_string())
+    into_cstring_raw(
+        serde_json::json!({
+            "error": err.to_string(),
+            "error_type": err.error_type(),
+            "status_code": err.status_code(),
+        })
+        .to_string(),
+    )
 }
 
 /// Invoke the `on_error` callback with an error JSON string.
@@ -209,7 +219,8 @@ fn fire_error(on_error: extern "C" fn(*const c_char), msg: impl std::fmt::Displa
         "error": msg.to_string(),
         "error_type": "Other",
         "status_code": null,
-    }).to_string();
+    })
+    .to_string();
     if let Ok(cstr) = CString::new(json) {
         on_error(cstr.as_ptr());
     }
@@ -221,7 +232,8 @@ fn fire_error_struct(on_error: extern "C" fn(*const c_char), err: &AiMuxError) {
         "error": err.to_string(),
         "error_type": err.error_type(),
         "status_code": err.status_code(),
-    }).to_string();
+    })
+    .to_string();
     if let Ok(cstr) = CString::new(json) {
         on_error(cstr.as_ptr());
     }
@@ -240,7 +252,7 @@ unsafe fn parse_two_args(a: *const c_char, b: *const c_char) -> Option<(String, 
 }
 
 /// 执行一个 async 操作并返回 JSON 字符串（caller 必须 free）。
-fn run_and_serialize<F, T>(model_msg: &str, f: F) -> *mut c_char
+fn run_and_serialize<F, T>(_model_msg: &str, f: F) -> *mut c_char
 where
     F: std::future::Future<Output = Result<T, AiMuxError>>,
     T: serde::Serialize,
@@ -586,12 +598,13 @@ pub extern "C" fn aimux_embed(
         None => return error_json_raw("invalid values_json"),
     };
     let mut opts = aimux_core::embedding_model::EmbeddingCallOptions::new("");
-    if let Some(s) = cstr_to_string(opts_json) {
-        if !s.trim().is_empty() && s.trim() != "null" {
-            match serde_json::from_str::<aimux_core::embedding_model::EmbeddingCallOptions>(&s) {
-                Ok(o) => opts = o,
-                Err(e) => return error_json_raw(format!("invalid opts: {e}")),
-            }
+    if let Some(s) = cstr_to_string(opts_json)
+        && !s.trim().is_empty()
+        && s.trim() != "null"
+    {
+        match serde_json::from_str::<aimux_core::embedding_model::EmbeddingCallOptions>(&s) {
+            Ok(o) => opts = o,
+            Err(e) => return error_json_raw(format!("invalid opts: {e}")),
         }
     }
     let values: Vec<String> = match serde_json::from_str(&values_json) {
@@ -737,7 +750,7 @@ pub extern "C" fn aimux_transcription_generate(
     handle: u64,
     audio_base64: *const c_char,
     media_type: *const c_char,
-    opts_json: *const c_char,
+    _opts_json: *const c_char,
 ) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Transcription(m)) => m,
@@ -795,7 +808,7 @@ pub extern "C" fn aimux_file_upload(
     handle: u64,
     data_base64: *const c_char,
     media_type: *const c_char,
-    opts_json: *const c_char,
+    _opts_json: *const c_char,
 ) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Files(m)) => m,

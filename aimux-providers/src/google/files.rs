@@ -258,10 +258,10 @@ impl Files for GoogleFiles {
             }
 
             tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
-            if let Some(signal) = &options.abort_signal {
-                if signal.is_aborted() {
-                    return Err(AiMuxError::Other("file upload polling aborted".to_string()));
-                }
+            if let Some(signal) = &options.abort_signal
+                && signal.is_aborted()
+            {
+                return Err(AiMuxError::Other("file upload polling aborted".to_string()));
             }
 
             let poll_url = format!("{}/{}", self.config.base_url, file.name);

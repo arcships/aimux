@@ -10,7 +10,6 @@
 //! API, so the response fixtures mirror the Gemini API shape.
 
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};

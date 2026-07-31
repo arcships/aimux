@@ -1,4 +1,4 @@
-﻿//! Rust translations of the Anthropic Files provider tests.
+//! Rust translations of the Anthropic Files provider tests.
 //!
 //! Source: `reference/ai/packages/anthropic/src/anthropic-files.test.ts`
 //! (12 test cases).
@@ -282,7 +282,7 @@ async fn handles_base64_string_data() {
         media_type: "application/octet-stream".to_string(),
         filename: None,
         provider_options: None,
-    abort_signal: None,
+        abort_signal: None,
     };
 
     let result = files.upload_file(&opts).await.unwrap();

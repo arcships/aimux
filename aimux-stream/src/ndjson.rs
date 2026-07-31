@@ -97,7 +97,7 @@ where
                 if line.is_empty() {
                     continue;
                 }
-                match serde_json::from_str::<T>(&line) {
+                match serde_json::from_str::<T>(line) {
                     Ok(value) => return Poll::Ready(Some(Ok(value))),
                     Err(e) => return Poll::Ready(Some(Err(NdjsonError::Json(e)))),
                 }

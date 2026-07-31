@@ -1,4 +1,4 @@
-﻿//! Rust translations of the OpenAI Files provider tests.
+//! Rust translations of the OpenAI Files provider tests.
 //!
 //! Source: `reference/ai/packages/openai/src/files/openai-files.test.ts`
 //! (8 test cases).
@@ -260,7 +260,7 @@ async fn should_handle_base64_string_data() {
         media_type: "application/octet-stream".to_string(),
         filename: None,
         provider_options: None,
-    abort_signal: None,
+        abort_signal: None,
     };
 
     let result = files.upload_file(&opts).await.unwrap();

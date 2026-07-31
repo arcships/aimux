@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Hume speech (TTS) model tests.
+//! Rust translation of the Hume speech (TTS) model tests.
 //!
 //! Source: `reference/ai/packages/hume/src/hume-speech-model.test.ts`
 //!
@@ -81,10 +81,7 @@ async fn should_pass_the_model_and_text() {
         .unwrap();
 
     let requests = server.received_requests().await.expect("requests recorded");
-    assert!(
-        !requests.is_empty(),
-        "expected at least one request"
-    );
+    assert!(!requests.is_empty(), "expected at least one request");
     let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
     assert_eq!(body["utterances"][0]["text"], "Hello from the AI SDK!");
     assert_eq!(
@@ -126,10 +123,7 @@ async fn should_pass_headers() {
     model.do_generate(&options).await.unwrap();
 
     let requests = server.received_requests().await.expect("requests recorded");
-    assert!(
-        !requests.is_empty(),
-        "expected at least one request"
-    );
+    assert!(!requests.is_empty(), "expected at least one request");
     let h = &requests[0].headers;
     assert_eq!(h.get("x-hume-api-key").unwrap(), "test-api-key");
     assert_eq!(

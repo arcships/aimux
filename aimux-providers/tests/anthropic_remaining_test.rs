@@ -25,7 +25,6 @@
 //! `// TODO: implementation gap` note, so they document the gap without
 //! breaking the suite.
 
-use reqwest::Client;
 use serde_json::{Value, json};
 use serial_test::serial;
 use wiremock::matchers::{method, path};
@@ -59,17 +58,6 @@ fn test_prompt() -> LanguageModelPrompt {
 /// Build `CallOptions` with everything unset except `prompt`.
 fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
     CallOptions::new(prompt)
-}
-
-/// Build a `reqwest::Client` that bypasses any system HTTP proxy. The mock
-/// server is on the loopback interface; routing its requests through a real
-/// proxy (e.g. `HTTP_PROXY` set in the developer shell) makes the tests
-/// flaky, so we force a direct connection.
-fn direct_client() -> Client {
-    Client::builder()
-        .no_proxy()
-        .build()
-        .expect("reqwest client build")
 }
 
 /// Build an `AnthropicModel` backed by `config` (model id `claude-3-haiku-20240307`).

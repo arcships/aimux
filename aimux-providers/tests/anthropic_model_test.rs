@@ -21,7 +21,6 @@
 //! documented in the task summary.
 
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

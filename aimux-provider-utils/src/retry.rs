@@ -256,7 +256,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
             let d = get_retry_delay_ms_with_jitter(None, 2000, &mut rng);
-            assert!(d >= 0 && d < 2000, "delay {d} out of [0, 2000)");
+            assert!((0..2000).contains(&d), "delay {d} out of [0, 2000)");
         }
     }
 
@@ -266,7 +266,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
             let d = get_retry_delay_ms_with_jitter(Some(3000), 2000, &mut rng);
-            assert!(d >= 0 && d < 3000, "delay {d} out of [0, 3000)");
+            assert!((0..3000).contains(&d), "delay {d} out of [0, 3000)");
         }
     }
 

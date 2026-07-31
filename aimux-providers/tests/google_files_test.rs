@@ -1,4 +1,4 @@
-﻿//! Rust translations of the Google Files provider tests.
+//! Rust translations of the Google Files provider tests.
 //!
 //! Source: `reference/ai/packages/google/src/google-files.test.ts`
 //! (21 test cases).
@@ -164,7 +164,7 @@ async fn should_include_display_name_in_initiation_body_when_provided() {
         media_type: "text/plain".to_string(),
         filename: None,
         provider_options: Some(po),
-    abort_signal: None,
+        abort_signal: None,
     };
     files.upload_file(&opts).await.unwrap();
 
@@ -491,7 +491,7 @@ async fn should_accept_valid_provider_options() {
         media_type: "text/plain".to_string(),
         filename: None,
         provider_options: Some(po),
-    abort_signal: None,
+        abort_signal: None,
     };
 
     let result = files.upload_file(&opts).await.unwrap();
@@ -532,7 +532,7 @@ async fn should_pass_through_unknown_properties() {
         media_type: "text/plain".to_string(),
         filename: None,
         provider_options: Some(po),
-    abort_signal: None,
+        abort_signal: None,
     };
 
     let result = files.upload_file(&opts).await.unwrap();

@@ -1,4 +1,4 @@
-﻿//! Error types for aimux-core.
+//! Error types for aimux-core.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -111,8 +111,11 @@ impl AiMuxError {
     /// originate from an HTTP response return `None`.
     pub fn status_code(&self) -> Option<u16> {
         let message = match self {
-            AiMuxError::Provider(m) | AiMuxError::Http(m) | AiMuxError::Auth(m)
-            | AiMuxError::ApiCall(m) | AiMuxError::ModelNotFound(m) => m,
+            AiMuxError::Provider(m)
+            | AiMuxError::Http(m)
+            | AiMuxError::Auth(m)
+            | AiMuxError::ApiCall(m)
+            | AiMuxError::ModelNotFound(m) => m,
             _ => return None,
         };
         // Parse "HTTP 403: ..." → 403

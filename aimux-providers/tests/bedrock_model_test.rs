@@ -7,7 +7,6 @@
 //! - Streaming via the AWS event stream binary format
 
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

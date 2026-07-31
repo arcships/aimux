@@ -8,7 +8,6 @@
 //! - Error handling
 
 use futures::StreamExt;
-use reqwest::Client;
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

@@ -24,8 +24,6 @@ use serde_json::Value;
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
-use aimux_core::message::ModelMessage;
-use aimux_core::stream_part::StreamPart;
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 
 const CASSETTE_DIR: &str = "tests/cassettes";
@@ -33,7 +31,6 @@ const CASSETTE_DIR: &str = "tests/cassettes";
 /// A single cassette loaded from disk.
 struct Cassette {
     provider: String,
-    scenario: String,
     file_name: String,
     req_path: String,
     req_body: Value,
@@ -84,11 +81,6 @@ fn load_all_cassettes() -> Vec<Cassette> {
                 .unwrap_or(false);
 
             let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
-            let scenario = raw
-                .get("scenario")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
 
             let resp_headers = resp
                 .get("headers")
@@ -98,7 +90,6 @@ fn load_all_cassettes() -> Vec<Cassette> {
 
             all.push(Cassette {
                 provider: provider_name.clone(),
-                scenario,
                 file_name,
                 req_path: req["path"].as_str().unwrap_or("/").to_string(),
                 req_body,
@@ -129,16 +120,16 @@ fn extract_prompt(cass: &Cassette) -> String {
     let messages = cass.req_body.get("messages").and_then(|v| v.as_array());
     if let Some(msgs) = messages {
         for msg in msgs.iter().rev() {
-            if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
-                if let Some(content) = msg.get("content") {
-                    if let Some(s) = content.as_str() {
-                        return s.to_string();
-                    }
-                    if let Some(arr) = content.as_array() {
-                        for part in arr {
-                            if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                                return text.to_string();
-                            }
+            if msg.get("role").and_then(|r| r.as_str()) == Some("user")
+                && let Some(content) = msg.get("content")
+            {
+                if let Some(s) = content.as_str() {
+                    return s.to_string();
+                }
+                if let Some(arr) = content.as_array() {
+                    for part in arr {
+                        if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
+                            return text.to_string();
                         }
                     }
                 }
@@ -183,7 +174,7 @@ async fn replay_single_cassette(cass: &Cassette) -> Result<(), String> {
         .iter()
         .filter_map(|(k, v)| v.as_str().map(|vs| (k.clone(), vs.to_string())))
         .collect();
-    let mut mock = Mock::given(wiremock::matchers::method("POST"))
+    let mock = Mock::given(wiremock::matchers::method("POST"))
         .and(wiremock::matchers::path(&req_path))
         .respond_with(move |_req: &Request| {
             let mut template = ResponseTemplate::new(resp_status);
@@ -292,7 +283,6 @@ async fn replay_all_cassettes_exhaustive() {
 
     let mut passed = 0u32;
     let mut failed = 0u32;
-    let mut skipped = 0u32;
     let mut errors: Vec<String> = Vec::new();
 
     for cass in &chat_cassettes {
@@ -307,7 +297,7 @@ async fn replay_all_cassettes_exhaustive() {
         }
     }
 
-    skipped = (total - chat_cassettes.len()) as u32;
+    let skipped = (total - chat_cassettes.len()) as u32;
 
     eprintln!();
     eprintln!("══════════════════════════════════════════════════════");

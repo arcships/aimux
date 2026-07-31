@@ -13,9 +13,9 @@ use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
-use aimux_core::image_model::{ImageCallOptions, ImageModel};
+use aimux_core::image_model::ImageModel;
 use aimux_core::shared::FileBytes;
-use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
+use aimux_core::transcription_model::TranscriptionModel;
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 
 const CASSETTE_DIR: &str = "tests/cassettes";
@@ -64,7 +64,7 @@ async fn mount_single(cass: &Value) -> (MockServer, String) {
 #[tokio::test]
 async fn cassette_openai_embedding_query() {
     let cass = load_cassette("openai", "TestOpenAI.test_query.json").expect("cassette should load");
-    let (server, base_url) = mount_single(&cass).await;
+    let (_server, base_url) = mount_single(&cass).await;
 
     let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("text-embedding-3-small");
@@ -85,7 +85,7 @@ async fn cassette_openai_embedding_query() {
 async fn cassette_openai_embedding_documents() {
     let cass =
         load_cassette("openai", "TestOpenAI.test_documents.json").expect("cassette should load");
-    let (server, base_url) = mount_single(&cass).await;
+    let (_server, base_url) = mount_single(&cass).await;
 
     let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("text-embedding-3-small");
@@ -108,7 +108,7 @@ async fn cassette_openai_embedding_documents() {
 async fn cassette_openai_embedding_error() {
     let cass =
         load_cassette("openai", "TestOpenAI.test_embed_error.json").expect("cassette should load");
-    let (server, base_url) = mount_single(&cass).await;
+    let (_server, base_url) = mount_single(&cass).await;
 
     let provider = OpenAIProvider::new(OpenAIConfig::new("test-key").with_base_url(base_url));
     let model = provider.embedding_model("nonexistent");

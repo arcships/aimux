@@ -88,10 +88,7 @@ async fn requests_correct_url() {
         .unwrap();
 
     let requests = server.received_requests().await.expect("requests recorded");
-    assert!(
-        !requests.is_empty(),
-        "expected at least one request"
-    );
+    assert!(!requests.is_empty(), "expected at least one request");
     assert_eq!(requests[0].url.path(), "/v1/speech");
     assert_eq!(requests[0].method.as_str(), "POST");
 }

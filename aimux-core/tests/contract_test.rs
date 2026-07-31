@@ -60,16 +60,11 @@ fn assert_roundtrip<T: serde::Serialize + serde::de::DeserializeOwned>(
         serde_json::from_str(expected_json).expect("expected is not valid JSON");
     // We can't always construct the exact Rust value from the fixture,
     // so we verify round-trip: deserialize → re-serialize → compare.
-    let roundtripped = match expected_json {
-        _ => {
-            // Try deserializing directly from the JSON string
-            match serde_json::from_str::<T>(expected_json) {
-                Ok(v) => serde_json::to_string(&v).unwrap(),
-                Err(_) => {
-                    // Some types need special handling — skip roundtrip for those
-                    return;
-                }
-            }
+    let roundtripped = match serde_json::from_str::<T>(expected_json) {
+        Ok(v) => serde_json::to_string(&v).unwrap(),
+        Err(_) => {
+            // Some types need special handling — skip roundtrip for those
+            return;
         }
     };
     let rt_val: Value = serde_json::from_str(&roundtripped).unwrap();
