@@ -39,7 +39,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - host: macos-latest
             target: aarch64-apple-darwin
-          - host: macos-latest
+          - host: macos-13
             target: x86_64-apple-darwin
           - host: windows-latest
             target: x86_64-pc-windows-msvc
@@ -60,12 +60,6 @@ jobs:
         shell: bash
         run: |
           npx napi build --platform --target ${{ matrix.settings.target }}
-          # Ensure the .node artifact is in the project root for tests.
-          # napi build usually places it there, but cross-compile (--target)
-          # may leave it under target/<target>/release/.
-          if ! ls *.node >/dev/null 2>&1; then
-            cp target/${{ matrix.settings.target }}/release/*.node . 2>/dev/null || true
-          fi
           ls -la *.node 2>/dev/null || echo "WARNING: No .node files in root"
       - name: Test
         working-directory: bindings/node
