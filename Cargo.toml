@@ -18,6 +18,18 @@ repository = "https://github.com/yourusername/aimux"
 description = "Rust alternative to Vercel AI SDK - unified provider interface for LLM applications"
 rust-version = "1.85"
 
+# Release profile: minimize binary size for FFI bindings.
+# - lto + codegen-units=1: cross-crate dead-code elimination across 172 providers
+# - panic="abort": drop .eh_frame unwind tables (~9% of binary)
+# - strip: remove symbol tables
+# - opt-level="z": optimize for size
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"
+
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
