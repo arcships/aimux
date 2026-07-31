@@ -57,12 +57,16 @@ jobs:
         run: npm install
       - name: Build
         working-directory: bindings/node
+        shell: bash
         run: |
           npx napi build --platform --target ${{ matrix.settings.target }}
-          # napi build with --target may leave the .node file in target/ dir;
-          # copy it to the project root so tests can find it.
-          cp -f target/${{ matrix.settings.target }}/release/*.node . 2>/dev/null || true
-          ls -la *.node 2>/dev/null || echo "No .node files in root"
+          # Ensure the .node artifact is in the project root for tests.
+          # napi build usually places it there, but cross-compile (--target)
+          # may leave it under target/<target>/release/.
+          if ! ls *.node >/dev/null 2>&1; then
+            cp target/${{ matrix.settings.target }}/release/*.node . 2>/dev/null || true
+          fi
+          ls -la *.node 2>/dev/null || echo "WARNING: No .node files in root"
       - name: Test
         working-directory: bindings/node
         run: npm test
