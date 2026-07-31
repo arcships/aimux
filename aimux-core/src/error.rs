@@ -80,4 +80,44 @@ impl AiMuxError {
             _ => None,
         }
     }
+
+    /// Returns the error variant name as a string (e.g. `"Auth"`, `"Provider"`,
+    /// `"RateLimited"`). Used by FFI bindings to give callers a machine-readable
+    /// error type alongside the human-readable message.
+    pub fn error_type(&self) -> &'static str {
+        match self {
+            AiMuxError::Provider(_) => "Provider",
+            AiMuxError::Http(_) => "Http",
+            AiMuxError::Json(_) => "Json",
+            AiMuxError::Stream(_) => "Stream",
+            AiMuxError::Tool(_) => "Tool",
+            AiMuxError::InvalidArgument(_) => "InvalidArgument",
+            AiMuxError::InvalidPrompt(_) => "InvalidPrompt",
+            AiMuxError::RateLimited { .. } => "RateLimited",
+            AiMuxError::Auth(_) => "Auth",
+            AiMuxError::ModelNotFound(_) => "ModelNotFound",
+            AiMuxError::Unsupported(_) => "Unsupported",
+            AiMuxError::NoSuchModel(_) => "NoSuchModel",
+            AiMuxError::ApiCall(_) => "ApiCall",
+            AiMuxError::Other(_) => "Other",
+        }
+    }
+
+    /// Returns the HTTP status code carried by this error, if any.
+    ///
+    /// HTTP-layer errors created by `parse_provider_error` and
+    /// `send_with_retry_raw` embed the status code in the message as
+    /// `"HTTP {status}: ..."`. This method extracts it. Errors that don't
+    /// originate from an HTTP response return `None`.
+    pub fn status_code(&self) -> Option<u16> {
+        let message = match self {
+            AiMuxError::Provider(m) | AiMuxError::Http(m) | AiMuxError::Auth(m)
+            | AiMuxError::ApiCall(m) | AiMuxError::ModelNotFound(m) => m,
+            _ => return None,
+        };
+        // Parse "HTTP 403: ..." → 403
+        let rest = message.strip_prefix("HTTP ")?;
+        let code_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        code_str.parse().ok()
+    }
 }

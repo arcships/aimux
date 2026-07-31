@@ -49,10 +49,10 @@ impl Model {
 
         let result = generate_text(&*self.inner, parsed_prompt, opts)
             .await
-            .map_err(|e| Error::from_reason(format!("{e}")))?;
+            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
 
         serde_json::to_string(&result)
-            .map_err(|e| Error::from_reason(format!("serialize result: {e}")))
+            .map_err(|e| Error::from_reason(format!("[{}] serialize result: {e}", e.error_type())))
     }
 
     /// Stream text from the model.
@@ -74,7 +74,7 @@ impl Model {
             let prompt = match parse_prompt(&prompt) {
                 Ok(p) => p,
                 Err(e) => {
-                    let _ = tx.send(Err(format!("invalid prompt: {e}"))).await;
+                    let _ = tx.send(Err(format!("[{}] invalid prompt: {e}", e.error_type()))).await;
                     return;
                 }
             };
@@ -100,14 +100,14 @@ impl Model {
                                 }
                             }
                             Err(e) => {
-                                let _ = tx.send(Err(format!("{e}"))).await;
+                                let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(format!("{e}"))).await;
+                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
                 }
             }
         });
@@ -177,7 +177,7 @@ pub async fn openai(
     let provider = OpenAIProvider::new(config);
     let model = provider
         .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("{e}")))?;
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
     })
@@ -200,7 +200,7 @@ pub async fn anthropic(
     let provider = AnthropicProvider::new(config);
     let model = provider
         .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("{e}")))?;
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
     })
@@ -223,7 +223,7 @@ pub async fn deepseek(
     let provider = DeepSeekProvider::new(config);
     let model = provider
         .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("{e}")))?;
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
     })
@@ -235,7 +235,7 @@ pub async fn deepseek(
 
 fn parse_prompt(json: &str) -> Result<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| Error::from_reason(format!("invalid prompt JSON: {e}")))?;
+        .map_err(|e| Error::from_reason(format!("[{}] invalid prompt JSON: {e}", e.error_type())))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -243,7 +243,7 @@ fn parse_prompt(json: &str) -> Result<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| Error::from_reason(format!("invalid prompt: {e}")))
+        .map_err(|e| Error::from_reason(format!("[{}] invalid prompt: {e}", e.error_type())))
 }
 
 fn parse_opts(json: Option<&str>) -> Result<GenerateTextOptions> {
@@ -255,7 +255,7 @@ fn parse_opts(json: Option<&str>) -> Result<GenerateTextOptions> {
                 return Ok(GenerateTextOptions::default());
             }
             serde_json::from_str(s)
-                .map_err(|e| Error::from_reason(format!("invalid options JSON: {e}")))
+                .map_err(|e| Error::from_reason(format!("[{}] invalid options JSON: {e}", e.error_type())))
         }
     }
 }

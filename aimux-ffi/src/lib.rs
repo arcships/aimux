@@ -179,9 +179,25 @@ fn into_cstring_raw(s: String) -> *mut c_char {
         .unwrap_or(std::ptr::null_mut())
 }
 
-/// Build an error JSON string `{"error":"..."}` as an owned `*mut c_char`.
+/// Build an error JSON string with error type, message, and optional status code.
+///
+/// Output: `{"error":"<message>","error_type":"<variant>","status_code":<u16|null>}`
 fn error_json_raw(msg: impl std::fmt::Display) -> *mut c_char {
-    into_cstring_raw(serde_json::json!({ "error": msg.to_string() }).to_string())
+    into_cstring_raw(serde_json::json!({
+        "error": msg.to_string(),
+        "error_type": "Other",
+        "status_code": null,
+    }).to_string())
+}
+
+/// Build an error JSON string from an `AiMuxError`, preserving the variant
+/// name and HTTP status code for programmatic use by bindings.
+fn error_json_from(err: &AiMuxError) -> *mut c_char {
+    into_cstring_raw(serde_json::json!({
+        "error": err.to_string(),
+        "error_type": err.error_type(),
+        "status_code": err.status_code(),
+    }).to_string())
 }
 
 /// Invoke the `on_error` callback with an error JSON string.
@@ -189,7 +205,23 @@ fn error_json_raw(msg: impl std::fmt::Display) -> *mut c_char {
 /// The pointer is valid only for the duration of the callback (no leak: the
 /// backing `CString` is freed when this function returns).
 fn fire_error(on_error: extern "C" fn(*const c_char), msg: impl std::fmt::Display) {
-    let json = serde_json::json!({ "error": msg.to_string() }).to_string();
+    let json = serde_json::json!({
+        "error": msg.to_string(),
+        "error_type": "Other",
+        "status_code": null,
+    }).to_string();
+    if let Ok(cstr) = CString::new(json) {
+        on_error(cstr.as_ptr());
+    }
+}
+
+/// Like `fire_error` but preserves the `AiMuxError` variant name and status code.
+fn fire_error_struct(on_error: extern "C" fn(*const c_char), err: &AiMuxError) {
+    let json = serde_json::json!({
+        "error": err.to_string(),
+        "error_type": err.error_type(),
+        "status_code": err.status_code(),
+    }).to_string();
     if let Ok(cstr) = CString::new(json) {
         on_error(cstr.as_ptr());
     }
@@ -218,7 +250,7 @@ where
         Ok(r) => serde_json::to_string(&r)
             .map(into_cstring_raw)
             .unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
-        Err(e) => error_json_raw(format!("{}: {e}", model_msg)),
+        Err(e) => error_json_from(&e),
     }
 }
 
@@ -437,14 +469,14 @@ pub extern "C" fn aimux_stream_text(
                             }
                         }
                         Err(e) => {
-                            fire_error(on_error, format!("stream error: {e}"));
+                            fire_error_struct(on_error, &e);
                             return;
                         }
                     }
                 }
                 on_done();
             }
-            Err(e) => fire_error(on_error, format!("stream_text: {e}")),
+            Err(e) => fire_error_struct(on_error, &e),
         }
     });
 }

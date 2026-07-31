@@ -58,8 +58,8 @@ impl Model {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| PyRuntimeError::new_err(format!("[{}] serialize result: {e}", e.error_type()))),
+            Err(e) => Err(PyRuntimeError::new_err(format!("[{}] {e}", e.error_type()))),
         }
     }
 
@@ -89,14 +89,14 @@ impl Model {
                                 }
                             }
                             Err(e) => {
-                                let _ = tx.send(Err(format!("{e}"))).await;
+                                let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(format!("{e}"))).await;
+                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
                 }
             }
         });
@@ -149,7 +149,7 @@ fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
     let provider = OpenAIProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
     })
@@ -169,7 +169,7 @@ fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<
     let provider = AnthropicProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
     })
@@ -189,7 +189,7 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
     let provider = DeepSeekProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
     })
@@ -244,7 +244,7 @@ where
 
 fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| PyRuntimeError::new_err(format!("invalid prompt JSON: {e}")))?;
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] invalid prompt JSON: {e}", e.error_type())))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -252,7 +252,7 @@ fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| PyRuntimeError::new_err(format!("invalid prompt: {e}")))
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] invalid prompt: {e}", e.error_type())))
 }
 
 fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
@@ -264,7 +264,7 @@ fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
                 return Ok(GenerateTextOptions::default());
             }
             serde_json::from_str(s)
-                .map_err(|e| PyRuntimeError::new_err(format!("invalid options JSON: {e}")))
+                .map_err(|e| PyRuntimeError::new_err(format!("[{}] invalid options JSON: {e}", e.error_type())))
         }
     }
 }
