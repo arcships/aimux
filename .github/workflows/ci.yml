@@ -51,7 +51,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install dependencies
         working-directory: bindings/node
         run: npm install
@@ -86,10 +86,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install maturin
-        run: pip install maturin ${{ matrix.os == 'ubuntu-latest' && '[patchelf]' || '' }}
+        run: pip install maturin${{ matrix.os == 'ubuntu-latest' && '[patchelf]' || '' }}
       - name: Build
         working-directory: bindings/python
-        run: maturin develop
+        shell: bash
+        run: |
+          maturin build --release
+          pip install --force-reinstall target/wheels/*.whl
       - name: Test
         working-directory: bindings/python
         run: python -m pytest tests/ -v
@@ -140,7 +143,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Run Rust contract tests
         run: cargo test --test contract_test -p aimux-core
       - name: Build Node binding
@@ -192,6 +195,7 @@ jobs:
         run: cargo build -p aimux-ffi --release
       - name: Copy dylib for Swift
         run: |
+          mkdir -p /usr/local/lib
           cp target/release/libaimux_ffi.dylib /usr/local/lib/
       - name: Build Swift Package
         working-directory: bindings/swift
