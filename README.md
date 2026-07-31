@@ -38,6 +38,37 @@ difference: aimux is an access layer, those are orchestration layers.
 - **Hermetic tests** — 2,650+ cassettes replay real API responses; no network
   or API keys required.
 
+## Performance
+
+Benchmarked against the official OpenAI SDKs on the same machine, same mock
+server, same abstraction layer (HTTP + JSON, no orchestration). Full results
+and methodology in [docs/PERF-RESULTS.md](docs/PERF-RESULTS.md).
+
+| | aimux | OpenAI SDK | aimux faster |
+|---|---|---|---|
+| **Node.js** (single req) | 0.101 ms | 1.488 ms | **14.7×** |
+| **Python** (single req) | 0.080 ms | 0.595 ms | **7.5×** |
+
+### Sustained stress (2000 requests, 200 KB context, 50 KB response)
+
+| | aimux rps | SDK rps | aimux P99 | SDK P99 | RSS growth |
+|---|---|---|---|---|---|
+| **Node.js** (32 cores) | 1512 | 563¹ | 1.92 ms | 3.96 ms | +23 MB vs +103 MB |
+| **Python** | 1393 | 987 | 0.94 ms | 1.37 ms | **+0 MB** vs +8 MB |
+
+¹ vs Vercel AI SDK (not apples-to-apples — AISDK adds Zod validation,
+middleware, and telemetry per request).
+
+### Why it's fast
+
+- **Rust core** — `reqwest` connection pool, no GC, no runtime pauses.
+- **Zero memory growth** — Python aimux RSS did not grow a single byte across
+  2000 requests; Node grew only 2 MB.
+- **Stable tail latency** — no GC pauses means P99 stays flat even under CPU
+  contention; the JS SDK's P99 spikes to 12.87 ms on a single core.
+- **FFI boundary is cheap** — serialization is ~50% of overhead only on large
+  payloads; in real LLM requests (3–10 s) it is <0.1%.
+
 ## Architecture
 
 ```
