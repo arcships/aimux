@@ -6,6 +6,7 @@ pub mod files;
 pub mod model;
 pub mod prepare_tools;
 pub mod sanitize_json_schema;
+pub mod stream;
 pub mod types;
 pub mod usage;
 

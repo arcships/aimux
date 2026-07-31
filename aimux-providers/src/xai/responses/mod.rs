@@ -34,6 +34,7 @@ use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream}
 use aimux_stream::SseStream;
 
 use super::super::XAIConfig;
+use crate::openai::responses::responses_convert::build_header_list;
 use convert::{
     build_responses_request_body, convert_xai_responses_usage, get_tool_input,
     map_xai_responses_finish_reason, resolve_tool_name,
@@ -77,16 +78,6 @@ impl XaiResponsesModel {
     fn endpoint(&self) -> String {
         format!("{}/responses", self.config.base_url())
     }
-}
-
-/// Build the header list for a JSON POST: auth/extra headers + `Content-Type`.
-///
-/// Returns a `Vec<(String, String)>` for `HttpRequest` — no reqwest types.
-fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
-    let mut list: Vec<(String, String)> =
-        headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-    list.push(("Content-Type".to_string(), "application/json".to_string()));
-    list
 }
 
 #[async_trait]

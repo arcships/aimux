@@ -1,26 +1,21 @@
 ﻿//! Anthropic language model — implements `LanguageModel` trait.
+//!
+//! The request body building, HTTP send and response/SSE parsing live in the
+//! shared [`super::stream`] core; this module only wires the standard Anthropic
+//! endpoint, Bearer/x-api-key auth and `Json` body encoding.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use async_trait::async_trait;
-use futures::StreamExt;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
-use aimux_core::stream_part::StreamPart;
-use aimux_core::types::TokenUsage;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
-
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream};
-use aimux_stream::SseStream;
-use serde_json::json;
+use aimux_core::result::{GenerateResult, StreamResult};
 
 use super::AnthropicConfig;
-use super::convert::{build_request_body_with_warnings, parse_stop_reason};
-use super::types::{AnthropicResponse, ContentBlock, StreamEvent};
+use super::convert::build_request_body_with_warnings;
+use super::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
 
 /// An Anthropic language model (e.g. `claude-sonnet-4-20250514`).
 pub struct AnthropicModel {
@@ -33,34 +28,56 @@ impl AnthropicModel {
         Self { model_id, config }
     }
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "anthropic-version".to_string(),
-            self.config.api_version.clone(),
-        );
-        // Auth: prefer bearer token, fall back to x-api-key.
-        if let Some(token) = &self.config.auth_token {
-            headers.insert("authorization".to_string(), format!("Bearer {token}"));
-        } else {
-            headers.insert("x-api-key".to_string(), self.config.api_key.clone());
-        }
-        // Extra config-level headers (lower precedence than per-call headers).
-        if let Some(cfg_headers) = &self.config.headers {
-            for (k, v) in cfg_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
     fn endpoint(&self) -> String {
         format!("{}/v1/messages", self.config.base_url)
+    }
+
+    /// Build the auth-header closure for the standard (Bearer/x-api-key) path.
+    ///
+    /// The body bytes are ignored (no request signing). Config-level and
+    /// per-call headers and the `anthropic-beta` header are merged last-wins,
+    /// matching the original `HashMap` semantics.
+    fn make_header_builder(
+        &self,
+        extra: Option<&HashMap<String, String>>,
+        betas: BTreeSet<String>,
+    ) -> impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError> {
+        let api_version = self.config.api_version.clone();
+        let auth_token = self.config.auth_token.clone();
+        let api_key = self.config.api_key.clone();
+        let cfg_headers = self.config.headers.clone();
+        let extra = extra.cloned();
+        move |_body: &[u8], _url: &str| -> Result<Vec<(String, String)>, AiMuxError> {
+            let mut headers: HashMap<String, String> = HashMap::new();
+            headers.insert(
+                "anthropic-version".to_string(),
+                api_version.clone(),
+            );
+            // Auth: prefer bearer token, fall back to x-api-key.
+            if let Some(token) = &auth_token {
+                headers.insert("authorization".to_string(), format!("Bearer {token}"));
+            } else {
+                headers.insert("x-api-key".to_string(), api_key.clone());
+            }
+            // Extra config-level headers (lower precedence than per-call headers).
+            if let Some(cfg_headers) = &cfg_headers {
+                for (k, v) in cfg_headers {
+                    headers.insert(k.clone(), v.clone());
+                }
+            }
+            if let Some(extra) = &extra {
+                for (k, v) in extra {
+                    headers.insert(k.clone(), v.clone());
+                }
+            }
+            if !betas.is_empty() {
+                headers.insert(
+                    "anthropic-beta".to_string(),
+                    betas.iter().cloned().collect::<Vec<_>>().join(","),
+                );
+            }
+            Ok(headers.into_iter().collect())
+        }
     }
 }
 
@@ -76,432 +93,31 @@ impl LanguageModel for AnthropicModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let req = build_request_body_with_warnings(&self.model_id, options, false)?;
-        let body = req.body;
-        let warnings = req.warnings;
-        let mut headers = self.build_headers(options.headers.as_ref());
-        if !req.betas.is_empty() {
-            headers.insert(
-                "anthropic-beta".to_string(),
-                req.betas.iter().cloned().collect::<Vec<_>>().join(","),
-            );
-        }
-
-        let resp = send(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                body: HttpBody::Json(body.clone()),
-            },
+        let endpoint = self.endpoint();
+        let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
+        anthropic_generate_core(
+            &endpoint,
             self.config.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
+            req.body,
+            req.warnings,
+            build_headers,
+            BodyEncoding::Json,
         )
-        .await?;
-
-        let data: AnthropicResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
-
-        // Build content array.
-        let mut content = Vec::new();
-        for block in &data.content {
-            match block {
-                ContentBlock::Text { text } => {
-                    content.push(GenerateContent::Text { text: text.clone(), provider_metadata: None});
-                }
-                ContentBlock::ToolUse { id, name, input } => {
-                    content.push(GenerateContent::ToolCall {
-                        tool_call_id: id.clone(),
-                        tool_name: name.clone(),
-                        input: input.clone(),
-                        provider_executed: None,
-                        dynamic: None,
-                        provider_metadata: None,
-                    });
-                }
-                ContentBlock::Thinking {
-                    thinking,
-                    signature,
-                } => {
-                    content.push(GenerateContent::Reasoning {
-                        text: thinking.clone(),
-                        provider_metadata: Some(json!({
-                            "anthropic": { "signature": signature }
-                        })),
-                    });
-                }
-                // Provider-executed (server-side) tool calls are surfaced as
-                // tool calls so they round-trip on follow-up turns. The result
-                // blocks (web_search_tool_result, code_execution_tool_result,
-                // ...) and any unknown block type are intentionally dropped:
-                // `GenerateContent` has no provider-tool-result variant, and
-                // none of the current tests assert on their content.
-                ContentBlock::ServerToolUse { id, name, input } => {
-                    content.push(GenerateContent::ToolCall {
-                        tool_call_id: id.clone(),
-                        tool_name: name.clone(),
-                        input: input.clone(),
-                        provider_executed: None,
-                        dynamic: None,
-                        provider_metadata: None,
-                    });
-                }
-                _ => {}
-            }
-        }
-
-        let finish_reason = data
-            .stop_reason
-            .as_deref()
-            .map(parse_stop_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
-
-        let reasoning_tokens = data
-            .usage
-            .output_tokens_details
-            .as_ref()
-            .and_then(|d| d.thinking_tokens);
-        let output_total = data.usage.output_tokens;
-        let text_tokens = reasoning_tokens
-            .zip(output_total)
-            .map(|(r, t)| t.saturating_sub(r));
-
-        let usage = Usage {
-            input_tokens: TokenUsage {
-                total: data.usage.input_tokens,
-                ..Default::default()
-            },
-            output_tokens: TokenUsage {
-                total: output_total,
-                text: text_tokens,
-                reasoning: reasoning_tokens,
-                ..Default::default()
-            },
-            raw: None,
-        };
-
-        Ok(GenerateResult {
-            content,
-            finish_reason,
-            usage,
-            warnings,
-            provider_metadata: None,
-            response: ResponseMetadata {
-                id: Some(data.id),
-                timestamp: None,
-                model_id: Some(data.model),
-            },
-            request_body: Some(body),
-            response_headers: None,
-        })
+        .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let req = build_request_body_with_warnings(&self.model_id, options, true)?;
-        let body = req.body;
-        let warnings = req.warnings;
-        let mut headers = self.build_headers(options.headers.as_ref());
-        if !req.betas.is_empty() {
-            headers.insert(
-                "anthropic-beta".to_string(),
-                req.betas.iter().cloned().collect::<Vec<_>>().join(","),
-            );
-        }
-
-        let resp = send_stream(
-            HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
-                headers: headers
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                body: HttpBody::Json(body.clone()),
-            },
+        let endpoint = self.endpoint();
+        let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
+        anthropic_stream_core(
+            &endpoint,
             self.config.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
+            req.body,
+            req.warnings,
+            build_headers,
+            BodyEncoding::Json,
         )
-        .await?;
-
-        let response_headers = resp.headers;
-        let sse_stream = SseStream::new(resp.body);
-
-        // Per-content-block state, keyed by the Anthropic `index` field. Text
-        // blocks track whether a `TextStart` has been emitted; tool_use blocks
-        // accumulate the `input_json_delta` partial-json fragments so the final
-        // `ToolCall` can carry the parsed JSON object; thinking blocks track
-        // whether a `ReasoningStart` has been emitted.
-        enum BlockState {
-            Text {
-                started: bool,
-            },
-            ToolUse {
-                id: String,
-                name: String,
-                accumulated_json: String,
-            },
-            Thinking {
-                started: bool,
-            },
-        }
-
-        let stream = async_stream::stream! {
-            // First part: StreamStart.
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let mut sse = sse_stream;
-            let mut blocks: HashMap<usize, BlockState> = HashMap::new();
-            let mut final_usage = Usage::default();
-            let mut final_finish_reason: Option<FinishReason> = None;
-            let mut response_meta_emitted = false;
-
-            while let Some(event) = sse.next().await {
-                match event {
-                    Ok(sse_event) => {
-                        match serde_json::from_str::<StreamEvent>(&sse_event.data) {
-                            Ok(StreamEvent::MessageStart { message }) => {
-                                if let Some(usage) = &message.usage {
-                                    final_usage = Usage {
-                                        input_tokens: aimux_core::types::TokenUsage {
-                                            total: usage.input_tokens,
-                                            ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    };
-                                }
-                                if !response_meta_emitted {
-                                    yield Ok(StreamPart::ResponseMetadata {
-                                        id: Some(message.id.clone()),
-                                        timestamp: None,
-                                        model_id: Some(message.model.clone()),
-                                    });
-                                    response_meta_emitted = true;
-                                }
-                            }
-                            Ok(StreamEvent::ContentBlockStart { index, content_block }) => {
-                                match content_block {
-                                    ContentBlock::Text { .. } => {
-                                        blocks.insert(index, BlockState::Text { started: false });
-                                    }
-                                    ContentBlock::Thinking { .. } => {
-                                        blocks.insert(index, BlockState::Thinking { started: false });
-                                    }
-                                    ContentBlock::ToolUse { id, name, .. } => {
-                                        yield Ok(StreamPart::ToolInputStart {
-                                            id: id.clone(),
-                                            tool_name: name.clone(),
-                                            provider_executed: None,
-                                            dynamic: None,
-                                            title: None,
-                                            provider_metadata: None,
-                                        });
-                                        blocks.insert(index, BlockState::ToolUse {
-                                            id,
-                                            name,
-                                            accumulated_json: String::new(),
-                                        });
-                                    }
-                                    // Server-side / provider-executed tool
-                                    // blocks (server_tool_use, mcp_tool_use,
-                                    // result blocks, ...) are not yet streamed
-                                    // as first-class parts; ignore them here so
-                                    // an unknown block type never aborts the
-                                    // stream.
-                                    _ => {}
-                                }
-                            }
-                            Ok(StreamEvent::ContentBlockDelta { index, delta }) => {
-                                if let Some(text) = delta.text {
-                                    // Start the text segment on the first delta. The text
-                                    // id is the stringified content-block index, matching
-                                    // the TS SDK.
-                                    let start_id: Option<String> = match blocks.get_mut(&index)
-                                    {
-                                        Some(BlockState::Text { started: false }) => {
-                                            if let Some(BlockState::Text { started }) =
-                                                blocks.get_mut(&index)
-                                            {
-                                                *started = true;
-                                            }
-                                            Some(index.to_string())
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some(id) = start_id {
-                                        yield Ok(StreamPart::TextStart { id, provider_metadata: None});
-                                    }
-                                    yield Ok(StreamPart::TextDelta {
-                                        id: index.to_string(),
-                                        delta: text,
-                                        provider_metadata: None,
-                                    });
-                                }
-                                if let Some(partial) = delta.partial_json {
-                                    // Accumulate the partial JSON fragment and emit a
-                                    // ToolInputDelta. Empty fragments (the leading
-                                    // `input_json_delta` with `partial_json: ""`) are
-                                    // skipped, matching the TS SDK.
-                                    let delta_id: Option<String> = match blocks.get_mut(&index)
-                                    {
-                                        Some(BlockState::ToolUse {
-                                            id,
-                                            accumulated_json,
-                                            ..
-                                        }) if !partial.is_empty() => {
-                                            accumulated_json.push_str(&partial);
-                                            Some(id.clone())
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some(id) = delta_id {
-                                        yield Ok(StreamPart::ToolInputDelta {
-                                            id,
-                                            delta: partial,
-                                            provider_metadata: None,
-                                        });
-                                    }
-                                }
-                                if let Some(thinking) = delta.thinking {
-                                    // Start the reasoning segment on the first
-                                    // thinking delta. The id is the stringified
-                                    // content-block index, matching the TS SDK.
-                                    let start_id: Option<String> = match blocks.get_mut(&index)
-                                    {
-                                        Some(BlockState::Thinking { started: false }) => {
-                                            if let Some(BlockState::Thinking { started }) =
-                                                blocks.get_mut(&index)
-                                            {
-                                                *started = true;
-                                            }
-                                            Some(index.to_string())
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some(id) = start_id {
-                                        yield Ok(StreamPart::ReasoningStart { id,
-                provider_metadata: None,
-            });
-                                    }
-                                    yield Ok(StreamPart::ReasoningDelta {
-                                        id: index.to_string(),
-                                        delta: thinking,
-                provider_metadata: None,
-            });
-                                }
-                            }
-                            Ok(StreamEvent::ContentBlockStop { index }) => {
-                                // Removing the block releases the borrow before any yield.
-                                if let Some(state) = blocks.remove(&index) {
-                                    match state {
-                                        BlockState::Text { started: true } => {
-                                            yield Ok(StreamPart::TextEnd {
-                                                id: index.to_string(),
-                                                provider_metadata: None,
-                                            });
-                                        }
-                                        BlockState::Text { started: false } => {
-                                            // Text block with no deltas — nothing to emit.
-                                        }
-                                        BlockState::Thinking { started: true } => {
-                                            yield Ok(StreamPart::ReasoningEnd {
-                                                id: index.to_string(),
-                provider_metadata: None,
-            });
-                                        }
-                                        BlockState::Thinking { started: false } => {
-                                            // Thinking block with no deltas — nothing to emit.
-                                        }
-                                        BlockState::ToolUse {
-                                            id,
-                                            name,
-                                            accumulated_json,
-                                        } => {
-                                            yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                            let input: serde_json::Value = if accumulated_json
-                                                .is_empty()
-                                            {
-                                                serde_json::json!({})
-                                            } else {
-                                                serde_json::from_str(&accumulated_json)
-                                                    .unwrap_or(serde_json::json!({}))
-                                            };
-                                            yield Ok(StreamPart::ToolCall {
-                                                tool_call_id: id,
-                                                tool_name: name,
-                                                input,
-                                                provider_executed: None,
-                                                dynamic: None,
-                                                provider_metadata: None,
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                            Ok(StreamEvent::MessageDelta { delta, usage }) => {
-                                if let Some(reason) = delta.stop_reason {
-                                    final_finish_reason = Some(parse_stop_reason(&reason));
-                                }
-                                if let Some(u) = usage {
-                                    let reasoning_tokens = u
-                                        .output_tokens_details
-                                        .as_ref()
-                                        .and_then(|d| d.thinking_tokens);
-                                    let output_total = u.output_tokens;
-                                    let text_tokens = reasoning_tokens
-                                        .zip(output_total)
-                                        .map(|(r, t)| t.saturating_sub(r));
-                                    final_usage.output_tokens = TokenUsage {
-                                        total: output_total,
-                                        text: text_tokens,
-                                        reasoning: reasoning_tokens,
-                                        ..Default::default()
-                                    };
-                                }
-                            }
-                            Ok(StreamEvent::MessageStop) => break,
-                            Ok(StreamEvent::Error { error }) => {
-                                // Surface Anthropic in-stream errors (e.g.
-                                // overloaded_error) as a `StreamPart::Error` and
-                                // stop the stream, mirroring the TS "forward
-                                // error chunks" / "forward overloaded error"
-                                // behaviour.
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Provider(error.message),
-                                });
-                                return;
-                            }
-                            Ok(_) | Err(_) => {}
-                        }
-                    }
-                    Err(e) => {
-                        yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
-                        });
-                        return;
-                    }
-                }
-            }
-
-            // Final part: Finish.
-            yield Ok(StreamPart::Finish {
-                finish_reason: final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                }),
-                usage: final_usage,
-                provider_metadata: None,
-            });
-        };
-
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
-        })
+        .await
     }
 }
