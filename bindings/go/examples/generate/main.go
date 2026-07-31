@@ -1,4 +1,4 @@
-// Example: minimal non-streaming text generation with aimux.
+// Example: typed text generation and multimodal with aimux.
 //
 // Prerequisites:
 //   cargo build -p aimux-ffi --release
@@ -24,33 +24,26 @@ func main() {
 		log.Fatal("OPENAI_API_KEY not set")
 	}
 
+	// ── Typed text generation (no manual JSON) ────────────────────────────
 	model := aimux.OpenAI(apiKey, "gpt-4o")
 	defer model.Close()
 
-	result, err := model.GenerateText(`"Explain Rust ownership in one sentence."`, "")
+	result, err := model.Generate("Explain Rust ownership in one sentence.", nil)
 	if err != nil {
 		log.Fatalf("generate failed: %v", err)
 	}
+	fmt.Println(result.Text)
 
-	// Parse the typed result.
-	parsed, err := aimux.ParseGenerateTextResult(result)
-	if err != nil {
-		log.Fatalf("parse failed: %v", err)
-	}
-
-	fmt.Println(parsed.Text)
-
-	// Or use streaming:
+	// ── Typed streaming ────────────────────────────────────────────────────
 	fmt.Println("\n--- Streaming ---")
-	stream := model.StreamText(`"Write a haiku about Rust."`, "")
+	stream, err := model.Stream("Write a haiku about Rust.", nil)
+	if err != nil {
+		log.Fatalf("stream failed: %v", err)
+	}
 	for part := range stream.Parts() {
-		sp, err := aimux.ParseStreamPart(part)
-		if err != nil {
-			continue
-		}
-		if sp.Tag == "TextDelta" {
+		if part.Tag == "TextDelta" {
 			var td aimux.TextDeltaPayload
-			json.Unmarshal(sp.Payload, &td)
+			json.Unmarshal(part.Payload, &td)
 			fmt.Print(td.Delta)
 		}
 	}
@@ -58,4 +51,17 @@ func main() {
 		log.Fatalf("stream error: %v", err)
 	}
 	fmt.Println()
+
+	// ── Multimodal: Embedding ──────────────────────────────────────────────
+	emb, err := aimux.NewOpenAIEmbedding(apiKey, "text-embedding-3-small")
+	if err != nil {
+		log.Fatalf("embedding model failed: %v", err)
+	}
+	defer emb.Close()
+	// emb.Embed([]string{"hello", "world"}, nil) — requires network
+
+	// ── DeepSeek (OpenAI-compatible convenience) ──────────────────────────
+	deepseek := aimux.DeepSeek(os.Getenv("DEEPSEEK_API_KEY"), "deepseek-chat")
+	defer deepseek.Close()
+	// result, _ = deepseek.Generate("Hello", nil) — requires network
 }

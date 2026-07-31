@@ -50,6 +50,41 @@ static void do_stream(uint64_t handle, const char* prompt, const char* opts, int
                       trampoline_part, trampoline_done, trampoline_error);
     current_stream_id = 0;
 }
+
+// ── Multimodal constructors and operations (not in aimux-ffi.h yet, but
+//    exported as C symbols from libaimux_ffi.a) ────────────────────────────
+
+// Embedding
+uint64_t aimux_openai_embedding_new(const char *api_key, const char *model_id);
+char *aimux_embed(uint64_t handle, const char *values_json, const char *opts_json);
+
+// Speech (TTS)
+uint64_t aimux_openai_speech_new(const char *api_key, const char *model_id);
+char *aimux_speech_generate(uint64_t handle, const char *opts_json);
+
+// Image
+uint64_t aimux_openai_image_new(const char *api_key, const char *model_id);
+char *aimux_image_generate(uint64_t handle, const char *opts_json);
+
+// Transcription (STT)
+uint64_t aimux_openai_transcription_new(const char *api_key, const char *model_id);
+char *aimux_transcription_generate(uint64_t handle, const char *audio_base64, const char *media_type, const char *opts_json);
+
+// Files
+uint64_t aimux_openai_files_new(const char *api_key);
+char *aimux_file_upload(uint64_t handle, const char *data_base64, const char *media_type, const char *opts_json);
+
+// Reranking
+uint64_t aimux_cohere_reranking_new(const char *api_key, const char *model_id);
+char *aimux_rerank(uint64_t handle, const char *opts_json);
+
+// Video
+uint64_t aimux_google_video_new(const char *api_key, const char *model_id);
+char *aimux_video_generate(uint64_t handle, const char *opts_json);
+
+// Search
+uint64_t aimux_tavily_search_new(const char *api_key, const char *model_id);
+char *aimux_search(uint64_t handle, const char *opts_json);
 */
 import "C"
 

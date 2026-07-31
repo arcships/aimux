@@ -1,6 +1,6 @@
 # RFC-0011：Golang 绑定
 
-> **状态**：v0.1（PoC 落地：cgo + 静态链接 + 19 个测试全通过）
+> **状态**：v0.2（typed API + 8 模态多模态 + DeepSeek 工厂，对齐 Node 旗舰覆盖）
 > **日期**：2026-07-31
 > **关联**：[RFC-0001](0001-multilang-bindings.md) 多语言绑定、[aimux-ffi](../aimux-ffi/aimux-ffi.h)
 
@@ -261,3 +261,5 @@ GitHub Actions 矩阵（对齐现有 [CI](../.github)）：
 |------|------|------|
 | 2026-07-31 | DRAFT v0.1 | 初稿：Go 绑定设计，升级 RFC-0001 §5.3 第三梯队为立即执行；cgo + 静态链接路径；push callback → channel 流式映射；单 binary 实测验证（7.5MB） |
 | 2026-07-31 | v0.1 | **PoC 落地**：`bindings/go/` 完整实现（aimux.go cgo 声明 + Model + Generate/Stream；types.go typed JSON 类型；19 个测试全通过：7 单元 + 6 E2E + 6 契约子测试）。单 binary 实测 8.7MB（strip 后），静态链接 `libaimux_ffi.a`，零额外文件依赖 |
+| 2026-07-31 | v0.1.1 | **审核修复**：RWMutex handle 生命周期、stream 兜底 closeParts、error envelope JSON 解析、构造函数返回 error、ParseStreamPart 校验、数值类型对齐 Rust（uint32/uint64/float64）、mock server io.ReadAll、契约 default→Fatal |
+| 2026-07-31 | v0.2 | **对齐 Node 旗舰覆盖**：typed 文本 API（Generate/Stream 接受 string|[]ModelMessage + typed options，返回 *GenerateTextResult / typed StreamPart channel）；8 模态多模态（Embedding/Speech/Image/Transcription/Files/Reranking/Video/Search）+ 工厂函数 + typed 结果类型（对齐 ts-rs wire format）；DeepSeek 工厂；55 个测试全通过（含 -race） |
