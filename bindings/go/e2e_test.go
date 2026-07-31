@@ -97,6 +97,20 @@ func (s *mockProviderServer) LastRequestBody() string {
 	return s.lastRequestBody
 }
 
+// SetResponse sets the response body and content type (thread-safe).
+func (s *mockProviderServer) SetResponse(body string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.responseBody = body
+}
+
+// SetContentType sets the response content type (thread-safe).
+func (s *mockProviderServer) SetContentType(ct string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.contentType = ct
+}
+
 // ── Canned OpenAI responses ────────────────────────────────────────────────────
 
 // plainOpenAIResponse is a plain OpenAI text response (no tool calls).
@@ -157,7 +171,7 @@ func weatherToolsOpts(toolChoice string) string {
 func TestE2E_GenerateTextParsesText(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
-	srv.responseBody = plainOpenAIResponse
+	srv.SetResponse(plainOpenAIResponse)
 
 	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
 	defer m.Close()
@@ -183,7 +197,7 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
-	srv.responseBody = toolCallOpenAIResponse
+	srv.SetResponse(toolCallOpenAIResponse)
 
 	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
 	defer m.Close()
@@ -236,7 +250,7 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 func TestE2E_MultiRoleMessagesReachProvider(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
-	srv.responseBody = plainOpenAIResponse
+	srv.SetResponse(plainOpenAIResponse)
 
 	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
 	defer m.Close()
@@ -283,7 +297,7 @@ func TestE2E_MultiRoleMessagesReachProvider(t *testing.T) {
 func TestE2E_ToolChoiceReachesProvider(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
-	srv.responseBody = toolCallOpenAIResponse
+	srv.SetResponse(toolCallOpenAIResponse)
 
 	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
 	defer m.Close()
@@ -306,11 +320,11 @@ func TestE2E_ToolChoiceReachesProvider(t *testing.T) {
 func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
-	srv.contentType = "text/event-stream"
+	srv.SetContentType("text/event-stream")
 
 	// SSE stream: tool_calls delta (name) -> arguments delta -> finish_reason.
 	sseResponse := buildToolCallSSE()
-	srv.responseBody = sseResponse
+	srv.SetResponse(sseResponse)
 
 	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
 	defer m.Close()
@@ -346,11 +360,11 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
-	srv.contentType = "text/event-stream"
+	srv.SetContentType("text/event-stream")
 
 	// SSE stream: "Hello" -> " world" -> finish.
 	sseResponse := buildTextDeltaSSE()
-	srv.responseBody = sseResponse
+	srv.SetResponse(sseResponse)
 
 	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
 	defer m.Close()
@@ -411,4 +425,94 @@ func buildToolCallSSE() string {
 	sb.WriteString("data: " + chunk3 + "\n\n")
 	sb.WriteString("data: [DONE]\n\n")
 	return sb.String()
+}
+
+// ── Tool-call full round-trip ─────────────────────────────────────────────────
+
+// TestE2E_ToolCallFullRoundTrip mirrors Kotlin's `tool-call full round-trip`
+// scenario: the model requests a tool call, the client sends the tool result
+// back as a multi-part tool message, and the model produces a final answer.
+// This verifies ModelMessage multi-part content reaches the provider correctly.
+func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+
+	// Queue: first call returns a tool_call, second call returns the final text.
+	srv.setResponses(toolCallOpenAIResponse, plainOpenAIResponse)
+
+	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	defer m.Close()
+
+	// 1. First call: model requests get_weather tool call.
+	result1, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
+	if err != nil {
+		t.Fatalf("first generate failed: %v", err)
+	}
+	parsed1, _ := ParseGenerateTextResult(result1)
+	if len(parsed1.ToolCalls) == 0 {
+		t.Fatal("expected tool calls in first response")
+	}
+	call := parsed1.ToolCalls[0]
+	if call.ToolName != "get_weather" {
+		t.Fatalf("expected tool name 'get_weather', got %q", call.ToolName)
+	}
+
+	// 2. Build a multi-part tool-result message using ModelMessage's Content
+	//    (any) field — this is the path that was previously unsupported.
+	toolResultMsg := ModelMessage{
+		Role: RoleTool,
+		Content: []map[string]any{
+			{
+				"type":         "tool_result",
+				"tool_call_id": call.ToolCallID,
+				"tool_name":    call.ToolName,
+				"result":       map[string]any{"temperature": "20C"},
+			},
+		},
+	}
+	conversation := []ModelMessage{
+		NewTextMessage(RoleUser, "What is the weather in Tokyo?"),
+		NewTextMessage(RoleAssistant, ""), // assistant's prior turn
+		toolResultMsg,                       // tool result fed back
+	}
+	prompt, _ := MarshalMessages(conversation)
+
+	// 3. Second call: model produces final text from the tool result.
+	result2, err := m.GenerateText(prompt, "")
+	if err != nil {
+		t.Fatalf("second generate failed: %v", err)
+	}
+	parsed2, _ := ParseGenerateTextResult(result2)
+	if parsed2.Text == "" {
+		t.Error("expected non-empty final text")
+	}
+
+	// Verify the second request carried the tool-result message correctly.
+	// The engine converts multi-part tool_result content into OpenAI's wire
+	// format: {"role":"tool","tool_call_id":"...","content":"<stringified result>"}.
+	reqBody := srv.LastRequestBody()
+	var body struct {
+		Messages []struct {
+			Role         string          `json:"role"`
+			Content      json.RawMessage `json:"content"`
+			ToolCallID   string          `json:"tool_call_id,omitempty"`
+		} `json:"messages"`
+	}
+	json.Unmarshal([]byte(reqBody), &body)
+	if len(body.Messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(body.Messages))
+	}
+	// The third message (tool result) in OpenAI format.
+	third := body.Messages[2]
+	if third.Role != "tool" {
+		t.Errorf("expected third role 'tool', got %q", third.Role)
+	}
+	if third.ToolCallID != call.ToolCallID {
+		t.Errorf("expected tool_call_id %q, got %q", call.ToolCallID, third.ToolCallID)
+	}
+	// The content should contain the result data (stringified by the engine).
+	contentStr := string(third.Content)
+	if !strings.Contains(contentStr, "temperature") {
+		t.Errorf("expected content to contain result data, got %s", contentStr)
+	}
 }

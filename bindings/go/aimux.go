@@ -192,6 +192,7 @@ type streamEntry struct {
 	parts chan string
 	mu    sync.Mutex
 	err   error
+	once  sync.Once
 }
 
 // streamRegistry maps stream IDs to active stream entries. This avoids passing
@@ -222,6 +223,13 @@ func unregisterStream(id int64) {
 	streamRegMu.Lock()
 	defer streamRegMu.Unlock()
 	delete(streamReg, id)
+}
+
+// closeParts safely closes the stream's parts channel exactly once, guarding
+// against the engine firing both on_done and on_error for the same stream
+// (which would otherwise panic on double close).
+func (e *streamEntry) closeParts() {
+	e.once.Do(func() { close(e.parts) })
 }
 
 // Stream is a handle to an in-progress or completed stream.
@@ -256,11 +264,23 @@ func (s *Stream) Err() error {
 //	}
 func (m *Model) StreamText(promptJson, optsJson string) *Stream {
 	entry, id := registerStream()
+	handle := m.handle // snapshot in calling goroutine to avoid data race with Close
 
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		defer unregisterStream(id)
+
+		if m.closed.Load() {
+			e := lookupStream(int64(id))
+			if e != nil {
+				e.mu.Lock()
+				e.err = errors.New("aimux: model already closed")
+				e.mu.Unlock()
+				e.closeParts()
+			}
+			return
+		}
 
 		cPrompt := C.CString(promptJson)
 		defer C.free(unsafe.Pointer(cPrompt))
@@ -271,7 +291,7 @@ func (m *Model) StreamText(promptJson, optsJson string) *Stream {
 			defer C.free(unsafe.Pointer(cOpts))
 		}
 
-		C.do_stream(C.uint64_t(m.handle), cPrompt, cOpts, C.int64_t(id))
+		C.do_stream(C.uint64_t(handle), cPrompt, cOpts, C.int64_t(id))
 	}()
 
 	return &Stream{parts: entry.parts, entry: entry}
@@ -294,7 +314,7 @@ func goStreamDone(id C.int64_t) {
 	if e == nil {
 		return
 	}
-	close(e.parts)
+	e.closeParts()
 }
 
 //export goStreamError
@@ -306,5 +326,5 @@ func goStreamError(id C.int64_t, err *C.char) {
 	e.mu.Lock()
 	e.err = errors.New(C.GoString(err))
 	e.mu.Unlock()
-	close(e.parts)
+	e.closeParts()
 }

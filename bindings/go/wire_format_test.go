@@ -141,6 +141,16 @@ func TestWireFormatConsistency(t *testing.T) {
 					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
 				}
 
+			case "ReasoningEffort":
+				var re ReasoningEffort
+				if err := json.Unmarshal([]byte(wireJSON), &re); err != nil {
+					t.Fatalf("failed to unmarshal ReasoningEffort: %v", err)
+				}
+				reencoded, _ := json.Marshal(re)
+				if string(reencoded) != wireJSON {
+					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
+				}
+
 			default:
 				t.Skipf("unsupported fixture type: %s", tc.Type)
 			}

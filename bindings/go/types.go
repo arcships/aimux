@@ -37,6 +37,23 @@ const (
 	FinishOther         FinishReasonUnified = "other"
 )
 
+// ReasoningEffort controls how much reasoning effort the model spends.
+// Mirrors Kotlin ReasoningEffort (Types.kt:72-81).
+type ReasoningEffort string
+
+const (
+	ReasoningProviderDefault ReasoningEffort = "provider-default"
+	ReasoningNone            ReasoningEffort = "none"
+	ReasoningMinimal         ReasoningEffort = "minimal"
+	ReasoningLow             ReasoningEffort = "low"
+	ReasoningMedium          ReasoningEffort = "medium"
+	ReasoningHigh            ReasoningEffort = "high"
+	ReasoningXHigh           ReasoningEffort = "xhigh"
+)
+
+// ToolChoice is polymorphic on the wire: bare string ("auto"/"none"/"required")
+// or tagged object ({"type":"tool","toolName":"..."}). Modeled as raw JSON to
+// preserve both shapes; use the constructors below.
 type ToolChoice = json.RawMessage
 
 // ToolChoiceAuto/None/Required are helper constructors for the string variants.
@@ -45,26 +62,35 @@ func ToolChoiceNone() ToolChoice     { return json.RawMessage(`"none"`) }
 func ToolChoiceRequired() ToolChoice { return json.RawMessage(`"required"`) }
 
 // ToolChoiceTool builds a ToolChoice selecting a specific tool.
+// Uses json.Marshal with a struct to ensure correct field order and escaping.
 func ToolChoiceTool(name string) ToolChoice {
-	return json.RawMessage(`{"type":"tool","toolName":"` + name + `"}`)
+	b, err := json.Marshal(struct {
+		Type     string `json:"type"`
+		ToolName string `json:"toolName"`
+	}{Type: "tool", ToolName: name})
+	if err != nil {
+		// Should not happen for a string — fall back to a safe literal.
+		return json.RawMessage(`{"type":"tool","toolName":""}`)
+	}
+	return json.RawMessage(b)
 }
 
 // ── Core types ───────────────────────────────────────────────────────────────
 
 // TokenUsage is token usage detail with cache breakdown.
 type TokenUsage struct {
-	Total     *int64 `json:"total,omitempty"`
-	NoCache   *int64 `json:"no_cache,omitempty"`
-	CacheRead *int64 `json:"cache_read,omitempty"`
+	Total      *int64 `json:"total,omitempty"`
+	NoCache    *int64 `json:"no_cache,omitempty"`
+	CacheRead  *int64 `json:"cache_read,omitempty"`
 	CacheWrite *int64 `json:"cache_write,omitempty"`
-	Text      *int64 `json:"text,omitempty"`
-	Reasoning *int64 `json:"reasoning,omitempty"`
+	Text       *int64 `json:"text,omitempty"`
+	Reasoning  *int64 `json:"reasoning,omitempty"`
 }
 
 // Usage is token usage statistics.
 type Usage struct {
-	InputTokens  TokenUsage    `json:"input_tokens,omitempty"`
-	OutputTokens TokenUsage    `json:"output_tokens,omitempty"`
+	InputTokens  TokenUsage      `json:"input_tokens,omitempty"`
+	OutputTokens TokenUsage      `json:"output_tokens,omitempty"`
 	Raw          json.RawMessage `json:"raw,omitempty"`
 }
 
@@ -75,10 +101,13 @@ type FinishReason struct {
 }
 
 // ToolCall represents a tool call requested by the model.
+// Mirrors Kotlin ToolCall (Types.kt:157-164).
 type ToolCall struct {
-	ToolCallID string          `json:"tool_call_id"`
-	ToolName   string          `json:"tool_name"`
-	Input      json.RawMessage `json:"input,omitempty"`
+	ToolCallID       string          `json:"tool_call_id"`
+	ToolName         string          `json:"tool_name"`
+	Input            json.RawMessage `json:"input,omitempty"`
+	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
+	Dynamic          *bool           `json:"dynamic,omitempty"`
 }
 
 // ContentPart is a single content part in the raw response.
@@ -86,20 +115,37 @@ type ToolCall struct {
 // for forward compatibility.
 type ContentPart = json.RawMessage
 
+// ResponseMetadata describes the provider HTTP response.
+// Mirrors Kotlin ResponseMetadata (Types.kt:141-146).
+type ResponseMetadata struct {
+	ID          string          `json:"id,omitempty"`
+	Timestamp   json.RawMessage `json:"timestamp,omitempty"`
+	ModelID     string          `json:"model_id,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+}
+
 // GenerateResult is the raw provider result.
+// Mirrors Kotlin GenerateResult (Types.kt:853-871).
 type GenerateResult struct {
-	Content     []ContentPart `json:"content"`
-	FinishReason FinishReason `json:"finish_reason"`
-	Usage       Usage         `json:"usage"`
+	Content         []ContentPart     `json:"content,omitempty"`
+	FinishReason    FinishReason      `json:"finish_reason,omitempty"`
+	Usage           Usage             `json:"usage,omitempty"`
+	Warnings        []json.RawMessage `json:"warnings,omitempty"`
+	ProviderMetadata json.RawMessage  `json:"provider_metadata,omitempty"`
+	Response        ResponseMetadata  `json:"response,omitempty"`
+	RequestBody     json.RawMessage   `json:"request_body,omitempty"`
+	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
 }
 
 // GenerateTextResult is the typed result of a GenerateText call.
+// Mirrors Kotlin GenerateTextResult (Types.kt:878-886).
 type GenerateTextResult struct {
-	Text     string           `json:"text"`
-	ToolCalls []ToolCall      `json:"tool_calls,omitempty"`
-	Raw      GenerateResult   `json:"raw"`
-	Usage    Usage            `json:"usage"`
-	FinishReason FinishReason `json:"finish_reason"`
+	Text         string           `json:"text"`
+	ToolCalls    []ToolCall       `json:"tool_calls,omitempty"`
+	FinishReason FinishReason     `json:"finish_reason,omitempty"`
+	Usage        Usage            `json:"usage,omitempty"`
+	Warnings     []json.RawMessage `json:"warnings,omitempty"`
+	Raw          GenerateResult   `json:"raw"`
 }
 
 // ParseGenerateTextResult parses the JSON string returned by Model.GenerateText
@@ -115,9 +161,17 @@ func ParseGenerateTextResult(jsonStr string) (*GenerateTextResult, error) {
 // ── ModelMessage (for multi-role prompts) ─────────────────────────────────────
 
 // ModelMessage is a single message in a conversation.
+// Content is `any` so it can be a plain string (common case) or a slice of
+// typed ContentParts (multi-part content, e.g. tool results).
+// Mirrors Kotlin ModelMessage (Types.kt:523-548).
 type ModelMessage struct {
-	Role    Role   `json:"role"`
-	Content string `json:"content"`
+	Role    Role `json:"role"`
+	Content any  `json:"content"`
+}
+
+// NewTextMessage builds a message with plain string content (the common case).
+func NewTextMessage(role Role, text string) ModelMessage {
+	return ModelMessage{Role: role, Content: text}
 }
 
 // MarshalMessages serializes a slice of ModelMessage to JSON for use as a prompt.
@@ -133,28 +187,35 @@ func MarshalMessages(msgs []ModelMessage) (string, error) {
 
 // GenerateTextOptions is the typed options for text generation.
 // All fields are optional (pointer types) to match the engine's schema.
+// Mirrors Kotlin GenerateTextOptions (Types.kt:561-579).
 type GenerateTextOptions struct {
-	MaxOutputTokens   *int               `json:"max_output_tokens,omitempty"`
-	Temperature        *float64           `json:"temperature,omitempty"`
-	StopSequences      []string           `json:"stop_sequences,omitempty"`
-	TopP               *float64           `json:"top_p,omitempty"`
-	TopK               *int               `json:"top_k,omitempty"`
-	PresencePenalty    *float64           `json:"presence_penalty,omitempty"`
-	FrequencyPenalty   *float64           `json:"frequency_penalty,omitempty"`
-	ResponseFormat    json.RawMessage    `json:"response_format,omitempty"`
-	Seed               *int64             `json:"seed,omitempty"`
-	Tools             []Tool              `json:"tools,omitempty"`
-	ToolChoice        ToolChoice          `json:"tool_choice,omitempty"`
-	Headers           map[string]string   `json:"headers,omitempty"`
-	ProviderOptions   json.RawMessage    `json:"provider_options,omitempty"`
-	Instructions       *string            `json:"instructions,omitempty"`
+	MaxOutputTokens  *int              `json:"max_output_tokens,omitempty"`
+	Temperature       *float64          `json:"temperature,omitempty"`
+	StopSequences     []string          `json:"stop_sequences,omitempty"`
+	TopP              *float64          `json:"top_p,omitempty"`
+	TopK              *int              `json:"top_k,omitempty"`
+	PresencePenalty   *float64          `json:"presence_penalty,omitempty"`
+	FrequencyPenalty  *float64          `json:"frequency_penalty,omitempty"`
+	ResponseFormat    json.RawMessage   `json:"response_format,omitempty"`
+	Seed              *int64            `json:"seed,omitempty"`
+	Tools             []Tool            `json:"tools,omitempty"`
+	ToolChoice        ToolChoice        `json:"tool_choice,omitempty"`
+	Headers           map[string]string `json:"headers,omitempty"`
+	ProviderOptions   json.RawMessage   `json:"provider_options,omitempty"`
+	Reasoning         *ReasoningEffort  `json:"reasoning,omitempty"`
+	Instructions       *string           `json:"instructions,omitempty"`
 }
 
-// Tool is a function tool definition.
+// Tool is a function tool definition (the "function" variant).
+// Mirrors Kotlin Tool.Function (Types.kt:209-230).
 type Tool struct {
-	Type        string          `json:"type"`         // always "function"
-	Name        string          `json:"name"`
-	InputSchema json.RawMessage `json:"input_schema,omitempty"`
+	Type            string                       `json:"type"` // always "function"
+	Name            string                       `json:"name"`
+	Description     *string                      `json:"description,omitempty"`
+	InputSchema     json.RawMessage              `json:"input_schema,omitempty"`
+	Strict          *bool                        `json:"strict,omitempty"`
+	ProviderOptions map[string]json.RawMessage   `json:"provider_options,omitempty"`
+	InputExamples   []json.RawMessage            `json:"input_examples,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.
