@@ -1,30 +1,33 @@
-﻿# chatgpt cassettes — 待实现
+# chatgpt cassettes — to be implemented
 
-这 33 个录像来自 rig (MIT)，记录的是 ChatGPT 网页版的 **Codex Responses API**
-（`/backend-api/codex/responses`），不是 OpenAI 官方 API。
+These 33 recordings come from rig (MIT) and capture the ChatGPT web **Codex
+Responses API** (`/backend-api/codex/responses`), not the official OpenAI API.
 
-## 为什么没有挂载回放测试
+## Why no playback tests are mounted
 
-`aimux-providers/src/` 下**没有 chatgpt provider 实现**。这个端点的请求/响应格式
-与 OpenAI Responses API (`/v1/responses`) 不同：
+There is **no chatgpt provider implementation** under `aimux-providers/src/`.
+The request/response format of this endpoint differs from the OpenAI Responses
+API (`/v1/responses`):
 
-- 路径是 `/backend-api/codex/responses`（非 `/v1/responses`）
-- 请求体用 `input` / `instructions` / `store` / `include` 这套字段
-- 鉴权走 ChatGPT 网页 OAuth，不是 `Authorization: Bearer <api-key>`
+- The path is `/backend-api/codex/responses` (not `/v1/responses`).
+- The request body uses the `input` / `instructions` / `store` / `include`
+  field set.
+- Authentication uses ChatGPT web OAuth, not `Authorization: Bearer <api-key>`.
 
-要回放这些录像，需要先实现一个独立的 `ChatGPTProvider`，不能复用 `OpenAIProvider`。
+To replay these recordings, a standalone `ChatGPTProvider` must be implemented
+first; it cannot reuse `OpenAIProvider`.
 
-## 录像内容
+## Recording contents
 
-全部 33 个录像的请求路径都是 `/backend-api/codex/responses`，覆盖：
-- 流式/非流式 completion
-- 多轮工具调用（parallel / sequential / nested arguments）
-- reasoning session
-- prompt cache / store 字段
-- unicode 参数、零参数工具调用
-- 401 错误响应
+All 33 recordings hit the path `/backend-api/codex/responses` and cover:
+- Streaming / non-streaming completions
+- Multi-turn tool calling (parallel / sequential / nested arguments)
+- Reasoning sessions
+- Prompt cache / `store` fields
+- Unicode parameters, zero-argument tool calls
+- 401 error responses
 
-## 后续
+## Next steps
 
-实现 `ChatGPTProvider` 后，在 `conformance_test.rs` 加 `mod chatgpt_conformance`，
-照 bedrock/openai 的模式挂载即可。
+Once `ChatGPTProvider` is implemented, add `mod chatgpt_conformance` in
+`conformance_test.rs` and mount it following the bedrock/openai pattern.

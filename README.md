@@ -1,32 +1,61 @@
-﻿# aimux
+# aimux
 
-> 统一 LLM 服务接入层 — 一套 API 接入 172+ 家 AI 服务商
+> **A unified LLM access layer written in Rust. One API for 172+ AI providers.**
 
-## 这是什么
+[![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
+[![Providers](https://img.shields.io/badge/providers-172%2B-green.svg)](rfc/0004-provider-inventory.md)
+[![Bindings](https://img.shields.io/badge/bindings-7-9cf.svg)](bindings/)
 
-aimux 是一个 Rust 写的 LLM 服务接入统一层。把各家 AI 服务商的 HTTP API 收敛成一个 `dyn LanguageModel` 接口，上游谁都能用。
+aimux is a Rust implementation of a unified LLM provider access layer. It
+collapses the HTTP APIs of every AI provider into a single
+`dyn LanguageModel` interface that anything upstream can call.
 
-和 rig、langchain 不同，aimux 不做 agent loop、不做 RAG、不做编排——只专注服务接入统一化。
+Unlike **rig** or **langchain**, aimux does **not** build agent loops, RAG, or
+orchestration — it focuses exclusively on unifying service access. That is the
+difference: aimux is an access layer, those are orchestration layers.
 
-## 核心能力
+---
 
-- **172 个厂商模块**：11 个原生协议实现（OpenAI/Anthropic/Google/Bedrock/Vertex/Azure/Cohere/Mistral/xAI/DeepSeek/Anthropic-AWS）+ 145 个 OpenAI 兼容薄封装 + 15 个语音/图像/视频专用 + 1 个通用 Responses API 封装
-- **统一接口**：`LanguageModel` trait（object-safe，支持 `Box<dyn>` 跨厂商互换）
-- **多模态**：文本、流式、工具调用、嵌入、图像、语音、转写、视频、重排序、文件
-- **配置描述结构**：`OpenAICompatProfile` 描述各家差异（top_k/tools/response_format/流式usage/请求体后处理），薄封装不丢差异
-- **录播测试**：2654 个 cassette 回放，不依赖网络和密钥
+## Why aimux
 
-## 架构
+- **172 provider modules** — 11 native protocol implementations
+  (OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
+  DeepSeek, Anthropic-AWS) + 145 OpenAI-compatible thin wrappers + 15
+  modality-specific (speech/image/video) + 1 generic Responses API wrapper.
+- **Unified, object-safe interface** — the `LanguageModel` trait supports
+  `Box<dyn>` so providers are interchangeable without changing call sites.
+- **Full multimodal** — text, streaming, tool calling, embeddings, image,
+  speech, transcription, video, reranking, files.
+- **Config-driven thin wrappers** — `OpenAICompatProfile` describes each
+  provider's quirks (top_k, tools, response_format, streaming usage, request
+  body post-processing), so thin wrappers never erase provider differences.
+- **Fast and small** — Rust core, release profile tuned for binary size
+  (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
+- **7 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
+  Go, C.
+- **Hermetic tests** — 2,650+ cassettes replay real API responses; no network
+  or API keys required.
+
+## Architecture
 
 ```
 aimux/
-├── aimux-core           # 核心抽象：LanguageModel / Provider / Message / StreamPart
-├── aimux-providers      # 172 个厂商实现
-├── aimux-stream         # SSE / NDJSON 流式解析
-├── aimux-provider-utils # HTTP 工具：重试、退避、错误解析、API Key 加载
+├── aimux-core            # Core abstractions: LanguageModel / Provider / Message / StreamPart
+├── aimux-providers       # 172 provider implementations
+├── aimux-stream          # SSE / NDJSON stream parsing
+├── aimux-provider-utils  # HTTP utilities: retry, backoff, error parsing, API-key loading
+└── aimux-ffi             # C ABI (opaque handle + JSON + push callback) for non-native bindings
 ```
 
-## 快速开始
+```
+           ┌─ native path ──→ aimux-core + aimux-providers (direct Rust types + async)
+bindings ──┤
+           └─ C ABI path  ──→ aimux-ffi (opaque handle + JSON + push callback)
+```
+
+## Quick start
 
 ```rust
 use aimux_core::prelude::*;
@@ -50,7 +79,7 @@ async fn main() -> Result<(), AiMuxError> {
 }
 ```
 
-## 流式输出
+## Streaming
 
 ```rust
 use futures::StreamExt;
@@ -71,68 +100,86 @@ while let Some(part) = stream.next().await {
 }
 ```
 
-## 切换厂商
+## Switch providers
 
 ```rust
-// OpenAI → DeepSeek，只改 provider
+// OpenAI → DeepSeek: only the provider changes
 let provider = DeepSeekProvider::new(
     DeepSeekConfig::from_env()?
 );
 let model = provider.model("deepseek-chat");
-// model 用法完全一样，都是 dyn LanguageModel
+// model usage is identical — it's all dyn LanguageModel
 ```
 
-## 厂商覆盖
+## Provider coverage
 
-| 类型 | 数量 | 代表 |
-|------|:---:|------|
-| 原生协议 | 11 | OpenAI、Anthropic、Google、Bedrock、Vertex、Azure、Cohere、Mistral、xAI、DeepSeek |
-| OpenAI 兼容 | 145 | Groq、Fireworks、Together、Perplexity、Ollama、OpenRouter、阿里通义、智谱、百度、腾讯、讯飞、月之暗面、硅基流动… |
-| 语音/转写 | 7 | ElevenLabs、Deepgram、AssemblyAI、Cartesia… |
-| 图像/视频 | 8 | Black Forest Labs、Replicate、Fal、KlingAI… |
+| Type | Count | Examples |
+|------|:-----:|----------|
+| Native protocol | 11 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, DeepSeek |
+| OpenAI-compatible | 145 | Groq, Fireworks, Together, Perplexity, Ollama, OpenRouter, Alibaba Tongyi, Zhipu, Baidu, Tencent, iFlytek, Moonshot, SiliconFlow… |
+| Speech / transcription | 7 | ElevenLabs, Deepgram, AssemblyAI, Cartesia… |
+| Image / video | 8 | Black Forest Labs, Replicate, Fal, KlingAI… |
 
-完整清单见 [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md)。
+Full list: [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md).
 
-## 测试
+## Language bindings
+
+aimux ships 7 bindings that share the same Rust core:
+
+| Binding | Path | Tool | Directory |
+|---------|------|------|-----------|
+| **Node.js** | native | napi-rs v3 | [bindings/node/](bindings/node/) |
+| **Python** | native | PyO3 + maturin | [bindings/python/](bindings/python/) |
+| **Swift** | C ABI | Swift Package | [bindings/swift/](bindings/swift/) |
+| **Kotlin** | C ABI | JNA | [bindings/kotlin/](bindings/kotlin/) |
+| **Flutter** | C ABI | dart:ffi | [bindings/flutter/](bindings/flutter/) |
+| **Go** | C ABI | cgo (static link, single binary) | [bindings/go/](bindings/go/) |
+| **C / C++** | C ABI | direct link | [bindings/c/](bindings/c/) |
+
+See [bindings/README.md](bindings/README.md) and the [API docs](docs/API.md).
+
+## Testing
 
 ```bash
 cargo test -p aimux-providers --tests
 ```
 
-测试不依赖网络和密钥，用 cassette 回放真实 API 响应。详见 [rfc/0003-test-cassette.md](rfc/0003-test-cassette.md)。
+Tests run on cassette playback — no network and no keys. See
+[rfc/0003-test-cassette.md](rfc/0003-test-cassette.md).
 
-## 多语言绑定
+## Documentation
 
-aimux 提供 7 种语言绑定，共享同一个 Rust 核心：
+| Doc | Contents |
+|-----|----------|
+| [docs/API.md](docs/API.md) | **API reference** (all modalities × all languages) |
+| [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | Project overview, design decisions, benchmarks |
+| [docs/PERF-RESULTS.md](docs/PERF-RESULTS.md) | Performance benchmark results |
+| [docs/aimux-vs-aisdk-node.md](docs/aimux-vs-aisdk-node.md) | Node.js DX comparison vs Vercel AI SDK |
+| [docs/README.md](docs/README.md) | Documentation index |
 
-| 绑定 | 路径 | 工具 | 目录 |
-|------|------|------|------|
-| **Node.js** | 原生 | napi-rs v3 | [bindings/node/](bindings/node/) |
-| **Python** | 原生 | PyO3 + maturin | [bindings/python/](bindings/python/) |
-| **Swift** | C ABI | Swift Package | [bindings/swift/](bindings/swift/) |
-| **Kotlin** | C ABI | JNA | [bindings/kotlin/](bindings/kotlin/) |
-| **Flutter** | C ABI | dart:ffi | [bindings/flutter/](bindings/flutter/) |
-| **Go** | C ABI | cgo（静态链接，单 binary） | [bindings/go/](bindings/go/) |
-| **C / C++** | C ABI | 直接链接 | [bindings/c/](bindings/c/) |
+### Design docs (RFCs)
 
-详见 [bindings/README.md](bindings/README.md) 和 [API 文档](docs/API.md)。
+| RFC | Contents |
+|-----|----------|
+| [0001](rfc/0001-multilang-bindings.md) | Multi-language bindings (Node/Swift/Kotlin/Flutter/Python) |
+| [0002](rfc/0002-provider-improvements.md) | Config descriptor & thin-wrapper improvements |
+| [0003](rfc/0003-test-cassette.md) | Test cassette scheme |
+| [0004](rfc/0004-provider-inventory.md) | Full provider inventory & implementation status |
+| [0005](rfc/0005-protocol-conversion.md) | Protocol conversion & adaptation layer |
+| [0006](rfc/0006-provider-development.md) | Provider minimum acceptance, core contract, tests |
+| [0007](rfc/0007-search-model-trait.md) | Search model trait |
+| [0008](rfc/0008-multimodal-bindings.md) | Multimodal bindings design |
+| [0009](rfc/0009-request-resilience.md) | Request resilience (shared client / jitter / timeout) |
+| [0010](rfc/0010-perf-benchmark-vs-aisdk.md) | Performance vs Vercel AI SDK benchmark |
+| [0011](rfc/0011-golang-bindings.md) | Go bindings (cgo static link + push callback → channel) |
+| [0012](rfc/0012-source-dedup.md) | Source dedup (product source −25%) |
 
-## 设计文档
+## Contributing
 
-| 文档 | 内容 |
-|------|------|
-| [docs/API.md](docs/API.md) | **API 文档**（全部模态 × 全部语言） |
-| [rfc/0001-multilang-bindings.md](rfc/0001-multilang-bindings.md) | 多语言绑定方案（Node/Swift/Kotlin/Flutter/Python） |
-| [rfc/0002-provider-improvements.md](rfc/0002-provider-improvements.md) | 配置描述结构与薄封装改进 |
-| [rfc/0003-test-cassette.md](rfc/0003-test-cassette.md) | 录播测试方案 |
-| [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md) | 全网厂商清单与实现现状 |
-| [rfc/0005-protocol-conversion.md](rfc/0005-protocol-conversion.md) | 协议转换与适配层设计 |
-| [rfc/0006-provider-development.md](rfc/0006-provider-development.md) | Provider 最小准入、实现路径、核心契约、按需测试与验收规范 |
-| [rfc/0008-multimodal-bindings.md](rfc/0008-multimodal-bindings.md) | 多模态绑定设计 |
-| [rfc/0009-request-resilience.md](rfc/0009-request-resilience.md) | 请求优化 — 参考 catcher 设计（共享 Client / jitter / 超时） |
-| [rfc/0010-perf-benchmark-vs-aisdk.md](rfc/0010-perf-benchmark-vs-aisdk.md) | 请求性能对比 — aimux vs Vercel AI SDK 基准方案（速度 / 结构化开销 / 并发三维度，同进程同 mock） |
-| [rfc/0011-golang-bindings.md](rfc/0011-golang-bindings.md) | Go 绑定设计 — cgo 静态链接 + push callback→channel 流式，单 binary 7.5MB |
+Contributions are welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development setup, testing workflow, provider/binding conventions, and the pull
+request process. Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)

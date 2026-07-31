@@ -13,7 +13,7 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/yourusername/aimux"
+repository = "https://github.com/arcships/aimux"
 description = "Rust alternative to Vercel AI SDK - unified provider interface for LLM applications"
 rust-version = "1.85"
 

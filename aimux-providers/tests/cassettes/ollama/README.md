@@ -1,27 +1,31 @@
-﻿# ollama cassettes — 待实现
+# ollama cassettes — to be implemented
 
-这 21 个录像来自 rig (MIT)，记录的是 **Ollama 原生 API**（`/api/chat`、`/api/tags`），
-不是 OpenAI 兼容接口。
+These 21 recordings come from rig (MIT) and capture the **Ollama native API**
+(`/api/chat`, `/api/tags`), not the OpenAI-compatible interface.
 
-## 为什么没有挂载回放测试
+## Why no playback tests are mounted
 
-`aimux-providers/src/` 下**没有 ollama provider 实现**。Ollama 原生 API 的请求/响应
-格式与 OpenAI Chat Completions 完全不同：
+There is **no ollama provider implementation** under `aimux-providers/src/`.
+The Ollama native API request/response format is entirely different from
+OpenAI Chat Completions:
 
-- 路径是 `/api/chat`（非 `/v1/chat/completions`）
-- 请求体用 `messages` / `model` / `options` / `think` / `stream` 字段
-- 响应体结构独立，流式是逐行 JSON（NDJSON），不是 SSE
+- The path is `/api/chat` (not `/v1/chat/completions`).
+- The request body uses `messages` / `model` / `options` / `think` / `stream`
+  fields.
+- The response body has its own structure; streaming is line-delimited JSON
+  (NDJSON), not SSE.
 
-要回放这些录像，需要先实现一个独立的 `OllamaProvider`，不能复用 `OpenAIProvider`。
+To replay these recordings, a standalone `OllamaProvider` must be implemented
+first; it cannot reuse `OpenAIProvider`.
 
-## 录像内容
+## Recording contents
 
-| 路径 | 数量 | 覆盖 |
-|------|------|------|
-| `/api/chat` | 20 | 流式/非流式 completion、结构化输出、工具调用、thinking |
+| Path | Count | Coverage |
+|------|------|----------|
+| `/api/chat` | 20 | Streaming / non-streaming completions, structured output, tool calling, thinking |
 | `/api/tags` | 1 | list models |
 
-## 后续
+## Next steps
 
-实现 `OllamaProvider` 后，在 `conformance_test.rs` 加 `mod ollama_conformance`，
-照 bedrock 的模式挂载即可。
+Once `OllamaProvider` is implemented, add `mod ollama_conformance` in
+`conformance_test.rs` and mount it following the bedrock pattern.

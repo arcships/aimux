@@ -1,16 +1,16 @@
-# 测试录像方案
+# Test cassette proposal
 
-## 目标
+## Goal
 
-测试不依赖网络和密钥。跑测试时回放录像文件，不用真实调用厂商接口。
+Tests do not depend on the network or keys. When running tests, replay cassette files instead of making real calls to provider APIs.
 
-## 数据来源
+## Data sources
 
-### 现成可用
+### Ready-to-use
 
-rig 项目录了 505 个真实返回录像，MIT 协议，可以用。覆盖 16 家厂商：
+The rig project recorded 505 real-response cassettes under the MIT license, which can be used. They cover 16 providers:
 
-| 厂商 | 录像数 |
+| Provider | Cassette count |
 |------|:---:|
 | Gemini | 116 |
 | OpenAI | 64 |
@@ -24,87 +24,87 @@ rig 项目录了 505 个真实返回录像，MIT 协议，可以用。覆盖 16 
 | Groq | 10 |
 | Perplexity | 9 |
 | Mistral | 9 |
-| 其他 | 7 |
+| Other | 7 |
 
-rig 的格式是 YAML，每个文件含 `when`（请求：路径、方法、请求头、请求体）和 `then`（响应：状态码、响应头、响应体）。流式响应的响应体就是原始的 SSE 文本，一块一块的。
+rig's format is YAML; each file contains `when` (request: path, method, headers, body) and `then` (response: status code, headers, body). For streaming responses, the body is the raw SSE text, chunk by chunk.
 
-### 自己补录
+### Recording our own
 
-rig 没覆盖的厂商，用开源工具 llmtape 起本地代理，真实调一次 API 录下来。这要花 API 额度，按需补。
+For providers not covered by rig, use the open-source tool llmtape to start a local proxy and make a real API call to record it. This costs API quota, so supplement as needed.
 
-### 不用的
+### Not used
 
-litellm 的录像没提交进仓库，vcrpy 默认运行时生成、运行后丢弃，拿不到。
+litellm's cassettes are not committed to the repository; vcrpy generates them at runtime by default and discards them after running, so they are unavailable.
 
-aimock 是造的假数据，不是真实返回，不能验证我们的解析对不对，不用。
+aimock uses fabricated fake data, not real responses, so it cannot verify whether our parsing is correct; not used.
 
-## 为什么转成自己的格式
+## Why convert to our own format
 
-法律上直接用 rig 的文件没问题（MIT 协议允许）。但转成自己的格式是为了工程整洁——结构自己定，命名自己定，不绑死 rig 的目录结构。转换后的文件保留一句来源声明即可。
+Legally, using rig's files directly is fine (the MIT license permits it). But converting to our own format is for engineering cleanliness — we define the structure and naming ourselves, and are not locked into rig's directory structure. The converted files just need to retain a one-line source declaration.
 
-## 格式设计
+## Format design
 
-用 JSON，一个场景一个文件。结构：
+Use JSON, one file per scenario. Structure:
 
 ```json
 {
-  "来源": "rig（MIT 协议）",
-  "厂商": "anthropic",
-  "场景": "流式工具调用",
-  "请求": {
-    "路径": "/v1/messages",
-    "方法": "POST",
-    "请求头": { "content-type": "application/json" },
-    "请求体": { ... }
+  "source": "rig (MIT license)",
+  "provider": "anthropic",
+  "scenario": "streaming tool calling",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": { "content-type": "application/json" },
+    "body": { ... }
   },
-  "响应": {
-    "状态码": 200,
-    "响应头": { "content-type": "text/event-stream" },
-    "响应体": "event: message_start\ndata: {...}\n\nevent: ..."
+  "response": {
+    "status_code": 200,
+    "headers": { "content-type": "text/event-stream" },
+    "body": "event: message_start\ndata: {...}\n\nevent: ..."
   }
 }
 ```
 
-关键点：
+Key points:
 
-- **响应体存原始文本**。非流式就是 JSON 字符串，流式就是 SSE 原文。这样回放时原样发回，我们的解析代码处理的就是真实数据。
-- **不存敏感信息**。rig 已经把 ID 替换成 `REDACTED`，我们保留这个做法。
-- **场景名用人话**。比如"流式工具调用"、"结构化输出"、"空结束轮"，不用 rig 的目录名。
+- **The response body stores raw text**. For non-streaming it is a JSON string; for streaming it is the raw SSE text. This way it is sent back as-is during replay, and our parsing code processes real data.
+- **No sensitive information is stored**. rig has already replaced IDs with `REDACTED`; we keep this practice.
+- **Scenario names in plain language**. For example "streaming tool calling", "structured output", "empty finish round", rather than rig's directory names.
 
-## 回放机制
+## Replay mechanism
 
-测试时起一个本地模拟服务，读录像文件，按请求匹配，返回对应的响应。
+During testing, start a local mock service that reads cassette files, matches by request, and returns the corresponding response.
 
-匹配规则：按路径 + 请求体的特征匹配。不按完整请求体匹配，因为请求体里可能有时间戳、随机数等不稳定字段。具体匹配哪些字段，等实现时定。
+Matching rule: match by path + features of the request body. Do not match by the full request body, because the body may contain unstable fields such as timestamps and random numbers. Exactly which fields to match will be decided at implementation time.
 
-模拟服务用 Rust 写，集成进测试。回放时把厂商的网址指向本地模拟服务，厂商代码不知道自己在被测。
+The mock service is written in Rust and integrated into the tests. During replay, the provider's URL is pointed at the local mock service, and the provider code does not know it is being tested.
 
-## 统一契约测试
+## Unified contract tests
 
-录像解决"有真实数据可回放"。再加一层统一测试，保证所有厂商行为一致。
+Cassettes solve "having real data to replay". Add another layer of unified tests to ensure consistent behavior across all providers.
 
-做法：定义一组标准输入（比如"生成文本"、"流式生成"、"带工具调用"），每个厂商跑同样的输入，断言同样的行为（比如"返回了文本"、"流式有开始和结束"、"工具调用解析正确"）。
+Approach: define a set of standard inputs (e.g. "generate text", "streaming generation", "with tool calling"), run the same inputs for each provider, and assert the same behaviors (e.g. "returned text", "streaming has a start and an end", "tool calling parsed correctly").
 
-这层测试不查具体返回内容（各厂商返回不同），只查结构——我们的代码有没有正确解析。
+This layer of tests does not check the specific returned content (each provider returns different content); it only checks the structure — whether our code parsed correctly.
 
-## 落地步骤
+## Implementation steps
 
-1. **写转换脚本**：把 rig 的 505 个 YAML 录像转成我们的 JSON 格式，存到 `tests/cassettes/` 下。
-2. **写回放服务**：Rust 实现的本地模拟服务，读 JSON 录像，按请求匹配返回响应。
-3. **改造现有测试**：把现在用 wiremock 手写的测试改成用回放服务。
-4. **写统一契约测试**：定义标准输入，跑所有厂商，断言行为结构。
-5. **补录缺失厂商**：用 llmtape 录 rig 没覆盖的厂商。
+1. **Write a conversion script**: convert rig's 505 YAML cassettes into our JSON format and store them under `tests/cassettes/`.
+2. **Write the replay service**: a Rust-implemented local mock service that reads JSON cassettes and returns responses matched by request.
+3. **Refactor existing tests**: change the tests currently hand-written with wiremock to use the replay service.
+4. **Write unified contract tests**: define standard inputs, run all providers, and assert the behavior structure.
+5. **Record missing providers**: use llmtape to record the providers not covered by rig.
 
-## 目录结构
+## Directory structure
 
 ```
 tests/
-├── cassettes/           # 录像文件（JSON）
+├── cassettes/           # recording files (JSON)
 │   ├── openai/
 │   ├── anthropic/
 │   └── ...
-├── replay/              # 回放服务实现
+├── replay/              # replay service implementation
 │   └── mod.rs
-└── conformance/         # 统一契约测试
+└── conformance/         # unified contract tests
     └── mod.rs
 ```

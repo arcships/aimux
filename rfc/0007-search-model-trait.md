@@ -1,24 +1,24 @@
-# RFC-0007：Search Model Trait 设计
+# RFC-0007: Search Model Trait Design
 
-> **状态**：ACCEPTED
-> **日期**：2026-07-28
-> **范围**：`aimux-core` 新增 `SearchModel` trait 及配套类型
-> **关联**：[Provider 开发规范](0006-provider-development.md)、[Provider 调研报告](../docs/provider-research/README.md)
+> **Status**: ACCEPTED
+> **Date**: 2026-07-28
+> **Scope**: `aimux-core` adds `SearchModel` trait and accompanying types
+> **Related**: [Provider Development Spec](0006-provider-development.md), [Provider Research Report](../docs/provider-research/README.md)
 
-## 1. 动机
+## 1. Motivation
 
-调研报告显示 11 个 search provider（tavily/serper/exa_ai/firecrawl/linkup/parallel_ai/searxng/google_pse/tinyfish/you_com/dataforseo）因 aimux-core 无 search trait 而搁置。这些 provider 的协议证据均为强/中，是最大的单类阻塞项。
+The research report shows that 11 search providers (tavily/serper/exa_ai/firecrawl/linkup/parallel_ai/searxng/google_pse/tinyfish/you_com/dataforseo) are stalled because aimux-core has no search trait. The protocol evidence for these providers is all strong/medium, making this the largest single-category blocker.
 
-Vercel AI SDK 参考实现中不存在 search model trait（仅有 language/embedding/rerank/speech/transcription/image/video/files/realtime 九种）。因此本 RFC 需要从零设计 search trait 的接口契约。
+No search model trait exists in the Vercel AI SDK reference implementation (only nine kinds: language/embedding/rerank/speech/transcription/image/video/files/realtime). Therefore, this RFC needs to design the search trait's interface contract from scratch.
 
-## 2. 设计目标
+## 2. Design Goals
 
-1. 覆盖 11 个 search provider的协议共性，不因个别 provider 的特有字段污染核心接口。
-2. 与现有 trait（RerankingModel、EmbeddingModel）风格一致：provider-facing `do_*` 方法 + `SearchCallOptions` + `SearchResult`。
-3. 不修改 `Provider` trait 的现有契约（`name` + `language_model`），search 能力通过 provider 上的额外方法暴露。
-4. 不引入用户 API 层（`generate_text` 级别的 `search` free function），仅定义 provider-facing trait。用户 API 可后续独立提案。
+1. Cover the protocol commonalities of the 11 search providers, without polluting the core interface with individual providers' unique fields.
+2. Be consistent in style with existing traits (RerankingModel, EmbeddingModel): provider-facing `do_*` method + `SearchCallOptions` + `SearchResult`.
+3. Do not modify the existing contract of the `Provider` trait (`name` + `language_model`); search capability is exposed via an additional method on the provider.
+4. Do not introduce a user API layer (a `search` free function at the `generate_text` level); only define the provider-facing trait. A user API can be proposed separately later.
 
-## 3. trait 设计
+## 3. Trait Design
 
 ### 3.1 SearchModel trait
 
@@ -148,19 +148,19 @@ pub struct SearchResponse {
 }
 ```
 
-## 4. Provider 集成方式
+## 4. Provider Integration Approach
 
-### 4.1 不修改 Provider trait
+### 4.1 Do Not Modify the Provider Trait
 
-`Provider` trait 保持不变（`name` + `language_model`）。纯 search provider 不适合通过 `language_model` 返回值——与 image/video/speech/rerank provider 的模式一致，search 能力通过 provider 上的额外方法暴露：
+The `Provider` trait remains unchanged (`name` + `language_model`). A pure search provider is not suited to being returned via `language_model` — consistent with the pattern for image/video/speech/rerank providers, search capability is exposed via an additional method on the provider:
 
 ```rust
-// 在 provider 实现中（如 TavilyProvider）
+// In the provider implementation (e.g. TavilyProvider)
 impl TavilyProvider {
     pub fn search_model(&self, model_id: &str) -> TavilySearchModel { ... }
 }
 
-// Provider trait impl 仍需实现（language_model 返回 Unsupported error）
+// Provider trait impl still required (language_model returns Unsupported error)
 impl Provider for TavilyProvider {
     fn name(&self) -> &str { "tavily" }
     fn language_model(&self, _: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
@@ -169,70 +169,70 @@ impl Provider for TavilyProvider {
 }
 ```
 
-### 4.2 不引入用户 API
+### 4.2 Do Not Introduce a User API
 
-本 RFC 不定义 `search()` free function（类似 `generate_text()`）。原因：
-- 现有 `generate_text` / `stream_text` 围绕 `LanguageModel` 设计，search 的输入/输出模型不同。
-- 用户 API 设计需考虑与 `generate_text` 的组合（如 "搜索后生成"），属于更高层抽象。
-- 先稳定 provider-facing trait，用户 API 可后续独立提案。
+This RFC does not define a `search()` free function (similar to `generate_text()`). Reasons:
+- The existing `generate_text` / `stream_text` are designed around `LanguageModel`; search has a different input/output model.
+- User API design needs to consider composition with `generate_text` (e.g. "search then generate"), which is a higher-level abstraction.
+- Stabilize the provider-facing trait first; a user API can be proposed separately later.
 
-## 5. 各 provider 映射
+## 5. Provider Mapping
 
-| Provider | endpoint | query 字段 | results 字段 | 特有行为 |
+| Provider | endpoint | query field | results field | Unique behavior |
 |---|---|---|---|---|
-| tavily | POST /search | query | results[].{title,url,content,score} | answer 字段 |
-| serper | POST /search | q | organic[].{title,link,snippet} | 无 score |
-| exa_ai | POST /search | query | results[].{title,url,text} | 无 score |
-| firecrawl | POST /v2/search | query | data[].{url,markdown} | 搜索+抓取合一 |
+| tavily | POST /search | query | results[].{title,url,content,score} | answer field |
+| serper | POST /search | q | organic[].{title,link,snippet} | no score |
+| exa_ai | POST /search | query | results[].{title,url,text} | no score |
+| firecrawl | POST /v2/search | query | data[].{url,markdown} | search + scrape combined |
 | linkup | POST /v1/search | query | results[].{url,title,content} | depth/outputType |
-| parallel_ai | POST /v1/search | objective | results[] | objective 模式 |
-| searxng | GET /search | q | results[].{title,url,content} | 自托管、无鉴权 |
-| google_pse | GET /v1 | q | items[].{title,link,snippet} | 需 cx 参数 |
+| parallel_ai | POST /v1/search | objective | results[] | objective mode |
+| searxng | GET /search | q | results[].{title,url,content} | self-hosted, no auth |
+| google_pse | GET /v1 | q | items[].{title,link,snippet} | requires cx parameter |
 | tinyfish | POST /search | query | results[] | x-api-key |
 | you_com | POST /search | query | hits[].{url,title,description} | ydc-index.io |
-| dataforseo | POST /v3/serp/... | keyword | tasks[].result.organic[] | Basic 鉴权 |
+| dataforseo | POST /v3/serp/... | keyword | tasks[].result.organic[] | Basic auth |
 
-**共性**：所有 provider 都有 query → results[] 的基本结构。title/url/content/snippet 是通用字段。score、answer、raw_content 是可选字段。
+**Commonality**: All providers have the basic query → results[] structure. title/url/content/snippet are common fields. score, answer, raw_content are optional fields.
 
-## 6. 与现有 trait 的关系
+## 6. Relationship with Existing Traits
 
-- **与 RerankingModel 的相似性**：都是 query → ordered results 的模式。但 reranking 的输入是已有文档列表（rerank），search 的输入是 query（从互联网/索引检索）。
-- **与 LanguageModel 的关系**：某些 search provider（如 Perplexity）将搜索集成在 language model 中（通过 provider-executed tool `web_search`）。本 trait 不替代这种模式，而是为纯 search API 提供独立接口。
-- **GenerateContent::Source**：现有 `GenerateContent::Source` 变体已用于 language model 的搜索引用结果。`SearchResultItem` 与 `Source` 结构相似但用途不同——`Source` 是 language model 输出中的引用，`SearchResultItem` 是 search API 的直接输出。
+- **Similarity to RerankingModel**: Both follow the query → ordered results pattern. But reranking's input is an existing list of documents (rerank), while search's input is a query (retrieved from the internet/index).
+- **Relationship with LanguageModel**: Some search providers (e.g. Perplexity) integrate search within the language model (via the provider-executed tool `web_search`). This trait does not replace that pattern; instead, it provides an independent interface for pure search APIs.
+- **GenerateContent::Source**: The existing `GenerateContent::Source` variant is already used for search citation results in language models. `SearchResultItem` is structurally similar to `Source` but serves a different purpose — `Source` is a citation within language model output, while `SearchResultItem` is the direct output of a search API.
 
-## 7. 不做的事
+## 7. Non-Goals
 
-1. 不修改 `Provider` trait。
-2. 不引入用户 API（`search()` free function）。
-3. 不定义流式搜索——所有 11 个 provider 均为同步请求/响应。
-4. 不定义 search + generate 组合抽象。
-5. 不为个别 provider 的特有字段（如 serper 的 `peopleAlsoAsk`、google_pse 的 `cx`）在核心 trait 中增加字段——这些走 `provider_options` 透传。
-6. 不在核心 trait 中定义 `model_id` 路由逻辑——endpoint 路径参数（如 dataforseo 的 `/v3/serp/google/organic/live/advanced`）由各 provider 在 `do_search` 内部自行处理。
-7. 不在 `SearchResultItem` 中定义 `published_date` 字段——多数 provider 不支持，tavily/serper 等可通过 `provider_metadata` 透传。
+1. Do not modify the `Provider` trait.
+2. Do not introduce a user API (`search()` free function).
+3. Do not define streaming search — all 11 providers are synchronous request/response.
+4. Do not define a search + generate composition abstraction.
+5. Do not add fields to the core trait for individual providers' unique fields (e.g. serper's `peopleAlsoAsk`, google_pse's `cx`) — these are passed through via `provider_options`.
+6. Do not define `model_id` routing logic in the core trait — endpoint path parameters (e.g. dataforseo's `/v3/serp/google/organic/live/advanced`) are handled by each provider internally within `do_search`.
+7. Do not define a `published_date` field in `SearchResultItem` — most providers do not support it; tavily/serper etc. can pass it through via `provider_metadata`.
 
-## 8. 变更范围
+## 8. Scope of Changes
 
-| 位置 | 变更 |
+| Location | Change |
 |---|---|
-| `aimux-core/src/search_model.rs` | 新增：SearchModel trait + SearchCallOptions + SearchResult + SearchResultItem + SearchResponse |
-| `aimux-core/src/lib.rs` | 新增 `pub mod search_model;` + re-export |
-| `aimux-core/src/prelude.rs` | 新增 search 相关 re-export |
-| `aimux-providers/` | 后续逐个实现 11 个 search provider |
+| `aimux-core/src/search_model.rs` | New: SearchModel trait + SearchCallOptions + SearchResult + SearchResultItem + SearchResponse |
+| `aimux-core/src/lib.rs` | New `pub mod search_model;` + re-export |
+| `aimux-core/src/prelude.rs` | New search-related re-exports |
+| `aimux-providers/` | Implement the 11 search providers one by one later |
 
-## 9. 风险
+## 9. Risks
 
-1. **Vercel AI SDK 无参考**：search trait 无上游参考实现，接口设计需自行验证。缓解：先稳定 provider-facing trait，不急于定义用户 API。
-2. **provider 差异大**：11 个 provider 的字段差异较大（如 dataforseo 用 Basic 鉴权、searxng 无鉴权、tavily 有 answer 字段）。缓解：核心 trait 只覆盖共性，特有字段走 `provider_options`。
-3. **与 language model 搜索的组合**：用户可能期望 search → generate 的组合流程。缓解：本 RFC 不处理组合，留待后续提案。
+1. **No Vercel AI SDK reference**: The search trait has no upstream reference implementation; the interface design needs self-validation. Mitigation: stabilize the provider-facing trait first, do not rush to define a user API.
+2. **Large provider differences**: The 11 providers differ significantly in fields (e.g. dataforseo uses Basic auth, searxng has no auth, tavily has an answer field). Mitigation: the core trait only covers commonalities; unique fields go through `provider_options`.
+3. **Composition with language model search**: Users may expect a search → generate composition flow. Mitigation: this RFC does not handle composition; left for a later proposal.
 
-## 10. 开放问题（已关闭）
+## 10. Open Questions (closed)
 
-1. ~~`SearchResultItem` 是否需要 `published_date` 字段？~~ **不加。** 多数 provider 不支持，tavily/serper 等可通过 `provider_metadata` 透传。与 RFC-0006 §2.3"只有请求代码会读取的配置项才对外暴露"原则一致。
-2. ~~`time_range` 应为 `String` 还是 `enum`？~~ **保持 `String`。** 各 provider 的枚举值不统一（tavily 用 day/week/month/year，serper 用中文式描述），强行 enum 会丢失语义或导致 mapping 地狱。String + provider_options 是最务实的。
-3. ~~是否需要 `SearchModel::max_results_per_call()` 方法？~~ **不需要。** search 不像 embedding 有批量调用的硬限制——`max_results` 已经在 `SearchCallOptions` 中，provider 自行截断即可。
+1. ~~Does `SearchResultItem` need a `published_date` field?~~ **No.** Most providers do not support it; tavily/serper etc. can pass it through via `provider_metadata`. This is consistent with the RFC-0006 §2.3 principle "only config items that request code will read are exposed externally".
+2. ~~Should `time_range` be `String` or `enum`?~~ **Keep `String`.** The enum values are inconsistent across providers (tavily uses day/week/month/year, serper uses Chinese-style descriptions); forcing an enum would lose semantics or cause mapping hell. String + provider_options is the most pragmatic.
+3. ~~Is a `SearchModel::max_results_per_call()` method needed?~~ **No.** Unlike embedding, search has no hard batch-call limit — `max_results` is already in `SearchCallOptions`, and the provider can truncate on its own.
 
-## 11. 实现顺序
+## 11. Implementation Order
 
-1. 本 RFC 评审通过后，先在 aimux-core 新增 trait 和类型。
-2. 逐个实现 11 个 search provider（按调研优先级：tavily/serper/exa_ai 先行）。
-3. 每个实现按 RFC-0006 流程：核验协议 → 实现 → wiremock 测试。
+1. After this RFC is approved, first add the trait and types in aimux-core.
+2. Implement the 11 search providers one by one (in research priority order: tavily/serper/exa_ai first).
+3. Each implementation follows the RFC-0006 process: verify protocol → implement → wiremock test.

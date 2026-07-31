@@ -1,47 +1,47 @@
-# RFC-0010：请求性能对比 — aimux vs Vercel AI SDK
+# RFC-0010: Request Performance Comparison — aimux vs Vercel AI SDK
 
-> **状态**：DRAFT（待评审）
-> **日期**：2026-07-30
-> **范围**：设计一套可复现的请求性能基准，在统一测量基准下对比 aimux（Rust 核心 + napi Node 绑定）与 Vercel AI SDK（纯 TS）的「统一接入层」开销；覆盖**速度、结构化开销、并发能力**三个维度；产出落地步骤与公平性约束
-> **关联**：[RFC-0009](0009-request-resilience.md) 请求层优化（对比前置依赖）、[RFC-0003](0003-test-cassette.md) 录播测试方案（mock 数据来源）、[RFC-0001](0001-multilang-bindings.md) 多语言绑定
+> **Status**: DRAFT (pending review)
+> **Date**: 2026-07-30
+> **Scope**: Design a reproducible request-performance benchmark to compare, under a unified measurement baseline, the "unified access layer" overhead of aimux (Rust core + napi Node binding) versus the Vercel AI SDK (pure TS); cover three dimensions: **speed, structural overhead, and concurrency capacity**; produce landing steps and fairness constraints
+> **Related**: [RFC-0009](0009-request-resilience.md) request-layer optimization (a prerequisite for comparison), [RFC-0003](0003-test-cassette.md) cassette test plan (source of mock data), [RFC-0001](0001-multilang-bindings.md) multilang bindings
 
-## 1. 动机
+## 1. Motivation
 
-aimux 在 [Cargo.toml](../Cargo.toml) 自定位为 `"Rust alternative to Vercel AI SDK"`。但「Rust 替代品」的性能主张至今**没有可复现的测量支撑**——既无 benchmark 目录，也无与 AISDK 的对比数据。本 RFC 定义一套基准，回答：
+aimux positions itself in [Cargo.toml](../Cargo.toml) as `"Rust alternative to Vercel AI SDK"`. But the performance claims of the "Rust alternative" still have **no reproducible measurement support** to date—there is neither a benchmark directory nor comparison data with AISDK. This RFC defines a benchmark suite to answer:
 
-> 在同等上游、同等负载下，aimux 这一「统一接入层」相对 Vercel AI SDK 的延迟 / 结构化开销 / 并发能力差异是多少？
+> Under the same upstream and the same load, what are the latency / structural-overhead / concurrency-capacity differences of aimux's "unified access layer" relative to the Vercel AI SDK?
 
-**对比的是什么、不是什么**：
+**What is and isn't being compared**:
 
-| 维度 | 说明 |
+| Dimension | Description |
 |---|---|
-| ✅ 对比 | SDK 自身的协议转换、请求构造、序列化、流式解析开销 |
-| ✅ 对比 | 统一抽象层带来的额外开销（是否「收敛 172 厂商」要付出性能税） |
-| ❌ 不对比 | 哪个语言更快（Rust vs JS 没有跨语言直比意义） |
-| ❌ 不对比 | 上游 LLM 自身性能（用 mock 抹平） |
+| ✅ Compared | The SDK's own protocol conversion, request construction, serialization, and streaming parsing overhead |
+| ✅ Compared | The extra overhead brought by the unified abstraction layer (whether "converging 172 providers" incurs a performance tax) |
+| ❌ Not compared | Which language is faster (Rust vs JS has no cross-language direct-comparison meaning) |
+| ❌ Not compared | The upstream LLM's own performance (flattened with mocks) |
 
-## 2. 核心挑战：不能跨语言直比数字
+## 2. Core Challenge: Numbers Cannot Be Directly Compared Across Languages
 
-aimux 核心是 Rust，AISDK 是纯 TS。若用 Rust 的 `#[bench]`/criterion 跑 aimux、用 JS 的 mitata 跑 AISDK，两边**计时器、运行时、FFI 边界、内存模型**全不一致，数字不可比。
+aimux's core is Rust; AISDK is pure TS. If you run aimux with Rust's `#[bench]`/criterion and AISDK with JS's mitata, the two sides' **timers, runtimes, FFI boundaries, and memory models** are all inconsistent, and the numbers are not comparable.
 
-**唯一公平的对比姿态**：在**同一个 Node.js 进程**内、面对**同一个本地 mock server**，让 aimux 走其真实生产路径（Node 应用 → napi → Rust 核心 → reqwest → HTTP），AISDK 走（Node 应用 → TS 核心 → undici → HTTP）。两者共用 Node 事件循环和同一条测量基准。
+**The only fair comparison posture**: within **the same Node.js process**, facing **the same local mock server**, let aimux go through its real production path (Node app → napi → Rust core → reqwest → HTTP), and AISDK go through (Node app → TS core → undici → HTTP). Both share the Node event loop and the same measurement baseline.
 
-aimux 已具备这条路径的所有前提：
+aimux already has all the prerequisites for this path:
 
-| 前提 | 现状 |
+| Prerequisite | Current status |
 |---|---|
-| Node 绑定可用 | [bindings/node/](../bindings/node/) 导出 `generateText(model, prompt)` / `streamText(model, prompt)`（[bindings/node/src/index.ts](../bindings/node/src/index.ts#L94)） |
-| 本地 mock 基础设施 | 100+ Rust 测试用 wiremock mock server，cassette 可回放（见 `aimux-providers/tests/`） |
-| 对标对象可访问 | `reference/ai/` 含 Vercel AI SDK 完整源码 |
-| 设计语义同源 | aimux `retry.rs` 注释明确 "Mirrors the TS SDK's `getRetryDelayInMs` / `retryWithExponentialBackoffRespectingRetryHeaders`"，两套 SDK 语义对齐，对比有意义 |
+| Node binding available | [bindings/node/](../bindings/node/) exports `generateText(model, prompt)` / `streamText(model, prompt)` ([bindings/node/src/index.ts](../bindings/node/src/index.ts#L94)) |
+| Local mock infrastructure | 100+ Rust tests use wiremock mock servers; cassettes can be replayed (see `aimux-providers/tests/`) |
+| Comparison target accessible | `reference/ai/` contains the full Vercel AI SDK source |
+| Design semantics share an origin | aimux's `retry.rs` comment explicitly says "Mirrors the TS SDK's `getRetryDelayInMs` / `retryWithExponentialBackoffRespectingRetryHeaders`"; the two SDKs' semantics are aligned, so the comparison is meaningful |
 
-## 3. 对比架构
+## 3. Comparison Architecture
 
 ```
                   ┌─────────────────────────────────────┐
-                  │   Node.js benchmark 进程            │
-                  │   统一计时: mitata / tinybench      │
-                  │   统一预热 + 统一 GC 控制            │
+                  │   Node.js benchmark process         │
+                  │   Unified timing: mitata / tinybench│
+                  │   Unified warmup + unified GC control│
                   └────────────┬───────────────┬────────┘
               ┌────────────────┘               └─────────────────┐
               ▼                                                  ▼
@@ -52,172 +52,172 @@ aimux 已具备这条路径的所有前提：
    │  streamText(...)      │                          │  streamText({...})   │
    └──────────┬───────────┘                          └──────────┬───────────┘
               │  reqwest + rustls-tls                            │  undici
-              │  （走 napi FFI 边界）                              │  （纯 JS）
+              │  (via napi FFI boundary)                           │  (pure JS)
               └────────────────────┬──────────────────────────────┘
                                    ▼
                   ┌─────────────────────────────────────┐
-                  │   本地 mock server                  │
-                  │   固定 JSON / 可回放 SSE 响应        │
-                  │   （抹平网络 RTT 与 LLM 生成时长）    │
+                  │   local mock server                 │
+                  │   Fixed JSON / replayable SSE        │
+                  │   (flattens network RTT and LLM time) │
                   └─────────────────────────────────────┘
 ```
 
-**关键设计**：mock server 返回**固定响应**（非流式用固定 JSON；流式用固定分片的 SSE 录像回放）。把网络 RTT 和 LLM 生成时长变成常量后，剩下的差值就是两个 SDK 自身的协议转换 / 序列化 / 流解析开销。
+**Key design**: the mock server returns **fixed responses** (fixed JSON for non-streaming; fixed-shard SSE recording replay for streaming). After turning network RTT and LLM generation duration into constants, the remaining difference is the two SDKs' own protocol-conversion / serialization / stream-parsing overhead.
 
-为剥离 aimux 的 napi FFI 边界成本，加第三条基线：
+To strip out aimux's napi FFI boundary cost, add a third baseline:
 
-| 基线 | 实现用途 |
+| Baseline | Implementation purpose |
 |---|---|
-| **B0. 纯 Node 直调 mock HTTP** | 用 `undici.request` 直接打 mock server，作为「无 SDK」基线。aimux 数字 − B0 = aimux 接入层 + FFI 开销；aimux 数字 − AISDK 数字 = aimux 相对 AISDK 的净差；AISDK − B0 = AISDK 接入层开销 |
+| **B0. Pure Node direct call to mock HTTP** | Use `undici.request` to hit the mock server directly, as the "no SDK" baseline. aimux number − B0 = aimux access layer + FFI overhead; aimux number − AISDK number = aimux's net difference relative to AISDK; AISDK − B0 = AISDK access-layer overhead |
 
-## 4. 三个对比维度
+## 4. Three Comparison Dimensions
 
-三个维度互补：**速度**测用户感知的端到端延迟；**结构化开销**测 SDK 自身 CPU 税（剥离网络，定位可优化空间）；**并发能力**测规模化表现。三者都纳入对比，缺一不可。
+The three dimensions complement each other: **speed** measures user-perceived end-to-end latency; **structural overhead** measures the SDK's own CPU tax (stripping the network, locating optimization space); **concurrency capacity** measures scaled behavior. All three are included in the comparison; none can be omitted.
 
-### 4.1 维度一：速度（端到端延迟）
+### 4.1 Dimension One: Speed (End-to-end Latency)
 
-含网络往返，反映真实负载下用户感知。
+Includes network round-trips, reflecting user perception under real load.
 
-| 场景 | 测什么 | 为什么有代表性 | 前置条件 |
+| Scenario | What is measured | Why it is representative | Prerequisites |
 |---|---|---|---|
-| **A. 非流式单请求** | 一次 `generateText` 端到端延迟（P50/P95/P99） | 基线，最常见调用形态 | 无 |
-| **B. 流式 TTFT + tokens/s** | 首 token 延迟、稳态吞吐、P99 尾延迟 | aimux 的 SSE 解析在 Rust（`aimux-stream`），AISDK 在 JS，这是 Rust 核心最能体现优势的地方 | SSE mock 回放器 |
+| **A. Non-streaming single request** | One `generateText` end-to-end latency (P50/P95/P99) | Baseline, the most common call form | None |
+| **B. Streaming TTFT + tokens/s** | First-token latency, steady-state throughput, P99 tail latency | aimux's SSE parsing is in Rust (`aimux-stream`), AISDK's is in JS; this is where the Rust core can best show its advantage | SSE mock replayer |
 
-### 4.2 维度二：结构化开销（纯 CPU）
+### 4.2 Dimension Two: Structural Overhead (Pure CPU)
 
-这是「统一接入层」最有说服力的对比点：aimux 把 172 厂商收敛成统一 `LanguageModel` 接口，这个收敛要付出多少 CPU。**关键是剥离网络**——只测 SDK 自身的协议转换 / 序列化 / 解析，不掺网络往返。
+This is the most persuasive comparison point for the "unified access layer": aimux converges 172 providers into a unified `LanguageModel` interface; how much CPU does this convergence cost. **The key is to strip the network**—only measure the SDK's own protocol conversion / serialization / parsing, with no network round-trips mixed in.
 
-**两套测法**：
+**Two measurement approaches**:
 
-1. **差值法（主）**：`SDK 总延迟 − B0 纯网络延迟 = 结构化开销（含 FFI）`。aimux 与 AISDK 各自减 B0 后相减，得净差。复用维度一的 B0 基线，无额外工作。
-2. **分段计时（辅）**：在 SDK 调用路径内打点，分出「请求构造」「网络往返」「响应解析」「流式分片解析」四段，给出每段占比，定位开销热点。aimux 侧打点在 Rust 内、经 napi 透出；AISDK 侧在 TS 内打点。可选——差值法已能回答主问题，分段计时用于深挖。
+1. **Difference method (primary)**: `SDK total latency − B0 pure-network latency = structural overhead (including FFI)`. aimux and AISDK each subtract B0 and then subtract from each other to get the net difference. Reuses Dimension One's B0 baseline, with no extra work.
+2. **Segmented timing (auxiliary)**: Instrument points within the SDK call path, splitting it into four segments—"request construction", "network round-trip", "response parsing", and "streaming-shard parsing"—giving each segment's proportion and locating overhead hotspots. On the aimux side, instrumentation is inside Rust and exposed via napi; on the AISDK side, instrumentation is inside TS. Optional—the difference method already answers the main question; segmented timing is for deeper investigation.
 
-**payload 规模曲线**：结构化开销应随 payload 线性增长。测 4 档，对比两者的**斜率**：
+**Payload-size curve**: structural overhead should grow linearly with payload size. Test 4 tiers and compare the two's **slopes**:
 
-| 档位 | 请求体 | 响应体 | 目的 |
+| Tier | Request body | Response body | Purpose |
 |---|---|---|---|
-| 小 | 1 轮对话 | 短响应 100 token | 基线开销（FFI 边界固定成本占比） |
-| 中 | 10 轮对话 | 中等响应 500 token | 常态负载 |
-| 大 | 长 prompt 4K token | 长响应 2K token | 大 payload 下 Rust serde 优势能否抵消 FFI |
-| 工具 | 5 个工具 schema + tool_call 响应 | 工具调用解析 | 结构化（非文本）解析路径 |
+| Small | 1 conversation turn | Short response 100 tokens | Baseline overhead (proportion of FFI boundary fixed cost) |
+| Medium | 10 conversation turns | Medium response 500 tokens | Normal load |
+| Large | Long prompt 4K tokens | Long response 2K tokens | Whether Rust serde's advantage at large payloads can offset FFI |
+| Tool | 5 tool schemas + tool_call response | Tool-call parsing | Structured (non-text) parsing path |
 
-**核心问题**：Rust serde 在大 payload 下的优势（若有）能否抵消 napi FFI 边界成本？这是判断「用 Rust 重写接入层」是否值得的核心证据。小 payload 下 FFI 固定开销占比高（aimux 可能反而慢），大 payload 下 serde 优势显现（aimux 可能反超）——拐点在哪，是本维度的关键产出。
+**Core question**: can Rust serde's advantage at large payloads (if any) offset the napi FFI boundary cost? This is the core evidence for judging whether "rewriting the access layer in Rust" is worthwhile. At small payloads, the FFI fixed overhead proportion is high (aimux may actually be slower); at large payloads, serde's advantage emerges (aimux may overtake)—where the inflection point lies is the key output of this dimension.
 
-### 4.3 维度三：并发能力（规模化）
+### 4.3 Dimension Three: Concurrency Capacity (Scaling)
 
-不只比单点吞吐，要看**曲线和稳定性**。
+Don't just compare single-point throughput; look at the **curve and stability**.
 
-| 指标 | 测法 |
+| Metric | Method |
 |---|---|
-| 吞吐曲线 | 并发数 N=1/10/50/100/200，各跑固定时长，画 reqs/s 曲线，看拐点（吞吐不再随并发增长处） |
-| 内存增长 | 每档并发记录 RSS 峰值，看是否随并发线性膨胀（泄漏/堆积信号） |
-| 压力稳定性 | 高并发下错误率、超时率、P99 尾延迟是否飙升 |
-| 连接复用效率 | aimux 落地 RFC-0009 前 vs 后，连接池复用对并发的提升（见 §7） |
+| Throughput curve | Concurrency N=1/10/50/100/200, each run for a fixed duration; plot reqs/s curve and look at the inflection point (where throughput no longer grows with concurrency) |
+| Memory growth | Record peak RSS at each concurrency tier; see whether it inflates linearly with concurrency (a leak/backlog signal) |
+| Stress stability | Whether error rate, timeout rate, and P99 tail latency spike under high concurrency |
+| Connection-reuse efficiency | aimux before vs after landing RFC-0009; the improvement connection-pool reuse brings to concurrency (see §7) |
 
-**前置条件**：依赖 RFC-0009 落地（见 §7），否则并发结论是「已知缺陷」非「架构上限」。
+**Prerequisite**: depends on RFC-0009 landing (see §7); otherwise the concurrency conclusion is a "known defect" rather than an "architectural ceiling".
 
-## 5. 指标清单
+## 5. Metric List
 
-每个维度统一采集：
+Each dimension uniformly collects:
 
-- **延迟**：均值 / P50 / P95 / P99
-- **吞吐**：reqs/s（非流式）、tokens/s（流式稳态）
-- **TTFT**（Time To First Token，仅流式）：从调用到收到第一个 `TextDelta` 的耗时
-- **内存**：进程 RSS 峰值；对比前后增量（剥离 mock server 自身占用）
-- **GC 稳定性**：`node --expose-gc` + 定时 `gc()` 采样，观察 aimux napi 是否带来跨边界 GC 抖动
-- **结构化开销**（维度二专属）：各段占比（请求构造 / 网络 / 响应解析 / 流式解析）；payload 四档的纯 CPU 耗时 + 回归斜率
+- **Latency**: mean / P50 / P95 / P99
+- **Throughput**: reqs/s (non-streaming), tokens/s (streaming steady state)
+- **TTFT** (Time To First Token, streaming only): time from call to receiving the first `TextDelta`
+- **Memory**: process RSS peak; the before/after increment (stripping the mock server's own footprint)
+- **GC stability**: `node --expose-gc` + periodic `gc()` sampling, observing whether aimux's napi introduces cross-boundary GC jitter
+- **Structural overhead** (Dimension Two only): proportion of each segment (request construction / network / response parsing / streaming parsing); pure-CPU time for the four payload tiers + regression slope
 
-输出格式：每次跑产出一份 JSON（`{ dimension, sdk, n, p50, p95, p99, mean, rss_peak_kb, ... }`），最终合并成对比表 + 折线图。
+Output format: each run produces a JSON file (`{ dimension, sdk, n, p50, p95, p99, mean, rss_peak_kb, ... }`), eventually merged into a comparison table + line chart.
 
-## 6. 公平性控制变量
+## 6. Fairness Control Variables
 
-| 变量 | 控制方式 |
+| Variable | Control method |
 |---|---|
-| 网络 | 全部走 `127.0.0.1`，无真实网络 |
-| LLM 生成时长 | mock 返回固定响应 / 固定分片 SSE，确定性回放 |
-| 进程启动 | 预热（warmup ≥ 50 次）后才开始计时 |
-| 计时器 | 同进程同框架（mitata），不用两套语言各自的 bench |
-| 连接复用 | 默认配置对比；如 RFC-0009 未落地，须在报告标注 aimux 侧无连接池（见 §7） |
-| 重试 | 双方都关闭 retry（`maxRetries: 0`），否则重试次数会污染延迟分布 |
-| 并发模型 | 同用 Node 事件循环 + 相同并发原语（`p-limit` 或手写 semaphore） |
+| Network | All go through `127.0.0.1`, no real network |
+| LLM generation duration | Mock returns fixed responses / fixed-shard SSE, deterministic replay |
+| Process startup | Warmup (warmup ≥ 50 times) before timing starts |
+| Timer | Same process, same framework (mitata); do not use each language's own bench |
+| Connection reuse | Compare with default config; if RFC-0009 is not landed, the report must note that the aimux side has no connection pool (see §7) |
+| Retry | Both sides disable retry (`maxRetries: 0`); otherwise retry counts pollute the latency distribution |
+| Concurrency model | Both use the Node event loop + the same concurrency primitives (`p-limit` or a hand-written semaphore) |
 
-## 7. 关键依赖：aimux 请求层现状对对比的影响
+## 7. Key Dependency: How aimux's Current Request Layer Affects the Comparison
 
-[RFC-0009](0009-request-resilience.md) 已查明：aimux 当前 **45 处 `Client::new()` 无连接池共享、无 TLS 会话复用、全仓无超时、retry 是死代码**。这对对比结果有决定性影响，各维度受影响程度不同：
+[RFC-0009](0009-request-resilience.md) has found that aimux currently has **45 `Client::new()` sites with no connection-pool sharing, no TLS session reuse, no timeouts anywhere in the repo, and retry as dead code**. This has a decisive impact on the comparison results; each dimension is affected to a different degree:
 
-- **维度一·速度（非流式 A）**：受影响小（单请求无连接复用机会）。可先做。
-- **维度一·速度（流式 B）**：受影响中等（建连成本摊薄在长流里）。可做，但 TTFT 会含一次 TLS 握手。
-- **维度二·结构化开销**：**几乎不受影响**——它剥离网络只测 CPU，连接池与否不影响序列化耗时。可先做。
-- **维度三·并发能力（C）**：**受影响致命**。aimux 每个 provider 各自建连，并发下可能每次新握手；AISDK（undici）默认有连接池复用。此时 aimux 看起来差，但**这不是 Rust 慢，是没接连接池**——是已知缺陷，非架构上限。
+- **Dimension One · Speed (non-streaming A)**: minimally affected (a single request has no connection-reuse opportunity). Can be done first.
+- **Dimension One · Speed (streaming B)**: moderately affected (connection-setup cost is amortized over a long stream). Can be done, but TTFT will include one TLS handshake.
+- **Dimension Two · Structural overhead**: **almost unaffected**—it strips the network and only measures CPU; whether a connection pool exists does not affect serialization time. Can be done first.
+- **Dimension Three · Concurrency capacity (C)**: **fatally affected**. aimux's providers each establish their own connections; under concurrency, a fresh handshake may occur each time. AISDK (undici) defaults to connection-pool reuse. Here aimux looks worse, but **this is not Rust being slow—it's not having a connection pool**—a known defect, not an architectural ceiling.
 
-**两种处置**：
+**Two options**:
 
-1. **先落地 RFC-0009 的 `shared_client()` + `PoolConfig` 再测维度三**（推荐）。否则并发对比的结论是「aimux 有个已知 bug」而非「aimux 的架构上限」。
-2. 若急于出数据，可先做维度一（速度）、维度二（结构化开销），维度三标注「对比的是 RFC-0009 落地前状态」并单列。
+1. **Land RFC-0009's `shared_client()` + `PoolConfig` before measuring Dimension Three** (recommended). Otherwise the concurrency comparison's conclusion is "aimux has a known bug" rather than "aimux's architectural ceiling".
+2. If you are in a hurry to produce data, you can do Dimension One (speed) and Dimension Two (structural overhead) first; mark Dimension Three as "comparing the pre-RFC-0009-landing state" and list it separately.
 
-## 8. 落地结构
+## 8. Landing Structure
 
-建议在 `bindings/node/` 下新增 benchmark 子目录，复用已有的 node 构建链：
+It is recommended to add a benchmark subdirectory under `bindings/node/`, reusing the existing node build chain:
 
 ```
 bindings/node/
 ├── bench/
-│   ├── README.md            # 如何运行、如何复现
-│   ├── mock-server.ts       # 本地 mock server（固定 JSON + SSE 回放）
-│   ├── cassettes/           # 从 aimux-providers/tests/cassettes 复用的回放数据
-│   ├── payloads/            # 维度二 payload 四档（小/中/大/工具）的固定数据
-│   ├── bench-nonstream.ts   # 维度一·速度（非流式 A）
-│   ├── bench-stream.ts      # 维度一·速度（流式 B）
-│   ├── bench-struct.ts      # 维度二·结构化开销（差值法 + payload 曲线 + 分段计时）
-│   ├── bench-concurrent.ts  # 维度三·并发能力（吞吐曲线 + 内存 + 稳定性）
-│   └── package.json         # 依赖 mitata + @ai-sdk/openai + openai
-└── ...（既有结构不动）
+│   ├── README.md            # How to run, how to reproduce
+│   ├── mock-server.ts       # Local mock server (fixed JSON + SSE replay)
+│   ├── cassettes/           # Replay data reused from aimux-providers/tests/cassettes
+│   ├── payloads/            # Dimension 2 payload four tiers (small/medium/large/tools) fixed data
+│   ├── bench-nonstream.ts   # Dimension 1 · speed (non-streaming A)
+│   ├── bench-stream.ts      # Dimension 1 · speed (streaming B)
+│   ├── bench-struct.ts      # Dimension 2 · structured overhead (difference method + payload curve + segmented timing)
+│   ├── bench-concurrent.ts  # Dimension 3 · concurrency capacity (throughput curve + memory + stability)
+│   └── package.json         # Depends on mitata + @ai-sdk/openai + openai
+└── ... (existing structure unchanged)
 ```
 
-**mock server 选型**：Node 原生 `http` 或 `undici` 的 `MockAgent`。优先 `undici` MockAgent——AISDK 本就用 undici，aimux 侧 reqwest 打的是真 HTTP，两者能在同一 mock 后端上对齐。若 reqwest 无法被 undici MockAgent 拦截（不同 HTTP 栈），则回退到起一个真实的本地 `http.Server`，两边都打它。
+**Mock server selection**: Node's native `http` or `undici`'s `MockAgent`. Prefer `undici` MockAgent—AISDK already uses undici, and aimux's side hits real HTTP via reqwest, so both can align on the same mock backend. If reqwest cannot be intercepted by undici MockAgent (different HTTP stacks), fall back to starting a real local `http.Server` that both sides hit.
 
-**维度二 payload 生成**：小/中/大/工具四档优先复用 `aimux-providers/tests/cassettes/` 的真实 cassette（保证解析路径真实），不足的由 mock server 按固定模板生成。
+**Dimension Two payload generation**: the small/medium/large/tool tiers preferably reuse real cassettes from `aimux-providers/tests/cassettes/` (to keep the parsing path real); any shortfall is generated by the mock server from fixed templates.
 
-## 9. 实现顺序
+## 9. Implementation Order
 
-| 步骤 | 内容 | 产出 |
+| Step | Content | Output |
 |---|---|---|
-| 1 | 搭 mock server + B0 基线（纯 undici 直调） | 验证测量基准可用 |
-| 2 | 维度一·速度：非流式 A（aimux + AISDK） | 第一份对比数据 |
-| 3 | 维度二·结构化开销：差值法（A − B0）+ payload 四档曲线 | 拐点 + 斜率，回答「Rust 重写是否值得」 |
-| 4 | 维度一·速度：流式 B（TTFT + tokens/s） | SSE 解析对比 |
-| 5 | 评估：维度三前是否先落地 RFC-0009 | 决策点 |
-| 6 | 维度三·并发能力：吞吐曲线 + 内存 + 稳定性 | 完整对比报告 |
-| 7 | 汇总成对比报告（表格 + 图）放入 `docs/` | 可对外引用的性能数据 |
+| 1 | Set up mock server + B0 baseline (pure undici direct call) | Verify the measurement baseline is usable |
+| 2 | Dimension One · Speed: non-streaming A (aimux + AISDK) | First comparison data |
+| 3 | Dimension Two · Structural overhead: difference method (A − B0) + four-tier payload curve | Inflection point + slope, answering "is the Rust rewrite worth it" |
+| 4 | Dimension One · Speed: streaming B (TTFT + tokens/s) | SSE parsing comparison |
+| 5 | Evaluate: whether to land RFC-0009 before Dimension Three | Decision point |
+| 6 | Dimension Three · Concurrency capacity: throughput curve + memory + stability | Complete comparison report |
+| 7 | Aggregate into a comparison report (tables + charts) and put it in `docs/` | Performance data that can be cited externally |
 
-每步独立可运行，不阻塞后续。步骤 1-4 不依赖 RFC-0009，可立即开始。
+Each step is independently runnable and does not block subsequent steps. Steps 1-4 do not depend on RFC-0009 and can start immediately.
 
-## 10. 风险
+## 10. Risks
 
-| 风险 | 等级 | 缓解 |
+| Risk | Level | Mitigation |
 |---|---|---|
-| **mock server 自身成为瓶颈** | 中 | B0 基线先行，确认 mock 吞吐远高于被测 SDK；必要时用多 mock 实例 |
-| **napi FFI 序列化吃掉 Rust 优势** | 中 | B0 基线剥离 FFI 成本；维度二 payload 曲线正是回答此问题——若 aimux 优势被 FFI 抹平，结论本身就是重要发现 |
-| **流式 SSE 回放时序失真** | 中 | 用真实 cassette 的字节级回放，保留原始分片边界与间隔 |
-| **AISDK 默认带 retry/中间件** | 低 | 显式 `maxRetries:0`、关闭无关中间件，双方对齐 |
-| **并发维度受 RFC-0009 缺陷污染** | 高 | §7 已述，维度三前先决策 |
-| **Node 版本/undici 版本差异** | 低 | 锁定 `engines` + 锁版本，报告标注环境 |
+| **The mock server itself becomes a bottleneck** | Medium | Run the B0 baseline first, confirming mock throughput is far higher than the SDK under test; use multiple mock instances if necessary |
+| **napi FFI serialization eats the Rust advantage** | Medium | The B0 baseline strips FFI cost; Dimension Two's payload curve is exactly what answers this—if aimux's advantage is erased by FFI, that conclusion is itself an important finding |
+| **Streaming SSE replay timing distortion** | Medium | Use byte-level replay of real cassettes, preserving original shard boundaries and intervals |
+| **AISDK defaults to retry/middleware** | Low | Explicitly `maxRetries:0`, turn off unrelated middleware, align both sides |
+| **Concurrency dimension polluted by RFC-0009 defects** | High | As stated in §7, decide before Dimension Three |
+| **Node version / undici version differences** | Low | Lock `engines` + lock versions, annotate the environment in the report |
 
-## 11. 不做的事
+## 11. Things Not to Do
 
-1. **不对比纯 Rust 直调 vs 纯 JS 直调**——跨语言无意义。所有对比都在 Node 进程内。
-2. **不打真实 LLM**——网络与生成时长不可控，污染测量。如需真实端到端压测，另立提案。
-3. **不做生产级压测平台**——本基准是可复现的微型基准，不是 wrk/k6 那类负载生成器。
-4. **不对比 172 厂商全覆盖**——只取 OpenAI 协议一家做代表（原生协议），薄封装共享同一请求路径，结论可外推。
-5. **不在本 RFC 落地 RFC-0009**——两者解耦，但维度三依赖 RFC-0009（§7）。
+1. **Do not compare pure-Rust direct call vs pure-JS direct call**—meaningless across languages. All comparisons are within the Node process.
+2. **Do not hit real LLMs**—network and generation duration are uncontrollable and pollute the measurement. If real end-to-end stress testing is needed, raise a separate proposal.
+3. **Do not build a production-grade stress-testing platform**—this benchmark is a reproducible micro-benchmark, not a load generator like wrk/k6.
+4. **Do not compare full coverage of 172 providers**—take only one, the OpenAI protocol, as a representative (native protocol); thin wrappers share the same request path, so the conclusion can be extrapolated.
+5. **Do not land RFC-0009 in this RFC**—the two are decoupled, but Dimension Three depends on RFC-0009 (§7).
 
-## 12. 验收
+## 12. Acceptance
 
-- [ ] `bindings/node/bench/` 可用 `pnpm bench` 一键运行
-- [ ] 单次运行产出 JSON 结果文件 + 终端对比表
-- [ ] 维度一（速度）：非流式 A + 流式 B 各一组数据
-- [ ] 维度二（结构化开销）：payload 四档曲线 + 拐点/斜率结论；FFI 成本可剥离
-- [ ] 维度三（并发能力）：吞吐曲线 + 内存增长 + 稳定性数据
-- [ ] 报告明确标注 aimux 请求层状态（RFC-0009 前/后）
-- [ ] B0 基线数据齐备
-- [ ] 结论可复现：同一机器连续两次跑，P50 波动 < 5%
+- [ ] `bindings/node/bench/` can be run with a single `pnpm bench`
+- [ ] A single run produces a JSON result file + a terminal comparison table
+- [ ] Dimension One (speed): one set of data each for non-streaming A + streaming B
+- [ ] Dimension Two (structural overhead): four-tier payload curve + inflection-point/slope conclusion; FFI cost can be stripped
+- [ ] Dimension Three (concurrency capacity): throughput curve + memory growth + stability data
+- [ ] The report explicitly annotates aimux's request-layer status (pre/post RFC-0009)
+- [ ] B0 baseline data is complete
+- [ ] The conclusion is reproducible: two consecutive runs on the same machine have P50 variance < 5%

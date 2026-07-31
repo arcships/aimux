@@ -1,45 +1,45 @@
-﻿# RFC 0005: 改名为 aimux
+# RFC 0005: Rename to aimux
 
-> **状态**：已定方案，待执行
-> **决策**：错误类型 `AiMuxError` · 仓库名 `aimux` · 品牌定位「受 Vercel AI SDK 启发」· 脚本批量执行 + 验证
+> **Status**: Decided plan, pending execution
+> **Decision**: Error type `AiMuxError` · repository name `aimux` · brand positioning "inspired by Vercel AI SDK" · script batch execution + verification
 
-## 一、背景与动机
+## 1. Background and Motivation
 
-当前项目名为 `aimux` / `aimux`。改名动机有二：
+The current project name is `aimux` / `aimux`. There are two motivations for the rename:
 
-1. **品牌身份**：`aimux` 连写形式容易让人联想为 Vercel AI SDK 的标识符。虽然严格来说 Vercel 的官方名是 "AI SDK"、npm 包是 `ai`、仓库是 `vercel/ai`，`aimux` 并非其注册标识符，但概念关联过强，不利于建立独立品牌。
-2. **Rust 命名惯例**：Rust crate 惯例是 kebab-case 分词（`ai-sdk-core`），当前 `aimux-core` 把 ai 与 sdk 粘在一起，不规范。
+1. **Brand identity**: The concatenated form `aimux` easily leads people to associate it with the identifier of Vercel AI SDK. Although strictly speaking Vercel's official name is "AI SDK", the npm package is `ai`, and the repository is `vercel/ai`, `aimux` is not its registered identifier, but the conceptual association is too strong, which is detrimental to establishing an independent brand.
+2. **Rust naming conventions**: The convention for Rust crates is kebab-case word separation (`ai-sdk-core`); the current `aimux-core` glues ai and sdk together, which is non-standard.
 
-## 二、命名选型理由
+## 2. Rationale for the Name Selection
 
-经多轮筛选（见会话记录），最终选定 **`aimux`**：
+After multiple rounds of screening (see session records), **`aimux`** was finally selected:
 
-- **架构语义最准**：mux（multiplexer，多路复用器）= 一个输入接口背后切换多路信号源，与本项目的「统一 `LanguageModel` trait 扇出多家 provider」架构字面对应。
-- **短**：5 字母，`aimux::` 前缀干净。
-- **含 AI 关键词**：一眼看出领域。
-- **crates.io 可用**：主名 `aimux` 及子 crate 命名空间 `aimux-core`/`aimux-providers` 等全部可用（已逐一核验）。
-- **赛道稀缺**：直白派 `llm-mux`/`modelmux`/`llm-bridge`/`llmkit`/`aikit`/`llm-rs`/`modelforge` 均已被同类竞品占用，`aimux` 是少有的既短又准又可用的幸存者。
+- **Most accurate architectural semantics**: mux (multiplexer) = switching among multiple signal sources behind a single input interface, which literally corresponds to this project's architecture of "a unified `LanguageModel` trait fanning out to multiple providers".
+- **Short**: 5 letters, the `aimux::` prefix is clean.
+- **Contains the AI keyword**: The domain is recognizable at a glance.
+- **Available on crates.io**: The primary name `aimux` and the sub-crate namespaces `aimux-core`/`aimux-providers` etc. are all available (verified one by one).
+- **Scarcity in the space**: The straightforward candidates `llm-mux`/`modelmux`/`llm-bridge`/`llmkit`/`aikit`/`llm-rs`/`modelforge` are all occupied by similar competing products; `aimux` is one of the few survivors that is both short, accurate, and available.
 
-被排除的候选及原因：
-- `duplex`（双工）：语义强调双向通信 2-way，与 1→N 扇出架构不符；且 bare `duplex` 已被占用（sunfishcode 的 IO trait crate，6.2 万下载）。
-- `aireq`/`aifetch`/`airun`/`modelrun`（动作动词）：只点单一动作，漏掉「多 provider 统一 + 文本/对象/工具/流式全家桶」核心卖点。
-- `oxide-ai`/`prism-ai`（隐喻派）：可用但不含 AI 关键词。
+Excluded candidates and reasons:
+- `duplex` (duplex): The semantics emphasize two-way (2-way) communication, which does not match the 1→N fan-out architecture; moreover, the bare `duplex` is already taken (sunfishcode's IO trait crate, 62k downloads).
+- `aireq`/`aifetch`/`airun`/`modelrun` (action verbs): They only point to a single action, missing the core selling point of "unified multiple providers + the full text/object/tool/streaming bundle".
+- `oxide-ai`/`prism-ai` (metaphor category): Available but do not contain the AI keyword.
 
-## 三、命名映射总表
+## 3. Complete Name Mapping Table
 
-| 层面 | 现状 | 目标 |
+| Aspect | Current | Target |
 |------|------|------|
-| 仓库名 / 根目录 | `aimux` | `aimux` |
-| crate 名（6 个） | `aimux-core` 等 | `aimux-core` / `aimux-stream` / `aimux-providers` / `aimux-provider-utils` |
-| 目录名（6 个） | `aimux-core/` 等 | `aimux-core/` 等 |
-| 代码标识符（下划线） | `aimux_core` / `aimux_providers` / `aimux_stream` / `aimux_provider_utils` | `aimux_core` / `aimux_providers` / `aimux_stream` / `aimux_provider_utils` |
-| 核心错误类型 | `AiMuxError`（遍布 25+ 文件） | `AiMuxError` |
-| 测试环境变量 | `AISDK_TEST_LOAD_API_KEY_VAR` | `AIMUX_TEST_LOAD_API_KEY_VAR` |
-| 品牌定位 | 「对标 Vercel AI SDK / 高性能替代方案」 | 「受 Vercel AI SDK 启发的 Rust 实现」 |
+| Repository name / root directory | `aimux` | `aimux` |
+| crate names (6) | `aimux-core` etc. | `aimux-core` / `aimux-stream` / `aimux-providers` / `aimux-provider-utils` |
+| directory names (6) | `aimux-core/` etc. | `aimux-core/` etc. |
+| code identifiers (underscores) | `aimux_core` / `aimux_providers` / `aimux_stream` / `aimux_provider_utils` | `aimux_core` / `aimux_providers` / `aimux_stream` / `aimux_provider_utils` |
+| core error type | `AiMuxError` (spread across 25+ files) | `AiMuxError` |
+| test environment variable | `AISDK_TEST_LOAD_API_KEY_VAR` | `AIMUX_TEST_LOAD_API_KEY_VAR` |
+| brand positioning | "Benchmark against Vercel AI SDK / high-performance alternative" | "Rust implementation inspired by Vercel AI SDK" |
 
-## 四、影响范围分层
+## 4. Impact Scope Layering
 
-### 第 1 层：目录改名（6 个）
+### Layer 1: Directory rename (6)
 
 ```
 aimux-core/          → aimux-core/
@@ -48,66 +48,66 @@ aimux-providers/     → aimux-providers/
 aimux-provider-utils/→ aimux-provider-utils/
 ```
 
-用 `git mv` 保留历史。
+Use `git mv` to preserve history.
 
-### 第 2 层：Cargo.toml（7 个文件）
+### Layer 2: Cargo.toml (7 files)
 
-- **根 `Cargo.toml`**：
-  - `members` 列表 6 条
-  - `workspace.dependencies` 里 4 条 `aimux-*` 引用
-  - `repository` URL（`github.com/yourusername/aimux`）
+- **Root `Cargo.toml`**:
+  - `members` list: 6 entries
+  - 4 `aimux-*` references in `workspace.dependencies`
+  - `repository` URL (`github.com/yourusername/aimux`)
   - `description`
-- **6 个子 crate 的 `Cargo.toml`**：
+- **`Cargo.toml` of the 6 sub-crates**:
   - `name = "aimux-xxx"` → `aimux-xxx`
-  - `description` 字符串
-  - `dependencies` / `dev-dependencies` 里的 `aimux-*` 引用
+  - `description` strings
+  - `aimux-*` references in `dependencies` / `dev-dependencies`
 
-### 第 3 层：Rust 源码（100+ 文件）
+### Layer 3: Rust source code (100+ files)
 
-- `use aimux_core::` → `use aimux_core::`（含全路径形式 `aimux_core::error::AiMuxError`）
-- `aimux_providers::` / `aimux_tools::` / `aimux_macros::` 同理
-- `AiMuxError` → `AiMuxError`（核心改动，25+ 文件，含 enum 定义、impl、所有 use 和引用）
-> **注：aimux-tools 和 aimux-macros 已于 2026-07-31 删除**，以下工具相关内容已过时，仅保留历史记录。
+- `use aimux_core::` → `use aimux_core::` (including the full-path form `aimux_core::error::AiMuxError`)
+- `aimux_providers::` / `aimux_tools::` / `aimux_macros::` likewise
+- `AiMuxError` → `AiMuxError` (core change, 25+ files, including the enum definition, impl, all uses and references)
+> **Note: aimux-tools and aimux-macros were deleted on 2026-07-31**; the tool-related content below is outdated and retained only as a historical record.
 
-- `aimux-macros/src/lib.rs` 的 `quote!` 宏里**生成代码**引用 `aimux_tools::ToolFn` 和 `aimux_core::error::AiMuxError`——必须同步改，否则用户用 `#[tool]` 宏展开后编译失败
-- 各 lib.rs 顶部 `//! # aimux-core` 等 crate 文档注释
+- The **generated code** inside the `quote!` macro in `aimux-macros/src/lib.rs` references `aimux_tools::ToolFn` and `aimux_core::error::AiMuxError` — these must be changed in sync, otherwise users will fail to compile after the `#[tool]` macro expands.
+- The crate doc comments at the top of each lib.rs, e.g. `//! # aimux-core`
 
-### 第 4 层：文档（10+ 文件）
+### Layer 4: Documentation (10+ files)
 
-- `README.md`：标题、目录树、代码示例、对照表、品牌定位语句
-- `HANDOFF.md` / `QUALITY_REVIEW.md` / `REMEDIATION.md` / `TEST_AUDIT.md` / `TRACKING.md`：文件路径引用、`AiMuxError` 提及
-- `docs/01~14` + `docs/README.md`：少数提及
-- `rfc/0001-multilang-bindings.md` / `rfc/0004-provider-inventory.md`：相对路径链接 `../aimux-core` 等（目录改名后链接失效，必须同步改）
+- `README.md`: title, directory tree, code examples, comparison tables, brand positioning statements
+- `HANDOFF.md` / `QUALITY_REVIEW.md` / `REMEDIATION.md` / `TEST_AUDIT.md` / `TRACKING.md`: file path references, `AiMuxError` mentions
+- `docs/01~14` + `docs/README.md`: a few mentions
+- `rfc/0001-multilang-bindings.md` / `rfc/0004-provider-inventory.md`: relative path links `../aimux-core` etc. (links become invalid after the directory rename and must be changed in sync)
 
-### 第 5 层：脚本
+### Layer 5: Scripts
 
-- `scripts/convert_cassettes.py:13`：`OUT_DIR = Path("aimux-providers/tests/cassettes")` → `aimux-providers/tests/cassettes`
+- `scripts/convert_cassettes.py:13`: `OUT_DIR = Path("aimux-providers/tests/cassettes")` → `aimux-providers/tests/cassettes`
 
-## 五、明确不动项（边界）
+## 5. Explicitly Untouched Items (Boundaries)
 
-| 项 | 原因 |
+| Item | Reason |
 |----|------|
-| `reference/` 整个目录 | 第三方参考项目（TokenHub / traceloop-hub / uni-api / unia / rig cassettes），非本项目代码 |
-| `docs/07-kernel-infrastructure.md` 里的 `AISDKError` | 描述 Vercel AI SDK 原生类 `@ai-sdk/provider.AISDKError`，是上游事实，非本项目符号 |
-| `aimux-providers/tests/fal_transcription_test.rs` 里的 `"Versal AISDK"` | mock 的 provider 返回文本（虚构服务名），与项目改名无关 |
-| `Cargo.lock` | 目录/crate 改名后 `cargo check` 自动重生成 |
-| `.githooks/`（pre-commit / pre-push） | 不含 aimux 字样 |
-| `rust-toolchain.toml` / `rustfmt.toml` / `.gitattributes` / `.gitignore` | 与命名无关 |
+| the entire `reference/` directory | Third-party reference projects (TokenHub / traceloop-hub / uni-api / unia / rig cassettes), not this project's code |
+| `AISDKError` in `docs/07-kernel-infrastructure.md` | Describes the Vercel AI SDK native class `@ai-sdk/provider.AISDKError`; this is an upstream fact, not a symbol of this project |
+| `"Versal AISDK"` in `aimux-providers/tests/fal_transcription_test.rs` | Mock provider return text (a fictitious service name), unrelated to the project rename |
+| `Cargo.lock` | Auto-regenerated by `cargo check` after directory/crate rename |
+| `.githooks/` (pre-commit / pre-push) | Does not contain the aimux string |
+| `rust-toolchain.toml` / `rustfmt.toml` / `.gitattributes` / `.gitignore` | Unrelated to naming |
 
-## 六、关键风险点
+## 6. Key Risks
 
-1. **宏生成代码**（`aimux-macros/src/lib.rs` 的 `quote!`）：替换必须在 `aimux_tools` 和 `aimux_core::error::AiMuxError` 两处同步，否则 `#[tool]` 宏用户编译失败。当前 README 标注 macros 子系统「待重写未闭环」，但改名仍要保持引用一致。
-2. **相对路径链接**：`rfc/` 里的 `../aimux-core` 链接，目录改名后失效。
-3. **脚本批量替换的误伤**：必须**排除 `reference/`**，否则会把 Vercel 原生 `AISDKError` 描述、mock 数据一起改掉。
-4. **大小写敏感**：`aimux`（小写）/ `AiMux`（驼峰）/ `AISDK`（全大写）三种形态要分别处理，不能一个正则通吃。具体替换规则：
+1. **Macro-generated code** (the `quote!` in `aimux-macros/src/lib.rs`): The replacement must be synchronized in both `aimux_tools` and `aimux_core::error::AiMuxError`, otherwise `#[tool]` macro users will fail to compile. The current README marks the macros subsystem as "pending rewrite, not yet closed", but the rename must still keep references consistent.
+2. **Relative path links**: The `../aimux-core` links in `rfc/` become invalid after the directory rename.
+3. **Collateral damage from script batch replacement**: The script must **exclude `reference/`**, otherwise it will also change the description of the Vercel native `AISDKError` and the mock data.
+4. **Case sensitivity**: The three forms `aimux` (lowercase) / `AiMux` (camelCase) / `AISDK` (all uppercase) must be handled separately; a single regex cannot cover all. Specific replacement rules:
    - `aimux` → `aimux`
    - `AiMux` → `AiMux`
    - `AISDK` → `AIMUX`
-   - `aimux` → `aimux`（仓库名去掉 -rs，注意此替换要在 `aimux`→`aimux` 之前或单独处理，避免重复替换）
+   - `aimux` → `aimux` (the repository name drops -rs; note this replacement must be done before `aimux`→`aimux` or handled separately, to avoid double replacement)
 
-## 七、执行步骤（脚本批量方案）
+## 7. Execution Steps (Script Batch Approach)
 
-### 步骤 1：目录改名
+### Step 1: Directory rename
 
 ```powershell
 git mv aimux-core aimux-core
@@ -118,26 +118,26 @@ git mv aimux-providers aimux-providers
 git mv aimux-provider-utils aimux-provider-utils
 ```
 
-### 步骤 2：批量替换文本（PowerShell 脚本）
+### Step 2: Batch text replacement (PowerShell script)
 
-脚本需满足：
-- 作用范围：根目录下的 `Cargo.toml`、`*.rs`、`*.md`、`scripts/*.py`
-- **排除 `reference/` 目录**
-- **排除 `target/` 目录**
-- 大小写敏感，按 `aimux`→`aimux`、`AiMux`→`AiMux`、`AISDK`→`AIMUX` 三组替换
-- `aimux`（仓库名）需单独处理为 `aimux`，注意顺序：先替换 `aimux`→`aimux`，再替换 `aimux`→`aimux`，避免 `aimux` 被拆成 `aimux-rs`
+The script must satisfy:
+- Scope: `Cargo.toml`, `*.rs`, `*.md`, `scripts/*.py` under the root directory
+- **Exclude the `reference/` directory**
+- **Exclude the `target/` directory**
+- Case-sensitive, performing three groups of replacements: `aimux`→`aimux`, `AiMux`→`AiMux`, `AISDK`→`AIMUX`
+- `aimux` (repository name) must be handled separately as `aimux`; note the order: first replace `aimux`→`aimux`, then replace `aimux`→`aimux`, to avoid `aimux` being split into `aimux-rs`
 
-伪代码：
+Pseudocode:
 ```powershell
-$root = "C:\Users\eric8\Desktop\code\aimux"  # 注意：根目录本身暂不改名，由用户后续 git remote/rename 处理
+$root = "C:\Users\eric8\Desktop\code\aimux"  # Note: the root directory itself is not renamed for now; the user handles it later via git remote/rename
 $files = Get-ChildItem -Recurse -File $root -Include *.rs,*.toml,*.md,*.py |
   Where-Object { $_.FullName -notmatch '\\reference\\' -and $_.FullName -notmatch '\\target\\' -and $_.FullName -notmatch '\\.git\\' }
 
 foreach ($f in $files) {
     $content = Get-Content $f.FullName -Raw -Encoding UTF8
-    # 仓库名先处理（注意顺序）
+    # Handle repository name first (note the order)
     $content = $content -replace 'aimux', 'aimux'
-    # 三种大小写形态
+    # Three case forms
     $content = $content -replace 'aimux', 'aimux'
     $content = $content -replace 'AiMux', 'AiMux'
     $content = $content -replace 'AISDK', 'AIMUX'
@@ -145,35 +145,35 @@ foreach ($f in $files) {
 }
 ```
 
-### 步骤 3：手动检查边界
+### Step 3: Manually check the boundaries
 
-- 确认 `reference/` 目录未被触碰
-- 确认 `docs/07` 的 `AISDKError`（Vercel 原生类描述）未被误改 —— **此条需在脚本后手动 grep 确认**，因为 `AISDK`→`AIMUX` 会误伤。处理：脚本执行后，手动把 `docs/07` 中描述 Vercel 原生类的 `AIMUXError` 改回 `AISDKError`。
-- 确认 `fal_transcription_test.rs` 的 mock 文本 `"Versal AISDK"` 未被误改 —— 同上，`AISDK`→`AIMUX` 会误伤，需手动改回 `"Versal AISDK"`。
+- Confirm the `reference/` directory was not touched
+- Confirm that `AISDKError` (the description of the Vercel native class) in `docs/07` was not mistakenly changed — **this item must be manually grep-confirmed after the script**, because `AISDK`→`AIMUX` will cause collateral damage. Handling: after the script runs, manually change `AIMUXError` (which describes the Vercel native class) in `docs/07` back to `AISDKError`.
+- Confirm that the mock text `"Versal AISDK"` in `fal_transcription_test.rs` was not mistakenly changed — same as above, `AISDK`→`AIMUX` will cause collateral damage and must be manually changed back to `"Versal AISDK"`.
 
-### 步骤 4：验证
+### Step 4: Verification
 
 ```powershell
 cargo check --workspace --all-targets
 cargo test --workspace
 ```
 
-`.githooks/pre-commit` 会自动跑 `cargo fmt --all --check` + `cargo check --workspace` 兜底。
+`.githooks/pre-commit` will automatically run `cargo fmt --all --check` + `cargo check --workspace` as a fallback.
 
-### 步骤 5：根目录 / 仓库改名（用户自行处理）
+### Step 5: Root directory / repository rename (handled by the user)
 
-本 RFC 范围内的脚本执行时，根目录名仍为 `aimux`。仓库改名（`git remote set-url`、GitHub repo rename、本地目录改名）由用户在脚本验证通过后自行执行，不在自动化范围内。
+When the scripts within the scope of this RFC are executed, the root directory name remains `aimux`. The repository rename (`git remote set-url`, GitHub repo rename, local directory rename) is performed by the user after the script verification passes, and is not within the scope of automation.
 
-## 八、预计工作量
+## 8. Estimated Workload
 
-- 脚本执行 + 手动边界检查：5-10 分钟
-- `cargo check` 首次编译验证：2-5 分钟
-- `cargo test`：视测试套件规模，5-15 分钟
-- 总计：约 15-30 分钟
+- Script execution + manual boundary check: 5-10 minutes
+- `cargo check` first compilation verification: 2-5 minutes
+- `cargo test`: depends on the test suite size, 5-15 minutes
+- Total: about 15-30 minutes
 
-## 九、回滚
+## 9. Rollback
 
-若验证失败：
-- `git status` 查看改动
-- `git restore --staged .` + `git checkout .` 撤销（目录改名用 `git mv` 撤回）
-- 或直接 `git reset --hard HEAD`（注意会丢失未提交的其他改动）
+If verification fails:
+- `git status` to view changes
+- `git restore --staged .` + `git checkout .` to revert (revert directory renames with `git mv`)
+- Or directly `git reset --hard HEAD` (note this will lose other uncommitted changes)

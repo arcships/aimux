@@ -1,360 +1,360 @@
-﻿# 厂商清单与实现现状
+# Provider Inventory and Implementation Status
 
-## 一、aimux 当前已实现的厂商
+## 1. Providers Currently Implemented in aimux
 
-**共 172 个厂商模块**（截至 2026-07-28）。
+**A total of 172 provider modules** (as of 2026-07-28).
 
-### 原生协议实现（有独立 model/convert，处理厂商特有差异）
+### Native Protocol Implementations (with independent model/convert, handling provider-specific differences)
 
-| 厂商 | 能力 | 说明 |
+| Provider | Capabilities | Notes |
 |------|------|------|
-| openai | 文本、流式、工具、嵌入、图像、语音、转写、文件 | 参考实现，655 行 model + 1223 行 convert，含 Responses API |
-| anthropic | 文本、流式、工具、文件、缓存控制 | 1438 行 convert，含 prompt caching、schema 净化 |
-| anthropic_aws | 文本、流式 | Anthropic 走 AWS Bedrock 侧通道 |
-| google | 文本、流式、嵌入、图像、视频、文件 | 995 行 convert，Gemini 原生协议 |
-| bedrock | 文本、流式、嵌入、图像、重排序 | 625 行 convert，Converse API + SigV4 签名 + 事件流 |
-| vertex | 文本、流式、嵌入、图像、转写、视频 | Google Vertex AI，GCP 认证 |
-| azure | 文本、流式、Responses API | Azure OpenAI，多种认证方式 |
-| cohere | 文本、流式、嵌入、重排序 | Cohere 原生协议 |
-| mistral | 文本、流式、嵌入 | Mistral 原生协议 |
-| xai | 文本、流式、工具、Responses API | 636 行 convert，处理推理内容、引用、搜索参数 |
-| deepseek | 文本、流式、推理 | 600 行，独立处理 reasoning_content 和 thinking 字段 |
+| openai | text, streaming, tools, embedding, image, speech, transcription, file | Reference implementation, 655 lines model + 1223 lines convert, includes Responses API |
+| anthropic | text, streaming, tools, file, cache control | 1438 lines convert, includes prompt caching, schema sanitization |
+| anthropic_aws | text, streaming | Anthropic via the AWS Bedrock side channel |
+| google | text, streaming, embedding, image, video, file | 995 lines convert, Gemini native protocol |
+| bedrock | text, streaming, embedding, image, reranking | 625 lines convert, Converse API + SigV4 signing + event stream |
+| vertex | text, streaming, embedding, image, transcription, video | Google Vertex AI, GCP authentication |
+| azure | text, streaming, Responses API | Azure OpenAI, multiple authentication methods |
+| cohere | text, streaming, embedding, reranking | Cohere native protocol |
+| mistral | text, streaming, embedding | Mistral native protocol |
+| xai | text, streaming, tools, Responses API | 636 lines convert, handles reasoning content, citations, search parameters |
+| deepseek | text, streaming, reasoning | 600 lines, independently handles reasoning_content and thinking fields |
 
-### OpenAI 兼容薄封装（只改网址和环境变量，无定制点）
+### OpenAI-Compatible Thin Wrappers (only change the URL and environment variables, no customization points)
 
-约 195 个。包括早期手写的和批量生成的：
+About 195. Includes early hand-written ones and batch-generated ones:
 
-groq、fireworks、togetherai、perplexity、moonshotai、cerebras、openrouter（含 Responses API）、ollama、copilot、llamafile、mistralrs、doubleword、zai、github、siliconflow、lmstudio、sambanova、alibaba、baseten、bytedance、deepinfra、huggingface、vercel、ai21、ai302、aibadgr、aigc2d、aihubmix、ails、aiml、albert、antling、anyscale、api2d、api2gpt、apiserpent、atlascloud、baichuan、baidu、bedrock_mantle、bigmodel、bing、byteplus、bytez、canopywave、chatgpt、clarifai、cline_pass、closeai、codestral、cometapi、commandcode、compactifai、coze、cybertron、databricks、datarobot、deepbricks、deepl、dify、doc2x、docker_model_runner、doubaoaudio、embercloud、fastcrw、fastembed、fastgpt、fastrouter、featherless_ai、flux、friendliai、galadriel、gaudi、gdc、gigachat、gonka24、gradient_ai、helicone、heroku、hosted_vllm、hyperbolic、ideogram、inception、inference_net、infinity、inworld、jimeng、jina、jlama、kilo、kiro、kluster_ai、krutrim、lambda_ai、lemonfox_ai、lingyiwanwu、litellm_proxy、llamacpp、local、localai、longcat、matterai、meshy、meta_llama、midjourney、milvus、minimax、mira、mixedbread、mlx、modal、modelscope、mokaai、morph、murf、nanogpt、ncompass、nebius、nextbit、nlp_cloud、nomic、nous_research、novita、nscale、nvidia_nim、nvidia_riva、oci、ohmygpt、ollama_cloud、omlx、onnx、oobabooba、openaimax、openaisb、opencode_go、opencode_zen、openvino、orcarouter、ovhcloud、parasail、perfxcloud、petals、pg_vector、pioneer、playai、portkey、predibase、qdrant、qihoo360、qiniu_ai、recraft、reka_ai、requesty、reve、runware、runwayml、s3_vectors、sagemaker、sakana、sangforaicp、sap、sarvam、scaleway、scx_ai、segmind、sglang、skylark、slack、snowflake、soniox、sora、speechify、stability_ai、stepfun、streamlake、submodel、suno、tei、tencent、text_embeddings_inference、tokenpony、tripo3d、tundra、upstage、v0、vidu、vllm、wafer、watsonx、xiaomimimo、xinference 等。
+groq, fireworks, togetherai, perplexity, moonshotai, cerebras, openrouter (including Responses API), ollama, copilot, llamafile, mistralrs, doubleword, zai, github, siliconflow, lmstudio, sambanova, alibaba, baseten, bytedance, deepinfra, huggingface, vercel, ai21, ai302, aibadgr, aigc2d, aihubmix, ails, aiml, albert, antling, anyscale, api2d, api2gpt, apiserpent, atlascloud, baichuan, baidu, bedrock_mantle, bigmodel, bing, byteplus, bytez, canopywave, chatgpt, clarifai, cline_pass, closeai, codestral, cometapi, commandcode, compactifai, coze, cybertron, databricks, datarobot, deepbricks, deepl, dify, doc2x, docker_model_runner, doubaoaudio, embercloud, fastcrw, fastembed, fastgpt, fastrouter, featherless_ai, flux, friendliai, galadriel, gaudi, gdc, gigachat, gonka24, gradient_ai, helicone, heroku, hosted_vllm, hyperbolic, ideogram, inception, inference_net, infinity, inworld, jimeng, jina, jlama, kilo, kiro, kluster_ai, krutrim, lambda_ai, lemonfox_ai, lingyiwanwu, litellm_proxy, llamacpp, local, localai, longcat, matterai, meshy, meta_llama, midjourney, milvus, minimax, mira, mixedbread, mlx, modal, modelscope, mokaai, morph, murf, nanogpt, ncompass, nebius, nextbit, nlp_cloud, nomic, nous_research, novita, nscale, nvidia_nim, nvidia_riva, oci, ohmygpt, ollama_cloud, omlx, onnx, oobabooba, openaimax, openaisb, opencode_go, opencode_zen, openvino, orcarouter, ovhcloud, parasail, perfxcloud, petals, pg_vector, pioneer, playai, portkey, predibase, qdrant, qihoo360, qiniu_ai, recraft, reka_ai, requesty, reve, runware, runwayml, s3_vectors, sagemaker, sakana, sangforaicp, sap, sarvam, scaleway, scx_ai, segmind, sglang, skylark, slack, snowflake, soniox, sora, speechify, stability_ai, stepfun, streamlake, submodel, suno, tei, tencent, text_embeddings_inference, tokenpony, tripo3d, tundra, upstage, v0, vidu, vllm, wafer, watsonx, xiaomimimo, xinference, etc.
 
-### 非文本能力专用厂商
+### Providers Dedicated to Non-Text Capabilities
 
-| 厂商 | 能力 |
+| Provider | Capabilities |
 |------|------|
-| voyage | 嵌入、重排序 |
-| cartesia | 语音、转写 |
-| elevenlabs | 语音、转写 |
-| hume | 语音 |
-| lmnt | 语音 |
-| assemblyai | 转写 |
-| deepgram | 转写 |
-| fal | 图像、转写、视频 |
-| gladia | 转写 |
-| revai | 转写 |
-| black_forest_labs | 图像 |
-| luma | 图像 |
-| prodia | 图像、视频 |
-| replicate | 图像、视频 |
-| klingai | 视频 |
+| voyage | embedding, reranking |
+| cartesia | speech, transcription |
+| elevenlabs | speech, transcription |
+| hume | speech |
+| lmnt | speech |
+| assemblyai | transcription |
+| deepgram | transcription |
+| fal | image, transcription, video |
+| gladia | transcription |
+| revai | transcription |
+| black_forest_labs | image |
+| luma | image |
+| prodia | image, video |
+| replicate | image, video |
+| klingai | video |
 
-### 通用封装
+### General Wrapper
 
-| 模块 | 说明 |
+| Module | Notes |
 |------|------|
-| open_responses | 通用 Responses API 封装，1238 行 |
+| open_responses | General Responses API wrapper, 1238 lines |
 
-### 已知问题
+### Known Issues
 
-薄封装仍无配置描述结构（RFC-0002 已记录）。深度求索的推理字段、阿里通义的 reasoning_content、Groq 的 top_k 限制等差异仍被丢失。这是下一步要做的。
+Thin wrappers still lack a configuration descriptor structure (recorded in RFC-0002). Differences such as DeepSeek's reasoning field, Alibaba Tongyi's reasoning_content, and Groq's top_k limit are still being lost. This is the next step.
 
-**合计：161 个厂商模块。**
+**Total: 161 provider modules.**
 
-> 其中 11 个原生协议实现 + 1 个通用封装 + 15 个非文本能力专用 + 134 个 OpenAI 兼容薄封装。
-> 注：向量数据库（milvus/qdrant/pg_vector/s3_vectors）、嵌入专用（jina/nomic/mixedbread/clip/fastembed/tei）、
-> 图像/视频/音乐生成（recraft/ideogram/stability_ai/meshy/tripo3d/runwayml/sora/vidu/jimeng/midjourney/flux/suno）、
-> 语音/转写（murf/playai/speechify/inworld/aws_polly/nvidia_riva/soniox/doubaoaudio/mokaai）、
-> 非LLM服务（bing/deepl/dify/slack/doc2x/streamlake/antling/sangforaicp/skylark）、
-> 特殊认证（watsonx/sagemaker/sap/oci/snowflake/bedrock_mantle）共 49 家未接入——
-> 它们不是 OpenAI Chat Completions 兼容的，需要各自的 trait 或认证方式。
+> Of these, 11 native protocol implementations + 1 general wrapper + 15 dedicated to non-text capabilities + 134 OpenAI-compatible thin wrappers.
+> Note: vector databases (milvus/qdrant/pg_vector/s3_vectors), embedding-dedicated (jina/nomic/mixedbread/clip/fastembed/tei),
+> image/video/music generation (recraft/ideogram/stability_ai/meshy/tripo3d/runwayml/sora/vidu/jimeng/midjourney/flux/suno),
+> speech/transcription (murf/playai/speechify/inworld/aws_polly/nvidia_riva/soniox/doubaoaudio/mokaai),
+> non-LLM services (bing/deepl/dify/slack/doc2x/streamlake/antling/sangforaicp/skylark),
+> special authentication (watsonx/sagemaker/sap/oci/snowflake/bedrock_mantle), a total of 49 are not integrated —
+> they are not OpenAI Chat Completions compatible and require their own traits or authentication methods.
 
 ---
 
-## 二、所有参考项目的厂商总清单
+## 2. Complete Provider Inventory of All Reference Projects
 
-> 合并去重四个扫描结果（Rust 竞品 / Python 生态 / 其他语言 / 网关）中出现过的所有厂商。
-> "网关覆盖"列标注支持该厂商的网关项目（不穷举，列代表性的）。
+> Merged and de-duplicated all providers that appeared in the four scan results (Rust competitors / Python ecosystem / other languages / gateways).
+> The "Gateway coverage" column marks gateway projects that support the provider (not exhaustive; representative ones are listed).
 
-### 主流大模型厂商
+### Mainstream Large Model Providers
 
-| 厂商 | aimux | rig | litellm | 网关覆盖 | 其他主要项目 |
+| Provider | aimux | rig | litellm | Gateway coverage | Other major projects |
 |------|:---:|:---:|:---:|:---:|------|
-| openai | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
-| anthropic | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
-| google (gemini) | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
-| azure (openai) | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
-| bedrock (aws) | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
-| vertex (gcp) | ✅原生 | ✅ | ✅ | 全员 | langchain4j, spring-ai |
-| mistral | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
-| cohere | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
-| xai (grok) | ✅原生 | ✅ | ✅ | 全员 | genai, pydantic-ai, instructor |
-| deepseek | ✅原生 | ✅ | ✅ | 全员 | 几乎所有项目 |
+| openai | ✅ native | ✅ | ✅ | all | almost all projects |
+| anthropic | ✅ native | ✅ | ✅ | all | almost all projects |
+| google (gemini) | ✅ native | ✅ | ✅ | all | almost all projects |
+| azure (openai) | ✅ native | ✅ | ✅ | all | almost all projects |
+| bedrock (aws) | ✅ native | ✅ | ✅ | all | almost all projects |
+| vertex (gcp) | ✅ native | ✅ | ✅ | all | langchain4j, spring-ai |
+| mistral | ✅ native | ✅ | ✅ | all | almost all projects |
+| cohere | ✅ native | ✅ | ✅ | all | almost all projects |
+| xai (grok) | ✅ native | ✅ | ✅ | all | genai, pydantic-ai, instructor |
+| deepseek | ✅ native | ✅ | ✅ | all | almost all projects |
 
-### OpenAI 兼容云厂商
+### OpenAI-Compatible Cloud Providers
 
-| 厂商 | aimux | rig | litellm | 网关覆盖 | 其他 |
+| Provider | aimux | rig | litellm | Gateway coverage | Other |
 |------|:---:|:---:|:---:|:---:|------|
-| groq | ✅薄 | ✅ | ✅ | portkey, bifrost, higress, one-hub, axonhub, ferro | pydantic-ai, instructor, aisuite, llama_index |
-| fireworks | ✅薄 | — | ✅ | portkey, one-hub, higress, APIPark, ferro | langchain, llama_index, langchain4j |
-| together | ✅薄 | ✅ | ✅ | portkey, higress, ferro | langchain, llama_index, langchain4j, aisuite |
-| perplexity | ✅薄 | ✅ | ✅ | portkey, ferro | langchain, llama_index, langchainjs |
-| moonshot (kimi) | ✅薄 | ✅ | ✅ | 全员国产网关 | llama_index, genai |
-| cerebras | ✅薄 | — | ✅ | portkey, bifrost, axonhub, ferro | pydantic-ai, instructor, aisuite, llama_index |
-| openrouter | ✅薄 | ✅ | ✅ | 几乎所有网关 | langchain, llama_index, genai, aisuite |
-| huggingface | ✅薄 | ✅ | ✅ | portkey, one-hub, bifrost, APIPark, ferro | langchain, llama_index, langchain4j, semantic-kernel |
-| deepinfra | ✅薄 | — | ✅ | portkey, llmgateway | llama_index, langchain |
-| ovhcloud | ✅薄 | — | ✅ | portkey, llmgateway | llama_index, langchain4j |
-| replicate | ✅图像 | — | ✅ | one-hub, TokenHub, ferro | langchain, llama_index |
-| novita | ✅薄 | — | ✅ | portkey, one-api, TokenHub, APIPark, ferro, llmgateway | llama_index |
-| nebius | ✅薄 | — | ✅ | portkey, bifrost, ferro, llmgateway | genai, aisuite, llama_index |
-| hyperbolic | ✅薄 | ✅ | ✅ | portkey | — |
-| minimax | ✅薄 | ✅ | ✅ | 全员国产网关, portkey, claude-code-router, llmgateway | genai, llama_index |
-| mistralrs | ✅薄 | ✅本地 | — | — | — |
-| llamafile | ✅薄 | ✅本地 | ✅ | — | langchaingo |
-| doubleword | ✅薄 | ✅ | — | — | — |
-| mira | ✅薄 | ✅ | — | — | — |
-| xiaomimimo (小米) | ✅薄 | ✅ | — | manifest, llmgateway, chats, TokenHub | — |
-| zai (智谱/z.ai) | ✅薄 | ✅ | ✅ | 全员国产网关, portkey, claude-code-router, llmgateway | genai |
-| github (models) | ✅薄 | — | ✅ | higress, one-hub, chats, TokenHub | langchain4j, llama_index |
-| github_copilot | ✅薄 | ✅ | ✅ | axonhub, manifest, TokenHub, bifrost | genai |
-| chatgpt (订阅) | ✅薄 | ✅ | ✅ | — | — |
-| ai21 | ✅薄 | — | ✅ | portkey, ferro | langchain, llama_index |
-| anyscale | ✅薄 | — | ✅ | portkey | langchain |
-| sambanova | ✅薄 | — | ✅ | portkey, ferro | llama_index |
-| predibase | ✅薄 | — | ✅ | portkey | — |
-| triton (nvidia) | ✅薄 | — | ✅ | portkey, higress | — |
-| databricks | ✅薄 | — | ✅ | portkey, ferro, TokenHub | langchain, llama_index |
+| groq | ✅ thin | ✅ | ✅ | portkey, bifrost, higress, one-hub, axonhub, ferro | pydantic-ai, instructor, aisuite, llama_index |
+| fireworks | ✅ thin | — | ✅ | portkey, one-hub, higress, APIPark, ferro | langchain, llama_index, langchain4j |
+| together | ✅ thin | ✅ | ✅ | portkey, higress, ferro | langchain, llama_index, langchain4j, aisuite |
+| perplexity | ✅ thin | ✅ | ✅ | portkey, ferro | langchain, llama_index, langchainjs |
+| moonshot (kimi) | ✅ thin | ✅ | ✅ | all domestic gateways | llama_index, genai |
+| cerebras | ✅ thin | — | ✅ | portkey, bifrost, axonhub, ferro | pydantic-ai, instructor, aisuite, llama_index |
+| openrouter | ✅ thin | ✅ | ✅ | almost all gateways | langchain, llama_index, genai, aisuite |
+| huggingface | ✅ thin | ✅ | ✅ | portkey, one-hub, bifrost, APIPark, ferro | langchain, llama_index, langchain4j, semantic-kernel |
+| deepinfra | ✅ thin | — | ✅ | portkey, llmgateway | llama_index, langchain |
+| ovhcloud | ✅ thin | — | ✅ | portkey, llmgateway | llama_index, langchain4j |
+| replicate | ✅ image | — | ✅ | one-hub, TokenHub, ferro | langchain, llama_index |
+| novita | ✅ thin | — | ✅ | portkey, one-api, TokenHub, APIPark, ferro, llmgateway | llama_index |
+| nebius | ✅ thin | — | ✅ | portkey, bifrost, ferro, llmgateway | genai, aisuite, llama_index |
+| hyperbolic | ✅ thin | ✅ | ✅ | portkey | — |
+| minimax | ✅ thin | ✅ | ✅ | all domestic gateways, portkey, claude-code-router, llmgateway | genai, llama_index |
+| mistralrs | ✅ thin | ✅ local | — | — | — |
+| llamafile | ✅ thin | ✅ local | ✅ | — | langchaingo |
+| doubleword | ✅ thin | ✅ | — | — | — |
+| mira | ✅ thin | ✅ | — | — | — |
+| xiaomimimo (Xiaomi) | ✅ thin | ✅ | — | manifest, llmgateway, chats, TokenHub | — |
+| zai (Zhipu/z.ai) | ✅ thin | ✅ | ✅ | all domestic gateways, portkey, claude-code-router, llmgateway | genai |
+| github (models) | ✅ thin | — | ✅ | higress, one-hub, chats, TokenHub | langchain4j, llama_index |
+| github_copilot | ✅ thin | ✅ | ✅ | axonhub, manifest, TokenHub, bifrost | genai |
+| chatgpt (subscription) | ✅ thin | ✅ | ✅ | — | — |
+| ai21 | ✅ thin | — | ✅ | portkey, ferro | langchain, llama_index |
+| anyscale | ✅ thin | — | ✅ | portkey | langchain |
+| sambanova | ✅ thin | — | ✅ | portkey, ferro | llama_index |
+| predibase | ✅ thin | — | ✅ | portkey | — |
+| triton (nvidia) | ✅ thin | — | ✅ | portkey, higress | — |
+| databricks | ✅ thin | — | ✅ | portkey, ferro, TokenHub | langchain, llama_index |
 | sagemaker (aws) | ❌ | — | ✅ | portkey | langchain, llm-chain |
 | watsonx (ibm) | ❌ | — | ✅ | — | langchain, langchain4j, langchaingo |
-| scaleway | ✅薄 | — | ✅ | TokenHub | — |
+| scaleway | ✅ thin | — | ✅ | TokenHub | — |
 | snowflake | ❌ | — | ✅ | TokenHub | — |
 | sap | ❌ | — | ✅ | — | — |
 | oci (oracle) | ❌ | — | ✅ | TokenHub, portkey(oracle) | llama_index |
-| nlp_cloud | ✅薄 | — | ✅ | — | langchain |
-| friendliai | ✅薄 | — | ✅ | — | llama_index |
-| clarifai | ✅薄 | — | ✅ | — | langchain, llama_index |
-| gigachat (三星) | ✅薄 | — | ✅ | — | — |
-| codestral | ✅薄 | — | ✅ | — | — |
-| morph | ✅薄 | — | ✅ | TokenHub | — |
-| v0 | ✅薄 | — | ✅ | — | — |
-| aiml | ✅薄 | — | ✅ | TokenHub | — |
-| heroku | ✅薄 | — | ✅ | — | — |
-| hosted_vllm | ✅薄 | — | ✅ | — | — |
-| nvidia_nim | ✅薄 | — | ✅ | manifest, ferro, APIPark, TokenHub | — |
-| nscale | ✅薄 | — | ✅ | portkey, llmgateway | — |
-| lambda_ai | ✅薄 | — | ✅ | portkey | — |
-| databricks | ✅薄 | — | ✅ | portkey, ferro | langchain |
-| petals | ✅薄 | — | ✅ | — | — |
-| oobabooba | ✅薄 | — | ✅ | — | — |
-| inception | ✅薄 | — | ✅ | TokenHub | — |
-| galadriel | ✅薄 | — | ✅ | — | — |
-| gdc | ✅薄 | — | ✅ | — | — |
-| datarobot | ✅薄 | — | ✅ | — | — |
-| infinity | ✅薄 | — | ✅ | — | — |
-| kluster-ai | ✅薄 | — | — | portkey | — |
-| featherless-ai | ✅薄 | — | ✅ | portkey | llama_index |
-| krutrim | ✅薄 | — | — | portkey | — |
-| bytez | ✅薄 | — | — | portkey | — |
-| upstage | ✅薄 | — | — | portkey, APIPark, langchain4j | — |
-| deepbricks | ✅薄 | — | — | portkey | — |
-| lemonfox-ai | ✅薄 | — | — | portkey | — |
-| inference-net | ✅薄 | — | — | portkey, llmgateway | — |
-| 302ai | ✅薄 | — | — | portkey, TokenHub | — |
-| cometapi | ✅薄 | — | ✅ | portkey, TokenHub | — |
-| matterai | ✅薄 | — | — | portkey | — |
+| nlp_cloud | ✅ thin | — | ✅ | — | langchain |
+| friendliai | ✅ thin | — | ✅ | — | llama_index |
+| clarifai | ✅ thin | — | ✅ | — | langchain, llama_index |
+| gigachat (Samsung) | ✅ thin | — | ✅ | — | — |
+| codestral | ✅ thin | — | ✅ | — | — |
+| morph | ✅ thin | — | ✅ | TokenHub | — |
+| v0 | ✅ thin | — | ✅ | — | — |
+| aiml | ✅ thin | — | ✅ | TokenHub | — |
+| heroku | ✅ thin | — | ✅ | — | — |
+| hosted_vllm | ✅ thin | — | ✅ | — | — |
+| nvidia_nim | ✅ thin | — | ✅ | manifest, ferro, APIPark, TokenHub | — |
+| nscale | ✅ thin | — | ✅ | portkey, llmgateway | — |
+| lambda_ai | ✅ thin | — | ✅ | portkey | — |
+| databricks | ✅ thin | — | ✅ | portkey, ferro | langchain |
+| petals | ✅ thin | — | ✅ | — | — |
+| oobabooba | ✅ thin | — | ✅ | — | — |
+| inception | ✅ thin | — | ✅ | TokenHub | — |
+| galadriel | ✅ thin | — | ✅ | — | — |
+| gdc | ✅ thin | — | ✅ | — | — |
+| datarobot | ✅ thin | — | ✅ | — | — |
+| infinity | ✅ thin | — | ✅ | — | — |
+| kluster-ai | ✅ thin | — | — | portkey | — |
+| featherless-ai | ✅ thin | — | ✅ | portkey | llama_index |
+| krutrim | ✅ thin | — | — | portkey | — |
+| bytez | ✅ thin | — | — | portkey | — |
+| upstage | ✅ thin | — | — | portkey, APIPark, langchain4j | — |
+| deepbricks | ✅ thin | — | — | portkey | — |
+| lemonfox-ai | ✅ thin | — | — | portkey | — |
+| inference-net | ✅ thin | — | — | portkey, llmgateway | — |
+| 302ai | ✅ thin | — | — | portkey, TokenHub | — |
+| cometapi | ✅ thin | — | ✅ | portkey, TokenHub | — |
+| matterai | ✅ thin | — | — | portkey | — |
 | meshy | ❌ | — | — | portkey | — |
-| nextbit | ✅薄 | — | — | portkey | — |
+| nextbit | ✅ thin | — | — | portkey | — |
 | tripo3d | ❌ | — | — | portkey | — |
-| modal | ✅薄 | — | — | portkey | — |
-| aibadgr | ✅薄 | — | — | portkey, TokenHub, chats | — |
-| ncompass | ✅薄 | — | — | portkey | — |
-| reka-ai | ✅薄 | — | ✅ | portkey | llama_index |
+| modal | ✅ thin | — | — | portkey | — |
+| aibadgr | ✅ thin | — | — | portkey, TokenHub, chats | — |
+| ncompass | ✅ thin | — | — | portkey | — |
+| reka-ai | ✅ thin | — | ✅ | portkey | llama_index |
 | stability-ai | ❌ | — | ✅ | portkey, one-hub, spring-ai | — |
 | segmind | ❌ | — | — | portkey | — |
-| monsterapi | ✅薄 | — | — | portkey | llama_index |
-| sgl (sglang) | ✅薄 | — | ✅ | bifrost | guidance, outlines, llama_index |
-| parasail | ✅薄 | — | — | bifrost | — |
-| wafer | ✅薄 | — | — | bifrost, axonhub | — |
+| monsterapi | ✅ thin | — | — | portkey | llama_index |
+| sgl (sglang) | ✅ thin | — | ✅ | bifrost | guidance, outlines, llama_index |
+| parasail | ✅ thin | — | — | bifrost | — |
+| wafer | ✅ thin | — | — | bifrost, axonhub | — |
 | runway | ❌ | — | ✅(runwayml) | bifrost | — |
 | runware | ❌ | — | — | bifrost | — |
-| sarvam | ✅薄 | — | ✅ | bifrost, claude-code-router, TokenHub | — |
-| opencode-go | ✅薄 | — | — | bifrost, manifest, axonhub | genai |
-| opencode-zen | ✅薄 | — | — | bifrost, manifest | — |
+| sarvam | ✅ thin | — | ✅ | bifrost, claude-code-router, TokenHub | — |
+| opencode-go | ✅ thin | — | — | bifrost, manifest, axonhub | genai |
+| opencode-zen | ✅ thin | — | — | bifrost, manifest | — |
 | bedrock_mantle | ❌ | — | ✅ | bifrost, llmgateway | — |
-| vllm | ✅薄 | — | ✅ | bifrost, higress | guidance, outlines, llama_index |
-| nous (nousresearch) | ✅薄 | — | — | manifest | — |
-| byteplus | ✅薄 | — | — | manifest | — |
-| kiro | ✅薄 | — | — | manifest | — |
-| pioneer | ✅薄 | — | — | manifest | — |
-| kilo | ✅薄 | — | — | manifest, TokenHub | — |
-| cline-pass | ✅薄 | — | — | manifest | — |
-| commandcode | ✅薄 | — | — | manifest | — |
-| copilot (github) | ✅薄 | ✅ | ✅ | manifest | genai |
-| longcat | ✅薄 | — | — | higress, axonhub | — |
-| yi (零一) | ✅薄 | — | — | higress, one-api, APIPark, TokenHub, chats | llama_index |
+| vllm | ✅ thin | — | ✅ | bifrost, higress | guidance, outlines, llama_index |
+| nous (nousresearch) | ✅ thin | — | — | manifest | — |
+| byteplus | ✅ thin | — | — | manifest | — |
+| kiro | ✅ thin | — | — | manifest | — |
+| pioneer | ✅ thin | — | — | manifest | — |
+| kilo | ✅ thin | — | — | manifest, TokenHub | — |
+| cline-pass | ✅ thin | — | — | manifest | — |
+| commandcode | ✅ thin | — | — | manifest | — |
+| copilot (github) | ✅ thin | ✅ | ✅ | manifest | genai |
+| longcat | ✅ thin | — | — | higress, axonhub | — |
+| yi (01.AI) | ✅ thin | — | — | higress, one-api, APIPark, TokenHub, chats | llama_index |
 | deepl | ❌ | — | — | higress, one-api | — |
 | dify | ❌ | — | — | higress, new-api, aiproxy | — |
-| stepfun (阶跃) | ✅薄 | — | — | higress, one-api, APIPark, TokenHub | llama_index |
-| baichuan | ✅薄 | — | — | higress, one-api, APIPark, TokenHub, coai | — |
-| kling (可灵) | ✅视频 | — | — | higress, new-api, one-hub, TokenHub | — |
-| triton | ✅薄 | — | ✅ | higress | — |
-| perfxcloud | ✅薄 | — | — | APIPark | — |
+| stepfun (StepFun) | ✅ thin | — | — | higress, one-api, APIPark, TokenHub | llama_index |
+| baichuan | ✅ thin | — | — | higress, one-api, APIPark, TokenHub, coai | — |
+| kling (Kling) | ✅ video | — | — | higress, new-api, one-hub, TokenHub | — |
+| triton | ✅ thin | — | ✅ | higress | — |
+| perfxcloud | ✅ thin | — | — | APIPark | — |
 | doc2x | ❌ | — | — | aiproxy | — |
 | sangforaicp | ❌ | — | — | aiproxy | — |
 | streamlake | ❌ | — | — | aiproxy | — |
 | antling | ❌ | — | — | aiproxy | — |
 | text_embeddings_inference | ❌ | — | — | aiproxy | — |
-| skylark (云雀) | ❌ | — | — | coai | — |
+| skylark (Skylark) | ❌ | — | — | coai | — |
 | bing (new bing) | ❌ | — | — | coai | — |
 | slack (slack claude) | ❌ | — | — | coai | — |
 | ideogram | ❌ | — | — | one-hub | — |
 | flux | ❌ | — | — | one-hub | — |
-| suno (音乐) | ❌ | — | — | new-api, one-hub | — |
+| suno (music) | ❌ | — | — | new-api, one-hub | — |
 | midjourney | ❌ | — | — | new-api, one-hub, coai | — |
 | sora | ❌ | — | — | new-api | — |
-| vidu (视频) | ❌ | — | — | new-api | — |
-| jimeng (即梦) | ❌ | — | — | new-api | — |
+| vidu (video) | ❌ | — | — | new-api | — |
+| jimeng (Jimeng) | ❌ | — | — | new-api | — |
 | doubaoaudio | ❌ | — | — | aiproxy | — |
 | mokaai | ❌ | — | — | new-api | — |
 | recraft | ❌ | — | ✅ | one-hub, portkey, TokenHub | — |
-| sakana | ✅薄 | — | — | llmgateway | — |
-| meta | ✅薄 | — | ✅(meta_llama) | manifest, llmgateway, TokenHub | — |
-| scx-ai | ✅薄 | — | — | llmgateway | — |
-| atlascloud | ✅薄 | — | — | llmgateway, genai | — |
-| canopywave | ✅薄 | — | — | llmgateway | — |
-| embercloud | ✅薄 | — | — | llmgateway | — |
-| tundra | ✅薄 | — | — | llmgateway | — |
-| reve | ✅薄 | — | — | llmgateway | — |
-| gonka24 | ✅薄 | — | — | llmgateway | — |
-| albert | ✅薄 | — | — | OpenGateLLM | — |
+| sakana | ✅ thin | — | — | llmgateway | — |
+| meta | ✅ thin | — | ✅(meta_llama) | manifest, llmgateway, TokenHub | — |
+| scx-ai | ✅ thin | — | — | llmgateway | — |
+| atlascloud | ✅ thin | — | — | llmgateway, genai | — |
+| canopywave | ✅ thin | — | — | llmgateway | — |
+| embercloud | ✅ thin | — | — | llmgateway | — |
+| tundra | ✅ thin | — | — | llmgateway | — |
+| reve | ✅ thin | — | — | llmgateway | — |
+| gonka24 | ✅ thin | — | — | llmgateway | — |
+| albert | ✅ thin | — | — | OpenGateLLM | — |
 | tei (text embeddings inference) | ❌ | — | — | OpenGateLLM, aiproxy | — |
-| fastcrw | ✅薄 | — | ✅ | — | — |
-| apiserpent | ✅薄 | — | ✅ | — | — |
-| modelscope (魔搭) | ✅薄 | — | ✅ | axonhub, TokenHub | llama_index |
-| docker_model_runner | ✅薄 | — | ✅ | — | — |
-| ollama_cloud | ✅薄 | — | — | bifrost, ferro, manifest | genai |
-| aihubmix | ✅薄 | — | — | — | genai |
-| bigmodel (智谱) | ✅薄 | — | — | — | genai |
-| litellm_proxy | ✅薄 | — | ✅ | — | — |
-| compactifai | ✅薄 | — | ✅ | — | — |
-| fastembed | ❌ | — | — | — | swiftide(本地) |
-| docker_model_runner | ✅薄 | — | ✅ | — | — |
+| fastcrw | ✅ thin | — | ✅ | — | — |
+| apiserpent | ✅ thin | — | ✅ | — | — |
+| modelscope (ModelScope) | ✅ thin | — | ✅ | axonhub, TokenHub | llama_index |
+| docker_model_runner | ✅ thin | — | ✅ | — | — |
+| ollama_cloud | ✅ thin | — | — | bifrost, ferro, manifest | genai |
+| aihubmix | ✅ thin | — | — | — | genai |
+| bigmodel (Zhipu) | ✅ thin | — | — | — | genai |
+| litellm_proxy | ✅ thin | — | ✅ | — | — |
+| compactifai | ✅ thin | — | ✅ | — | — |
+| fastembed | ❌ | — | — | — | swiftide (local) |
+| docker_model_runner | ✅ thin | — | ✅ | — | — |
 
-### 国产厂商（单独汇总）
+### Domestic Providers (separate summary)
 
-| 厂商 | aimux | rig | litellm | 网关覆盖 | 其他 |
+| Provider | aimux | rig | litellm | Gateway coverage | Other |
 |------|:---:|:---:|:---:|:---:|------|
-| alibaba (通义/DashScope/百炼) | ✅薄 | — | ✅(dashscope) | new-api, one-api, simple-one-api, portkey, higress, ferro, APIPark, claude-code-router, llmgateway | genai, swiftide, llm-connector, llama_index |
-| baidu (文心/ernie) | ✅薄 | — | — | new-api, one-api, simple-one-api, APIPark, TokenHub, chats | genai, langchaingo, langchain-swift |
-| zhipu (智谱/glm) | ✅薄 | ✅(zai) | — | new-api, one-api, simple-one-api, portkey, higress, APIPark, axonhub, claude-code-router, llmgateway, aiproxy | llm-connector, langchain-swift, llama_index, genai |
-| tencent (混元/hunyuan) | ✅薄 | — | ✅ | new-api, one-api, simple-one-api, coai, APIPark, chats, TokenHub | llm-connector |
-| xunfei (讯飞/spark) | ✅薄 | — | — | new-api, one-api, simple-one-api, higress, APIPark, chats | — |
-| bytedance (火山/豆包/volcengine) | ✅薄 | — | ✅(volcengine) | new-api, one-api, simple-one-api, axonhub, APIPark, llmgateway | — |
-| baichuan | ✅薄 | — | — | one-api, higress, APIPark, TokenHub, coai | — |
-| stepfun (阶跃) | ✅薄 | — | — | one-api, higress, APIPark, TokenHub | llama_index |
-| minimax | ✅薄 | ✅ | ✅ | new-api, one-api, simple-one-api, portkey, claude-code-router, llmgateway, chats, TokenHub | genai, llama_index |
-| moonshot (月之暗面/kimi) | ✅薄 | ✅ | ✅ | new-api, one-api, portkey, higress, ferro, claude-code-router, llmgateway, APIPark | genai |
-| lingyiwanwu (零一/yi) | ✅薄 | — | — | new-api, one-api, higress, APIPark, TokenHub, chats | llama_index |
-| 360 (ai360/zhinao) | ✅薄 | — | — | new-api, one-api, coai, APIPark, chats | — |
-| coze (扣子) | ✅薄 | — | — | new-api, one-api, aiproxy | — |
-| siliconflow (硅基流动) | ✅薄 | — | — | new-api, one-api, APIPark, chats, claude-code-router | llama_index |
-| gigachat (三星) | ✅薄 | — | ✅ | — | — |
-| qiniu-ai (七牛) | ✅薄 | — | — | claude-code-router | — |
-| modelscope (魔搭) | ✅薄 | — | ✅ | axonhub, TokenHub | llama_index |
-| longcat | ✅薄 | — | — | higress, axonhub | — |
+| alibaba (Tongyi/DashScope/Bailian) | ✅ thin | — | ✅(dashscope) | new-api, one-api, simple-one-api, portkey, higress, ferro, APIPark, claude-code-router, llmgateway | genai, swiftide, llm-connector, llama_index |
+| baidu (Wenxin/ernie) | ✅ thin | — | — | new-api, one-api, simple-one-api, APIPark, TokenHub, chats | genai, langchaingo, langchain-swift |
+| zhipu (Zhipu/glm) | ✅ thin | ✅(zai) | — | new-api, one-api, simple-one-api, portkey, higress, APIPark, axonhub, claude-code-router, llmgateway, aiproxy | llm-connector, langchain-swift, llama_index, genai |
+| tencent (Hunyuan/hunyuan) | ✅ thin | — | ✅ | new-api, one-api, simple-one-api, coai, APIPark, chats, TokenHub | llm-connector |
+| xunfei (Xunfei/spark) | ✅ thin | — | — | new-api, one-api, simple-one-api, higress, APIPark, chats | — |
+| bytedance (Volcano/Doubao/volcengine) | ✅ thin | — | ✅(volcengine) | new-api, one-api, simple-one-api, axonhub, APIPark, llmgateway | — |
+| baichuan | ✅ thin | — | — | one-api, higress, APIPark, TokenHub, coai | — |
+| stepfun (StepFun) | ✅ thin | — | — | one-api, higress, APIPark, TokenHub | llama_index |
+| minimax | ✅ thin | ✅ | ✅ | new-api, one-api, simple-one-api, portkey, claude-code-router, llmgateway, chats, TokenHub | genai, llama_index |
+| moonshot (Moonshot AI/kimi) | ✅ thin | ✅ | ✅ | new-api, one-api, portkey, higress, ferro, claude-code-router, llmgateway, APIPark | genai |
+| lingyiwanwu (01.AI/yi) | ✅ thin | — | — | new-api, one-api, higress, APIPark, TokenHub, chats | llama_index |
+| 360 (ai360/zhinao) | ✅ thin | — | — | new-api, one-api, coai, APIPark, chats | — |
+| coze (Coze) | ✅ thin | — | — | new-api, one-api, aiproxy | — |
+| siliconflow (SiliconFlow) | ✅ thin | — | — | new-api, one-api, APIPark, chats, claude-code-router | llama_index |
+| gigachat (Samsung) | ✅ thin | — | ✅ | — | — |
+| qiniu-ai (Qiniu) | ✅ thin | — | — | claude-code-router | — |
+| modelscope (ModelScope) | ✅ thin | — | ✅ | axonhub, TokenHub | llama_index |
+| longcat | ✅ thin | — | — | higress, axonhub | — |
 
-### 本地推理
+### Local Inference
 
-| 厂商 | aimux | rig | litellm | 网关覆盖 | 其他 |
+| Provider | aimux | rig | litellm | Gateway coverage | Other |
 |------|:---:|:---:|:---:|:---:|------|
-| ollama | ✅薄 | ✅ | ✅ | new-api, one-api, portkey, bifrost, one-hub, higress, ferro, APIPark, chats, TokenHub | 几乎所有 SDK |
-| llama.cpp | ✅薄 | ✅本地 | — | — | guidance, outlines, llm-chain, langchain |
-| lmstudio | ✅薄 | — | ✅ | APIPark | aisuite, langchain-swift, edgequake |
-| vllm | ✅薄 | — | ✅ | bifrost, higress | guidance, outlines, llama_index, edgequake |
-| sglang | ✅薄 | — | — | bifrost | guidance, outlines, llama_index |
-| xinference | ✅薄 | — | ✅ | new-api, APIPark | llm-connector |
-| mistralrs | ✅薄 | ✅本地 | — | — | — |
-| omlx / mlx_lm | ✅薄 | — | — | — | genai, edgequake |
-| triton | ✅薄 | — | ✅ | higress, portkey | — |
-| local (通用本地) | ✅薄 | — | — | — | langchaingo, langchain-swift, llm-chain |
-| cybertron | ✅薄 | — | — | — | langchaingo |
-| jlama | ✅薄 | — | — | — | langchain4j |
-| localai | ✅薄 | — | — | — | langchain4j, llama_index |
-| onnx | ✅薄 | — | — | — | semantic-kernel, langchain4j |
-| openvino | ✅薄 | — | — | — | llama_index |
-| mlx | ✅薄 | — | — | — | outlines, llama_index |
-| gaudi | ✅薄 | — | — | — | llama_index |
+| ollama | ✅ thin | ✅ | ✅ | new-api, one-api, portkey, bifrost, one-hub, higress, ferro, APIPark, chats, TokenHub | almost all SDKs |
+| llama.cpp | ✅ thin | ✅ local | — | — | guidance, outlines, llm-chain, langchain |
+| lmstudio | ✅ thin | — | ✅ | APIPark | aisuite, langchain-swift, edgequake |
+| vllm | ✅ thin | — | ✅ | bifrost, higress | guidance, outlines, llama_index, edgequake |
+| sglang | ✅ thin | — | — | bifrost | guidance, outlines, llama_index |
+| xinference | ✅ thin | — | ✅ | new-api, APIPark | llm-connector |
+| mistralrs | ✅ thin | ✅ local | — | — | — |
+| omlx / mlx_lm | ✅ thin | — | — | — | genai, edgequake |
+| triton | ✅ thin | — | ✅ | higress, portkey | — |
+| local (general local) | ✅ thin | — | — | — | langchaingo, langchain-swift, llm-chain |
+| cybertron | ✅ thin | — | — | — | langchaingo |
+| jlama | ✅ thin | — | — | — | langchain4j |
+| localai | ✅ thin | — | — | — | langchain4j, llama_index |
+| onnx | ✅ thin | — | — | — | semantic-kernel, langchain4j |
+| openvino | ✅ thin | — | — | — | llama_index |
+| mlx | ✅ thin | — | — | — | outlines, llama_index |
+| gaudi | ✅ thin | — | — | — | llama_index |
 
-### 嵌入/重排序专用
+### Embedding/Reranking Dedicated
 
-| 厂商 | aimux | rig | litellm | 网关覆盖 | 其他 |
+| Provider | aimux | rig | litellm | Gateway coverage | Other |
 |------|:---:|:---:|:---:|:---:|------|
 | voyage | ✅ | ✅ | ✅ | portkey, ferro | langchainjs, langchain4j, llama_index |
 | jina | ❌ | — | ✅(jina_ai) | portkey, one-api, axonhub, higress, langchain4j, llama_index | edgequake, langchaingo |
 | nomic | ❌ | — | — | portkey | langchainjs, langchain4j |
-| cohere embedding/rerank | ✅ | ✅ | ✅ | 全员 | 多数项目 |
-| fastembed | ❌ | — | — | — | swiftide(本地) |
+| cohere embedding/rerank | ✅ | ✅ | ✅ | all | most projects |
+| fastembed | ❌ | — | — | — | swiftide (local) |
 | mixedbread | ❌ | — | — | — | LlamaIndexTS |
 | clip | ❌ | — | — | — | LlamaIndexTS |
 | pg_vector | ❌ | — | ✅ | — | — |
 | s3_vectors | ❌ | — | ✅ | — | — |
-| milvus (向量库) | ❌ | — | ✅ | portkey | — |
-| qdrant (向量库) | ❌ | — | — | portkey | — |
+| milvus (vector database) | ❌ | — | ✅ | portkey | — |
+| qdrant (vector database) | ❌ | — | — | portkey | — |
 
-### 语音/转写/图像/视频专用
+### Speech/Transcription/Image/Video Dedicated
 
-| 厂商 | aimux | 类型 | litellm | 网关覆盖 | 其他 |
+| Provider | aimux | Type | litellm | Gateway coverage | Other |
 |------|:---:|------|:---:|:---:|------|
-| elevenlabs | ✅ | 语音 | ✅ | bifrost, llmgateway | spring-ai |
-| deepgram | ✅ | 转写 | ✅ | — | aisuite, mastra |
-| assemblyai | ✅ | 转写 | — | — | llama_index |
-| cartesia | ✅ | 语音 | — | — | — |
-| fal | ✅ | 图像/视频 | ✅(fal_ai) | — | — |
-| replicate | ✅ | 图像/视频 | ✅ | one-hub, TokenHub, ferro | langchain, llama_index |
-| black_forest_labs | ✅ | 图像 | ✅ | — | — |
-| luma | ✅ | 图像 | ✅(runwayml?) | — | — |
-| prodia | ✅ | 图像/视频 | — | — | — |
-| klingai | ✅ | 视频 | — | new-api, higress, one-hub, TokenHub | — |
-| stability | ❌ | 图像 | ✅(stability) | portkey, one-hub, spring-ai | — |
-| recraft | ❌ | 图像 | ✅ | one-hub, portkey, TokenHub | — |
-| runwayml | ❌ | 视频 | ✅(runwayml) | bifrost | — |
-| hume | ✅ | 语音 | — | — | — |
-| lmnt | ✅ | 语音 | — | — | — |
-| gladia | ✅ | 转写 | — | — | — |
-| revai | ✅ | 转写 | — | — | — |
-| aws_polly | ❌ | 语音 | ✅ | — | — |
-| nvidia_riva | ❌ | 语音 | ✅ | — | — |
-| soniox | ❌ | 转写 | ✅ | — | — |
-| midjourney | ❌ | 图像 | — | new-api, one-hub, coai | — |
-| sora | ❌ | 视频 | — | new-api | — |
-| vidu | ❌ | 视频 | — | new-api | — |
-| jimeng (即梦) | ❌ | 图像 | — | new-api | — |
-| ideogram | ❌ | 图像 | — | one-hub | — |
-| flux | ❌ | 图像 | — | one-hub | — |
-| suno | ❌ | 音乐 | — | new-api, one-hub | — |
+| elevenlabs | ✅ | speech | ✅ | bifrost, llmgateway | spring-ai |
+| deepgram | ✅ | transcription | ✅ | — | aisuite, mastra |
+| assemblyai | ✅ | transcription | — | — | llama_index |
+| cartesia | ✅ | speech | — | — | — |
+| fal | ✅ | image/video | ✅(fal_ai) | — | — |
+| replicate | ✅ | image/video | ✅ | one-hub, TokenHub, ferro | langchain, llama_index |
+| black_forest_labs | ✅ | image | ✅ | — | — |
+| luma | ✅ | image | ✅(runwayml?) | — | — |
+| prodia | ✅ | image/video | — | — | — |
+| klingai | ✅ | video | — | new-api, higress, one-hub, TokenHub | — |
+| stability | ❌ | image | ✅(stability) | portkey, one-hub, spring-ai | — |
+| recraft | ❌ | image | ✅ | one-hub, portkey, TokenHub | — |
+| runwayml | ❌ | video | ✅(runwayml) | bifrost | — |
+| hume | ✅ | speech | — | — | — |
+| lmnt | ✅ | speech | — | — | — |
+| gladia | ✅ | transcription | — | — | — |
+| revai | ✅ | transcription | — | — | — |
+| aws_polly | ❌ | speech | ✅ | — | — |
+| nvidia_riva | ❌ | speech | ✅ | — | — |
+| soniox | ❌ | transcription | ✅ | — | — |
+| midjourney | ❌ | image | — | new-api, one-hub, coai | — |
+| sora | ❌ | video | — | new-api | — |
+| vidu | ❌ | video | — | new-api | — |
+| jimeng (Jimeng) | ❌ | image | — | new-api | — |
+| ideogram | ❌ | image | — | one-hub | — |
+| flux | ❌ | image | — | one-hub | — |
+| suno | ❌ | music | — | new-api, one-hub | — |
 | meshy | ❌ | 3D | — | portkey | — |
 | tripo3d | ❌ | 3D | — | portkey | — |
-| segmind | ❌ | 图像 | — | portkey | — |
-| runware | ❌ | 图像 | — | bifrost | — |
-| sarvam | ✅薄 | 语音 | ✅ | bifrost, claude-code-router, TokenHub | — |
-| murf | ❌ | 语音 | — | mastra | — |
-| playai | ❌ | 语音 | — | mastra | — |
-| speechify | ❌ | 语音 | — | mastra | — |
-| inworld | ❌ | 语音 | — | mastra | — |
+| segmind | ❌ | image | — | portkey | — |
+| runware | ❌ | image | — | bifrost | — |
+| sarvam | ✅ thin | speech | ✅ | bifrost, claude-code-router, TokenHub | — |
+| murf | ❌ | speech | — | mastra | — |
+| playai | ❌ | speech | — | mastra | — |
+| speechify | ❌ | speech | — | mastra | — |
+| inworld | ❌ | speech | — | mastra | — |
 
-### 编程订阅转 API（coding plan）
+### Programming Subscription to API (coding plan)
 
-2026 年兴起的一类，把编程工具订阅额度转成 API。OAuth 认证、账号池、特定端点、有封号风险。
+A category that emerged in 2026, converting programming tool subscription quotas into APIs. OAuth authentication, account pools, specific endpoints, with account-ban risk.
 
-| 厂商/类型 | rig | new-api | axonhub | claude-code-router | 其他网关 |
+| Provider/Type | rig | new-api | axonhub | claude-code-router | Other gateways |
 |------|:---:|:---:|:---:|:---:|:---:|
-| chatgpt 订阅 (codex) | ✅ | ✅ | ✅ | — | — |
+| chatgpt subscription (codex) | ✅ | ✅ | ✅ | — | — |
 | github copilot | ✅ | — | ✅ | — | portkey, bifrost, manifest, TokenHub |
-| claude code 订阅 | — | — | ✅ | ✅ | — |
+| claude code subscription | — | — | ✅ | ✅ | — |
 | cline | — | — | ✅ | — | manifest(cline-pass) |
 | nanogpt | — | — | ✅ | — | llmgateway, TokenHub |
 | kimi code | — | — | ✅ | — | — |
 | opencode_go | — | — | ✅ | — | bifrost, manifest |
 | antigravity | — | — | ✅ | — | — |
-| aimux (axonhub 内置) | — | — | ✅ | — | — |
+| aimux (axonhub built-in) | — | — | ✅ | — | — |
 | synthetic | — | — | ✅ | — | TokenHub |
 | neuralwatt | — | — | ✅ | — | — |
 | apertis | — | — | ✅ | — | — |
@@ -372,303 +372,303 @@ groq、fireworks、togetherai、perplexity、moonshotai、cerebras、openrouter�
 | pioneer | — | — | — | — | manifest |
 | kilo | — | — | — | — | manifest, TokenHub |
 | commandcode | — | — | — | — | manifest |
-| TokenHub 100+ 代理 | — | — | — | — | TokenHub(requesty, helicone, poe, submodel, morph, nearai, neon, poolside, wandb, clarifai 等) |
+| TokenHub 100+ proxies | — | — | — | — | TokenHub(requesty, helicone, poe, submodel, morph, nearai, neon, poolside, wandb, clarifai, etc.) |
 
-aimux 当前不支持任何 coding plan 接入。
+aimux currently does not support any coding plan integration.
 
-### 网关/聚合/代理型
+### Gateway/Aggregation/Proxy Type
 
-| 厂商 | aimux | rig | litellm | 网关覆盖 |
+| Provider | aimux | rig | litellm | Gateway coverage |
 |------|:---:|:---:|:---:|:---:|
-| openrouter | ✅薄 | ✅ | ✅ | 几乎所有网关 |
-| vercel (ai gateway) | ✅薄 | — | ✅(vercel_ai_gateway) | — |
-| portkey | ✅薄 | — | — | ✅portkey-gateway |
-| helicone | ✅薄 | — | — | TokenHub |
-| requesty | ✅薄 | — | — | TokenHub |
-| 302ai | ✅薄 | — | — | portkey, TokenHub |
-| cometapi | ✅薄 | — | ✅ | portkey, TokenHub |
-| novita | ✅薄 | — | ✅ | portkey, one-api, TokenHub, APIPark |
-| siliconflow | ✅薄 | — | — | new-api, one-api, APIPark, chats, claude-code-router |
-| submodel | ✅薄 | — | — | new-api, TokenHub |
-| api2d | ✅薄 | — | — | new-api, one-api |
-| ohmygpt | ✅薄 | — | — | new-api, one-api |
-| closeai | ✅薄 | — | — | one-api |
-| openaisb | ✅薄 | — | — | one-api |
-| openaimax | ✅薄 | — | — | new-api, one-api |
-| ails | ✅薄 | — | — | new-api, one-api |
-| api2gpt | ✅薄 | — | — | new-api, one-api |
-| aigc2d | ✅薄 | — | — | new-api, one-api |
-| fastgpt | ✅薄 | — | — | new-api, one-api |
-| tokenpony | ✅薄 | — | — | chats |
-| fastrouter | ✅薄 | — | — | TokenHub |
-| orcarouter | ✅薄 | — | — | TokenHub |
+| openrouter | ✅ thin | ✅ | ✅ | almost all gateways |
+| vercel (ai gateway) | ✅ thin | — | ✅(vercel_ai_gateway) | — |
+| portkey | ✅ thin | — | — | ✅portkey-gateway |
+| helicone | ✅ thin | — | — | TokenHub |
+| requesty | ✅ thin | — | — | TokenHub |
+| 302ai | ✅ thin | — | — | portkey, TokenHub |
+| cometapi | ✅ thin | — | ✅ | portkey, TokenHub |
+| novita | ✅ thin | — | ✅ | portkey, one-api, TokenHub, APIPark |
+| siliconflow | ✅ thin | — | — | new-api, one-api, APIPark, chats, claude-code-router |
+| submodel | ✅ thin | — | — | new-api, TokenHub |
+| api2d | ✅ thin | — | — | new-api, one-api |
+| ohmygpt | ✅ thin | — | — | new-api, one-api |
+| closeai | ✅ thin | — | — | one-api |
+| openaisb | ✅ thin | — | — | one-api |
+| openaimax | ✅ thin | — | — | new-api, one-api |
+| ails | ✅ thin | — | — | new-api, one-api |
+| api2gpt | ✅ thin | — | — | new-api, one-api |
+| aigc2d | ✅ thin | — | — | new-api, one-api |
+| fastgpt | ✅ thin | — | — | new-api, one-api |
+| tokenpony | ✅ thin | — | — | chats |
+| fastrouter | ✅ thin | — | — | TokenHub |
+| orcarouter | ✅ thin | — | — | TokenHub |
 
-### 通用/自定义渠道
+### General/Custom Channels
 
-几乎所有网关项目都有"自定义/OpenAI 兼容/通用"渠道，允许填入任意端点。aimux 的 `OpenAIProvider::with_base_url` 等价于此能力。
+Almost all gateway projects have a "custom/OpenAI-compatible/general" channel that allows filling in an arbitrary endpoint. aimux's `OpenAIProvider::with_base_url` is equivalent to this capability.
 
 ---
 
-## 三、aimux 缺失的厂商
+## 3. Providers Missing from aimux
 
-> 更新（2026-07-28）：OpenAI 兼容的 LLM chat 厂商已全部接入 thin wrapper。以下厂商未接入，原因各异：
+> Update (2026-07-28): OpenAI-compatible LLM chat providers have all been integrated as thin wrappers. The following providers are not integrated, for various reasons:
 
-### 非 OpenAI Chat Completions 协议（需要各自的 trait 或 API 格式）
+### Non-OpenAI Chat Completions Protocol (requires its own trait or API format)
 
-| 厂商 | 类型 | 未接入原因 |
+| Provider | Type | Reason for not integrating |
 |------|------|---------|
-| milvus / qdrant / pg_vector / s3_vectors | 向量数据库 | 不是 LLM API，是向量存储/检索 |
-| clip / fastembed / tei / text_embeddings_inference | 嵌入推理 | 不是 chat API，需要 EmbeddingModel trait 实现 |
-| jina / nomic / mixedbread | 嵌入/重排序 | 不是 chat API，需要 EmbeddingModel/RerankingModel 实现 |
-| recraft / ideogram / stability_ai / segmind / runware | 图像生成 | 不是 chat API，需要 ImageModel trait 实现 |
-| meshy / tripo3d | 3D 生成 | 不是 chat API |
-| runwayml / sora / vidu / jimeng / midjourney | 视频生成 | 不是 chat API，需要 VideoModel trait 实现 |
-| flux | 图像生成 | 不是 chat API |
-| suno | 音乐生成 | 不是 chat API，无对应 trait |
-| murf / playai / speechify / inworld | 语音合成 | 不是 chat API，需要 SpeechModel trait 实现 |
-| aws_polly | 语音合成 | AWS SigV4 认证，需要 SpeechModel |
-| nvidia_riva | 语音 | 不是 OpenAI 兼容 |
-| soniox | 语音转写 | WebSocket 协议，需要 TranscriptionModel |
-| doubaoaudio / mokaai | 音频 | 不是 chat API |
-| bing / deepl / dify / slack / doc2x | 非LLM服务 | 搜索/翻译/平台/消息，不是 LLM API |
-| streamlake / antling / sangforaicp / skylark | 非LLM服务 | 视频流/未知/企业平台/未知 |
+| milvus / qdrant / pg_vector / s3_vectors | vector database | Not an LLM API; it is vector storage/retrieval |
+| clip / fastembed / tei / text_embeddings_inference | embedding inference | Not a chat API; requires an EmbeddingModel trait implementation |
+| jina / nomic / mixedbread | embedding/reranking | Not a chat API; requires an EmbeddingModel/RerankingModel implementation |
+| recraft / ideogram / stability_ai / segmind / runware | image generation | Not a chat API; requires an ImageModel trait implementation |
+| meshy / tripo3d | 3D generation | Not a chat API |
+| runwayml / sora / vidu / jimeng / midjourney | video generation | Not a chat API; requires a VideoModel trait implementation |
+| flux | image generation | Not a chat API |
+| suno | music generation | Not a chat API; no corresponding trait |
+| murf / playai / speechify / inworld | speech synthesis | Not a chat API; requires a SpeechModel trait implementation |
+| aws_polly | speech synthesis | AWS SigV4 authentication; requires SpeechModel |
+| nvidia_riva | speech | Not OpenAI-compatible |
+| soniox | speech transcription | WebSocket protocol; requires TranscriptionModel |
+| doubaoaudio / mokaai | audio | Not a chat API |
+| bing / deepl / dify / slack / doc2x | non-LLM service | Search/translation/platform/messaging; not an LLM API |
+| streamlake / antling / sangforaicp / skylark | non-LLM service | Video streaming/unknown/enterprise platform/unknown |
 
-### 特殊认证（不能简单用 API key + Bearer）
+### Special Authentication (cannot simply use API key + Bearer)
 
-| 厂商 | 认证方式 | 未接入原因 |
+| Provider | Authentication method | Reason for not integrating |
 |------|---------|---------|
-| watsonx (ibm) | IBM IAM token | 需要独立认证实现 |
-| sagemaker (aws) | AWS SigV4 | 需要独立认证实现 |
-| sap | SAP auth | 需要独立认证实现 |
-| oci (oracle) | Oracle auth | 需要独立认证实现 |
-| snowflake | Snowflake auth | 需要独立认证实现 |
-| bedrock_mantle | AWS auth | 需要独立认证实现 |
+| watsonx (ibm) | IBM IAM token | Requires an independent authentication implementation |
+| sagemaker (aws) | AWS SigV4 | Requires an independent authentication implementation |
+| sap | SAP auth | Requires an independent authentication implementation |
+| oci (oracle) | Oracle auth | Requires an independent authentication implementation |
+| snowflake | Snowflake auth | Requires an independent authentication implementation |
+| bedrock_mantle | AWS auth | Requires an independent authentication implementation |
 
-### 需升级为原生协议实现（当前 thin wrapper 可能无法处理厂商特有字段）
+### Need to Upgrade to Native Protocol Implementation (current thin wrapper may not handle provider-specific fields)
 
-| 厂商 | 当前状态 | 需要做的事 |
+| Provider | Current status | What needs to be done |
 |------|---------|---------|
-| baidu (文心) | ✅薄（OpenAI 兼容端点） | 文心有自定义协议（ERNIE-Bot），需原生实现以覆盖完整能力 |
-| tencent (混元) | ✅薄 | 混元有自有签名机制，需原生实现 |
-| xunfei (讯飞) | ✅薄 | 讯飞用 WebSocket 协议，需独立实现 |
-| alibaba | ✅薄 | reasoning_content 字段被丢弃，需处理推理字段 |
-| groq | ✅薄 | top_k 靠巧合绕过，需配置描述标记不支持 |
-| 所有薄封装 | ✅薄 | 按 RFC-0002 加配置描述结构，处理各家差异 |
+| baidu (Wenxin) | ✅ thin (OpenAI-compatible endpoint) | Wenxin has a custom protocol (ERNIE-Bot); requires a native implementation to cover full capabilities |
+| tencent (Hunyuan) | ✅ thin | Hunyuan has its own signing mechanism; requires a native implementation |
+| xunfei (Xunfei) | ✅ thin | Xunfei uses the WebSocket protocol; requires an independent implementation |
+| alibaba | ✅ thin | The reasoning_content field is dropped; reasoning fields need to be handled |
+| groq | ✅ thin | top_k is bypassed by coincidence; needs a configuration descriptor to mark it as unsupported |
+| all thin wrappers | ✅ thin | Add a configuration descriptor structure per RFC-0002 to handle the differences of each provider |
 
-### 编程订阅是否纳入（待定）
+### Whether to Include Programming Subscriptions (pending)
 
-coding plan 类（chatgpt 订阅、copilot、claude code 订阅等）在 2026 年很火，但有 ToS 风险、协议不稳定。aimux 作为服务接入统一层，是否纳入这类接入需要决策。如果要纳入，参考 axonhub 和 claude-code-router 的实现。
+The coding plan category (chatgpt subscription, copilot, claude code subscription, etc.) is very popular in 2026, but carries ToS risks and unstable protocols. As a unified service integration layer, whether aimux should include this kind of integration requires a decision. If it is to be included, refer to the implementations of axonhub and claude-code-router.
 
 ---
 
-## 四、实现过程中需要更新或处理的点
+## 4. Points to Update or Handle During Implementation
 
-### 1. 薄封装改造（RFC-0002 已记录）
+### 1. Thin Wrapper Refactoring (recorded in RFC-0002)
 
-13 个 OpenAI 兼容薄封装需要加配置描述结构，让各家差异（推理字段、能力标记、用量统计方式）能被表达。这是放量铺厂商的前提。
+13 OpenAI-compatible thin wrappers need a configuration descriptor structure added so that each provider's differences (reasoning fields, capability flags, usage statistics methods) can be expressed. This is a prerequisite for rolling out providers at scale.
 
-### 2. 国产厂商的特殊协议
+### 2. Special Protocols of Domestic Providers
 
-百度、讯飞、智谱不完全走 OpenAI 兼容协议，需要原生实现：
-- 百度文心：自定义协议，有 ERNIE-Bot 系列
-- 讯飞星火：WebSocket 协议，签名鉴权特殊
-- 智谱 GLM：有自有协议，也有 OpenAI 兼容端点
+Baidu, Xunfei, and Zhipu do not fully follow the OpenAI-compatible protocol and require native implementations:
+- Baidu Wenxin: custom protocol, has the ERNIE-Bot series
+- Xunfei Spark: WebSocket protocol, special signing authentication
+- Zhipu GLM: has its own protocol and also an OpenAI-compatible endpoint
 
-### 3. 本地推理厂商的接入方式不同
+### 3. Different Integration Methods for Local Inference Providers
 
-ollama、llama.cpp、lmstudio 是本地服务，没有 HTTPS 和密钥，接入方式和云厂商不同：
-- ollama：HTTP localhost，无认证
-- llama.cpp：本地进程，走 GGUF 文件
-- lmstudio：本地 HTTP，OpenAI 兼容
+ollama, llama.cpp, and lmstudio are local services without HTTPS or keys, and their integration method differs from cloud providers:
+- ollama: HTTP localhost, no authentication
+- llama.cpp: local process, uses GGUF files
+- lmstudio: local HTTP, OpenAI-compatible
 
-这影响 Provider trait 的认证和 URL 构造逻辑。
+This affects the authentication and URL construction logic of the Provider trait.
 
-### 4. 网关型厂商的路由语义
+### 4. Routing Semantics of Gateway-Type Providers
 
-openrouter、vercel gateway 不是普通厂商——它们内部再路由到其他厂商。用户可能要指定"用 openrouter 路由到 anthropic/claude"。这影响 model_id 的解析方式（可能含斜杠分隔的厂商前缀）。
+openrouter and vercel gateway are not ordinary providers — they internally route to other providers. Users may want to specify "route to anthropic/claude via openrouter". This affects how model_id is parsed (it may contain a slash-separated provider prefix).
 
-### 5. 测试覆盖
+### 5. Test Coverage
 
-按 RFC-0003 的录播方案，每补一个厂商就要：
-- 从 rig 的录像里找对应厂商的录像（rig 覆盖 16 家）
-- rig 没覆盖的用 llmtape 自己录
-- 加进统一契约测试
+Per the cassette scheme of RFC-0003, each time a provider is added:
+- Find the corresponding provider's cassette from rig's recordings (rig covers 16 providers)
+- For those not covered by rig, record them yourself with llmtape
+- Add them to the unified contract tests
 
-### 6. 已有实现的验证
+### 6. Verification of Existing Implementations
 
-现有 11 个原生实现需要用录播测试验证正确性：
-- openai、anthropic、google、bedrock、vertex、azure、cohere、mistral、xai、deepseek、anthropic_aws
-- 这些实现代码量大（单家 500-1500 行），可能有未发现的解析 bug
-- 录播回放能发现"返回格式变了但代码没跟上"的问题
+The existing 11 native implementations need to be verified for correctness with cassette tests:
+- openai, anthropic, google, bedrock, vertex, azure, cohere, mistral, xai, deepseek, anthropic_aws
+- These implementations have a large amount of code (500-1500 lines per provider) and may contain undiscovered parsing bugs
+- Cassette replay can uncover "the return format changed but the code did not keep up" issues
 
-### 7. coding plan 接入的特殊性（如纳入）
+### 7. Specifics of coding plan Integration (if included)
 
-OAuth 认证流程、账号池管理、令牌刷新、封号风险处理——这些都和普通 API key 认证不同。如果决定纳入，需要单独设计一层认证抽象。
+OAuth authentication flows, account pool management, token refresh, and account-ban risk handling — these all differ from ordinary API key authentication. If it is decided to include them, a separate authentication abstraction layer needs to be designed.
 
 ---
 
-## 五、高用户量 coding agent 与转发服务
+## 5. High-User-Volume Coding Agents and Forwarding Services
 
-> 之前只扫了 SDK 和网关，漏了用户量更大的 coding agent 工具和配套的转发/切换服务。
-> 这些项目体量巨大（多个 10 万+ star），是 coding plan 类接入的实际来源。
+> Previously only SDKs and gateways were scanned, missing the higher-volume coding agent tools and their accompanying forwarding/switching services.
+> These projects are massive in scale (several with 100k+ stars) and are the actual source of coding plan integrations.
 
-### coding agent（终端/IDE 类）
+### coding agent (terminal/IDE type)
 
-| 项目 | ★ | 语言 | 定位 |
+| Project | ★ | Language | Positioning |
 |------|:---:|:---:|------|
-| openai/codex | 101k | Rust | OpenAI 官方 coding agent，终端运行 |
-| anthropics/claude-code | 139k | — | Anthropic 官方 coding agent，终端运行 |
-| anomalyco/opencode | 190k | TypeScript | 开源 coding agent（非官方）|
-| earendil-works/pi | 79k | TypeScript | AI agent 工具包：统一 LLM API + agent loop + TUI + coding CLI |
-| google-gemini/gemini-cli | 106k | TypeScript | Google 官方 Gemini 终端 agent |
-| cline/cline | 65k | TypeScript | 自治 coding agent，SDK/IDE/CLI |
-| Aider-AI/aider | 48k | Python | 终端 AI 配对编程 |
-| continuedev/continue | 35k | TypeScript | 开源 coding agent（IDE）|
-| RooCodeInc/Roo-Code | 24k | TypeScript | 编辑器内多 agent 团队 |
-| opencode-ai/opencode | 14k | Go | 终端 coding agent（另一个 opencode）|
+| openai/codex | 101k | Rust | OpenAI's official coding agent, runs in the terminal |
+| anthropics/claude-code | 139k | — | Anthropic's official coding agent, runs in the terminal |
+| anomalyco/opencode | 190k | TypeScript | Open-source coding agent (unofficial)|
+| earendil-works/pi | 79k | TypeScript | AI agent toolkit: unified LLM API + agent loop + TUI + coding CLI |
+| google-gemini/gemini-cli | 106k | TypeScript | Google's official Gemini terminal agent |
+| cline/cline | 65k | TypeScript | Autonomous coding agent, SDK/IDE/CLI |
+| Aider-AI/aider | 48k | Python | Terminal AI pair programming |
+| continuedev/continue | 35k | TypeScript | Open-source coding agent (IDE)|
+| RooCodeInc/Roo-Code | 24k | TypeScript | Multi-agent team inside the editor |
+| opencode-ai/opencode | 14k | Go | Terminal coding agent (another opencode)|
 
-### 转发/切换/代理服务（让 coding agent 接入任意厂商）
+### Forwarding/Switching/Proxy Services (letting coding agents integrate any provider)
 
-| 项目 | ★ | 语言 | 定位 |
+| Project | ★ | Language | Positioning |
 |------|:---:|:---:|------|
-| farion1231/cc-switch | 122k | Rust+TS | 跨平台桌面助手：Claude Code/Codex/OpenCode/OpenClaw/Grok Build/Hermes Agent 统一管理+厂商切换 |
-| musistudio/claude-code-router | 36k | TypeScript | Claude Code 路由到任意模型/provider |
-| lidge-jun/opencodex | 5.2k | TypeScript | Codex CLI + Claude Code 的通用 provider 代理 |
-| XueshiQiao/CCSwitcher | 160 | — | Claude Code 账号一键切换 |
-| liuzhengming/ccswitch-deepseek | 296 | — | ccswitch 转发到 DeepSeek |
-| nicremo/ccs | 11 | — | Claude Code 切到 MiniMax/Kimi/GLM/DeepSeek/Qwen |
-| glidea/claude-worker-proxy | 274 | — | Cloudflare Worker 上的 Claude Code 代理 |
+| farion1231/cc-switch | 122k | Rust+TS | Cross-platform desktop assistant: unified management + provider switching for Claude Code/Codex/OpenCode/OpenClaw/Grok Build/Hermes Agent |
+| musistudio/claude-code-router | 36k | TypeScript | Routes Claude Code to any model/provider |
+| lidge-jun/opencodex | 5.2k | TypeScript | General provider proxy for Codex CLI + Claude Code |
+| XueshiQiao/CCSwitcher | 160 | — | One-click Claude Code account switching |
+| liuzhengming/ccswitch-deepseek | 296 | — | ccswitch forwarding to DeepSeek |
+| nicremo/ccs | 11 | — | Switch Claude Code to MiniMax/Kimi/GLM/DeepSeek/Qwen |
+| glidea/claude-worker-proxy | 274 | — | Claude Code proxy on Cloudflare Worker |
 
-### coding agent 生态周边
+### coding agent Ecosystem Periphery
 
-| 项目 | ★ | 定位 |
+| Project | ★ | Positioning |
 |------|:---:|------|
-| awesome-opencode | 9.2k | opencode 插件/主题/agent 资源集 |
-| alvinunreal/oh-my-opencode-slim | 7.4k | opencode 多 agent 套件，混合任意模型 |
-| pinchbench/skill | 1.3k | OpenClaw coding agent 的 LLM 基准测试 |
-| kenryu42/cc-safety-net | 1.5k | coding agent CLI 安全网（拦截危险命令）|
-| agent-of-empires/agent-of-empires | 2.9k | 多 agent（Claude Code/OpenCode/Codex/Gemini/Pi/Copilot/Factory Droid）统一管理 TUI+Web |
+| awesome-opencode | 9.2k | opencode plugin/theme/agent resource collection |
+| alvinunreal/oh-my-opencode-slim | 7.4k | opencode multi-agent suite, mixing any models |
+| pinchbench/skill | 1.3k | LLM benchmark for the OpenClaw coding agent |
+| kenryu42/cc-safety-net | 1.5k | coding agent CLI safety net (intercepts dangerous commands)|
+| agent-of-empires/agent-of-empires | 2.9k | Unified management TUI+Web for multiple agents (Claude Code/OpenCode/Codex/Gemini/Pi/Copilot/Factory Droid) |
 
-### coding agent 与转发服务的详细厂商清单
+### Detailed Provider Inventory of coding agents and Forwarding Services
 
-**codex**（OpenAI 官方，Rust）：内置 4 家——OpenAI、Amazon Bedrock、Ollama、LM Studio。仅走 OpenAI Responses API，无跨协议转换。支持 ChatGPT 订阅 OAuth。
+**codex** (OpenAI official, Rust): 4 built-in — OpenAI, Amazon Bedrock, Ollama, LM Studio. Only uses the OpenAI Responses API, with no cross-protocol conversion. Supports ChatGPT subscription OAuth.
 
-**opencode**（190k star，TS）：委托 Vercel AI SDK，内置 ~20 家——anthropic、openai、google、google-vertex、github-copilot、amazon-bedrock、azure、openrouter、mistral、gitlab、xai、groq、deepinfra、cerebras、cohere、togetherai、perplexity、vercel、alibaba、venice、bedrock/mantle。支持 GitHub Copilot OAuth。
+**opencode** (190k stars, TS): Delegates to Vercel AI SDK, ~20 built-in — anthropic, openai, google, google-vertex, github-copilot, amazon-bedrock, azure, openrouter, mistral, gitlab, xai, groq, deepinfra, cerebras, cohere, togetherai, perplexity, vercel, alibaba, venice, bedrock/mantle. Supports GitHub Copilot OAuth.
 
-**pi**（79k star，TS）：自实现 10 种 API 适配器，37 个内置 provider——amazon-bedrock、ant-ling、anthropic、azure-openai-responses、cerebras、cloudflare-ai-gateway、cloudflare-workers-ai、deepseek、fireworks、github-copilot、google、google-vertex、groq、huggingface、kimi-coding、minimax、minimax-cn、mistral、moonshotai、moonshotai-cn、nvidia、openai、openai-codex、opencode、opencode-go、openrouter、qwen-token-plan、qwen-token-plan-cn、radius、together、vercel-ai-gateway、xai、xiaomi、xiaomi-token-plan(ams/cn/sgp)、zai、zai-coding-cn。支持 Codex 订阅/GitHub Copilot/radius 三种 OAuth。
+**pi** (79k stars, TS): Self-implements 10 API adapters, 37 built-in providers — amazon-bedrock, ant-ling, anthropic, azure-openai-responses, cerebras, cloudflare-ai-gateway, cloudflare-workers-ai, deepseek, fireworks, github-copilot, google, google-vertex, groq, huggingface, kimi-coding, minimax, minimax-cn, mistral, moonshotai, moonshotai-cn, nvidia, openai, openai-codex, opencode, opencode-go, openrouter, qwen-token-plan, qwen-token-plan-cn, radius, together, vercel-ai-gateway, xai, xiaomi, xiaomi-token-plan(ams/cn/sgp), zai, zai-coding-cn. Supports three OAuth types: Codex subscription/GitHub Copilot/radius.
 
-**cline**（65k star，TS）：~55+ provider——anthropic、claude-code、cline、cline-pass、openai-compatible、openai-native、openai-codex、openai-codex-cli、opencode、bedrock、vertex、gemini、ollama、lmstudio、deepseek、xai、together、fireworks、groq、poolside、cerebras、sambanova、nebius、baseten、requesty、litellm、huggingface、vercel-ai-gateway、v0、aihubmix、hicap、nousResearch、huawei-cloud-maas、wandb、xiaomi、tencent-tokenhub、kilo、zai、zai-coding-plan、qwen、qwen-code、doubao、mistral、moonshot、asksage、minimax、dify、oca、sapaicore、openrouter。支持 Claude Code/Cline/Codex/opencode 四种 OAuth。
+**cline** (65k stars, TS): ~55+ providers — anthropic, claude-code, cline, cline-pass, openai-compatible, openai-native, openai-codex, openai-codex-cli, opencode, bedrock, vertex, gemini, ollama, lmstudio, deepseek, xai, together, fireworks, groq, poolside, cerebras, sambanova, nebius, baseten, requesty, litellm, huggingface, vercel-ai-gateway, v0, aihubmix, hicap, nousResearch, huawei-cloud-maas, wandb, xiaomi, tencent-tokenhub, kilo, zai, zai-coding-plan, qwen, qwen-code, doubao, mistral, moonshot, asksage, minimax, dify, oca, sapaicore, openrouter. Supports four OAuth types: Claude Code/Cline/Codex/opencode.
 
-**continue**（35k star，TS）：66 个 provider 类——含 Anthropic、OpenAI、Gemini、Bedrock、Azure、VertexAI、Cohere、Mistral、Deepseek、xAI、MiniMax、Groq、OpenRouter、Together、Fireworks、Cerebras、Cloudflare、DeepInfra、HuggingFace、LlamaCpp、LlamaStack、Llamafile、LMStudio、Ollama、Nvidia、Novita、Msty、Mimo、Moonshot、Nebius、NCompass、Nous、OVHcloud、Replicate、Relace、SambaNova、SageMaker、Scaleway、SiliconFlow、TARS、Tensorix、TextGenWebUI、Venice、Vllm、WatsonX、zAI、CometAPI、ClawRouter、Docker、Flowise、FunctionNetwork、Inception、Jina、Kindo、Lemonade、AskSage 等。
+**continue** (35k stars, TS): 66 provider classes — including Anthropic, OpenAI, Gemini, Bedrock, Azure, VertexAI, Cohere, Mistral, Deepseek, xAI, MiniMax, Groq, OpenRouter, Together, Fireworks, Cerebras, Cloudflare, DeepInfra, HuggingFace, LlamaCpp, LlamaStack, Llamafile, LMStudio, Ollama, Nvidia, Novita, Msty, Mimo, Moonshot, Nebius, NCompass, Nous, OVHcloud, Replicate, Relace, SambaNova, SageMaker, Scaleway, SiliconFlow, TARS, Tensorix, TextGenWebUI, Venice, Vllm, WatsonX, zAI, CometAPI, ClawRouter, Docker, Flowise, FunctionNetwork, Inception, Jina, Kindo, Lemonade, AskSage, etc.
 
-**Roo-Code**（24k star，TS）：30+ handler——Anthropic、AwsBedrock、DeepSeek、Moonshot、Gemini、LiteLLM、LmStudio、Mistral、OpenAiCodex、OpenAiNative、OpenAi、OpenAICompatible、OpenRouter、Poe、QwenCode、Requesty、SambaNova、Unbound、Vertex、AnthropicVertex、VsCodeLm、XAI、ZAi、Fireworks、VercelAiGateway、MiniMax、Baseten、NativeOllama、FakeAI。内部规范格式 = Anthropic Messages。支持 Codex 订阅 OAuth。
+**Roo-Code** (24k stars, TS): 30+ handlers — Anthropic, AwsBedrock, DeepSeek, Moonshot, Gemini, LiteLLM, LmStudio, Mistral, OpenAiCodex, OpenAiNative, OpenAi, OpenAICompatible, OpenRouter, Poe, QwenCode, Requesty, SambaNova, Unbound, Vertex, AnthropicVertex, VsCodeLm, XAI, ZAi, Fireworks, VercelAiGateway, MiniMax, Baseten, NativeOllama, FakeAI. Internal canonical format = Anthropic Messages. Supports Codex subscription OAuth.
 
-**opencode-ai**（14k star，Go）：11 家——Copilot、Anthropic、OpenAI、Gemini、Bedrock、GROQ、Azure、VertexAI、OpenRouter、XAI、Local。每厂商独立 Go SDK client。支持 GitHub Copilot token exchange。
+**opencode-ai** (14k stars, Go): 11 — Copilot, Anthropic, OpenAI, Gemini, Bedrock, GROQ, Azure, VertexAI, OpenRouter, XAI, Local. Each provider has an independent Go SDK client. Supports GitHub Copilot token exchange.
 
-**aider**（48k star，Python）：委托 litellm，支持 litellm 全部 134 家。无 OAuth。
+**aider** (48k stars, Python): Delegates to litellm, supports all 134 of litellm's providers. No OAuth.
 
-**opencodex**（5.2k star，TS，转发服务）：60 个 provider entry——含 OpenAI(Codex 订阅池)、Anthropic(Claude 订阅)、xAI/Grok、Kimi、Kiro、Google Antigravity、Cursor、GitHub Copilot、DeepSeek、Moonshot、Z.AI、Zhipu、Qwen、Alibaba、Tencent、Baidu、MiniMax、SiliconFlow、Groq、Cerebras、Together、Fireworks、FirePass、HuggingFace、NVIDIA NIM、Venice、NanoGPT、Synthetic、Mistral、OpenRouter、OrcaRouter、BizRouter、Parallel、ZenMux、Vercel AI Gateway、Cloudflare AI Gateway/Workers AI、GitLab Duo、Kilo、Umans、Neuralwatt、opencode-go/zen/free、Ollama、vLLM、LM Studio、LiteLLM 等。协议转换最完整（内部中间表示 + 双向适配器）。
+**opencodex** (5.2k stars, TS, forwarding service): 60 provider entries — including OpenAI (Codex subscription pool), Anthropic (Claude subscription), xAI/Grok, Kimi, Kiro, Google Antigravity, Cursor, GitHub Copilot, DeepSeek, Moonshot, Z.AI, Zhipu, Qwen, Alibaba, Tencent, Baidu, MiniMax, SiliconFlow, Groq, Cerebras, Together, Fireworks, FirePass, HuggingFace, NVIDIA NIM, Venice, NanoGPT, Synthetic, Mistral, OpenRouter, OrcaRouter, BizRouter, Parallel, ZenMux, Vercel AI Gateway, Cloudflare AI Gateway/Workers AI, GitLab Duo, Kilo, Umans, Neuralwatt, opencode-go/zen/free, Ollama, vLLM, LM Studio, LiteLLM, etc. Most complete protocol conversion (internal intermediate representation + bidirectional adapters).
 
-**cc-switch**（122k star，Rust+Tauri）：80+ 家 preset——含 AiHubMix、OpenRouter、TheRouter、Novita AI、DMXAPI、CrazyRouter、NewAPI、APIKEY.FUN、SubRouter、DeepSeek、Zhipu GLM、Bailian、Baidu Qianfan、StepFun、ModelScope、Longcat、MiniMax、BaiLing、Xiaomi MiMo、DouBaoSeed/BytePlus、Tencent、Kimi/Kimi For Coding、PackyCode、ZetaAPI、APINebula、AICodeMirror、PatewayAI、FennoAI、RunAPI、Unity2.ai、Shengsuanyun、AIGoCode、AICoding、Code0、TeamoRouter、ClaudeCN、ClaudeAPI、CCSub、SSSAiCode、Micu、RightCode、ETok.ai、Cubence、SudoCode、Amux、CherryIN、RelaxyCode、E-FlowCode、PIPELLM、NekoCode、AtlasCloud、Compshare、KAT-Coder、Nvidia、Together AI、Nous Research、Claude Official、OpenAI Official、Google Official、Grok Official、Codex、GitHub Copilot、AWS Bedrock、Azure OpenAI、Gemini Native、OpenCode Go、自定义网关。无协议转换，仅配置切换 + 模型名映射。
+**cc-switch** (122k stars, Rust+Tauri): 80+ presets — including AiHubMix, OpenRouter, TheRouter, Novita AI, DMXAPI, CrazyRouter, NewAPI, APIKEY.FUN, SubRouter, DeepSeek, Zhipu GLM, Bailian, Baidu Qianfan, StepFun, ModelScope, Longcat, MiniMax, BaiLing, Xiaomi MiMo, DouBaoSeed/BytePlus, Tencent, Kimi/Kimi For Coding, PackyCode, ZetaAPI, APINebula, AICodeMirror, PatewayAI, FennoAI, RunAPI, Unity2.ai, Shengsuanyun, AIGoCode, AICoding, Code0, TeamoRouter, ClaudeCN, ClaudeAPI, CCSub, SSSAiCode, Micu, RightCode, ETok.ai, Cubence, SudoCode, Amux, CherryIN, RelaxyCode, E-FlowCode, PIPELLM, NekoCode, AtlasCloud, Compshare, KAT-Coder, Nvidia, Together AI, Nous Research, Claude Official, OpenAI Official, Google Official, Grok Official, Codex, GitHub Copilot, AWS Bedrock, Azure OpenAI, Gemini Native, OpenCode Go, custom gateway. No protocol conversion, only configuration switching + model name mapping.
 
-**claude-code-router**（36k star，TS）：20+ preset——anthropic、openai、deepseek、gemini、bailian、claudeapi、code0、fenno、kimi-coding、minimax、mistral、moonshot、nvidia、openrouter、qiniu-ai、runapi、siliconflow、teamorouter、unity2、zai-global-coding、zai-global-general、zhipu-cn-coding、zhipu-cn-general。内核不做协议转换，靠 route script。
+**claude-code-router** (36k stars, TS): 20+ presets — anthropic, openai, deepseek, gemini, bailian, claudeapi, code0, fenno, kimi-coding, minimax, mistral, moonshot, nvidia, openrouter, qiniu-ai, runapi, siliconflow, teamorouter, unity2, zai-global-coding, zai-global-general, zhipu-cn-coding, zhipu-cn-general. The core does not perform protocol conversion, relying on route scripts.
 
-### 新发现的厂商（之前清单遗漏）
+### Newly Discovered Providers (previously omitted from the inventory)
 
-以下厂商在 coding agent/转发服务中出现，之前清单未记录：
+The following providers appear in coding agents/forwarding services and were not previously recorded in the inventory:
 
-| 厂商 | 来源 | 类型 |
+| Provider | Source | Type |
 |------|------|------|
 | ant-ling | pi | LLM |
-| radius | pi | LLM（OAuth） |
+| radius | pi | LLM (OAuth) |
 | kimi-coding | pi/opencodex | coding plan |
 | qwen-token-plan / qwen-code | pi/cline | coding plan |
 | zai-coding-cn / zai-coding-plan | pi/cline | coding plan |
 | poolside | cline | LLM |
 | hicap | cline | LLM |
 | asksage | cline/continue | LLM |
-| dify | cline | 平台 |
+| dify | cline | platform |
 | oca | cline | LLM |
 | sapaicore | cline | LLM |
 | huawei-cloud-maas | cline | LLM |
-| msty | continue | 本地 |
+| msty | continue | local |
 | tars | continue | LLM |
 | tensorix | continue | LLM |
 | relace | continue | LLM |
-| llamastack | continue | 本地 |
+| llamastack | continue | local |
 | kindo | continue | LLM |
 | lemonade | continue | LLM |
-| flowise | continue | 平台 |
+| flowise | continue | platform |
 | functionnetwork | continue | LLM |
-| poe | Roo-Code | 聚合 |
+| poe | Roo-Code | aggregation |
 | unbound | Roo-Code | LLM |
 | firepass | opencodex | LLM |
-| orcarouter | opencodex | 代理 |
-| bizrouter | opencodex | 代理 |
-| parallel | opencodex | 代理 |
-| zenmux | opencodex | 代理 |
+| orcarouter | opencodex | proxy |
+| bizrouter | opencodex | proxy |
+| parallel | opencodex | proxy |
+| zenmux | opencodex | proxy |
 | umans | opencodex | LLM |
 | neuralwatt | opencodex/axonhub | LLM |
-| opencode-free | opencodex | 免费 |
+| opencode-free | opencodex | free |
 | kiro | opencodex/manifest | coding plan |
 | google antigravity | opencodex/axonhub | coding plan |
 | cursor | opencodex | coding plan |
-| packycode | cc-switch | 代理 |
-| zetaapi | cc-switch | 代理 |
-| apinebula | cc-switch | 代理 |
-| aicodemirror | cc-switch | 代理 |
-| patewayai | cc-switch | 代理 |
-| fennoai | cc-switch | 代理 |
-| runapi | cc-switch/claude-code-router | 代理 |
-| unity2.ai | cc-switch/claude-code-router | 代理 |
-| shengsuanyun | cc-switch | 代理 |
-| aigocode | cc-switch | 代理 |
-| aicoding | cc-switch | 代理 |
-| code0 | cc-switch/claude-code-router | 代理 |
-| teamorouter | cc-switch/claude-code-router | 代理 |
-| claudecn | cc-switch | 代理 |
-| ccsub | cc-switch | 代理 |
-| sssaicode | cc-switch | 代理 |
-| micu | cc-switch | 代理 |
-| rightcode | cc-switch | 代理 |
-| etok.ai | cc-switch | 代理 |
-| cubence | cc-switch | 代理 |
-| sudocode | cc-switch | 代理 |
-| amux | cc-switch | 代理 |
-| cherryin | cc-switch | 代理 |
-| relaxycode | cc-switch | 代理 |
-| e-flowcode | cc-switch | 代理 |
-| pipllm | cc-switch | 代理 |
-| nekocode | cc-switch | 代理 |
-| compshare | cc-switch | 代理 |
-| kat-coder | cc-switch | 代理 |
-| dmxapi | cc-switch | 代理 |
-| crazyrouter | cc-switch | 代理 |
-| subrouter | cc-switch | 代理 |
-| apikey.fun | cc-switch | 代理 |
-| therouter | cc-switch | 代理 |
-| clawrouter | continue | 代理 |
+| packycode | cc-switch | proxy |
+| zetaapi | cc-switch | proxy |
+| apinebula | cc-switch | proxy |
+| aicodemirror | cc-switch | proxy |
+| patewayai | cc-switch | proxy |
+| fennoai | cc-switch | proxy |
+| runapi | cc-switch/claude-code-router | proxy |
+| unity2.ai | cc-switch/claude-code-router | proxy |
+| shengsuanyun | cc-switch | proxy |
+| aigocode | cc-switch | proxy |
+| aicoding | cc-switch | proxy |
+| code0 | cc-switch/claude-code-router | proxy |
+| teamorouter | cc-switch/claude-code-router | proxy |
+| claudecn | cc-switch | proxy |
+| ccsub | cc-switch | proxy |
+| sssaicode | cc-switch | proxy |
+| micu | cc-switch | proxy |
+| rightcode | cc-switch | proxy |
+| etok.ai | cc-switch | proxy |
+| cubence | cc-switch | proxy |
+| sudocode | cc-switch | proxy |
+| amux | cc-switch | proxy |
+| cherryin | cc-switch | proxy |
+| relaxycode | cc-switch | proxy |
+| e-flowcode | cc-switch | proxy |
+| pipllm | cc-switch | proxy |
+| nekocode | cc-switch | proxy |
+| compshare | cc-switch | proxy |
+| kat-coder | cc-switch | proxy |
+| dmxapi | cc-switch | proxy |
+| crazyrouter | cc-switch | proxy |
+| subrouter | cc-switch | proxy |
+| apikey.fun | cc-switch | proxy |
+| therouter | cc-switch | proxy |
+| clawrouter | continue | proxy |
 
-> 以上新增厂商绝大多数是国内 coding agent 代理/中转服务，2026 年大量涌现。协议转换逻辑详见 [0005-protocol-conversion.md](0005-protocol-conversion.md)。
+> The vast majority of the newly added providers above are domestic coding agent proxy/relay services, which emerged in large numbers in 2026. For protocol conversion logic, see [0005-protocol-conversion.md](0005-protocol-conversion.md).
 
-### 对 aimux 的意义
+### Implications for aimux
 
-1. **cc-switch 用 Rust 写的**（Tauri 桌面应用）——它需要统一管理多家厂商的认证和切换，这正是 aimux 的 provider 抽象能提供的。
-2. **opencode 和 pi 都自带"统一 LLM API"层**——pi 明确写了"unified LLM API"，这和 aimux 定位直接重合。
-3. **转发服务（claude-code-router/opencodex）本质就是微型网关**——把 coding agent 的请求转发到任意厂商，和前面扫的网关项目同类。
-4. **这些项目用户量远超 SDK 项目**（opencode 19 万 vs rig 8 千）——如果 aimux 想被广泛使用，coding agent 生态是比 SDK 生态更大的市场。
+1. **cc-switch is written in Rust** (a Tauri desktop application) — it needs to uniformly manage the authentication and switching of multiple providers, which is exactly what aimux's provider abstraction can provide.
+2. **Both opencode and pi come with a "unified LLM API" layer** — pi explicitly states "unified LLM API", which directly overlaps with aimux's positioning.
+3. **Forwarding services (claude-code-router/opencodex) are essentially micro-gateways** — forwarding coding agent requests to any provider, of the same kind as the gateway projects scanned earlier.
+4. **These projects have far more users than SDK projects** (opencode 190k vs rig 8k) — if aimux wants to be widely used, the coding agent ecosystem is a larger market than the SDK ecosystem.
 
-aimux 当前不支持任何 coding agent 接入。是否为这类场景提供支持（OAuth 认证、订阅额度管理、厂商切换）需要决策。
+aimux currently does not support any coding agent integration. Whether to provide support for such scenarios (OAuth authentication, subscription quota management, provider switching) requires a decision.
 
 ---
 
-## 六、数据来源说明
+## 6. Data Source Notes
 
-本文档的厂商清单来自以下扫描（2026-07-27）：
+The provider inventory in this document comes from the following scans (2026-07-27):
 
-- **Rust 竞品**：rig(28家)、rust-genai(31家)、langchain-rust(5家)、kalosm、swiftide(9家)、graniet-llm(15家)、rllm(7家)、edgequake-llm、llm-connector(8家)、ai.rs、litellm-rust、unia(14家)、multi-llm、llmrust、rust_ai_sdk、llm-chain
-- **Python 生态**：litellm(134家)、langchain、llama_index(99家)、dspy、haystack、guidance、pydantic-ai(14家)、outlines、instructor(14家)、aisuite(28家)、textgrad、AutoGPT、OpenHands、autogen、crewAI、mirascope
-- **其他语言**：mastra、langchainjs、LlamaIndexTS、eino(仅接口)、langchaingo、langchain4j、spring-ai、semantic-kernel、semantic-kernel-java、dotnet-extensions、LangChain-csharp、langchain-swift
-- **网关**：new-api(54渠道)、one-api(38适配器)、portkey-gateway(72)、bifrost(29)、coai(18)、manifest(33)、higress(36)、one-hub(41)、simple-one-api(18)、uni-api(12适配器)、axonhub(20)、TokenHub(35+直连/100+代理)、aiproxy(37)、chats(22)、otari(配置驱动)、ferro-ai-gateway(29)、OpenGateLLM(5)、llmgateway(33)、APIPark(35)、envoy-ai-gateway(7)、claude-code-router(20)
-- **coding agent 与转发服务**：openai/codex(4家内置)、anthropics/claude-code(仅文档)、anomalyco/opencode(20家)、earendil-works/pi(37家)、google-gemini/gemini-cli(仅Google)、cline(55+家)、Aider-AI/aider(litellm透传)、continuedev/continue(66家)、RooCodeInc/Roo-Code(30+家)、opencode-ai/opencode(11家)、farion1231/cc-switch(80+家)、musistudio/claude-code-router(20+家)、lidge-jun/opencodex(60家)、XueshiQiao/CCSwitcher(Claude账号池)、glidea/claude-worker-proxy(任意OpenAI/Gemini)、liuzhengming/ccswitch-deepseek(DeepSeek)、nicremo/ccs(5家国产)、agent-of-empires(2.9k)、oh-my-opencode-slim(7.4k)、pinchbench(1.3k)、cc-safety-net(1.5k)
-- **协议转换逻辑**：详见 [0005-protocol-conversion.md](0005-protocol-conversion.md)，覆盖 SDK 适配层设计、网关跨协议互转、coding agent/转发服务协议转换
+- **Rust competitors**: rig(28), rust-genai(31), langchain-rust(5), kalosm, swiftide(9), graniet-llm(15), rllm(7), edgequake-llm, llm-connector(8), ai.rs, litellm-rust, unia(14), multi-llm, llmrust, rust_ai_sdk, llm-chain
+- **Python ecosystem**: litellm(134), langchain, llama_index(99), dspy, haystack, guidance, pydantic-ai(14), outlines, instructor(14), aisuite(28), textgrad, AutoGPT, OpenHands, autogen, crewAI, mirascope
+- **Other languages**: mastra, langchainjs, LlamaIndexTS, eino (interfaces only), langchaingo, langchain4j, spring-ai, semantic-kernel, semantic-kernel-java, dotnet-extensions, LangChain-csharp, langchain-swift
+- **Gateways**: new-api(54 channels), one-api(38 adapters), portkey-gateway(72), bifrost(29), coai(18), manifest(33), higress(36), one-hub(41), simple-one-api(18), uni-api(12 adapters), axonhub(20), TokenHub(35+ direct/100+ proxies), aiproxy(37), chats(22), otari (configuration-driven), ferro-ai-gateway(29), OpenGateLLM(5), llmgateway(33), APIPark(35), envoy-ai-gateway(7), claude-code-router(20)
+- **coding agents and forwarding services**: openai/codex(4 built-in), anthropics/claude-code (docs only), anomalyco/opencode(20), earendil-works/pi(37), google-gemini/gemini-cli (Google only), cline(55+), Aider-AI/aider (litellm passthrough), continuedev/continue(66), RooCodeInc/Roo-Code(30+), opencode-ai/opencode(11), farion1231/cc-switch(80+), musistudio/claude-code-router(20+), lidge-jun/opencodex(60), XueshiQiao/CCSwitcher (Claude account pool), glidea/claude-worker-proxy (arbitrary OpenAI/Gemini), liuzhengming/ccswitch-deepseek (DeepSeek), nicremo/ccs (5 domestic), agent-of-empires(2.9k), oh-my-opencode-slim(7.4k), pinchbench(1.3k), cc-safety-net(1.5k)
+- **Protocol conversion logic**: see [0005-protocol-conversion.md](0005-protocol-conversion.md), covering SDK adapter layer design, gateway cross-protocol mutual conversion, and coding agent/forwarding service protocol conversion

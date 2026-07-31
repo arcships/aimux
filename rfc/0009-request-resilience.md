@@ -1,58 +1,58 @@
-# RFC-0009：请求优化 — 参考 catcher 的设计
+# RFC-0009: Request Optimization — Referencing catcher's Design
 
-> **状态**：DRAFT（待评审）
-> **日期**：2026-07-29
-> **范围**：`aimux-provider-utils` 参考 catcher 的三个具体设计点（连接池配置、jitter 退避、固定超时），用 reqwest 原生 + 现有 retry.rs 实现请求层优化，不引入 catcher-http 依赖
-> **关联**：[RFC-0002](0002-provider-improvements.md) 厂商适配层改进、[RFC-0003](0003-test-cassette.md) 测试录像方案
+> **Status**: DRAFT (pending review)
+> **Date**: 2026-07-29
+> **Scope**: `aimux-provider-utils` references three specific design points from catcher (connection-pool config, jitter backoff, fixed timeouts) and implements request-layer optimization using reqwest natively + the existing retry.rs, without introducing a catcher-http dependency
+> **Related**: [RFC-0002](0002-provider-improvements.md) provider adapter layer improvements, [RFC-0003](0003-test-cassette.md) test cassette plan
 
-## 1. 动机
+## 1. Motivation
 
-aimux 把"统一 LLM 服务接入"做得很全（172 厂商、6 语言绑定），但**底层的请求收发是裸奔的**。证据如下：
+aimux has built "unified LLM service access" very comprehensively (172 providers, 6 language bindings), but **the underlying request sending/receiving runs bare**. The evidence is as follows:
 
-| # | 问题 | 证据 |
+| # | Problem | Evidence |
 |---|------|------|
-| 1 | **45 个 provider 各自 `reqwest::Client::new()`**，无连接池共享、无 TLS 会话复用 | `grep -rn "Client::new()" aimux-providers/src/` → 45 处。reqwest 官方建议整个应用复用单个 Client |
-| 2 | **retry 逻辑是死代码** | `aimux-provider-utils/src/retry.rs` 定义并 re-export 了 `retry_with_exponential_backoff*`，但全仓**零调用点** |
-| 3 | **79 个直接 `.send()` 点无 retry 包裹** | `grep -rln ".send().await" aimux-providers/src/` → 79 文件。失败即抛错，429/5xx 不重试 |
-| 4 | **全仓无超时** | `grep -rn ".timeout(\|connect_timeout\|pool_idle\|tcp_keepalive"` → 空。挂起的连接会永久阻塞 |
-| 5 | **retry 无 jitter** | `retry.rs` 是纯指数退避，并发 429 会惊群 |
+| 1 | **45 providers each do `reqwest::Client::new()`**, with no connection-pool sharing and no TLS session reuse | `grep -rn "Client::new()" aimux-providers/src/` → 45 hits. reqwest officially recommends reusing a single Client across the whole application |
+| 2 | **Retry logic is dead code** | `aimux-provider-utils/src/retry.rs` defines and re-exports `retry_with_exponential_backoff*`, but there are **zero call sites** across the repo |
+| 3 | **79 direct `.send()` sites with no retry wrapping** | `grep -rln ".send().await" aimux-providers/src/` → 79 files. Failure throws immediately; 429/5xx are not retried |
+| 4 | **No timeouts anywhere in the repo** | `grep -rn ".timeout(\|connect_timeout\|pool_idle\|tcp_keepalive"` → empty. Pending connections block forever |
+| 5 | **Retry has no jitter** | `retry.rs` is pure exponential backoff; concurrent 429s will cause thundering herd |
 
-[catcher](https://github.com/eric8810/catcher)（同作者、同 Rust+reqwest+rustls 技栈、同 MIT）的 `catcher-http` crate 已把请求/弹性层做成熟。经逐模块核实，对其取舍结论见 §3。
+[catcher](https://github.com/eric8810/catcher) (same author, same Rust+reqwest+rustls stack, same MIT) has a `catcher-http` crate that has matured the request/resilience layer. After verifying module by module, the take/skip conclusions are in §3.
 
-## 2. 方案选型：参考，不依赖
+## 2. Approach Selection: Reference, Don't Depend
 
-| | 路线 A：依赖 catcher-http | 路线 B（本 RFC）：参考 catcher 设计，reqwest 原生实现 |
+| | Route A: depend on catcher-http | Route B (this RFC): reference catcher's design, implement with reqwest natively |
 |---|---|---|
-| 做法 | 依赖 `catcher-http` + `catcher-core`，包错误转换 + 自建 builder | 抄 catcher 的具体设计点，用 reqwest 原生 + 现有 retry.rs 实现 |
-| 新依赖 | catcher-http + catcher-core + catcher-dns + backon + reqwest-middleware + retry-policies + parking_lot + tokio-util + rmp-serde | **零** |
-| reqwest 版本 | 强制升级 0.12→0.13（catcher 用 0.13） | 无需升级，保持 0.12 |
-| retry-after header | ❌ catcher 的 `HttpError{status,body}` 无结构化透传，backon 固定退避不读 header | ✅ 保留 aimux 现有 retry.rs 的 header 读取能力（更强） |
-| 错误转换 | 需映射 17 个 CatcherError 变体 | 不需要，直接用 AiMuxError |
-| 工作量 | reqwest 升级 + 错误转换 + 自建 HttpRequestBuilder（catcher 的 HttpRequest 是纯数据结构无链式） + 迁移 172 provider | 抄 3 个设计点，约百行 |
-| 自主权 | 跟随 catcher 发版 | 自主可控 |
+| Approach | Depend on `catcher-http` + `catcher-core`, wrap error conversion + self-build builder | Copy catcher's specific design points, implement with reqwest natively + the existing retry.rs |
+| New dependencies | catcher-http + catcher-core + catcher-dns + backon + reqwest-middleware + retry-policies + parking_lot + tokio-util + rmp-serde | **Zero** |
+| reqwest version | Forced upgrade 0.12→0.13 (catcher uses 0.13) | No upgrade needed, stay on 0.12 |
+| retry-after header | ❌ catcher's `HttpError{status,body}` has no structured passthrough; backon's fixed backoff does not read the header | ✅ Retain aimux's existing retry.rs header-reading capability (stronger) |
+| Error conversion | Need to map 17 CatcherError variants | Not needed; use AiMuxError directly |
+| Workload | reqwest upgrade + error conversion + self-built HttpRequestBuilder (catcher's HttpRequest is a plain data struct with no chaining) + migrate 172 providers | Copy 3 design points, ~100 lines |
+| Autonomy | Follows catcher releases | Self-controlled |
 
-**结论：catcher 真正对 aimux 有价值的是它的设计模式（PoolConfig 字段、jitter 策略、超时配置），不是它的代码包。** 借鉴模式比背依赖划算，尤其 retry-after 这点证明了"参考"在 LLM 场景反而比"引入"语义更正确。
+**Conclusion: what is truly valuable about catcher for aimux is its design patterns (PoolConfig fields, jitter strategy, timeout config), not its code package.** Borrowing patterns is more worthwhile than carrying a dependency, especially since the retry-after point proves that "referencing" is semantically more correct than "introducing" in the LLM scenario.
 
-## 3. 取舍：catcher 各能力对 aimux 的处置
+## 3. Take/Skip: How Each catcher Capability Is Handled for aimux
 
-逐模块核实 catcher-http 源码后的判断：
+Judgment after verifying the catcher-http source module by module:
 
-| catcher 能力 | 对 aimux 的处置 | 理由 |
+| catcher capability | Handling for aimux | Reason |
 |---|---|---|
-| `PoolConfig` 字段设计 | ✅ **引入**（抄字段，reqwest 原生实现） | `max_idle_per_host`/`idle_timeout_secs`/`keep_alive`/`keep_alive_interval_secs`，reqwest ClientBuilder 全支持，收益最高 |
-| `Full Jitter` 退避策略 | ✅ **引入**（补到现有 retry.rs） | catcher `backoff.rs` 的 `DecorrelatedJitter` 即 AWS Full Jitter，防惊群；aimux 现有 retry.rs 是纯指数无 jitter |
-| 固定超时字段 | ✅ **引入**（抄 `connect_timeout_ms`/`response_timeout_ms`） | reqwest ClientBuilder 原生支持 |
-| `AdaptiveTimeout`（P90 RTT 自适应） | ❌ **不引入** | `timeout = clamp(P90_RTT * multiplier)`，LLM 请求时长取决于生成长度/max_tokens 而非网络 RTT，会误杀长生成请求 |
-| `CircuitBreaker` 状态机 | 📌 **暂缓** | 实现成熟（CLOSED→OPEN→HALF_OPEN 约 150 行），但 aimux 是库不是网关，无 fallback 目标；retry 先行，retry 落地后若"连续失败每次等超时"成痛点再上 |
-| `reqwest-retry` 中间件整体 | ❌ **不引入** | backon 固定退避不读 retry-after header，比 aimux 现有 retry.rs 弱 |
-| SSE 自动重连 | 📌 **暂缓** | 流式+retry 语义复杂（已吐 token 后重试会重复内容），独立提案 |
-| msgpack / WS / TLS pinning / DNS 缓存 / 网络切换热重建 | ❌ **不引入** | LLM 场景用不到 |
+| `PoolConfig` field design | ✅ **Introduce** (copy fields, implement with reqwest natively) | `max_idle_per_host`/`idle_timeout_secs`/`keep_alive`/`keep_alive_interval_secs`; reqwest ClientBuilder supports all of them; highest payoff |
+| `Full Jitter` backoff strategy | ✅ **Introduce** (add to the existing retry.rs) | catcher `backoff.rs`'s `DecorrelatedJitter` is AWS Full Jitter, preventing thundering herd; aimux's existing retry.rs is pure exponential with no jitter |
+| Fixed timeout fields | ✅ **Introduce** (copy `connect_timeout_ms`/`response_timeout_ms`) | Natively supported by reqwest ClientBuilder |
+| `Adaptive Timeout` (P90 RTT adaptive) | ❌ **Do not introduce** | `timeout = clamp(P90_RTT * multiplier)`; LLM request duration depends on generation length/max_tokens rather than network RTT, and would wrongly kill long-generation requests |
+| `CircuitBreaker` state machine | 📌 **Defer** | The implementation is mature (CLOSED→OPEN→HALF_OPEN, ~150 lines), but aimux is a library, not a gateway, with no fallback target; retry first—after retry lands, if "consecutive failures each waiting for a timeout" becomes a pain point, add it then |
+| `reqwest-retry` middleware as a whole | ❌ **Do not introduce** | backon's fixed backoff does not read the retry-after header, weaker than aimux's existing retry.rs |
+| SSE auto-reconnect | 📌 **Defer** | Streaming + retry semantics are complex (retrying after tokens have already been emitted would duplicate content); separate proposal |
+| msgpack / WS / TLS pinning / DNS cache / network-switch hot rebuild | ❌ **Do not introduce** | Not needed in LLM scenarios |
 
-## 4. 设计
+## 4. Design
 
-### 4.1 引入点 1：共享 Client + PoolConfig（reqwest 原生）
+### 4.1 Introduction Point 1: Shared Client + PoolConfig (reqwest native)
 
-参考 catcher 的 `PoolConfig`（[catcher-http/src/types/http.rs](https://github.com/eric8810/catcher/blob/master/packages/catcher-http/src/types/http.rs)），用 reqwest `ClientBuilder` 原生实现：
+Reference catcher's `PoolConfig` ([catcher-http/src/types/http.rs](https://github.com/eric8810/catcher/blob/master/packages/catcher-http/src/types/http.rs)) and implement it natively with reqwest's `ClientBuilder`:
 
 ```rust
 //! aimux-provider-utils/src/http.rs
@@ -61,13 +61,13 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use reqwest::Client;
 
-/// 连接池配置（参考 catcher PoolConfig 字段设计）。
+/// Connection pool config (refer to catcher PoolConfig field design).
 #[derive(Debug, Clone)]
 pub struct PoolConfig {
     pub max_idle_per_host: usize,        // catcher: 10
-    pub idle_timeout_secs: u64,           // catcher: 30 — 防 retry 复用死连接
+    pub idle_timeout_secs: u64,           // catcher: 30 — prevents retry reusing a dead connection
     pub keep_alive: bool,                // catcher: true
-    pub keep_alive_interval_secs: u64,   // catcher: 20 — 更快发现死连接
+    pub keep_alive_interval_secs: u64,   // catcher: 20 — detects dead connections faster
 }
 
 impl Default for PoolConfig {
@@ -81,18 +81,18 @@ impl Default for PoolConfig {
     }
 }
 
-/// 超时配置（参考 catcher HttpClientConfig 的两个超时字段）。
+/// Timeout config (refer to catcher HttpClientConfig's two timeout fields).
 #[derive(Debug, Clone)]
 pub struct TimeoutConfig {
     pub connect_timeout_ms: u64,         // catcher: 10_000
-    pub response_timeout_ms: u64,        // catcher: 30_000；流式请求传 0 禁用
+    pub response_timeout_ms: u64,        // catcher: 30_000; pass 0 for streaming requests to disable
 }
 
-/// 全局共享的 reqwest::Client。OnceLock 保证只构建一次，
-/// 连接池/TLS 会话全仓复用。替代 45 处 Client::new()。
+/// Globally shared reqwest::Client. OnceLock guarantees it is built only once,
+/// connection pool/TLS session reused repo-wide. Replaces 45 Client::new() sites.
 static SHARED: OnceLock<Client> = OnceLock::new();
 
-/// 获取（或惰性初始化）共享 reqwest Client。
+/// Get (or lazily initialize) the shared reqwest Client.
 pub fn shared_client() -> &'static Client {
     SHARED.get_or_init(|| build_client(PoolConfig::default(), TimeoutConfig::default()))
 }
@@ -112,90 +112,90 @@ fn build_client(pool: PoolConfig, timeout: TimeoutConfig) -> Client {
 }
 ```
 
-**收益**：TLS 会话复用、连接池共享——aimux 当前最大的性能缺口，零新依赖解决。干掉 45 处 `Client::new()`。
+**Benefit**: TLS session reuse and connection-pool sharing—aimux's current biggest performance gap, solved with zero new dependencies. Eliminates the 45 `Client::new()` sites.
 
-### 4.2 引入点 2：Jitter 退避（补到现有 retry.rs，保留 retry-after）
+### 4.2 Introduction Point 2: Jitter Backoff (added to the existing retry.rs, retaining retry-after)
 
-catcher 的 `DecorrelatedJitter`（[backoff.rs](https://github.com/eric8810/catcher/blob/master/packages/catcher-http/src/resilience/backoff.rs)）即 AWS Full Jitter：`delay ∈ [0, calculated_backoff]`。
+catcher's `DecorrelatedJitter` ([backoff.rs](https://github.com/eric8810/catcher/blob/master/packages/catcher-http/src/resilience/backoff.rs)) is AWS Full Jitter: `delay ∈ [0, calculated_backoff]`.
 
-aimux 现有 `retry.rs` 是纯指数退避无 jitter。补 jitter，**且保留 aimux 现有的 retry-after header 读取能力**（这点比 catcher 强，不丢）：
+aimux's existing `retry.rs` is pure exponential backoff with no jitter. Add jitter, **and retain aimux's existing retry-after header-reading capability** (this is stronger than catcher's; don't lose it):
 
 ```rust
-//! aimux-provider-utils/src/retry.rs（增量补丁，不重写）
+//! aimux-provider-utils/src/retry.rs (incremental patch, no rewrite)
 
-/// 在 get_retry_delay_ms 基础上叠加 Full Jitter（参考 catcher DecorrelatedJitter）。
-/// delay = random(0, base)，base 仍优先采用 retry-after hint，回退指数退避。
+/// Adds Full Jitter on top of get_retry_delay_ms (refer to catcher DecorrelatedJitter).
+/// delay = random(0, base); base still prefers the retry-after hint, falling back to exponential backoff.
 pub fn get_retry_delay_ms_with_jitter(
     hint: Option<i64>,
     exponential_delay_ms: i64,
     rng: &mut impl rand::Rng,
 ) -> i64 {
-    let base = get_retry_delay_ms(hint, exponential_delay_ms); // 复用现有逻辑
+    let base = get_retry_delay_ms(hint, exponential_delay_ms); // reuses existing logic
     if base <= 0 { return 0; }
     rng.gen_range(0..base) // Full Jitter
 }
 ```
 
-- 现有 `get_retry_delay_ms` / `parse_retry_after` 保留不动，新函数复用它们
-- 现有 `retry_with_exponential_backoff_respecting_retry_headers` 内部 sleep 处改用 jitter 版本
-- 新增 `rand` 依赖（workspace 已有 `futures`/`tokio`，rand 体积小）
+- The existing `get_retry_delay_ms` / `parse_retry_after` remain untouched; the new function reuses them
+- The existing `retry_with_exponential_backoff_respecting_retry_headers` switches its internal sleep to the jitter version
+- Add a `rand` dependency (the workspace already has `futures`/`tokio`; rand is small)
 
-**收益**：防并发 429 惊群，且不丢 retry-after 语义。
+**Benefit**: prevents thundering herd on concurrent 429s, without losing retry-after semantics.
 
-### 4.3 引入点 3：固定超时
+### 4.3 Introduction Point 3: Fixed Timeout
 
-直接用 §4.1 的 `TimeoutConfig`。关键决策：
+Directly use the `TimeoutConfig` from §4.1. Key decisions:
 
-- **非流式请求**：`response_timeout_ms = 30_000`（catcher 默认值），reqwest `.timeout()` 守护
-- **流式请求**：`response_timeout_ms = 0` 禁用整体超时——LLM 流式时长取决于生成长度，固定超时会误杀长生成。仅保留 `connect_timeout_ms = 10_000` 守护建连阶段
+- **Non-streaming requests**: `response_timeout_ms = 30_000` (catcher's default), guarded by reqwest `.timeout()`
+- **Streaming requests**: `response_timeout_ms = 0` disables the overall timeout—LLM streaming duration depends on generation length, and a fixed timeout would wrongly kill long generations. Only keep `connect_timeout_ms = 10_000` to guard the connection-establishment phase
 
-由 provider 在构造请求时按是否流式选择。`shared_client()` 用默认 30s 整体超时；流式 provider 调用时需用单独的不带整体超时的 client（或用 reqwest 的 per-request `.timeout(None)` 覆盖）。
+The provider chooses based on whether the request is streaming when constructing it. `shared_client()` uses the default 30s overall timeout; streaming providers need a separate client without the overall timeout when calling (or override it with reqwest's per-request `.timeout(None)`).
 
-## 5. 不做的事（不引入项的依据）
+## 5. Things Not to Do (Rationale for Items Not Introduced)
 
-1. **不引入 catcher-http 依赖**。catcher 真正对 aimux 有价值的 3 个点（§4）用 reqwest 原生 + 现有 retry.rs 零依赖即可复现，而引入依赖的代价（reqwest 强制升级 0.12→0.13 + 17 个 CatcherError 变体转换 + 自建 HttpRequestBuilder + 依赖树膨胀 + retry-after 语义倒退）远大于收益。
-2. **不引入 AdaptiveTimeout**。`timeout = P90_RTT * multiplier` 对 LLM 不成立：两个请求 RTT 都是 200ms，但一个生成 10 token（总 500ms）、一个生成 2000 token（总 30s），用 RTT 算超时会误杀后者。
-3. **不引入 CircuitBreaker**。aimux 是库不是网关，单 provider 失败就失败，无 fallback 目标。retry 先行，若连续失败每次等超时成痛点再上（届时抄 catcher 状态机约 150 行即可）。
-4. **不引入 reqwest-retry 中间件**。backon 固定退避不读 retry-after header，比 aimux 现有 retry.rs 弱。
-5. **不引入 SSE 自动重连**。流式+retry 语义复杂，独立提案。
-6. **不引入 msgpack / WS / TLS pinning / DNS 缓存 / 网络切换热重建**。LLM 场景用不到。
+1. **Do not introduce the catcher-http dependency**. The 3 points where catcher is truly valuable to aimux (§4) can be reproduced with zero dependencies using reqwest natively + the existing retry.rs, while the cost of introducing the dependency (forced reqwest upgrade 0.12→0.13 + 17 CatcherError variant conversions + self-built HttpRequestBuilder + dependency-tree bloat + retry-after semantic regression) far exceeds the benefit.
+2. **Do not introduce AdaptiveTimeout**. `timeout = P90_RTT * multiplier` does not hold for LLMs: two requests both have a 200ms RTT, but one generates 10 tokens (500ms total) and the other generates 2000 tokens (30s total); computing the timeout from RTT would wrongly kill the latter.
+3. **Do not introduce CircuitBreaker**. aimux is a library, not a gateway; a single provider failure is just a failure, with no fallback target. Retry first; if consecutive failures each waiting for a timeout becomes a pain point, add it then (at that point, copying catcher's state machine is ~150 lines).
+4. **Do not introduce the reqwest-retry middleware**. backon's fixed backoff does not read the retry-after header, weaker than aimux's existing retry.rs.
+5. **Do not introduce SSE auto-reconnect**. Streaming + retry semantics are complex; separate proposal.
+6. **Do not introduce msgpack / WS / TLS pinning / DNS cache / network-switch hot rebuild**. Not needed in LLM scenarios.
 
-## 6. 迁移策略
+## 6. Migration Strategy
 
-### 6.1 测试安全网
+### 6.1 Test Safety Net
 
-aimux 测试用 **wiremock 本地 mock server**（见 `aimux-providers/tests/openai_image_test.rs`），靠 `base_url` 指向 `localhost`，不依赖特定 Client 实例。重构 client 构造方式不破坏这些测试——它们只依赖 base_url 路由。这是本方案最大的可行性保障。
+aimux tests use a **wiremock local mock server** (see `aimux-providers/tests/openai_image_test.rs`), pointing `base_url` at `localhost` and not depending on a specific Client instance. Refactoring how the client is constructed does not break these tests—they only depend on base_url routing. This is the biggest feasibility guarantee of this approach.
 
-注意：retry 会在 mock 测试里放大请求次数。wiremock 的 `.expect(N)` 断言需相应调整（未设 `expect` 的 mock 默认允许多次命中，多数测试不受影响）。
+Note: retry will amplify the request count in mock tests. wiremock's `.expect(N)` assertions need to be adjusted accordingly (mocks without `expect` set allow multiple hits by default, so most tests are unaffected).
 
-### 6.2 分批落地
+### 6.2 Phased Landing
 
-| 批次 | 范围 | 说明 |
+| Batch | Scope | Notes |
 |---|---|---|
-| 1 | `aimux-provider-utils` 新增 `src/http.rs`（shared_client + PoolConfig + TimeoutConfig） + retry.rs 补 jitter | 新增，不改 provider |
-| 2 | 把现有 retry.rs 接进请求路径（当前是死代码，0 调用） | 新增 `send_with_retry` 包装函数 |
-| 3 | 迁移 11 个原生协议 provider（openai/anthropic/google/...）的 `Client::new()` → `shared_client()` | 优先，覆盖主流量 |
-| 4 | 145 个 OpenAI 兼容薄封装 | 共享同一请求路径，可脚本化批量替换 |
-| 5 | 语音/图像/视频专用 provider | 非流式居多，最简单 |
+| 1 | `aimux-provider-utils` adds `src/http.rs` (shared_client + PoolConfig + TimeoutConfig) + retry.rs adds jitter | Additive; does not touch providers |
+| 2 | Wire the existing retry.rs into the request path (currently dead code, 0 calls) | Add a `send_with_retry` wrapper function |
+| 3 | Migrate the 11 native-protocol providers (openai/anthropic/google/...) from `Client::new()` → `shared_client()` | Priority; covers the main traffic |
+| 4 | 145 OpenAI-compatible thin wrappers | Share the same request path; can be batch-replaced by script |
+| 5 | Speech/image/video-specific providers | Mostly non-streaming; simplest |
 
-每批后跑 `cargo test -p aimux-providers --tests` 守护。**无需 reqwest 版本升级**（这是路线 B 相对路线 A 的一大优势）。
+After each batch, run `cargo test -p aimux-providers --tests` as a guard. **No reqwest version upgrade is needed** (a major advantage of Route B over Route A).
 
-## 7. 风险
+## 7. Risks
 
-| 风险 | 等级 | 缓解 |
+| Risk | Level | Mitigation |
 |---|---|---|
-| **172 provider 接触面大** | 中 | 分批迁移（§6.2），每批回归；薄封装共享路径可脚本化批量替换 |
-| **流式 + retry 语义** | 中 | 第一版仅覆盖建连阶段重试，已吐 token 后不重试；整体超时对流式禁用 |
-| **wiremock `.expect(N)` 与 retry 次数冲突** | 低 | 多数 mock 未设 expect；个别需调整为 N×重试次数 |
-| **shared_client 默认超时误杀流式** | 中 | 流式请求禁用整体超时（§4.3），或 per-request 覆盖 |
-| **jitter 引入 rand 依赖** | 低 | rand 体积小，标准库生态 |
+| **172 providers, large surface area** | Medium | Phased migration (§6.2), regress each batch; thin wrappers share the path and can be batch-replaced by script |
+| **Streaming + retry semantics** | Medium | The first version only covers connection-establishment-phase retry; no retry after tokens have been emitted; the overall timeout is disabled for streaming |
+| **wiremock `.expect(N)` conflicts with retry count** | Low | Most mocks do not set expect; a few need adjustment to N × retry count |
+| **shared_client default timeout wrongly kills streaming** | Medium | Disable the overall timeout for streaming requests (§4.3), or override per-request |
+| **jitter introduces a rand dependency** | Low | rand is small, part of the standard-library ecosystem |
 
-## 8. 实现顺序
+## 8. Implementation Order
 
-1. **包装层**：`aimux-provider-utils` 新建 `src/http.rs`（shared_client + PoolConfig + TimeoutConfig）。
-2. **retry 接入**：现有 `retry.rs` 补 jitter；新增 `send_with_retry` 把 retry 接进请求路径（当前 0 调用）。
-3. **试点**：迁移 `aimux-providers/src/openai/`（原生协议，主流量），跑 openai 全部测试验证。
-4. **铺开**：按 §6.2 批次迁移剩余 provider。
-5. **收尾**：更新 README 架构图与 `aimux-provider-utils` 模块说明。
+1. **Wrapper layer**: `aimux-provider-utils` creates `src/http.rs` (shared_client + PoolConfig + TimeoutConfig).
+2. **retry hookup**: the existing `retry.rs` adds jitter; add `send_with_retry` to wire retry into the request path (currently 0 calls).
+3. **Pilot**: migrate `aimux-providers/src/openai/` (native protocol, main traffic), run all openai tests to verify.
+4. **Roll out**: migrate the remaining providers per the §6.2 batches.
+5. **Wrap up**: update the README architecture diagram and the `aimux-provider-utils` module docs.
 
-每一步均可独立合入，不阻塞后续。无前置依赖升级。
+Each step can be merged independently and does not block subsequent steps. No prerequisite dependency upgrades.
