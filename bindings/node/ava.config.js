@@ -1,4 +1,5 @@
 export default {
+  workerThreads: false,
   extensions: {
     ts: 'module',
   },

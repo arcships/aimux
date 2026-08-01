@@ -19,6 +19,36 @@ const result = await generateText(model, 'What is Rust?')
 console.log(result.text)
 ```
 
+## Desktop and Electron compatibility
+
+The package ships one Node-API 8 binary per desktop OS and architecture. The
+root package selects a platform package at load time, so installers do not
+carry binaries for the other five targets.
+
+| OS | Architecture | Native package | Runtime baseline |
+|---|---|---|---|
+| Windows | x64 | `@arcships/aimux-win32-x64-msvc` | Static MSVC CRT; no Visual C++ Redistributable required |
+| Windows | ARM64 | `@arcships/aimux-win32-arm64-msvc` | Static MSVC CRT; no Visual C++ Redistributable required |
+| macOS | x64 | `@arcships/aimux-darwin-x64` | Addon deployment target 10.13; system frameworks only |
+| macOS | ARM64 | `@arcships/aimux-darwin-arm64` | Addon deployment target 11.0; system frameworks only |
+| Linux | x64 | `@arcships/aimux-linux-x64-gnu` | glibc 2.17 or newer |
+| Linux | ARM64 | `@arcships/aimux-linux-arm64-gnu` | glibc 2.17 or newer |
+
+The addon uses Node-API rather than Electron's version-specific native ABI, so
+it does not require an Electron-specific rebuild. Load it from the main process
+or a Node-enabled preload script. Keep npm optional dependencies enabled when
+installing, because the native platform package is an optional dependency.
+
+When packaging with ASAR, keep native addons unpacked:
+
+```yaml
+asarUnpack:
+  - '**/*.node'
+```
+
+Linux musl distributions such as Alpine are not included in the six desktop
+targets. The GNU/Linux builds use rustls and do not require system OpenSSL.
+
 ## Text Generation
 
 Non-streaming text generation; returns the complete result.
