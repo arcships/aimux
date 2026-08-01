@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "LLM provider implementations for aimux (OpenAI, Anthropic, Mistral, Cohere, and more)"
-keywords = ["llm", "ai", "openai", "anthropic", "provider", "llm-provider"]
+keywords = ["llm", "ai", "openai", "anthropic", "provider"]
 categories = ["api-bindings", "asynchronous"]
 documentation = "https://docs.rs/aimux-providers"
 
