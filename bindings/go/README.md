@@ -7,21 +7,22 @@ access layer for 172+ AI providers, built on a Rust core.
 
 ```bash
 go get github.com/arcships/aimux/bindings/go
+go generate github.com/arcships/aimux/bindings/go   # downloads libaimux_ffi.a for your platform
+go build ./...
 ```
 
-The binding links `libaimux_ffi.a` (static archive) via cgo. The archive is
-built from the Rust core with cargo — **native build for your own platform,
-no cross-compilation involved**. You need the [Rust toolchain](https://rustup.rs)
-(one-time install):
+The binding links `libaimux_ffi.a` (static archive) via cgo. Every release
+builds the archive for 4 platforms (linux x64, macOS x64/arm64, Windows x64)
+on CI and ships them on the [GitHub Releases](https://github.com/arcships/aimux/releases)
+page. `go generate` fetches the right one for your machine — a few MB, no
+Rust toolchain, no compilation. Pin a specific version with
+`AIMUX_FFI_VERSION=v0.1.0 go generate github.com/arcships/aimux/bindings/go`.
 
-```bash
-cd <your-module>            # or anywhere inside a Go module that imports the binding
-go generate ./...           # builds target/release/libaimux_ffi.a (first build: a few minutes)
-go build ./...              # subsequent builds are fast (incremental)
-```
-
-> The cgo `LDFLAGS` point at `<repo>/target/release/libaimux_ffi.a` — the
-> standard location when the build runs from a checkout of this repository.
+> Platforms without a prebuilt archive (e.g. FreeBSD, RISC-V): clone the
+> repo and run `cargo build -p aimux-ffi --release` locally, then build
+> your Go code from that checkout.
+> The archive lands in `<module-cache>/.../aimux/target/release/`; a `go
+> clean -modcache` or Go upgrade removes it — re-run `go generate`.
 
 ## Quick start
 

@@ -4,10 +4,10 @@
 //
 //	go generate ./...
 //
-// from this package to build the current platform's static archive with
-// cargo (native build — no cross-compilation needed). Requires the Rust
-// toolchain; see README.md.
+// from your module to download the prebuilt archive for your platform from
+// the GitHub Release assets (built by CI on every release). Requires network
+// access; pin a version with AIMUX_FFI_VERSION=v0.1.0.
 //
-//go:generate cargo build --manifest-path ../../Cargo.toml -p aimux-ffi --release
+//go:generate go run ./cmd/ffidownload
 
 package aimux

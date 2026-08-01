@@ -142,8 +142,10 @@ jobs:
           args: --no-sdist
           working-directory: bindings/python
 
-  # ── Go binding: build libaimux_ffi.a + run tests (verification only; the
-  #    .a is built by users locally via `go generate` — no release artifacts) ──
+  # ── Go binding: build libaimux_ffi.a per platform, ship on GitHub Release
+  #    (users download the archive for their platform via `go generate`).
+  #    NOTE: Windows uses the gnu target — Go's cgo links with mingw gcc,
+  #    which cannot consume MSVC-format .a archives. ─────────────────────────
   go-build:
     name: Go binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
@@ -158,7 +160,7 @@ jobs:
           - host: macos-latest
             target: aarch64-apple-darwin
           - host: windows-latest
-            target: x86_64-pc-windows-msvc
+            target: x86_64-pc-windows-gnu
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -174,6 +176,16 @@ jobs:
           export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.settings.target }}/release"
           go vet ./...
           go test ./...
+      - name: Stage archive with platform name
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp target/${{ matrix.settings.target }}/release/libaimux_ffi.a staging/libaimux_ffi-${{ matrix.settings.target }}.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libaimux_ffi-${{ matrix.settings.target }}.a
+          path: staging/libaimux_ffi-${{ matrix.settings.target }}.a
 
   # ── C ABI shared libraries (C/C++ + reference for other bindings) ────────
   ffi-build:
@@ -200,16 +212,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build cdylib
         run: cargo build -p aimux-ffi --release --target ${{ matrix.target }}
+      - name: Stage library with platform name
+        shell: bash
+        run: |
+          mkdir -p staging
+          case "${{ matrix.target }}" in
+            *linux*) cp target/${{ matrix.target }}/release/libaimux_ffi.so staging/${{ matrix.artifact }} ;;
+            *darwin*) cp target/${{ matrix.target }}/release/libaimux_ffi.dylib staging/${{ matrix.artifact }} ;;
+            *windows*) cp target/${{ matrix.target }}/release/aimux_ffi.dll staging/${{ matrix.artifact }} ;;
+          esac
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: target/${{ matrix.target }}/release/${{ matrix.artifact == 'aimux_ffi-windows-x64.dll' && 'aimux_ffi.dll' || matrix.artifact }}
+          path: staging/${{ matrix.artifact }}
 
-  # ── GitHub Release: aggregate all binary artifacts ───────────────────────
+  # ── GitHub Release: aggregate all binary artifacts (C ABI libs + Go .a) ──
   github-release:
     name: Create GitHub Release
-    needs: [ffi-build]
+    needs: [go-build, ffi-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
