@@ -228,6 +228,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(google_embedding, m)?)?;
     m.add_function(wrap_pyfunction!(google_image, m)?)?;
     m.add_function(wrap_pyfunction!(google_video, m)?)?;
+    m.add_function(wrap_pyfunction!(tavily_search, m)?)?;
     Ok(())
 }
 

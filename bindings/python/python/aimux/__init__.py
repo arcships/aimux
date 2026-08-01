@@ -31,6 +31,7 @@ from .aimux import (
     google_embedding,
     google_image,
     google_video,
+    tavily_search,
 )
 
 __all__ = [
@@ -56,6 +57,7 @@ __all__ = [
     "google_embedding",
     "google_image",
     "google_video",
+    "tavily_search",
     "generate_text",
     "stream_text",
 ]

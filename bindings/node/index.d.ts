@@ -150,3 +150,6 @@ export declare function openaiSpeech(apiKey: string, modelId: string, baseUrl?: 
 
 /** Create an OpenAI transcription model instance. */
 export declare function openaiTranscription(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<TranscriptionModel>
+
+/** Create a Tavily search model instance. */
+export declare function tavilySearch(apiKey: string, baseUrl?: string | undefined | null): Promise<SearchModel>

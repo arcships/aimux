@@ -18,10 +18,13 @@ package aimux
 
 // Functions exported by libaimux_ffi.a but not yet declared in aimux-ffi.h.
 uint64_t aimux_cohere_reranking_new(const char *api_key, const char *model_id);
+uint64_t aimux_cohere_reranking_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_rerank(uint64_t handle, const char *opts_json);
 uint64_t aimux_google_video_new(const char *api_key, const char *model_id);
+uint64_t aimux_google_video_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_video_generate(uint64_t handle, const char *opts_json);
 uint64_t aimux_tavily_search_new(const char *api_key, const char *model_id);
+uint64_t aimux_tavily_search_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_search(uint64_t handle, const char *opts_json);
 */
 import "C"
@@ -123,6 +126,41 @@ func cstringTriple(a, b, c string) (*C.char, *C.char, *C.char, func()) {
 	}
 }
 
+// newMultimodalModelWithBase is the common constructor for multimodal models
+// that take (api_key, model_id) and optionally a base_url. When baseURL is
+// empty, the no-base C constructor is used; otherwise the _with_base variant.
+func newMultimodalModelWithBase(
+	apiKey, modelID, baseURL string,
+	plain func(ca, cb *C.char) C.uint64_t,
+	withBase func(ca, cb, cbase *C.char) C.uint64_t,
+) (*multimodalHandle, error) {
+	if baseURL == "" {
+		ca, cb, cleanup := cstringPair(apiKey, modelID)
+		defer cleanup()
+		return newMultimodalHandle(func() C.uint64_t { return plain(ca, cb) })
+	}
+	ca, cb, cbase, cleanup := cstringTriple(apiKey, modelID, baseURL)
+	defer cleanup()
+	return newMultimodalHandle(func() C.uint64_t { return withBase(ca, cb, cbase) })
+}
+
+// newMultimodalModelFiles is the constructor for the Files manager, which
+// takes only an api_key (no model_id) and optionally a base_url.
+func newMultimodalModelFiles(
+	apiKey, baseURL string,
+	plain func(ca *C.char) C.uint64_t,
+	withBase func(ca, cbase *C.char) C.uint64_t,
+) (*multimodalHandle, error) {
+	ca := C.CString(apiKey)
+	defer C.free(unsafe.Pointer(ca))
+	if baseURL == "" {
+		return newMultimodalHandle(func() C.uint64_t { return plain(ca) })
+	}
+	cbase := C.CString(baseURL)
+	defer C.free(unsafe.Pointer(cbase))
+	return newMultimodalHandle(func() C.uint64_t { return withBase(ca, cbase) })
+}
+
 // ── EmbeddingModel ──────────────────────────────────────────────────────────
 
 // EmbeddingModel generates vector embeddings for text.
@@ -192,11 +230,53 @@ func ParseEmbeddingResult(jsonStr string) (*EmbeddingResult, error) {
 
 // NewOpenAIEmbedding creates an OpenAI embedding model (e.g. text-embedding-3-small).
 func NewOpenAIEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
-	ca, cb, cleanup := cstringPair(apiKey, modelID)
-	defer cleanup()
-	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_openai_embedding_new(ca, cb)
-	})
+	return NewOpenAIEmbeddingWithBase(apiKey, modelID, "")
+}
+
+// NewOpenAIEmbeddingWithBase creates an OpenAI embedding model with a custom base URL.
+func NewOpenAIEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_openai_embedding_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_openai_embedding_new_with_base(ca, cb, cbase) },
+	)
+	if err != nil {
+		return nil, err
+	}
+	m := &EmbeddingModel{h: mh}
+	runtime.SetFinalizer(m, func(m *EmbeddingModel) { m.Close() })
+	return m, nil
+}
+
+// NewCohereEmbedding creates a Cohere embedding model (e.g. embed-english-v3.0).
+func NewCohereEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
+	return NewCohereEmbeddingWithBase(apiKey, modelID, "")
+}
+
+// NewCohereEmbeddingWithBase creates a Cohere embedding model with a custom base URL.
+func NewCohereEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_cohere_embedding_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_cohere_embedding_new_with_base(ca, cb, cbase) },
+	)
+	if err != nil {
+		return nil, err
+	}
+	m := &EmbeddingModel{h: mh}
+	runtime.SetFinalizer(m, func(m *EmbeddingModel) { m.Close() })
+	return m, nil
+}
+
+// NewGoogleEmbedding creates a Google embedding model (e.g. gemini-embedding-001).
+func NewGoogleEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
+	return NewGoogleEmbeddingWithBase(apiKey, modelID, "")
+}
+
+// NewGoogleEmbeddingWithBase creates a Google embedding model with a custom base URL.
+func NewGoogleEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_google_embedding_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_google_embedding_new_with_base(ca, cb, cbase) },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -239,12 +319,17 @@ func ParseSpeechResult(jsonStr string) (*SpeechResult, error) {
 	return &r, nil
 }
 
+// NewOpenAISpeech creates an OpenAI speech (TTS) model.
 func NewOpenAISpeech(apiKey, modelID string) (*SpeechModel, error) {
-	ca, cb, cleanup := cstringPair(apiKey, modelID)
-	defer cleanup()
-	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_openai_speech_new(ca, cb)
-	})
+	return NewOpenAISpeechWithBase(apiKey, modelID, "")
+}
+
+// NewOpenAISpeechWithBase creates an OpenAI speech model with a custom base URL.
+func NewOpenAISpeechWithBase(apiKey, modelID, baseURL string) (*SpeechModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_openai_speech_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_openai_speech_new_with_base(ca, cb, cbase) },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -286,12 +371,36 @@ func ParseImageResult(jsonStr string) (*ImageResult, error) {
 	return &r, nil
 }
 
+// NewOpenAIImage creates an OpenAI image model (e.g. dall-e-3).
 func NewOpenAIImage(apiKey, modelID string) (*ImageModel, error) {
-	ca, cb, cleanup := cstringPair(apiKey, modelID)
-	defer cleanup()
-	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_openai_image_new(ca, cb)
-	})
+	return NewOpenAIImageWithBase(apiKey, modelID, "")
+}
+
+// NewOpenAIImageWithBase creates an OpenAI image model with a custom base URL.
+func NewOpenAIImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_openai_image_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_openai_image_new_with_base(ca, cb, cbase) },
+	)
+	if err != nil {
+		return nil, err
+	}
+	m := &ImageModel{h: mh}
+	runtime.SetFinalizer(m, func(m *ImageModel) { m.Close() })
+	return m, nil
+}
+
+// NewGoogleImage creates a Google image model (e.g. gemini-2.5-flash-image).
+func NewGoogleImage(apiKey, modelID string) (*ImageModel, error) {
+	return NewGoogleImageWithBase(apiKey, modelID, "")
+}
+
+// NewGoogleImageWithBase creates a Google image model with a custom base URL.
+func NewGoogleImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_google_image_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_google_image_new_with_base(ca, cb, cbase) },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -354,12 +463,17 @@ func ParseTranscriptionResult(jsonStr string) (*TranscriptionResult, error) {
 	return &r, nil
 }
 
+// NewOpenAITranscription creates an OpenAI transcription (STT) model.
 func NewOpenAITranscription(apiKey, modelID string) (*TranscriptionModel, error) {
-	ca, cb, cleanup := cstringPair(apiKey, modelID)
-	defer cleanup()
-	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_openai_transcription_new(ca, cb)
-	})
+	return NewOpenAITranscriptionWithBase(apiKey, modelID, "")
+}
+
+// NewOpenAITranscriptionWithBase creates an OpenAI transcription model with a custom base URL.
+func NewOpenAITranscriptionWithBase(apiKey, modelID, baseURL string) (*TranscriptionModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_openai_transcription_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_openai_transcription_new_with_base(ca, cb, cbase) },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -422,12 +536,17 @@ func ParseUploadFileResult(jsonStr string) (*UploadFileResult, error) {
 	return &r, nil
 }
 
+// NewOpenAIFiles creates an OpenAI files manager.
 func NewOpenAIFiles(apiKey string) (*Files, error) {
-	ca := C.CString(apiKey)
-	defer C.free(unsafe.Pointer(ca))
-	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_openai_files_new(ca)
-	})
+	return NewOpenAIFilesWithBase(apiKey, "")
+}
+
+// NewOpenAIFilesWithBase creates an OpenAI files manager with a custom base URL.
+func NewOpenAIFilesWithBase(apiKey, baseURL string) (*Files, error) {
+	mh, err := newMultimodalModelFiles(apiKey, baseURL,
+		func(ca *C.char) C.uint64_t { return C.aimux_openai_files_new(ca) },
+		func(ca, cbase *C.char) C.uint64_t { return C.aimux_openai_files_new_with_base(ca, cbase) },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -470,12 +589,17 @@ func ParseRerankingResult(jsonStr string) (*RerankingResult, error) {
 	return &r, nil
 }
 
+// NewCohereReranking creates a Cohere reranking model (e.g. rerank-v3.0).
 func NewCohereReranking(apiKey, modelID string) (*RerankingModel, error) {
-	ca, cb, cleanup := cstringPair(apiKey, modelID)
-	defer cleanup()
-	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_cohere_reranking_new(ca, cb)
-	})
+	return NewCohereRerankingWithBase(apiKey, modelID, "")
+}
+
+// NewCohereRerankingWithBase creates a Cohere reranking model with a custom base URL.
+func NewCohereRerankingWithBase(apiKey, modelID, baseURL string) (*RerankingModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_cohere_reranking_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_cohere_reranking_new_with_base(ca, cb, cbase) },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -517,12 +641,17 @@ func ParseVideoResult(jsonStr string) (*VideoResult, error) {
 	return &r, nil
 }
 
+// NewGoogleVideo creates a Google video model (e.g. veo-3.0).
 func NewGoogleVideo(apiKey, modelID string) (*VideoModel, error) {
-	ca, cb, cleanup := cstringPair(apiKey, modelID)
-	defer cleanup()
-	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_google_video_new(ca, cb)
-	})
+	return NewGoogleVideoWithBase(apiKey, modelID, "")
+}
+
+// NewGoogleVideoWithBase creates a Google video model with a custom base URL.
+func NewGoogleVideoWithBase(apiKey, modelID, baseURL string) (*VideoModel, error) {
+	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
+		func(ca, cb *C.char) C.uint64_t { return C.aimux_google_video_new(ca, cb) },
+		func(ca, cb, cbase *C.char) C.uint64_t { return C.aimux_google_video_new_with_base(ca, cb, cbase) },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -564,11 +693,32 @@ func ParseSearchResult(jsonStr string) (*SearchResult, error) {
 	return &r, nil
 }
 
+// NewTavilySearch creates a Tavily search model. Tavily uses a fixed endpoint,
+// so no model ID is needed.
 func NewTavilySearch(apiKey string) (*SearchModel, error) {
+	return NewTavilySearchWithBase(apiKey, "")
+}
+
+// NewTavilySearchWithBase creates a Tavily search model with a custom base URL
+// (for testing against a mock server).
+func NewTavilySearchWithBase(apiKey, baseURL string) (*SearchModel, error) {
 	ca := C.CString(apiKey)
 	defer C.free(unsafe.Pointer(ca))
+	if baseURL == "" {
+		mh, err := newMultimodalHandle(func() C.uint64_t {
+			return C.aimux_tavily_search_new(ca, nil)
+		})
+		if err != nil {
+			return nil, err
+		}
+		m := &SearchModel{h: mh}
+		runtime.SetFinalizer(m, func(m *SearchModel) { m.Close() })
+		return m, nil
+	}
+	cbase := C.CString(baseURL)
+	defer C.free(unsafe.Pointer(cbase))
 	mh, err := newMultimodalHandle(func() C.uint64_t {
-		return C.aimux_tavily_search_new(ca, nil)
+		return C.aimux_tavily_search_new_with_base(ca, nil, cbase)
 	})
 	if err != nil {
 		return nil, err

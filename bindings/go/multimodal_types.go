@@ -40,7 +40,7 @@ type EmbeddingResult struct {
 // EmbeddingCallOptions is the options for an embedding call.
 type EmbeddingCallOptions struct {
 	Values          []string          `json:"values,omitempty"`
-	ProviderOptions json.RawMessage   `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -82,7 +82,7 @@ type SpeechCallOptions struct {
 	Instructions    *string          `json:"instructions,omitempty"`
 	Speed           *float64         `json:"speed,omitempty"`
 	Language        *string          `json:"language,omitempty"`
-	ProviderOptions json.RawMessage  `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -124,7 +124,7 @@ type ImageCallOptions struct {
 	Seed             *uint64            `json:"seed,omitempty"`
 	Files            []json.RawMessage  `json:"files,omitempty"`
 	Mask             json.RawMessage    `json:"mask,omitempty"`
-	ProviderOptions  json.RawMessage    `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
 	Headers          map[string]string  `json:"headers,omitempty"`
 }
 
@@ -166,7 +166,7 @@ type TranscriptionResult struct {
 type TranscriptionCallOptions struct {
 	Audio           json.RawMessage   `json:"audio"`
 	MediaType       string            `json:"media_type"`
-	ProviderOptions json.RawMessage   `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -198,7 +198,7 @@ type RerankingCallOptions struct {
 	Documents       json.RawMessage   `json:"documents"`
 	Query           string            `json:"query"`
 	TopN            *int              `json:"top_n,omitempty"`
-	ProviderOptions json.RawMessage   `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -252,7 +252,7 @@ type VideoCallOptions struct {
 	AspectRatio     *string           `json:"aspect_ratio,omitempty"`
 	Resolution      *string           `json:"resolution,omitempty"`
 	Seed            *uint64           `json:"seed,omitempty"`
-	ProviderOptions json.RawMessage   `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -291,7 +291,7 @@ type SearchCallOptions struct {
 	TimeRange          *string           `json:"time_range,omitempty"`
 	IncludeDomains     []string          `json:"include_domains,omitempty"`
 	ExcludeDomains     []string          `json:"exclude_domains,omitempty"`
-	ProviderOptions    json.RawMessage   `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
 	Headers            map[string]string `json:"headers,omitempty"`
 }
 
@@ -311,5 +311,22 @@ type UploadFileCallOptions struct {
 	Data            json.RawMessage   `json:"data"`
 	MediaType       string            `json:"media_type"`
 	Filename        *string           `json:"filename,omitempty"`
-	ProviderOptions json.RawMessage   `json:"provider_options,omitempty"`
+	ProviderOptions jsonObj `json:"provider_options"`
+}
+
+// jsonObj is a json.RawMessage that serializes as {} when nil (instead of null).
+// This is needed because Rust's SharedProviderOptions (HashMap) requires a map,
+// not null, in the JSON wire format.
+type jsonObj json.RawMessage
+
+func (o jsonObj) MarshalJSON() ([]byte, error) {
+	if o == nil {
+		return []byte("{}"), nil
+	}
+	return []byte(o), nil
+}
+
+func (o *jsonObj) UnmarshalJSON(data []byte) error {
+	*o = jsonObj(append([]byte(nil), data...))
+	return nil
 }

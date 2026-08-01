@@ -137,7 +137,9 @@ void aimux_free_string(char *ptr);
 uint64_t aimux_openai_embedding_new(const char *api_key, const char *model_id);
 uint64_t aimux_openai_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 uint64_t aimux_cohere_embedding_new(const char *api_key, const char *model_id);
+uint64_t aimux_cohere_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 uint64_t aimux_google_embedding_new(const char *api_key, const char *model_id);
+uint64_t aimux_google_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_embed(uint64_t handle, const char *values_json, const char *opts_json);
 
 /* ── Speech (TTS) ────────────────────────────────────────────────────────── */
@@ -151,6 +153,7 @@ char *aimux_speech_generate(uint64_t handle, const char *opts_json);
 uint64_t aimux_openai_image_new(const char *api_key, const char *model_id);
 uint64_t aimux_openai_image_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 uint64_t aimux_google_image_new(const char *api_key, const char *model_id);
+uint64_t aimux_google_image_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_image_generate(uint64_t handle, const char *opts_json);
 
 /* ── Transcription (STT, non-streaming) ──────────────────────────────────── */

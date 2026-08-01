@@ -13,7 +13,7 @@ use aimux_core::transcription_model::{
 };
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingModel as RerankingModelTrait};
 use aimux_core::video_model::{VideoCallOptions, VideoModel as VideoModelTrait};
-use aimux_core::search_model::{SearchCallOptions, SearchModel as SearchModelTrait};
+use aimux_core::search_model::SearchModel as SearchModelTrait;
 use aimux_core::files_model::{Files as FilesTrait, UploadFileCallOptions};
 use aimux_core::shared::FileBytes;
 use napi::bindgen_prelude::*;
@@ -474,6 +474,24 @@ pub async fn google_video(
     let provider = GoogleProvider::new(config);
     let model = provider.video(&model_id);
     Ok(VideoModel {
+        inner: Arc::new(model),
+    })
+}
+
+/// Create a Tavily search model instance.
+#[napi]
+pub async fn tavily_search(
+    api_key: String,
+    base_url: Option<String>,
+) -> Result<SearchModel> {
+    use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
+    let mut config = TavilyConfig::new(api_key);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = TavilyProvider::new(config);
+    let model = provider.search_model();
+    Ok(SearchModel {
         inner: Arc::new(model),
     })
 }

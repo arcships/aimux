@@ -723,3 +723,4 @@ module.exports.openaiFiles = nativeBinding.openaiFiles
 module.exports.openaiImage = nativeBinding.openaiImage
 module.exports.openaiSpeech = nativeBinding.openaiSpeech
 module.exports.openaiTranscription = nativeBinding.openaiTranscription
+module.exports.tavilySearch = nativeBinding.tavilySearch

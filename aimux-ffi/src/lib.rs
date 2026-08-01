@@ -570,6 +570,23 @@ pub extern "C" fn aimux_cohere_embedding_new(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn aimux_cohere_embedding_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    let mut config = CohereConfig::new(api_key);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    let model = CohereProvider::new(config).embedding_model(&model_id);
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
@@ -578,6 +595,23 @@ pub extern "C" fn aimux_google_embedding_new(
         return 0;
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_google_embedding_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    let mut config = GoogleConfig::new(api_key);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    let model = GoogleProvider::new(config).embedding_model(&model_id);
     intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
@@ -695,6 +729,23 @@ pub extern "C" fn aimux_google_image_new(api_key: *const c_char, model_id: *cons
         return 0;
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
+    intern_handle(ModelHandle::Image(Arc::new(model)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_google_image_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    let mut config = GoogleConfig::new(api_key);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    let model = GoogleProvider::new(config).image(&model_id);
     intern_handle(ModelHandle::Image(Arc::new(model)))
 }
 
