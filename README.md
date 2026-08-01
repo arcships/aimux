@@ -1,5 +1,9 @@
 # aimux
 
+<p align="center">
+  <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
+</p>
+
 > **A unified LLM access layer written in Rust. One API for 172+ AI providers.**
 
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
