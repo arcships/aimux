@@ -28,8 +28,31 @@ input: JsonValue,
 provider_options?: JsonValue | null, } | { "type": "tool_result", tool_call_id: string, 
 /**
  * The tool's output (usually a JSON value or plain text).
+ *
+ * Accepts the legacy `output` field name (used by the Vercel AI SDK
+ * and the 0.1.0 TypeScript bindings) as an alias during deserialization,
+ * so multi-part tool messages constructed either way round-trip
+ * correctly. Serialization always emits `result`.
  */
-output: JsonValue, 
+result: JsonValue, 
+/**
+ * The name of the tool that produced this result (optional on the
+ * user-input side; providers that need it can look it up from the
+ * preceding tool call).
+ */
+tool_name?: string | null, 
+/**
+ * Whether the result is an error or error message.
+ */
+is_error?: boolean | null, 
+/**
+ * Whether the result is preliminary (replaces prior, e.g. image previews).
+ */
+preliminary?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, 
 /**
  * Provider-specific options for this part (e.g.
  * `anthropic.cacheControl`).

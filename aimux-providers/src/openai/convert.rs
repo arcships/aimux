@@ -681,6 +681,15 @@ fn convert_message_to_openai(
             .collect::<Vec<_>>()
             .join("");
 
+        // Reasoning / thinking content. DeepSeek V4 thinking mode (and other
+        // OpenAI-compatible reasoning models such as xAI) require prior
+        // assistant `reasoning_content` to be replayed on subsequent turns,
+        // including tool-call turns. Mirrors the Vercel AI SDK
+        // `openai-compatible` assistant conversion, which emits
+        // `reasoning_content` whenever a reasoning part is present. Groq uses
+        // the `reasoning` field name and is handled in its own branch above.
+        let reasoning: String = collect_reasoning(&msg.content);
+
         let tool_calls_json: Vec<Value> = msg
             .content
             .iter()
@@ -715,15 +724,40 @@ fn convert_message_to_openai(
             Value::String(text)
         };
 
-        return Ok(vec![json!({
+        let mut msg_obj = json!({
             "role": "assistant",
             "content": content,
             "tool_calls": tool_calls_json,
-        })]);
+        });
+        if !reasoning.is_empty() {
+            msg_obj["reasoning_content"] = json!(reasoning);
+        }
+        return Ok(vec![msg_obj]);
     }
 
-    // Default: when every part is text (without providerOptions), collapse to string.
-    let all_plain_text = msg.content.iter().all(|p| {
+    // Default path (non-Groq, no tool calls). Assistant reasoning / thinking
+    // parts are lifted to a top-level `reasoning_content` string (DeepSeek V4
+    // thinking mode and other OpenAI-compatible reasoning models require it to
+    // be replayed on later turns); they are never valid OpenAI content parts,
+    // so they are excluded from the content shape below. Non-assistant roles do
+    // not carry reasoning, but the filter is harmless.
+    let reasoning = if msg.role == Role::Assistant {
+        collect_reasoning(&msg.content)
+    } else {
+        String::new()
+    };
+    let has_reasoning = !reasoning.is_empty();
+
+    // Consider only non-reasoning parts for the content shape. When they are
+    // all plain text (without providerOptions), collapse to a string — matching
+    // the Vercel AI SDK `openai-compatible` assistant conversion
+    // (`content: toolCalls.length > 0 ? text || null : text`).
+    let content_parts: Vec<&ContentPart> = msg
+        .content
+        .iter()
+        .filter(|p| !matches!(p, ContentPart::Reasoning { .. }))
+        .collect();
+    let all_plain_text = content_parts.iter().all(|p| {
         matches!(
             p,
             ContentPart::Text {
@@ -733,9 +767,8 @@ fn convert_message_to_openai(
         )
     });
 
-    if all_plain_text {
-        let text: String = msg
-            .content
+    let mut msg_obj = if all_plain_text {
+        let text: String = content_parts
             .iter()
             .filter_map(|p| match p {
                 ContentPart::Text { text, .. } => Some(text.as_str()),
@@ -743,16 +776,35 @@ fn convert_message_to_openai(
             })
             .collect::<Vec<_>>()
             .join("");
-        Ok(vec![json!({ "role": role, "content": text })])
+        json!({ "role": role, "content": text })
     } else {
-        let parts: Vec<Value> = msg
-            .content
+        let parts: Vec<Value> = content_parts
             .iter()
             .enumerate()
             .map(|(i, part)| convert_part_to_openai(part, i))
             .collect::<Result<_, _>>()?;
-        Ok(vec![json!({ "role": role, "content": parts })])
+        json!({ "role": role, "content": parts })
+    };
+    if has_reasoning {
+        msg_obj["reasoning_content"] = json!(reasoning);
     }
+    Ok(vec![msg_obj])
+}
+
+/// Collect and concatenate the `text` of all `ContentPart::Reasoning` parts in
+/// `content`, mirroring the Vercel AI SDK assistant-message conversion. Used to
+/// build the OpenAI-compatible top-level `reasoning_content` / `reasoning`
+/// field that thinking models (DeepSeek V4, xAI, Groq) require to be replayed
+/// across turns.
+fn collect_reasoning(content: &[ContentPart]) -> String {
+    content
+        .iter()
+        .filter_map(|p| match p {
+            ContentPart::Reasoning { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 /// Convert a system message, respecting promptCacheBreakpoint.

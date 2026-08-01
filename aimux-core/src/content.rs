@@ -109,6 +109,12 @@ pub enum ContentPart {
     ToolResult {
         tool_call_id: String,
         /// The tool's output (usually a JSON value or plain text).
+        ///
+        /// Accepts the legacy `output` field name (used by the Vercel AI SDK
+        /// and the 0.1.0 TypeScript bindings) as an alias during deserialization,
+        /// so multi-part tool messages constructed either way round-trip
+        /// correctly. Serialization always emits `result`.
+        #[serde(alias = "output")]
         result: Value,
         /// The name of the tool that produced this result (optional on the
         /// user-input side; providers that need it can look it up from the

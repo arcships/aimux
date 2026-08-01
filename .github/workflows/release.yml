@@ -49,10 +49,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # Idempotent publish: skips a crate whose version already exists on
       # crates.io, so re-running the workflow after a partial failure is safe.
+      # The version is read from the workspace Cargo.toml so this never goes
+      # stale across releases.
       - name: Publish aimux-stream
         run: |
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-stream/0.1.0" > /dev/null 2>&1; then
-            echo "aimux-stream@0.1.0 already published, skipping"
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-stream/${VERSION}" > /dev/null 2>&1; then
+            echo "aimux-stream@${VERSION} already published, skipping"
           else
             cargo publish -p aimux-stream
           fi
@@ -61,8 +64,9 @@ jobs:
       - name: Publish aimux-core
         run: |
           sleep 30
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-core/0.1.0" > /dev/null 2>&1; then
-            echo "aimux-core@0.1.0 already published, skipping"
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-core/${VERSION}" > /dev/null 2>&1; then
+            echo "aimux-core@${VERSION} already published, skipping"
           else
             cargo publish -p aimux-core
           fi
@@ -71,8 +75,9 @@ jobs:
       - name: Publish aimux-provider-utils
         run: |
           sleep 30
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-provider-utils/0.1.0" > /dev/null 2>&1; then
-            echo "aimux-provider-utils@0.1.0 already published, skipping"
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-provider-utils/${VERSION}" > /dev/null 2>&1; then
+            echo "aimux-provider-utils@${VERSION} already published, skipping"
           else
             cargo publish -p aimux-provider-utils
           fi
@@ -81,8 +86,9 @@ jobs:
       - name: Publish aimux-providers
         run: |
           sleep 30
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-providers/0.1.0" > /dev/null 2>&1; then
-            echo "aimux-providers@0.1.0 already published, skipping"
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-providers/${VERSION}" > /dev/null 2>&1; then
+            echo "aimux-providers@${VERSION} already published, skipping"
           else
             cargo publish -p aimux-providers
           fi
@@ -91,8 +97,9 @@ jobs:
       - name: Publish aimux-ffi
         run: |
           sleep 30
-          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-ffi/0.1.0" > /dev/null 2>&1; then
-            echo "aimux-ffi@0.1.0 already published, skipping"
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-ffi/${VERSION}" > /dev/null 2>&1; then
+            echo "aimux-ffi@${VERSION} already published, skipping"
           else
             cargo publish -p aimux-ffi
           fi

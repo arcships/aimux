@@ -28,6 +28,11 @@ input: JsonValue,
 provider_options?: JsonValue | null, } | { "type": "tool_result", tool_call_id: string, 
 /**
  * The tool's output (usually a JSON value or plain text).
+ *
+ * Accepts the legacy `output` field name (used by the Vercel AI SDK
+ * and the 0.1.0 TypeScript bindings) as an alias during deserialization,
+ * so multi-part tool messages constructed either way round-trip
+ * correctly. Serialization always emits `result`.
  */
 result: JsonValue, 
 /**

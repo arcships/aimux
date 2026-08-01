@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-01
+
+### Fixed
+- **`tool`-role `ContentPart[]` with the legacy `output` field is now accepted.**
+  `ContentPart::ToolResult` renamed `output` → `result` in 0.1.1, but
+  deserialization only accepted `result`, so multi-part `tool` messages built
+  with `output` (the Vercel AI SDK / 0.1.0 TypeScript shape) were rejected with
+  "data did not match any variant of untagged enum ModelPrompt". `result` now
+  accepts `output` as a serde alias, so both shapes round-trip and
+  `tool_call_id` reaches the OpenAI wire format. Serialization still emits
+  `result`.
+- **`reasoning` ContentPart is now replayed as `reasoning_content` on the
+  request side.** Thinking models (e.g. DeepSeek `deepseek-v4-flash`) require
+  prior assistant `reasoning_content` to be passed back on later turns,
+  including tool-call turns; the OpenAI message converter previously dropped
+  `ContentPart::Reasoning` parts, producing "The `reasoning_content` in the
+  thinking mode must be passed back to the API." Reasoning parts are now lifted
+  to a top-level `reasoning_content` string on assistant messages (mirroring
+  the Vercel AI SDK `openai-compatible` assistant conversion), for both the
+  tool-call and text paths. Groq's `reasoning` field name is unchanged.
+- Regenerated the stale TypeScript bindings (`ToolResult.ts`, `ContentPart.ts`,
+  `GenerateContent.ts`, `StreamPart.ts`, `ToolCall.ts`, `Usage.ts`) so the npm
+  copy matches the Rust source of truth (`result` field, added fields).
+- Made the `release.yml` crates.io idempotency checks read the version
+  dynamically from `Cargo.toml` instead of a hardcoded `0.1.0` (which would
+  have skipped the 0.1.2 publish).
+
 ### Changed
 - Rewrote the top-level `README.md` in English with badges, architecture
   overview, and curated quickstart.
@@ -15,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved internal research, audit, and handoff notes into `docs/internal/`.
 - Removed committed Windows build artifacts (`.exe`/`.pdb`) and gitignored them.
 
-### Fixed
+### Fixed (prior)
 - Corrected the `repository` URL in `Cargo.toml` (`yourusername` → `arcships`).
 - Fixed the CI workflow trigger branch (`main` → `master`) so CI now runs on
   the actual default branch.

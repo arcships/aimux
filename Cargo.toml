@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/arcships/aimux"
@@ -67,10 +67,10 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 
 # Internal crates
-aimux-core = { path = "aimux-core", version = "0.1.0" }
-aimux-providers = { path = "aimux-providers", version = "0.1.0" }
-aimux-stream = { path = "aimux-stream", version = "0.1.0" }
-aimux-provider-utils = { path = "aimux-provider-utils", version = "0.1.0" }
+aimux-core = { path = "aimux-core", version = "0.1.2" }
+aimux-providers = { path = "aimux-providers", version = "0.1.2" }
+aimux-stream = { path = "aimux-stream", version = "0.1.2" }
+aimux-provider-utils = { path = "aimux-provider-utils", version = "0.1.2" }
 
 # HTTP date parsing (Retry-After header)
 httpdate = "1"
