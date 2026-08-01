@@ -33,3 +33,4 @@ aimux-core/bindings/bindings/
 # Windows build artifacts (never commit)
 *.exe
 *.pdb
+dist/

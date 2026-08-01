@@ -2,8 +2,8 @@
 //
 // Run: OPENAI_API_KEY=sk-... node --experimental-strip-types examples/stream-text.ts
 
-import { openai, streamText } from '../index.ts'
-import type { StreamPart } from '../index.ts'
+import { openai, streamText } from '../src/index.ts'
+import type { StreamPart } from '../src/index.ts'
 
 async function main() {
   const apiKey = process.env.OPENAI_API_KEY

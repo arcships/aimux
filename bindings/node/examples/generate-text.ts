@@ -2,7 +2,7 @@
 //
 // Run: OPENAI_API_KEY=sk-... node --experimental-strip-types examples/generate-text.ts
 
-import { openai, generateText } from '../index.ts'
+import { openai, generateText } from '../src/index.ts'
 
 async function main() {
   const apiKey = process.env.OPENAI_API_KEY

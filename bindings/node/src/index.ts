@@ -6,34 +6,38 @@
 // Users would otherwise have to JSON.stringify every input and JSON.parse every
 // output, with no static types. This wrapper erases that JSON boundary: inputs
 // and outputs are typed objects, using the ts-rs generated types from
-// `aimux-core/bindings` (the single source of truth — NOT a local copy).
+// `./types.ts` (synced from `aimux-core/bindings` — single source of truth in
+// the Rust core, local copy packaged with the npm tarball).
 //
 // The raw napi API (`index.js` / `index.d.ts`, auto-generated) is untouched.
 // This is purely an extra TypeScript layer on top.
 
 import type { Model } from '../index.js'
 
-// Canonical ts-rs generated types. These are type-only imports, so they are
-// fully erased at runtime (the wrapper only touches the raw `../index.js`).
-import type { GenerateTextOptions } from '../../aimux-core/bindings/GenerateTextOptions.ts'
-import type { GenerateTextResult } from '../../aimux-core/bindings/GenerateTextResult.ts'
-import type { StreamPart } from '../../aimux-core/bindings/StreamPart.ts'
-import type { ModelMessage } from '../../aimux-core/bindings/ModelMessage.ts'
-import type { Tool } from '../../aimux-core/bindings/Tool.ts'
-import type { ToolChoice } from '../../aimux-core/bindings/ToolChoice.ts'
-import type { ToolCall } from '../../aimux-core/bindings/ToolCall.ts'
-import type { ToolResult } from '../../aimux-core/bindings/ToolResult.ts'
-import type { Usage } from '../../aimux-core/bindings/Usage.ts'
-import type { FinishReason } from '../../aimux-core/bindings/FinishReason.ts'
-import type { Warning } from '../../aimux-core/bindings/Warning.ts'
-import type { Role } from '../../aimux-core/bindings/Role.ts'
-import type { MessageContent } from '../../aimux-core/bindings/MessageContent.ts'
-import type { ContentPart } from '../../aimux-core/bindings/ContentPart.ts'
-import type { ResponseFormat } from '../../aimux-core/bindings/ResponseFormat.ts'
-import type { ReasoningEffort } from '../../aimux-core/bindings/ReasoningEffort.ts'
-import type { AiMuxError } from '../../aimux-core/bindings/AiMuxError.ts'
-import type { GenerateResult } from '../../aimux-core/bindings/GenerateResult.ts'
-import type { FunctionTool } from '../../aimux-core/bindings/FunctionTool.ts'
+// Canonical ts-rs generated types (local copy, packaged with the npm tarball).
+// These are type-only imports, so they are fully erased at runtime (the
+// wrapper only touches the raw `../index.js`).
+import type {
+  GenerateTextOptions,
+  GenerateTextResult,
+  StreamPart,
+  ModelMessage,
+  Tool,
+  ToolChoice,
+  ToolCall,
+  ToolResult,
+  Usage,
+  FinishReason,
+  Warning,
+  Role,
+  MessageContent,
+  ContentPart,
+  ResponseFormat,
+  ReasoningEffort,
+  AiMuxError,
+  GenerateResult,
+  FunctionTool,
+} from './types'
 
 // Re-export the raw napi constructors/factories so consumers can do everything
 // from a single import: `import { openai, generateText } from 'aimux'`.

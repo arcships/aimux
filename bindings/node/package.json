@@ -1,13 +1,13 @@
 {
   "name": "@arcships/aimux",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unified LLM service layer — one API for 172+ AI providers (Rust core, Node.js binding)",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
     "index.js",
     "index.d.ts",
-    "src/index.ts",
+    "dist/",
     "*.node"
   ],
   "os": [
@@ -24,8 +24,8 @@
   },
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./raw": {
       "types": "./index.d.ts",
@@ -42,12 +42,14 @@
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
+    "build:typed": "tsc -p tsconfig.json",
     "test": "ava",
-    "prepublishOnly": "napi prepublish -t npm"
+    "prepublishOnly": "npm run build:typed && napi prepublish -t npm"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.8.0",
-    "ava": "^6.0.0"
+    "ava": "^6.0.0",
+    "typescript": "^5.5.0"
   },
   "engines": {
     "node": ">= 18"
