@@ -19,4 +19,12 @@ reasoning: ReasoningEffort | null,
 /**
  * System instructions prepended to the prompt.
  */
-instructions: string | null, };
+instructions: string | null, 
+/**
+ * Per-call request body overrides (deep-merged). See RFC-0017.
+ */
+body_overrides: JsonValue | null, 
+/**
+ * Per-call retry count override. `None` = provider default, `Some(0)` = disable.
+ */
+max_retries: number | null, };

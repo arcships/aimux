@@ -31,7 +31,7 @@ pub enum ResponseFormat {
 /// This is the **provider-facing** options struct. Users interact with
 /// `GenerateTextOptions` (user-facing) which is converted to `CallOptions`
 /// by the `generate_text` / `stream_text` functions.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CallOptions {
     /// The standardized prompt (message array). Required.
@@ -79,6 +79,15 @@ pub struct CallOptions {
     /// Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
     /// Anthropic `thinking` config.
     pub reasoning: Option<ReasoningEffort>,
+
+    /// Per-call request body overrides. Deep-merged into the provider-built
+    /// request body (after any built-in vendor override) before sending.
+    /// `null` values delete the corresponding key. See RFC-0017.
+    pub body_overrides: Option<Value>,
+
+    /// Per-call retry count override. `None` uses the provider's configured
+    /// `RetryConfig.max_retries`. `Some(0)` disables retries.
+    pub max_retries: Option<u32>,
 }
 
 impl CallOptions {
@@ -106,6 +115,8 @@ impl CallOptions {
             headers: None,
             provider_options: None,
             reasoning: None,
+            body_overrides: None,
+            max_retries: None,
         }
     }
 }

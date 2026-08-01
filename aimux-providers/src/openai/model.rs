@@ -51,6 +51,16 @@ impl OpenAIModel {
         if let Some(ref org) = self.config.org_id {
             headers.insert("OpenAI-Organization".to_string(), org.clone());
         }
+        if let Some(ref project) = self.config.project {
+            headers.insert("OpenAI-Project".to_string(), project.clone());
+        }
+        // Provider-level headers (from OpenAIConfig.with_headers).
+        if let Some(ref config_headers) = self.config.headers {
+            for (k, v) in config_headers {
+                headers.insert(k.clone(), v.clone());
+            }
+        }
+        // Per-call headers (from CallOptions.headers), overriding provider-level.
         if let Some(extra) = extra {
             for (k, v) in extra {
                 headers.insert(k.clone(), v.clone());
@@ -61,6 +71,43 @@ impl OpenAIModel {
 
     fn endpoint(&self) -> String {
         format!("{}/chat/completions", self.config.base_url)
+    }
+}
+
+/// Resolve the effective `RetryConfig`: if the caller passed a per-call
+/// `max_retries` override, clone the provider config and substitute it;
+/// otherwise return the provider config as-is (RFC-0017).
+fn resolve_retry_config(provider: &RetryConfig, max_retries_override: Option<u32>) -> RetryConfig {
+    match max_retries_override {
+        Some(n) => RetryConfig {
+            max_retries: n,
+            ..*provider
+        },
+        None => *provider,
+    }
+}
+
+/// Merge provider-level `body_overrides` into the per-call options (RFC-0017).
+///
+/// Provider-level overrides are applied first (lower priority); per-call
+/// `body_overrides` from `CallOptions` are merged on top. If neither is
+/// present, the options are returned unchanged (cheap clone).
+fn merge_body_overrides(options: &CallOptions, provider_overrides: &Option<Value>) -> CallOptions {
+    match (provider_overrides, &options.body_overrides) {
+        (Some(provider), Some(call)) => {
+            // Merge: provider first, then call (call wins).
+            let mut merged = provider.clone();
+            crate::openai::convert::deep_merge_json(&mut merged, call);
+            let mut opts = options.clone();
+            opts.body_overrides = Some(merged);
+            opts
+        }
+        (Some(provider), None) => {
+            let mut opts = options.clone();
+            opts.body_overrides = Some(provider.clone());
+            opts
+        }
+        (None, _) => options.clone(),
     }
 }
 
@@ -147,28 +194,32 @@ impl LanguageModel for OpenAIModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let options = merge_body_overrides(options, &self.config.body_overrides);
         execute_generate(
             &self.endpoint(),
             &headers,
             &self.model_id,
-            options,
+            &options,
             &self.config.provider,
             &self.config.profile,
-            &self.config.retry_config,
+            &retry_config,
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let options = merge_body_overrides(options, &self.config.body_overrides);
         execute_stream(
             &self.endpoint(),
             &headers,
             &self.model_id,
-            options,
+            &options,
             &self.config.provider,
             &self.config.profile,
-            &self.config.retry_config,
+            &retry_config,
         )
         .await
     }

@@ -160,21 +160,85 @@ impl AsyncGenerator for StreamTextGenerator {
 // Provider constructors — factory functions exposed to JS.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Optional provider configuration accepted by factory functions.
+///
+/// Passed as the 3rd argument to `openai()` / `anthropic()` / `deepseek()`.
+/// For backward compatibility a bare string is still accepted (treated as
+/// `baseUrl`). See RFC-0017.
+#[napi(object)]
+pub struct ProviderConfig {
+    /// Base URL for API calls (e.g. a relay/proxy endpoint).
+    pub base_url: Option<String>,
+    /// Extra HTTP headers merged into every request, as a JSON object string
+    /// (e.g. `'{"X-Custom":"value"}'`).
+    pub headers: Option<String>,
+    /// OpenAI organization ID (sent via `OpenAI-Organization` header).
+    pub organization: Option<String>,
+    /// OpenAI project ID (sent via `OpenAI-Project` header).
+    pub project: Option<String>,
+    /// Override the provider's retry count. `0` disables retries.
+    pub max_retries: Option<u32>,
+    /// Provider-level request body overrides as a JSON string (deep-merged
+    /// into every request). Per-call `bodyOverrides` in GenerateTextOptions
+    /// takes precedence. Pass a JSON object string, e.g.
+    /// `'{"enable_thinking": false}'`.
+    pub body_overrides: Option<String>,
+}
+
+/// Convert a ProviderConfig (from JS) into OpenAIConfig builder steps.
+fn apply_provider_config_openai(
+    mut config: aimux_providers::openai::OpenAIConfig,
+    cfg: &ProviderConfig,
+) -> aimux_providers::openai::OpenAIConfig {
+    if let Some(url) = &cfg.base_url {
+        config = config.with_base_url(url);
+    }
+    if let Some(ref json_str) = cfg.headers {
+        if let Ok(h) = serde_json::from_str::<std::collections::HashMap<String, String>>(json_str) {
+            config = config.with_headers(h);
+        }
+    }
+    if let Some(ref org) = cfg.organization {
+        config = config.with_org_id(org);
+    }
+    if let Some(ref proj) = cfg.project {
+        config = config.with_project(proj);
+    }
+    if let Some(max) = cfg.max_retries {
+        config = config.with_retry_config(aimux_provider_utils::RetryConfig {
+            max_retries: max,
+            ..aimux_provider_utils::RetryConfig::default()
+        });
+    }
+    if let Some(ref json_str) = cfg.body_overrides {
+        if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
+            config = config.with_body_overrides(overrides);
+        }
+    }
+    config
+}
+
 /// Create an OpenAI model instance.
 #[napi]
 pub async fn openai(
     api_key: String,
     model_id: String,
-    base_url: Option<String>,
+    config: Option<Either<String, ProviderConfig>>,
 ) -> Result<Model> {
     use aimux_core::provider::Provider;
     use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
+    let mut cfg = OpenAIConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            cfg = apply_provider_config_openai(cfg, &opts);
+        }
+        None => {}
     }
-    let provider = OpenAIProvider::new(config);
+    let provider = OpenAIProvider::new(cfg);
     let model = provider
         .language_model(&model_id)
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
@@ -188,16 +252,35 @@ pub async fn openai(
 pub async fn anthropic(
     api_key: String,
     model_id: String,
-    base_url: Option<String>,
+    config: Option<Either<String, ProviderConfig>>,
 ) -> Result<Model> {
     use aimux_core::provider::Provider;
     use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 
-    let mut config = AnthropicConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
+    let mut cfg = AnthropicConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+            if let Some(ref json_str) = opts.headers {
+                if let Ok(h) = serde_json::from_str::<std::collections::HashMap<String, String>>(json_str) {
+                    cfg = cfg.with_headers(h);
+                }
+            }
+            if let Some(max) = opts.max_retries {
+                cfg = cfg.with_retry_config(aimux_provider_utils::RetryConfig {
+                    max_retries: max,
+                    ..aimux_provider_utils::RetryConfig::default()
+                });
+            }
+        }
+        None => {}
     }
-    let provider = AnthropicProvider::new(config);
+    let provider = AnthropicProvider::new(cfg);
     let model = provider
         .language_model(&model_id)
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
@@ -211,16 +294,40 @@ pub async fn anthropic(
 pub async fn deepseek(
     api_key: String,
     model_id: String,
-    base_url: Option<String>,
+    config: Option<Either<String, ProviderConfig>>,
 ) -> Result<Model> {
     use aimux_core::provider::Provider;
     use aimux_providers::deepseek::{DeepSeekConfig, DeepSeekProvider};
 
-    let mut config = DeepSeekConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
+    let mut cfg = DeepSeekConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+            if let Some(ref json_str) = opts.headers {
+                if let Ok(h) = serde_json::from_str::<std::collections::HashMap<String, String>>(json_str) {
+                    cfg = cfg.with_headers(h);
+                }
+            }
+            if let Some(max) = opts.max_retries {
+                cfg = cfg.with_retry_config(aimux_provider_utils::RetryConfig {
+                    max_retries: max,
+                    ..aimux_provider_utils::RetryConfig::default()
+                });
+            }
+            if let Some(ref json_str) = opts.body_overrides {
+                if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    cfg = DeepSeekConfig(cfg.0.with_body_overrides(overrides));
+                }
+            }
+        }
+        None => {}
     }
-    let provider = DeepSeekProvider::new(config);
+    let provider = DeepSeekProvider::new(cfg);
     let model = provider
         .language_model(&model_id)
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
