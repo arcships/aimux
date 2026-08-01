@@ -110,15 +110,31 @@ jobs:
   node-build:
     name: Node build (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     if: github.event_name == 'push' || github.event.inputs.node == 'true'
     strategy:
       fail-fast: false
       matrix:
         settings:
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: aimux.win32-x64-msvc.node
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+            binary: aimux.win32-arm64-msvc.node
+          - host: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: aimux.darwin-x64.node
           - host: macos-latest
             target: aarch64-apple-darwin
+            binary: aimux.darwin-arm64.node
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: aimux.linux-x64-gnu.node
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            binary: aimux.linux-arm64-gnu.node
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -127,15 +143,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: Install dependencies
         working-directory: bindings/node
-        run: npm install
-      - name: Build
+        run: npm ci
+      - name: Build Linux (glibc 2.17 baseline)
+        if: contains(matrix.settings.target, 'unknown-linux-gnu')
         working-directory: bindings/node
         shell: bash
-        run: |
-          npx napi build --platform --release --target ${{ matrix.settings.target }}
+        env:
+          TARGET_CC: clang
+          TARGET_CXX: clang++
+        run: npx napi build --platform --release --target ${{ matrix.settings.target }} --use-napi-cross
+      - name: Build
+        if: ${{ !contains(matrix.settings.target, 'unknown-linux-gnu') }}
+        working-directory: bindings/node
+        shell: bash
+        run: npx napi build --platform --release --target ${{ matrix.settings.target }}
+      - name: Verify artifact
+        working-directory: bindings/node
+        shell: bash
+        run: test -f '${{ matrix.settings.binary }}'
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -152,27 +180,43 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
       - name: Install dependencies
         working-directory: bindings/node
-        run: npm install
+        run: npm ci
+      - name: Create platform packages
+        working-directory: bindings/node
+        run: npx napi create-npm-dirs
       - name: Download platform binaries
         uses: actions/download-artifact@v4
         with:
-          path: bindings/node
+          path: bindings/node/artifacts
           pattern: node-*
-          merge-multiple: true
-      - name: Verify binaries
+      - name: Collect and verify platform packages
         working-directory: bindings/node
-        run: ls -la *.node
-      - name: Publish (napi prepublish + npm)
-        working-directory: bindings/node
+        shell: bash
         run: |
-          npx napi prepublish -t npm
-          npm publish --provenance --access public
+          npx napi artifacts --output-dir artifacts --npm-dir npm
+          expected=(
+            npm/win32-x64-msvc/aimux.win32-x64-msvc.node
+            npm/win32-arm64-msvc/aimux.win32-arm64-msvc.node
+            npm/darwin-x64/aimux.darwin-x64.node
+            npm/darwin-arm64/aimux.darwin-arm64.node
+            npm/linux-x64-gnu/aimux.linux-x64-gnu.node
+            npm/linux-arm64-gnu/aimux.linux-arm64-gnu.node
+          )
+          for binary in "${expected[@]}"; do
+            test -f "$binary" || { echo "Missing $binary" >&2; exit 1; }
+          done
+          test "$(find npm -type f -name 'aimux.*.node' | wc -l | tr -d ' ')" = 6
+      - name: Publish
+        working-directory: bindings/node
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+          NPM_CONFIG_ACCESS: public
 
   # ── Python binding: build + publish platform wheels (OIDC trusted) ───────
   python-release:

@@ -25,18 +25,40 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace
 
-  # ── Node binding: build + test (main platforms) ─────────────────────────────
+  # ── Node binding: build all desktop targets, test on native hosts ───────────
   node-binding:
     name: Node binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.13'
     strategy:
       fail-fast: false
       matrix:
         settings:
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: aimux.win32-x64-msvc.node
+            test: true
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+            binary: aimux.win32-arm64-msvc.node
+            test: false
+          - host: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: aimux.darwin-x64.node
+            test: true
           - host: macos-latest
             target: aarch64-apple-darwin
+            binary: aimux.darwin-arm64.node
+            test: true
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: aimux.linux-x64-gnu.node
+            test: true
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            binary: aimux.linux-arm64-gnu.node
+            test: false
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -45,17 +67,53 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: Install dependencies
         working-directory: bindings/node
-        run: npm install
+        run: npm ci
+      - name: Build Linux (glibc 2.17 baseline)
+        if: contains(matrix.settings.target, 'unknown-linux-gnu')
+        working-directory: bindings/node
+        shell: bash
+        env:
+          TARGET_CC: clang
+          TARGET_CXX: clang++
+        run: npx napi build --platform --target ${{ matrix.settings.target }} --use-napi-cross
       - name: Build
+        if: ${{ !contains(matrix.settings.target, 'unknown-linux-gnu') }}
+        working-directory: bindings/node
+        shell: bash
+        run: npx napi build --platform --target ${{ matrix.settings.target }}
+      - name: Verify artifact
+        working-directory: bindings/node
+        shell: bash
+        run: test -f '${{ matrix.settings.binary }}'
+      - name: Verify glibc baseline
+        if: contains(matrix.settings.target, 'unknown-linux-gnu')
         working-directory: bindings/node
         shell: bash
         run: |
-          npx napi build --platform --target ${{ matrix.settings.target }}
-          ls -la *.node 2>/dev/null || echo "WARNING: No .node files in root"
+          highest=$(readelf --version-info '${{ matrix.settings.binary }}' | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)
+          test -n "$highest"
+          test "$(printf '%s\n' GLIBC_2.17 "$highest" | sort -V | tail -1)" = GLIBC_2.17
+      - name: Verify static Windows CRT
+        if: contains(matrix.settings.target, 'windows-msvc')
+        working-directory: bindings/node
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $install) { throw 'Visual Studio C++ tools not found' }
+          $toolsVersion = (Get-Content "$install\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt").Trim()
+          $targetArch = if ('${{ matrix.settings.target }}' -like 'aarch64-*') { 'arm64' } else { 'x64' }
+          $dumpbin = "$install\VC\Tools\MSVC\$toolsVersion\bin\Hostx64\$targetArch\dumpbin.exe"
+          $dependencies = & $dumpbin /DEPENDENTS '${{ matrix.settings.binary }}' | Out-String
+          if ($LASTEXITCODE -ne 0) { throw 'dumpbin failed' }
+          if ($dependencies -match '(?im)^\s*(?:VCRUNTIME|MSVCP|UCRTBASE|api-ms-win-crt)[^\s]*\.dll\s*$') {
+            throw "Dynamic MSVC runtime dependency found:`n$dependencies"
+          }
       - name: Test
+        if: matrix.settings.test
         working-directory: bindings/node
         run: npm test
       - name: Upload artifact
@@ -170,7 +228,7 @@ jobs:
       - name: Build Node binding
         working-directory: bindings/node
         run: |
-          npm install
+          npm ci
           npx napi build --platform
       - name: Run Node contract tests
         working-directory: contract-tests

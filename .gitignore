@@ -22,9 +22,10 @@ bindings/python/**/*.egg-info/
 bindings/flutter/.dart_tool/
 bindings/flutter/.packages
 bindings/node/node_modules/
+bindings/node/artifacts/
+bindings/node/npm/
 bindings/node/bench/node_modules/
 bindings/node/bench/package-lock.json
-bindings/node/package-lock.json
 bindings/python/**/__pycache__/
 bindings/python/uv.lock
 bindings/kotlin/build/

@@ -7,16 +7,7 @@
   "files": [
     "index.js",
     "index.d.ts",
-    "dist/",
-    "*.node"
-  ],
-  "os": [
-    "darwin",
-    "linux"
-  ],
-  "cpu": [
-    "x64",
-    "arm64"
+    "dist/"
   ],
   "repository": {
     "type": "git",
@@ -34,20 +25,26 @@
     "./package.json": "./package.json"
   },
   "napi": {
-    "name": "aimux",
-    "package": {
-      "name": "@arcships/aimux"
-    }
+    "binaryName": "aimux",
+    "packageName": "@arcships/aimux",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu"
+    ]
   },
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
     "build:typed": "tsc -p tsconfig.json",
     "test": "ava",
-    "prepublishOnly": "npm run build:typed && napi prepublish -t npm"
+    "prepublishOnly": "npm run build:typed && napi prepublish -t npm --no-gh-release"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.8.0",
+    "@napi-rs/cli": "3.8.2",
     "ava": "^6.0.0",
     "typescript": "^5.5.0"
   },
