@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-01
+
+### Added
+- **Six desktop native targets for Node binding** — expanded from 2 to 6
+  platform-specific Node-API packages: Windows x64/ARM64 (MSVC), macOS
+  x64/ARM64, GNU/Linux x64/ARM64. The root `@arcships/aimux` package
+  auto-selects the matching platform package at install time. Targets
+  Node-API 8 (compatible with Node.js and Electron without rebuild).
+  - Linux built against glibc 2.17 baseline (napi-cross).
+  - Windows statically links MSVC CRT (no runtime dependency).
+  - macOS deployment target set to 10.13.
+
+### Changed
+- CI/release matrices updated for all six Node binding targets.
+- Node.js 24 + `npm ci` in binding workflows.
+- `package-lock.json` tracked, `@napi-rs/cli` pinned to 3.8.2.
+- AVA worker threads disabled (avoids napi-rs/Tokio teardown panics).
+
 ## [0.1.3] - 2026-08-01
 
 ### Added
