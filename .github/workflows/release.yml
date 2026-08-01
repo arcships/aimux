@@ -8,6 +8,27 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      rust:
+        description: 'Publish Rust crates to crates.io'
+        type: boolean
+        default: true
+      node:
+        description: 'Build + publish Node binding to npm'
+        type: boolean
+        default: false
+      python:
+        description: 'Publish Python wheels to PyPI'
+        type: boolean
+        default: false
+      jvm:
+        description: 'Publish Java + Kotlin to Maven Central'
+        type: boolean
+        default: false
+      artifacts:
+        description: 'Build Go .a + C ABI libs and create GitHub Release'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -22,6 +43,7 @@ jobs:
     name: Publish crates to crates.io
     runs-on: ubuntu-latest
     environment: release
+    if: github.event_name == 'push' || github.event.inputs.rust == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -58,6 +80,7 @@ jobs:
   node-build:
     name: Node build (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    if: github.event_name == 'push' || github.event.inputs.node == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +117,7 @@ jobs:
     needs: node-build
     runs-on: ubuntu-latest
     environment: release
+    if: github.event_name == 'push' || github.event.inputs.node == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -124,6 +148,7 @@ jobs:
   python-release:
     name: Publish Python (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    if: github.event_name == 'push' || github.event.inputs.python == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -149,6 +174,7 @@ jobs:
   go-build:
     name: Go binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
+    if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -191,6 +217,7 @@ jobs:
   ffi-build:
     name: aimux-ffi (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
+    if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -232,6 +259,7 @@ jobs:
     name: Publish Java+Kotlin to Maven Central
     runs-on: ubuntu-latest
     environment: release
+    if: github.event_name == 'push' || github.event.inputs.jvm == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -261,6 +289,7 @@ jobs:
     name: Create GitHub Release
     needs: [go-build, ffi-build]
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Download all artifacts
