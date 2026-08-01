@@ -8,7 +8,7 @@ feature coverage matrix — lives in the [API overview](../API.md).
 ## Quick Start
 
 ```bash
-npm install aimux
+npm install @arcships/aimux
 ```
 
 ```typescript

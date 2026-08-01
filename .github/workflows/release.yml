@@ -47,32 +47,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Idempotent publish: skips a crate whose version already exists on
+      # crates.io, so re-running the workflow after a partial failure is safe.
       - name: Publish aimux-stream
-        run: cargo publish -p aimux-stream
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish aimux-provider-utils
-        run: cargo publish -p aimux-provider-utils
+        run: |
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-stream/0.1.0" > /dev/null 2>&1; then
+            echo "aimux-stream@0.1.0 already published, skipping"
+          else
+            cargo publish -p aimux-stream
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish aimux-core
-        # Wait for the crates.io index to pick up aimux-stream/provider-utils
-        # before publishing dependents.
         run: |
           sleep 30
-          cargo publish -p aimux-core
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-core/0.1.0" > /dev/null 2>&1; then
+            echo "aimux-core@0.1.0 already published, skipping"
+          else
+            cargo publish -p aimux-core
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish aimux-provider-utils
+        run: |
+          sleep 30
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-provider-utils/0.1.0" > /dev/null 2>&1; then
+            echo "aimux-provider-utils@0.1.0 already published, skipping"
+          else
+            cargo publish -p aimux-provider-utils
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish aimux-providers
         run: |
           sleep 30
-          cargo publish -p aimux-providers
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-providers/0.1.0" > /dev/null 2>&1; then
+            echo "aimux-providers@0.1.0 already published, skipping"
+          else
+            cargo publish -p aimux-providers
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish aimux-ffi
         run: |
           sleep 30
-          cargo publish -p aimux-ffi
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-ffi/0.1.0" > /dev/null 2>&1; then
+            echo "aimux-ffi@0.1.0 already published, skipping"
+          else
+            cargo publish -p aimux-ffi
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
