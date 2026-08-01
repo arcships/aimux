@@ -17,6 +17,7 @@
 package aimux
 
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.Closeable

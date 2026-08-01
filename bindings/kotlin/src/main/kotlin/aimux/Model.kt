@@ -36,6 +36,52 @@ internal interface AimuxFFI : Library {
 
     fun aimux_drop_handle(handle: Long)
     fun aimux_free_string(ptr: Pointer?)
+
+    // ── Embedding ──────────────────────────────────────────────────────────
+    fun aimux_openai_embedding_new(apiKey: String, modelId: String): Long
+    fun aimux_openai_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_cohere_embedding_new(apiKey: String, modelId: String): Long
+    fun aimux_cohere_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_google_embedding_new(apiKey: String, modelId: String): Long
+    fun aimux_google_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_embed(handle: Long, valuesJson: String, optsJson: String?): Pointer?
+
+    // ── Speech (TTS) ───────────────────────────────────────────────────────
+    fun aimux_openai_speech_new(apiKey: String, modelId: String): Long
+    fun aimux_openai_speech_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_speech_generate(handle: Long, optsJson: String): Pointer?
+
+    // ── Image ──────────────────────────────────────────────────────────────
+    fun aimux_openai_image_new(apiKey: String, modelId: String): Long
+    fun aimux_openai_image_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_google_image_new(apiKey: String, modelId: String): Long
+    fun aimux_google_image_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_image_generate(handle: Long, optsJson: String): Pointer?
+
+    // ── Transcription (STT) ────────────────────────────────────────────────
+    fun aimux_openai_transcription_new(apiKey: String, modelId: String): Long
+    fun aimux_openai_transcription_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_transcription_generate(handle: Long, audioBase64: String, mediaType: String, optsJson: String?): Pointer?
+
+    // ── Files ──────────────────────────────────────────────────────────────
+    fun aimux_openai_files_new(apiKey: String): Long
+    fun aimux_openai_files_new_with_base(apiKey: String, baseUrl: String): Long
+    fun aimux_file_upload(handle: Long, dataBase64: String, mediaType: String, optsJson: String?): Pointer?
+
+    // ── Reranking ──────────────────────────────────────────────────────────
+    fun aimux_cohere_reranking_new(apiKey: String, modelId: String): Long
+    fun aimux_cohere_reranking_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_rerank(handle: Long, optsJson: String): Pointer?
+
+    // ── Video ──────────────────────────────────────────────────────────────
+    fun aimux_google_video_new(apiKey: String, modelId: String): Long
+    fun aimux_google_video_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_video_generate(handle: Long, optsJson: String): Pointer?
+
+    // ── Search ─────────────────────────────────────────────────────────────
+    fun aimux_tavily_search_new(apiKey: String, modelId: String): Long
+    fun aimux_tavily_search_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_search(handle: Long, optsJson: String): Pointer?
 }
 
 internal object FFI {
