@@ -1,0 +1,16 @@
+[package]
+name = "cache-audit-prototype"
+version = "0.1.0"
+edition = "2021"
+description = "Round-4 prototype: block-chain fingerprint + TraceStore + cache-hit audit verdict engine (zero external deps)"
+
+# 独立工程:脱离 aimux 根 workspace(根仓库另有 workspace 配置)
+[workspace]
+
+[lib]
+name = "cache_audit"
+path = "src/lib.rs"
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
