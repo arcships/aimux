@@ -26,6 +26,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
+use serde_json::Value;
 
 /// 描述 OpenAI 兼容厂商的差异。
 ///
@@ -111,6 +112,10 @@ pub struct OpenAIConfig {
     /// 测试中可用 `.with_retry_config(RetryConfig { max_retries: 0, .. })`
     /// 关闭重试（RFC-0009 §4.2）。
     pub retry_config: RetryConfig,
+    /// Provider 级请求体覆盖（RFC-0017）。在标准请求体 + 内置厂商 override
+    /// 之后 deep-merge。per-call 的 `CallOptions.body_overrides` 在此之后
+    /// 再 merge（覆盖 provider 级）。
+    pub body_overrides: Option<Value>,
 }
 
 impl OpenAIConfig {
@@ -125,6 +130,7 @@ impl OpenAIConfig {
             provider: "openai".to_string(),
             profile: OpenAICompatProfile::full(),
             retry_config: RetryConfig::default(),
+            body_overrides: None,
         }
     }
 
@@ -166,6 +172,12 @@ impl OpenAIConfig {
     /// 设置重试配置。传入 `max_retries: 0` 可关闭重试。
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
+        self
+    }
+
+    /// 设置 provider 级请求体覆盖（RFC-0017）。
+    pub fn with_body_overrides(mut self, overrides: Value) -> Self {
+        self.body_overrides = Some(overrides);
         self
     }
 

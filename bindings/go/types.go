@@ -203,6 +203,8 @@ type GenerateTextOptions struct {
 	ProviderOptions   json.RawMessage   `json:"provider_options,omitempty"`
 	Reasoning         *ReasoningEffort  `json:"reasoning,omitempty"`
 	Instructions       *string           `json:"instructions,omitempty"`
+	BodyOverrides     json.RawMessage   `json:"body_overrides,omitempty"`
+	MaxRetries        *uint32           `json:"max_retries,omitempty"`
 }
 
 // Tool is a function tool definition (the "function" variant).

@@ -16,6 +16,7 @@ use aimux_core::result::{GenerateResult, StreamResult};
 use super::AnthropicConfig;
 use super::convert::build_request_body_with_warnings;
 use super::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
+use aimux_provider_utils::RetryConfig;
 
 /// An Anthropic language model (e.g. `claude-sonnet-4-20250514`).
 pub struct AnthropicModel {
@@ -89,12 +90,14 @@ impl LanguageModel for AnthropicModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let req = build_request_body_with_warnings(&self.model_id, options, false)?;
+        let options = merge_anthropic_body_overrides(options, &self.config.body_overrides);
+        let req = build_request_body_with_warnings(&self.model_id, &options, false)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
+        let retry_config = resolve_anthropic_retry(&self.config.retry_config, options.max_retries);
         anthropic_generate_core(
             &endpoint,
-            self.config.retry_config,
+            retry_config,
             req.body,
             req.warnings,
             build_headers,
@@ -104,17 +107,55 @@ impl LanguageModel for AnthropicModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let req = build_request_body_with_warnings(&self.model_id, options, true)?;
+        let options = merge_anthropic_body_overrides(options, &self.config.body_overrides);
+        let req = build_request_body_with_warnings(&self.model_id, &options, true)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref(), req.betas);
+        let retry_config = resolve_anthropic_retry(&self.config.retry_config, options.max_retries);
         anthropic_stream_core(
             &endpoint,
-            self.config.retry_config,
+            retry_config,
             req.body,
             req.warnings,
             build_headers,
             BodyEncoding::Json,
         )
         .await
+    }
+}
+
+/// Resolve per-call max_retries override (RFC-0017). RetryConfig is Copy.
+fn resolve_anthropic_retry(
+    provider: &RetryConfig,
+    max_retries_override: Option<u32>,
+) -> RetryConfig {
+    match max_retries_override {
+        Some(n) => RetryConfig {
+            max_retries: n,
+            ..*provider
+        },
+        None => *provider,
+    }
+}
+
+/// Merge provider-level body_overrides into per-call options (RFC-0017).
+fn merge_anthropic_body_overrides(
+    options: &CallOptions,
+    provider_overrides: &Option<serde_json::Value>,
+) -> CallOptions {
+    match (provider_overrides, &options.body_overrides) {
+        (Some(provider), Some(call)) => {
+            let mut merged = provider.clone();
+            crate::openai::convert::deep_merge_json(&mut merged, call);
+            let mut opts = options.clone();
+            opts.body_overrides = Some(merged);
+            opts
+        }
+        (Some(provider), None) => {
+            let mut opts = options.clone();
+            opts.body_overrides = Some(provider.clone());
+            opts
+        }
+        (None, _) => options.clone(),
     }
 }

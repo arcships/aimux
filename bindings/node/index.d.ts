@@ -113,7 +113,7 @@ export declare class VideoModel {
 }
 
 /** Create an Anthropic model instance. */
-export declare function anthropic(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<Model>
+export declare function anthropic(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
 /** Create a Cohere embedding model instance. */
 export declare function cohereEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
@@ -122,7 +122,7 @@ export declare function cohereEmbedding(apiKey: string, modelId: string, baseUrl
 export declare function cohereReranking(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<RerankingModel>
 
 /** Create a DeepSeek model instance. */
-export declare function deepseek(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<Model>
+export declare function deepseek(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
 /** Create a Google embedding model instance. */
 export declare function googleEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
@@ -134,7 +134,7 @@ export declare function googleImage(apiKey: string, modelId: string, baseUrl?: s
 export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<VideoModel>
 
 /** Create an OpenAI model instance. */
-export declare function openai(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<Model>
+export declare function openai(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
 /** Create an OpenAI embedding model instance. */
 export declare function openaiEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
@@ -150,6 +150,36 @@ export declare function openaiSpeech(apiKey: string, modelId: string, baseUrl?: 
 
 /** Create an OpenAI transcription model instance. */
 export declare function openaiTranscription(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<TranscriptionModel>
+
+/**
+ * Optional provider configuration accepted by factory functions.
+ *
+ * Passed as the 3rd argument to `openai()` / `anthropic()` / `deepseek()`.
+ * For backward compatibility a bare string is still accepted (treated as
+ * `baseUrl`). See RFC-0017.
+ */
+export interface ProviderConfig {
+  /** Base URL for API calls (e.g. a relay/proxy endpoint). */
+  baseUrl?: string
+  /**
+   * Extra HTTP headers merged into every request, as a JSON object string
+   * (e.g. `'{"X-Custom":"value"}'`).
+   */
+  headers?: string
+  /** OpenAI organization ID (sent via `OpenAI-Organization` header). */
+  organization?: string
+  /** OpenAI project ID (sent via `OpenAI-Project` header). */
+  project?: string
+  /** Override the provider's retry count. `0` disables retries. */
+  maxRetries?: number
+  /**
+   * Provider-level request body overrides as a JSON string (deep-merged
+   * into every request). Per-call `bodyOverrides` in GenerateTextOptions
+   * takes precedence. Pass a JSON object string, e.g.
+   * `'{"enable_thinking": false}'`.
+   */
+  bodyOverrides?: string
+}
 
 /** Create a Tavily search model instance. */
 export declare function tavilySearch(apiKey: string, baseUrl?: string | undefined | null): Promise<SearchModel>

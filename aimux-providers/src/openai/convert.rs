@@ -1432,7 +1432,38 @@ pub fn build_request_body_with_warnings_fallible(
         }
     }
 
+    // Per-call request body overrides (RFC-0017): deep-merge user-supplied
+    // JSON into the built body. `null` values delete the corresponding key.
+    // Applied last so users can override anything, including vendor-specific
+    // fields injected above.
+    if let Some(ref overrides) = options.body_overrides {
+        deep_merge_json(&mut body, overrides);
+    }
+
     Ok(RequestBodyResult { body, warnings })
+}
+
+/// Recursively deep-merge `patch` into `target` (RFC-0017).
+///
+/// - Objects: merge key-by-key (recursive).
+/// - Scalars / arrays: `patch` overwrites `target`.
+/// - `null` in `patch`: deletes the key from `target` (explicit removal).
+pub fn deep_merge_json(target: &mut Value, patch: &Value) {
+    match (target, patch) {
+        (Value::Object(t), Value::Object(p)) => {
+            for (k, v) in p {
+                match v {
+                    Value::Null => {
+                        t.remove(k);
+                    }
+                    _ => {
+                        deep_merge_json(t.entry(k).or_insert(Value::Null), v);
+                    }
+                }
+            }
+        }
+        (target, patch) => *target = patch.clone(),
+    }
 }
 
 /// Convert `CallOptions` to an OpenAI request body, returning warnings.

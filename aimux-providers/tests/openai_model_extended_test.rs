@@ -43,6 +43,8 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         headers: None,
         provider_options: None,
         reasoning: None,
+        body_overrides: None,
+        max_retries: None,
     }
 }
 fn po(map: Value) -> Option<std::collections::HashMap<String, Value>> {

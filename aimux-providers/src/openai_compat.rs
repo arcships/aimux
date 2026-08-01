@@ -36,7 +36,7 @@ macro_rules! declare_openai_compat_provider {
         $env_var:literal,
         $profile:expr
     ) => {
-        pub struct $config($crate::openai::OpenAIConfig);
+        pub struct $config(pub $crate::openai::OpenAIConfig);
 
         impl $config {
             pub fn new(api_key: impl Into<String>) -> Self {
@@ -55,6 +55,27 @@ macro_rules! declare_openai_compat_provider {
 
             pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
                 self.0 = self.0.with_base_url(url);
+                self
+            }
+
+            /// Attach extra headers merged into every request.
+            pub fn with_headers(
+                mut self,
+                headers: std::collections::HashMap<String, String>,
+            ) -> Self {
+                self.0 = self.0.with_headers(headers);
+                self
+            }
+
+            /// Set retry config. `max_retries: 0` disables retries.
+            pub fn with_retry_config(mut self, config: aimux_provider_utils::RetryConfig) -> Self {
+                self.0 = self.0.with_retry_config(config);
+                self
+            }
+
+            /// Set provider-level request body overrides (RFC-0017).
+            pub fn with_body_overrides(mut self, overrides: serde_json::Value) -> Self {
+                self.0 = self.0.with_body_overrides(overrides);
                 self
             }
         }

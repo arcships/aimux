@@ -622,6 +622,10 @@ class GenerateTextOptions {
   final Map<String, dynamic>? providerOptions;
   final ReasoningEffort? reasoning;
   final String? instructions;
+  @JsonKey(name: 'body_overrides')
+  final Map<String, dynamic>? bodyOverrides;
+  @JsonKey(name: 'max_retries')
+  final int? maxRetries;
 
   GenerateTextOptions({
     this.maxOutputTokens,
@@ -639,6 +643,8 @@ class GenerateTextOptions {
     this.providerOptions,
     this.reasoning,
     this.instructions,
+    this.bodyOverrides,
+    this.maxRetries,
   });
 
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
@@ -664,6 +670,8 @@ class GenerateTextOptions {
           ? ReasoningEffort.fromJson(json['reasoning'] as String)
           : null,
       instructions: json['instructions'] as String?,
+      bodyOverrides: json['body_overrides'] as Map<String, dynamic>?,
+      maxRetries: json['max_retries'] as int?,
     );
   }
   Map<String, dynamic> toJson() => {
@@ -682,6 +690,8 @@ class GenerateTextOptions {
         if (providerOptions != null) 'provider_options': providerOptions,
         if (reasoning != null) 'reasoning': reasoning!.toJson(),
         if (instructions != null) 'instructions': instructions,
+        if (bodyOverrides != null) 'body_overrides': bodyOverrides,
+        if (maxRetries != null) 'max_retries': maxRetries,
       };
 }
 
