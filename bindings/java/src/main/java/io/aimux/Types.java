@@ -1735,7 +1735,7 @@ public final class Types {
                 && Objects.equals(reasoning, that.reasoning)
                 && Objects.equals(instructions, that.instructions)
                 && Objects.equals(bodyOverrides, that.bodyOverrides)
-                && Objects.equals(maxRetries, that.maxRetries));
+                && Objects.equals(maxRetries, that.maxRetries);
         }
 
         @Override
