@@ -7,6 +7,8 @@
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Providers](https://img.shields.io/badge/providers-172%2B-green.svg)](rfc/0004-provider-inventory.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
+[![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
+[![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
 
 aimux is a Rust implementation of a unified LLM provider access layer. It
 collapses the HTTP APIs of every AI provider into a single
@@ -86,6 +88,28 @@ bindings ──┤
            └─ C ABI path  ──→ aimux-ffi (opaque handle + JSON + push callback)
 ```
 
+## Installation
+
+**Rust** (the core library):
+
+```bash
+cargo add aimux-core aimux-providers
+```
+
+| Crate | Description | crates.io |
+|-------|-------------|-----------|
+| `aimux-core` | Core abstractions: `LanguageModel` / `Provider` / `Message` / `StreamPart` | [crates.io](https://crates.io/crates/aimux-core) |
+| `aimux-providers` | 172+ provider implementations | [crates.io](https://crates.io/crates/aimux-providers) |
+| `aimux-stream` | SSE / NDJSON stream parsing | [crates.io](https://crates.io/crates/aimux-stream) |
+| `aimux-provider-utils` | HTTP utilities: retry, backoff, error parsing | [crates.io](https://crates.io/crates/aimux-provider-utils) |
+| `aimux-ffi` | C ABI for non-native bindings | [crates.io](https://crates.io/crates/aimux-ffi) |
+
+**Node.js**:
+
+```bash
+npm install @arcships/aimux
+```
+
 ## Quick start
 
 ```rust
@@ -157,16 +181,16 @@ Full list: [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md).
 
 aimux ships 8 bindings that share the same Rust core:
 
-| Binding | Path | Tool | Directory |
-|---------|------|------|-----------|
-| **Node.js** | native | napi-rs v3 | [bindings/node/](bindings/node/) |
-| **Python** | native | PyO3 + maturin | [bindings/python/](bindings/python/) |
-| **Swift** | C ABI | Swift Package | [bindings/swift/](bindings/swift/) |
-| **Kotlin** | C ABI | JNA | [bindings/kotlin/](bindings/kotlin/) |
-| **Flutter** | C ABI | dart:ffi | [bindings/flutter/](bindings/flutter/) |
-| **Go** | C ABI | cgo (static link, single binary) | [bindings/go/](bindings/go/) |
-| **Java** | C ABI | JNA | [bindings/java/](bindings/java/) |
-| **C / C++** | C ABI | direct link | [bindings/c/](bindings/c/) |
+| Binding | Path | Tool | Package | Directory |
+|---------|------|------|---------|-----------|
+| **Node.js** | native | napi-rs v3 | `@arcships/aimux` on [npm](https://www.npmjs.com/package/@arcships/aimux) | [bindings/node/](bindings/node/) |
+| **Python** | native | PyO3 + maturin | `aimux` on PyPI (pending) | [bindings/python/](bindings/python/) |
+| **Swift** | C ABI | Swift Package | SPM (pending) | [bindings/swift/](bindings/swift/) |
+| **Kotlin** | C ABI | JNA | `io.aimux:aimux-kotlin` on Maven Central (pending) | [bindings/kotlin/](bindings/kotlin/) |
+| **Flutter** | C ABI | dart:ffi | pub.dev (pending) | [bindings/flutter/](bindings/flutter/) |
+| **Go** | C ABI | cgo (static link, single binary) | GitHub Release `.a` | [bindings/go/](bindings/go/) |
+| **Java** | C ABI | JNA | `io.aimux:aimux-java` on Maven Central (pending) | [bindings/java/](bindings/java/) |
+| **C / C++** | C ABI | direct link | GitHub Release shared libs | [bindings/c/](bindings/c/) |
 
 See [bindings/README.md](bindings/README.md) and the [API docs](docs/API.md).
 
