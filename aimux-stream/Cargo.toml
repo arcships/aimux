@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Streaming primitives for aimux"
+keywords = ["llm", "streaming", "sse", "ndjson"]
+categories = ["asynchronous", "parser-implementations"]
+documentation = "https://docs.rs/aimux-stream"
 
 [dependencies]
 futures = { workspace = true }

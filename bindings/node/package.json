@@ -4,6 +4,24 @@
   "description": "Unified LLM service layer — one API for 172+ AI providers (Rust core, Node.js binding)",
   "main": "index.js",
   "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src/index.ts",
+    "*.node"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arcships/aimux.git"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",

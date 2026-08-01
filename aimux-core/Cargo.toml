@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Core abstractions for aimux: LanguageModel trait, message types, and user-facing API"
+keywords = ["llm", "ai", "openai", "anthropic", "provider", "llm-provider"]
+categories = ["api-bindings", "asynchronous"]
+documentation = "https://docs.rs/aimux-core"
 
 [dependencies]
 serde = { workspace = true }

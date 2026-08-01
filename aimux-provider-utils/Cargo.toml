@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Shared utilities for aimux provider implementations"
+keywords = ["llm", "http", "retry", "backoff"]
+categories = ["api-bindings", "asynchronous"]
+documentation = "https://docs.rs/aimux-provider-utils"
 
 [dependencies]
 aimux-core = { workspace = true }

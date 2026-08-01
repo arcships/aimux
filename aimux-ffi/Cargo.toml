@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "C ABI boundary for aimux multi-language bindings (opaque handle + push stream)"
+keywords = ["llm", "ffi", "c-abi", "bindings"]
+categories = ["api-bindings", "asynchronous", "foreign-function-interface"]
+documentation = "https://docs.rs/aimux-ffi"
 
 [lib]
 # Produce linkable artifacts for C ABI consumers (Swift / Kotlin / C).

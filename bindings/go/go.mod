@@ -1,3 +1,3 @@
-module github.com/aimux/aimux-go
+module github.com/arcships/aimux/bindings/go
 
 go 1.23

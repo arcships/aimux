@@ -15,7 +15,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/aimux/aimux-go"
+	"github.com/arcships/aimux/bindings/go"
 )
 
 func main() {

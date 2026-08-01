@@ -67,10 +67,10 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 
 # Internal crates
-aimux-core = { path = "aimux-core" }
-aimux-providers = { path = "aimux-providers" }
-aimux-stream = { path = "aimux-stream" }
-aimux-provider-utils = { path = "aimux-provider-utils" }
+aimux-core = { path = "aimux-core", version = "0.1.0" }
+aimux-providers = { path = "aimux-providers", version = "0.1.0" }
+aimux-stream = { path = "aimux-stream", version = "0.1.0" }
+aimux-provider-utils = { path = "aimux-provider-utils", version = "0.1.0" }
 
 # HTTP date parsing (Retry-After header)
 httpdate = "1"
