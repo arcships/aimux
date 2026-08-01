@@ -114,6 +114,18 @@ cargo add aimux-core aimux-providers
 npm install @arcships/aimux
 ```
 
+```typescript
+import { openai, generateText } from '@arcships/aimux'
+
+const model = await openai(process.env.OPENAI_API_KEY!, 'gpt-4o')
+const result = await generateText(model, 'Explain Rust ownership in one sentence.')
+console.log(result.text)
+```
+
+> The package ships a typed wrapper (`generateText` / `streamText`) on top of
+> the raw napi API. Need the raw JSON-string interface? Use
+> `import { openai } from '@arcships/aimux/raw'`.
+
 ## Quick start
 
 ```rust
