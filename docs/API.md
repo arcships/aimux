@@ -4,126 +4,61 @@
 
 ## Table of Contents
 
+- [Language Guides](#language-guides)
 - [Quick Start](#quick-start)
-- [Text Generation](#text-generation)
-- [Streaming Generation](#streaming-generation)
-- [Vector Embedding](#vector-embedding)
-- [Speech Synthesis (TTS)](#speech-synthesis-tts)
-- [Speech to Text (STT)](#speech-to-text-stt)
-- [Image Generation](#image-generation)
-- [Video Generation](#video-generation)
-- [Reranking](#reranking)
-- [Search](#search)
-- [File Upload](#file-upload)
+- [Features](#features)
+  - [Text Generation](#text-generation)
+  - [Streaming Generation](#streaming-generation)
+  - [Tool Calling](#tool-calling)
+  - [Multi-Role Messages](#multi-role-messages)
+  - [Vector Embedding](#vector-embedding)
+  - [Speech Synthesis (TTS)](#speech-synthesis-tts)
+  - [Speech to Text (STT)](#speech-to-text-stt)
+  - [Image Generation](#image-generation)
+  - [Video Generation](#video-generation)
+  - [Reranking](#reranking)
+  - [Search](#search)
+  - [File Upload](#file-upload)
 - [Provider Factory Functions](#provider-factory-functions)
-- [Tool Calling](#tool-calling)
-- [Multi-Role Messages](#multi-role-messages)
-- [Rust API](#rust-api)
-- [C ABI (aimux-ffi)](#c-abi-aimux-ffi)
-- [Multi-Language Bindings](#multi-language-bindings)
+- [Feature Coverage](#feature-coverage)
+- [Construction and base_url Support](#construction-and-base_url-support)
+- [Design Documents](#design-documents)
+- [License](#license)
 
----
+## Language Guides
+
+Each language has its own guide with that language's examples:
+
+| Language | Guide | Coverage |
+|------|------|------|
+| Node.js | [api/node.md](api/node.md) | Full multimodal surface (native path) |
+| Python | [api/python.md](api/python.md) | Full multimodal surface (native path) |
+| Rust | [api/rust.md](api/rust.md) | Full multimodal surface (core) |
+| Go | [api/go.md](api/go.md) | Full multimodal surface (C ABI path, typed wrappers) |
+| C/C++ | [api/c.md](api/c.md) | Full multimodal surface (C ABI) |
+| Swift | [api/swift.md](api/swift.md) | Full multimodal surface (C ABI path) |
+| Kotlin | [api/kotlin.md](api/kotlin.md) | Full multimodal surface (C ABI path) |
+| Flutter/Dart | [api/flutter.md](api/flutter.md) | Full multimodal surface (C ABI path) |
 
 ## Quick Start
 
-### Node.js
+All bindings share the same API shape — only the syntax differs. Pick your
+language guide and follow its Quick Start:
 
-```bash
-npm install aimux
-```
+[Node.js](api/node.md#quick-start) · [Python](api/python.md#quick-start) ·
+[Rust](api/rust.md#quick-start) · [Go](api/go.md#quick-start) ·
+[C/C++](api/c.md#quick-start) · [Swift](api/swift.md#quick-start) ·
+[Kotlin](api/kotlin.md#quick-start) · [Flutter/Dart](api/flutter.md#quick-start)
 
-```typescript
-import { openai, generateText } from 'aimux'
+## Features
 
-const model = await openai(process.env.OPENAI_API_KEY!, 'gpt-4o')
-const result = await generateText(model, 'What is Rust?')
-console.log(result.text)
-```
-
-### Python
-
-```bash
-pip install aimux
-```
-
-```python
-from aimux import openai, generate_text
-
-model = openai("sk-...", "gpt-4o")
-result = generate_text(model, "What is Rust?")
-print(result["text"])
-```
-
-### Rust
-
-```rust
-use aimux_core::prelude::*;
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
-
-#[tokio::main]
-async fn main() -> Result<(), AiMuxError> {
-    let provider = OpenAIProvider::new(OpenAIConfig::new("sk-..."));
-    let model = provider.model("gpt-4o");
-    let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default()).await?;
-    println!("{}", result.text);
-    Ok(())
-}
-```
-
----
-
-## Text Generation
+### Text Generation
 
 Non-streaming text generation; returns the complete result.
 
-### Node.js
+Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-generation) · [Rust](api/rust.md#text-generation) · [Go](api/go.md#text-generation) · [Swift](api/swift.md#text-generation) · [Kotlin](api/kotlin.md#text-generation) · [Flutter](api/flutter.md#text-generation) · [C ABI](api/c.md#language-model)
 
-```typescript
-const { openai, generateText } = require('aimux')
-
-const model = await openai('sk-...', 'gpt-4o', 'https://api.openai.com/v1')
-const result = await generateText(model, 'Explain Rust ownership.', {
-  max_output_tokens: 100,
-  temperature: 0.7,
-})
-
-console.log(result.text)           // generated text
-console.log(result.usage)          // token usage
-console.log(result.finish_reason)  // finish reason
-console.log(result.tool_calls)     // tool calls (if any)
-```
-
-### Python
-
-```python
-from aimux import openai, generate_text
-
-model = openai("sk-...", "gpt-4o")
-result = generate_text(model, "Explain Rust ownership.", {
-    "max_output_tokens": 100,
-    "temperature": 0.7,
-})
-
-print(result["text"])
-print(result["usage"])
-print(result["finish_reason"])
-```
-
-### Rust
-
-```rust
-let result = generate_text(
-    &model,
-    "Explain Rust ownership.",
-    GenerateTextOptions {
-        max_output_tokens: Some(100),
-        temperature: Some(0.7),
-        ..Default::default()
-    },
-).await?;
-```
-
-### Parameters
+#### Parameters
 
 | Parameter | Type | Description |
 |------|------|------|
@@ -137,25 +72,37 @@ let result = generate_text(
 | `instructions` | `string?` | System instructions |
 | `reasoning` | `ReasoningEffort?` | Reasoning effort |
 
-### Return Value
+#### Return Value
 
-```typescript
-interface GenerateTextResult {
-  text: string                  // generated text (all Text variants concatenated)
-  tool_calls: ToolCall[]        // tool call list (extracted from content)
-  finish_reason: FinishReason    // finish reason
-  usage: Usage                  // token usage
-  warnings: Warning[]           // warnings
-  raw: GenerateResult           // raw provider result (includes full content)
-}
-```
+The result is a structured object with these fields (the exact type
+declaration differs per language — see each [language guide](#language-guides)
+for its own declaration):
 
-> **Note**: `result.text` and `result.tool_calls` are convenience fields extracted from `result.raw.content`.
-> The `Source`, `Reasoning`, and `ToolResult` variants do not appear in the convenience fields — access them via `result.raw.content`.
+| Field | Description |
+|------|------|
+| `text` | Generated text (all Text variants concatenated) |
+| `tool_calls` | Tool call list (extracted from content) |
+| `finish_reason` | Finish reason |
+| `usage` | Token usage |
+| `warnings` | Warnings |
+| `raw` | Raw provider result (includes full content) |
 
-### Structured content (`raw.content`)
+> **Note**: `text` and `tool_calls` are convenience fields extracted from `raw.content`.
+> The `Source`, `Reasoning`, and `ToolResult` variants do not appear in the convenience fields — access them via `raw.content`.
 
-`result.raw.content` is a `GenerateContent` array containing 6 variants:
+> **Type declarations are per-language.** Every binding declares these types in
+> its own syntax: TypeScript `interface`/`type` in [node.md](api/node.md#types),
+> Python pydantic models in [python.md](api/python.md#types), Rust `struct`/`enum`
+> in [rust.md](api/rust.md#types), Kotlin `data class` in
+> [kotlin.md](api/kotlin.md#types), Dart classes in [flutter.md](api/flutter.md#types),
+> Swift `struct` in [swift.md](api/swift.md#types), Go `struct` in
+> [go.md](api/go.md#types). The tables below describe the shared **JSON shape**
+> that crosses the binding boundary — the field names and variant tags are
+> identical in every language.
+
+#### Structured content (`raw.content`)
+
+`raw.content` is a `GenerateContent` array containing 6 variants:
 
 | Variant | Fields | Description |
 |------|------|------|
@@ -166,111 +113,13 @@ interface GenerateTextResult {
 | `File` | `data: FileData`, `media_type`, `filename?`, `provider_metadata?` | File generated by the model |
 | `ToolResult` | `tool_call_id`, `tool_name`, `result`, `is_error?`, `preliminary?`, `dynamic?`, `provider_metadata?` | Tool result executed by the provider |
 
-```typescript
-// access structured content
-const result = await generateText(model, "...", { tools })
-const rawContent = result.raw.content
-const toolCallPart = rawContent.find(c => c.ToolCall)
-const reasoningPart = rawContent.find(c => c.Reasoning)
-```
-
-### Multi-Role Messages
-
-`prompt` accepts a message array to implement multi-turn conversation; roles support `system` / `user` / `assistant` / `tool`:
-
-```typescript
-// Node.js — multi-turn dialogue + tool round-trip
-const result = await generateText(model, [
-  { role: 'user', content: "What's the weather in Tokyo?" },
-  { role: 'assistant', content: null, tool_calls: [{
-    id: 'call_abc', type: 'function',
-    function: { name: 'get_weather', arguments: '{"location":"Tokyo"}' }
-  }]},
-  { role: 'tool', tool_call_id: 'call_abc',
-    content: '{"temperature":22,"condition":"sunny"}' }
-], { tools })
-```
-
-```python
-# Python — system + user multi-turn
-result = generate_text(model, [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "What is Rust?"},
-])
-```
-
-```rust
-// Rust — tool round-trip
-let messages = vec![
-    ModelMessage::user("What's the weather in Tokyo?"),
-    ModelMessage {
-        role: Role::Assistant,
-        content: MessageContent::Parts(vec![ContentPart::tool_call(
-            "call_abc", "get_weather", json!({"location": "Tokyo"}),
-        )]),
-    },
-    ModelMessage {
-        role: Role::Tool,
-        content: MessageContent::Parts(vec![ContentPart::tool_result(
-            "call_abc", json!({"temperature": 22, "condition": "sunny"}),
-        )]),
-    },
-];
-let result = generate_text(&model, messages, opts).await?;
-```
-
----
-
-## Streaming Generation
+### Streaming Generation
 
 Returns generated content as a stream, output chunk by chunk.
 
-### Node.js
+Examples: [Node.js](api/node.md#streaming-generation) · [Python](api/python.md#streaming-generation) · [Rust](api/rust.md#streaming-generation) · [Go](api/go.md#streaming-generation) · [Swift](api/swift.md#streaming-generation) · [Kotlin](api/kotlin.md#streaming-generation) · [Flutter](api/flutter.md#streaming-generation) · [C ABI](api/c.md#language-model)
 
-```typescript
-const { openai, streamText } = require('aimux')
-
-const model = await openai('sk-...', 'gpt-4o')
-for await (const part of streamText(model, 'Write a haiku about Rust.')) {
-  if (part.TextDelta) {
-    process.stdout.write(part.TextDelta.delta)
-  }
-  if (part.Finish) {
-    console.log('\n[done]')
-  }
-}
-```
-
-### Python
-
-```python
-from aimux import openai, stream_text
-
-model = openai("sk-...", "gpt-4o")
-for part in stream_text(model, "Write a haiku about Rust."):
-    if "TextDelta" in part:
-        print(part["TextDelta"]["delta"], end="")
-    if "Finish" in part:
-        print("\n[done]")
-```
-
-### Rust
-
-```rust
-use futures::StreamExt;
-
-let result = stream_text(&model, "Write a haiku.", GenerateTextOptions::default()).await?;
-let mut stream = result.stream;
-while let Some(part) = stream.next().await {
-    match part? {
-        StreamPart::TextDelta { delta, .. } => print!("{}", delta),
-        StreamPart::Finish { .. } => println!("\n[done]"),
-        _ => {}
-    }
-}
-```
-
-### StreamPart Types
+#### StreamPart Types
 
 | Variant | Description |
 |------|------|
@@ -286,50 +135,25 @@ while let Some(part) = stream.next().await {
 | `Error` | Stream error |
 | `Raw` | Provider raw chunk (for debugging, when `include_raw_chunks` is set) |
 
----
+### Tool Calling
 
-## Vector Embedding
+Tool definitions are language-agnostic data descriptions (JSON Schema) that require no macros.
+
+Examples: [Node.js](api/node.md#tool-calling) · [Python](api/python.md#tool-calling) · [Rust](api/rust.md#tool-calling)
+
+### Multi-Role Messages
+
+`prompt` accepts a message array to implement multi-turn conversation; roles support `system` / `user` / `assistant` / `tool`.
+
+Examples: [Node.js](api/node.md#multi-role-messages) · [Python](api/python.md#multi-role-messages) · [Rust](api/rust.md#multi-role-messages)
+
+### Vector Embedding
 
 Converts text into a vector representation.
 
-### Node.js
+Examples: [Node.js](api/node.md#vector-embedding) · [Python](api/python.md#vector-embedding) · [Rust](api/rust.md#vector-embedding) · [Go](api/go.md#vector-embedding) · [C ABI](api/c.md#vector-embedding)
 
-```typescript
-const { openaiEmbedding } = require('aimux')
-
-const embedder = await openaiEmbedding('sk-...', 'text-embedding-3-small')
-const resultJson = await embedder.embed(JSON.stringify(['hello', 'world']))
-const result = JSON.parse(resultJson)
-
-console.log(result.embeddings.length)  // 2
-console.log(result.embeddings[0].length)  // 1536 (dimension depends on model)
-console.log(result.usage.tokens)  // input token count
-```
-
-### Python
-
-```python
-from aimux import openai_embedding
-
-embedder = openai_embedding("sk-...", "text-embedding-3-small")
-# embed() takes a JSON string, returns a JSON string
-result = json.loads(embedder.embed(json.dumps(["hello", "world"])))
-print(len(result["embeddings"]))      # 2
-print(len(result["embeddings"][0]))   # 1536
-```
-
-### Rust
-
-```rust
-use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
-
-let model = provider.embedding_model("text-embedding-3-small");
-let opts = EmbeddingCallOptions::new("hello");
-let result = model.do_embed(&opts).await?;
-// result.embeddings[0] is Vec<f32>
-```
-
-### Supported Providers
+#### Supported Providers
 
 | Factory function | Provider | Representative model |
 |---------|---------|---------|
@@ -337,320 +161,60 @@ let result = model.do_embed(&opts).await?;
 | `cohereEmbedding` | Cohere | embed-english-v3.0 |
 | `googleEmbedding` | Google | gemini-embedding-001 |
 
----
-
-## Speech Synthesis (TTS)
+### Speech Synthesis (TTS)
 
 Converts text into speech audio.
 
-### Node.js
+Examples: [Node.js](api/node.md#speech-synthesis-tts) · [Python](api/python.md#speech-synthesis-tts) · [Rust](api/rust.md#speech-synthesis-tts) · [Go](api/go.md#speech-synthesis-tts) · [C ABI](api/c.md#speech)
 
-```typescript
-const { openaiSpeech } = require('aimux')
-const fs = require('fs')
-
-const speaker = await openaiSpeech('sk-...', 'tts-1')
-const resultJson = await speaker.generate(JSON.stringify({
-  text: 'Hello world!',
-  voice: 'alloy',
-  output_format: 'mp3',
-}))
-const result = JSON.parse(resultJson)
-
-// audio is in result.audio (base64 or binary)
-if (result.audio.Base64) {
-  fs.writeFileSync('out.mp3', Buffer.from(result.audio.Base64, 'base64'))
-}
-```
-
-### Python
-
-```python
-from aimux import openai_speech
-import json, base64
-
-speaker = openai_speech("sk-...", "tts-1")
-result = json.loads(speaker.generate(json.dumps({
-    "text": "Hello world!",
-    "voice": "alloy",
-    "output_format": "mp3",
-})))
-
-if "Base64" in result["audio"]:
-    audio_bytes = base64.b64decode(result["audio"]["Base64"])
-    with open("out.mp3", "wb") as f:
-        f.write(audio_bytes)
-```
-
-### Rust
-
-```rust
-use aimux_core::speech_model::{SpeechCallOptions, SpeechModel};
-
-let model = provider.speech("tts-1");
-let opts = SpeechCallOptions::new("Hello world!");
-let result = model.do_generate(&opts).await?;
-// result.audio is AudioData::Base64(String) or AudioData::Binary(Vec<u8>)
-```
-
-### Supported Providers
+#### Supported Providers
 
 | Factory function | Provider | Representative model |
 |---------|---------|---------|
 | `openaiSpeech` | OpenAI | tts-1, tts-1-hd |
 
----
-
-## Speech to Text (STT)
+### Speech to Text (STT)
 
 Converts audio into text (non-streaming).
 
-### Node.js
+Examples: [Node.js](api/node.md#speech-to-text-stt) · [Python](api/python.md#speech-to-text-stt) · [Rust](api/rust.md#speech-to-text-stt) · [Go](api/go.md#speech-to-text-stt) · [C ABI](api/c.md#speech)
 
-```typescript
-const { openaiTranscription } = require('aimux')
-const fs = require('fs')
+### Image Generation
 
-const transcriber = await openaiTranscription('sk-...', 'whisper-1')
-const audioBase64 = fs.readFileSync('audio.mp3').toString('base64')
-const resultJson = await transcriber.generate(audioBase64, 'audio/mp3')
-const result = JSON.parse(resultJson)
+Examples: [Node.js](api/node.md#image-generation) · [Python](api/python.md#image-generation) · [Rust](api/rust.md#image-generation) · [Go](api/go.md#image-generation) · [C ABI](api/c.md#image)
 
-console.log(result.text)       // transcribed text
-console.log(result.segments)   // timestamped segments
-console.log(result.language)   // detected language
-```
-
-### Python
-
-```python
-from aimux import openai_transcription
-import base64, json
-
-transcriber = openai_transcription("sk-...", "whisper-1")
-audio_b64 = base64.b64encode(open("audio.mp3", "rb").read()).decode()
-result = json.loads(transcriber.generate(audio_b64, "audio/mp3"))
-
-print(result["text"])
-print(result["segments"])
-```
-
-### Rust
-
-```rust
-use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-
-let model = provider.transcription("whisper-1");
-let opts = TranscriptionCallOptions::new(
-    AudioInput::Base64(audio_base64),
-    "audio/mp3",
-);
-let result = model.do_generate(&opts).await?;
-// result.text, result.segments, result.language
-```
-
----
-
-## Image Generation
-
-### Node.js
-
-```typescript
-const { openaiImage } = require('aimux')
-const fs = require('fs')
-
-const imager = await openaiImage('sk-...', 'dall-e-3')
-const resultJson = await imager.generate(JSON.stringify({
-  prompt: 'A cute baby sea otter',
-  n: 1,
-}))
-const result = JSON.parse(resultJson)
-
-if (result.images.Base64) {
-  fs.writeFileSync('out.png', Buffer.from(result.images.Base64[0], 'base64'))
-}
-```
-
-### Rust
-
-```rust
-use aimux_core::image_model::{ImageCallOptions, ImageModel};
-
-let model = provider.image("dall-e-3");
-let opts = ImageCallOptions { prompt: Some("A cute sea otter".into()), n: 1, .. };
-let result = model.do_generate(&opts).await?;
-// result.images is ImageOutputs::Base64(Vec<String>) or Binary(Vec<Vec<u8>>)
-```
-
-### Supported Providers
+#### Supported Providers
 
 | Factory function | Provider | Representative model |
 |---------|---------|---------|
 | `openaiImage` | OpenAI | dall-e-3 |
 | `googleImage` | Google | gemini-2.5-flash-image |
 
----
-
-## Video Generation
+### Video Generation
 
 Video generation typically returns a URL (not binary).
 
-### Node.js
+Examples: [Node.js](api/node.md#video-generation) · [Python](api/python.md#video-generation) · [Rust](api/rust.md#video-generation) · [Go](api/go.md#video-generation) · [C ABI](api/c.md#video-generation)
 
-```typescript
-const { googleVideo } = require('aimux')
-
-const videor = await googleVideo('sk-...', 'veo-3.0')
-const resultJson = await videor.generate(JSON.stringify({
-  prompt: 'A cat playing piano',
-  n: 1,
-}))
-const result = JSON.parse(resultJson)
-
-// result.videos is usually { Url: { url, media_type } }
-if (result.videos[0].Url) {
-  console.log('Video URL:', result.videos[0].Url.url)
-}
-```
-
-### Rust
-
-```rust
-use aimux_core::video_model::{VideoCallOptions, VideoModel};
-
-let model = provider.video("veo-3.0");
-let opts = VideoCallOptions { prompt: Some("A cat".into()), n: 1, .. };
-let result = model.do_generate(&opts).await?;
-// result.videos[0] is VideoData::Url { url, media_type }
-```
-
-### C ABI
-
-```c
-uint64_t handle = aimux_google_video_new(api_key, "veo-3.0");
-// opts_json: {"prompt":"A cat playing piano","n":1}
-const char *result = aimux_video_generate(handle, opts_json);
-aimux_drop_handle(handle);
-aimux_free_string(result);
-```
-
----
-
-## Reranking
+### Reranking
 
 Reorders a document list by relevance.
 
-### Node.js
+Examples: [Node.js](api/node.md#reranking) · [Python](api/python.md#reranking) · [Rust](api/rust.md#reranking) · [Go](api/go.md#reranking) · [C ABI](api/c.md#reranking)
 
-```typescript
-const { cohereReranking } = require('aimux')
-
-const reranker = await cohereReranking('sk-...', 'rerank-v3.0')
-const resultJson = await reranker.rerank(
-  'What is Rust?',
-  JSON.stringify([
-    { text: 'Rust is a systems programming language.' },
-    { text: 'Rust is a chemical element.' },
-  ]),
-)
-const result = JSON.parse(resultJson)
-
-// result.ranks sorted by relevance
-result.ranks.forEach(r => console.log(r.index, r.score))
-```
-
-### Rust
-
-```rust
-use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
-
-let model = provider.reranking_model("rerank-v3.0");
-let opts = RerankingCallOptions::new("What is Rust?", docs);
-let result = model.do_rerank(&opts).await?;
-// result.ranks sorted by score
-```
-
-### C ABI
-
-```c
-uint64_t handle = aimux_cohere_reranking_new(api_key, "rerank-v3.0");
-// opts_json: {"query":"What is Rust?","documents":{"Text":{"values":["doc1","doc2"]}},"top_n":3}
-const char *result = aimux_rerank(handle, opts_json);
-aimux_drop_handle(handle);
-aimux_free_string(result);
-```
-
----
-
-## Search
+### Search
 
 Calls a search provider to obtain results.
 
-### Node.js
+Examples: [Node.js](api/node.md#search) · [Python](api/python.md#search) · [Rust](api/rust.md#search) · [Go](api/go.md#search) · [C ABI](api/c.md#search)
 
-```typescript
-// The SearchModel class is exposed, but there is no standalone factory function — use via the Rust core or C ABI
-// The Node binding does not yet expose a search factory function
-```
+> ⚠️ The `SearchModel` class is exported in Node.js / Python but there is **no factory function** in those bindings yet — use Rust, Go, or the C ABI.
 
-### Rust
-
-```rust
-use aimux_core::search_model::{SearchCallOptions, SearchModel};
-
-let model = provider.search_model("tavily-search");
-let opts = SearchCallOptions::new("What is Rust?");
-let result = model.do_search(&opts).await?;
-// result.results is Vec<SearchResultItem>
-```
-
-### C ABI
-
-```c
-uint64_t handle = aimux_tavily_search_new(api_key, "tavily-search");
-// opts_json: {"query":"What is Rust?","max_results":5}
-const char *result = aimux_search(handle, opts_json);
-// result: {"results":[{"title":"...","url":"...","content":"..."}],"answer":null}
-aimux_drop_handle(handle);
-aimux_free_string(result);
-```
-
----
-
-## File Upload
+### File Upload
 
 Uploads a file to the provider and returns a file ID.
 
-### Node.js
-
-```typescript
-const { openaiFiles } = require('aimux')
-const fs = require('fs')
-
-const files = await openaiFiles('sk-...')
-const fileBase64 = fs.readFileSync('doc.pdf').toString('base64')
-const resultJson = await files.uploadFile(fileBase64, 'application/pdf')
-const result = JSON.parse(resultJson)
-
-console.log(result.provider_reference)  // { openai: 'file-xxx' }
-```
-
-### Rust
-
-```rust
-use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData};
-use aimux_core::shared::FileBytes;
-
-let files = provider.files();
-let opts = UploadFileCallOptions::new(
-    UploadFileData::Data { data: FileBytes::Base64(file_b64) },
-    "application/pdf",
-);
-let result = files.upload_file(opts).await?;
-// result.provider_reference is HashMap<String, String>
-```
-
----
+Examples: [Node.js](api/node.md#file-upload) · [Python](api/python.md#file-upload) · [Rust](api/rust.md#file-upload) · [Go](api/go.md#file-upload) · [C ABI](api/c.md#file)
 
 ## Provider Factory Functions
 
@@ -709,179 +273,56 @@ let result = files.upload_file(opts).await?;
 
 > The `baseUrl?` parameter of all factory functions is optional; by default each provider's official API address is used. When testing, pass a local mock server URL.
 
----
-
-## Tool Calling
-
-Tool definitions are language-agnostic data descriptions (JSON Schema) that require no macros.
-
-### Defining Tools
-
-```typescript
-// Node.js — construct the data object directly
-const tools = [{
-  type: 'function',
-  name: 'get_weather',
-  description: 'Get current weather',
-  input_schema: {
-    type: 'object',
-    properties: {
-      location: { type: 'string', description: 'City name' }
-    },
-    required: ['location']
-  }
-}]
-
-const result = await generateText(model, "What's the weather in Tokyo?", { tools })
-if (result.tool_calls.length > 0) {
-  const call = result.tool_calls[0]
-  console.log(call.tool_name)     // get_weather
-  console.log(call.input)         // { location: "Tokyo" }
-}
-```
-
-```rust
-use aimux_core::tool::FunctionTool;
-use serde_json::json;
-
-let tool = FunctionTool::new("get_weather", json!({
-    "type": "object",
-    "properties": {
-        "location": { "type": "string" }
-    },
-    "required": ["location"]
-}));
-```
-
-### Tool Selection Strategy
-
-```typescript
-const opts = {
-  tools,
-  tool_choice: 'auto'        // 'auto' | 'none' | 'required' | { type: 'tool', toolName: 'get_weather' }
-}
-```
+> **Per-language naming.** The tables above use the Node.js (camelCase) names. Each binding has its own naming convention for the same factories: Python uses snake_case (`openai_embedding`, `google_video`), Go uses `NewXxx` constructors returning `(T, error)` (`NewOpenAIEmbedding`, `NewGoogleVideo`), and the C ABI uses `aimux_<provider>_<feature>_new` (`aimux_openai_embedding_new`). Swift/Kotlin/Flutter currently expose only the language-model constructors (`Model.openai` / `Model.anthropic`). See [Feature Coverage](#feature-coverage) for the full matrix and each [language guide](#language-guides) for examples.
 
 ---
 
-## Rust API
+## Feature Coverage
 
-The Rust core provides 8 traits, implemented by each provider as needed:
+Coverage verified against the current binding implementations (2026-08-01):
 
-| Trait | Method | Semantics |
-|-------|------|------|
-| `LanguageModel` | `do_generate`, `do_stream` | Text generation |
-| `EmbeddingModel` | `do_embed` | Vector embedding |
-| `SpeechModel` | `do_generate` | Speech synthesis |
-| `TranscriptionModel` | `do_generate`, `do_stream` | Speech to text |
-| `ImageModel` | `do_generate` | Image generation |
-| `RerankingModel` | `do_rerank` | Reranking |
-| `VideoModel` | `do_generate` | Video generation |
-| `SearchModel` | `do_search` | Search |
-| `Files` | `upload_file` | File upload |
+| Feature | Rust (core) | Node.js | Python | Swift | Kotlin | Flutter | Go | C/C++ |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Text generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Streaming generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Vector embedding | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Speech synthesis (TTS) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Speech to text (STT) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Image generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Video generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Reranking | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Search | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| File upload | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-The user-facing API consists of the `generate_text()` / `stream_text()` free functions, which internally call the trait methods.
+- ✅ — available. All bindings now expose the full multimodal surface.
+- **Node.js / Python** (native path): full multimodal surface — every factory in the [Provider Factory Functions](#provider-factory-functions) section.
+- **Go** (C ABI path): full multimodal surface with typed wrappers — `NewOpenAIEmbedding` / `NewCohereEmbedding` / `NewGoogleEmbedding`, `NewOpenAISpeech`, `NewOpenAITranscription`, `NewOpenAIImage` / `NewGoogleImage`, `NewOpenAIFiles`, `NewCohereReranking`, `NewGoogleVideo`, `NewTavilySearch`, plus `DeepSeek`/`NewDeepSeek` and the typed `Generate`/`Stream` API. All multimodal constructors support `WithBase` variants.
+- **C/C++** (C ABI path): full multimodal surface via the [C ABI function list](api/c.md#function-list).
+- **Swift / Kotlin / Flutter** (C ABI path): each now wraps all 8 multimodal model types alongside text generation and streaming. See each [language guide](#language-guides) for the API surface.
+- **Swift / Kotlin / Flutter** (C ABI path): currently wrap only the language model (`Model.openai` / `Model.anthropic`) — text generation and streaming. Multimodal features (embedding, TTS, STT, image, video, rerank, search, files) are reachable only through the raw [C ABI](api/c.md) until the wrappers are extended.
 
----
+**How this table was derived** — every cell was checked against the binding's
+own source (not inferred from another language). A feature counts as ✅ only
+when the binding exposes a public factory **and** an invocable method for it;
+⚠️ means the class exists but no factory function was found, so it cannot be
+instantiated. Evidence per binding:
 
-## C ABI (aimux-ffi)
-
-The C ABI boundary provides FFI interfaces for Swift / Kotlin / Flutter / C++. All functions communicate via JSON strings.
-
-### Function List
-
-#### Language Model
-
-| Function | Description |
+| Binding | Evidence (source of truth) |
 |------|------|
-| `aimux_openai_new(api_key, model_id)` | Create an OpenAI language model |
-| `aimux_openai_new_with_base(api_key, model_id, base_url)` | Create an OpenAI language model (custom base_url, for mock testing) |
-| `aimux_anthropic_new(api_key, model_id)` | Create an Anthropic language model |
-| `aimux_anthropic_new_with_base(api_key, model_id, base_url)` | Create an Anthropic language model (custom base_url) |
-| `aimux_generate_text(handle, prompt_json, opts_json)` | Non-streaming generation (returns a JSON string) |
-| `aimux_stream_text(handle, prompt_json, opts_json, on_part, on_done, on_error)` | Streaming generation (push callback) |
+| Rust | `aimux-core/src/` — one trait per feature: `language_model.rs`, `embedding_model.rs`, `speech_model.rs`, `transcription_model.rs`, `image_model.rs`, `video_model.rs`, `reranking_model.rs`, `search_model.rs`, `files_model.rs`; plus `generate.rs` (`generate_text` / `stream_text`) |
+| Node.js | `bindings/node/index.d.ts` — 9 model classes + 16 factory functions (L12-152); `SearchModel.search` exists (L65) but no search factory in the export list |
+| Python | `bindings/python/src/lib.rs` L203-231 — 8 multimodal classes registered via `add_class`, 10 multimodal factories via `add_function`; no search factory |
+| Swift | `bindings/swift/Sources/Aimux/Aimux.swift` — `Model` (4 constructors) + `generateText` / `streamText` / `streamTextAsync` / `generate`; `Multimodal.swift` — 8 multimodal classes (EmbeddingModel, SpeechModel, TranscriptionModel, ImageModel, VideoModel, RerankingModel, SearchModel, Files) with factory constructors + methods + 19 Codable types |
+| Kotlin | `bindings/kotlin/src/main/kotlin/aimux/Model.kt` — JNA interface declares all 38 ABI functions; `Multimodal.kt` — 8 multimodal Closeable classes with factory methods; `MultimodalTypes.kt` — serializable data classes for all result/option types |
+| Flutter | `bindings/flutter/lib/aimux.dart` — `Model` (text); `multimodal.dart` — 8 multimodal classes with dart:ffi lookups for all 32 C ABI multimodal symbols |
+| Go | `bindings/go/multimodal.go` — `NewOpenAIEmbedding` / `NewOpenAISpeech` / `NewOpenAITranscription` / `NewOpenAIImage` / `NewGoogleVideo` / `NewCohereReranking` / `NewTavilySearch` / `NewOpenAIFiles` + matching `ParseXxxResult`; embedding & image are OpenAI-only (no Cohere/Google constructors) |
+| C/C++ | `aimux-ffi/src/lib.rs` — 36 exported `extern "C"` functions; full mapping in [c.md](api/c.md#function-list) |
 
-#### Vector Embedding
+> The ❌ / ⚠️ cells are tracked as actionable work items in
+> [Binding API Gaps](api/gaps.md) — each gap lists the required C ABI
+> functions and a reference implementation.
 
-| Function | Description |
-|------|------|
-| `aimux_openai_embedding_new(api_key, model_id)` | Create an embedding model |
-| `aimux_embed(handle, values_json, opts_json)` | Generate vector embeddings |
-
-#### Speech
-
-| Function | Description |
-|------|------|
-| `aimux_openai_speech_new(api_key, model_id)` | Create a TTS model |
-| `aimux_speech_generate(handle, opts_json)` | Generate speech |
-| `aimux_openai_transcription_new(api_key, model_id)` | Create an STT model |
-| `aimux_transcription_generate(handle, audio_base64, media_type, opts_json)` | Transcribe audio |
-
-#### Image
-
-| Function | Description |
-|------|------|
-| `aimux_openai_image_new(api_key, model_id)` | Create an image model |
-| `aimux_image_generate(handle, opts_json)` | Generate an image |
-
-#### Video Generation (added 2026-07-29)
-
-| Function | Description |
-|------|------|
-| `aimux_google_video_new(api_key, model_id)` | Create a Google video model |
-| `aimux_video_generate(handle, opts_json)` | Generate a video (`VideoCallOptions` JSON) |
-
-#### Reranking (added 2026-07-29)
-
-| Function | Description |
-|------|------|
-| `aimux_cohere_reranking_new(api_key, model_id)` | Create a Cohere reranking model |
-| `aimux_rerank(handle, opts_json)` | Rerank (`RerankingCallOptions` JSON) |
-
-#### Search (added 2026-07-29)
-
-| Function | Description |
-|------|------|
-| `aimux_tavily_search_new(api_key, model_id)` | Create a Tavily search model (`model_id` is a placeholder only; Tavily uses a fixed endpoint) |
-| `aimux_search(handle, opts_json)` | Execute a search (`SearchCallOptions` JSON) |
-
-#### File
-
-| Function | Description |
-|------|------|
-| `aimux_openai_files_new(api_key)` | Create a file manager |
-| `aimux_file_upload(handle, data_base64, media_type, opts_json)` | Upload a file |
-
-#### Resource Management
-
-| Function | Description |
-|------|------|
-| `aimux_drop_handle(handle)` | Free the model handle (0 is a no-op) |
-| `aimux_free_string(ptr)` | Free a returned string |
-
-### Memory Management
-
-- `aimux_generate_text` and similar functions return `char*`; the caller must release it with `aimux_free_string`
-- The `const char*` received by the `aimux_stream_text` callback is valid only during the callback; it must be copied synchronously within the callback
-- `aimux_drop_handle` frees the model handle (0 is a no-op)
-
-### Header File
-
-`aimux-ffi/aimux-ffi.h` — the complete C header file; C++ can use it directly by wrapping it in `extern "C"`.
-
----
-
-## Design Documents
-
-| Document | Content |
-|------|------|
-| [RFC-0001](rfc/0001-multilang-bindings.md) | Multi-language binding design |
-| [RFC-0003](rfc/0003-test-cassette.md) | Cassette testing design |
-| [RFC-0008](rfc/0008-multimodal-bindings.md) | Multimodal binding design |
-
-## Multi-Language Bindings
-
-All binding layers share the same Rust core, with a consistent API shape. The following lists the construction method and base_url support for each binding.
+## Construction and base_url Support
 
 | Binding | FFI method | base_url support | Construction example |
 |------|---------|:---:|---------|
@@ -895,57 +336,15 @@ All binding layers share the same Rust core, with a consistent API shape. The fo
 
 > The Node/Python bindings bypass the C ABI and call `aimux-providers` directly; Swift/Kotlin/Flutter/Go/C go through the `aimux-ffi` C ABI. Go uses cgo to statically link `libaimux_ffi.a`, producing a single binary (see [RFC-0011](../rfc/0011-golang-bindings.md) for details).
 
-### Swift
+---
 
-```swift
-import Aimux
+## Design Documents
 
-let model = try Model.openai(apiKey: "sk-...", modelId: "gpt-4o", baseUrl: "http://localhost:3000")
-let result = try model.generateText(prompt: "\"What is Rust?\"")
-// or pass multi-role messages
-let result2 = try model.generateText(prompt: #"[{"role":"user","content":"Hello"}]"#)
-```
-
-### Kotlin
-
-```kotlin
-Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
-    val result = model.generateText("\"What is Rust?\"")
-}
-// streaming
-Model.openai("sk-...", "gpt-4o").use { model ->
-    model.streamText("\"Write a haiku\"", onPart = { println(it) }, onDone = {}, onError = {})
-}
-```
-
-### Flutter/Dart
-
-```dart
-final model = Model.openai('sk-...', 'gpt-4o', baseUrl: 'http://localhost:3000');
-final result = model.generateText('What is Rust?');
-model.close();
-// streaming
-final stream = model.streamText('Write a haiku');
-await for (final part in stream) {
-  if (part.containsKey('TextDelta')) print(part['TextDelta']['delta']);
-}
-```
-
-### Go
-
-```go
-// cgo statically links libaimux_ffi.a, producing a single binary (the Rust core is compiled into the executable)
-model := aimux.OpenAIWithBase("sk-...", "gpt-4o", "http://localhost:3000")
-defer model.Close()
-result := model.GenerateText(`"What is Rust?"`)
-// streaming
-stream := model.StreamText(`"Write a haiku"`)
-for part := range stream {
-    fmt.Println(part) // StreamPart JSON
-}
-```
-
-> For the Go binding design, see [RFC-0011](../rfc/0011-golang-bindings.md).
+| Document | Content |
+|------|------|
+| [RFC-0001](../rfc/0001-multilang-bindings.md) | Multi-language binding design |
+| [RFC-0003](../rfc/0003-test-cassette.md) | Cassette testing design |
+| [RFC-0008](../rfc/0008-multimodal-bindings.md) | Multimodal binding design |
 
 ---
 

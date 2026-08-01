@@ -182,7 +182,8 @@ Tests run on cassette playback — no network and no keys. See
 
 | Doc | Contents |
 |-----|----------|
-| [docs/API.md](docs/API.md) | **API reference** (all modalities × all languages) |
+| [docs/API.md](docs/API.md) | **API overview** — shared reference + links to per-language guides |
+| [docs/api/](docs/api/) | **Per-language API guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter |
 | [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | Project overview, design decisions, benchmarks |
 | [docs/PERF-RESULTS.md](docs/PERF-RESULTS.md) | Performance benchmark results |
 | [docs/aimux-vs-aisdk-node.md](docs/aimux-vs-aisdk-node.md) | Node.js DX comparison vs Vercel AI SDK |
@@ -204,6 +205,7 @@ Tests run on cassette playback — no network and no keys. See
 | [0010](rfc/0010-perf-benchmark-vs-aisdk.md) | Performance vs Vercel AI SDK benchmark |
 | [0011](rfc/0011-golang-bindings.md) | Go bindings (cgo static link + push callback → channel) |
 | [0012](rfc/0012-source-dedup.md) | Source dedup (product source −25%) |
+| [0013](rfc/0013-java-bindings.md) | Java bindings (JNA + raw/typed two-layer API) |
 
 ## Contributing
 

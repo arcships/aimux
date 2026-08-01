@@ -6,7 +6,9 @@ Public documentation for aimux — a unified LLM access layer written in Rust.
 
 | Doc | Contents |
 |-----|----------|
-| [API.md](API.md) | **API reference** — all modalities × all languages |
+| [API.md](API.md) | **API overview** — features, shared reference tables, factory functions, coverage matrix |
+| [api/gaps.md](api/gaps.md) | **Binding API gaps** — per-binding missing API tracking (Swift/Kotlin/Flutter multimodal, Go base_url, search factories, C ABI `_with_base`), with C ABI function mapping and reference implementations |
+| [api/](api/) | **Per-language guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter |
 | [PROJECT-OVERVIEW.md](PROJECT-OVERVIEW.md) | Project overview, design decisions, and benchmark summary |
 | [PERF-RESULTS.md](PERF-RESULTS.md) | Performance benchmark results (aimux vs OpenAI SDK / Vercel AI SDK) |
 | [aimux-vs-aisdk-node.md](aimux-vs-aisdk-node.md) | Node.js developer-experience comparison vs Vercel AI SDK |
