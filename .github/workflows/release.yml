@@ -142,7 +142,8 @@ jobs:
           args: --no-sdist
           working-directory: bindings/python
 
-  # ── Go binding: build static libaimux_ffi.a per platform + test ─────────
+  # ── Go binding: build libaimux_ffi.a + run tests (verification only; the
+  #    .a is built by users locally via `go generate` — no release artifacts) ──
   go-build:
     name: Go binding (${{ matrix.settings.target }})
     runs-on: ${{ matrix.settings.host }}
@@ -151,30 +152,19 @@ jobs:
       matrix:
         settings:
           - host: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            artifact: libaimux_ffi-x86_64-unknown-linux-musl.a
-            setup: apt-get update && apt-get install -y musl-tools
+            target: x86_64-unknown-linux-gnu
           - host: macos-13
             target: x86_64-apple-darwin
-            artifact: libaimux_ffi-x86_64-apple-darwin.a
-            setup: ""
           - host: macos-latest
             target: aarch64-apple-darwin
-            artifact: libaimux_ffi-aarch64-apple-darwin.a
-            setup: ""
           - host: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: libaimux_ffi-x86_64-pc-windows-msvc.a
-            setup: ""
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Install cross toolchain
-        if: matrix.settings.setup != ''
-        run: ${{ matrix.settings.setup }}
       - name: Build static archive
         run: cargo build -p aimux-ffi --release --target ${{ matrix.settings.target }}
       - name: Test Go binding
@@ -184,11 +174,6 @@ jobs:
           export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.settings.target }}/release"
           go vet ./...
           go test ./...
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.settings.artifact }}
-          path: target/${{ matrix.settings.target }}/release/libaimux_ffi.a
 
   # ── C ABI shared libraries (C/C++ + reference for other bindings) ────────
   ffi-build:
@@ -224,7 +209,7 @@ jobs:
   # ── GitHub Release: aggregate all binary artifacts ───────────────────────
   github-release:
     name: Create GitHub Release
-    needs: [go-build, ffi-build]
+    needs: [ffi-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

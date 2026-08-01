@@ -10,14 +10,18 @@ go get github.com/arcships/aimux/bindings/go
 ```
 
 The binding links `libaimux_ffi.a` (static archive) via cgo. The archive is
-downloaded per-platform from the [GitHub Releases](https://github.com/arcships/aimux/releases)
-page by the `go generate` script:
+built from the Rust core with cargo — **native build for your own platform,
+no cross-compilation involved**. You need the [Rust toolchain](https://rustup.rs)
+(one-time install):
 
 ```bash
-go generate ./...
+cd <your-module>            # or anywhere inside a Go module that imports the binding
+go generate ./...           # builds target/release/libaimux_ffi.a (first build: a few minutes)
+go build ./...              # subsequent builds are fast (incremental)
 ```
 
-You need a C toolchain (gcc/clang) but **not** a Rust toolchain.
+> The cgo `LDFLAGS` point at `<repo>/target/release/libaimux_ffi.a` — the
+> standard location when the build runs from a checkout of this repository.
 
 ## Quick start
 
