@@ -1,0 +1,242 @@
+name: Release
+
+# First-release pipeline (M1): Rust crates → crates.io, Node → npm,
+# Python → PyPI (trusted publishing), Go .a artifacts + C ABI artifacts →
+# GitHub Release. Swift / Kotlin / Flutter land in later milestones.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write   # npm provenance + PyPI trusted publishing
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Rust core → crates.io (dependency order) ─────────────────────────────
+  rust-publish:
+    name: Publish crates to crates.io
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish aimux-stream
+        run: cargo publish -p aimux-stream
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish aimux-provider-utils
+        run: cargo publish -p aimux-provider-utils
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish aimux-core
+        # Wait for the crates.io index to pick up aimux-stream/provider-utils
+        # before publishing dependents.
+        run: |
+          sleep 30
+          cargo publish -p aimux-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish aimux-providers
+        run: |
+          sleep 30
+          cargo publish -p aimux-providers
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish aimux-ffi
+        run: |
+          sleep 30
+          cargo publish -p aimux-ffi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # ── Node binding: build per-platform .node, then publish to npm ──────────
+  node-build:
+    name: Node build (${{ matrix.settings.target }})
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - host: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        working-directory: bindings/node
+        run: npm install
+      - name: Build
+        working-directory: bindings/node
+        shell: bash
+        run: |
+          npx napi build --platform --release --target ${{ matrix.settings.target }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-${{ matrix.settings.target }}
+          path: bindings/node/*.node
+
+  node-publish:
+    name: Publish Node to npm
+    needs: node-build
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Install dependencies
+        working-directory: bindings/node
+        run: npm install
+      - name: Download platform binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: bindings/node
+          pattern: node-*
+          merge-multiple: true
+      - name: Verify binaries
+        working-directory: bindings/node
+        run: ls -la *.node
+      - name: Publish (napi prepublish + npm)
+        working-directory: bindings/node
+        run: |
+          npx napi prepublish -t npm
+          npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── Python binding: build + publish platform wheels (OIDC trusted) ───────
+  python-release:
+    name: Publish Python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build and publish wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: publish
+          args: --no-sdist
+          working-directory: bindings/python
+
+  # ── Go binding: build static libaimux_ffi.a per platform + test ─────────
+  go-build:
+    name: Go binding (${{ matrix.settings.target }})
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: libaimux_ffi-x86_64-unknown-linux-musl.a
+            setup: apt-get update && apt-get install -y musl-tools
+          - host: macos-13
+            target: x86_64-apple-darwin
+            artifact: libaimux_ffi-x86_64-apple-darwin.a
+            setup: ""
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            artifact: libaimux_ffi-aarch64-apple-darwin.a
+            setup: ""
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: libaimux_ffi-x86_64-pc-windows-msvc.a
+            setup: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross toolchain
+        if: matrix.settings.setup != ''
+        run: ${{ matrix.settings.setup }}
+      - name: Build static archive
+        run: cargo build -p aimux-ffi --release --target ${{ matrix.settings.target }}
+      - name: Test Go binding
+        working-directory: bindings/go
+        shell: bash
+        run: |
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.settings.target }}/release"
+          go vet ./...
+          go test ./...
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.settings.artifact }}
+          path: target/${{ matrix.settings.target }}/release/libaimux_ffi.a
+
+  # ── C ABI shared libraries (C/C++ + reference for other bindings) ────────
+  ffi-build:
+    name: aimux-ffi (${{ matrix.target }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: libaimux_ffi-linux-x64.so
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            artifact: libaimux_ffi-macos-arm64.dylib
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: aimux_ffi-windows-x64.dll
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build cdylib
+        run: cargo build -p aimux-ffi --release --target ${{ matrix.target }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact == 'aimux_ffi-windows-x64.dll' && 'aimux_ffi.dll' || matrix.artifact }}
+
+  # ── GitHub Release: aggregate all binary artifacts ───────────────────────
+  github-release:
+    name: Create GitHub Release
+    needs: [go-build, ffi-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: List assets
+        run: ls -la release-assets/
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/**
+          generate_release_notes: true
