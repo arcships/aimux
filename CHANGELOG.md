@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-01
+
+### Added
+- **`bodyOverrides` (JSON deep-merge)** — per-call and provider-level request
+  body overrides. Objects merge recursively, scalars overwrite, `null` deletes
+  keys. Applied after built-in vendor overrides; per-call overrides
+  provider-level. Lets users inject vendor-specific fields (e.g.
+  `enable_thinking`, `thinking_budget`) without closure bridging — critical
+  for aimux's multi-language C ABI architecture where closures can't cross the
+  JSON string boundary. (RFC-0017)
+- **`maxRetries` (per-call)** — override the provider's retry count. `Some(0)`
+  disables retries. Available on both `GenerateTextOptions` (per-call) and
+  provider factory config (provider-level, Node only).
+- **Provider factory config object (Node)** — `openai()`/`anthropic()`/
+  `deepseek()` 3rd param now accepts `string | ProviderConfig` (backward
+  compatible). `ProviderConfig` exposes `baseUrl`, `headers`, `organization`,
+  `project`, `maxRetries`, `bodyOverrides`.
+- **All 7 language typed wrappers** now expose `body_overrides` + `max_retries`
+  on `GenerateTextOptions`: Node, Python, Go, Java, Kotlin, Swift, Flutter.
+- RFC-0016 (Vercel AI SDK gap analysis) and RFC-0017 (provider config DX
+  design).
+
+### Fixed
+- **`build_headers` now reads `config.headers` and `config.project`** —
+  previously `OpenAIConfig.with_headers()` / `with_project()` set fields that
+  `build_headers` silently ignored. Provider-level headers and project ID now
+  reach the wire.
+- **Anthropic factory now applies `bodyOverrides`** — was missing in the
+  initial implementation (OpenAI/DeepSeek had it, Anthropic didn't).
+- **`openai_compat` macro** — added `with_headers`/`with_retry_config`/
+  `with_body_overrides` pass-through methods to all 251 OpenAI-compatible
+  thin-wrapper providers (previously only `with_base_url` was exposed).
+
 ## [0.1.2] - 2026-08-01
 
 ### Fixed
