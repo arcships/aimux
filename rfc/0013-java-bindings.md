@@ -1,6 +1,6 @@
 # RFC-0013: Java Bindings
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (2026-08-01)
 > **Date**: 2026-08-01
 > **Related**: [RFC-0001](0001-multilang-bindings.md) multilang bindings, [RFC-0008](0008-multimodal-bindings.md) multimodal bindings, [RFC-0011](0011-golang-bindings.md) Golang bindings, [aimux-ffi.h](../aimux-ffi/aimux-ffi.h)
 

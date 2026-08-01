@@ -37,4 +37,8 @@ echo "  Flutter -> bindings/flutter/pubspec.yaml"
 sed -i -E "s/^version = .*/version = \"$VERSION\"/" bindings/kotlin/build.gradle.kts
 echo "  Kotlin  -> bindings/kotlin/build.gradle.kts"
 
+# Java
+sed -i -E "s/^version = .*/version = \"$VERSION\"/" bindings/java/build.gradle.kts
+echo "  Java    -> bindings/java/build.gradle.kts"
+
 echo "Done. Go is driven by the git tag — no change needed."
