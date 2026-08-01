@@ -199,3 +199,56 @@ test('per-call bodyOverrides take precedence over provider-level', async (t) => 
     await closeServer(server)
   }
 })
+
+// ── maxRetries ────────────────────────────────────────────────────────────────
+
+test('maxRetries: 0 disables retries (single request on 500)', async (t) => {
+  let requestCount = 0
+  const { server, url } = await startMockServer(async (req, res) => {
+    requestCount++
+    await readBody(req)
+    res.writeHead(500, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ error: { message: 'Internal server error', type: 'server_error' } }))
+  })
+
+  try {
+    const model = await openai('test-key', 'gpt-4o', url)
+    const opts = JSON.stringify({ max_retries: 0 })
+
+    await t.throwsAsync(
+      async () => model.generateText(JSON.stringify('Hello'), opts),
+      { message: /500|Internal|server_error/i },
+    )
+
+    // With retries disabled, exactly 1 request should have been made.
+    t.is(requestCount, 1, 'should make exactly 1 request when maxRetries=0')
+  } finally {
+    await closeServer(server)
+  }
+})
+
+test('maxRetries: factory-level disables retries', async (t) => {
+  let requestCount = 0
+  const { server, url } = await startMockServer(async (req, res) => {
+    requestCount++
+    await readBody(req)
+    res.writeHead(500, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ error: { message: 'Internal server error', type: 'server_error' } }))
+  })
+
+  try {
+    const model = await openai('test-key', 'gpt-4o', {
+      baseUrl: url,
+      maxRetries: 0,
+    })
+
+    await t.throwsAsync(
+      async () => model.generateText(JSON.stringify('Hello')),
+      { message: /500|Internal|server_error/i },
+    )
+
+    t.is(requestCount, 1, 'factory maxRetries:0 should make exactly 1 request')
+  } finally {
+    await closeServer(server)
+  }
+})

@@ -16,6 +16,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key};
+use serde_json::Value;
 
 /// The bare (unversioned) Anthropic API URL.
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
@@ -41,6 +42,8 @@ pub struct AnthropicConfig {
     pub headers: Option<HashMap<String, String>>,
     /// 重试配置。默认 `RetryConfig::default()`（max_retries=2）。
     pub retry_config: RetryConfig,
+    /// Provider 级请求体覆盖（RFC-0017）。在标准请求体之后 deep-merge。
+    pub body_overrides: Option<Value>,
 }
 
 impl AnthropicConfig {
@@ -55,6 +58,7 @@ impl AnthropicConfig {
             name: "anthropic.messages".to_string(),
             headers: None,
             retry_config: RetryConfig::default(),
+            body_overrides: None,
         }
     }
 
@@ -97,6 +101,12 @@ impl AnthropicConfig {
         self
     }
 
+    /// Set provider-level request body overrides (RFC-0017).
+    pub fn with_body_overrides(mut self, overrides: Value) -> Self {
+        self.body_overrides = Some(overrides);
+        self
+    }
+
     /// Load the configuration from the environment.
     ///
     /// Reads `ANTHROPIC_API_KEY` (required) and the optional
@@ -123,6 +133,7 @@ pub struct AnthropicConfigBuilder {
     base_url: Option<String>,
     name: Option<String>,
     headers: Option<HashMap<String, String>>,
+    body_overrides: Option<Value>,
 }
 
 impl AnthropicConfigBuilder {
@@ -151,6 +162,11 @@ impl AnthropicConfigBuilder {
         self
     }
 
+    pub fn body_overrides(mut self, overrides: Value) -> Self {
+        self.body_overrides = Some(overrides);
+        self
+    }
+
     /// Build the config, validating that `api_key` and `auth_token` are not
     /// both set and that a provided `base_url` is non-empty.
     pub fn build(self) -> Result<AnthropicConfig, AiMuxError> {
@@ -174,6 +190,7 @@ impl AnthropicConfigBuilder {
                 .unwrap_or_else(|| "anthropic.messages".to_string()),
             headers: self.headers,
             retry_config: RetryConfig::default(),
+            body_overrides: self.body_overrides,
         })
     }
 }

@@ -809,6 +809,8 @@ class GenerateTextOptions(BaseModel):
     provider_options: Optional[Dict[str, Any]] = None
     reasoning: Optional[ReasoningEffort] = None
     instructions: Optional[str] = None
+    body_overrides: Optional[Any] = None
+    max_retries: Optional[int] = None
 
 
 class GenerateResult(BaseModel):

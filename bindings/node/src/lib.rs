@@ -277,6 +277,11 @@ pub async fn anthropic(
                     ..aimux_provider_utils::RetryConfig::default()
                 });
             }
+            if let Some(ref json_str) = opts.body_overrides {
+                if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    cfg = cfg.with_body_overrides(overrides);
+                }
+            }
         }
         None => {}
     }

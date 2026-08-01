@@ -1619,6 +1619,8 @@ public final class Types {
         @JsonProperty("provider_options") private Map<String, JsonNode> providerOptions;
         @JsonProperty("reasoning") private ReasoningEffort reasoning;
         @JsonProperty("instructions") private String instructions;
+        @JsonProperty("body_overrides") private JsonNode bodyOverrides;
+        @JsonProperty("max_retries") private Long maxRetries;
 
         @JsonCreator
         GenerateTextOptions() {}
@@ -1627,7 +1629,8 @@ public final class Types {
                                     Double topP, Long topK, Double presencePenalty, Double frequencyPenalty,
                                     JsonNode responseFormat, Long seed, List<Tool> tools, ToolChoice toolChoice,
                                     Map<String, String> headers, Map<String, JsonNode> providerOptions,
-                                    ReasoningEffort reasoning, String instructions) {
+                                    ReasoningEffort reasoning, String instructions,
+                                    JsonNode bodyOverrides, Long maxRetries) {
             this.maxOutputTokens = maxOutputTokens;
             this.temperature = temperature;
             this.stopSequences = stopSequences;
@@ -1643,6 +1646,8 @@ public final class Types {
             this.providerOptions = providerOptions;
             this.reasoning = reasoning;
             this.instructions = instructions;
+            this.bodyOverrides = bodyOverrides;
+            this.maxRetries = maxRetries;
         }
 
         public Long getMaxOutputTokens() { return maxOutputTokens; }
@@ -1660,6 +1665,8 @@ public final class Types {
         public Map<String, JsonNode> getProviderOptions() { return providerOptions; }
         public ReasoningEffort getReasoning() { return reasoning; }
         public String getInstructions() { return instructions; }
+        public JsonNode getBodyOverrides() { return bodyOverrides; }
+        public Long getMaxRetries() { return maxRetries; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -1679,6 +1686,8 @@ public final class Types {
             private Map<String, JsonNode> providerOptions;
             private ReasoningEffort reasoning;
             private String instructions;
+            private JsonNode bodyOverrides;
+            private Long maxRetries;
 
             public Builder maxOutputTokens(Long v) { this.maxOutputTokens = v; return this; }
             public Builder temperature(Double v) { this.temperature = v; return this; }
@@ -1695,11 +1704,13 @@ public final class Types {
             public Builder providerOptions(Map<String, JsonNode> v) { this.providerOptions = v; return this; }
             public Builder reasoning(ReasoningEffort v) { this.reasoning = v; return this; }
             public Builder instructions(String v) { this.instructions = v; return this; }
+            public Builder bodyOverrides(JsonNode v) { this.bodyOverrides = v; return this; }
+            public Builder maxRetries(Long v) { this.maxRetries = v; return this; }
 
             public GenerateTextOptions build() {
                 return new GenerateTextOptions(maxOutputTokens, temperature, stopSequences, topP, topK,
                     presencePenalty, frequencyPenalty, responseFormat, seed, tools, toolChoice, headers,
-                    providerOptions, reasoning, instructions);
+                    providerOptions, reasoning, instructions, bodyOverrides, maxRetries);
             }
         }
 
@@ -1722,14 +1733,16 @@ public final class Types {
                 && Objects.equals(headers, that.headers)
                 && Objects.equals(providerOptions, that.providerOptions)
                 && Objects.equals(reasoning, that.reasoning)
-                && Objects.equals(instructions, that.instructions);
+                && Objects.equals(instructions, that.instructions)
+                && Objects.equals(bodyOverrides, that.bodyOverrides)
+                && Objects.equals(maxRetries, that.maxRetries));
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty,
                 frequencyPenalty, responseFormat, seed, tools, toolChoice, headers, providerOptions, reasoning,
-                instructions);
+                instructions, bodyOverrides, maxRetries);
         }
     }
 
