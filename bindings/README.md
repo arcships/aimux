@@ -16,6 +16,7 @@ Binding layer ────┤
 | **Kotlin** | C ABI | JNA | ✅ PoC | [kotlin/](kotlin/) |
 | **Flutter** | C ABI | dart:ffi handwritten | ✅ PoC | [flutter/](flutter/) |
 | **Go** | C ABI | cgo (static linking `libaimux_ffi.a`) | ✅ PoC | [go/](go/) |
+| **Java** | C ABI | JNA | ✅ PoC | [java/](java/) |
 | **C / C++** | C ABI | direct link to aimux-ffi.h | ✅ PoC | [c/](c/) |
 
 ## Build
@@ -95,6 +96,21 @@ go test ./...
 ```
 
 The Go binding statically links `libaimux_ffi.a` via cgo; the artifact is a **single binary** (the Rust core is compiled into the executable, no need to distribute `.so`). See [RFC-0011](../rfc/0011-golang-bindings.md) for details.
+
+### Java
+```bash
+# First build the aimux-ffi .so
+cargo build -p aimux-ffi --release
+
+cd bindings/java
+export JAVA_HOME=...   # JDK 17 (any 9+ works; bytecode targets Java 8)
+export LD_LIBRARY_PATH="$(pwd)/../../target/release:${LD_LIBRARY_PATH}"
+gradle test
+```
+
+The Java binding uses JNA (no native toolchain needed at build time); the
+native library ships as per-platform classifier JARs. See
+[RFC-0013](../rfc/0013-java-bindings.md) for details.
 
 ## Contract Tests
 

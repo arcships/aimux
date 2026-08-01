@@ -39,6 +39,7 @@ Each language has its own guide with that language's examples:
 | Swift | [api/swift.md](api/swift.md) | Full multimodal surface (C ABI path) |
 | Kotlin | [api/kotlin.md](api/kotlin.md) | Full multimodal surface (C ABI path) |
 | Flutter/Dart | [api/flutter.md](api/flutter.md) | Full multimodal surface (C ABI path) |
+| Java | [api/java.md](api/java.md) | Full multimodal surface (C ABI path) |
 
 ## Quick Start
 
@@ -281,25 +282,24 @@ Examples: [Node.js](api/node.md#file-upload) · [Python](api/python.md#file-uplo
 
 Coverage verified against the current binding implementations (2026-08-01):
 
-| Feature | Rust (core) | Node.js | Python | Swift | Kotlin | Flutter | Go | C/C++ |
-|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Text generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Streaming generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Vector embedding | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Speech synthesis (TTS) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Speech to text (STT) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Image generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Video generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Reranking | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Search | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| File upload | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Feature | Rust (core) | Node.js | Python | Swift | Kotlin | Flutter | Go | C/C++ | Java |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Text generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Streaming generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Vector embedding | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Speech synthesis (TTS) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Speech to text (STT) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Image generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Video generation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Reranking | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Search | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| File upload | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 - ✅ — available. All bindings now expose the full multimodal surface.
 - **Node.js / Python** (native path): full multimodal surface — every factory in the [Provider Factory Functions](#provider-factory-functions) section.
 - **Go** (C ABI path): full multimodal surface with typed wrappers — `NewOpenAIEmbedding` / `NewCohereEmbedding` / `NewGoogleEmbedding`, `NewOpenAISpeech`, `NewOpenAITranscription`, `NewOpenAIImage` / `NewGoogleImage`, `NewOpenAIFiles`, `NewCohereReranking`, `NewGoogleVideo`, `NewTavilySearch`, plus `DeepSeek`/`NewDeepSeek` and the typed `Generate`/`Stream` API. All multimodal constructors support `WithBase` variants.
 - **C/C++** (C ABI path): full multimodal surface via the [C ABI function list](api/c.md#function-list).
-- **Swift / Kotlin / Flutter** (C ABI path): each now wraps all 8 multimodal model types alongside text generation and streaming. See each [language guide](#language-guides) for the API surface.
-- **Swift / Kotlin / Flutter** (C ABI path): currently wrap only the language model (`Model.openai` / `Model.anthropic`) — text generation and streaming. Multimodal features (embedding, TTS, STT, image, video, rerank, search, files) are reachable only through the raw [C ABI](api/c.md) until the wrappers are extended.
+- **Swift / Kotlin / Flutter / Java** (C ABI path): each now wraps all 8 multimodal model types alongside text generation and streaming. See each [language guide](#language-guides) for the API surface.
 
 **How this table was derived** — every cell was checked against the binding's
 own source (not inferred from another language). A feature counts as ✅ only

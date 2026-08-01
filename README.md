@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 [![Providers](https://img.shields.io/badge/providers-172%2B-green.svg)](rfc/0004-provider-inventory.md)
-[![Bindings](https://img.shields.io/badge/bindings-7-9cf.svg)](bindings/)
+[![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 
 aimux is a Rust implementation of a unified LLM provider access layer. It
 collapses the HTTP APIs of every AI provider into a single
@@ -33,8 +33,8 @@ difference: aimux is an access layer, those are orchestration layers.
   body post-processing), so thin wrappers never erase provider differences.
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
-- **7 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
-  Go, C.
+- **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
+  Go, Java, C.
 - **Hermetic tests** — 2,650+ cassettes replay real API responses; no network
   or API keys required.
 
@@ -155,7 +155,7 @@ Full list: [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md).
 
 ## Language bindings
 
-aimux ships 7 bindings that share the same Rust core:
+aimux ships 8 bindings that share the same Rust core:
 
 | Binding | Path | Tool | Directory |
 |---------|------|------|-----------|
@@ -165,6 +165,7 @@ aimux ships 7 bindings that share the same Rust core:
 | **Kotlin** | C ABI | JNA | [bindings/kotlin/](bindings/kotlin/) |
 | **Flutter** | C ABI | dart:ffi | [bindings/flutter/](bindings/flutter/) |
 | **Go** | C ABI | cgo (static link, single binary) | [bindings/go/](bindings/go/) |
+| **Java** | C ABI | JNA | [bindings/java/](bindings/java/) |
 | **C / C++** | C ABI | direct link | [bindings/c/](bindings/c/) |
 
 See [bindings/README.md](bindings/README.md) and the [API docs](docs/API.md).

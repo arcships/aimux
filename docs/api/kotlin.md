@@ -68,7 +68,7 @@ surface: `Role`, `FinishReasonUnified`, `ReasoningEffort`, `TokenUsage`,
 
 ## Coverage
 
-Text generation and streaming are supported. Multimodal features (embedding,
-TTS, STT, image, video, rerank, search, files) are reachable only through the
-raw [C ABI](c.md) until the wrappers are extended — see the
-[coverage matrix](../API.md#feature-coverage).
+Full multimodal surface — text generation, streaming, embedding, TTS, STT,
+image, video, rerank, search, and file upload (`Multimodal.kt` +
+`MultimodalTypes.kt`), verified by mock-server end-to-end tests (no real
+network). See the [coverage matrix](../API.md#feature-coverage).

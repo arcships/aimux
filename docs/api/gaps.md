@@ -19,6 +19,7 @@
 | **Node.js** | ~~Search 无工厂~~ | ✅ 已完成 |
 | **Python** | ~~Search 无工厂~~ | ✅ 已完成 |
 | **C ABI** | ~~`cohere_embedding` / `google_embedding` / `google_image` 无 `_with_base`~~ | ✅ 已完成 |
+| **Java** | 无（RFC-0013 新绑定，自始实现完整多模态面） | ✅ 已完成 |
 
 > **所有差距已修复。** Feature Coverage 矩阵全绿(见
 > [API.md](../API.md#feature-coverage))。
