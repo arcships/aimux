@@ -12,6 +12,25 @@ Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
 }
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+All 250 registry-backed OpenAI-compatible providers are reachable by name;
+`aimux.ProviderName` holds the constants:
+
+```kotlin
+// Key from the provider's env var (GROQ_API_KEY etc.):
+Model.provider(name = "groq", modelId = "llama-3.3-70b").use { model ->
+    val result = model.generateText("\"Hello\"")
+}
+
+// Explicit key + optional config JSON ({"base_url": "..."}):
+Model.provider(name = "groq", apiKey = "sk-...", modelId = "llama-3.3-70b").use { model ->
+    val result = model.generateText("\"Hello\"")
+}
+```
+
+Unknown names throw an error listing the available providers.
+
 ## Text Generation
 
 ```kotlin

@@ -18,6 +18,29 @@ try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:30
 }
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+All 250 registry-backed OpenAI-compatible providers are reachable by name;
+`ProviderName` holds the constants:
+
+```java
+import io.aimux.Model;
+import io.aimux.ProviderName;
+
+// Key from the provider's env var (GROQ_API_KEY etc.):
+try (Model model = Model.providerFromEnv("groq", "llama-3.3-70b")) {
+    String result = model.generateText("\"Hello\"");
+}
+
+// Explicit key + optional config JSON ({"base_url": "..."}):
+try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
+    String result = model.generateText("\"Hello\"");
+}
+```
+
+`deepseek(apiKey, modelId)` remains as a shortcut (registry-backed).
+Unknown names throw an error listing the available providers.
+
 ## Architecture
 
 Two layers, mirroring the Kotlin binding:

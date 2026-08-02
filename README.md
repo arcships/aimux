@@ -26,17 +26,19 @@ difference: aimux is an access layer, those are orchestration layers.
 
 ## Why aimux
 
-- **172 provider modules** — 11 native protocol implementations
+- **290+ provider modules** — 11 native protocol implementations
   (OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
-  DeepSeek, Anthropic-AWS) + 145 OpenAI-compatible thin wrappers + 15
-  modality-specific (speech/image/video) + 1 generic Responses API wrapper.
+  DeepSeek, Anthropic-AWS) + **250 registry-backed OpenAI-compatible providers**
+  (unified `provider(name, ...)` entry, RFC-0017 phase 4) + modality-specific
+  (speech/image/video/search).
 - **Unified, object-safe interface** — the `LanguageModel` trait supports
   `Box<dyn>` so providers are interchangeable without changing call sites.
 - **Full multimodal** — text, streaming, tool calling, embeddings, image,
   speech, transcription, video, reranking, files.
-- **Config-driven thin wrappers** — `OpenAICompatProfile` describes each
-  provider's quirks (top_k, tools, response_format, streaming usage, request
-  body post-processing), so thin wrappers never erase provider differences.
+- **Config-driven provider registry** — `provider-registry.json` describes
+  each of the 250 OpenAI-compatible providers (base URL, env var, profile
+  quirks: top_k, tools, response_format, streaming usage, max_tokens key);
+  one unified `provider(name, ...)` entry in every binding (RFC-0017 phase 4).
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
 - **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
@@ -80,7 +82,7 @@ middleware, and telemetry per request).
 ```
 aimux/
 ├── aimux-core            # Core abstractions: LanguageModel / Provider / Message / StreamPart
-├── aimux-providers       # 172 provider implementations
+├── aimux-providers       # 290+ provider implementations (250 registry-backed + native)
 ├── aimux-stream          # SSE / NDJSON stream parsing
 ├── aimux-provider-utils  # HTTP utilities: retry, backoff, error parsing, API-key loading
 └── aimux-ffi             # C ABI (opaque handle + JSON + push callback) for non-native bindings
@@ -174,20 +176,23 @@ while let Some(part) = stream.next().await {
 ## Switch providers
 
 ```rust
-// OpenAI → DeepSeek: only the provider changes
-let provider = DeepSeekProvider::new(
-    DeepSeekConfig::from_env()?
-);
-let model = provider.model("deepseek-chat");
+// OpenAI → DeepSeek: only the provider name changes (RFC-0017 phase 4 —
+// registry-backed; key read from the provider's env var)
+let model = aimux_providers::provider_from_env("deepseek", "deepseek-chat", None)?;
 // model usage is identical — it's all dyn LanguageModel
 ```
+
+All 250 OpenAI-compatible providers are registry-backed: `provider(name, ...)`
+in every binding, with typed `ProviderName` (enum/union/consts per language).
+The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
+see [docs/API.md](docs/API.md#built-in-providers-rfc-0017-phase-4).
 
 ## Provider coverage
 
 | Type | Count | Examples |
 |------|:-----:|----------|
 | Native protocol | 11 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, DeepSeek |
-| OpenAI-compatible | 145 | Groq, Fireworks, Together, Perplexity, Ollama, OpenRouter, Alibaba Tongyi, Zhipu, Baidu, Tencent, iFlytek, Moonshot, SiliconFlow… |
+| OpenAI-compatible (registry) | 250 | Groq, Fireworks, Together, Perplexity, Ollama, OpenRouter, Alibaba Tongyi, Zhipu, Baidu, Tencent, iFlytek, Moonshot, SiliconFlow… |
 | Speech / transcription | 7 | ElevenLabs, Deepgram, AssemblyAI, Cartesia… |
 | Image / video | 8 | Black Forest Labs, Replicate, Fal, KlingAI… |
 
@@ -247,6 +252,10 @@ Tests run on cassette playback — no network and no keys. See
 | [0011](rfc/0011-golang-bindings.md) | Go bindings (cgo static link + push callback → channel) |
 | [0012](rfc/0012-source-dedup.md) | Source dedup (product source −25%) |
 | [0013](rfc/0013-java-bindings.md) | Java bindings (JNA + raw/typed two-layer API) |
+| [0016](rfc/0016-align-with-aisdk.md) | Align with Vercel AI SDK (capability gaps) |
+| [0017](rfc/0017-provider-config-dx.md) | Unified provider config & request body overrides (DX) |
+| [0018](rfc/0018-codex-subscription.md) | Codex subscription channel provider (evaluation) |
+| [0019](rfc/0019-session-affinity.md) | Session affinity lightweight support |
 
 ## Contributing
 

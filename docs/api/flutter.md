@@ -12,6 +12,24 @@ final result = model.generateText('What is Rust?');
 model.close();
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+All 250 registry-backed OpenAI-compatible providers are reachable by name;
+`ProviderName` holds the constants:
+
+```dart
+// Key from the provider's env var (GROQ_API_KEY etc.):
+final model = Model.provider('groq', 'llama-3.3-70b');
+final result = model.generateText('Hello');
+model.close();
+
+// Explicit key + optional config JSON ({"base_url": "..."}):
+final model2 = Model.provider('groq', 'llama-3.3-70b', apiKey: 'sk-...');
+model2.close();
+```
+
+Unknown names throw an error listing the available providers.
+
 ## Text Generation
 
 ```dart
