@@ -392,22 +392,17 @@ async fn should_extract_reasoning_content_and_text_from_deepseek_reasoning_fixtu
 // "disabled" | "adaptive" }`) and a `reasoning_effort` field, with
 // xhigh→max / minimal→low remapping that emits `Compatibility` warnings.
 //
-// Rust status: the shared OpenAI request builder emits `reasoning_effort`
-// straight from `options.reasoning` (Display string) and never emits
-// `thinking`; it does not remap xhigh/minimal or emit compatibility warnings;
-// and it only reads provider options under the `openai` key, so
-// `providerOptions.deepseek.*` is ignored. The remapping / thinking tests
-// below are TDD red lights.
+// Rust status (stage2-001, RFC-0017 阶段 2): the DeepSeek 特化已整体退役——
+// 共享 builder 直传 `options.reasoning` 为 `reasoning_effort`（7 档,无归一化）,
+// 不注入 `thinking`,不产生归一化 warning;`providerOptions.deepseek.*` 被忽略。
+// thinking 注入 / effort 重映射由用户 bodyOverrides 定义。以下测试断言退役后的
+// 透传语义（原断言特化的测试已按新语义改写）。
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: doGenerate › reasoning › "should send correct request body"
-/// (line ~82) — `providerOptions.deepseek.thinking = { type: "enabled" }`
-/// must land in the request body.
-///
-/// RED LIGHT: `thinking` is never emitted and `deepseek` provider options are
-/// not consulted.
+/// stage2-001: DeepSeek 特化退役——`providerOptions.deepseek.thinking` 不再
+/// 翻译为请求体 `thinking` 字段（thinking 注入改由用户 bodyOverrides 定义）。
 #[tokio::test]
-async fn should_send_thinking_enabled_in_request_body_via_provider_options() {
+async fn should_not_inject_thinking_from_deepseek_provider_options() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -421,14 +416,16 @@ async fn should_send_thinking_enabled_in_request_body_via_provider_options() {
     let body = result.request_body.expect("body");
 
     assert_eq!(body["model"], json!("deepseek-reasoner"));
-    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+    assert!(
+        body.get("thinking").is_none(),
+        "stage2-001: DeepSeek 特化退役,thinking 不再由 providerOptions.deepseek 注入,改用 bodyOverrides"
+    );
 }
 
-/// TS: "should map top-level reasoning to thinking enabled" (line ~132).
-///
-/// RED LIGHT: `thinking` is not emitted (only `reasoning_effort: "high"` is).
+/// stage2-001: 顶层 `reasoning: 'high'` 透传为 `reasoning_effort: "high"`,
+/// 不再注入 `thinking`。
 #[tokio::test]
-async fn should_map_top_level_reasoning_high_to_thinking_enabled_and_reasoning_effort_high() {
+async fn should_passthrough_reasoning_high_to_reasoning_effort_without_thinking() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -441,16 +438,17 @@ async fn should_map_top_level_reasoning_high_to_thinking_enabled_and_reasoning_e
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+    assert!(
+        body.get("thinking").is_none(),
+        "stage2-001: thinking 注入已退役,开思考改用 bodyOverrides:{{thinking:{{type:'enabled'}}}}"
+    );
     assert_eq!(body["reasoning_effort"], json!("high"));
 }
 
-/// TS: "should map top-level reasoning none to thinking disabled" (line ~145).
-///
-/// RED LIGHT: `thinking` is not emitted and `reasoning_effort` is set to
-/// `"none"` instead of being omitted.
+/// stage2-001: 顶层 `reasoning: 'none'` 透传为 `reasoning_effort: "none"`,
+/// 不含 thinking 注入（任务验收:透传语义）。
 #[tokio::test]
-async fn should_map_top_level_reasoning_none_to_thinking_disabled() {
+async fn should_passthrough_reasoning_none_to_reasoning_effort_without_thinking() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -463,19 +461,17 @@ async fn should_map_top_level_reasoning_none_to_thinking_disabled() {
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["thinking"], json!({ "type": "disabled" }));
     assert!(
-        body.get("reasoning_effort").is_none(),
-        "reasoning 'none' should map to thinking disabled, not set reasoning_effort"
+        body.get("thinking").is_none(),
+        "stage2-001: thinking 注入已退役,关思考改用 bodyOverrides:{{thinking:{{type:'disabled'}}}}"
     );
+    assert_eq!(body["reasoning_effort"], json!("none"));
 }
 
-/// TS: "should map top-level reasoning xhigh to reasoning_effort max" (line ~158).
-///
-/// RED LIGHT: Rust emits `reasoning_effort: "xhigh"` (not `"max"`) and produces
-/// no compatibility warning.
+/// stage2-001: `reasoning: 'xhigh'` 直传为 `reasoning_effort: "xhigh"`,
+/// 无归一化(xhigh→max 已退役),无 warning。
 #[tokio::test]
-async fn should_map_top_level_reasoning_xhigh_to_reasoning_effort_max_with_warning() {
+async fn should_passthrough_reasoning_xhigh_without_normalization() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -488,23 +484,15 @@ async fn should_map_top_level_reasoning_xhigh_to_reasoning_effort_max_with_warni
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["reasoning_effort"], json!("max"));
+    assert_eq!(body["reasoning_effort"], json!("xhigh"));
     let warning = result
         .warnings
         .iter()
         .find(|w| matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning"));
-    match warning {
-        Some(Warning::Compatibility { details, .. }) => assert_eq!(
-            details.as_deref(),
-            Some(
-                "reasoning \"xhigh\" is not directly supported by this model. mapped to effort \"max\"."
-            )
-        ),
-        other => panic!(
-            "expected a reasoning compatibility warning, got {:?}",
-            other
-        ),
-    }
+    assert!(
+        warning.is_none(),
+        "stage2-001: 归一化已退役,xhigh 直传不产生归一化 warning"
+    );
 }
 
 /// TS: "should map top-level reasoning low to reasoning_effort low without a
@@ -554,13 +542,10 @@ async fn should_map_top_level_reasoning_medium_to_reasoning_effort_medium() {
     assert_eq!(body["reasoning_effort"], json!("medium"));
 }
 
-/// TS: "should map top-level reasoning minimal to reasoning_effort low with
-/// compatibility warning" (line ~203).
-///
-/// RED LIGHT: Rust emits `reasoning_effort: "minimal"` (not `"low"`) and
-/// produces no compatibility warning.
+/// stage2-001: `reasoning: 'minimal'` 直传为 `reasoning_effort: "minimal"`,
+/// 无归一化(minimal→low 已退役),无 warning。
 #[tokio::test]
-async fn should_map_top_level_reasoning_minimal_to_reasoning_effort_low_with_warning() {
+async fn should_passthrough_reasoning_minimal_without_normalization() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -573,32 +558,21 @@ async fn should_map_top_level_reasoning_minimal_to_reasoning_effort_low_with_war
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["reasoning_effort"], json!("low"));
+    assert_eq!(body["reasoning_effort"], json!("minimal"));
     let warning = result
         .warnings
         .iter()
         .find(|w| matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning"));
-    match warning {
-        Some(Warning::Compatibility { details, .. }) => assert_eq!(
-            details.as_deref(),
-            Some(
-                "reasoning \"minimal\" is not directly supported by this model. mapped to effort \"low\"."
-            )
-        ),
-        other => panic!(
-            "expected a reasoning compatibility warning, got {:?}",
-            other
-        ),
-    }
+    assert!(
+        warning.is_none(),
+        "stage2-001: 归一化已退役,minimal 直传不产生归一化 warning"
+    );
 }
 
-/// TS: "should pass providerOptions reasoningEffort %s through to the API"
-/// (line ~220, `it.each(['low', 'medium', 'xhigh'])`).
-///
-/// RED LIGHT: `providerOptions.deepseek.reasoningEffort` is ignored (the shared
-/// builder only reads the `openai` key), so `reasoning_effort` is absent.
+/// stage2-001: `providerOptions.deepseek.reasoningEffort` 不再被翻译
+/// （deepseek 特化退役,共享 builder 只读 `openai` key）→ `reasoning_effort` 缺席。
 #[tokio::test]
-async fn should_pass_provider_options_reasoning_effort_through_to_api() {
+async fn should_ignore_deepseek_provider_options_reasoning_effort() {
     for effort in ["low", "medium", "xhigh"] {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
@@ -612,22 +586,18 @@ async fn should_pass_provider_options_reasoning_effort_through_to_api() {
         let result = model.do_generate(&options).await.expect("should succeed");
         let body = result.request_body.expect("body");
 
-        assert_eq!(
-            body["reasoning_effort"],
-            json!(effort),
-            "reasoning_effort should pass through for effort={}",
+        assert!(
+            body.get("reasoning_effort").is_none(),
+            "stage2-001: deepseek 特化退役,providerOptions.deepseek.reasoningEffort 被忽略,effort={} 不出现",
             effort
         );
     }
 }
 
-/// TS: "should pass providerOptions thinking.type=adaptive through to the API"
-/// (line ~238).
-///
-/// RED LIGHT: `thinking` is never emitted and `deepseek` provider options are
-/// not consulted.
+/// stage2-001: `providerOptions.deepseek.thinking.type=adaptive` 不再翻译为
+/// 请求体 `thinking` 字段（特化退役）→ thinking 缺席。
 #[tokio::test]
-async fn should_pass_provider_options_thinking_adaptive_through_to_api() {
+async fn should_ignore_deepseek_provider_options_thinking_adaptive() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -640,15 +610,16 @@ async fn should_pass_provider_options_thinking_adaptive_through_to_api() {
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["thinking"], json!({ "type": "adaptive" }));
+    assert!(
+        body.get("thinking").is_none(),
+        "stage2-001: providerOptions.deepseek.thinking 被忽略,改用 bodyOverrides"
+    );
 }
 
-/// TS: "should pass providerOptions reasoningEffort" (line ~253) — only
-/// `reasoningEffort: "max"` is set, so `thinking` must be undefined.
-///
-/// RED LIGHT: `reasoning_effort` is absent (deepseek options ignored).
+/// stage2-001: `providerOptions.deepseek.reasoningEffort = "max"` 被忽略 →
+/// `reasoning_effort` 缺席;thinking 亦缺席。
 #[tokio::test]
-async fn should_pass_provider_options_reasoning_effort_max() {
+async fn should_ignore_deepseek_provider_options_reasoning_effort_max() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -661,18 +632,18 @@ async fn should_pass_provider_options_reasoning_effort_max() {
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["reasoning_effort"], json!("max"));
-    // When only reasoningEffort is set without thinking, thinking should be
-    // undefined and rely on the API default (enabled).
+    assert!(
+        body.get("reasoning_effort").is_none(),
+        "stage2-001: providerOptions.deepseek.reasoningEffort 被忽略"
+    );
+    // 未设置 reasoning/thinking 时,请求体不含 thinking,依赖 API 默认。
     assert!(body.get("thinking").is_none());
 }
 
-/// TS: "should prefer providerOptions thinking over top-level reasoning"
-/// (line ~270).
-///
-/// RED LIGHT: `thinking` is not emitted.
+/// stage2-001: `providerOptions.deepseek.thinking` 不再优先于顶层 `reasoning`
+/// （特化退役）——thinking 缺席,`reasoning:'none'` 透传为 `reasoning_effort:"none"`。
 #[tokio::test]
-async fn should_prefer_provider_options_thinking_over_top_level_reasoning() {
+async fn should_ignore_deepseek_provider_options_thinking_over_top_level_reasoning() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -686,16 +657,17 @@ async fn should_prefer_provider_options_thinking_over_top_level_reasoning() {
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+    assert!(
+        body.get("thinking").is_none(),
+        "stage2-001: providerOptions.deepseek.thinking 被忽略,改用 bodyOverrides"
+    );
+    assert_eq!(body["reasoning_effort"], json!("none"));
 }
 
-/// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
-/// (line ~286).
-///
-/// RED LIGHT: the `deepseek` provider option is ignored, so `reasoning_effort`
-/// falls back to the top-level `"high"`.
+/// stage2-001: `providerOptions.deepseek.reasoningEffort` 被忽略,顶层
+/// `reasoning:'high'` 透传为 `reasoning_effort:"high"`。
 #[tokio::test]
-async fn should_prefer_provider_options_reasoning_effort_over_top_level_reasoning() {
+async fn should_ignore_deepseek_provider_options_reasoning_effort_over_top_level_reasoning() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
@@ -709,7 +681,7 @@ async fn should_prefer_provider_options_reasoning_effort_over_top_level_reasonin
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
-    assert_eq!(body["reasoning_effort"], json!("max"));
+    assert_eq!(body["reasoning_effort"], json!("high"));
 }
 
 /// TS: "should not set thinking when reasoning is not specified" (line ~302).
