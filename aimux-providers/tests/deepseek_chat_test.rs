@@ -338,8 +338,9 @@ async fn should_extract_text_content() {
 
 /// TS: doGenerate › tool call › "should send correct request body" (line ~318).
 ///
-/// Verifies that tools and `thinking` are correctly serialized in the request
-/// body.
+/// Verifies that tools are correctly serialized in the request body.
+/// stage2-001（RFC-0017 阶段 2）：DeepSeek 特化已退役——`providerOptions.deepseek`
+/// 不再翻译为请求体 `thinking` 字段，用户改用 bodyOverrides 注入（新语义透传）。
 #[tokio::test]
 async fn should_send_correct_tool_call_request_body() {
     let server = MockServer::start().await;
@@ -350,13 +351,17 @@ async fn should_send_correct_tool_call_request_body() {
 
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![weather_tool().into()]);
+    // 退役后 providerOptions.deepseek.* 被忽略（不再有 apply_deepseek_override）。
     options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
 
     let result = model.do_generate(&options).await.expect("should succeed");
     let body = result.request_body.expect("body");
 
     assert_eq!(body["model"], json!("deepseek-reasoner"));
-    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+    assert!(
+        body.get("thinking").is_none(),
+        "stage2-001: DeepSeek 特化退役,thinking 不再由 providerOptions.deepseek 注入,改用 bodyOverrides"
+    );
     assert_eq!(
         body["tools"],
         json!([{

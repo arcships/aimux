@@ -1007,7 +1007,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
 
 /// Convert `CallOptions` to an OpenAI request body, returning warnings.
 /// `provider` controls provider-specific behaviour (e.g. groq reads provider
-/// options from the `"groq"` key and applies a reasoning-effort map).
+/// options from the `"groq"` key).
 /// `profile` declares provider capability differences (top_k, tools, etc.).
 pub fn build_request_body_with_warnings_fallible(
     model_id: &str,
@@ -1038,23 +1038,15 @@ pub fn build_request_body_with_warnings_fallible(
         openai_option(provider_opts, key)
     };
 
-    // Resolve reasoning effort.
-    // Groq maps minimal→low, xhigh→high, and skips 'none' (no reasoning_effort
-    // sent). Other providers use the raw value.
+    // Resolve reasoning effort — direct passthrough (v3: no built-in vendor
+    // normalization). Top-level `reasoning` maps verbatim to `reasoning_effort`
+    // (all levels sent as-is, including none/minimal/xhigh);
+    // `providerOptions.reasoningEffort` wins over top-level `reasoning`.
     let resolved_reasoning_effort: Option<String> = popt("reasoningEffort")
         .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()))
         .or_else(|| {
             if is_custom_reasoning(&options.reasoning) {
-                if provider == "groq" {
-                    match options.reasoning? {
-                        ReasoningEffort::None => None,
-                        ReasoningEffort::Minimal => Some("low".to_string()),
-                        ReasoningEffort::Xhigh => Some("high".to_string()),
-                        other => Some(other.to_string()),
-                    }
-                } else {
-                    options.reasoning.map(|r| r.to_string())
-                }
+                options.reasoning.map(|r| r.to_string())
             } else {
                 None
             }
@@ -1115,26 +1107,35 @@ pub fn build_request_body_with_warnings_fallible(
         body["top_k"] = json!(tk);
     }
 
-    // Max tokens / max_completion_tokens
+    // Max tokens / max_completion_tokens。
+    //
+    // `max_tokens_key` 是内部数据（非用户概念），指定该厂商唯一认的 key：
+    // - Some("max_tokens")            → 只发 max_tokens（如 stepfun/siliconflow/perplexity 等）
+    // - Some("max_completion_tokens") → 只发 max_completion_tokens（groq/heroku 等）
+    // - None                          → 现状推断：推理模型发 mct，非推理发 max_tokens。
     let max_completion_tokens_opt =
         popt("maxCompletionTokens").and_then(|v| v.as_u64().map(|n| n as u32));
 
-    if is_reasoning_model {
-        if let Some(max_tokens) = options.max_output_tokens {
-            match max_completion_tokens_opt {
-                None => body["max_completion_tokens"] = json!(max_tokens),
-                Some(mct) => body["max_completion_tokens"] = json!(mct),
-            }
-        } else if let Some(mct) = max_completion_tokens_opt {
-            body["max_completion_tokens"] = json!(mct);
-        }
-    } else {
-        if let Some(max_tokens) = options.max_output_tokens {
-            body["max_tokens"] = json!(max_tokens);
-        }
-        if let Some(mct) = max_completion_tokens_opt {
-            body["max_completion_tokens"] = json!(mct);
-        }
+    // 推理模型用 mct 还是 max_tokens：由 max_tokens_key 决定，None/未知值走现状推断。
+    let use_mct_key = match profile.max_tokens_key {
+        Some("max_tokens") => false,
+        Some("max_completion_tokens") => true,
+        _ => is_reasoning_model,
+    };
+
+    if let Some(max_tokens) = options.max_output_tokens {
+        let key = if use_mct_key {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
+        body[key] = json!(max_tokens);
+    }
+    // 显式 maxCompletionTokens 选项：只认 max_tokens 的厂商不发送 mct。
+    if let Some(mct) = max_completion_tokens_opt
+        && profile.max_tokens_key != Some("max_tokens")
+    {
+        body["max_completion_tokens"] = json!(mct);
     }
 
     // Temperature, top_p, frequency_penalty, presence_penalty
@@ -1327,6 +1328,9 @@ pub fn build_request_body_with_warnings_fallible(
     if let Some(ref effort) = resolved_reasoning_effort {
         body["reasoning_effort"] = json!(effort);
     }
+    // 注：旧的"reasoning 无映射提示"warning 块（is_custom_reasoning &&
+    // resolved_reasoning_effort.is_none()）已删除——v3 直传语义下该分支不可达：
+    // is_custom_reasoning=true 时 resolved 必为 Some（见上方 resolved 解析）。
 
     // Service tier
     if provider == "groq" {
@@ -1423,14 +1427,8 @@ pub fn build_request_body_with_warnings_fallible(
         });
     }
 
-    // 请求体后处理：某些厂商需要追加额外字段。
-    if let Some(ref override_kind) = profile.request_body_override {
-        match override_kind {
-            super::RequestBodyOverride::DeepSeek => {
-                apply_deepseek_override(&mut body, &mut warnings, options);
-            }
-        }
-    }
+    // 厂商特化后处理已整体退役（RFC-0017 阶段 2）：不内置任何厂商映射，
+    // thinking 注入 / effort 重映射等差异由用户 bodyOverrides 定义。
 
     // Per-call request body overrides (RFC-0017): deep-merge user-supplied
     // JSON into the built body. `null` values delete the corresponding key.
@@ -1479,76 +1477,6 @@ pub fn build_request_body_with_warnings(
             body: Value::Null,
             warnings: Vec::new(),
         })
-}
-
-/// DeepSeek 请求体后处理：追加 `thinking` 字段，重映射 `reasoning_effort`。
-fn apply_deepseek_override(body: &mut Value, warnings: &mut Vec<Warning>, options: &CallOptions) {
-    use aimux_core::types::ReasoningEffort;
-
-    let deepseek_opts = options
-        .provider_options
-        .as_ref()
-        .and_then(|m| m.get("deepseek"));
-
-    // thinking 字段
-    if let Some(thinking) = deepseek_opts.and_then(|o| o.get("thinking")).cloned() {
-        body["thinking"] = thinking;
-    } else if let Some(reasoning) = options.reasoning
-        && reasoning != ReasoningEffort::ProviderDefault
-    {
-        if reasoning == ReasoningEffort::None {
-            body["thinking"] = json!({ "type": "disabled" });
-        } else {
-            body["thinking"] = json!({ "type": "enabled" });
-        }
-    }
-
-    // reasoning_effort 重映射
-    if body.get("reasoning_effort").is_some() {
-        body.as_object_mut()
-            .expect("request body is a JSON object")
-            .remove("reasoning_effort");
-    }
-
-    if let Some(effort) = deepseek_opts
-        .and_then(|o| o.get("reasoningEffort"))
-        .cloned()
-    {
-        body["reasoning_effort"] = effort;
-    } else if let Some(reasoning) = options.reasoning {
-        match reasoning {
-            ReasoningEffort::None | ReasoningEffort::ProviderDefault => {}
-            ReasoningEffort::High => {
-                body["reasoning_effort"] = json!("high");
-            }
-            ReasoningEffort::Low => {
-                body["reasoning_effort"] = json!("low");
-            }
-            ReasoningEffort::Medium => {
-                body["reasoning_effort"] = json!("medium");
-            }
-            ReasoningEffort::Xhigh => {
-                body["reasoning_effort"] = json!("max");
-                warnings.push(Warning::Compatibility {
-                    feature: "reasoning".to_string(),
-                    details: Some(
-                        "reasoning \"xhigh\" is not directly supported by this model. mapped to effort \"max\"."
-                            .to_string(),
-                    ),
-                });
-            }
-            ReasoningEffort::Minimal => {
-                body["reasoning_effort"] = json!("low");
-                warnings.push(Warning::Compatibility {
-                    feature: "reasoning".to_string(),
-                    details: Some(
-                        "reasoning \"minimal\" is not directly supported by this model. mapped to effort \"low\"."
-                            .to_string(),
-                    ),
-                });
-            }
-        }
-    }
 }
 
 /// Parse OpenAI finish reason string into `FinishReason`.
