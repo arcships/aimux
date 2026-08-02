@@ -207,4 +207,23 @@ P1 问题:
 
 主要偏差(均不影响 Rust 核心,影响跨语言一致性):ProviderName 派生类型仅 2/8 语言(RFC 承诺 6 语言缺失);Python/Go config 仅支持 base_url;未知名字错误详情在 C ABI 系绑定丢失;Node/Python 的 phase 4 冒烟未落库;Go/Kotlin/Swift/Flutter 测试不在 CI;ProviderName 防漂移与 registry schema 校验测试偏弱。
 
+---
+
+## 修复状态 (2026-08-02, 合入前)
+
+| 审计项 | 状态 | 修复 |
+|---|---|---|
+| P1-1 Node 发布面 provider 导出 | ✅ 已修 | `index.js` 补 `module.exports.provider`;`index.d.ts` 补 `provider()` 声明 |
+| P1-2 Go DeepSeek registry 化 | ✅ 已修 | `multimodal.go` `DeepSeek()/NewDeepSeek()` → `Provider("deepseek", ...)` |
+| P2 ProviderName 8 语言 | ✅ 已修 | 生成器扩展输出 Go/Python/Java/Kotlin/Swift/Flutter 派生文件(checked-in) |
+| P2 冒烟落库 | ✅ 已修 | Node ava(`__test__/index.test.ts` +3 用例)+ Python pytest(`test_aimux.py` +3 用例,9 passed) |
+| P2 防漂移测试 | ✅ 已修 | `provider_name_matches_registry_json`(JSON 全量对比) |
+| 全量测试 | ✅ EXIT=0 | `cargo test -p aimux-providers --tests` 全绿(2769+) |
+
+**遗留 backlog(低优先级/环境限制)**:
+- C ABI 系绑定未知名字错误仅返回 handle=0(设计如此——C ABI 无错误通道,文档已说明)
+- Python/Go config 覆盖仅 base_url(headers/maxRetries 可后续补)
+- Go/Java/Kotlin/Swift/Flutter 运行时验证需有 cgo/各语言工具链的 CI 环境
+- `npm run build` 重新生成 index.js/d.ts 需完整 Node 环境(本机 PATH 的 node 为 Dim 精简运行时,已手动补产物)
+
 对照 RFC 验收清单:入口可用 ✅(Go/Java/Kotlin/Swift/Flutter 仍为"代码就绪未运行",本次审计只验证到代码层);ProviderName 被测试锁定 ⚠️(仅弱锁);用户覆盖生效 ⚠️(代码在,冒烟未落库);未知名字报错含列表 ⚠️(仅 Rust/Node/Python);全量测试 2769 绿 ✅。
