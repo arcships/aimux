@@ -281,10 +281,10 @@ mod tests {
     fn provider_name_roundtrip() {
         assert_eq!(ProviderName::Groq.as_str(), "groq");
         assert_eq!(
-            ProviderName::from_str("deepseek"),
+            "deepseek".parse::<ProviderName>().ok(),
             Some(ProviderName::Deepseek)
         );
-        assert_eq!(ProviderName::from_str("nope"), None);
+        assert_eq!("nope".parse::<ProviderName>().ok(), None);
         assert!(ProviderName::all_names().contains("groq"));
         assert_eq!(ProviderName::ALL.len(), 250);
     }
@@ -305,8 +305,9 @@ mod tests {
             .collect();
         assert_eq!(ProviderName::ALL.len(), names.len());
         for name in &names {
-            let variant = ProviderName::from_str(name)
-                .unwrap_or_else(|| panic!("registry name {name} missing from ProviderName"));
+            let variant = name
+                .parse::<ProviderName>()
+                .unwrap_or_else(|_| panic!("registry name {name} missing from ProviderName"));
             assert_eq!(variant.as_str(), *name);
         }
     }
