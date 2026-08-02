@@ -756,7 +756,7 @@ declare_openai_compat_provider!(
     FirepassConfig,
     FirepassProvider,
     "Fireworks (Firepass)",
-    "https://api.fireworks.ai/inference/v1（OpenAI",
+    "https://api.fireworks.ai/inference/v1",
     "FIREWORKS_API_KEY",
     OpenAICompatProfile::full()
 );
@@ -774,7 +774,8 @@ declare_openai_compat_provider!(
     FreemodelConfig,
     FreemodelProvider,
     "FreeModel",
-    "client.chat.completions.create",
+    // ⚠️ freemodel base_url 为推断值，待实测确认 (batch-03)
+    "https://api.freemodel.dev/v1",
     "FREEMODEL_API_KEY",
     OpenAICompatProfile::full()
 );
@@ -837,7 +838,7 @@ declare_openai_compat_provider!(
     GmiConfig,
     GmiProvider,
     "GMI",
-    "https://api.gmi-serving.com/v1（与",
+    "https://api.gmi-serving.com/v1",
     "GMI_API_KEY",
     OpenAICompatProfile::full()
 );
@@ -936,7 +937,7 @@ declare_openai_compat_provider!(
     IflowcnConfig,
     IflowcnProvider,
     "iFlow",
-    "https://apis.iflow.cn/v1（chat",
+    "https://apis.iflow.cn/v1",
     "IFLOW_API_KEY",
     OpenAICompatProfile::full()
 );
@@ -1530,7 +1531,7 @@ declare_openai_compat_provider!(
     OpencodeConfig,
     OpencodeProvider,
     "OpenCode Zen",
-    "opencode_zen.rs",
+    "https://api.opencode.zen/v1",
     "OPENCODE_API_KEY",
     OpenAICompatProfile::full()
 );
@@ -2124,7 +2125,7 @@ declare_openai_compat_provider!(
     VolcEngineConfig,
     VolcEngineProvider,
     "VolcEngine",
-    "https://ark.cn-beijing.volces.com",
+    "https://ark.cn-beijing.volces.com/api/v3",
     "ARK_API_KEY",
     OpenAICompatProfile::full()
 );
@@ -2250,7 +2251,7 @@ declare_openai_compat_provider!(
     ZhipuV4Config,
     ZhipuV4Provider,
     "ZhipuV4",
-    "https://open.bigmodel.cn",
+    "https://open.bigmodel.cn/api/paas/v4",
     "ZHIPU_API_KEY",
     OpenAICompatProfile::full()
 );
