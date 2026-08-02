@@ -178,7 +178,12 @@ while let Some(part) = stream.next().await {
 ```rust
 // OpenAI → DeepSeek: only the provider name changes (RFC-0017 phase 4 —
 // registry-backed; key read from the provider's env var)
-let model = aimux_providers::provider_from_env("deepseek", "deepseek-chat", None)?;
+use aimux_providers::{provider, provider_from_env, ProviderName};
+
+// 推荐:类型化 ProviderName(IDE 补全 + 编译期检查)
+let model = provider(ProviderName::Deepseek, None, "deepseek-chat", None)?;
+// 字符串形式同样可用:
+let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 // model usage is identical — it's all dyn LanguageModel
 ```
 

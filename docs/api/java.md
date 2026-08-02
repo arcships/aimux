@@ -27,12 +27,12 @@ All 250 registry-backed OpenAI-compatible providers are reachable by name;
 import io.aimux.Model;
 import io.aimux.ProviderName;
 
-// Key from the provider's env var (GROQ_API_KEY etc.):
-try (Model model = Model.providerFromEnv("groq", "llama-3.3-70b")) {
+// 推荐:ProviderName.GROQ 常量(类型检查 + 补全)
+try (Model model = Model.providerFromEnv(ProviderName.GROQ, "llama-3.3-70b")) {
     String result = model.generateText("\"Hello\"");
 }
 
-// Explicit key + optional config JSON ({"base_url": "..."}):
+// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
 try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
     String result = model.generateText("\"Hello\"");
 }

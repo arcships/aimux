@@ -21,11 +21,11 @@ All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` is an enum with one case per provider:
 
 ```swift
-// Key from the provider's env var (GROQ_API_KEY etc.):
-let model = try Aimux.provider(name: "groq", modelId: "llama-3.3-70b")
+// 推荐:ProviderName enum case(类型检查 + 补全)
+let model = try Aimux.provider(name: ProviderName.groq.rawValue, modelId: "llama-3.3-70b")
 let result = try model.generateText(prompt: "\"Hello\"")
 
-// Explicit key + optional config JSON ({"base_url": "..."}):
+// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
 let model2 = try Aimux.provider(name: "groq", apiKey: "sk-...", modelId: "llama-3.3-70b")
 ```
 

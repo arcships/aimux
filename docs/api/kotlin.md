@@ -18,12 +18,12 @@ All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `aimux.ProviderName` holds the constants:
 
 ```kotlin
-// Key from the provider's env var (GROQ_API_KEY etc.):
-Model.provider(name = "groq", modelId = "llama-3.3-70b").use { model ->
+// 推荐:ProviderName.GROQ 常量(类型检查 + 补全)
+Model.provider(name = ProviderName.GROQ, modelId = "llama-3.3-70b").use { model ->
     val result = model.generateText("\"Hello\"")
 }
 
-// Explicit key + optional config JSON ({"base_url": "..."}):
+// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
 Model.provider(name = "groq", apiKey = "sk-...", modelId = "llama-3.3-70b").use { model ->
     val result = model.generateText("\"Hello\"")
 }

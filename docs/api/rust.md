@@ -42,8 +42,10 @@ let model = provider(
     Some(ProviderOptions { base_url: Some("https://relay.example/v1".into()), ..Default::default() }),
 )?;
 
-// Typed name (IDE-completable, compile-checked):
-let model = provider(ProviderName::Groq.as_str(), None, "llama-3.3-70b", None)?;
+// Typed name (推荐——IDE-completable, compile-checked):
+let model = provider(ProviderName::Groq, None, "llama-3.3-70b", None)?;
+// 字符串形式同样可用（弱类型兼容）:
+let model = provider_from_env("groq", "llama-3.3-70b", None)?;
 ```
 
 `ProviderName` is generated from `provider_registry.json` (250 variants, `as_str`/

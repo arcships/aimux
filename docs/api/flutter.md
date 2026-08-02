@@ -18,12 +18,12 @@ All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:
 
 ```dart
-// Key from the provider's env var (GROQ_API_KEY etc.):
-final model = Model.provider('groq', 'llama-3.3-70b');
+// 推荐:ProviderName.groq 常量(补全 + 防拼写错误)
+final model = Model.provider(ProviderName.groq, 'llama-3.3-70b');
 final result = model.generateText('Hello');
 model.close();
 
-// Explicit key + optional config JSON ({"base_url": "..."}):
+// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
 final model2 = Model.provider('groq', 'llama-3.3-70b', apiKey: 'sk-...');
 model2.close();
 ```

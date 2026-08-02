@@ -60,14 +60,24 @@ a unified `provider(name, ...)` entry point — the per-provider shell types
 
 ```text
 provider(name, api_key?, model_id, config?)   // all languages
-  name     — registry name (typed: ProviderName enum/union per language)
+  name     — registry name; 推荐使用类型化 ProviderName（见下），字符串同样可用
   api_key  — optional; omitted/None reads the provider's env var from the registry
   config   — optional overrides (base_url / headers / maxRetries / body_overrides)
 ```
 
 - Unknown names fail with an error that lists the available providers.
-- `ProviderName` is generated from the registry (Rust enum, TS union, Go
-  consts, Java/Kotlin consts, Swift enum, Dart consts) — IDE-completable.
+- **推荐写法**:`ProviderName` is generated from the registry (Rust enum, TS
+  const object, Go/Java/Kotlin consts, Swift enum, Dart consts) —
+  IDE-completable and typo-proof:
+
+  ```text
+  Rust:   provider(ProviderName::Groq, ...)        TS:     provider(ProviderName.groq, ...)
+  Go:     Provider(ProviderName.Groq, ...)         Java:   Model.provider(ProviderName.GROQ, ...)
+  Swift:  Aimux.provider(name: ProviderName.groq.rawValue, ...)
+  Dart:   Model.provider(ProviderName.groq, ...)
+  ```
+
+  字符串形式（`provider("groq", ...)`）在全部语言中同样可用——两种写法等价。
 - The native `openai` / `anthropic` / `deepseek` factories remain as shortcuts.
 - Custom/relay providers: build from the base classes (`OpenAIConfig` +
   `OpenAIProvider` in Rust) or use the `base_url` override in `provider()`.

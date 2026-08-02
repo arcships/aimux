@@ -34,12 +34,12 @@ All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `aimux.ProviderName` holds typed constants:
 
 ```go
-// Key from the provider's env var (GROQ_API_KEY etc.):
-model, err := aimux.Provider("groq", "", "llama-3.3-70b")
+// 推荐:ProviderName.Groq 常量(类型检查 + 补全)
+model, err := aimux.Provider(aimux.ProviderName.Groq, "", "llama-3.3-70b")
 if err != nil { log.Fatal(err) }
 defer model.Close()
 
-// Explicit key + base URL override:
+// 字符串形式同样可用 + base URL 覆盖:
 model2, err := aimux.ProviderWithBase("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
 defer model2.Close()
 ```
