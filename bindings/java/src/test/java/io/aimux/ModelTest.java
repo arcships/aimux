@@ -62,8 +62,9 @@ class ModelTest {
 
     @Test
     void providerCreatesModelWithProviderNameConstant() {
-        // Recommended typed spelling: ProviderName.GROQ constant, env-var key.
-        try (Model model = Model.providerFromEnv(ProviderName.GROQ, "llama-3.3-70b")) {
+        // Recommended typed spelling: ProviderName.GROQ constant (key is
+        // validated on the first API call, not construction).
+        try (Model model = Model.provider(ProviderName.GROQ, "sk-test-fake-key", "llama-3.3-70b", null)) {
             assertThat(model).isNotNull();
         }
     }

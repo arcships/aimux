@@ -28,8 +28,11 @@ final class AimuxTests: XCTestCase {
     }
 
     func testProviderModelCreationWithProviderName() throws {
-        // Recommended typed spelling: ProviderName enum case, env-var key.
-        let model = try Aimux.provider(name: ProviderName.groq.rawValue, modelId: "llama-3.3-70b")
+        // Recommended typed spelling: ProviderName enum case (key is
+        // validated on the first API call, not construction).
+        let model = try Aimux.provider(
+            name: ProviderName.groq.rawValue, apiKey: "sk-test-fake-key", modelId: "llama-3.3-70b"
+        )
         XCTAssertNotNil(model)
     }
 

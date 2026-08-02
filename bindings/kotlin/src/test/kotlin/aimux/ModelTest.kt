@@ -32,8 +32,9 @@ class ModelTest {
 
     @Test
     fun `provider creates model with ProviderName constant (recommended)`() {
-        // Recommended typed spelling: ProviderName.GROQ constant, env-var key.
-        Model.provider(name = ProviderName.GROQ, modelId = "llama-3.3-70b").use { model ->
+        // Recommended typed spelling: ProviderName.GROQ constant (key is
+        // validated on the first API call, not construction).
+        Model.provider(name = ProviderName.GROQ, apiKey = "sk-test-fake-key", modelId = "llama-3.3-70b").use { model ->
             assertThat(model).isNotNull
         }
     }
