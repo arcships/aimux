@@ -19,6 +19,32 @@ const result = await generateText(model, 'What is Rust?')
 console.log(result.text)
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+All 250 built-in OpenAI-compatible providers are registry-backed. Look them up
+by name; the `ProviderName` type is a string-literal union generated from
+`provider-registry.json`, so your IDE autocompletes and typo'd names fail
+type-checking:
+
+```typescript
+import { provider, generateText } from 'aimux'
+import type { ProviderName } from 'aimux'
+
+// Key from the provider's env var (GROQ_API_KEY etc.), base URL & profile
+// from the registry:
+const model = await provider('groq', undefined, 'llama-3.3-70b')
+// Explicit key + overrides:
+const relay = await provider('groq', 'sk-...', 'llama-3.3-70b', {
+  baseUrl: 'https://relay.example/v1',
+  maxRetries: 0,
+})
+const result = await generateText(model, 'Hello')
+```
+
+`openai` / `anthropic` / `deepseek` factories remain (deepseek is now
+registry-backed). For custom providers not in the registry, build from the
+base classes with `createProvider`-style config via the base-URL override.
+
 ## Desktop and Electron compatibility
 
 The package ships one Node-API 8 binary per desktop OS and architecture. The

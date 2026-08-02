@@ -22,6 +22,34 @@ async fn main() -> Result<(), AiMuxError> {
 }
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+All 250 built-in OpenAI-compatible providers are registry-backed: no per-provider
+`XxxConfig`/`XxxProvider` types. Look them up by name (or by the `ProviderName` enum):
+
+```rust
+use aimux_providers::{provider, provider_from_env, ProviderName, ProviderOptions};
+
+// Key from the provider's env var (GROQ_API_KEY etc.), base URL & profile from
+// the registry — replaces the retired `XxxConfig::from_env()`.
+let model = provider_from_env("groq", "llama-3.3-70b", None)?;
+
+// Explicit key + overrides — replaces the retired `XxxConfig::new().with_base_url(..)`.
+let model = provider(
+    "groq",
+    Some("sk-...".to_string()),
+    "llama-3.3-70b",
+    Some(ProviderOptions { base_url: Some("https://relay.example/v1".into()), ..Default::default() }),
+)?;
+
+// Typed name (IDE-completable, compile-checked):
+let model = provider(ProviderName::Groq.as_str(), None, "llama-3.3-70b", None)?;
+```
+
+`ProviderName` is generated from `provider_registry.json` (250 variants, `as_str`/
+`from_str`/`ALL`). Unknown names fail with `AiMuxError::UnknownProvider` listing
+the available providers.
+
 ## Text Generation
 
 Non-streaming text generation; returns the complete result.
