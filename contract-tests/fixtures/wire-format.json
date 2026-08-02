@@ -52,6 +52,12 @@
     "description": "Default GenerateTextOptions with all fields null"
   },
   {
+    "name": "timeout_configuration_values",
+    "type": "TimeoutConfiguration",
+    "json": "{\"total_ms\":5000,\"first_chunk_ms\":1000,\"chunk_ms\":500}",
+    "description": "TimeoutConfiguration with all three limits set (wire shape lock, RFC-0016 H3)"
+  },
+  {
     "name": "role_user",
     "type": "Role",
     "json": "\"user\"",

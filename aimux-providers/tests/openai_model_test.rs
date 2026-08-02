@@ -1594,7 +1594,10 @@ async fn abort_signal_cancels_in_flight_generate() {
     signal.abort();
 
     let result = handle.await.expect("task must finish");
-    assert!(result.is_err(), "aborted call must fail, got {result:?}");
+    assert!(
+        matches!(result, Err(AiMuxError::Aborted)),
+        "aborted call must fail with Aborted, got {result:?}"
+    );
 }
 
 /// TS: abort before send fails fast.
@@ -1631,7 +1634,7 @@ async fn abort_before_send_fails_fast() {
         .do_generate(&options)
         .await
         .expect_err("pre-aborted signal must fail fast");
-    assert!(err.to_string().contains("aborted"), "got {err:?}");
+    assert!(matches!(err, AiMuxError::Aborted), "got {err:?}");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -64,11 +64,13 @@ pub struct SpeechModel {
 #[napi]
 impl SpeechModel {
     /// Generate speech audio. `opts_json` is JSON-serialized SpeechCallOptions.
-    /// Returns JSON-serialized SpeechResult (audio as base64 in JSON).
+    /// `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+    /// the call. Returns JSON-serialized SpeechResult (audio as base64 in JSON).
     #[napi(ts_return_type = "Promise<string>")]
-    pub async fn generate(&self, opts_json: String) -> Result<String> {
-        let opts: SpeechCallOptions = serde_json::from_str(&opts_json)
+    pub async fn generate(&self, opts_json: String, bridge: Option<&crate::AbortBridge>) -> Result<String> {
+        let mut opts: SpeechCallOptions = serde_json::from_str(&opts_json)
             .map_err(|e| Error::from_reason(format!("invalid opts: {e}")))?;
+        opts.abort_signal = bridge.map(|b| b.core_signal());
 
         let result = self.inner.do_generate(&opts).await
             .map_err(|e| Error::from_reason(format!("{e}")))?;
@@ -89,11 +91,13 @@ pub struct ImageModel {
 #[napi]
 impl ImageModel {
     /// Generate images. `opts_json` is JSON-serialized ImageCallOptions.
-    /// Returns JSON-serialized ImageResult (images as base64 in JSON).
+    /// `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+    /// the call. Returns JSON-serialized ImageResult (images as base64 in JSON).
     #[napi(ts_return_type = "Promise<string>")]
-    pub async fn generate(&self, opts_json: String) -> Result<String> {
-        let opts: ImageCallOptions = serde_json::from_str(&opts_json)
+    pub async fn generate(&self, opts_json: String, bridge: Option<&crate::AbortBridge>) -> Result<String> {
+        let mut opts: ImageCallOptions = serde_json::from_str(&opts_json)
             .map_err(|e| Error::from_reason(format!("invalid opts: {e}")))?;
+        opts.abort_signal = bridge.map(|b| b.core_signal());
 
         let result = self.inner.do_generate(&opts).await
             .map_err(|e| Error::from_reason(format!("{e}")))?;
@@ -115,13 +119,15 @@ pub struct TranscriptionModel {
 impl TranscriptionModel {
     /// Transcribe audio. `audio_base64` is base64-encoded audio data.
     /// `media_type` is e.g. "audio/mp3". `opts_json` is optional JSON options.
-    /// Returns JSON-serialized TranscriptionResult.
+    /// `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+    /// the call. Returns JSON-serialized TranscriptionResult.
     #[napi(ts_return_type = "Promise<string>")]
     pub async fn generate(
         &self,
         audio_base64: String,
         media_type: String,
         opts_json: Option<String>,
+        bridge: Option<&crate::AbortBridge>,
     ) -> Result<String> {
         let mut opts = TranscriptionCallOptions::new(
             AudioInput::Base64(audio_base64),
@@ -135,6 +141,7 @@ impl TranscriptionModel {
                 parsed.provider_options.inspect(|p| opts.provider_options = Some(p.clone()));
             }
         }
+        opts.abort_signal = bridge.map(|b| b.core_signal());
 
         let result = self.inner.do_generate(&opts).await
             .map_err(|e| Error::from_reason(format!("{e}")))?;
@@ -156,13 +163,15 @@ pub struct RerankingModel {
 impl RerankingModel {
     /// Rerank documents. `query` is the search query, `docs_json` is a JSON
     /// array of documents, `opts_json` is optional JSON options.
-    /// Returns JSON-serialized RerankingResult.
+    /// `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+    /// the call. Returns JSON-serialized RerankingResult.
     #[napi(ts_return_type = "Promise<string>")]
     pub async fn rerank(
         &self,
         query: String,
         docs_json: String,
         opts_json: Option<String>,
+        bridge: Option<&crate::AbortBridge>,
     ) -> Result<String> {
         use aimux_core::reranking_model::RerankingDocuments;
         let docs: RerankingDocuments = serde_json::from_str(&docs_json)
@@ -177,6 +186,7 @@ impl RerankingModel {
                 opts.top_n = parsed.top_n;
             }
         }
+        opts.abort_signal = bridge.map(|b| b.core_signal());
 
         let result = self.inner.do_rerank(&opts).await
             .map_err(|e| Error::from_reason(format!("{e}")))?;
@@ -197,11 +207,13 @@ pub struct VideoModel {
 #[napi]
 impl VideoModel {
     /// Generate video. `opts_json` is JSON-serialized VideoCallOptions.
-    /// Returns JSON-serialized VideoResult (typically contains a URL).
+    /// `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+    /// the call. Returns JSON-serialized VideoResult (typically contains a URL).
     #[napi(ts_return_type = "Promise<string>")]
-    pub async fn generate(&self, opts_json: String) -> Result<String> {
-        let opts: VideoCallOptions = serde_json::from_str(&opts_json)
+    pub async fn generate(&self, opts_json: String, bridge: Option<&crate::AbortBridge>) -> Result<String> {
+        let mut opts: VideoCallOptions = serde_json::from_str(&opts_json)
             .map_err(|e| Error::from_reason(format!("invalid opts: {e}")))?;
+        opts.abort_signal = bridge.map(|b| b.core_signal());
 
         let result = self.inner.do_generate(&opts).await
             .map_err(|e| Error::from_reason(format!("{e}")))?;
@@ -222,9 +234,15 @@ pub struct SearchModel {
 #[napi]
 impl SearchModel {
     /// Search. `query` is the search query, `opts_json` is optional JSON options.
-    /// Returns JSON-serialized SearchResult.
+    /// `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+    /// the call. Returns JSON-serialized SearchResult.
     #[napi(ts_return_type = "Promise<string>")]
-    pub async fn search(&self, query: String, opts_json: Option<String>) -> Result<String> {
+    pub async fn search(
+        &self,
+        query: String,
+        opts_json: Option<String>,
+        bridge: Option<&crate::AbortBridge>,
+    ) -> Result<String> {
         use aimux_core::search_model::SearchCallOptions;
         let mut opts = SearchCallOptions::new(query);
         if let Some(s) = opts_json.as_deref() {
@@ -234,6 +252,7 @@ impl SearchModel {
                 opts = parsed;
             }
         }
+        opts.abort_signal = bridge.map(|b| b.core_signal());
 
         let result = self.inner.do_search(&opts).await
             .map_err(|e| Error::from_reason(format!("{e}")))?;

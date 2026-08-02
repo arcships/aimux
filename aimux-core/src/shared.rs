@@ -9,11 +9,10 @@
 //! keys inside them.
 
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use ts_rs::TS;
 
 // Re-export the existing `Warning` so providers can import everything they
@@ -83,33 +82,49 @@ pub enum FileData {
 
 /// A cancellation signal analogous to the Web `AbortSignal`.
 ///
-/// Rust has no built-in `AbortSignal`; this is a minimal, dependency-free
-/// implementation backed by an `Arc<AtomicBool>`. Providers that want true
-/// async cancellation should poll [`AbortSignal::is_aborted`] (e.g. inside a
-/// `tokio::select!` arm) or check it between request steps. Callers obtain a
-/// signal, hand out clones, and call [`AbortSignal::abort`] to request
-/// cancellation.
+/// Event-driven: backed by `tokio_util::sync::CancellationToken` (itself a
+/// `tokio::sync::Notify`). Consumers can poll [`is_aborted`](Self::is_aborted)
+/// synchronously, or await [`cancelled`](Self::cancelled) for prompt,
+/// notification-based wakeup — no polling loop needed.
 ///
-/// This type is `Send + Sync` and cheap to clone (a single `Arc`).
-#[derive(Debug, Clone, Default)]
+/// This type is `Send + Sync` and cheap to clone.
+#[derive(Debug, Clone)]
 pub struct AbortSignal {
-    aborted: Arc<AtomicBool>,
+    token: CancellationToken,
+}
+
+impl Default for AbortSignal {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AbortSignal {
     /// Create a fresh, un-aborted signal.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            token: CancellationToken::new(),
+        }
     }
 
-    /// Request cancellation. All clones observe the aborted state.
+    /// Request cancellation. All clones observe the aborted state and any
+    /// pending [`cancelled`](Self::cancelled) futures resolve.
     pub fn abort(&self) {
-        self.aborted.store(true, Ordering::SeqCst);
+        self.token.cancel();
     }
 
     /// Returns `true` once [`abort`](Self::abort) has been called.
     pub fn is_aborted(&self) -> bool {
-        self.aborted.load(Ordering::SeqCst)
+        self.token.is_cancelled()
+    }
+
+    /// A future that resolves as soon as the signal is aborted.
+    ///
+    /// If the signal is already aborted, the future resolves immediately on
+    /// the first poll. Suitable for `tokio::select!` arms.
+    pub fn cancelled(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
+        let token = self.token.clone();
+        async move { token.cancelled_owned().await }
     }
 }
 

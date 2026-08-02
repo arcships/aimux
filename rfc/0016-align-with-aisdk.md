@@ -163,7 +163,7 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | L4 | env 自动读取 | 部分:`provider()`/`deepseek()` 走注册表,api_key 可空读 env([lib.rs:314](../bindings/node/src/lib.rs#L314));`openai()`/`anthropic()` 工厂仍强制传参 | 0.1.3 |
 | M9 | warnings 丢弃 | 部分:非流式已透传([model.rs:383](../aimux-providers/src/openai/model.rs#L383));流式仍 `StreamStart{warnings:vec![]}`([model.rs:450](../aimux-providers/src/openai/model.rs#L450)) | 0.1.3 |
 | L2 | tool-call.input 类型 | 维持 `Value`(设计选择,Node 侧消费更友好),不回归 V4 string 形态 | — |
-| H1 | abortSignal 取消 | `CallOptions`/`GenerateTextOptions` 加 `#[serde(skip)] abort_signal`([options.rs:96](../aimux-core/src/options.rs#L96)、[generate.rs:60](../aimux-core/src/generate.rs#L60));全部 16 个 `LanguageModel` 实现接线到 `HttpRequest.abort_signal`(http 层 `send_request` 早已 `tokio::select!` 响应取消);Node 桥接:JS `AbortSignal` → `AbortBridge`(napi class 持 `Arc<AbortSignal>`,`on_abort` 注册,[lib.rs:40-72](../bindings/node/src/lib.rs#L40)),`generateText`/`streamText` 第三参接收。FFI/C-ABI 无法传运行时句柄,未做 `aimux_cancel`(见 §7.3 类别②) | 0.1.6 |
+| H1 | abortSignal 取消 | `CallOptions`/`GenerateTextOptions` 加 `#[serde(skip)] abort_signal`([options.rs:96](../aimux-core/src/options.rs#L96)、[generate.rs:60](../aimux-core/src/generate.rs#L60));全部 16 个 `LanguageModel` 实现接线到 `HttpRequest.abort_signal`;Node 桥接:JS `AbortSignal` → `AbortBridge`(napi class 持 `Arc<AbortSignal>`,`on_abort` 注册,[lib.rs:40-72](../bindings/node/src/lib.rs#L40)),`generateText`/`streamText` 第三参接收。FFI/C-ABI 无法传运行时句柄,未做 `aimux_cancel`(见 §7.3 类别②)。**2026-08-02 升级**:`AbortSignal` 底层换 `tokio_util::CancellationToken`(事件驱动,覆盖 body 阶段,见 §7.6 R1-R4) | 0.1.6 |
 | H3 | timeout | core `TimeoutConfiguration { total_ms, first_chunk_ms, chunk_ms }`([options.rs:32](../aimux-core/src/options.rs#L32));`CallOptions.timeout`/`GenerateTextOptions.timeout`(JSON 可序列化,FFI/Python/Node 自动透传);http 层 `send_timed`/`send_stream_timed`([http.rs:289](../aimux-provider-utils/src/http.rs#L289)):total 覆盖整体(含 retry),流式 `TimeoutBodyStream` 滑动窗口执行 first-chunk/chunk-idle/total;超时 → `AiMuxError::Timeout`(不可重试)。16 个 LLM provider 全部接线。注:`tokio::time::Sleep` 被 drop 会注销 timer——timer 必须存于 stream 内而非 poll 局部变量 | 0.1.6 |
 
 ### 7.2 未落地清单(逐条追踪)
@@ -207,6 +207,23 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 - `docs/plan/backlog.md` 仅跟踪 RFC-0017 阶段 2 项,无本 RFC 条目;`docs/api/gaps.md` 是 binding 多模态差距(已闭合),与本 RFC 无关
 - 内部审计(QUALITY_REVIEW/REMEDIATION)顺带提到 H1 未接线及 core util.rs `AbortSignal` 缺陷(全仓零调用,建议删除改 `tokio_util::CancellationToken`),未覆盖其余缺口
 - 后续实施建议:本表逐条勾销;若进入排期,迁移到 `docs/plan/backlog.md` 分区跟踪
+
+### 7.6 双 agent review(2026-08-02)与修复
+
+提交 1b7229e 后由独立 agent 做了设计 review(glm-5.2)与代码 review(gpt-5.6-sol)。两者独立收敛到同一核心缺口,已全修并提交:
+
+| # | Review 发现 | 严重度 | 修复 |
+|---|-------------|--------|------|
+| R1 | `TimeoutBodyStream` 超时后不终止,持续 yield `Err(Timeout)`(违反 Stream 契约) | P0(代码) | `done` 终止状态:超时/内部错误/流结束均置位,后续 poll 返回 `None`(fused)。`timeout_stream_is_fused_after_timeout` 测试 |
+| R2 | abort 仅覆盖建连/响应头,不覆盖 body(非流式 `resp.bytes()` 与流式 body) | P0(代码)/P1(设计) | 根因是 `AbortSignal` 为 `AtomicBool` + 50ms 轮询(`abort_wait`),非事件驱动。`AbortSignal` 底层换 `tokio_util::CancellationToken`([shared.rs:95](../aimux-core/src/shared.rs#L95)),新增 `cancelled()` future;`send_request` 改 `select!{biased}`(abort 优先);非流式 body 读取包 `select!`;`TimeoutBodyStream` 接 `abort_signal` + 事件驱动 `abort_wait`(存 stream 内,`Notify` waker 跨 poll 存活) |
+| R3 | `Instant + Duration::from_millis(u64::MAX)` 可 panic(用户 JSON 可输入) | P1 | `validate_timeout` 入口校验(checked_add,溢出 → `InvalidArgument`);`total_ms=0` 显式立即超时 |
+| R4 | abort/timeout 竞争时错误类型不稳定(50ms 轮询) | P1 | `select!{biased}` + `CancellationToken` 事件驱动;`abort_wins_over_total_timeout` 测试 |
+| R5 | 错误消息恒为 "stream timeout",无法区分 first-chunk/chunk/total | P2 | `TimeoutKind` 枚举,消息区分 |
+| R6 | abort 测试假阳性(只断言 `is_err`、无超时上限) | P2 | 断言 `AiMuxError::Aborted` + join 包 `tokio::time::timeout` + 耗时断言 |
+| R7 | Node 多模态 `generate`/`rerank`/`search` 不透出 abort(core 已支持) | P1(设计) | 全部 6 个多模态方法加 `bridge: Option<&AbortBridge>` 参,注入 `opts.abort_signal`([multimodal.rs](../bindings/node/src/multimodal.rs)) |
+| R8 | 契约 fixture 缺 `TimeoutConfiguration` 正值 | P2 | `wire-format.json` 补 `timeout_configuration_values` fixture |
+
+新增错误变体 `AiMuxError::Aborted`(error_type "Aborted",不可重试),取代散落的 `Other("request aborted")`。
 
 ### 7.5 明确不做(2026-08-02 决策)
 

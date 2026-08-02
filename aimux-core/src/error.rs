@@ -53,6 +53,9 @@ pub enum AiMuxError {
     #[error("request timed out: {0}")]
     Timeout(String),
 
+    #[error("request aborted")]
+    Aborted,
+
     #[error("{0}")]
     Other(String),
 }
@@ -107,6 +110,7 @@ impl AiMuxError {
             AiMuxError::UnknownProvider(_) => "UnknownProvider",
             AiMuxError::ApiCall(_) => "ApiCall",
             AiMuxError::Timeout(_) => "Timeout",
+            AiMuxError::Aborted => "Aborted",
             AiMuxError::Other(_) => "Other",
         }
     }

@@ -5,7 +5,7 @@
 //! types — they hand `http::send` a pure-data `HttpRequest` and get back an
 //! `HttpResponse` (or `HttpStreamResponse`).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use wiremock::matchers::{method, path};
@@ -242,10 +242,7 @@ async fn abort_before_send_fails_immediately() {
     let err = send(req, fast_config(), &DEFAULT_ERROR_STRUCTURE)
         .await
         .unwrap_err();
-    assert!(
-        err.to_string().contains("aborted"),
-        "got {err:?}"
-    );
+    assert!(matches!(err, AiMuxError::Aborted), "got {err:?}");
 }
 
 #[tokio::test]
@@ -273,10 +270,20 @@ async fn abort_mid_request_cancels() {
     });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
+    let started = Instant::now();
     signal.abort();
 
-    let result = handle.await.unwrap();
-    assert!(result.is_err(), "expected abort error, got {result:?}");
+    // Bounded join: if cancellation regresses to hanging, the outer timeout
+    // fails the test instead of hanging the suite.
+    let result = tokio::time::timeout(Duration::from_secs(2), handle)
+        .await
+        .expect("cancelled call must finish within 2s")
+        .expect("task must not panic");
+    assert!(matches!(result, Err(AiMuxError::Aborted)), "got {result:?}");
+    assert!(
+        started.elapsed() < Duration::from_millis(250),
+        "abort should cancel well before the 300ms server delay"
+    );
 }
 
 #[tokio::test]
@@ -401,7 +408,10 @@ async fn send_stream_timed_first_chunk_timeout() {
     let first = stream.next().await.expect("stream must yield an error");
     let err = first.unwrap_err();
     assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
-    assert!(err.to_string().contains("stream timeout"), "got {err:?}");
+    assert!(
+        err.to_string().contains("first chunk timeout"),
+        "got {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -434,4 +444,74 @@ async fn send_stream_timed_total_timeout_on_connect() {
     };
 
     assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn send_timed_zero_total_fails_immediately() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .expect(0) // must never be reached
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let err = send_timed(
+        json_post(&url),
+        fast_config(),
+        &DEFAULT_ERROR_STRUCTURE,
+        Some(RequestTimeout {
+            total_ms: Some(0),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn abort_wins_over_total_timeout() {
+    // When abort and the total deadline race, the abort must be reported
+    // (biased select) — RFC-0016 review P1 (stable error classification).
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true}))
+                .set_delay(Duration::from_millis(500)),
+        )
+        .mount(&server)
+        .await;
+
+    let signal = AbortSignal::new();
+    let signal_clone = signal.clone();
+    let url = format!("{}/v1/chat", server.uri());
+    let request = json_post(&url);
+    let handle = tokio::spawn(async move {
+        let mut req = request;
+        req.abort_signal = Some(signal_clone);
+        send_timed(
+            req,
+            fast_config(),
+            &DEFAULT_ERROR_STRUCTURE,
+            Some(RequestTimeout {
+                total_ms: Some(100),
+                ..Default::default()
+            }),
+        )
+        .await
+    });
+
+    // Abort just before the 100ms deadline so both fire around the same time.
+    tokio::time::sleep(Duration::from_millis(90)).await;
+    signal.abort();
+
+    let result = tokio::time::timeout(Duration::from_secs(2), handle)
+        .await
+        .expect("must finish")
+        .expect("task must not panic");
+    assert!(matches!(result, Err(AiMuxError::Aborted)), "got {result:?}");
 }

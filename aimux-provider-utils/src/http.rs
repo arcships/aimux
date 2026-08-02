@@ -232,10 +232,18 @@ pub async fn send(
 
     let status = resp.status().as_u16();
     let headers = collect_headers(resp.headers());
-    let body = resp
-        .bytes()
-        .await
-        .map_err(|e| AiMuxError::Http(e.to_string()))?;
+    // The response body can be large/slow; keep honoring abort while reading.
+    let body = match &request.abort_signal {
+        Some(signal) => {
+            let bytes = resp.bytes();
+            tokio::select! {
+                biased;
+                _ = signal.cancelled() => return Err(AiMuxError::Aborted),
+                b = bytes => b.map_err(|e| AiMuxError::Http(e.to_string()))?,
+            }
+        }
+        None => resp.bytes().await.map_err(|e| AiMuxError::Http(e.to_string()))?,
+    };
 
     Ok(HttpResponse {
         status,
@@ -285,8 +293,12 @@ pub async fn send_timed(
     error_structure: &ErrorStructure,
     timeout: Option<RequestTimeout>,
 ) -> Result<HttpResponse, AiMuxError> {
+    let timeout = timeout.unwrap_or_default();
+    validate_timeout(&timeout)?;
+
     let fut = send(request, retry_config, error_structure);
-    match timeout.and_then(|t| t.total_ms) {
+    match timeout.total_ms {
+        Some(0) => Err(AiMuxError::Timeout("total timeout".to_string())),
         Some(ms) => Ok(tokio::time::timeout(Duration::from_millis(ms), fut)
             .await
             .map_err(|_| AiMuxError::Timeout(format!("total timeout after {ms}ms")))??),
@@ -298,7 +310,7 @@ pub async fn send_timed(
 /// `total_ms` covers connect (+ retries); the returned byte stream is then
 /// wrapped so that `first_chunk_ms` / `chunk_ms` / the remaining `total_ms`
 /// are enforced on the chunks themselves. Expired limits surface as
-/// `AiMuxError::Timeout` items in the stream.
+/// `AiMuxError::Timeout` items in the stream (after which the stream ends).
 pub async fn send_stream_timed(
     request: HttpRequest,
     retry_config: RetryConfig,
@@ -306,16 +318,18 @@ pub async fn send_stream_timed(
     timeout: Option<RequestTimeout>,
 ) -> Result<HttpStreamResponse, AiMuxError> {
     let timeout = timeout.unwrap_or_default();
+    validate_timeout(&timeout)?;
     let start = Instant::now();
 
     let resp = match timeout.total_ms {
+        Some(0) => return Err(AiMuxError::Timeout("total timeout".to_string())),
         Some(ms) => tokio::time::timeout(
             Duration::from_millis(ms),
-            send_stream(request, retry_config, error_structure),
+            send_stream(request.clone(), retry_config, error_structure),
         )
         .await
         .map_err(|_| AiMuxError::Timeout(format!("total timeout after {ms}ms")))??,
-        None => send_stream(request, retry_config, error_structure).await?,
+        None => send_stream(request.clone(), retry_config, error_structure).await?,
     };
     if timeout.total_ms.is_none() && timeout.first_chunk_ms.is_none() && timeout.chunk_ms.is_none() {
         return Ok(resp);
@@ -330,53 +344,111 @@ pub async fn send_stream_timed(
             total_ms: timeout.total_ms,
             first_chunk_ms: timeout.first_chunk_ms,
             chunk_ms: timeout.chunk_ms,
+            abort_signal: request.abort_signal,
             first: true,
             last_chunk_at: None,
             sleep: None,
+            abort_wait: None,
+            done: false,
         }
         .boxed(),
     })
 }
 
-/// Stream wrapper enforcing first-chunk / chunk-idle / total deadlines.
+/// Reject timeout values whose deadline cannot be represented (e.g.
+/// `u64::MAX` ms on platforms whose `Instant` range is narrower) — adding
+/// such a duration to an `Instant` would panic.
+fn validate_timeout(timeout: &RequestTimeout) -> Result<(), AiMuxError> {
+    let now = Instant::now();
+    for ms in [timeout.total_ms, timeout.first_chunk_ms, timeout.chunk_ms]
+        .into_iter()
+        .flatten()
+    {
+        if now.checked_add(Duration::from_millis(ms)).is_none() {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "timeout value {ms}ms is too large"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Which deadline fired (for error messages).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimeoutKind {
+    FirstChunk,
+    ChunkIdle,
+    Total,
+}
+
+impl TimeoutKind {
+    fn message(self) -> &'static str {
+        match self {
+            TimeoutKind::FirstChunk => "first chunk timeout",
+            TimeoutKind::ChunkIdle => "chunk idle timeout",
+            TimeoutKind::Total => "total timeout",
+        }
+    }
+}
+
+/// Stream wrapper enforcing first-chunk / chunk-idle / total deadlines plus
+/// abort-signal cancellation.
 ///
 /// Polling is bounded by the earliest applicable deadline: before the first
 /// item, `first_chunk_ms` (from request start) applies; afterwards,
 /// `chunk_ms` is a **sliding window** reset on every chunk. `total_ms` caps
-/// everything from request start. When a deadline passes while no chunk
-/// arrived, the stream yields a `AiMuxError::Timeout` error item and stops.
+/// everything from request start. An aborted signal ends the stream with
+/// `AiMuxError::Aborted` (abort wins over deadlines). After an error item
+/// the stream yields `None` (fused).
 ///
-/// The pending `tokio::time::Sleep` is stored in the stream (not a local):
-/// dropping a `Sleep` unregisters its timer entry, so a local would silently
-/// cancel the deadline on the first poll.
+/// The pending `tokio::time::Sleep` and the abort waiter are stored in the
+/// stream (not locals): dropping a `Sleep` unregisters its timer entry, and
+/// the abort waiter is a `Notify` future whose waker must stay registered
+/// while the stream is Pending.
 struct TimeoutBodyStream {
     inner: BoxStream<'static, Result<Bytes, AiMuxError>>,
     start: Instant,
     total_ms: Option<u64>,
     first_chunk_ms: Option<u64>,
     chunk_ms: Option<u64>,
+    abort_signal: Option<AbortSignal>,
     first: bool,
     last_chunk_at: Option<Instant>,
     sleep: Option<Pin<Box<tokio::time::Sleep>>>,
+    abort_wait: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    done: bool,
 }
 
 impl TimeoutBodyStream {
-    /// The earliest applicable deadline, or `None` when no limit is set.
-    fn next_deadline(&self) -> Option<Instant> {
+    /// The earliest applicable deadline and what it is, or `None` when no
+    /// limit is set. Deadline values were validated at the send entry point,
+    /// so plain `Instant + Duration` cannot overflow here.
+    fn next_deadline(&self) -> Option<(Instant, TimeoutKind)> {
         let phase = if self.first {
-            self.first_chunk_ms
-                .map(|ms| self.start + Duration::from_millis(ms))
+            self.first_chunk_ms.map(|ms| {
+                (
+                    self.start + Duration::from_millis(ms),
+                    TimeoutKind::FirstChunk,
+                )
+            })
         } else {
             self.chunk_ms.and_then(|ms| {
                 self.last_chunk_at
-                    .map(|t| t + Duration::from_millis(ms))
+                    .map(|t| (t + Duration::from_millis(ms), TimeoutKind::ChunkIdle))
             })
         };
-        let total = self.total_ms.map(|ms| self.start + Duration::from_millis(ms));
+        let total = self
+            .total_ms
+            .map(|ms| (self.start + Duration::from_millis(ms), TimeoutKind::Total));
         match (phase, total) {
-            (Some(d), Some(td)) => Some(d.min(td)),
-            (Some(d), None) => Some(d),
-            (None, Some(td)) => Some(td),
+            (Some((pd, pk)), Some((td, _))) => {
+                if pd <= td {
+                    Some((pd, pk))
+                } else {
+                    Some((td, TimeoutKind::Total))
+                }
+            }
+            (Some(x), None) | (None, Some(x)) => Some(x),
             (None, None) => None,
         }
     }
@@ -388,19 +460,55 @@ impl Stream for TimeoutBodyStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.as_mut().get_mut();
 
-        let Some(deadline) = this.next_deadline() else {
-            // No timeout configured: pass through.
+        if this.done {
+            return Poll::Ready(None);
+        }
+
+        // Abort fast path — also catches signals aborted before the call.
+        if let Some(sig) = &this.abort_signal
+            && sig.is_aborted()
+        {
+            this.done = true;
+            this.sleep = None;
+            return Poll::Ready(Some(Err(AiMuxError::Aborted)));
+        }
+
+        // Lazy-create the event-driven abort waiter so an abort wakes us
+        // while Pending (the signal's `Notify` stores the waker).
+        if this.abort_wait.is_none() && this.abort_signal.is_some() {
+            this.abort_wait = Some(Box::pin(
+                this.abort_signal.as_ref().expect("checked above").cancelled(),
+            ));
+        }
+
+        let Some((deadline, kind)) = this.next_deadline() else {
+            // No timeout configured: pass through (abort still honored).
+            if let Some(wait) = this.abort_wait.as_mut() {
+                if wait.as_mut().poll(cx).is_ready() {
+                    this.done = true;
+                    return Poll::Ready(Some(Err(AiMuxError::Aborted)));
+                }
+            }
             let result = this.inner.as_mut().poll_next(cx);
-            if let Poll::Ready(Some(Ok(_))) = &result {
-                this.first = false;
-                this.last_chunk_at = Some(Instant::now());
+            match &result {
+                Poll::Ready(Some(Ok(_))) => {
+                    this.first = false;
+                    this.last_chunk_at = Some(Instant::now());
+                }
+                Poll::Ready(Some(Err(_))) | Poll::Ready(None) => {
+                    this.done = true;
+                }
+                Poll::Pending => {}
             }
             return result;
         };
 
         if Instant::now() >= deadline {
+            this.done = true;
             this.sleep = None;
-            return Poll::Ready(Some(Err(timeout_error("stream timeout"))));
+            return Poll::Ready(Some(Err(AiMuxError::Timeout(
+                kind.message().to_string(),
+            ))));
         }
 
         // (Re)create the timer if missing or pointed at a different deadline.
@@ -411,12 +519,24 @@ impl Stream for TimeoutBodyStream {
         if needs_reset {
             this.sleep = Some(Box::pin(tokio::time::sleep_until(deadline.into())));
         }
-        let sleep = this.sleep.as_mut().expect("timer just (re)created");
 
         loop {
-            if sleep.as_mut().poll(cx).is_ready() {
-                this.sleep = None;
-                return Poll::Ready(Some(Err(timeout_error("stream timeout"))));
+            // Abort wins over any deadline.
+            if let Some(wait) = this.abort_wait.as_mut() {
+                if wait.as_mut().poll(cx).is_ready() {
+                    this.done = true;
+                    this.sleep = None;
+                    return Poll::Ready(Some(Err(AiMuxError::Aborted)));
+                }
+            }
+            if let Some(sleep) = this.sleep.as_mut() {
+                if sleep.as_mut().poll(cx).is_ready() {
+                    this.done = true;
+                    this.sleep = None;
+                    return Poll::Ready(Some(Err(AiMuxError::Timeout(
+                        kind.message().to_string(),
+                    ))));
+                }
             }
             match this.inner.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(bytes))) => {
@@ -428,11 +548,12 @@ impl Stream for TimeoutBodyStream {
                     return Poll::Ready(Some(Ok(bytes)));
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    this.first = false;
+                    this.done = true;
                     this.sleep = None;
                     return Poll::Ready(Some(Err(e)));
                 }
                 Poll::Ready(None) => {
+                    this.done = true;
                     this.sleep = None;
                     return Poll::Ready(None);
                 }
@@ -440,10 +561,6 @@ impl Stream for TimeoutBodyStream {
             }
         }
     }
-}
-
-fn timeout_error(kind: &str) -> AiMuxError {
-    AiMuxError::Timeout(format!("{kind}"))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -517,13 +634,6 @@ async fn send_with_retry_raw(
     Err(last_error)
 }
 
-/// Wait until `signal` has been aborted without blocking the executor.
-async fn abort_wait(signal: &AbortSignal) {
-    while !signal.is_aborted() {
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-}
-
 /// Send one HTTP attempt, cancelling the in-flight connection if requested.
 async fn send_request(
     client: &Client,
@@ -531,15 +641,14 @@ async fn send_request(
 ) -> Result<reqwest::Response, AiMuxError> {
     if let Some(signal) = &request.abort_signal {
         if signal.is_aborted() {
-            return Err(AiMuxError::Other(
-                "request aborted before sending".to_string(),
-            ));
+            return Err(AiMuxError::Aborted);
         }
 
         let response = build_request_builder(client, request)?.send();
         tokio::select! {
+            biased;
+            _ = signal.cancelled() => Err(AiMuxError::Aborted),
             result = response => result.map_err(|e| AiMuxError::Http(e.to_string())),
-            _ = abort_wait(signal) => Err(AiMuxError::Other("request aborted".to_string())),
         }
     } else {
         build_request_builder(client, request)?
@@ -710,15 +819,19 @@ mod tests {
             total_ms: None,
             first_chunk_ms: Some(200),
             chunk_ms: None,
+            abort_signal: None,
             first: true,
             last_chunk_at: None,
             sleep: None,
+            abort_wait: None,
+            done: false,
         };
         let item = tokio::time::timeout(Duration::from_secs(5), timed.next())
             .await
             .expect("first-chunk deadline must fire within 5s")
             .expect("stream must yield an error");
         assert!(matches!(item, Err(AiMuxError::Timeout(_))));
+        assert!(item.unwrap_err().to_string().contains("first chunk timeout"));
     }
 
     #[tokio::test]
@@ -734,9 +847,12 @@ mod tests {
             total_ms: None,
             first_chunk_ms: None,
             chunk_ms: Some(200),
+            abort_signal: None,
             first: true,
             last_chunk_at: None,
             sleep: None,
+            abort_wait: None,
+            done: false,
         };
 
         let first = timed.next().await.expect("first chunk").unwrap();
@@ -747,6 +863,7 @@ mod tests {
             .expect("chunk idle timeout must fire within 5s")
             .expect("stream must yield an error");
         assert!(matches!(second, Err(AiMuxError::Timeout(_))));
+        assert!(second.unwrap_err().to_string().contains("chunk idle timeout"));
     }
 
     #[tokio::test]
@@ -762,14 +879,154 @@ mod tests {
             total_ms: None,
             first_chunk_ms: Some(1000),
             chunk_ms: Some(1000),
+            abort_signal: None,
             first: true,
             last_chunk_at: None,
             sleep: None,
+            abort_wait: None,
+            done: false,
         };
         let a = timed.next().await.unwrap().unwrap();
         let b = timed.next().await.unwrap().unwrap();
         assert_eq!(&a[..], b"a");
         assert_eq!(&b[..], b"b");
         assert!(timed.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn timeout_stream_is_fused_after_timeout() {
+        // After a timeout error item the stream must yield None, not an
+        // endless stream of errors (RFC-0016 review P0).
+        let inner = futures::stream::pending::<Result<Bytes, AiMuxError>>().boxed();
+        let mut timed = TimeoutBodyStream {
+            inner,
+            start: Instant::now(),
+            total_ms: None,
+            first_chunk_ms: Some(100),
+            chunk_ms: None,
+            abort_signal: None,
+            first: true,
+            last_chunk_at: None,
+            sleep: None,
+            abort_wait: None,
+            done: false,
+        };
+        let first = tokio::time::timeout(Duration::from_secs(5), timed.next())
+            .await
+            .expect("must fire")
+            .expect("must be an error");
+        assert!(matches!(first, Err(AiMuxError::Timeout(_))));
+        let second = tokio::time::timeout(Duration::from_millis(500), timed.next())
+            .await
+            .expect("stream must end right after the timeout error");
+        assert!(second.is_none());
+    }
+
+    #[tokio::test]
+    async fn abort_wakes_pending_timeout_stream() {
+        // Abort while the inner stream is Pending must end the stream
+        // promptly (event-driven, no 50ms polling).
+        let signal = AbortSignal::new();
+        let inner = futures::stream::pending::<Result<Bytes, AiMuxError>>().boxed();
+        let mut timed = TimeoutBodyStream {
+            inner,
+            start: Instant::now(),
+            total_ms: None,
+            first_chunk_ms: None,
+            chunk_ms: None,
+            abort_signal: Some(signal.clone()),
+            first: true,
+            last_chunk_at: None,
+            sleep: None,
+            abort_wait: None,
+            done: false,
+        };
+
+        let handle = tokio::spawn(async move {
+            let _ = timed.next().await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        signal.abort();
+
+        tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("abort must wake the pending stream within 2s")
+            .expect("task must finish cleanly");
+    }
+
+    #[tokio::test]
+    async fn abort_before_first_poll_fails_fast() {
+        let signal = AbortSignal::new();
+        signal.abort();
+        let inner = futures::stream::pending::<Result<Bytes, AiMuxError>>().boxed();
+        let mut timed = TimeoutBodyStream {
+            inner,
+            start: Instant::now(),
+            total_ms: None,
+            first_chunk_ms: None,
+            chunk_ms: None,
+            abort_signal: Some(signal),
+            first: true,
+            last_chunk_at: None,
+            sleep: None,
+            abort_wait: None,
+            done: false,
+        };
+        let item = timed.next().await.expect("must yield an error");
+        assert!(matches!(item, Err(AiMuxError::Aborted)));
+        assert!(timed.next().await.is_none(), "stream must be fused after abort");
+    }
+
+    #[test]
+    fn validate_timeout_rejects_overflowing_values() {
+        // Platform-dependent: on platforms whose `Instant` range is narrower
+        // (e.g. Unix), huge values must be rejected with InvalidArgument and
+        // must never panic; on wider ranges (Windows) they are accepted.
+        let now = Instant::now();
+        let huge = RequestTimeout {
+            total_ms: Some(u64::MAX),
+            ..Default::default()
+        };
+        match now.checked_add(Duration::from_millis(u64::MAX)) {
+            None => {
+                let err = validate_timeout(&huge).unwrap_err();
+                assert!(matches!(err, AiMuxError::InvalidArgument(_)));
+            }
+            Some(_) => {
+                assert!(validate_timeout(&huge).is_ok());
+            }
+        }
+        assert!(validate_timeout(&RequestTimeout::default()).is_ok());
+    }
+
+    #[test]
+    fn next_deadline_kind_selection() {
+        let now = Instant::now();
+        let base = TimeoutBodyStream {
+            inner: futures::stream::pending().boxed(),
+            start: now,
+            total_ms: Some(10_000),
+            first_chunk_ms: Some(1_000),
+            chunk_ms: None,
+            abort_signal: None,
+            first: true,
+            last_chunk_at: None,
+            sleep: None,
+            abort_wait: None,
+            done: false,
+        };
+        let (d, k) = base.next_deadline().unwrap();
+        assert_eq!(k, TimeoutKind::FirstChunk);
+        assert_eq!(d, now + Duration::from_millis(1_000));
+
+        // Total wins when it is earlier.
+        let s2 = TimeoutBodyStream {
+            total_ms: Some(500),
+            first_chunk_ms: Some(1_000),
+            ..base
+        };
+        let (d2, k2) = s2.next_deadline().unwrap();
+        assert_eq!(k2, TimeoutKind::Total);
+        assert_eq!(d2, now + Duration::from_millis(500));
     }
 }
