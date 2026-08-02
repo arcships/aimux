@@ -1,4 +1,4 @@
-//! Cohere language model — implements `LanguageModel` trait.
+﻿//! Cohere language model — implements `LanguageModel` trait.
 //!
 //! Mirrors the TS `cohere-chat-language-model.ts`. Cohere uses its own message
 //! format (not OpenAI-compatible) and streams named SSE events
@@ -18,7 +18,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 use super::CohereConfig;
@@ -110,7 +110,7 @@ impl LanguageModel for CohereModel {
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
@@ -120,10 +120,11 @@ impl LanguageModel for CohereModel {
                     .collect(),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &COHERE_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -232,7 +233,7 @@ impl LanguageModel for CohereModel {
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
@@ -242,10 +243,11 @@ impl LanguageModel for CohereModel {
                     .collect(),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &COHERE_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 

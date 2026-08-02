@@ -70,6 +70,8 @@ fn options_with_tools(prompt: LanguageModelPrompt, tools: Vec<FunctionTool>) -> 
         reasoning: None,
         body_overrides: None,
         max_retries: None,
+        timeout: None,
+        abort_signal: None,
     }
 }
 
@@ -135,6 +137,16 @@ async fn mock_json_response(server: &MockServer, body: Value) {
     Mock::given(method("POST"))
         .and(path("/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(server)
+        .await;
+}
+
+/// Mock a JSON chat completion response delayed by `delay` (RFC-0016 H1/H3
+/// tests: timeout + abort need an in-flight request to cancel).
+async fn mock_json_response_with_delay(server: &MockServer, body: Value, delay: Duration) {
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body).set_delay(delay))
         .mount(server)
         .await;
 }
@@ -1494,6 +1506,132 @@ mod do_stream {
             other => panic!("expected Finish, got {:?}", other),
         }
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RFC-0016 H1/H3: abort + per-call timeout (provider-level)
+// ════════════════════════════════════════════════════════════════════════════
+
+use aimux_core::options::TimeoutConfiguration;
+use aimux_core::shared::AbortSignal;
+use std::time::Duration;
+
+/// TS: timeout — total_ms bounds the whole call.
+#[tokio::test]
+async fn total_timeout_aborts_slow_generate() {
+    let server = MockServer::start().await;
+    mock_json_response_with_delay(
+        &server,
+        json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1711115037,
+            "model": "gpt-3.5-turbo",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": "Hello" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 4, "total_tokens": 6, "completion_tokens": 2 }
+        }),
+        Duration::from_millis(500),
+    )
+    .await;
+
+    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+    let provider = OpenAIProvider::new(config);
+    let model = provider.model("gpt-3.5-turbo");
+
+    let mut options = default_options(test_prompt());
+    options.timeout = Some(TimeoutConfiguration {
+        total_ms: Some(100),
+        ..Default::default()
+    });
+
+    let err = model
+        .do_generate(&options)
+        .await
+        .expect_err("slow response must be cut by total timeout");
+    assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+}
+
+/// TS: abort signal — aborting mid-request cancels do_generate.
+#[tokio::test]
+async fn abort_signal_cancels_in_flight_generate() {
+    let server = MockServer::start().await;
+    mock_json_response_with_delay(
+        &server,
+        json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1711115037,
+            "model": "gpt-3.5-turbo",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": "Hello" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 4, "total_tokens": 6, "completion_tokens": 2 }
+        }),
+        Duration::from_millis(300),
+    )
+    .await;
+
+    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+    let provider = OpenAIProvider::new(config);
+    let model = provider.model("gpt-3.5-turbo");
+
+    let signal = AbortSignal::new();
+    let signal_clone = signal.clone();
+    let mut options = default_options(test_prompt());
+    options.abort_signal = Some(signal_clone);
+
+    let handle = tokio::spawn(async move {
+        model.do_generate(&options).await
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    signal.abort();
+
+    let result = handle.await.expect("task must finish");
+    assert!(result.is_err(), "aborted call must fail, got {result:?}");
+}
+
+/// TS: abort before send fails fast.
+#[tokio::test]
+async fn abort_before_send_fails_fast() {
+    let server = MockServer::start().await;
+    mock_json_response(
+        &server,
+        json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1711115037,
+            "model": "gpt-3.5-turbo",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": "Hello" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 4, "total_tokens": 6, "completion_tokens": 2 }
+        }),
+    )
+    .await;
+
+    let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+    let provider = OpenAIProvider::new(config);
+    let model = provider.model("gpt-3.5-turbo");
+
+    let signal = AbortSignal::new();
+    signal.abort();
+    let mut options = default_options(test_prompt());
+    options.abort_signal = Some(signal);
+
+    let err = model
+        .do_generate(&options)
+        .await
+        .expect_err("pre-aborted signal must fail fast");
+    assert!(err.to_string().contains("aborted"), "got {err:?}");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

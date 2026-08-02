@@ -1,4 +1,4 @@
-//! Open Responses provider - a generic Responses API wrapper.
+﻿//! Open Responses provider - a generic Responses API wrapper.
 //!
 //! Works with any OpenAI Responses-compatible API endpoint (LM Studio,
 //! OpenAI, etc.). Unlike the OpenAI Chat Completions provider, this speaks
@@ -28,7 +28,7 @@ use aimux_core::types::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 // == Config ==
@@ -187,17 +187,18 @@ impl LanguageModel for OpenResponsesModel {
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.config.provider_options_name);
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.config.url.clone(),
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -349,17 +350,18 @@ impl LanguageModel for OpenResponsesModel {
             b
         };
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.config.url.clone(),
                 headers: headers.into_iter().collect(),
                 body: HttpBody::Json(stream_body),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 

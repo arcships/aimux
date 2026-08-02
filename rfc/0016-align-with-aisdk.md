@@ -144,7 +144,7 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 1. **H1 abortSignal 的 napi 桥接**:JS `AbortSignal` → Rust `AbortSignal` 的最佳桥接方式需验证(napi 的 `tokio_rt` feature + `CancellationToken`)。其他模型 trait 已有 `abort_signal` 字段,但 Node 是否已为它们桥接过 signal 需确认。
 2. **L2 tool-call.input 类型**:aimux 用 `Value`(解析后 JSON)而非 V4 规范的 `string`。需确认是否回归 V4 的 string 形态,还是保留为 aimux 的有意设计(Node 侧消费更友好)。
 3. **M4 通用 providerOptions 透传的安全边界**:从白名单改为透传后,需确保不会把内部字段(如 `prompt_cache_breakpoint` 已在白名单)重复发送。
-4. **H4 多步工具循环的范围**:是否对标 Vercel `generateText` 的完整多步(stopWhen/maxSteps/prepareStep/activeTools/toolOrder/refineToolInput/repairToolCall),还是先做最小可用版(tools 自动执行 + steps)。
+4. **H4 多步工具循环的范围**:~~是否对标 Vercel `generateText` 的完整多步(stopWhen/maxSteps/prepareStep/activeTools/toolOrder/refineToolInput/repairToolCall),还是先做最小可用版(tools 自动执行 + steps)~~ — 已关闭:H4 明确不做,见 [§7.5](#75-明确不做2026-08-02-决策)
 
 ---
 
@@ -163,13 +163,15 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | L4 | env 自动读取 | 部分:`provider()`/`deepseek()` 走注册表,api_key 可空读 env([lib.rs:314](../bindings/node/src/lib.rs#L314));`openai()`/`anthropic()` 工厂仍强制传参 | 0.1.3 |
 | M9 | warnings 丢弃 | 部分:非流式已透传([model.rs:383](../aimux-providers/src/openai/model.rs#L383));流式仍 `StreamStart{warnings:vec![]}`([model.rs:450](../aimux-providers/src/openai/model.rs#L450)) | 0.1.3 |
 | L2 | tool-call.input 类型 | 维持 `Value`(设计选择,Node 侧消费更友好),不回归 V4 string 形态 | — |
+| H1 | abortSignal 取消 | `CallOptions`/`GenerateTextOptions` 加 `#[serde(skip)] abort_signal`([options.rs:96](../aimux-core/src/options.rs#L96)、[generate.rs:60](../aimux-core/src/generate.rs#L60));全部 16 个 `LanguageModel` 实现接线到 `HttpRequest.abort_signal`(http 层 `send_request` 早已 `tokio::select!` 响应取消);Node 桥接:JS `AbortSignal` → `AbortBridge`(napi class 持 `Arc<AbortSignal>`,`on_abort` 注册,[lib.rs:40-72](../bindings/node/src/lib.rs#L40)),`generateText`/`streamText` 第三参接收。FFI/C-ABI 无法传运行时句柄,未做 `aimux_cancel`(见 §7.3 类别②) | 0.1.6 |
+| H3 | timeout | core `TimeoutConfiguration { total_ms, first_chunk_ms, chunk_ms }`([options.rs:32](../aimux-core/src/options.rs#L32));`CallOptions.timeout`/`GenerateTextOptions.timeout`(JSON 可序列化,FFI/Python/Node 自动透传);http 层 `send_timed`/`send_stream_timed`([http.rs:289](../aimux-provider-utils/src/http.rs#L289)):total 覆盖整体(含 retry),流式 `TimeoutBodyStream` 滑动窗口执行 first-chunk/chunk-idle/total;超时 → `AiMuxError::Timeout`(不可重试)。16 个 LLM provider 全部接线。注:`tokio::time::Sleep` 被 drop 会注销 timer——timer 必须存于 stream 内而非 poll 局部变量 | 0.1.6 |
 
 ### 7.2 未落地清单(逐条追踪)
 
 **高优先级:**
-- **H1** abortSignal — `CallOptions` 无 `abort_signal` 字段,`do_generate`/`do_stream` 硬编码 `abort_signal: None`([model.rs:271](../aimux-providers/src/openai/model.rs#L271)、[model.rs:420](../aimux-providers/src/openai/model.rs#L420));`LanguageModel` trait 不带 signal。media provider 在用、LLM 漏着
-- **H3** timeout — core 零实现,无任何超时字段
-- **H4** 多步工具循环 — 全仓库无 steps/maxSteps/工具执行循环,`generate_text` 仍单次调用
+- ~~**H1** abortSignal~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-02)
+- ~~**H3** timeout~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-02)
+- ~~**H4** 多步工具循环~~ — 已移出:明确不做,见 [§7.5](#75-明确不做2026-08-02-决策)
 
 **中优先级:**
 - **M2** includeRawChunks — `StreamPart::Raw` 已定义但全仓 0 处 emit;`CallOptions` 无字段
@@ -195,9 +197,9 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | 类别 | 改动量 | 涉及缺口 |
 |------|--------|---------|
 | ① 加字段(机械性,每 wrapper 类型层同步;Node/Python JSON 直传可不加字段仅丢类型提示) | 小 | H3、M2、M3(options 字段);M7、M9、M10、L1(结果/StreamPart 字段) |
-| ② 动 FFI + 全 wrapper(结构性) | 大 | H1(需新增 `aimux_cancel(handle)` 类 C 入口 + 各语言 cancel();Node 另需 JS AbortSignal→native 桥接);H4(若做 core 自动执行工具需回调注册,若做"tool_results 回填重调"API 则 wire 不动、各 wrapper 写 loop helper);M13(宿主回调注册);M12(若新增独立入口 `aimux_generate_object` 则全链改动,若复用 generate_text + options 字段则降级为 ①) |
+| ② 动 FFI + 全 wrapper(结构性) | 大 | H1(2026-08-02:**Node 已落地**——`AbortBridge` 类桥接 JS signal;FFI/C-ABI 仍未做 `aimux_cancel(handle)` 类入口,其他语言暂无取消);H4(明确不做,见 §7.5);M13(宿主回调注册);M12(若新增独立入口 `aimux_generate_object` 则全链改动,若复用 generate_text + options 字段则降级为 ①) |
 | ③ wrapper 自实现(wire 不动) | 中 | M11(streamText 聚合器,宿主语言便利层);M6(跨语言注入宿主 fetch 不现实,大概率 core 内 reqwest 配置,归 ① 或不涉及) |
-| ④ 契约测试同步 | 小 | 所有新增字段需同步 `contract-tests/fixtures/wire-format.json` 及各 binding wire 测试(go `wire_format_test.go`、python `test_wrapper.py`、node `__test__`) |
+| ④ 契约测试同步 | 小 | 所有新增字段需同步 `contract-tests/fixtures/wire-format.json` 及各 binding wire 测试(go `wire_format_test.go`、python `test_wrapper.py`、node `__test__`)。H3 的 `timeout` 字段已入 fixture(2026-08-02) |
 
 ### 7.4 文档跟踪状态
 
@@ -205,3 +207,11 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 - `docs/plan/backlog.md` 仅跟踪 RFC-0017 阶段 2 项,无本 RFC 条目;`docs/api/gaps.md` 是 binding 多模态差距(已闭合),与本 RFC 无关
 - 内部审计(QUALITY_REVIEW/REMEDIATION)顺带提到 H1 未接线及 core util.rs `AbortSignal` 缺陷(全仓零调用,建议删除改 `tokio_util::CancellationToken`),未覆盖其余缺口
 - 后续实施建议:本表逐条勾销;若进入排期,迁移到 `docs/plan/backlog.md` 分区跟踪
+
+### 7.5 明确不做(2026-08-02 决策)
+
+| # | 缺口 | 决策 | 理由 |
+|---|------|------|------|
+| H4 | 多步工具循环(agent) | ❌ 不做 | 产品决策:不做多步工具循环(steps/stopWhen/工具自动执行)。`generate_text`/`stream_text` 保持单次调用,只返回 `tool_calls`,工具执行与多轮编排由调用方自管(与 aimux 薄绑定、单次调用定位一致) |
+
+§6 开放问题 4(H4 范围)随之关闭。

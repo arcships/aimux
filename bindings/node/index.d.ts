@@ -35,22 +35,33 @@ export declare class ImageModel {
   generate(optsJson: string): Promise<string>
 }
 
+export declare class AbortBridge {
+  /**
+   * Bridge a JS `AbortSignal` to the core's runtime cancellation.
+   * Pass the result to `Model.generateText` / `Model.streamText`.
+   */
+  constructor(signal: AbortSignal)
+  /** Returns `true` once the underlying JS signal has been aborted. */
+  aborted(): boolean
+}
+
 export declare class Model {
   /**
    * Generate text (non-streaming).
    *
    * `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.
    * `options` — optional JSON-serialized `GenerateTextOptions`.
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels the call.
    * Returns a JSON-serialized `GenerateTextResult`.
    */
-  generateText(prompt: string, options?: string | undefined | null): Promise<string>
+  generateText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
   /**
    * Stream text from the model.
    *
    * Returns an `AsyncGenerator<string>` yielding `StreamPart` JSON strings.
    * Use `for await (const part of model.streamText(...))` to consume.
    */
-  streamText(prompt: string, options?: string | undefined | null): Promise<AsyncGenerator<string>>
+  streamText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AsyncGenerator<string>>
 }
 
 export declare class RerankingModel {

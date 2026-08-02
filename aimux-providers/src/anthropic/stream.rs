@@ -21,11 +21,14 @@ use futures::StreamExt;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::shared::AbortSignal;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::Warning;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RequestTimeout, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 use serde_json::json;
 
@@ -58,6 +61,7 @@ fn build_anthropic_request(
     body: &serde_json::Value,
     build_headers: &impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
+    abort_signal: Option<AbortSignal>,
 ) -> Result<HttpRequest, AiMuxError> {
     // Serialize once; the Bytes path sends these exact bytes and the closure
     // signs over them, guaranteeing signature/body agreement.
@@ -74,8 +78,7 @@ fn build_anthropic_request(
         url: endpoint.to_string(),
         headers,
         body: http_body,
-
-        abort_signal: None,
+        abort_signal,
     })
 }
 
@@ -149,9 +152,11 @@ pub(crate) async fn anthropic_generate_core(
     warnings: Vec<Warning>,
     build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
+    abort_signal: Option<AbortSignal>,
+    timeout: Option<RequestTimeout>,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding)?;
-    let resp = send(request, retry_config, &DEFAULT_ERROR_STRUCTURE).await?;
+    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let resp = send_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let data: AnthropicResponse =
         serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
@@ -243,9 +248,11 @@ pub(crate) async fn anthropic_stream_core(
     warnings: Vec<Warning>,
     build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
+    abort_signal: Option<AbortSignal>,
+    timeout: Option<RequestTimeout>,
 ) -> Result<StreamResult, AiMuxError> {
-    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding)?;
-    let resp = send_stream(request, retry_config, &DEFAULT_ERROR_STRUCTURE).await?;
+    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let resp = send_stream_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let response_headers = resp.headers;
     let sse_stream = SseStream::new(resp.body);

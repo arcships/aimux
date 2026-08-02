@@ -1,4 +1,4 @@
-//! Mistral language model — implements `LanguageModel` trait.
+﻿//! Mistral language model — implements `LanguageModel` trait.
 //!
 //! Mirrors the TS `mistral-chat-language-model.ts`. Key differences from the
 //! OpenAI model:
@@ -24,7 +24,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 use super::MistralConfig;
@@ -213,7 +213,7 @@ impl LanguageModel for MistralModel {
         let body = build_request_body(&self.model_id, options, false);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
@@ -223,10 +223,11 @@ impl LanguageModel for MistralModel {
                     .collect(),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &MISTRAL_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -300,7 +301,7 @@ impl LanguageModel for MistralModel {
         let body = build_request_body(&self.model_id, options, true);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
@@ -310,10 +311,11 @@ impl LanguageModel for MistralModel {
                     .collect(),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &MISTRAL_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 

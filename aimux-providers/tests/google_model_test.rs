@@ -65,6 +65,8 @@ fn options_with_tools(prompt: LanguageModelPrompt, tools: Vec<FunctionTool>) -> 
         reasoning: None,
         body_overrides: None,
         max_retries: None,
+        timeout: None,
+        abort_signal: None,
     }
 }
 

@@ -56,6 +56,15 @@ pub struct GenerateTextOptions {
     pub body_overrides: Option<Value>,
     /// Per-call retry count override. `None` = provider default, `Some(0)` = disable.
     pub max_retries: Option<u32>,
+    /// Per-call timeout configuration (total / first-chunk / chunk idle).
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+    /// Abort signal for cancelling the call.
+    ///
+    /// Runtime handle — never crosses the JSON boundary. Rust callers set it
+    /// directly; the Node binding bridges a JS `AbortSignal` natively.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub abort_signal: Option<crate::shared::AbortSignal>,
 }
 
 impl GenerateTextOptions {
@@ -82,6 +91,8 @@ impl GenerateTextOptions {
             reasoning: self.reasoning,
             body_overrides: self.body_overrides,
             max_retries: self.max_retries,
+            timeout: self.timeout,
+            abort_signal: self.abort_signal,
         }
     }
 }

@@ -1,4 +1,4 @@
-//! xAI language model — implements `LanguageModel` trait.
+﻿//! xAI language model — implements `LanguageModel` trait.
 //!
 //! Mirrors the TS `XaiChatLanguageModel`. Unlike the thin OpenAI-compatible
 //! wrappers, xAI has enough provider-specific behaviour (reasoning content,
@@ -21,7 +21,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 use super::convert::{build_request_body_with_warnings, convert_xai_usage, parse_finish_reason};
@@ -98,17 +98,18 @@ impl LanguageModel for XaiModel {
         let request_result = build_request_body_with_warnings(&self.model_id, options, false)?;
         let body = request_result.body;
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -254,17 +255,18 @@ impl LanguageModel for XaiModel {
         let body = request_result.body;
         let warnings = request_result.warnings;
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 

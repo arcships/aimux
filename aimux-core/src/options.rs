@@ -10,6 +10,7 @@ use ts_rs::TS;
 
 use crate::language_model_message::LanguageModelPrompt;
 pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolChoice};
+use crate::shared::AbortSignal;
 use crate::types::ReasoningEffort;
 
 /// How the model should format its response.
@@ -24,6 +25,24 @@ pub enum ResponseFormat {
         name: Option<String>,
         description: Option<String>,
     },
+}
+
+/// Per-call timeout configuration.
+///
+/// Aligned with V4 `LanguageModelV4CallOptions.timeout`
+/// (`TimeoutConfiguration`). All values are milliseconds; `None` disables the
+/// corresponding limit. A `total` timeout also covers retry backoff and the
+/// whole streamed response.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TimeoutConfiguration {
+    /// Overall timeout for the entire call (including retries and, for
+    /// streaming, the whole stream), in milliseconds.
+    pub total_ms: Option<u64>,
+    /// Timeout waiting for the first stream chunk (streaming only).
+    pub first_chunk_ms: Option<u64>,
+    /// Maximum idle time between consecutive stream chunks (streaming only).
+    pub chunk_ms: Option<u64>,
 }
 
 /// Options passed to `LanguageModel::do_generate` / `do_stream`.
@@ -88,6 +107,18 @@ pub struct CallOptions {
     /// Per-call retry count override. `None` uses the provider's configured
     /// `RetryConfig.max_retries`. `Some(0)` disables retries.
     pub max_retries: Option<u32>,
+
+    /// Per-call timeout configuration (total / first-chunk / chunk idle).
+    /// `None` = no timeouts (provider defaults still apply at the HTTP layer).
+    pub timeout: Option<TimeoutConfiguration>,
+
+    /// Abort signal for cancelling the call.
+    ///
+    /// Runtime handle — never crosses the JSON boundary (bindings that only
+    /// pass JSON cannot set it; Node bridges a JS `AbortSignal` natively).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub abort_signal: Option<AbortSignal>,
 }
 
 impl CallOptions {
@@ -117,6 +148,8 @@ impl CallOptions {
             reasoning: None,
             body_overrides: None,
             max_retries: None,
+            timeout: None,
+            abort_signal: None,
         }
     }
 }

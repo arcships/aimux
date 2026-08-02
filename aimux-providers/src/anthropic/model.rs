@@ -102,6 +102,8 @@ impl LanguageModel for AnthropicModel {
             req.warnings,
             build_headers,
             BodyEncoding::Json,
+            options.abort_signal.clone(),
+            options.timeout.map(Into::into),
         )
         .await
     }
@@ -119,6 +121,8 @@ impl LanguageModel for AnthropicModel {
             req.warnings,
             build_headers,
             BodyEncoding::Json,
+            options.abort_signal.clone(),
+            options.timeout.map(Into::into),
         )
         .await
     }

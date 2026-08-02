@@ -1,4 +1,4 @@
-//! Google Vertex AI language model — implements `LanguageModel`.
+﻿//! Google Vertex AI language model — implements `LanguageModel`.
 //!
 //! Reuses the shared [`crate::google::convert`] message conversion logic and
 //! [`crate::google::types`] response types. Only the endpoint construction and
@@ -18,7 +18,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 use crate::google::convert::{build_request_body, convert_usage, parse_finish_reason};
@@ -128,17 +128,18 @@ impl LanguageModel for VertexModel {
         let body = build_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.generate_endpoint(),
                 headers,
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -198,17 +199,18 @@ impl LanguageModel for VertexModel {
         let body = build_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.stream_endpoint(),
                 headers,
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 

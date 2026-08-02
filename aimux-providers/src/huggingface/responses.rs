@@ -1,4 +1,4 @@
-//! Hugging Face Responses API language model.
+﻿//! Hugging Face Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the Hugging Face Responses
 //! API (`POST /responses`). This is the lightest Responses implementation in
@@ -35,7 +35,7 @@ use aimux_core::types::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 use super::HuggingFaceConfig;
@@ -94,17 +94,18 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let body = request.body;
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.0.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -164,17 +165,18 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let body = request.body;
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.0.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
