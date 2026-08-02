@@ -31,7 +31,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 
-use aimux_providers::{provider, provider_from_env, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {

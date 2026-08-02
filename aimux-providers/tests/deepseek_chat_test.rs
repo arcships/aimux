@@ -45,7 +45,7 @@ use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::openai::OpenAICompatProfile;
 use aimux_providers::openai::convert::build_request_body_with_warnings;
-use aimux_providers::{provider, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers (mirrors deepseek_reasoning_test.rs)

@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Cerebras provider.
+//! Provider-specific tests for the Cerebras provider.
 //!
 //! Translated from the TypeScript suites:
 //! - `packages/cerebras/src/cerebras-provider.test.ts`
@@ -32,7 +32,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 
-use aimux_providers::{provider, provider_from_env, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -77,8 +77,13 @@ fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
 /// TS: `createCerebras()` produces a provider whose name is "cerebras".
 #[test]
 fn provider_builds_cerebras_model() {
-    let model = provider("cerebras", Some("test-key".to_string()), "llama-3.3-70b", None)
-        .expect("cerebras provider should build");
+    let model = provider(
+        "cerebras",
+        Some("test-key".to_string()),
+        "llama-3.3-70b",
+        None,
+    )
+    .expect("cerebras provider should build");
     assert_eq!(model.model_id(), "llama-3.3-70b");
 }
 

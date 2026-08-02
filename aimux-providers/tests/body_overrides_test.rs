@@ -190,8 +190,7 @@ fn max_tokens_key_max_tokens_reasoning_model() {
         max_tokens_key: Some("max_tokens"),
         ..aimux_providers::openai::OpenAICompatProfile::full()
     };
-    let body =
-        build_request_body_with_warnings("o4-mini", &opts, false, "openai", &profile).body;
+    let body = build_request_body_with_warnings("o4-mini", &opts, false, "openai", &profile).body;
     assert_eq!(body["max_tokens"], json!(100));
     assert!(
         body.get("max_completion_tokens").is_none(),
@@ -212,8 +211,7 @@ fn max_tokens_key_max_completion_tokens_non_reasoning() {
         max_tokens_key: Some("max_completion_tokens"),
         ..aimux_providers::openai::OpenAICompatProfile::full()
     };
-    let body =
-        build_request_body_with_warnings("gpt-4o", &opts, false, "openai", &profile).body;
+    let body = build_request_body_with_warnings("gpt-4o", &opts, false, "openai", &profile).body;
     assert_eq!(body["max_completion_tokens"], json!(100));
     assert!(
         body.get("max_tokens").is_none(),
@@ -242,9 +240,10 @@ fn groq_none_passthrough_no_warning() {
         &aimux_providers::openai::OpenAICompatProfile::groq(),
     );
     assert_eq!(result.body["reasoning_effort"], json!("none"));
-    let reasoning_warning = result.warnings.iter().find(|w| {
-        matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning")
-    });
+    let reasoning_warning = result
+        .warnings
+        .iter()
+        .find(|w| matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning"));
     assert!(
         reasoning_warning.is_none(),
         "已发 effort 时不应 warning(防误报): {:?}",
@@ -268,9 +267,10 @@ fn no_warning_when_reasoning_translated() {
         &aimux_providers::openai::OpenAICompatProfile::full(),
     );
     assert_eq!(result.body["reasoning_effort"], json!("none"));
-    let reasoning_warning = result.warnings.iter().find(|w| {
-        matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning")
-    });
+    let reasoning_warning = result
+        .warnings
+        .iter()
+        .find(|w| matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning"));
     assert!(
         reasoning_warning.is_none(),
         "已发 effort 时不应 warning(防误报): {:?}",

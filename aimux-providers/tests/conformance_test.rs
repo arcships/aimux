@@ -1,4 +1,4 @@
-﻿//! Conformance tests using real recorded API responses (cassettes).
+//! Conformance tests using real recorded API responses (cassettes).
 //!
 //! These tests mount cassette files from `tests/cassettes/<provider>/` and
 //! verify that our provider implementations correctly parse real-world API
@@ -24,12 +24,12 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 
 use aimux_providers::{
-    provider, AnthropicConfig, AnthropicProvider, BedrockProvider, BedrockProviderConfig,
-    CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, HuggingFaceConfig,
-    HuggingFaceProvider, LlamafileConfig, LlamafileProvider, LmStudioConfig, LmStudioProvider,
-    MistralConfig, MistralProvider, MistralrsConfig, MistralrsProvider, OllamaConfig,
-    OllamaProvider, OpenAIConfig, OpenAIProvider, OpenRouterConfig, OpenRouterProvider,
-    ProviderOptions, XAIConfig, XAIProvider,
+    AnthropicConfig, AnthropicProvider, BedrockProvider, BedrockProviderConfig, CohereConfig,
+    CohereProvider, GoogleConfig, GoogleProvider, HuggingFaceConfig, HuggingFaceProvider,
+    LlamafileConfig, LlamafileProvider, LmStudioConfig, LmStudioProvider, MistralConfig,
+    MistralProvider, MistralrsConfig, MistralrsProvider, OllamaConfig, OllamaProvider,
+    OpenAIConfig, OpenAIProvider, OpenRouterConfig, OpenRouterProvider, ProviderOptions, XAIConfig,
+    XAIProvider, provider,
 };
 
 // 閳光偓閳光偓 helpers 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓

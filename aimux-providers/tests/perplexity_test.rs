@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Perplexity provider.
+//! Provider-specific tests for the Perplexity provider.
 //!
 //! Translated from the TypeScript suites:
 //! - `packages/perplexity/src/perplexity-language-model.test.ts`
@@ -36,7 +36,7 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{provider, provider_from_env, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 

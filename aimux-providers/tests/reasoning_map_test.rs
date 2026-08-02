@@ -19,8 +19,8 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
-use aimux_providers::openai::convert::build_request_body_with_warnings;
 use aimux_providers::openai::OpenAICompatProfile;
+use aimux_providers::openai::convert::build_request_body_with_warnings;
 use aimux_providers::provider_registry_entry;
 use serde_json::json;
 
@@ -49,9 +49,9 @@ fn opts_with_reasoning(r: ReasoningEffort) -> CallOptions {
 }
 
 fn has_reasoning_warning(warnings: &[Warning]) -> bool {
-    warnings.iter().any(|w| {
-        matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning")
-    })
+    warnings
+        .iter()
+        .any(|w| matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning"))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -155,8 +155,16 @@ fn wired_vendors() -> Vec<(&'static str, OpenAICompatProfile, &'static str)> {
             provider_registry_entry("siliconflow").unwrap(),
             "max_tokens",
         ),
-        ("sarvam", provider_registry_entry("sarvam").unwrap(), "max_tokens"),
-        ("reka_ai", provider_registry_entry("reka_ai").unwrap(), "max_tokens"),
+        (
+            "sarvam",
+            provider_registry_entry("sarvam").unwrap(),
+            "max_tokens",
+        ),
+        (
+            "reka_ai",
+            provider_registry_entry("reka_ai").unwrap(),
+            "max_tokens",
+        ),
         (
             "publicai",
             provider_registry_entry("publicai").unwrap(),
@@ -188,7 +196,13 @@ fn assert_vendor_key(
     model_id: &str,
     branch: &str,
 ) {
-    let result = build_request_body_with_warnings(model_id, &opts_with_max_tokens(100), false, provider, profile);
+    let result = build_request_body_with_warnings(
+        model_id,
+        &opts_with_max_tokens(100),
+        false,
+        provider,
+        profile,
+    );
     assert_eq!(
         result.body[expected_key],
         json!(100),

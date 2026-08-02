@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK Groq provider tests.
+//! Rust translations of the AI SDK Groq provider tests.
 //!
 //! Sources (TS → Rust):
 //! - `packages/groq/src/convert-to-groq-chat-messages.test.ts` → message
@@ -33,7 +33,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{provider, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 

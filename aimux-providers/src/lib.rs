@@ -10,7 +10,7 @@
 // phase 4 — use [`provider`] / [`provider_from_env`] instead.
 pub mod provider;
 pub mod provider_name;
-pub use provider::{provider, provider_from_env, provider_registry_entry, ProviderOptions};
+pub use provider::{ProviderOptions, provider, provider_from_env, provider_registry_entry};
 
 pub mod anthropic;
 pub mod anthropic_aws;

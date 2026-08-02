@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Alibaba (DashScope / Qwen) provider.
+//! Provider-specific tests for the Alibaba (DashScope / Qwen) provider.
 //!
 //! Translated from the TypeScript suites:
 //! - `packages/alibaba/src/alibaba-provider.test.ts`
@@ -40,7 +40,7 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{provider, provider_from_env, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 

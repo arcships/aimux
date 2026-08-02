@@ -404,10 +404,7 @@ pub extern "C" fn aimux_provider_new(
 /// Convenience: create a language model by provider name, reading the API key
 /// from the provider's env var. Returns `0` on failure.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_provider_from_env(
-    name: *const c_char,
-    model_id: *const c_char,
-) -> u64 {
+pub extern "C" fn aimux_provider_from_env(name: *const c_char, model_id: *const c_char) -> u64 {
     let Some(name) = cstr_to_string(name) else {
         return 0;
     };

@@ -1,4 +1,4 @@
-﻿//! DeepSeek `reasoning_content` tests, translated from the Vercel AI SDK
+//! DeepSeek `reasoning_content` tests, translated from the Vercel AI SDK
 //! TypeScript suite.
 //!
 //! Translation sources:
@@ -61,7 +61,7 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{ReasoningEffort, Warning};
 
-use aimux_providers::{provider, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers (mirrors openai_compatible_test.rs / anthropic_model_test.rs)

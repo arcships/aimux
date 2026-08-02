@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Fireworks provider.
+//! Provider-specific tests for the Fireworks provider.
 //!
 //! Translated from `packages/fireworks/src/fireworks-provider.test.ts`.
 //!
@@ -34,7 +34,7 @@ use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromp
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
 
-use aimux_providers::{provider, provider_from_env, ProviderOptions};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -212,7 +212,11 @@ fn from_env_loads_fireworks_api_key() {
         std::env::set_var("FIREWORKS_API_KEY", "env-test-key");
     }
 
-    let model = provider_from_env("fireworks", "accounts/fireworks/models/llama-v3p1-70b-instruct", None);
+    let model = provider_from_env(
+        "fireworks",
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        None,
+    );
     assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
@@ -232,7 +236,11 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("FIREWORKS_API_KEY");
     }
 
-    let model = provider_from_env("fireworks", "accounts/fireworks/models/llama-v3p1-70b-instruct", None);
+    let model = provider_from_env(
+        "fireworks",
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        None,
+    );
     assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {

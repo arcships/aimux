@@ -1,4 +1,4 @@
-﻿//! Provider configuration tests for the remaining thin OpenAI-compatible
+//! Provider configuration tests for the remaining thin OpenAI-compatible
 //! wrappers: HuggingFace, TogetherAI, Vercel.
 //!
 //! The existing `openai_compatible_test.rs` covers basic do_generate /
@@ -29,7 +29,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 
 use aimux_providers::{
-    provider, provider_from_env, HuggingFaceConfig, HuggingFaceProvider, ProviderOptions,
+    HuggingFaceConfig, HuggingFaceProvider, ProviderOptions, provider, provider_from_env,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -329,13 +329,8 @@ mod vercel_config {
     fn provider_name_is_vercel() {
         // Phase 4: the shell VercelConfig/VercelProvider pair is retired —
         // registry-backed provider() replaces it.
-        let model = provider(
-            "vercel",
-            Some("test-key".to_string()),
-            "v0-1.5-md",
-            None,
-        )
-        .expect("vercel should construct from registry");
+        let model = provider("vercel", Some("test-key".to_string()), "v0-1.5-md", None)
+            .expect("vercel should construct from registry");
         assert_eq!(model.model_id(), "v0-1.5-md");
     }
 

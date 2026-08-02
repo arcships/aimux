@@ -27,7 +27,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::RetryConfig;
 
-use crate::openai::{OpenAIConfig, OpenAICompatProfile, OpenAIProvider};
+use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
 use crate::provider_name::ProviderName;
 
 /// One entry of `provider-registry.json` (registry slice).
@@ -123,15 +123,12 @@ pub fn provider(
     options: Option<ProviderOptions>,
 ) -> Result<Box<dyn LanguageModel>, AiMuxError> {
     let name = name.as_ref();
-    let entry = registry()
-        .iter()
-        .find(|e| e.name == name)
-        .ok_or_else(|| {
-            AiMuxError::UnknownProvider(format!(
-                "unknown provider '{name}' — available providers: {}",
-                ProviderName::all_names()
-            ))
-        })?;
+    let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {
+        AiMuxError::UnknownProvider(format!(
+            "unknown provider '{name}' — available providers: {}",
+            ProviderName::all_names()
+        ))
+    })?;
 
     let key = match api_key {
         Some(key) => key,
@@ -249,7 +246,10 @@ mod tests {
         match err {
             AiMuxError::UnknownProvider(msg) => {
                 assert!(msg.contains("no-such-provider"));
-                assert!(msg.contains("groq"), "error should list available providers");
+                assert!(
+                    msg.contains("groq"),
+                    "error should list available providers"
+                );
             }
             other => panic!("expected UnknownProvider, got {other:?}"),
         }
@@ -280,7 +280,10 @@ mod tests {
     #[test]
     fn provider_name_roundtrip() {
         assert_eq!(ProviderName::Groq.as_str(), "groq");
-        assert_eq!(ProviderName::from_str("deepseek"), Some(ProviderName::Deepseek));
+        assert_eq!(
+            ProviderName::from_str("deepseek"),
+            Some(ProviderName::Deepseek)
+        );
         assert_eq!(ProviderName::from_str("nope"), None);
         assert!(ProviderName::all_names().contains("groq"));
         assert_eq!(ProviderName::ALL.len(), 250);
