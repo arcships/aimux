@@ -30,105 +30,7 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{
-    AbacusConfig, AbacusProvider, AlibabaConfig, AlibabaProvider, ApertisConfig, ApertisProvider,
-    AtomicChatConfig, AtomicChatProvider, BasetenConfig, BasetenProvider, BlueclawConfig,
-    BlueclawProvider, ByteDanceConfig, ByteDanceProvider, CerebrasConfig, CerebrasProvider,
-    CloudflareConfig, CloudflareProvider, DarkbloomConfig, DarkbloomProvider, DeepInfraConfig,
-    DeepInfraProvider, DeepSeekConfig, DeepSeekProvider, FirepassConfig, FirepassProvider,
-    FireworksConfig, FireworksProvider, FreemodelConfig, FreemodelProvider, GmiConfig, GmiProvider,
-    GroqConfig, GroqProvider, HetznerConfig, HetznerProvider, HuggingFaceConfig,
-    HuggingFaceProvider, IflowcnConfig, IflowcnProvider, KuaeCloudCodingPlanConfig,
-    KuaeCloudCodingPlanProvider, LemonadeConfig, LemonadeProvider, LibertaiConfig,
-    LibertaiProvider, LynkrConfig, LynkrProvider, MinimaxCnCodingPlanConfig,
-    MinimaxCnCodingPlanProvider, MinimaxCodingPlanConfig, MinimaxCodingPlanProvider,
-    MoonshotAIConfig, MoonshotAIProvider, MoonshotaiCnConfig, MoonshotaiCnProvider, OpencodeConfig,
-    OpencodeProvider, PerplexityConfig, PerplexityProvider, PinstripesConfig, PinstripesProvider,
-    PrivatemodeAiConfig, PrivatemodeAiProvider, PublicaiConfig, PublicaiProvider, SnowflakeConfig,
-    SnowflakeProvider, SyntheticConfig, SyntheticProvider, TencentCodingPlanConfig,
-    TencentCodingPlanProvider, TencentTokenPlanConfig, TencentTokenPlanEnterpriseAutoConfig,
-    TencentTokenPlanEnterpriseAutoProvider, TencentTokenPlanEnterpriseProConfig,
-    TencentTokenPlanEnterpriseProProvider, TencentTokenPlanGeneralPersonalConfig,
-    TencentTokenPlanGeneralPersonalProvider, TencentTokenPlanHyPersonalConfig,
-    TencentTokenPlanHyPersonalProvider, TencentTokenPlanProvider, TensormeshConfig,
-    TensormeshProvider, ThinkingmachinesConfig, ThinkingmachinesProvider, TinfoilConfig,
-    TinfoilProvider, TogetherAIConfig, TogetherAIProvider, VercelConfig, VercelProvider,
-    VertexAiAi21ModelsConfig, VertexAiAi21ModelsProvider, VertexAiAnthropicModelsConfig,
-    VertexAiAnthropicModelsProvider, VertexAiDeepseekModelsConfig, VertexAiDeepseekModelsProvider,
-    VertexAiLlamaModelsConfig, VertexAiLlamaModelsProvider, VertexAiMinimaxModelsConfig,
-    VertexAiMinimaxModelsProvider, VertexAiMistralModelsConfig, VertexAiMistralModelsProvider,
-    VertexAiMoonshotModelsConfig, VertexAiMoonshotModelsProvider, VertexAiOpenaiModelsConfig,
-    VertexAiOpenaiModelsProvider, VertexAiQwenModelsConfig, VertexAiQwenModelsProvider,
-    VertexAiZaiModelsConfig, VertexAiZaiModelsProvider, XAIConfig, XAIProvider,
-    XiaomiTokenPlanAmsConfig, XiaomiTokenPlanAmsProvider, XiaomiTokenPlanCnConfig,
-    XiaomiTokenPlanCnProvider, XiaomiTokenPlanSgpConfig, XiaomiTokenPlanSgpProvider,
-    XpersonaConfig, XpersonaProvider, ZeldocConfig, ZeldocProvider,
-    abliteration_ai::AbliterationAiConfig, abliteration_ai::AbliterationAiProvider,
-    ai_router::AiRouterConfig, ai_router::AiRouterProvider, aiand::AiandConfig,
-    aiand::AiandProvider, aki_io::AkiIoConfig, aki_io::AkiIoProvider,
-    alibaba_coding_plan::AlibabaCodingPlanConfig, alibaba_coding_plan::AlibabaCodingPlanProvider,
-    alibaba_coding_plan_cn::AlibabaCodingPlanCnConfig,
-    alibaba_coding_plan_cn::AlibabaCodingPlanCnProvider,
-    alibaba_token_plan::AlibabaTokenPlanConfig, alibaba_token_plan::AlibabaTokenPlanProvider,
-    alibaba_token_plan_cn::AlibabaTokenPlanCnConfig,
-    alibaba_token_plan_cn::AlibabaTokenPlanCnProvider, ambient::AmbientConfig,
-    ambient::AmbientProvider, anyapi::AnyapiConfig, anyapi::AnyapiProvider, auriko::AurikoConfig,
-    auriko::AurikoProvider, baidu_v2::BaiduV2Config, baidu_v2::BaiduV2Provider,
-    bailing::BailingConfig, bailing::BailingProvider, bedrock_mantle::BedrockMantleConfig,
-    bedrock_mantle::BedrockMantleProvider, berget::BergetConfig, berget::BergetProvider,
-    cherryin::CherryinConfig, cherryin::CherryinProvider, chutes::ChutesConfig,
-    chutes::ChutesProvider, claudinio::ClaudinioConfig, claudinio::ClaudinioProvider,
-    cloudferro_sherlock::CloudferroSherlockConfig, cloudferro_sherlock::CloudferroSherlockProvider,
-    cloudflare_workers_ai::CloudflareWorkersAiConfig,
-    cloudflare_workers_ai::CloudflareWorkersAiProvider, cortecs::CortecsConfig,
-    cortecs::CortecsProvider, crof::CrofConfig, crof::CrofProvider, crossmodel::CrossmodelConfig,
-    crossmodel::CrossmodelProvider, crusoe::CrusoeConfig, crusoe::CrusoeProvider,
-    daoxe::DaoxeConfig, daoxe::DaoxeProvider, digitalocean::DigitaloceanConfig,
-    digitalocean::DigitaloceanProvider, dinference::DinferenceConfig,
-    dinference::DinferenceProvider, doubao::DoubaoConfig, doubao::DoubaoProvider, drun::DrunConfig,
-    drun::DrunProvider, ebcloud::EbcloudConfig, ebcloud::EbcloudProvider,
-    empiriolabs::EmpiriolabsConfig, empiriolabs::EmpiriolabsProvider, evroc::EvrocConfig,
-    evroc::EvrocProvider, frogbot::FrogbotConfig, frogbot::FrogbotProvider,
-    gmicloud::GmicloudConfig, gmicloud::GmicloudProvider, hpc_ai::HpcAiConfig,
-    hpc_ai::HpcAiProvider, inceptron::InceptronConfig, inceptron::InceptronProvider,
-    inferx::InferxConfig, inferx::InferxProvider, io_net::IoNetConfig, io_net::IoNetProvider,
-    jiekou::JiekouConfig, jiekou::JiekouProvider, kenari::KenariConfig, kenari::KenariProvider,
-    kimi::KimiConfig, kimi::KimiProvider, kimi_for_coding::KimiForCodingConfig,
-    kimi_for_coding::KimiForCodingProvider, lilac::LilacConfig, lilac::LilacProvider,
-    llama::LlamaConfig, llama::LlamaProvider, llamagate::LlamagateConfig,
-    llamagate::LlamagateProvider, llmgateway::LlmgatewayConfig, llmgateway::LlmgatewayProvider,
-    llmtr::LlmtrConfig, llmtr::LlmtrProvider, lucidquery::LucidqueryConfig,
-    lucidquery::LucidqueryProvider, meganova::MeganovaConfig, meganova::MeganovaProvider,
-    merge_gateway::MergeGatewayConfig, merge_gateway::MergeGatewayProvider, meta::MetaConfig,
-    meta::MetaProvider, mimo::MimoConfig, mimo::MimoProvider, minimax_cn::MinimaxCnConfig,
-    minimax_cn::MinimaxCnProvider, mixlayer::MixlayerConfig, mixlayer::MixlayerProvider,
-    moark::MoarkConfig, moark::MoarkProvider, model_oracle_ai::ModelOracleAiConfig,
-    model_oracle_ai::ModelOracleAiProvider, nearai::NearaiConfig, nearai::NearaiProvider,
-    neon::NeonConfig, neon::NeonProvider, neuralwatt::NeuralwattConfig,
-    neuralwatt::NeuralwattProvider, oci::OciConfig, oci::OciProvider, ofox::OfoxConfig,
-    ofox::OfoxProvider, perplexity_agent::PerplexityAgentConfig,
-    perplexity_agent::PerplexityAgentProvider, poe::PoeConfig, poe::PoeProvider,
-    poolside::PoolsideConfig, poolside::PoolsideProvider, ppinfra::PpinfraConfig,
-    ppinfra::PpinfraProvider, qihang_ai::QihangAiConfig, qihang_ai::QihangAiProvider,
-    regolo_ai::RegoloAiConfig, regolo_ai::RegoloAiProvider, routing_run::RoutingRunConfig,
-    routing_run::RoutingRunProvider, snowflake_cortex::SnowflakeCortexConfig,
-    snowflake_cortex::SnowflakeCortexProvider, stackit::StackitConfig, stackit::StackitProvider,
-    stepfun_ai_step_plan::StepfunAiStepPlanConfig, stepfun_ai_step_plan::StepfunAiStepPlanProvider,
-    stepfun_step_plan::StepfunStepPlanConfig, stepfun_step_plan::StepfunStepPlanProvider,
-    subconscious::SubconsciousConfig, subconscious::SubconsciousProvider,
-    tencent_tokenhub::TencentTokenhubConfig, tencent_tokenhub::TencentTokenhubProvider,
-    the_grid_ai::TheGridAiConfig, the_grid_ai::TheGridAiProvider, tokenflux::TokenfluxConfig,
-    tokenflux::TokenfluxProvider, trustedrouter::TrustedrouterConfig,
-    trustedrouter::TrustedrouterProvider, umans_ai::UmansAiConfig, umans_ai::UmansAiProvider,
-    unorouter::UnorouterConfig, unorouter::UnorouterProvider, venice::VeniceConfig,
-    venice::VeniceProvider, vivgrid::VivgridConfig, vivgrid::VivgridProvider,
-    volc_engine::VolcEngineConfig, volc_engine::VolcEngineProvider, vultr::VultrConfig,
-    vultr::VultrProvider, wandb::WandbConfig, wandb::WandbProvider, xunfei::XunfeiConfig,
-    xunfei::XunfeiProvider, zai_coding_plan::ZaiCodingPlanConfig,
-    zai_coding_plan::ZaiCodingPlanProvider, zenmux::ZenmuxConfig, zenmux::ZenmuxProvider,
-    zhipu_v4::ZhipuV4Config, zhipu_v4::ZhipuV4Provider,
-    zhipuai_coding_plan::ZhipuaiCodingPlanConfig, zhipuai_coding_plan::ZhipuaiCodingPlanProvider,
-};
+use aimux_providers::{provider, ProviderOptions, bedrock_mantle::BedrockMantleConfig, bedrock_mantle::BedrockMantleProvider,  huggingface::HuggingFaceConfig, huggingface::HuggingFaceProvider,  xai::XAIConfig, xai::XAIProvider,  vertex_ai_ai21_models::VertexAiAi21ModelsConfig, vertex_ai_ai21_models::VertexAiAi21ModelsProvider,  vertex_ai_anthropic_models::VertexAiAnthropicModelsConfig, vertex_ai_anthropic_models::VertexAiAnthropicModelsProvider,  vertex_ai_deepseek_models::VertexAiDeepseekModelsConfig, vertex_ai_deepseek_models::VertexAiDeepseekModelsProvider,  vertex_ai_llama_models::VertexAiLlamaModelsConfig, vertex_ai_llama_models::VertexAiLlamaModelsProvider,  vertex_ai_minimax_models::VertexAiMinimaxModelsConfig, vertex_ai_minimax_models::VertexAiMinimaxModelsProvider,  vertex_ai_mistral_models::VertexAiMistralModelsConfig, vertex_ai_mistral_models::VertexAiMistralModelsProvider,  vertex_ai_moonshot_models::VertexAiMoonshotModelsConfig, vertex_ai_moonshot_models::VertexAiMoonshotModelsProvider,  vertex_ai_openai_models::VertexAiOpenaiModelsConfig, vertex_ai_openai_models::VertexAiOpenaiModelsProvider,  vertex_ai_qwen_models::VertexAiQwenModelsConfig, vertex_ai_qwen_models::VertexAiQwenModelsProvider,  vertex_ai_zai_models::VertexAiZaiModelsConfig, vertex_ai_zai_models::VertexAiZaiModelsProvider,};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -205,7 +107,7 @@ fn text_deltas(parts: &[StreamPart]) -> Vec<String> {
 // Test generator — 4 tests per provider, identical structure.
 //
 // Usage:
-//   openai_compatible_tests!(groq, Groq, GroqConfig, GroqProvider, "llama-3.3-70b-versatile");
+//   openai_compatible_tests!(groq, "groq", "llama-3.3-70b-versatile");
 //
 // The `$factory` closure builds a provider pointed at the mock server URI,
 // so each wrapper's `with_base_url` override path is exercised end-to-end.
@@ -221,13 +123,16 @@ macro_rules! openai_compatible_tests {
         mod $mod_name {
             use super::*;
 
+            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+                let config = <$config>::new("test-api-key").with_base_url(server.uri());
+                Box::new(<$provider>::new(config).model($model_id))
+            }
+        mod $mod_name {
+            use super::*;
+
             /// Build a provider pointed at the mock server.
             /// Uses the wrapper's public `with_base_url` so the override path
             /// (and therefore the default-URL wiring) is exercised.
-            fn make_provider(server: &MockServer) -> $provider {
-                let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                <$provider>::new(config)
-            }
 
             // ── 1. do_generate returns text ─────────────────────────────────
 
@@ -242,8 +147,7 @@ macro_rules! openai_compatible_tests {
                     .mount(&server)
                     .await;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+                let model = make_provider(&server);
 
                 let result = model
                     .do_generate(&default_options(test_prompt()))
@@ -278,8 +182,7 @@ macro_rules! openai_compatible_tests {
                     .mount(&server)
                     .await;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+                let model = make_provider(&server);
 
                 let result = model
                     .do_stream(&default_options(test_prompt()))
@@ -322,8 +225,7 @@ macro_rules! openai_compatible_tests {
                     .mount(&server)
                     .await;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+                let model = make_provider(&server);
 
                 let result = model.do_generate(&default_options(test_prompt())).await;
                 assert!(
@@ -346,8 +248,7 @@ macro_rules! openai_compatible_tests {
                     .mount(&server)
                     .await;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+                let model = make_provider(&server);
                 let _ = model
                     .do_generate(&default_options(test_prompt()))
                     .await
@@ -381,73 +282,211 @@ macro_rules! openai_compatible_tests {
                 assert_eq!(body["messages"][0]["content"], "Hello");
             }
         }
+        }
+    };
+    (
+        $mod_name:ident,
+        $provider_name:literal,
+        $model_id:literal
+    ) => {
+        mod $mod_name {
+            use super::*;
+
+            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+                provider(
+                    $provider_name,
+                    Some("test-api-key".to_string()),
+                    $model_id,
+                    Some(ProviderOptions {
+                        base_url: Some(server.uri()),
+                        ..Default::default()
+                    }),
+                )
+                .expect("provider construction")
+            }
+        mod $mod_name {
+            use super::*;
+
+            /// Build a provider pointed at the mock server.
+            /// Uses the wrapper's public `with_base_url` so the override path
+            /// (and therefore the default-URL wiring) is exercised.
+
+            // ── 1. do_generate returns text ─────────────────────────────────
+
+            #[tokio::test]
+            async fn do_generate_returns_text() {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .and(path("/chat/completions"))
+                    .respond_with(
+                        ResponseTemplate::new(200).set_body_json(text_completion_body()),
+                    )
+                    .mount(&server)
+                    .await;
+
+                let model = make_provider(&server);
+
+                let result = model
+                    .do_generate(&default_options(test_prompt()))
+                    .await
+                    .expect("do_generate should succeed");
+
+                assert_eq!(result.content.len(), 1);
+                match &result.content[0] {
+                    GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
+                    other => panic!("expected Text, got {:?}", other),
+                }
+                assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+            }
+
+            // ── 2. do_stream returns text deltas ────────────────────────────
+
+            #[tokio::test]
+            async fn do_stream_returns_text() {
+                let server = MockServer::start().await;
+                let body = sse_body(&[
+                    &sse_event(r#"{"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}"#),
+                    &sse_event(r#"{"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"content":", World!"},"finish_reason":null}]}"#),
+                    &sse_event(r#"{"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":30,"total_tokens":34}}"#),
+                ]);
+                Mock::given(method("POST"))
+                    .and(path("/chat/completions"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(body),
+                    )
+                    .mount(&server)
+                    .await;
+
+                let model = make_provider(&server);
+
+                let result = model
+                    .do_stream(&default_options(test_prompt()))
+                    .await
+                    .expect("do_stream should succeed");
+                let parts = collect_stream(result).await;
+
+                assert_eq!(
+                    text_deltas(&parts),
+                    vec!["Hello".to_string(), ", World!".to_string()]
+                );
+
+                // Final part is a Finish with the stop reason.
+                let finish = parts.iter().find(|p| matches!(p, StreamPart::Finish { .. }));
+                match finish {
+                    Some(StreamPart::Finish { finish_reason, .. }) => {
+                        assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
+                    }
+                    other => panic!("expected Finish, got {:?}", other),
+                }
+            }
+
+            // ── 3. 401 maps to Auth error ───────────────────────────────────
+
+            #[tokio::test]
+            async fn status_401_maps_to_auth_error() {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .and(path("/chat/completions"))
+                    .respond_with(
+                        ResponseTemplate::new(401).set_body_json(json!({
+                            "error": {
+                                "message": "Incorrect API key provided",
+                                "type": "invalid_request_error",
+                                "param": null,
+                                "code": "invalid_api_key"
+                            }
+                        })),
+                    )
+                    .mount(&server)
+                    .await;
+
+                let model = make_provider(&server);
+
+                let result = model.do_generate(&default_options(test_prompt())).await;
+                assert!(
+                    matches!(result, Err(AiMuxError::Auth(ref m))
+                        if m == "Incorrect API key provided"),
+                    "expected Auth error, got {result:?}"
+                );
+            }
+
+            // ── 4. request hits the right path with the Bearer header ──────
+
+            #[tokio::test]
+            async fn request_uses_correct_url_and_auth_header() {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .and(path("/chat/completions"))
+                    .respond_with(
+                        ResponseTemplate::new(200).set_body_json(text_completion_body()),
+                    )
+                    .mount(&server)
+                    .await;
+
+                let model = make_provider(&server);
+                let _ = model
+                    .do_generate(&default_options(test_prompt()))
+                    .await
+                    .unwrap();
+
+                let requests = server
+                    .received_requests()
+                    .await
+                    .expect("requests should be recorded");
+                assert_eq!(requests.len(), 1, "exactly one request expected");
+
+                // The path is relative to the mock server root, so it must be
+                // `/chat/completions` — proving the wrapper appended the
+                // `/chat/completions` suffix to the configured base URL.
+                assert_eq!(requests[0].url.path(), "/chat/completions");
+
+                // Authorization header carries the configured API key.
+                assert_eq!(
+                    requests[0]
+                        .headers
+                        .get("authorization")
+                        .and_then(|v| v.to_str().ok()),
+                    Some("Bearer test-api-key"),
+                    "Authorization: Bearer header missing or wrong"
+                );
+
+                // The request body carries the chosen model id.
+                let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+                assert_eq!(body["model"], $model_id);
+                assert_eq!(body["messages"][0]["role"], "user");
+                assert_eq!(body["messages"][0]["content"], "Hello");
+            }
+        }
+        }
     };
 }
 
-openai_compatible_tests!(groq, GroqConfig, GroqProvider, "llama-3.3-70b-versatile");
-openai_compatible_tests!(deepseek, DeepSeekConfig, DeepSeekProvider, "deepseek-chat");
-openai_compatible_tests!(
-    togetherai,
-    TogetherAIConfig,
-    TogetherAIProvider,
-    "meta-llama/Llama-3-70b-chat-hf"
-);
-openai_compatible_tests!(
-    fireworks,
-    FireworksConfig,
-    FireworksProvider,
-    "accounts/fireworks/models/llama-v3p1-70b-instruct"
-);
-openai_compatible_tests!(perplexity, PerplexityConfig, PerplexityProvider, "sonar");
-openai_compatible_tests!(cerebras, CerebrasConfig, CerebrasProvider, "llama-3.3-70b");
+openai_compatible_tests!(groq, "groq", "llama-3.3-70b-versatile");
+openai_compatible_tests!(deepseek, "deepseek", "deepseek-chat");
+openai_compatible_tests!(togetherai, "togetherai", "meta-llama/Llama-3-70b-chat-hf");
+openai_compatible_tests!(fireworks, "fireworks", "accounts/fireworks/models/llama-v3p1-70b-instruct");
+openai_compatible_tests!(perplexity, "perplexity", "sonar");
+openai_compatible_tests!(cerebras, "cerebras", "llama-3.3-70b");
 openai_compatible_tests!(xai, XAIConfig, XAIProvider, "grok-2");
-openai_compatible_tests!(
-    moonshotai,
-    MoonshotAIConfig,
-    MoonshotAIProvider,
-    "moonshot-v1-8k"
-);
+openai_compatible_tests!(moonshotai, "moonshotai", "moonshot-v1-8k");
 
 // Second batch of OpenAI-compatible thin wrappers.
-openai_compatible_tests!(
-    deepinfra,
-    DeepInfraConfig,
-    DeepInfraProvider,
-    "meta-llama/Meta-Llama-3-70B-Instruct"
-);
-openai_compatible_tests!(
-    baseten,
-    BasetenConfig,
-    BasetenProvider,
-    "deepseek-ai/DeepSeek-V3-0324"
-);
-openai_compatible_tests!(
-    huggingface,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
-    "meta-llama/Llama-3.3-70B-Instruct"
-);
-openai_compatible_tests!(alibaba, AlibabaConfig, AlibabaProvider, "qwen-max");
-openai_compatible_tests!(
-    bytedance,
-    ByteDanceConfig,
-    ByteDanceProvider,
-    "doubao-pro-32k"
-);
-openai_compatible_tests!(vercel, VercelConfig, VercelProvider, "v0-1.5-md");
+openai_compatible_tests!(deepinfra, "deepinfra", "meta-llama/Meta-Llama-3-70B-Instruct");
+openai_compatible_tests!(baseten, "baseten", "deepseek-ai/DeepSeek-V3-0324");
+openai_compatible_tests!(huggingface, HuggingFaceConfig, HuggingFaceProvider, "meta-llama/Llama-3.3-70B-Instruct");
+openai_compatible_tests!(alibaba, "alibaba", "qwen-max");
+openai_compatible_tests!(bytedance, "bytedance", "doubao-pro-32k");
+openai_compatible_tests!(vercel, "vercel", "v0-1.5-md");
 
 // P0 thin-wrapper providers (provider-research batch).
-openai_compatible_tests!(abacus, AbacusConfig, AbacusProvider, "route-llm");
-openai_compatible_tests!(
-    abliteration_ai,
-    AbliterationAiConfig,
-    AbliterationAiProvider,
-    "abliterated-model"
-);
-openai_compatible_tests!(aiand, AiandConfig, AiandProvider, "openai/gpt-oss-120b");
-openai_compatible_tests!(ambient, AmbientConfig, AmbientProvider, "ambient/large");
-openai_compatible_tests!(umans_ai, UmansAiConfig, UmansAiProvider, "umans-coder");
-openai_compatible_tests!(venice, VeniceConfig, VeniceProvider, "zai-org-glm-5");
+openai_compatible_tests!(abacus, "abacus", "route-llm");
+openai_compatible_tests!(abliteration_ai, "abliteration_ai", "abliterated-model");
+openai_compatible_tests!(aiand, "aiand", "openai/gpt-oss-120b");
+openai_compatible_tests!(ambient, "ambient", "ambient/large");
+openai_compatible_tests!(umans_ai, "umans_ai", "umans-coder");
+openai_compatible_tests!(venice, "venice", "zai-org-glm-5");
 
 // ════════════════════════════════════════════════════════════════════════════
 // Tool-call scenarios — a second macro generating 2 tests per provider:
@@ -488,10 +527,13 @@ macro_rules! openai_compatible_tool_tests {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> $provider {
+            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
                 let config = <$config>::new("test-api-key").with_base_url(server.uri());
-                <$provider>::new(config)
+                Box::new(<$provider>::new(config).model($model_id))
             }
+        mod $mod_name {
+            use super::*;
+
 
             /// do_generate extracts a tool call from the response.
             #[tokio::test]
@@ -505,8 +547,7 @@ macro_rules! openai_compatible_tool_tests {
                     .mount(&server)
                     .await;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+                let model = make_provider(&server);
 
                 let result = model
                     .do_generate(&default_options(test_prompt()))
@@ -544,8 +585,7 @@ macro_rules! openai_compatible_tool_tests {
                     .mount(&server)
                     .await;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+                let model = make_provider(&server);
 
                 let result = model
                     .do_stream(&default_options(test_prompt()))
@@ -565,78 +605,124 @@ macro_rules! openai_compatible_tool_tests {
                 assert_eq!(input, json!({"city": "SF"}));
             }
         }
+        }
+    };
+    (
+        $mod_name:ident,
+        $provider_name:literal,
+        $model_id:literal
+    ) => {
+        mod $mod_name {
+            use super::*;
+
+            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+                provider(
+                    $provider_name,
+                    Some("test-api-key".to_string()),
+                    $model_id,
+                    Some(ProviderOptions {
+                        base_url: Some(server.uri()),
+                        ..Default::default()
+                    }),
+                )
+                .expect("provider construction")
+            }
+        mod $mod_name {
+            use super::*;
+
+
+            /// do_generate extracts a tool call from the response.
+            #[tokio::test]
+            async fn do_generate_extracts_tool_call() {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .and(path("/chat/completions"))
+                    .respond_with(
+                        ResponseTemplate::new(200).set_body_json(tool_call_completion_body()),
+                    )
+                    .mount(&server)
+                    .await;
+
+                let model = make_provider(&server);
+
+                let result = model
+                    .do_generate(&default_options(test_prompt()))
+                    .await
+                    .expect("do_generate should succeed");
+
+                assert_eq!(result.content.len(), 1);
+                match &result.content[0] {
+                    GenerateContent::ToolCall { tool_call_id, tool_name, input, .. } => {
+                        assert_eq!(tool_call_id, "call_abc");
+                        assert_eq!(tool_name, "get-weather");
+                        assert_eq!(input, &json!({"city": "SF"}));
+                    }
+                    other => panic!("expected ToolCall, got {:?}", other),
+                }
+                assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+            }
+
+            /// do_stream emits a ToolCall stream part.
+            #[tokio::test]
+            async fn do_stream_emits_tool_call() {
+                let server = MockServer::start().await;
+                let body = sse_body(&[
+                    &sse_event(r#"{"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"get-weather","arguments":""}}]},"finish_reason":null}]}"#),
+                    &sse_event(r#"{"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"SF\"}"}}]},"finish_reason":null}]}"#),
+                    &sse_event(r#"{"id":"chatcmpl-1","model":"test-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":10,"total_tokens":20}}"#),
+                ]);
+                Mock::given(method("POST"))
+                    .and(path("/chat/completions"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(body),
+                    )
+                    .mount(&server)
+                    .await;
+
+                let model = make_provider(&server);
+
+                let result = model
+                    .do_stream(&default_options(test_prompt()))
+                    .await
+                    .expect("do_stream should succeed");
+                let parts = collect_stream(result).await;
+
+                let tool_call = parts.iter().find_map(|p| match p {
+                    StreamPart::ToolCall { tool_call_id, tool_name, input, .. } => {
+                        Some((tool_call_id.clone(), tool_name.clone(), input.clone()))
+                    }
+                    _ => None,
+                });
+                let (id, name, input) = tool_call.expect("should have ToolCall");
+                assert_eq!(id, "call_abc");
+                assert_eq!(name, "get-weather");
+                assert_eq!(input, json!({"city": "SF"}));
+            }
+        }
+        }
     };
 }
 
 openai_compatible_tool_tests!(
     groq_tools,
-    GroqConfig,
-    GroqProvider,
+    "groq",
     "llama-3.3-70b-versatile"
 );
-openai_compatible_tool_tests!(
-    deepseek_tools,
-    DeepSeekConfig,
-    DeepSeekProvider,
-    "deepseek-chat"
-);
-openai_compatible_tool_tests!(
-    togetherai_tools,
-    TogetherAIConfig,
-    TogetherAIProvider,
-    "meta-llama/Llama-3-70b-chat-hf"
-);
-openai_compatible_tool_tests!(
-    fireworks_tools,
-    FireworksConfig,
-    FireworksProvider,
-    "accounts/fireworks/models/llama-v3p1-70b-instruct"
-);
-openai_compatible_tool_tests!(
-    perplexity_tools,
-    PerplexityConfig,
-    PerplexityProvider,
-    "sonar"
-);
-openai_compatible_tool_tests!(
-    cerebras_tools,
-    CerebrasConfig,
-    CerebrasProvider,
-    "llama-3.3-70b"
-);
+openai_compatible_tool_tests!(deepseek_tools, "deepseek", "deepseek-chat");
+openai_compatible_tool_tests!(togetherai_tools, "togetherai", "meta-llama/Llama-3-70b-chat-hf");
+openai_compatible_tool_tests!(fireworks_tools, "fireworks", "accounts/fireworks/models/llama-v3p1-70b-instruct");
+openai_compatible_tool_tests!(perplexity_tools, "perplexity", "sonar");
+openai_compatible_tool_tests!(cerebras_tools, "cerebras", "llama-3.3-70b");
 openai_compatible_tool_tests!(xai_tools, XAIConfig, XAIProvider, "grok-2");
-openai_compatible_tool_tests!(
-    moonshotai_tools,
-    MoonshotAIConfig,
-    MoonshotAIProvider,
-    "moonshot-v1-8k"
-);
-openai_compatible_tool_tests!(
-    deepinfra_tools,
-    DeepInfraConfig,
-    DeepInfraProvider,
-    "meta-llama/Meta-Llama-3-70B-Instruct"
-);
-openai_compatible_tool_tests!(
-    baseten_tools,
-    BasetenConfig,
-    BasetenProvider,
-    "deepseek-ai/DeepSeek-V3-0324"
-);
-openai_compatible_tool_tests!(
-    huggingface_tools,
-    HuggingFaceConfig,
-    HuggingFaceProvider,
-    "meta-llama/Llama-3.3-70B-Instruct"
-);
-openai_compatible_tool_tests!(alibaba_tools, AlibabaConfig, AlibabaProvider, "qwen-max");
-openai_compatible_tool_tests!(
-    bytedance_tools,
-    ByteDanceConfig,
-    ByteDanceProvider,
-    "doubao-pro-32k"
-);
-openai_compatible_tool_tests!(vercel_tools, VercelConfig, VercelProvider, "v0-1.5-md");
+openai_compatible_tool_tests!(moonshotai_tools, "moonshotai", "moonshot-v1-8k");
+openai_compatible_tool_tests!(deepinfra_tools, "deepinfra", "meta-llama/Meta-Llama-3-70B-Instruct");
+openai_compatible_tool_tests!(baseten_tools, "baseten", "deepseek-ai/DeepSeek-V3-0324");
+openai_compatible_tool_tests!(huggingface_tools, HuggingFaceConfig, HuggingFaceProvider, "meta-llama/Llama-3.3-70B-Instruct");
+openai_compatible_tool_tests!(alibaba_tools, "alibaba", "qwen-max");
+openai_compatible_tool_tests!(bytedance_tools, "bytedance", "doubao-pro-32k");
+openai_compatible_tool_tests!(vercel_tools, "vercel", "v0-1.5-md");
 
 // ════════════════════════════════════════════════════════════════════════════
 // Default base URL wiring — verifies each wrapper's hard-coded default (without
@@ -659,17 +745,21 @@ mod default_base_urls {
     /// `with_base_url` actually mutates the underlying OpenAI config. This is
     /// a smoke test that the wrapper wires `with_base_url` through correctly.
     #[test]
-    fn with_base_url_override_is_applied() {
-        // Every wrapper's `with_base_url` must override the default. We spot-
-        // check groq here; the per-provider request tests above cover the
-        // remaining wrappers end-to-end against a mock server.
-        let cfg = GroqConfig::new("k").with_base_url("https://example.test/v1");
-        // There's no public getter on the wrapper, so we verify behaviourally:
-        // building a provider and inspecting a model's endpoint is private.
-        // Instead, confirm the wrapper constructs without panic and the
-        // override path doesn't revert to the default (covered by the mock
-        // tests which rely on the override landing at the mock URI).
-        let _provider = GroqProvider::new(cfg);
+    fn base_url_override_is_applied() {
+        // provider() options must override the registry default. Spot-check
+        // groq here; the per-provider request tests above cover the remaining
+        // providers end-to-end against a mock server.
+        let model = provider(
+            "groq",
+            Some("k".to_string()),
+            "llama-3.3-70b",
+            Some(ProviderOptions {
+                base_url: Some("https://example.test/v1".to_string()),
+                ..Default::default()
+            }),
+        )
+        .expect("provider construction should succeed");
+        let _ = model;
     }
 
     /// The documented default base URLs (from the task spec) — a regression
@@ -689,10 +779,17 @@ mod default_base_urls {
         // important assertion is that WITHOUT the override the wrapper would
         // target api.groq.com (we can't mock that here), so this test merely
         // confirms the override mechanism the other tests depend on.
-        let cfg = GroqConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = GroqProvider::new(cfg);
-        let _ = provider
-            .model("llama-3.3-70b-versatile")
+        let model = provider(
+            "groq",
+            Some("test-api-key".to_string()),
+            "llama-3.3-70b-versatile",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("provider construction");
+        let _ = model
             .do_generate(&default_options(test_prompt()))
             .await
             .expect("generate should succeed against the mock");
@@ -714,9 +811,16 @@ async fn deepseek_maps_reasoning_to_reasoning_effort() {
         .mount(&server)
         .await;
 
-    let config = DeepSeekConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepSeekProvider::new(config);
-    let model = provider.model("deepseek-reasoner");
+    let model = provider(
+        "deepseek",
+        Some("test-api-key".to_string()),
+        "deepseek-reasoner",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("provider construction");
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::High);
@@ -747,9 +851,16 @@ async fn groq_extracts_usage() {
         .mount(&server)
         .await;
 
-    let config = GroqConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GroqProvider::new(config);
-    let model = provider.model("llama-3.3-70b-versatile");
+    let model = provider(
+    "groq",
+    Some("test-api-key".to_string()),
+    "llama-3.3-70b-versatile",
+    Some(ProviderOptions {
+        base_url: Some(server.uri()),
+        ..Default::default()
+    }),
+)
+.expect("provider construction");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -772,9 +883,16 @@ async fn deepseek_rate_limit_maps_to_rate_limited() {
         .mount(&server)
         .await;
 
-    let config = DeepSeekConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = DeepSeekProvider::new(config);
-    let model = provider.model("deepseek-chat");
+    let model = provider(
+    "deepseek",
+    Some("test-api-key".to_string()),
+    "deepseek-chat",
+    Some(ProviderOptions {
+        base_url: Some(server.uri()),
+        ..Default::default()
+    }),
+)
+.expect("provider construction");
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -797,9 +915,16 @@ async fn groq_exposes_response_headers() {
         .mount(&server)
         .await;
 
-    let config = GroqConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = GroqProvider::new(config);
-    let model = provider.model("llama-3.3-70b-versatile");
+    let model = provider(
+    "groq",
+    Some("test-api-key".to_string()),
+    "llama-3.3-70b-versatile",
+    Some(ProviderOptions {
+        base_url: Some(server.uri()),
+        ..Default::default()
+    }),
+)
+.expect("provider construction");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -814,573 +939,138 @@ async fn groq_exposes_response_headers() {
 }
 
 // P1 thin-wrapper providers (provider-research batch).
-openai_compatible_tests!(chutes, ChutesConfig, ChutesProvider, "default");
-openai_compatible_tests!(meta, MetaConfig, MetaProvider, "meta/muse-spark-1.1");
-openai_compatible_tests!(poe, PoeConfig, PoeProvider, "anthropic/claude-haiku-3");
-openai_compatible_tests!(
-    wandb,
-    WandbConfig,
-    WandbProvider,
-    "JetBrains/Mellum2-12B-A2.5B-Instruct"
-);
-openai_compatible_tests!(ai_router, AiRouterConfig, AiRouterProvider, "/v1/models");
-openai_compatible_tests!(aki_io, AkiIoConfig, AkiIoProvider, "llama3-chat-70b");
-openai_compatible_tests!(
-    alibaba_coding_plan,
-    AlibabaCodingPlanConfig,
-    AlibabaCodingPlanProvider,
-    "sk-sp-xxxxx"
-);
-openai_compatible_tests!(
-    alibaba_coding_plan_cn,
-    AlibabaCodingPlanCnConfig,
-    AlibabaCodingPlanCnProvider,
-    "sk-sp-xxxxx"
-);
-openai_compatible_tests!(anyapi, AnyapiConfig, AnyapiProvider, "messages");
-openai_compatible_tests!(auriko, AurikoConfig, AurikoProvider, "budget_exhausted");
-openai_compatible_tests!(baidu_v2, BaiduV2Config, BaiduV2Provider, "qianfan/");
-openai_compatible_tests!(bailing, BailingConfig, BailingProvider, "enable_search");
-openai_compatible_tests!(berget, BergetConfig, BergetProvider, "google/");
-openai_compatible_tests!(claudinio, ClaudinioConfig, ClaudinioProvider, "max_tokens");
-openai_compatible_tests!(
-    cloudferro_sherlock,
-    CloudferroSherlockConfig,
-    CloudferroSherlockProvider,
-    "MiniMaxAI/MiniMax-M2.5"
-);
-openai_compatible_tests!(
-    cloudflare_workers_ai,
-    CloudflareWorkersAiConfig,
-    CloudflareWorkersAiProvider,
-    "@cf/meta/llama-3.1-8b-instruct"
-);
-openai_compatible_tests!(cortecs, CortecsConfig, CortecsProvider, "claude-4-5-sonnet");
-openai_compatible_tests!(crof, CrofConfig, CrofProvider, "deepseek-v3.2");
-openai_compatible_tests!(
-    crossmodel,
-    CrossmodelConfig,
-    CrossmodelProvider,
-    "vendor/model"
-);
-openai_compatible_tests!(
-    crusoe,
-    CrusoeConfig,
-    CrusoeProvider,
-    "deepseek-ai/DeepSeek-V3-0324"
-);
-openai_compatible_tests!(
-    daoxe,
-    DaoxeConfig,
-    DaoxeProvider,
-    "claude-sonnet-4-20250514"
-);
-openai_compatible_tests!(dinference, DinferenceConfig, DinferenceProvider, "glm-5");
-openai_compatible_tests!(drun, DrunConfig, DrunProvider, "public/deepseek-r1");
-openai_compatible_tests!(ebcloud, EbcloudConfig, EbcloudProvider, "DeepSeek-V4-Flash");
-openai_compatible_tests!(
-    empiriolabs,
-    EmpiriolabsConfig,
-    EmpiriolabsProvider,
-    "sk-empiriolabs-"
-);
-openai_compatible_tests!(frogbot, FrogbotConfig, FrogbotProvider, "claude-haiku-4-5");
-openai_compatible_tests!(
-    gmicloud,
-    GmicloudConfig,
-    GmicloudProvider,
-    "Qwen/Qwen3.7-Max"
-);
-openai_compatible_tests!(
-    hpc_ai,
-    HpcAiConfig,
-    HpcAiProvider,
-    "anthropic/claude-opus-4.7"
-);
-openai_compatible_tests!(
-    inceptron,
-    InceptronConfig,
-    InceptronProvider,
-    "MiniMaxAI/MiniMax-M2.5"
-);
-openai_compatible_tests!(inferx, InferxConfig, InferxProvider, "Qwen/Qwen3.6-35B-A3B");
-openai_compatible_tests!(
-    io_net,
-    IoNetConfig,
-    IoNetProvider,
-    "meta-llama/Llama-3.3-70B-Instruct"
-);
-openai_compatible_tests!(jiekou, JiekouConfig, JiekouProvider, "deepseek/deepseek-r1");
-openai_compatible_tests!(kenari, KenariConfig, KenariProvider, "gpt-4o-mini");
-openai_compatible_tests!(kimi, KimiConfig, KimiProvider, "thinking");
-openai_compatible_tests!(
-    kimi_for_coding,
-    KimiForCodingConfig,
-    KimiForCodingProvider,
-    "k3"
-);
-openai_compatible_tests!(lilac, LilacConfig, LilacProvider, "moonshotai/kimi-k2.6");
-openai_compatible_tests!(
-    llama,
-    LlamaConfig,
-    LlamaProvider,
-    "Llama-4-Scout-17B-16E-Instruct-FP8"
-);
-openai_compatible_tests!(llmgateway, LlmgatewayConfig, LlmgatewayProvider, "gpt-4o");
-openai_compatible_tests!(llmtr, LlmtrConfig, LlmtrProvider, "model");
-openai_compatible_tests!(
-    lucidquery,
-    LucidqueryConfig,
-    LucidqueryProvider,
-    "lucidquery-agi-01-frontier"
-);
-openai_compatible_tests!(
-    meganova,
-    MeganovaConfig,
-    MeganovaProvider,
-    "Qwen/Qwen3-235B-A22B-Instruct-2507"
-);
-openai_compatible_tests!(
-    merge_gateway,
-    MergeGatewayConfig,
-    MergeGatewayProvider,
-    "gpt-5.2"
-);
-openai_compatible_tests!(mimo, MimoConfig, MimoProvider, "mimo-v2.5-pro");
-openai_compatible_tests!(minimax_cn, MinimaxCnConfig, MinimaxCnProvider, "MiniMax-M2");
-openai_compatible_tests!(mixlayer, MixlayerConfig, MixlayerProvider, "qwen/");
-openai_compatible_tests!(moark, MoarkConfig, MoarkProvider, "GLM-4.7");
-openai_compatible_tests!(
-    model_oracle_ai,
-    ModelOracleAiConfig,
-    ModelOracleAiProvider,
-    "reasoning_effort"
-);
-openai_compatible_tests!(neon, NeonConfig, NeonProvider, "nt_live_...");
-openai_compatible_tests!(
-    neuralwatt,
-    NeuralwattConfig,
-    NeuralwattProvider,
-    "meta-llama/"
-);
-openai_compatible_tests!(
-    ofox,
-    OfoxConfig,
-    OfoxProvider,
-    "Three Protocols, One Gateway"
-);
-openai_compatible_tests!(
-    perplexity_agent,
-    PerplexityAgentConfig,
-    PerplexityAgentProvider,
-    "openai/gpt-5.6-sol"
-);
-openai_compatible_tests!(
-    poolside,
-    PoolsideConfig,
-    PoolsideProvider,
-    "poolside/laguna-s-2.1"
-);
-openai_compatible_tests!(
-    ppinfra,
-    PpinfraConfig,
-    PpinfraProvider,
-    "deepseek/deepseek-v3-0324"
-);
-openai_compatible_tests!(qihang_ai, QihangAiConfig, QihangAiProvider, "gpt-4o");
-openai_compatible_tests!(
-    routing_run,
-    RoutingRunConfig,
-    RoutingRunProvider,
-    "routing-run/claude-opus-4-8"
-);
-openai_compatible_tests!(
-    snowflake_cortex,
-    SnowflakeCortexConfig,
-    SnowflakeCortexProvider,
-    "claude-sonnet-4-5"
-);
-openai_compatible_tests!(
-    stackit,
-    StackitConfig,
-    StackitProvider,
-    "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8"
-);
-openai_compatible_tests!(
-    stepfun_ai_step_plan,
-    StepfunAiStepPlanConfig,
-    StepfunAiStepPlanProvider,
-    "step-3.7-flash"
-);
-openai_compatible_tests!(
-    stepfun_step_plan,
-    StepfunStepPlanConfig,
-    StepfunStepPlanProvider,
-    "step-3.7-flash"
-);
-openai_compatible_tests!(
-    subconscious,
-    SubconsciousConfig,
-    SubconsciousProvider,
-    "subconscious/tim-qwen3.6-27b"
-);
-openai_compatible_tests!(
-    tencent_tokenhub,
-    TencentTokenhubConfig,
-    TencentTokenhubProvider,
-    "chat.completion"
-);
-openai_compatible_tests!(
-    the_grid_ai,
-    TheGridAiConfig,
-    TheGridAiProvider,
-    "text-prime"
-);
-openai_compatible_tests!(
-    tokenflux,
-    TokenfluxConfig,
-    TokenfluxProvider,
-    "chat.completion"
-);
-openai_compatible_tests!(
-    trustedrouter,
-    TrustedrouterConfig,
-    TrustedrouterProvider,
-    "trustedrouter/auto"
-);
-openai_compatible_tests!(
-    unorouter,
-    UnorouterConfig,
-    UnorouterProvider,
-    "claude-haiku-4-5-20251001"
-);
-openai_compatible_tests!(vivgrid, VivgridConfig, VivgridProvider, "messages");
-openai_compatible_tests!(
-    volc_engine,
-    VolcEngineConfig,
-    VolcEngineProvider,
-    "ep-20240xxxxxxxx"
-);
-openai_compatible_tests!(vultr, VultrConfig, VultrProvider, "messages");
-openai_compatible_tests!(xunfei, XunfeiConfig, XunfeiProvider, "messages");
-openai_compatible_tests!(
-    zai_coding_plan,
-    ZaiCodingPlanConfig,
-    ZaiCodingPlanProvider,
-    "glm-4.5-air"
-);
-openai_compatible_tests!(zhipu_v4, ZhipuV4Config, ZhipuV4Provider, "/api/paas/v4");
-openai_compatible_tests!(
-    alibaba_token_plan,
-    AlibabaTokenPlanConfig,
-    AlibabaTokenPlanProvider,
-    "MiniMax-M2.5"
-);
-openai_compatible_tests!(
-    alibaba_token_plan_cn,
-    AlibabaTokenPlanCnConfig,
-    AlibabaTokenPlanCnProvider,
-    "MiniMax-M2.5"
-);
-openai_compatible_tests!(
-    bedrock_mantle,
-    BedrockMantleConfig,
-    BedrockMantleProvider,
-    "bedrock_mantle/openai.gpt-oss-120b"
-);
-openai_compatible_tests!(
-    cherryin,
-    CherryinConfig,
-    CherryinProvider,
-    "BAAI/bge-reranker-v2-m3(free)"
-);
-openai_compatible_tests!(
-    digitalocean,
-    DigitaloceanConfig,
-    DigitaloceanProvider,
-    "anthropic-claude-3.5-sonnet"
-);
-openai_compatible_tests!(doubao, DoubaoConfig, DoubaoProvider, "deepseek-v3-2-251201");
-openai_compatible_tests!(evroc, EvrocConfig, EvrocProvider, "KBLab/kb-whisper-large");
-openai_compatible_tests!(
-    llamagate,
-    LlamagateConfig,
-    LlamagateProvider,
-    "llamagate/codellama-7b"
-);
-openai_compatible_tests!(
-    zhipuai_coding_plan,
-    ZhipuaiCodingPlanConfig,
-    ZhipuaiCodingPlanProvider,
-    "glm-4.5-air"
-);
-openai_compatible_tests!(
-    nearai,
-    NearaiConfig,
-    NearaiProvider,
-    "Qwen/Qwen3-30B-A3B-Instruct-2507"
-);
-openai_compatible_tests!(oci, OciConfig, OciProvider, "oci/cohere.command-a-03-2025");
-openai_compatible_tests!(
-    regolo_ai,
-    RegoloAiConfig,
-    RegoloAiProvider,
-    "llama-3.3-70b-instruct"
-);
-openai_compatible_tests!(
-    zenmux,
-    ZenmuxConfig,
-    ZenmuxProvider,
-    "anthropic/claude-opus-4"
-);
+openai_compatible_tests!(chutes, "chutes", "default");
+openai_compatible_tests!(meta, "meta", "meta/muse-spark-1.1");
+openai_compatible_tests!(poe, "poe", "anthropic/claude-haiku-3");
+openai_compatible_tests!(wandb, "wandb", "JetBrains/Mellum2-12B-A2.5B-Instruct");
+openai_compatible_tests!(ai_router, "ai_router", "/v1/models");
+openai_compatible_tests!(aki_io, "aki_io", "llama3-chat-70b");
+openai_compatible_tests!(alibaba_coding_plan, "alibaba_coding_plan", "sk-sp-xxxxx");
+openai_compatible_tests!(alibaba_coding_plan_cn, "alibaba_coding_plan_cn", "sk-sp-xxxxx");
+openai_compatible_tests!(anyapi, "anyapi", "messages");
+openai_compatible_tests!(auriko, "auriko", "budget_exhausted");
+openai_compatible_tests!(baidu_v2, "baidu_v2", "qianfan/");
+openai_compatible_tests!(bailing, "bailing", "enable_search");
+openai_compatible_tests!(berget, "berget", "google/");
+openai_compatible_tests!(claudinio, "claudinio", "max_tokens");
+openai_compatible_tests!(cloudferro_sherlock, "cloudferro_sherlock", "MiniMaxAI/MiniMax-M2.5");
+openai_compatible_tests!(cloudflare_workers_ai, "cloudflare_workers_ai", "@cf/meta/llama-3.1-8b-instruct");
+openai_compatible_tests!(cortecs, "cortecs", "claude-4-5-sonnet");
+openai_compatible_tests!(crof, "crof", "deepseek-v3.2");
+openai_compatible_tests!(crossmodel, "crossmodel", "vendor/model");
+openai_compatible_tests!(crusoe, "crusoe", "deepseek-ai/DeepSeek-V3-0324");
+openai_compatible_tests!(daoxe, "daoxe", "claude-sonnet-4-20250514");
+openai_compatible_tests!(dinference, "dinference", "glm-5");
+openai_compatible_tests!(drun, "drun", "public/deepseek-r1");
+openai_compatible_tests!(ebcloud, "ebcloud", "DeepSeek-V4-Flash");
+openai_compatible_tests!(empiriolabs, "empiriolabs", "sk-empiriolabs-");
+openai_compatible_tests!(frogbot, "frogbot", "claude-haiku-4-5");
+openai_compatible_tests!(gmicloud, "gmicloud", "Qwen/Qwen3.7-Max");
+openai_compatible_tests!(hpc_ai, "hpc_ai", "anthropic/claude-opus-4.7");
+openai_compatible_tests!(inceptron, "inceptron", "MiniMaxAI/MiniMax-M2.5");
+openai_compatible_tests!(inferx, "inferx", "Qwen/Qwen3.6-35B-A3B");
+openai_compatible_tests!(io_net, "io_net", "meta-llama/Llama-3.3-70B-Instruct");
+openai_compatible_tests!(jiekou, "jiekou", "deepseek/deepseek-r1");
+openai_compatible_tests!(kenari, "kenari", "gpt-4o-mini");
+openai_compatible_tests!(kimi, "kimi", "thinking");
+openai_compatible_tests!(kimi_for_coding, "kimi_for_coding", "k3");
+openai_compatible_tests!(lilac, "lilac", "moonshotai/kimi-k2.6");
+openai_compatible_tests!(llama, "llama", "Llama-4-Scout-17B-16E-Instruct-FP8");
+openai_compatible_tests!(llmgateway, "llmgateway", "gpt-4o");
+openai_compatible_tests!(llmtr, "llmtr", "model");
+openai_compatible_tests!(lucidquery, "lucidquery", "lucidquery-agi-01-frontier");
+openai_compatible_tests!(meganova, "meganova", "Qwen/Qwen3-235B-A22B-Instruct-2507");
+openai_compatible_tests!(merge_gateway, "merge_gateway", "gpt-5.2");
+openai_compatible_tests!(mimo, "mimo", "mimo-v2.5-pro");
+openai_compatible_tests!(minimax_cn, "minimax_cn", "MiniMax-M2");
+openai_compatible_tests!(mixlayer, "mixlayer", "qwen/");
+openai_compatible_tests!(moark, "moark", "GLM-4.7");
+openai_compatible_tests!(model_oracle_ai, "model_oracle_ai", "reasoning_effort");
+openai_compatible_tests!(neon, "neon", "nt_live_...");
+openai_compatible_tests!(neuralwatt, "neuralwatt", "meta-llama/");
+openai_compatible_tests!(ofox, "ofox", "Three Protocols, One Gateway");
+openai_compatible_tests!(perplexity_agent, "perplexity_agent", "openai/gpt-5.6-sol");
+openai_compatible_tests!(poolside, "poolside", "poolside/laguna-s-2.1");
+openai_compatible_tests!(ppinfra, "ppinfra", "deepseek/deepseek-v3-0324");
+openai_compatible_tests!(qihang_ai, "qihang_ai", "gpt-4o");
+openai_compatible_tests!(routing_run, "routing_run", "routing-run/claude-opus-4-8");
+openai_compatible_tests!(snowflake_cortex, "snowflake_cortex", "claude-sonnet-4-5");
+openai_compatible_tests!(stackit, "stackit", "Qwen/Qwen3-VL-235B-A22B-Instruct-FP8");
+openai_compatible_tests!(stepfun_ai_step_plan, "stepfun_ai_step_plan", "step-3.7-flash");
+openai_compatible_tests!(stepfun_step_plan, "stepfun_step_plan", "step-3.7-flash");
+openai_compatible_tests!(subconscious, "subconscious", "subconscious/tim-qwen3.6-27b");
+openai_compatible_tests!(tencent_tokenhub, "tencent_tokenhub", "chat.completion");
+openai_compatible_tests!(the_grid_ai, "the_grid_ai", "text-prime");
+openai_compatible_tests!(tokenflux, "tokenflux", "chat.completion");
+openai_compatible_tests!(trustedrouter, "trustedrouter", "trustedrouter/auto");
+openai_compatible_tests!(unorouter, "unorouter", "claude-haiku-4-5-20251001");
+openai_compatible_tests!(vivgrid, "vivgrid", "messages");
+openai_compatible_tests!(volc_engine, "volc_engine", "ep-20240xxxxxxxx");
+openai_compatible_tests!(vultr, "vultr", "messages");
+openai_compatible_tests!(xunfei, "xunfei", "messages");
+openai_compatible_tests!(zai_coding_plan, "zai_coding_plan", "glm-4.5-air");
+openai_compatible_tests!(zhipu_v4, "zhipu_v4", "/api/paas/v4");
+openai_compatible_tests!(alibaba_token_plan, "alibaba_token_plan", "MiniMax-M2.5");
+openai_compatible_tests!(alibaba_token_plan_cn, "alibaba_token_plan_cn", "MiniMax-M2.5");
+openai_compatible_tests!(bedrock_mantle, BedrockMantleConfig, BedrockMantleProvider, "bedrock_mantle/openai.gpt-oss-120b");
+openai_compatible_tests!(cherryin, "cherryin", "BAAI/bge-reranker-v2-m3(free)");
+openai_compatible_tests!(digitalocean, "digitalocean", "anthropic-claude-3.5-sonnet");
+openai_compatible_tests!(doubao, "doubao", "deepseek-v3-2-251201");
+openai_compatible_tests!(evroc, "evroc", "KBLab/kb-whisper-large");
+openai_compatible_tests!(llamagate, "llamagate", "llamagate/codellama-7b");
+openai_compatible_tests!(zhipuai_coding_plan, "zhipuai_coding_plan", "glm-4.5-air");
+openai_compatible_tests!(nearai, "nearai", "Qwen/Qwen3-30B-A3B-Instruct-2507");
+openai_compatible_tests!(oci, "oci", "oci/cohere.command-a-03-2025");
+openai_compatible_tests!(regolo_ai, "regolo_ai", "llama-3.3-70b-instruct");
+openai_compatible_tests!(zenmux, "zenmux", "anthropic/claude-opus-4");
 
 // P2 thin-wrapper providers (provider-research batch).
-openai_compatible_tests!(apertis, ApertisConfig, ApertisProvider, "apertis/<model>");
-openai_compatible_tests!(
-    darkbloom,
-    DarkbloomConfig,
-    DarkbloomProvider,
-    "darkbloom/gemma-4-26b"
-);
-openai_compatible_tests!(
-    libertai,
-    LibertaiConfig,
-    LibertaiProvider,
-    "libertai/bge-m3"
-);
-openai_compatible_tests!(
-    pinstripes,
-    PinstripesConfig,
-    PinstripesProvider,
-    "pinstripes/ps/deepseek-v4-flash"
-);
-openai_compatible_tests!(
-    publicai,
-    PublicaiConfig,
-    PublicaiProvider,
-    "publicai/BSC-LT/ALIA-40b-instruct_Q8_0"
-);
-openai_compatible_tests!(
-    synthetic,
-    SyntheticConfig,
-    SyntheticProvider,
-    "hf:MiniMaxAI/MiniMax-M2"
-);
-openai_compatible_tests!(
-    tensormesh,
-    TensormeshConfig,
-    TensormeshProvider,
-    "tensormesh/MiniMaxAI/MiniMax-M2.5"
-);
-openai_compatible_tests!(
-    atomic_chat,
-    AtomicChatConfig,
-    AtomicChatProvider,
-    "Meta-Llama-3_1-8B-Instruct-GGUF"
-);
-openai_compatible_tests!(
-    blueclaw,
-    BlueclawConfig,
-    BlueclawProvider,
-    "Qwen/Qwen3.6-35B-A3B-FP8"
-);
-openai_compatible_tests!(
-    cloudflare,
-    CloudflareConfig,
-    CloudflareProvider,
-    "cloudflare/@cf/..."
-);
-openai_compatible_tests!(
-    firepass,
-    FirepassConfig,
-    FirepassProvider,
-    "accounts/fireworks/routers/kimi-k2p6-turbo"
-);
-openai_compatible_tests!(
-    freemodel,
-    FreemodelConfig,
-    FreemodelProvider,
-    "claude-fable-5"
-);
-openai_compatible_tests!(gmi, GmiConfig, GmiProvider, "gmi/");
-openai_compatible_tests!(
-    hetzner,
-    HetznerConfig,
-    HetznerProvider,
-    "Qwen/Qwen3.6-35B-A3B-FP8"
-);
-openai_compatible_tests!(iflowcn, IflowcnConfig, IflowcnProvider, "deepseek-r1");
-openai_compatible_tests!(
-    kuae_cloud_coding_plan,
-    KuaeCloudCodingPlanConfig,
-    KuaeCloudCodingPlanProvider,
-    "GLM-4.7"
-);
-openai_compatible_tests!(
-    lemonade,
-    LemonadeConfig,
-    LemonadeProvider,
-    "Qwen3-0.6B-GGUF"
-);
-openai_compatible_tests!(lynkr, LynkrConfig, LynkrProvider, "lynkr-auto");
-openai_compatible_tests!(
-    minimax_cn_coding_plan,
-    MinimaxCnCodingPlanConfig,
-    MinimaxCnCodingPlanProvider,
-    "MiniMax-M3"
-);
-openai_compatible_tests!(
-    minimax_coding_plan,
-    MinimaxCodingPlanConfig,
-    MinimaxCodingPlanProvider,
-    "MiniMax-M3"
-);
-openai_compatible_tests!(
-    moonshotai_cn,
-    MoonshotaiCnConfig,
-    MoonshotaiCnProvider,
-    "kimi-k2-0711-preview"
-);
-openai_compatible_tests!(
-    opencode,
-    OpencodeConfig,
-    OpencodeProvider,
-    "/chat/completions"
-);
-openai_compatible_tests!(
-    tencent_coding_plan,
-    TencentCodingPlanConfig,
-    TencentCodingPlanProvider,
-    "glm-5"
-);
-openai_compatible_tests!(
-    tencent_token_plan,
-    TencentTokenPlanConfig,
-    TencentTokenPlanProvider,
-    "hy3"
-);
-openai_compatible_tests!(
-    tencent_token_plan_enterprise_auto,
-    TencentTokenPlanEnterpriseAutoConfig,
-    TencentTokenPlanEnterpriseAutoProvider,
-    "auto"
-);
-openai_compatible_tests!(
-    tencent_token_plan_enterprise_pro,
-    TencentTokenPlanEnterpriseProConfig,
-    TencentTokenPlanEnterpriseProProvider,
-    "auto"
-);
-openai_compatible_tests!(
-    tencent_token_plan_general_personal,
-    TencentTokenPlanGeneralPersonalConfig,
-    TencentTokenPlanGeneralPersonalProvider,
-    "deepseek-v4-flash-202605"
-);
-openai_compatible_tests!(
-    tencent_token_plan_hy_personal,
-    TencentTokenPlanHyPersonalConfig,
-    TencentTokenPlanHyPersonalProvider,
-    "hy3"
-);
-openai_compatible_tests!(
-    thinkingmachines,
-    ThinkingmachinesConfig,
-    ThinkingmachinesProvider,
-    "thinkingmachines/Inkling"
-);
-openai_compatible_tests!(tinfoil, TinfoilConfig, TinfoilProvider, "gemma4-31b");
-openai_compatible_tests!(
-    xiaomi_token_plan_ams,
-    XiaomiTokenPlanAmsConfig,
-    XiaomiTokenPlanAmsProvider,
-    "mimo-v2-omni"
-);
-openai_compatible_tests!(
-    xiaomi_token_plan_cn,
-    XiaomiTokenPlanCnConfig,
-    XiaomiTokenPlanCnProvider,
-    "mimo-v2-omni"
-);
-openai_compatible_tests!(
-    xiaomi_token_plan_sgp,
-    XiaomiTokenPlanSgpConfig,
-    XiaomiTokenPlanSgpProvider,
-    "mimo-v2-omni"
-);
-openai_compatible_tests!(xpersona, XpersonaConfig, XpersonaProvider, "claude-fable-5");
-openai_compatible_tests!(zeldoc, ZeldocConfig, ZeldocProvider, "z-code");
-openai_compatible_tests!(
-    privatemode_ai,
-    PrivatemodeAiConfig,
-    PrivatemodeAiProvider,
-    "gpt-oss-120b"
-);
-openai_compatible_tests!(
-    snowflake,
-    SnowflakeConfig,
-    SnowflakeProvider,
-    "claude-sonnet-4-5"
-);
+openai_compatible_tests!(apertis, "apertis", "apertis/<model>");
+openai_compatible_tests!(darkbloom, "darkbloom", "darkbloom/gemma-4-26b");
+openai_compatible_tests!(libertai, "libertai", "libertai/bge-m3");
+openai_compatible_tests!(pinstripes, "pinstripes", "pinstripes/ps/deepseek-v4-flash");
+openai_compatible_tests!(publicai, "publicai", "publicai/BSC-LT/ALIA-40b-instruct_Q8_0");
+openai_compatible_tests!(synthetic, "synthetic", "hf:MiniMaxAI/MiniMax-M2");
+openai_compatible_tests!(tensormesh, "tensormesh", "tensormesh/MiniMaxAI/MiniMax-M2.5");
+openai_compatible_tests!(atomic_chat, "atomic_chat", "Meta-Llama-3_1-8B-Instruct-GGUF");
+openai_compatible_tests!(blueclaw, "blueclaw", "Qwen/Qwen3.6-35B-A3B-FP8");
+openai_compatible_tests!(cloudflare, "cloudflare", "cloudflare/@cf/...");
+openai_compatible_tests!(firepass, "firepass", "accounts/fireworks/routers/kimi-k2p6-turbo");
+openai_compatible_tests!(freemodel, "freemodel", "claude-fable-5");
+openai_compatible_tests!(gmi, "gmi", "gmi/");
+openai_compatible_tests!(hetzner, "hetzner", "Qwen/Qwen3.6-35B-A3B-FP8");
+openai_compatible_tests!(iflowcn, "iflowcn", "deepseek-r1");
+openai_compatible_tests!(kuae_cloud_coding_plan, "kuae_cloud_coding_plan", "GLM-4.7");
+openai_compatible_tests!(lemonade, "lemonade", "Qwen3-0.6B-GGUF");
+openai_compatible_tests!(lynkr, "lynkr", "lynkr-auto");
+openai_compatible_tests!(minimax_cn_coding_plan, "minimax_cn_coding_plan", "MiniMax-M3");
+openai_compatible_tests!(minimax_coding_plan, "minimax_coding_plan", "MiniMax-M3");
+openai_compatible_tests!(moonshotai_cn, "moonshotai_cn", "kimi-k2-0711-preview");
+openai_compatible_tests!(opencode, "opencode", "/chat/completions");
+openai_compatible_tests!(tencent_coding_plan, "tencent_coding_plan", "glm-5");
+openai_compatible_tests!(tencent_token_plan, "tencent_token_plan", "hy3");
+openai_compatible_tests!(tencent_token_plan_enterprise_auto, "tencent_token_plan_enterprise_auto", "auto");
+openai_compatible_tests!(tencent_token_plan_enterprise_pro, "tencent_token_plan_enterprise_pro", "auto");
+openai_compatible_tests!(tencent_token_plan_general_personal, "tencent_token_plan_general_personal", "deepseek-v4-flash-202605");
+openai_compatible_tests!(tencent_token_plan_hy_personal, "tencent_token_plan_hy_personal", "hy3");
+openai_compatible_tests!(thinkingmachines, "thinkingmachines", "thinkingmachines/Inkling");
+openai_compatible_tests!(tinfoil, "tinfoil", "gemma4-31b");
+openai_compatible_tests!(xiaomi_token_plan_ams, "xiaomi_token_plan_ams", "mimo-v2-omni");
+openai_compatible_tests!(xiaomi_token_plan_cn, "xiaomi_token_plan_cn", "mimo-v2-omni");
+openai_compatible_tests!(xiaomi_token_plan_sgp, "xiaomi_token_plan_sgp", "mimo-v2-omni");
+openai_compatible_tests!(xpersona, "xpersona", "claude-fable-5");
+openai_compatible_tests!(zeldoc, "zeldoc", "z-code");
+openai_compatible_tests!(privatemode_ai, "privatemode_ai", "gpt-oss-120b");
+openai_compatible_tests!(snowflake, "snowflake", "claude-sonnet-4-5");
 
 // Vertex AI MaaS partner-model providers (OpenAI-compatible thin wrappers).
-openai_compatible_tests!(
-    vertex_ai_ai21_models,
-    VertexAiAi21ModelsConfig,
-    VertexAiAi21ModelsProvider,
-    "ai21/jamba-1.5-large"
-);
-openai_compatible_tests!(
-    vertex_ai_anthropic_models,
-    VertexAiAnthropicModelsConfig,
-    VertexAiAnthropicModelsProvider,
-    "anthropic/claude-sonnet-4"
-);
-openai_compatible_tests!(
-    vertex_ai_deepseek_models,
-    VertexAiDeepseekModelsConfig,
-    VertexAiDeepseekModelsProvider,
-    "deepseek-ai/deepseek-v3.1-maas"
-);
-openai_compatible_tests!(
-    vertex_ai_llama_models,
-    VertexAiLlamaModelsConfig,
-    VertexAiLlamaModelsProvider,
-    "meta/llama-4-scout-17b-16e-instruct-maas"
-);
-openai_compatible_tests!(
-    vertex_ai_minimax_models,
-    VertexAiMinimaxModelsConfig,
-    VertexAiMinimaxModelsProvider,
-    "minimax/minimax-m2-maas"
-);
-openai_compatible_tests!(
-    vertex_ai_mistral_models,
-    VertexAiMistralModelsConfig,
-    VertexAiMistralModelsProvider,
-    "mistralai/mistral-large-2411"
-);
-openai_compatible_tests!(
-    vertex_ai_moonshot_models,
-    VertexAiMoonshotModelsConfig,
-    VertexAiMoonshotModelsProvider,
-    "moonshotai/kimi-k2-thinking-maas"
-);
-openai_compatible_tests!(
-    vertex_ai_openai_models,
-    VertexAiOpenaiModelsConfig,
-    VertexAiOpenaiModelsProvider,
-    "openai/gpt-oss-120b-maas"
-);
-openai_compatible_tests!(
-    vertex_ai_qwen_models,
-    VertexAiQwenModelsConfig,
-    VertexAiQwenModelsProvider,
-    "qwen/qwen3-coder-480b-a35b-instruct-maas"
-);
-openai_compatible_tests!(
-    vertex_ai_zai_models,
-    VertexAiZaiModelsConfig,
-    VertexAiZaiModelsProvider,
-    "zai-org/glm-4.7-maas"
-);
+openai_compatible_tests!(vertex_ai_ai21_models, VertexAiAi21ModelsConfig, VertexAiAi21ModelsProvider, "ai21/jamba-1.5-large");
+openai_compatible_tests!(vertex_ai_anthropic_models, VertexAiAnthropicModelsConfig, VertexAiAnthropicModelsProvider, "anthropic/claude-sonnet-4");
+openai_compatible_tests!(vertex_ai_deepseek_models, VertexAiDeepseekModelsConfig, VertexAiDeepseekModelsProvider, "deepseek-ai/deepseek-v3.1-maas");
+openai_compatible_tests!(vertex_ai_llama_models, VertexAiLlamaModelsConfig, VertexAiLlamaModelsProvider, "meta/llama-4-scout-17b-16e-instruct-maas");
+openai_compatible_tests!(vertex_ai_minimax_models, VertexAiMinimaxModelsConfig, VertexAiMinimaxModelsProvider, "minimax/minimax-m2-maas");
+openai_compatible_tests!(vertex_ai_mistral_models, VertexAiMistralModelsConfig, VertexAiMistralModelsProvider, "mistralai/mistral-large-2411");
+openai_compatible_tests!(vertex_ai_moonshot_models, VertexAiMoonshotModelsConfig, VertexAiMoonshotModelsProvider, "moonshotai/kimi-k2-thinking-maas");
+openai_compatible_tests!(vertex_ai_openai_models, VertexAiOpenaiModelsConfig, VertexAiOpenaiModelsProvider, "openai/gpt-oss-120b-maas");
+openai_compatible_tests!(vertex_ai_qwen_models, VertexAiQwenModelsConfig, VertexAiQwenModelsProvider, "qwen/qwen3-coder-480b-a35b-instruct-maas");
+openai_compatible_tests!(vertex_ai_zai_models, VertexAiZaiModelsConfig, VertexAiZaiModelsProvider, "zai-org/glm-4.7-maas");

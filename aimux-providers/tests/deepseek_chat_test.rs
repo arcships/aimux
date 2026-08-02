@@ -45,7 +45,7 @@ use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::openai::OpenAICompatProfile;
 use aimux_providers::openai::convert::build_request_body_with_warnings;
-use aimux_providers::{DeepSeekConfig, DeepSeekProvider};
+use aimux_providers::{provider, ProviderOptions};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers (mirrors deepseek_reasoning_test.rs)
@@ -66,9 +66,17 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 /// Build a DeepSeek provider whose base URL points at the mock server.
-fn make_provider(server: &MockServer) -> DeepSeekProvider {
-    let config = DeepSeekConfig::new("test-api-key").with_base_url(server.uri());
-    DeepSeekProvider::new(config)
+fn make_provider(server: &MockServer, model_id: &str) -> Box<dyn LanguageModel> {
+    provider(
+        "deepseek",
+        Some("test-api-key".to_string()),
+        model_id,
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("deepseek provider should build")
 }
 
 /// Wrap a value as `providerOptions.deepseek.<value>`.
@@ -263,8 +271,7 @@ async fn should_send_correct_text_request_body() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-chat");
+    let model = make_provider(&server, "deepseek-chat");
 
     let prompt = vec![
         LanguageModelPromptMessage {
@@ -306,8 +313,7 @@ async fn should_extract_text_content() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-chat");
+    let model = make_provider(&server, "deepseek-chat");
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -346,8 +352,7 @@ async fn should_send_correct_tool_call_request_body() {
     let server = MockServer::start().await;
     mock_json(&server, tool_call_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server, "deepseek-reasoner");
 
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![weather_tool().into()]);
@@ -394,8 +399,7 @@ async fn should_extract_tool_call_content() {
     let server = MockServer::start().await;
     mock_json(&server, tool_call_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server, "deepseek-reasoner");
 
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![weather_tool().into()]);
@@ -442,8 +446,7 @@ async fn should_send_json_response_format_without_schema() {
     let server = MockServer::start().await;
     mock_json(&server, json_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server, "deepseek-reasoner");
 
     let mut options = default_options(test_prompt());
     options.response_format = Some(ResponseFormat::Json {
@@ -475,8 +478,7 @@ async fn should_send_json_response_format_with_schema() {
     let server = MockServer::start().await;
     mock_json(&server, json_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server, "deepseek-reasoner");
 
     let schema = json!({
         "type": "object",
@@ -529,8 +531,7 @@ async fn should_extract_json_response_text_content() {
     let server = MockServer::start().await;
     mock_json(&server, json_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server, "deepseek-reasoner");
 
     let mut options = default_options(test_prompt());
     options.response_format = Some(ResponseFormat::Json {
@@ -573,8 +574,7 @@ async fn should_send_correct_stream_request_body() {
     )]);
     mock_sse(&server, body).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-chat");
+    let model = make_provider(&server, "deepseek-chat");
 
     let prompt = vec![
         LanguageModelPromptMessage {
@@ -632,8 +632,7 @@ async fn should_stream_text() {
     ]);
     mock_sse(&server, body).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-chat");
+    let model = make_provider(&server, "deepseek-chat");
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -710,8 +709,7 @@ async fn should_stream_tool_call() {
     ]);
     mock_sse(&server, body).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server, "deepseek-reasoner");
 
     let mut options = default_options(test_prompt());
     options.tools = Some(vec![weather_tool().into()]);

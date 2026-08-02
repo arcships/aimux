@@ -29,8 +29,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 
 use aimux_providers::{
-    HuggingFaceConfig, HuggingFaceProvider, TogetherAIConfig, TogetherAIProvider, VercelConfig,
-    VercelProvider,
+    provider, provider_from_env, HuggingFaceConfig, HuggingFaceProvider, ProviderOptions,
 };
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -202,9 +201,16 @@ mod togetherai_config {
     /// configuration.
     #[test]
     fn provider_name_is_togetherai() {
-        let config = TogetherAIConfig::new("test-key");
-        let provider = TogetherAIProvider::new(config);
-        assert_eq!(provider.name(), "togetherai");
+        // Phase 4: the shell TogetherAIConfig/TogetherAIProvider pair is
+        // retired — registry-backed provider() replaces it.
+        let model = provider(
+            "togetherai",
+            Some("test-key".to_string()),
+            "meta-llama/Llama-3-70b-chat-hf",
+            None,
+        )
+        .expect("togetherai should construct from registry");
+        assert_eq!(model.model_id(), "meta-llama/Llama-3-70b-chat-hf");
     }
 
     /// TS: `createTogetherAI({ apiKey: 'custom-key' })` �?custom API key
@@ -219,9 +225,16 @@ mod togetherai_config {
             .mount(&server)
             .await;
 
-        let config = TogetherAIConfig::new("my-custom-key").with_base_url(server.uri());
-        let provider = TogetherAIProvider::new(config);
-        let model = provider.model("meta-llama/Llama-3-70b-chat-hf");
+        let model = provider(
+            "togetherai",
+            Some("my-custom-key".to_string()),
+            "meta-llama/Llama-3-70b-chat-hf",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("togetherai should construct from registry");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -240,19 +253,24 @@ mod togetherai_config {
             .mount(&server)
             .await;
 
-        let config = TogetherAIConfig::new("test-key").with_base_url(server.uri());
-        let provider = TogetherAIProvider::new(config);
-        let model = provider.model("meta-llama/Llama-3-70b-chat-hf");
-
-        let mut options = default_options(test_prompt());
-        options.headers = Some(
-            vec![("x-custom-header".to_string(), "test-value".to_string())]
-                .into_iter()
-                .collect(),
-        );
+        let model = provider(
+            "togetherai",
+            Some("test-key".to_string()),
+            "meta-llama/Llama-3-70b-chat-hf",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                headers: Some(
+                    vec![("x-custom-header".to_string(), "test-value".to_string())]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..Default::default()
+            }),
+        )
+        .expect("togetherai should construct from registry");
 
         model
-            .do_generate(&options)
+            .do_generate(&default_options(test_prompt()))
             .await
             .expect("should succeed with custom headers");
     }
@@ -263,8 +281,11 @@ mod togetherai_config {
         let saved = std::env::var("TOGETHER_API_KEY").ok();
         unsafe { std::env::set_var("TOGETHER_API_KEY", "env-test-key") };
 
-        let config = TogetherAIConfig::from_env();
-        assert!(config.is_ok(), "from_env should succeed with env var set");
+        let result = provider_from_env("togetherai", "meta-llama/Llama-3-70b-chat-hf", None);
+        assert!(
+            result.is_ok(),
+            "provider_from_env should succeed with env var set"
+        );
 
         unsafe {
             match saved {
@@ -281,8 +302,11 @@ mod togetherai_config {
         let saved = std::env::var("TOGETHER_API_KEY").ok();
         unsafe { std::env::remove_var("TOGETHER_API_KEY") };
 
-        let config = TogetherAIConfig::from_env();
-        assert!(config.is_err(), "from_env should fail without env var");
+        let result = provider_from_env("togetherai", "meta-llama/Llama-3-70b-chat-hf", None);
+        assert!(
+            result.is_err(),
+            "provider_from_env should fail without env var"
+        );
 
         unsafe {
             if let Some(v) = saved {
@@ -303,9 +327,16 @@ mod vercel_config {
     /// configuration.
     #[test]
     fn provider_name_is_vercel() {
-        let config = VercelConfig::new("test-key");
-        let provider = VercelProvider::new(config);
-        assert_eq!(provider.name(), "vercel");
+        // Phase 4: the shell VercelConfig/VercelProvider pair is retired —
+        // registry-backed provider() replaces it.
+        let model = provider(
+            "vercel",
+            Some("test-key".to_string()),
+            "v0-1.5-md",
+            None,
+        )
+        .expect("vercel should construct from registry");
+        assert_eq!(model.model_id(), "v0-1.5-md");
     }
 
     /// TS: `createVercel({ apiKey: 'custom-key' })` �?custom API key
@@ -320,9 +351,16 @@ mod vercel_config {
             .mount(&server)
             .await;
 
-        let config = VercelConfig::new("my-custom-key").with_base_url(server.uri());
-        let provider = VercelProvider::new(config);
-        let model = provider.model("v0-1.5-md");
+        let model = provider(
+            "vercel",
+            Some("my-custom-key".to_string()),
+            "v0-1.5-md",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("vercel should construct from registry");
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -336,8 +374,11 @@ mod vercel_config {
         let saved = std::env::var("VERCEL_API_KEY").ok();
         unsafe { std::env::set_var("VERCEL_API_KEY", "env-test-key") };
 
-        let config = VercelConfig::from_env();
-        assert!(config.is_ok(), "from_env should succeed with env var set");
+        let result = provider_from_env("vercel", "v0-1.5-md", None);
+        assert!(
+            result.is_ok(),
+            "provider_from_env should succeed with env var set"
+        );
 
         unsafe {
             match saved {
@@ -354,8 +395,11 @@ mod vercel_config {
         let saved = std::env::var("VERCEL_API_KEY").ok();
         unsafe { std::env::remove_var("VERCEL_API_KEY") };
 
-        let config = VercelConfig::from_env();
-        assert!(config.is_err(), "from_env should fail without env var");
+        let result = provider_from_env("vercel", "v0-1.5-md", None);
+        assert!(
+            result.is_err(),
+            "provider_from_env should fail without env var"
+        );
 
         unsafe {
             if let Some(v) = saved {

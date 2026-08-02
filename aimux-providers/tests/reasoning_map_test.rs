@@ -8,7 +8,8 @@
 //!   （阶段 1 能力回归）
 //! - **max_tokens_key 矩阵**：8 家接线（stepfun/siliconflow/sarvam/reka_ai/publicai/
 //!   perplexity → `"max_tokens"`；groq/heroku → `"max_completion_tokens"`）×
-//!   推理/非推理两分支。profile 取自各薄封装 config 实际构造（锁注册表接线，防死代码）。
+//!   推理/非推理两分支。profile 取自注册表 `provider_registry_entry(name)`
+//!   （锁注册表接线，防死代码）。
 //! - **无 warning 断言**：直传语义下 reasoning 不再产生"未翻译"warning（防未来误加）。
 //! - **reasoning_effort 直传**：7 档无归一化（none/minimal/low/medium/high/xhigh 原样
 //!   透传；provider-default 不发字段）。
@@ -20,10 +21,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::types::{ReasoningEffort, Warning};
 use aimux_providers::openai::convert::build_request_body_with_warnings;
 use aimux_providers::openai::OpenAICompatProfile;
-use aimux_providers::{
-    GroqConfig, HerokuConfig, PerplexityConfig, PublicaiConfig, RekaAiConfig, SarvamConfig,
-    SiliconFlowConfig, StepfunConfig,
-};
+use aimux_providers::provider_registry_entry;
 use serde_json::json;
 
 fn user_prompt() -> LanguageModelPrompt {
@@ -140,31 +138,43 @@ fn i5_body_overrides_injects_thinking_enabled() {
 // ════════════════════════════════════════════════════════════════════════════
 // max_tokens_key 矩阵：8 家接线 × 推理/非推理两分支
 //
-// profile 从各薄封装 `XxxConfig::new(...)` 实际构造取出——直接锁注册表接线
+// profile 从注册表 `provider_registry_entry(name)` 实际构造取出——直接锁注册表接线
 // （若注册表行被改回 full()，此处 profile.max_tokens_key 断言即失败，防死代码）。
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 8 家接线清单：(provider 名, 实际 profile, 期望 max_tokens_key)。
 fn wired_vendors() -> Vec<(&'static str, OpenAICompatProfile, &'static str)> {
     vec![
-        ("stepfun", StepfunConfig::new("k").0.profile, "max_tokens"),
+        (
+            "stepfun",
+            provider_registry_entry("stepfun").unwrap(),
+            "max_tokens",
+        ),
         (
             "siliconflow",
-            SiliconFlowConfig::new("k").0.profile,
+            provider_registry_entry("siliconflow").unwrap(),
             "max_tokens",
         ),
-        ("sarvam", SarvamConfig::new("k").0.profile, "max_tokens"),
-        ("reka_ai", RekaAiConfig::new("k").0.profile, "max_tokens"),
-        ("publicai", PublicaiConfig::new("k").0.profile, "max_tokens"),
+        ("sarvam", provider_registry_entry("sarvam").unwrap(), "max_tokens"),
+        ("reka_ai", provider_registry_entry("reka_ai").unwrap(), "max_tokens"),
+        (
+            "publicai",
+            provider_registry_entry("publicai").unwrap(),
+            "max_tokens",
+        ),
         (
             "perplexity",
-            PerplexityConfig::new("k").0.profile,
+            provider_registry_entry("perplexity").unwrap(),
             "max_tokens",
         ),
-        ("groq", GroqConfig::new("k").0.profile, "max_completion_tokens"),
+        (
+            "groq",
+            provider_registry_entry("groq").unwrap(),
+            "max_completion_tokens",
+        ),
         (
             "heroku",
-            HerokuConfig::new("k").0.profile,
+            provider_registry_entry("heroku").unwrap(),
             "max_completion_tokens",
         ),
     ]

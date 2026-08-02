@@ -61,7 +61,7 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{ReasoningEffort, Warning};
 
-use aimux_providers::{DeepSeekConfig, DeepSeekProvider};
+use aimux_providers::{provider, ProviderOptions};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers (mirrors openai_compatible_test.rs / anthropic_model_test.rs)
@@ -82,9 +82,17 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 /// Build a DeepSeek provider whose base URL points at the mock server.
-fn make_provider(server: &MockServer) -> DeepSeekProvider {
-    let config = DeepSeekConfig::new("test-api-key").with_base_url(server.uri());
-    DeepSeekProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "deepseek",
+        Some("test-api-key".to_string()),
+        "deepseek-reasoner",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("deepseek provider should build")
 }
 
 /// Wrap a value as `providerOptions.deepseek.<value>`.
@@ -227,8 +235,7 @@ async fn should_prefer_reasoning_content_over_reasoning_field_when_both_provided
     )
     .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -287,8 +294,7 @@ async fn should_extract_reasoning_from_reasoning_field_when_reasoning_content_no
     )
     .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -349,8 +355,7 @@ async fn should_extract_reasoning_content_and_text_from_deepseek_reasoning_fixtu
     )
     .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -406,8 +411,7 @@ async fn should_not_inject_thinking_from_deepseek_provider_options() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.provider_options = deepseek_opts(json!({ "thinking": { "type": "enabled" } }));
@@ -429,8 +433,7 @@ async fn should_passthrough_reasoning_high_to_reasoning_effort_without_thinking(
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::High);
@@ -452,8 +455,7 @@ async fn should_passthrough_reasoning_none_to_reasoning_effort_without_thinking(
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::None);
@@ -475,8 +477,7 @@ async fn should_passthrough_reasoning_xhigh_without_normalization() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::Xhigh);
@@ -505,8 +506,7 @@ async fn should_map_top_level_reasoning_low_to_reasoning_effort_low_without_warn
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::Low);
@@ -530,8 +530,7 @@ async fn should_map_top_level_reasoning_medium_to_reasoning_effort_medium() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::Medium);
@@ -549,8 +548,7 @@ async fn should_passthrough_reasoning_minimal_without_normalization() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::Minimal);
@@ -577,8 +575,7 @@ async fn should_ignore_deepseek_provider_options_reasoning_effort() {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("deepseek-reasoner");
+        let model = make_provider(&server);
 
         let mut options = default_options(test_prompt());
         options.provider_options = deepseek_opts(json!({ "reasoningEffort": effort }));
@@ -601,8 +598,7 @@ async fn should_ignore_deepseek_provider_options_thinking_adaptive() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.provider_options = deepseek_opts(json!({ "thinking": { "type": "adaptive" } }));
@@ -623,8 +619,7 @@ async fn should_ignore_deepseek_provider_options_reasoning_effort_max() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.provider_options = deepseek_opts(json!({ "reasoningEffort": "max" }));
@@ -647,8 +642,7 @@ async fn should_ignore_deepseek_provider_options_thinking_over_top_level_reasoni
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::None);
@@ -671,8 +665,7 @@ async fn should_ignore_deepseek_provider_options_reasoning_effort_over_top_level
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::High);
@@ -692,8 +685,7 @@ async fn should_not_set_thinking_when_reasoning_not_specified() {
     let server = MockServer::start().await;
     mock_json(&server, text_completion_body()).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -749,8 +741,7 @@ async fn should_stream_reasoning_content_before_text_deltas() {
     ]);
     mock_sse(&server, body).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -809,8 +800,7 @@ async fn should_stream_reasoning_from_reasoning_field_when_reasoning_content_not
     ]);
     mock_sse(&server, body).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -858,8 +848,7 @@ async fn should_prefer_reasoning_content_over_reasoning_field_in_streaming() {
     ]);
     mock_sse(&server, body).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -917,8 +906,7 @@ async fn should_stream_reasoning_from_deepseek_reasoning_fixture() {
     ]);
     mock_sse(&server, body).await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-reasoner");
+    let model = make_provider(&server);
 
     let result = model
         .do_stream(&default_options(test_prompt()))

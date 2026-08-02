@@ -33,9 +33,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 
-use aimux_providers::{FireworksConfig, FireworksProvider};
+use aimux_providers::{provider, provider_from_env, ProviderOptions};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -64,17 +63,33 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn make_provider(server: &MockServer) -> FireworksProvider {
-    let config = FireworksConfig::new("test-api-key").with_base_url(server.uri());
-    FireworksProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "fireworks",
+        Some("test-api-key".to_string()),
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("fireworks provider should build")
 }
 
 /// TS: `createFireworks()` produces a provider whose name is "fireworks".
 #[test]
-fn provider_name_is_fireworks() {
-    let config = FireworksConfig::new("test-key");
-    let provider = FireworksProvider::new(config);
-    assert_eq!(provider.name(), "fireworks");
+fn provider_builds_fireworks_model() {
+    let model = provider(
+        "fireworks",
+        Some("test-key".to_string()),
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        None,
+    )
+    .expect("fireworks provider should build");
+    assert_eq!(
+        model.model_id(),
+        "accounts/fireworks/models/llama-v3p1-70b-instruct"
+    );
 }
 
 /// TS: the default base URL appends `/chat/completions`.
@@ -87,8 +102,7 @@ async fn request_hits_chat_completions_path() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("accounts/fireworks/models/llama-v3p1-70b-instruct");
+    let model = make_provider(&server);
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -109,9 +123,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = FireworksConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = FireworksProvider::new(config);
-    let model = provider.model("accounts/fireworks/models/llama-v3p1-70b-instruct");
+    let model = provider(
+        "fireworks",
+        Some("my-custom-key".to_string()),
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("fireworks provider should build");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -131,9 +152,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = FireworksConfig::new("test-key").with_base_url(server.uri());
-    let provider = FireworksProvider::new(config);
-    let model = provider.model("accounts/fireworks/models/llama-v3p1-70b-instruct");
+    let model = provider(
+        "fireworks",
+        Some("test-key".to_string()),
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("fireworks provider should build");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -158,11 +186,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = FireworksConfig::new("test-key").with_base_url(server.uri());
-    let provider = FireworksProvider::new(config);
-    let model = provider
-        .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct")
-        .expect("language_model should succeed");
+    let model = provider(
+        "fireworks",
+        Some("test-key".to_string()),
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("provider should build a model");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -179,8 +212,8 @@ fn from_env_loads_fireworks_api_key() {
         std::env::set_var("FIREWORKS_API_KEY", "env-test-key");
     }
 
-    let config = FireworksConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider_from_env("fireworks", "accounts/fireworks/models/llama-v3p1-70b-instruct", None);
+    assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
         match saved {
@@ -199,8 +232,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("FIREWORKS_API_KEY");
     }
 
-    let config = FireworksConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider_from_env("fireworks", "accounts/fireworks/models/llama-v3p1-70b-instruct", None);
+    assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -230,8 +263,7 @@ async fn request_body_and_usage() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("accounts/fireworks/models/llama-v3p1-70b-instruct");
+    let model = make_provider(&server);
     let result = model
         .do_generate(&default_options(test_prompt()))
         .await
