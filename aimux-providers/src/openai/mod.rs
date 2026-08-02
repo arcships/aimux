@@ -62,15 +62,23 @@ impl OpenAICompatProfile {
         }
     }
 
-    /// Groq profile：不支持 top_k，流式 usage 在 x_groq 字段。
+    /// Groq profile：不支持 top_k，流式 usage 在 x_groq 字段；
+    /// `max_tokens` 已弃用，只发 `max_completion_tokens`（backlog B9）。
     pub fn groq() -> Self {
         Self {
             supports_top_k: false,
             supports_tools: true,
             supports_response_format: true,
             stream_usage_key: Some("x_groq"),
-            max_tokens_key: None,
+            max_tokens_key: Some("max_completion_tokens"),
         }
+    }
+
+    /// 设置 `max_tokens_key`（内部数据，非用户概念）：`"max_tokens"` 或
+    /// `"max_completion_tokens"`。注册表薄封装行用此构建差异 profile。
+    pub fn with_max_tokens_key(mut self, key: &'static str) -> Self {
+        self.max_tokens_key = Some(key);
+        self
     }
 
     /// DeepSeek profile：特化已退役（RFC-0017 阶段 2），回归 `full()`——

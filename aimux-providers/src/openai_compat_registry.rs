@@ -893,7 +893,7 @@ declare_openai_compat_provider!(
     "Heroku AI",
     "https://api.heroku.com/inference/v1",
     "HEROKU_API_KEY",
-    OpenAICompatProfile::full()
+    OpenAICompatProfile::full().with_max_tokens_key("max_completion_tokens")
 );
 declare_openai_compat_provider!(
     hetzner,
@@ -1595,7 +1595,7 @@ declare_openai_compat_provider!(
     "Perplexity",
     "https://api.perplexity.ai",
     "PERPLEXITY_API_KEY",
-    OpenAICompatProfile::full()
+    OpenAICompatProfile::full().with_max_tokens_key("max_tokens")
 );
 declare_openai_compat_provider!(
     perplexity_agent,
@@ -1694,7 +1694,7 @@ declare_openai_compat_provider!(
     "Publicai",
     "https://platform.publicai.co/v1",
     "PUBLICAI_API_KEY",
-    OpenAICompatProfile::full()
+    OpenAICompatProfile::full().with_max_tokens_key("max_tokens")
 );
 declare_openai_compat_provider!(
     qihang_ai,
@@ -1739,7 +1739,7 @@ declare_openai_compat_provider!(
     "Reka AI",
     "https://api.reka.ai/v1",
     "REKA_API_KEY",
-    OpenAICompatProfile::full()
+    OpenAICompatProfile::full().with_max_tokens_key("max_tokens")
 );
 declare_openai_compat_provider!(
     requesty,
@@ -1793,7 +1793,7 @@ declare_openai_compat_provider!(
     "Sarvam AI",
     "https://api.sarvam.ai/v1",
     "SARVAM_API_KEY",
-    OpenAICompatProfile::full()
+    OpenAICompatProfile::full().with_max_tokens_key("max_tokens")
 );
 declare_openai_compat_provider!(
     scaleway,
@@ -1820,7 +1820,7 @@ declare_openai_compat_provider!(
     "SiliconFlow",
     "https://api.siliconflow.cn/v1",
     "SILICONFLOW_API_KEY",
-    OpenAICompatProfile::full()
+    OpenAICompatProfile::full().with_max_tokens_key("max_tokens")
 );
 declare_openai_compat_provider!(
     snowflake,
@@ -1856,7 +1856,7 @@ declare_openai_compat_provider!(
     "StepFun (阶跃星辰)",
     "https://api.stepfun.com/v1",
     "STEPFUN_API_KEY",
-    OpenAICompatProfile::full()
+    OpenAICompatProfile::full().with_max_tokens_key("max_tokens")
 );
 declare_openai_compat_provider!(
     stepfun_ai_step_plan,
