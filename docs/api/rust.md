@@ -63,9 +63,29 @@ let result = generate_text(
     GenerateTextOptions {
         max_output_tokens: Some(100),
         temperature: Some(0.7),
+        max_retries: Some(0), // disable retries for this call
+        timeout: Some(aimux_core::options::TimeoutConfiguration {
+            total_ms: Some(30_000),
+            first_chunk_ms: Some(5_000),
+            chunk_ms: Some(2_000),
+        }),
         ..Default::default()
     },
 ).await?;
+```
+
+Cancellation — set the runtime `abort_signal` handle (never crosses the JSON
+boundary; FFI bindings cannot set it):
+
+```rust
+let signal = aimux_core::shared::AbortSignal::new();
+let opts = GenerateTextOptions {
+    abort_signal: Some(signal.clone()),
+    ..Default::default()
+};
+let task = tokio::spawn(generate_text(&model, "Explain Rust.", opts));
+signal.abort(); // cancels connect, body reads, and streaming
+let result = task.await.unwrap()?;
 ```
 
 > Parameters, return value, and the `raw.content` variants are documented in
@@ -88,6 +108,11 @@ while let Some(part) = stream.next().await {
     }
 }
 ```
+
+Streaming honors the same `timeout` / `abort_signal` options as
+[text generation](#text-generation); streamed timeouts surface as
+`StreamPart::Error { error: AiMuxError::Timeout(..) }` and aborting the
+signal ends the stream with `StreamPart::Error { error: AiMuxError::Aborted }`.
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
 
