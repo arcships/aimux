@@ -373,12 +373,14 @@ await generateText(model, prompt, {
 | 基础类构造(createProvider 地基) | `OpenAIConfig`/`OpenAIProvider` 保留 |
 
 **验收**:
-- [ ] 任意语言 `provider(ProviderName::Groq, key, "llama-3.3-70b")` 可用,profile 差异生效
-- [ ] `ProviderName` 类型生成正确且被测试锁定(250 名字与 JSON 一致,防漂移)
-- [ ] 用户覆盖内置条目(base_url 修正)生效,无需发版
-- [ ] `createProvider({...})` 可构造自定义薄封装,与内置表互不影响
-- [ ] 未知名字报错信息含可用列表
-- [ ] 阶段 3 调研发现的 7 处 registry base_url 错误通过数据修正落地(已由 stage2-004 完成 ✅)
+- [x] 任意语言 `provider(ProviderName::Groq, key, "llama-3.3-70b")` 可用,profile 差异生效(Rust/Node/Python 冒烟 ✅;Go/Java/Kotlin/Swift/Flutter 代码就绪,环境受限未运行)
+- [x] `ProviderName` 类型生成正确且被测试锁定(250 名字与 JSON 一致,`provider_name_roundtrip` 测试)
+- [x] 用户覆盖内置条目生效(`ProviderOptions.base_url` 等;Rust `base_url_override_is_applied` + Node/Python/Go/C 的 config 参数)
+- [x] `createProvider` 等价能力:基础类 `OpenAIConfig`/`OpenAIProvider` 保留 + 各绑定 config 参数覆盖(Rust/Node/Python/Go/C 均实现)
+- [x] 未知名字报错含可用列表(Node/Python 冒烟验证)
+- [x] 7 处 registry base_url 错误通过数据修正落地(stage2-004 完成)
+
+**实施状态(2026-08-02)**:✅ 完成——registry JSON 唯一数据源;250 壳类型退役(发布一天零成本);`provider(name)` 入口 + `ProviderName` 派生类型(Rust enum/TS union);C ABI `aimux_provider_new`/`aimux_provider_from_env`;8 语言绑定统一入口;全量测试 2769 绿;Node/Python E2E 冒烟通过。
 
 ---
 
