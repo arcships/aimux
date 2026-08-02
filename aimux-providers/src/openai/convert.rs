@@ -1328,20 +1328,9 @@ pub fn build_request_body_with_warnings_fallible(
     if let Some(ref effort) = resolved_reasoning_effort {
         body["reasoning_effort"] = json!(effort);
     }
-
-    // warning：`reasoning` 已设置但通用路径未发 effort → 提示（不静默）。
-    // 已发 effort（OpenAI 有效）→ 不 warning（防误报，RFC-0017 §2.3）。
-    if is_custom_reasoning(&options.reasoning) && resolved_reasoning_effort.is_none() {
-        warnings.push(Warning::Compatibility {
-            feature: "reasoning".to_string(),
-            details: Some(format!(
-                "reasoning \"{}\" 未翻译,该厂商需 bodyOverrides",
-                options
-                    .reasoning
-                    .unwrap_or(ReasoningEffort::ProviderDefault),
-            )),
-        });
-    }
+    // 注：旧的"reasoning 无映射提示"warning 块（is_custom_reasoning &&
+    // resolved_reasoning_effort.is_none()）已删除——v3 直传语义下该分支不可达：
+    // is_custom_reasoning=true 时 resolved 必为 Some（见上方 resolved 解析）。
 
     // Service tier
     if provider == "groq" {

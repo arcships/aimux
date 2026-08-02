@@ -7,8 +7,11 @@
 //! `thinking_budget`) without closure bridging — critical for aimux's
 //! multi-language C ABI architecture. `null` values delete keys.
 //!
-//! stage2-001 (RFC-0017 phase 2) additions: `max_tokens_key` branch and the
-//! `reasoning` no-mapping warning (not silent).
+//! stage2-001 (RFC-0017 phase 2) additions: `max_tokens_key` branch and direct
+//! `reasoning` → `reasoning_effort` passthrough. The old "reasoning no-mapping"
+//! warning block was removed (F6): under v3 direct-passthrough semantics it is
+//! unreachable dead code (is_custom_reasoning ⇒ resolved effort is always Some),
+//! and the passthrough tests below now guard against re-adding it.
 
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
@@ -218,7 +221,10 @@ fn max_tokens_key_max_completion_tokens_non_reasoning() {
     );
 }
 
-// ── warning: reasoning 无映射提示 (stage2-001, RFC-0017 phase 2 §2.4) ────────
+// ── reasoning 直传: 无 warning（F6: 旧"无映射提示"warning 块已删除）────────────
+//
+// v3 直传语义下 `reasoning` 一律映射为 `reasoning_effort`,warning 块不可达已被
+// 删除。以下两个用例断言"无 reasoning warning",作为未来误加 warning 的回归护栏。
 
 /// 直传路径: groq 不再特化归一化(`none` 原样透传 'none')→ 已发 effort,不 warning。
 #[test]
