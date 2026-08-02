@@ -85,6 +85,8 @@ const model = await openai('sk-...', 'gpt-4o', 'https://api.openai.com/v1')
 const result = await generateText(model, 'Explain Rust ownership.', {
   max_output_tokens: 100,
   temperature: 0.7,
+  max_retries: 0,                          // disable retries for this call
+  timeout: { total_ms: 30_000, first_chunk_ms: 5_000, chunk_ms: 2_000 },
 })
 
 console.log(result.text)           // generated text
@@ -92,6 +94,18 @@ console.log(result.usage)          // token usage
 console.log(result.finish_reason)  // finish reason
 console.log(result.tool_calls)     // tool calls (if any)
 ```
+
+Cancellation via `AbortSignal` (4th argument — works for both
+`generateText` and `streamText`):
+
+```typescript
+const controller = new AbortController()
+const result = await generateText(model, 'Explain Rust ownership.', {}, controller.signal)
+controller.abort() // cancels an in-flight call; pre-aborted signals fail fast
+```
+
+Multimodal calls (image/speech/video/transcription/rerank/search) accept the
+same signal as their last argument:
 
 > Parameters, return value, and the `raw.content` variants are documented in
 > the [API overview](../API.md#text-generation).
@@ -253,6 +267,17 @@ const result = JSON.parse(resultJson)
 if (result.images.Base64) {
   fs.writeFileSync('out.png', Buffer.from(result.images.Base64[0], 'base64'))
 }
+```
+
+Multimodal calls accept an optional `AbortSignal` as their last argument:
+
+```typescript
+const controller = new AbortController()
+const resultJson = await imager.generate(
+  JSON.stringify({ prompt: 'A cute baby sea otter' }),
+  controller.signal,
+)
+controller.abort() // cancels the image call
 ```
 
 ## Video Generation

@@ -50,6 +50,12 @@ pub enum AiMuxError {
     #[error("API call error: {0}")]
     ApiCall(String),
 
+    #[error("request timed out: {0}")]
+    Timeout(String),
+
+    #[error("request aborted")]
+    Aborted,
+
     #[error("{0}")]
     Other(String),
 }
@@ -103,6 +109,8 @@ impl AiMuxError {
             AiMuxError::NoSuchModel(_) => "NoSuchModel",
             AiMuxError::UnknownProvider(_) => "UnknownProvider",
             AiMuxError::ApiCall(_) => "ApiCall",
+            AiMuxError::Timeout(_) => "Timeout",
+            AiMuxError::Aborted => "Aborted",
             AiMuxError::Other(_) => "Other",
         }
     }

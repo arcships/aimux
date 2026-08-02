@@ -1,4 +1,4 @@
-//! Amazon Bedrock language model — implements `LanguageModel`.
+﻿//! Amazon Bedrock language model — implements `LanguageModel`.
 //!
 //! Uses the Bedrock Converse API (`/model/{model-id}/converse` and
 //! `/model/{model-id}/converse-stream`), which provides a unified interface
@@ -20,7 +20,7 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usa
 use serde_json::json;
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
 
 use super::BedrockAuth;
 use super::convert::{build_request_body, convert_usage, map_finish_reason};
@@ -111,17 +111,18 @@ impl LanguageModel for BedrockModel {
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url,
                 headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -178,17 +179,18 @@ impl LanguageModel for BedrockModel {
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url,
                 headers,
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 

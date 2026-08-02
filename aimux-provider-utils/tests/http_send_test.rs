@@ -5,7 +5,7 @@
 //! types — they hand `http::send` a pure-data `HttpRequest` and get back an
 //! `HttpResponse` (or `HttpStreamResponse`).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use wiremock::matchers::{method, path};
@@ -214,4 +214,312 @@ async fn send_stream_returns_byte_stream() {
         collected.extend_from_slice(&chunk.unwrap());
     }
     assert_eq!(collected, sse_body.as_bytes());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RFC-0016 H1/H3: abort + per-call timeout
+// ─────────────────────────────────────────────────────────────────────────────
+
+use aimux_core::shared::AbortSignal;
+use aimux_provider_utils::{RequestTimeout, send_stream_timed, send_timed};
+
+#[tokio::test]
+async fn abort_before_send_fails_immediately() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .expect(0) // must never be reached
+        .mount(&server)
+        .await;
+
+    let signal = AbortSignal::new();
+    signal.abort();
+
+    let mut req = json_post(&format!("{}/v1/chat", server.uri()));
+    req.abort_signal = Some(signal);
+
+    let err = send(req, fast_config(), &DEFAULT_ERROR_STRUCTURE)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, AiMuxError::Aborted), "got {err:?}");
+}
+
+#[tokio::test]
+async fn abort_mid_request_cancels() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true}))
+                .set_delay(Duration::from_millis(300)),
+        )
+        .mount(&server)
+        .await;
+
+    let signal = AbortSignal::new();
+    let signal_clone = signal.clone();
+
+    let url = format!("{}/v1/chat", server.uri());
+    let request = json_post(&url);
+    let handle = tokio::spawn(async move {
+        let mut req = request;
+        req.abort_signal = Some(signal_clone);
+        send(req, fast_config(), &DEFAULT_ERROR_STRUCTURE).await
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let started = Instant::now();
+    signal.abort();
+
+    // Bounded join: if cancellation regresses to hanging, the outer timeout
+    // fails the test instead of hanging the suite.
+    let result = tokio::time::timeout(Duration::from_secs(2), handle)
+        .await
+        .expect("cancelled call must finish within 2s")
+        .expect("task must not panic");
+    assert!(matches!(result, Err(AiMuxError::Aborted)), "got {result:?}");
+    assert!(
+        started.elapsed() < Duration::from_millis(250),
+        "abort should cancel well before the 300ms server delay"
+    );
+}
+
+#[tokio::test]
+async fn send_timed_total_timeout_fails() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true}))
+                .set_delay(Duration::from_millis(500)),
+        )
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let err = send_timed(
+        json_post(&url),
+        fast_config(),
+        &DEFAULT_ERROR_STRUCTURE,
+        Some(RequestTimeout {
+            total_ms: Some(100),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+    assert!(err.to_string().contains("total timeout"), "got {err:?}");
+}
+
+#[tokio::test]
+async fn send_timed_total_timeout_covers_retries() {
+    // A 429 (retryable) + a slow success: the total deadline must bound the
+    // whole retry sequence, not just one attempt.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after-ms", "200"))
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let err = send_timed(
+        json_post(&url),
+        fast_config(),
+        &DEFAULT_ERROR_STRUCTURE,
+        Some(RequestTimeout {
+            total_ms: Some(100),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn send_timed_within_budget_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true}))
+                .set_delay(Duration::from_millis(50)),
+        )
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let resp = send_timed(
+        json_post(&url),
+        fast_config(),
+        &DEFAULT_ERROR_STRUCTURE,
+        Some(RequestTimeout {
+            total_ms: Some(5000),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resp.status, 200);
+}
+
+#[tokio::test]
+async fn send_stream_timed_first_chunk_timeout() {
+    // wiremock's `set_delay` delays the whole response (headers included), so
+    // this test covers "the first-byte budget includes response-header
+    // latency" — the first-chunk timer counts from request start. The
+    // body-pending wakeup path itself is covered by the unit tests
+    // (`timeout_stream_yields_after_first_chunk_deadline` and
+    // `timeout_stream_enforces_chunk_idle_deadline`), which use a pending
+    // inner stream.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Type", "text/event-stream")
+                .set_body_string("data: {\"choices\":[]}\n\n")
+                .set_delay(Duration::from_millis(500)),
+        )
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let resp = match send_stream_timed(
+        json_post(&url),
+        fast_config(),
+        &DEFAULT_ERROR_STRUCTURE,
+        Some(RequestTimeout {
+            first_chunk_ms: Some(100),
+            ..Default::default()
+        }),
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => panic!("unexpected error: {e:?}"),
+    };
+
+    let mut stream = resp.body;
+    let first = stream.next().await.expect("stream must yield an error");
+    let err = first.unwrap_err();
+    assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+    assert!(
+        err.to_string().contains("first chunk timeout"),
+        "got {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn send_stream_timed_total_timeout_on_connect() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("data: x\n\n")
+                .set_delay(Duration::from_millis(500)),
+        )
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let err = match send_stream_timed(
+        json_post(&url),
+        fast_config(),
+        &DEFAULT_ERROR_STRUCTURE,
+        Some(RequestTimeout {
+            total_ms: Some(100),
+            ..Default::default()
+        }),
+    )
+    .await
+    {
+        Ok(_) => panic!("expected timeout, got success"),
+        Err(e) => e,
+    };
+
+    assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn send_timed_zero_total_fails_immediately() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .expect(0) // must never be reached
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let err = send_timed(
+        json_post(&url),
+        fast_config(),
+        &DEFAULT_ERROR_STRUCTURE,
+        Some(RequestTimeout {
+            total_ms: Some(0),
+            ..Default::default()
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn abort_wins_over_total_timeout() {
+    // Abort fires strictly before the 100ms total deadline, so the call must
+    // report Aborted — verifying the documented "abort wins" semantics for
+    // the connect phase (biased select inside send_request). A true
+    // same-instant tie is not exercised here (that depends on tokio's
+    // internal poll order); see RFC-0016 §7.6 S5.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({"ok": true}))
+                .set_delay(Duration::from_millis(500)),
+        )
+        .mount(&server)
+        .await;
+
+    let signal = AbortSignal::new();
+    let signal_clone = signal.clone();
+    let url = format!("{}/v1/chat", server.uri());
+    let request = json_post(&url);
+    let handle = tokio::spawn(async move {
+        let mut req = request;
+        req.abort_signal = Some(signal_clone);
+        send_timed(
+            req,
+            fast_config(),
+            &DEFAULT_ERROR_STRUCTURE,
+            Some(RequestTimeout {
+                total_ms: Some(100),
+                ..Default::default()
+            }),
+        )
+        .await
+    });
+
+    // Abort just before the 100ms deadline so both fire around the same time.
+    tokio::time::sleep(Duration::from_millis(90)).await;
+    signal.abort();
+
+    let result = tokio::time::timeout(Duration::from_secs(2), handle)
+        .await
+        .expect("must finish")
+        .expect("task must not panic");
+    assert!(matches!(result, Err(AiMuxError::Aborted)), "got {result:?}");
 }

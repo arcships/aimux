@@ -16,3 +16,4 @@ thiserror = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
+tokio-util = "0.7"

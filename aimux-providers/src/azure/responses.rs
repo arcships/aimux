@@ -1,4 +1,4 @@
-//! Azure OpenAI Responses API language model.
+﻿//! Azure OpenAI Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the Azure OpenAI
 //! `/responses` endpoint. Azure speaks the same Responses API wire format as
@@ -37,7 +37,7 @@ use aimux_core::result::{GenerateResult, StreamResult};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream, with_user_agent_suffix,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed, with_user_agent_suffix,
     without_trailing_slash,
 };
 use aimux_stream::SseStream;
@@ -250,17 +250,18 @@ impl LanguageModel for AzureResponsesModel {
 
         let provider_key = provider_key().to_string();
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -298,17 +299,18 @@ impl LanguageModel for AzureResponsesModel {
             .and_then(|v| v.as_bool())
             == Some(true);
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 

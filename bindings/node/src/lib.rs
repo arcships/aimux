@@ -1,4 +1,4 @@
-//! aimux-node: Node.js binding (napi-rs v3, native path).
+﻿//! aimux-node: Node.js binding (napi-rs v3, native path).
 //!
 //! This is the **flagship binding** — directly uses aimux-providers, bypassing
 //! aimux-ffi. napi-rs maps Rust async to JS Promise/AsyncIterator, giving
@@ -31,21 +31,66 @@ pub struct Model {
     inner: Arc<dyn LanguageModel>,
 }
 
+/// A bridge from a JS `AbortSignal` to the core's runtime cancellation.
+///
+/// napi's own `AbortSignal` is not `Send` (it holds `Rc`), so it cannot be a
+/// parameter of an async napi method. This class is created synchronously
+/// (registering the abort callback on the JS thread) and then passed to
+/// `generateText` / `streamText` — it only holds an `Arc` and is `Send`.
+///
+/// ```ts
+/// const bridge = signal ? new AbortBridge(signal) : undefined
+/// await model.generateText(prompt, options, bridge)
+/// ```
+#[napi]
+pub struct AbortBridge {
+    signal: Arc<aimux_core::shared::AbortSignal>,
+}
+
+#[napi]
+impl AbortBridge {
+    #[napi(constructor)]
+    pub fn new(signal: napi::bindgen_prelude::AbortSignal) -> Self {
+        let core = aimux_core::shared::AbortSignal::new();
+        let watcher = core.clone();
+        signal.on_abort(move || watcher.abort());
+        Self {
+            signal: Arc::new(core),
+        }
+    }
+
+    /// Returns `true` once the underlying JS signal has been aborted.
+    #[napi]
+    pub fn aborted(&self) -> bool {
+        self.signal.is_aborted()
+    }
+}
+
+impl AbortBridge {
+    fn core_signal(&self) -> aimux_core::shared::AbortSignal {
+        (*self.signal).clone()
+    }
+}
+
 #[napi]
 impl Model {
     /// Generate text (non-streaming).
     ///
     /// `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.
     /// `options` — optional JSON-serialized `GenerateTextOptions`.
+    /// `bridge` — optional `AbortBridge` (wrap a JS `AbortSignal` in one);
+    /// aborting the signal cancels the call.
     /// Returns a JSON-serialized `GenerateTextResult`.
     #[napi(ts_return_type = "Promise<string>")]
     pub async fn generate_text(
         &self,
         prompt: String,
         options: Option<String>,
+        bridge: Option<&AbortBridge>,
     ) -> Result<String> {
         let parsed_prompt = parse_prompt(&prompt)?;
-        let opts = parse_opts(options.as_deref())?;
+        let mut opts = parse_opts(options.as_deref())?;
+        opts.abort_signal = bridge.map(|b| b.core_signal());
 
         let result = generate_text(&*self.inner, parsed_prompt, opts)
             .await
@@ -64,8 +109,12 @@ impl Model {
         &self,
         prompt: String,
         options: Option<String>,
+        bridge: Option<&AbortBridge>,
     ) -> Result<StreamTextGenerator> {
         let model = self.inner.clone();
+        // Extract the core signal on the napi thread; it is `Send` and can
+        // move into the spawned task.
+        let abort_signal = bridge.map(|b| b.core_signal());
 
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(64);
 
@@ -78,13 +127,14 @@ impl Model {
                     return;
                 }
             };
-            let opts = match parse_opts(options.as_deref()) {
+            let mut opts = match parse_opts(options.as_deref()) {
                 Ok(o) => o,
                 Err(e) => {
                     let _ = tx.send(Err(format!("invalid options: {e}"))).await;
                     return;
                 }
             };
+            opts.abort_signal = abort_signal;
 
             match stream_text(&*model, prompt, opts).await {
                 Ok(stream_result) => {

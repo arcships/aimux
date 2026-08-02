@@ -41,7 +41,15 @@ import type {
 
 // Re-export the raw napi constructors/factories so consumers can do everything
 // from a single import: `import { openai, generateText } from 'aimux'`.
-export { Model, StreamTextGenerator, openai, anthropic, deepseek, provider } from '../index.js'
+export {
+  Model,
+  StreamTextGenerator,
+  AbortBridge,
+  openai,
+  anthropic,
+  deepseek,
+  provider,
+} from '../index.js'
 export type { ProviderName } from './types/ProviderName'
 
 // Public type surface — typed objects, no `any`.
@@ -83,6 +91,7 @@ export type RawModel = Model
  * @param prompt  - A plain string or an array of typed chat messages.
  * @param options - Optional typed generation options (tools, tool_choice,
  *                  temperature, response_format, …).
+ * @param signal  - Optional `AbortSignal`; aborting it cancels the call.
  *
  * Internally calls the raw
  * `model.generateText(JSON.stringify(prompt), options ? JSON.stringify(options) : undefined)`
@@ -100,9 +109,11 @@ export async function generateText(
   model: RawModel,
   prompt: string | ModelMessage[],
   options?: GenerateTextOptions,
+  signal?: AbortSignal,
 ): Promise<GenerateTextResult> {
   const optsJson = options ? JSON.stringify(options) : undefined
-  const resultJson = await model.generateText(JSON.stringify(prompt), optsJson)
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const resultJson = await model.generateText(JSON.stringify(prompt), optsJson, bridge)
   return JSON.parse(resultJson) as GenerateTextResult
 }
 
@@ -112,6 +123,7 @@ export async function generateText(
  * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
  * @param prompt  - A plain string or an array of typed chat messages.
  * @param options - Optional typed generation options (tools, tool_choice, …).
+ * @param signal  - Optional `AbortSignal`; aborting it cancels the stream.
  *
  * Internally drives the raw `model.streamText(JSON.stringify(prompt), …)`
  * async generator and `JSON.parse`s each JSON-string chunk before yielding it
@@ -130,9 +142,11 @@ export async function* streamText(
   model: RawModel,
   prompt: string | ModelMessage[],
   options?: GenerateTextOptions,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamPart> {
   const optsJson = options ? JSON.stringify(options) : undefined
-  const gen = await model.streamText(JSON.stringify(prompt), optsJson)
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const gen = await model.streamText(JSON.stringify(prompt), optsJson, bridge)
   for await (const json of gen) {
     yield JSON.parse(json) as StreamPart
   }

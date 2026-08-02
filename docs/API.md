@@ -103,6 +103,13 @@ Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-
 | `tool_choice` | `ToolChoice?` | Tool selection strategy |
 | `instructions` | `string?` | System instructions |
 | `reasoning` | `ReasoningEffort?` | Reasoning effort |
+| `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = provider default, 2) |
+| `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
+| `body_overrides` | `object?` | Per-call request-body overrides, deep-merged (RFC-0017); `null` values delete keys |
+| `headers` | `object?` | Extra HTTP headers |
+
+Node.js additionally accepts an `AbortSignal` as the 4th argument of
+`generateText` / `streamText` (see [Request Cancellation](#request-cancellation)).
 
 #### Return Value
 
@@ -166,6 +173,86 @@ Examples: [Node.js](api/node.md#streaming-generation) · [Python](api/python.md#
 | `Finish` | Stream end (carries usage + finish_reason) |
 | `Error` | Stream error |
 | `Raw` | Provider raw chunk (for debugging, when `include_raw_chunks` is set) |
+
+### Request Cancellation (abort)
+
+Calls can be cancelled mid-flight. Cancellation covers the whole request
+lifecycle — connect, response headers, non-streaming body reads, and the
+streaming body (including while waiting between chunks and during retry
+backoff). An abort is reported as `AiMuxError::Aborted` (not retryable; a
+pre-aborted signal fails fast without sending).
+
+- **Node.js** — pass an `AbortSignal` as the last argument; the typed wrapper
+  bridges it internally:
+
+  ```ts
+  import { openai, generateText, streamText } from 'aimux'
+
+  const controller = new AbortController()
+  const model = await openai('sk-...', 'gpt-4o')
+
+  const result = await generateText(model, 'Explain Rust.', {}, controller.signal)
+
+  const gen = streamText(model, 'Write a haiku.', {}, controller.signal)
+  controller.abort() // cancels the stream promptly
+  ```
+
+  Under the hood the wrapper constructs an `AbortBridge` (also exported, for
+  the raw napi surface and multimodal calls). `AbortBridge` is one-shot: it
+  shares the signal's cancellation state, so aborting once aborts every call
+  that uses the same bridge, and reusing an aborted bridge fails fast.
+
+- **Rust** — set `abort_signal` directly on the options (a runtime handle, it
+  never crosses the JSON boundary):
+
+  ```rust
+  let signal = aimux_core::shared::AbortSignal::new();
+  let opts = GenerateTextOptions { abort_signal: Some(signal.clone()), ..Default::default() };
+  let task = tokio::spawn(generate_text(&model, "Explain Rust.", opts));
+  signal.abort(); // cancels the call
+  ```
+
+- **FFI / Python / Go / C ABI** — the JSON boundary cannot carry runtime
+  handles; cancellation is not yet exposed there (tracked in RFC-0016 §7.3).
+
+### Timeouts
+
+Per-call timeout limits, JSON-serializable in every binding:
+
+| Field | Type | Description |
+|------|------|------|
+| `total_ms` | `number?` | Overall deadline for the whole call — includes retries and, for streaming, the entire stream. `0` fails immediately |
+| `first_chunk_ms` | `number?` | Streaming only: time allowed from request start until the first chunk |
+| `chunk_ms` | `number?` | Streaming only: max idle time **between** chunks (sliding window, reset on every chunk) |
+
+`None`/absent disables the corresponding limit. On expiry the call fails with
+`AiMuxError::Timeout` (not retryable); streaming timeouts surface as a
+`StreamPart::Error` item (`"first chunk timeout"` / `"chunk idle timeout"` /
+`"total timeout"`). Unrepresentable values (e.g. `u64::MAX` ms on narrower
+platforms) are rejected with `AiMuxError::InvalidArgument` instead of
+panicking. When both abort and a deadline are in play, abort wins.
+
+```ts
+// Node.js — timeouts ride inside the options object
+await generateText(model, 'Explain Rust.', {
+  timeout: { total_ms: 30_000, first_chunk_ms: 5_000, chunk_ms: 2_000 },
+})
+```
+
+```rust
+// Rust
+let opts = GenerateTextOptions {
+    timeout: Some(aimux_core::options::TimeoutConfiguration {
+        total_ms: Some(30_000),
+        first_chunk_ms: Some(5_000),
+        chunk_ms: Some(2_000),
+    }),
+    ..Default::default()
+};
+```
+
+> Vercel's `stepMs`/`toolMs` are intentionally absent — they serve the
+> multi-step tool loop (H4), which aimux does not implement (RFC-0016 §7.5).
 
 ### Tool Calling
 

@@ -32,7 +32,17 @@ export declare class ImageModel {
    * Generate images. `opts_json` is JSON-serialized ImageCallOptions.
    * Returns JSON-serialized ImageResult (images as base64 in JSON).
    */
-  generate(optsJson: string): Promise<string>
+  generate(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
+}
+
+export declare class AbortBridge {
+  /**
+   * Bridge a JS `AbortSignal` to the core's runtime cancellation.
+   * Pass the result to `Model.generateText` / `Model.streamText`.
+   */
+  constructor(signal: AbortSignal)
+  /** Returns `true` once the underlying JS signal has been aborted. */
+  aborted(): boolean
 }
 
 export declare class Model {
@@ -41,16 +51,17 @@ export declare class Model {
    *
    * `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.
    * `options` — optional JSON-serialized `GenerateTextOptions`.
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels the call.
    * Returns a JSON-serialized `GenerateTextResult`.
    */
-  generateText(prompt: string, options?: string | undefined | null): Promise<string>
+  generateText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
   /**
    * Stream text from the model.
    *
    * Returns an `AsyncGenerator<string>` yielding `StreamPart` JSON strings.
    * Use `for await (const part of model.streamText(...))` to consume.
    */
-  streamText(prompt: string, options?: string | undefined | null): Promise<AsyncGenerator<string>>
+  streamText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AsyncGenerator<string>>
 }
 
 export declare class RerankingModel {
@@ -59,7 +70,7 @@ export declare class RerankingModel {
    * array of documents, `opts_json` is optional JSON options.
    * Returns JSON-serialized RerankingResult.
    */
-  rerank(query: string, docsJson: string, optsJson?: string | undefined | null): Promise<string>
+  rerank(query: string, docsJson: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 
 export declare class SearchModel {
@@ -67,7 +78,7 @@ export declare class SearchModel {
    * Search. `query` is the search query, `opts_json` is optional JSON options.
    * Returns JSON-serialized SearchResult.
    */
-  search(query: string, optsJson?: string | undefined | null): Promise<string>
+  search(query: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 
 export declare class SpeechModel {
@@ -75,7 +86,7 @@ export declare class SpeechModel {
    * Generate speech audio. `opts_json` is JSON-serialized SpeechCallOptions.
    * Returns JSON-serialized SpeechResult (audio as base64 in JSON).
    */
-  generate(optsJson: string): Promise<string>
+  generate(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 
 /**
@@ -101,7 +112,7 @@ export declare class TranscriptionModel {
    * `media_type` is e.g. "audio/mp3". `opts_json` is optional JSON options.
    * Returns JSON-serialized TranscriptionResult.
    */
-  generate(audioBase64: string, mediaType: string, optsJson?: string | undefined | null): Promise<string>
+  generate(audioBase64: string, mediaType: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 
 export declare class VideoModel {
@@ -109,7 +120,7 @@ export declare class VideoModel {
    * Generate video. `opts_json` is JSON-serialized VideoCallOptions.
    * Returns JSON-serialized VideoResult (typically contains a URL).
    */
-  generate(optsJson: string): Promise<string>
+  generate(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 
 /** Create an Anthropic model instance. */

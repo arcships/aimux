@@ -134,6 +134,8 @@ impl LanguageModel for AnthropicAwsModel {
             Vec::new(),
             build_headers,
             BodyEncoding::Bytes,
+            options.abort_signal.clone(),
+            options.timeout.map(Into::into),
         )
         .await
     }
@@ -149,6 +151,8 @@ impl LanguageModel for AnthropicAwsModel {
             Vec::new(),
             build_headers,
             BodyEncoding::Bytes,
+            options.abort_signal.clone(),
+            options.timeout.map(Into::into),
         )
         .await
     }

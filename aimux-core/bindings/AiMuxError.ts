@@ -3,4 +3,4 @@
 /**
  * Unified error type for all aimux operations.
  */
-export type AiMuxError = { "Provider": string } | { "Http": string } | { "Json": string } | { "Stream": string } | { "Tool": string } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "RateLimited": { retry_after_ms: bigint, } } | { "Auth": string } | { "ModelNotFound": string } | { "Unsupported": string } | { "NoSuchModel": string } | { "ApiCall": string } | { "Other": string };
+export type AiMuxError = { "Provider": string } | { "Http": string } | { "Json": string } | { "Stream": string } | { "Tool": string } | { "InvalidArgument": string } | { "InvalidPrompt": string } | { "RateLimited": { retry_after_ms: bigint, } } | { "Auth": string } | { "ModelNotFound": string } | { "Unsupported": string } | { "NoSuchModel": string } | { "UnknownProvider": string } | { "ApiCall": string } | { "Timeout": string } | "Aborted" | { "Other": string };

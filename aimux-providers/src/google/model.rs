@@ -1,4 +1,4 @@
-//! Google Gemini language model — implements `LanguageModel`.
+﻿//! Google Gemini language model — implements `LanguageModel`.
 
 use std::collections::HashMap;
 
@@ -14,7 +14,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 use super::GoogleConfig;
@@ -111,17 +111,18 @@ impl LanguageModel for GoogleModel {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.generate_endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await
         .map_err(api_call_to_provider_error)?;
@@ -187,17 +188,18 @@ impl LanguageModel for GoogleModel {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.stream_endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await
         .map_err(api_call_to_provider_error)?;

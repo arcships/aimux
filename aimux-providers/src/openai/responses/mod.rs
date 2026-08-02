@@ -1,4 +1,4 @@
-//! OpenAI Responses API language model.
+﻿//! OpenAI Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the `/v1/responses`
 //! endpoint. The Responses API uses a different request/response format from
@@ -44,7 +44,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send, send_stream};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_timed, send_stream_timed};
 use aimux_stream::SseStream;
 
 use super::OpenAIConfig;
@@ -115,17 +115,18 @@ impl LanguageModel for OpenAIResponsesModel {
         let body = request_result.body;
         let provider_key = self.provider_options_name().to_string();
 
-        let resp = send(
+        let resp = send_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
@@ -160,17 +161,18 @@ impl LanguageModel for OpenAIResponsesModel {
             .and_then(|v| v.as_bool())
             == Some(true);
 
-        let resp = send_stream(
+        let resp = send_stream_timed(
             HttpRequest {
                 method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
 
-                abort_signal: None,
+                abort_signal: options.abort_signal.clone(),
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
+            options.timeout.map(Into::into),
         )
         .await?;
 
