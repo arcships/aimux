@@ -12,6 +12,8 @@
 | B5 | 调研全局 | 7 处 registry base_url 确定性错误 + ~20 处存疑——P0 修复（数据层），与阶段 2 并行不冲突 | 待开工 |
 | B6 | 调研 batch-02 | DeepSeek 是否接受 `max_completion_tokens` 待实测——实测后决定 DeepSeek 是否加 `max_tokens_key="max_tokens"`（v3 下它已无特化，纯通用路径，优先级降低） | 待实测 |
 | B8 | 调研 batch-03 | Heroku 的 `allow_ignored_params` 机制——max_tokens_key 之外的特殊参数行为，用户 bodyOverrides + 手册文档化 | 待文档化 |
+| B9 | verify stage2-001 F7 | 厂商级 `max_tokens_key` 数据接线未做（6 家 `"max_tokens"` + groq/heroku `"max_completion_tokens"`）——**须在 stage2-002/003 收尾前接线**，否则 groq/heroku 修复对真实流量不生效 | 待 stage2-002 |
+| B10 | verify stage2-001 F8 | `Some("max_tokens")` + 显式 `maxCompletionTokens` 被静默丢弃——行为方向符合设计，但需在用户手册标注（用户应改用 `max_output_tokens`） | 待文档化 |
 
 ## 已闭合（v3 变更消除）
 

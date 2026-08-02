@@ -11,7 +11,6 @@ aimux 保留的机制（全部已有）：
   reasoning        → 通用路径透传 reasoning_effort（7 档，厂商自决）
   body_overrides   → 用户定义一切厂商差异（provider 级 + per-call）
   max_tokens_key   → 修 aimux 自身推断 bug（内部数据，非用户概念）
-  warning          → reasoning 无映射且未发 effort 时提示（不静默）
 
 aimux 退役的机制：
   RequestBodyOverride 枚举（含 DeepSeek）
@@ -29,7 +28,7 @@ aimux 退役的机制：
 |---|---|
 | A. 退役 | 删 `RequestBodyOverride`/`request_body_override`/`apply_deepseek_override`/归一化；`deepseek()` profile 回归 full() |
 | B. max_tokens_key | 内部字段 + 分支（6 家 `"max_tokens"`，groq/heroku `"max_completion_tokens"`） |
-| C. warning | `reasoning` 无映射且未发 effort → warning（不静默） |
+| C. ~~warning~~ | **已删除**——直传语义下不可达（§2.4），防死代码 |
 | D. 用户手册 | 调研矩阵 → `docs/provider-config-manual.md`（每厂商 bodyOverrides 示例，含 DeepSeek V4 官方机制） |
 | E. 测试 | 退役回归 + max_tokens_key + warning |
 
@@ -90,11 +89,11 @@ convert.rs ~1118-1138 分支改造。内置行:
 | stepfun/siliconflow/sarvam/reka/publicai/perplexity | `"max_tokens"` | 只认 max_tokens（batch-05 C 级） |
 | groq/heroku | `"max_completion_tokens"` | max_tokens 弃用/官方要求（batch-03 C 级；heroku 的 allow_ignored_params 另行评估） |
 
-### 2.4 warning
+### 2.4 warning（已删除,直传语义下不可达）
 
-- `reasoning` 设置 + 无任何映射 + 通用路径未发 effort → warning（"未翻译,该厂商需 bodyOverrides"）
-- 通用路径已发 effort（OpenAI 有效）→ 不 warning（防误报）
-- 厂商认不认 reasoning_effort 无法判断（那是知识）——"无害无效"由用户发现
+v2 时代设计过"reasoning 无映射 → warning（不静默）"。**v3 直传后不可达**：`is_custom_reasoning=true` 时 `resolved_reasoning_effort` 必然 Some（直传），warning 条件恒为 false——死代码，**删除**（防死代码原则, RFC-0009 教训）。
+
+v3 行为：`reasoning` 任何档位一律直传 `reasoning_effort`，厂商认不认是厂商的事（"报错/忽略自决"）。aimux 不做厂商知识判断（谁认 reasoning_effort 是知识,不内置）。用户对"aimux 已忠实翻译但厂商忽略"的感知由用户自己处理（手册引导）。
 
 ### 2.5 兼容性承诺
 
@@ -118,9 +117,9 @@ convert.rs ~1118-1138 分支改造。内置行:
 
 | # | 连接 | 验证 | 任务 |
 |---|---|---|---|
-| I1 | reasoning:'none' + 未发 effort → warning 透出 | warnings 断言 | stage2-001 |
-| I2 | reasoning:'none' + 已发 effort（OpenAI）→ 无 warning | 同上（防误报） | stage2-001 |
-| I3 | max_tokens_key → 请求体 key 名（推理模型分支） | wiremock 断言 | stage2-001 |
+| I1 | reasoning:'none' → 请求体含 reasoning_effort:"none"（直传） | wiremock 断言 | stage2-001 |
+| I2 | reasoning:'xhigh' → 请求体含 "xhigh"（无归一化） | 同上 | stage2-001 |
+| I3 | max_tokens_key → 请求体 key 名（推理/非推理分支） | wiremock 断言 | stage2-001 |
 | I4 | 退役后 DeepSeek 请求体不含 thinking 注入（除非用户配置） | wiremock 断言 | stage2-002 |
 | I5 | 用户 bodyOverrides 注入 thinking → 请求体含之（阶段 1 能力回归） | wiremock 断言 | stage2-002 |
 
@@ -129,7 +128,7 @@ convert.rs ~1118-1138 分支改造。内置行:
 - [ ] `cargo test --workspace --no-fail-fast` 全绿
 - [ ] 退役回归：DeepSeek `reasoning:'none'` 请求体不再含 `thinking`；`reasoning_effort` 直传 7 档（含 xhigh）
 - [ ] max_tokens_key：6 家 `"max_tokens"` + groq/heroku `"max_completion_tokens"`，推理/非推理两分支
-- [ ] warning：I1/I2 两条路径
+- [ ] 无 warning 断言保留（防未来误加映射提示——直传语义下不该有"未翻译"warning）
 - [ ] 用户手册：覆盖调研 §3 全部思考机制厂商（每厂商配置示例 + 来源）
 - [ ] 绑定层零改动（git diff 确认）
 

@@ -173,7 +173,7 @@ await generateText(model, p, {
 
 **档位透传成立**:`xhigh` 是 DeepSeek 官方接受的有效输入(自行映射 flash→high/pro→max)——"透传 + 厂商自决"无需 aimux 归一化。
 
-**warning 保留**:`reasoning` 无映射且通用路径未发 effort 时提示(不静默)。注:aimux 无法判断厂商认不认 `reasoning_effort`(那是知识),"无害无效"的行为由用户自行发现(如 DeepSeek V4 忽略不认识的字段)。
+**warning 已删除**:v3 直传语义下"无映射未翻译"状态不存在(任何档位必然直传),warning 条件恒假为死代码——删除。`reasoning` 一律透传,厂商自决。
 
 **max_tokens_key 保留**:修 aimux 自身推断 bug(推理模型推断错发 `max_completion_tokens` 给只认 `max_tokens` 的厂商),纯内部数据,非用户概念。
 
