@@ -728,15 +728,14 @@ func NewTavilySearchWithBase(apiKey, baseURL string) (*SearchModel, error) {
 	return m, nil
 }
 
-// ── DeepSeek convenience constructor ────────────────────────────────────────
+// ── DeepSeek convenience constructor (registry-backed, RFC-0017 phase 4) ────
 
 // DeepSeek is a convenience constructor for DeepSeek (OpenAI-compatible API).
-// It uses OpenAIWithBase under the hood with DeepSeek's base URL.
 func DeepSeek(apiKey, modelID string) *Model {
-	return OpenAIWithBase(apiKey, modelID, "https://api.deepseek.com/v1")
+	return mustNew(NewDeepSeek(apiKey, modelID))
 }
 
 // NewDeepSeek is the error-returning variant of DeepSeek.
 func NewDeepSeek(apiKey, modelID string) (*Model, error) {
-	return NewOpenAIWithBase(apiKey, modelID, "https://api.deepseek.com/v1")
+	return Provider("deepseek", apiKey, modelID)
 }

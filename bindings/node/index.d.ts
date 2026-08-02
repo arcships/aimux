@@ -124,6 +124,9 @@ export declare function cohereReranking(apiKey: string, modelId: string, baseUrl
 /** Create a DeepSeek model instance. */
 export declare function deepseek(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
+/** Create a language model from the built-in registry by provider name (RFC-0017 phase 4). */
+export declare function provider(name: string, apiKey?: string | undefined | null, modelId: string, config?: ProviderConfig | undefined | null): Promise<Model>
+
 /** Create a Google embedding model instance. */
 export declare function googleEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
 
