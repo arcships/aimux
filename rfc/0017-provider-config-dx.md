@@ -344,23 +344,40 @@ await generateText(model, prompt, {
 
 **目标**:把"新增/修正 provider"从库行为变成纯用户行为;补上绑定层(除 Rust 外)对 250 家 registry 的暴露缺口(现状:Node/Python/Go 等只有 openai/anthropic/deepseek 三个工厂)。
 
-**架构定稿(2026-08-02)**:`provider-registry.json` 是**唯一数据源**——内置 provider 的构造数据(base_url/env_var/profile)全部从 JSON 查条目获得,不再是宏参数内嵌。宏/类型只是"按名字查 JSON"的壳,不存在双源问题,无 build.rs、无代码生成器。
+**架构定稿(2026-08-02, v2)**:`provider-registry.json` 是**唯一数据源**——内置 provider 的构造数据(base_url/env_var/profile)全部从 JSON 查条目获得。Rust 250 个编译期类型壳(`XxxConfig`/`XxxProvider`)**退役**(crates.io 发布仅一天,破坏零成本,0.x 内处理)——统一改为名字驱动入口 + 各语言 `ProviderName` 派生类型。
 
 **改动**:
 1. `provider-registry.json` — 唯一数据源(250 家:name/display/base_url/env_var/profile 全字段),由阶段 3 调研数据生成;Rust `include_str!` embed,各绑定打包同一份
-2. **内置构造改造**:Rust 250 个编译期类型(`XxxConfig`/`XxxProvider`)**保留为壳**——`GroqConfig::new(key)` 内部 = 查 JSON 的 groq 条目 → `OpenAIConfig`(行为不变,用户代码零破坏);统一构造逻辑一套(`OpenAIConfig`/`OpenAIProvider`)
-3. **动态入口** `provider(name, apiKey, modelId, config?)`(各语言统一):名字 → 查 JSON → 构造;用户同名配置覆盖内置数据(修 base_url 不用等发版)
+2. **名字类型声明**(checked-in 派生文件,脚本 `scripts/gen_provider_names.py` 从 JSON 生成,无 build.rs):
+   - TS: `type ProviderName = 'groq' | 'deepseek' | ...`(字面量 union → IDE 补全 + 编译期检查)
+   - Rust: `pub enum ProviderName { Groq, DeepSeek, ... }`(250 变体 + `as_str()`/`FromStr`/`Display`)
+   - Go/Python/Swift/Kotlin/Java: 各语言常量/枚举/Literal 形态
+3. **统一入口**(各语言一致):
+   - `provider(name: ProviderName, api_key: Option<String>, model_id, config?)` — 名字 → 查 JSON → 构造;`api_key=None` 时自动读 JSON 条目的 env_var(替代旧 `from_env()`)
+   - config 可覆盖 JSON 条目字段(base_url/headers/maxRetries/bodyOverrides 等,替代旧 `with_base_url`)
+   - 未知名字 → 明确错误:"unknown provider 'xxx',可用列表见 ProviderName"
 4. **`createProvider(config)`**(各语言):用户用基础类(`OpenAIConfig`/`OpenAIProvider`)手工构造自己的薄封装——**与内置表无关**的纯用户侧 API;用于自定义 relay / 内置表外厂商
 5. 边界特例(§2.6):认证流程特殊者(GigaChat/copilot)标记 unsupported 或后续 auth 钩子;伪兼容(coze/zai_coding_plan)修正分类
 6. 校验:启动时对 registry JSON 做 schema 校验(必填字段/base_url 合法性)
 
-**用户覆盖形态**:同名条目——用户 JSON(配置文件或 API 传入)替换/merge 内置条目,仅在"查条目"一步生效;编译期类型用户仍可用 `with_base_url` 等 builder 手动覆盖(现状能力)。
+**用户覆盖形态**:同名条目——用户 JSON(配置文件或 API 传入)替换/merge 内置条目,仅在"查条目"一步生效;config 参数亦可逐次覆盖。
+
+**能力对照(类型退役后)**:
+
+| 旧能力 | 新形态 |
+|---|---|
+| `XxxConfig::new(key)` | `provider("groq", Some(key), model)` |
+| `XxxConfig::from_env()` | `provider("groq", None, model)`(自动读 env_var) |
+| `with_base_url(...)` | `provider("groq", key, model, { baseUrl })` |
+| `groq()`/`deepseek()` profile | JSON 条目内置(max_tokens_key 等已就位) |
+| 基础类构造(createProvider 地基) | `OpenAIConfig`/`OpenAIProvider` 保留 |
 
 **验收**:
-- [ ] 任意语言 `provider("groq", key, "llama-3.3-70b")` 可用,profile 差异生效
+- [ ] 任意语言 `provider(ProviderName::Groq, key, "llama-3.3-70b")` 可用,profile 差异生效
+- [ ] `ProviderName` 类型生成正确且被测试锁定(250 名字与 JSON 一致,防漂移)
 - [ ] 用户覆盖内置条目(base_url 修正)生效,无需发版
-- [ ] Rust 编译期类型行为不变(全量测试通过)——壳化后 `GroqConfig::new()` 与旧行为等价
 - [ ] `createProvider({...})` 可构造自定义薄封装,与内置表互不影响
+- [ ] 未知名字报错信息含可用列表
 - [ ] 阶段 3 调研发现的 7 处 registry base_url 错误通过数据修正落地(已由 stage2-004 完成 ✅)
 
 ---
@@ -374,7 +391,7 @@ await generateText(model, prompt, {
 | 退役 `RequestBodyOverride`(阶段 2) | ⚠️ **破坏性**:DeepSeek `reasoning:'none'` 不再自动注入 `thinking:{type:"disabled"}`——需用户 `bodyOverrides`;0.x minor bump 覆盖(该功能 2026-07-28 才上线) | 文档化迁移说明 |
 | `OpenAICompatProfile` 加 `max_tokens_key`(内部) | ✅ | 默认 None,行为不变 |
 | `OpenAIConfig` 加 `body_overrides` | ✅ | 默认 None |
-| registry JSON 化(阶段 4) | ✅ | 编译期类型保留、行为不变;新增动态入口与用户覆盖,纯增量 |
+| registry JSON 化 + 类型壳退役(阶段 4) | ⚠️ **破坏性**:250 个 `XxxConfig`/`XxxProvider` 类型移除,统一 `provider(name, ...)` 入口——**crates.io 发布仅一天,0.x 内处理零成本**;`OpenAIConfig`/`OpenAIProvider` 基础类保留 |
 
 ---
 
@@ -417,4 +434,4 @@ await generateText(model, prompt, {
 6. **退役 DeepSeek 特化的迁移**:0.x minor bump + 用户手册迁移说明(reasoning:'none' → bodyOverrides)。
 7. **registry JSON 化的校验时机**:启动时 schema 校验替代编译期校验,错误发现延后——是否可接受?校验规则集(必填字段/base_url 合法/profile 字段范围)需定义。
 8. **认证流程特殊厂商**(GigaChat OAuth/copilot device-flow)的落地形态:auth 钩子(代码扩展点)还是暂不支持仅文档化。
-9. ~~**Rust 编译期类型与 JSON 的单一事实来源**~~:**已解决(2026-08-02)**——JSON 为唯一源,类型壳化(构造时查 JSON),无宏生成、无双源、无 build.rs。
+9. ~~**Rust 编译期类型与 JSON 的单一事实来源**~~:**已解决(2026-08-02)**——JSON 为唯一源;类型壳**退役**(发布一天零成本),统一 `provider(name)` 入口 + `ProviderName` 派生类型,无宏生成、无双源、无 build.rs。
