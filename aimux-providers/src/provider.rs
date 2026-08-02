@@ -238,6 +238,26 @@ mod tests {
     }
 
     #[test]
+    fn provider_accepts_typed_and_string_names() {
+        // Both spellings work: typed ProviderName (recommended) and string.
+        let typed = match provider(
+            ProviderName::Groq,
+            Some("sk-test".into()),
+            "llama-3.3-70b",
+            None,
+        ) {
+            Ok(m) => m,
+            Err(e) => panic!("typed name should construct: {e}"),
+        };
+        assert_eq!(typed.model_id(), "llama-3.3-70b");
+        let string = match provider("groq", Some("sk-test".into()), "llama-3.3-70b", None) {
+            Ok(m) => m,
+            Err(e) => panic!("string name should construct: {e}"),
+        };
+        assert_eq!(string.model_id(), "llama-3.3-70b");
+    }
+
+    #[test]
     fn provider_unknown_name_lists_available() {
         let err = match provider("no-such-provider", Some("k".into()), "m", None) {
             Ok(_) => panic!("unknown name must fail"),

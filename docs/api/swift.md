@@ -15,6 +15,22 @@ let result = try model.generateText(prompt: "\"What is Rust?\"")
 print(result)
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+All 250 registry-backed OpenAI-compatible providers are reachable by name;
+`ProviderName` is an enum with one case per provider:
+
+```swift
+// 推荐:ProviderName enum case(类型检查 + 补全)
+let model = try Aimux.provider(name: ProviderName.groq.rawValue, modelId: "llama-3.3-70b")
+let result = try model.generateText(prompt: "\"Hello\"")
+
+// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
+let model2 = try Aimux.provider(name: "groq", apiKey: "sk-...", modelId: "llama-3.3-70b")
+```
+
+Unknown names throw an error listing the available providers.
+
 ## Text Generation
 
 `generateText(prompt:options:)` returns the raw `GenerateResult` JSON string.

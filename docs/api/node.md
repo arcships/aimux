@@ -30,10 +30,9 @@ type-checking:
 import { provider, generateText } from 'aimux'
 import type { ProviderName } from 'aimux'
 
-// Key from the provider's env var (GROQ_API_KEY etc.), base URL & profile
-// from the registry:
-const model = await provider('groq', undefined, 'llama-3.3-70b')
-// Explicit key + overrides:
+// 推荐:ProviderName.groq 写法(IDE 补全 + 类型检查)
+const model = await provider(ProviderName.groq, undefined, 'llama-3.3-70b')
+// 字符串形式同样可用:
 const relay = await provider('groq', 'sk-...', 'llama-3.3-70b', {
   baseUrl: 'https://relay.example/v1',
   maxRetries: 0,

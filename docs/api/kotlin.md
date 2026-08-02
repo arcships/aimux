@@ -12,6 +12,25 @@ Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
 }
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+All 250 registry-backed OpenAI-compatible providers are reachable by name;
+`aimux.ProviderName` holds the constants:
+
+```kotlin
+// 推荐:ProviderName.GROQ 常量(类型检查 + 补全)
+Model.provider(name = ProviderName.GROQ, modelId = "llama-3.3-70b").use { model ->
+    val result = model.generateText("\"Hello\"")
+}
+
+// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
+Model.provider(name = "groq", apiKey = "sk-...", modelId = "llama-3.3-70b").use { model ->
+    val result = model.generateText("\"Hello\"")
+}
+```
+
+Unknown names throw an error listing the available providers.
+
 ## Text Generation
 
 ```kotlin
