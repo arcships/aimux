@@ -1,5 +1,5 @@
 import test from 'ava'
-import { openai, anthropic, deepseek } from '../index.js'
+import { openai, anthropic, deepseek, provider } from '../index.js'
 
 // These tests verify the native module loads and the API surface works.
 // They do NOT make real API calls — they test error handling for invalid keys.
@@ -8,6 +8,7 @@ test('native module loads and exports functions', (t) => {
   t.is(typeof openai, 'function')
   t.is(typeof anthropic, 'function')
   t.is(typeof deepseek, 'function')
+  t.is(typeof provider, 'function')
 })
 
 test('openai() creates a model instance with valid key format', async (t) => {
@@ -17,6 +18,29 @@ test('openai() creates a model instance with valid key format', async (t) => {
   t.truthy(model)
   t.is(typeof model.generateText, 'function')
   t.is(typeof model.streamText, 'function')
+})
+
+test('provider() creates a registry model instance (RFC-0017 phase 4)', async (t) => {
+  const model = await provider('groq', 'sk-test-fake-key', 'llama-3.3-70b')
+  t.truthy(model)
+  t.is(typeof model.generateText, 'function')
+  t.is(typeof model.streamText, 'function')
+})
+
+test('provider() with undefined apiKey reads the registry env var', async (t) => {
+  // GROQ_API_KEY is unset in CI — the construction must fail with a clear
+  // error (missing env key), proving the env-var path is wired.
+  await t.throwsAsync(
+    () => provider('abacus', undefined, 'm'),
+    { message: /api key/i },
+  )
+})
+
+test('provider() rejects unknown provider names with the available list', async (t) => {
+  await t.throwsAsync(
+    () => provider('no-such-provider', 'k', 'm'),
+    { message: /no-such-provider/ },
+  )
 })
 
 test('anthropic() creates a model instance', async (t) => {

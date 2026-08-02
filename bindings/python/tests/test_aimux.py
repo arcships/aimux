@@ -10,13 +10,40 @@ import pytest
 
 def test_module_imports():
     """Native module loads and exports functions."""
-    from aimux import openai, anthropic, deepseek, generate_text, stream_text
+    from aimux import openai, anthropic, deepseek, provider, generate_text, stream_text
 
     assert callable(openai)
     assert callable(anthropic)
     assert callable(deepseek)
+    assert callable(provider)
     assert callable(generate_text)
     assert callable(stream_text)
+
+
+def test_provider_creates_registry_model():
+    """provider() creates a registry model instance (RFC-0017 phase 4)."""
+    from aimux import provider
+
+    model = provider("groq", "sk-test-fake-key", "llama-3.3-70b")
+    assert model is not None
+    assert hasattr(model, "generate_text")
+    assert hasattr(model, "stream_text")
+
+
+def test_provider_unknown_name_raises():
+    """provider() rejects unknown names with the available list."""
+    from aimux import provider
+
+    with pytest.raises(Exception, match="no-such-provider"):
+        provider("no-such-provider", "k", "m")
+
+
+def test_provider_missing_env_key_raises():
+    """provider() with api_key=None reads the env var and fails clearly when unset."""
+    from aimux import provider
+
+    with pytest.raises(Exception, match="(?i)api key"):
+        provider("abacus", None, "m")
 
 
 def test_openai_creates_model():

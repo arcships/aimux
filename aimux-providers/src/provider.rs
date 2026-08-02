@@ -285,4 +285,26 @@ mod tests {
         assert!(ProviderName::all_names().contains("groq"));
         assert_eq!(ProviderName::ALL.len(), 250);
     }
+
+    #[test]
+    fn provider_name_matches_registry_json() {
+        // Anti-drift: every registry name must exist as a ProviderName variant
+        // and round-trip; counts must match (guards against editing the JSON
+        // without regenerating provider_name.rs).
+        let registry: serde_json::Value =
+            serde_json::from_str(include_str!("provider_registry.json"))
+                .expect("registry JSON is valid");
+        let names: Vec<&str> = registry
+            .as_array()
+            .expect("registry is an array")
+            .iter()
+            .map(|e| e["name"].as_str().expect("name is a string"))
+            .collect();
+        assert_eq!(ProviderName::ALL.len(), names.len());
+        for name in &names {
+            let variant = ProviderName::from_str(name)
+                .unwrap_or_else(|| panic!("registry name {name} missing from ProviderName"));
+            assert_eq!(variant.as_str(), *name);
+        }
+    }
 }
