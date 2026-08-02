@@ -1,6 +1,6 @@
 # RFC-0016: 对齐 Vercel AI SDK 能力缺口
 
-> **Status**: DRAFT (pending review)
+> **Status**: DRAFT (pending review) — 实施状态与下游 wrapper 影响见 [§7](#7-实施状态截至-2026-08-02)(2026-08-02 更新)
 > **Date**: 2026-08-01
 > **Scope**: 系统对比 aimux 0.1.2 与 Vercel AI SDK (`@ai-sdk/openai` / `@ai-sdk/openai-compatible` / `@ai-sdk/provider` V4) 的接口与实现,识别能力缺口,并按优先级规划补齐路径
 > **Related**: [RFC-0009](0009-request-resilience.md) request resilience(retry/timeout,本 RFC 的 abortSignal/timeout 缺口与之相关),[RFC-0014](0014-logging.md) 统一日志体系(可观测性缺口依赖本 RFC 的 span 树)
@@ -145,3 +145,63 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 2. **L2 tool-call.input 类型**:aimux 用 `Value`(解析后 JSON)而非 V4 规范的 `string`。需确认是否回归 V4 的 string 形态,还是保留为 aimux 的有意设计(Node 侧消费更友好)。
 3. **M4 通用 providerOptions 透传的安全边界**:从白名单改为透传后,需确保不会把内部字段(如 `prompt_cache_breakpoint` 已在白名单)重复发送。
 4. **H4 多步工具循环的范围**:是否对标 Vercel `generateText` 的完整多步(stopWhen/maxSteps/prepareStep/activeTools/toolOrder/refineToolInput/repairToolCall),还是先做最小可用版(tools 自动执行 + steps)。
+
+---
+
+## 7. 实施状态(截至 2026-08-02)
+
+> 本节为实施追踪:记录 §2 各缺口的落地状态与下游 wrapper 联动影响,作为后续补齐的核对依据。
+> §2 表格保持"起草时缺口"原样,不随实施改动;落地情况一律以本节为准。
+
+### 7.1 已落地(相对本 RFC 起草时)
+
+| # | 缺口 | 落地方式 | 版本 |
+|---|------|---------|------|
+| H2 | maxRetries 不可配 | `CallOptions.max_retries` + `GenerateTextOptions.max_retries`([options.rs:90](../aimux-core/src/options.rs#L90)、[generate.rs:58](../aimux-core/src/generate.rs#L58));Node `ProviderConfig.max_retries` 透传([lib.rs:207](../bindings/node/src/lib.rs#L207)) | 0.1.3 |
+| M1 | 工厂级 headers/org/project/retry | Node 工厂收 `ProviderConfig { baseUrl, headers, organization, project, maxRetries, bodyOverrides }`([lib.rs:168](../bindings/node/src/lib.rs#L168)),透传 `with_headers`/`with_org_id`/`with_project`/`with_retry_config`([lib.rs:189-218](../bindings/node/src/lib.rs#L189));anthropic 同理 | 0.1.3 |
+| M4/M5 | providerOptions 透传 / transformRequestBody | **换形态解决**:`RequestBodyOverride` 封闭枚举退役,改 RFC-0017 通用 `body_overrides`(JSON deep-merge,per-call + provider 级 + 全 binding 透出,[convert.rs:1437](../aimux-providers/src/openai/convert.rs#L1437))。任意新 API 参数均可发送;但**不是** Vercel 式"未知 providerOptions key 自动透传"(core `provider_options` 仍白名单读取,[convert.rs:376](../aimux-providers/src/openai/convert.rs#L376)),也**不是** transform 闭包 | 0.1.3 |
+| L4 | env 自动读取 | 部分:`provider()`/`deepseek()` 走注册表,api_key 可空读 env([lib.rs:314](../bindings/node/src/lib.rs#L314));`openai()`/`anthropic()` 工厂仍强制传参 | 0.1.3 |
+| M9 | warnings 丢弃 | 部分:非流式已透传([model.rs:383](../aimux-providers/src/openai/model.rs#L383));流式仍 `StreamStart{warnings:vec![]}`([model.rs:450](../aimux-providers/src/openai/model.rs#L450)) | 0.1.3 |
+| L2 | tool-call.input 类型 | 维持 `Value`(设计选择,Node 侧消费更友好),不回归 V4 string 形态 | — |
+
+### 7.2 未落地清单(逐条追踪)
+
+**高优先级:**
+- **H1** abortSignal — `CallOptions` 无 `abort_signal` 字段,`do_generate`/`do_stream` 硬编码 `abort_signal: None`([model.rs:271](../aimux-providers/src/openai/model.rs#L271)、[model.rs:420](../aimux-providers/src/openai/model.rs#L420));`LanguageModel` trait 不带 signal。media provider 在用、LLM 漏着
+- **H3** timeout — core 零实现,无任何超时字段
+- **H4** 多步工具循环 — 全仓库无 steps/maxSteps/工具执行循环,`generate_text` 仍单次调用
+
+**中优先级:**
+- **M2** includeRawChunks — `StreamPart::Raw` 已定义但全仓 0 处 emit;`CallOptions` 无字段
+- **M3** logprobs 请求 — 仅响应侧解析([model.rs:363](../aimux-providers/src/openai/model.rs#L363)),请求体不写 `logprobs`/`top_logprobs`
+- **M6** 自定义 fetch / proxy — 仍是进程级共享 reqwest client
+- **M7** 顶层结果聚合 — `GenerateTextResult` 仅 text/tool_calls([generate.rs:96](../aimux-core/src/generate.rs#L96));reasoning/files/sources 在 `raw.content`,无 `responseMessages`
+- **M8** 缺 variant — `tool-approval-request`/`custom`/`reasoning-file` 均无;`source` 无 document 子类型([stream_part.rs:156](../aimux-core/src/stream_part.rs#L156))
+- **M10** usage.raw — `convert_usage` 写死 `raw: None`([model.rs:172](../aimux-providers/src/openai/model.rs#L172));流式 raw usage 只进 provider_metadata([model.rs:762](../aimux-providers/src/openai/model.rs#L762))
+- **M11** streamText 聚合器 — Node 仍 yield 原始 StreamPart JSON([lib.rs:63](../bindings/node/src/lib.rs#L63));core 仅 `StreamTextResult::text()`
+- **M12** 结构化 output / generateObject — 无
+- **M13** 生命周期 callbacks — 无
+
+**低优先级:**
+- **L1** response-metadata.timestamp 恒 None(非流式 [model.rs:387](../aimux-providers/src/openai/model.rs#L387)、流式 [model.rs:539](../aimux-providers/src/openai/model.rs#L539))
+- **L3** supportsStructuredOutputs / includeUsage 仍硬编码
+- **L5** telemetry、**L6** toolApproval — 无
+- **L7** queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage — 均未做(注:error structure 有 `DEFAULT_ERROR_STRUCTURE` 常量但写死不可配)
+
+### 7.3 下游 wrapper 影响矩阵
+
+架构事实:所有 binding 走 JSON 边界 —— `aimux-ffi`(C ABI,供 C/Go/Java/Kotlin/Swift/Flutter)与 Node(napi)、Python(pyo3)独立,但都是 options 进 JSON、结果回 JSON([aimux_generate_text(handle, prompt_json, opts_json)](../aimux-ffi/src/lib.rs#L433))。因此**可序列化字段自动透传**,只有**运行时桥接**(回调/取消/宿主函数)必须动 wire 层。
+
+| 类别 | 改动量 | 涉及缺口 |
+|------|--------|---------|
+| ① 加字段(机械性,每 wrapper 类型层同步;Node/Python JSON 直传可不加字段仅丢类型提示) | 小 | H3、M2、M3(options 字段);M7、M9、M10、L1(结果/StreamPart 字段) |
+| ② 动 FFI + 全 wrapper(结构性) | 大 | H1(需新增 `aimux_cancel(handle)` 类 C 入口 + 各语言 cancel();Node 另需 JS AbortSignal→native 桥接);H4(若做 core 自动执行工具需回调注册,若做"tool_results 回填重调"API 则 wire 不动、各 wrapper 写 loop helper);M13(宿主回调注册);M12(若新增独立入口 `aimux_generate_object` 则全链改动,若复用 generate_text + options 字段则降级为 ①) |
+| ③ wrapper 自实现(wire 不动) | 中 | M11(streamText 聚合器,宿主语言便利层);M6(跨语言注入宿主 fetch 不现实,大概率 core 内 reqwest 配置,归 ① 或不涉及) |
+| ④ 契约测试同步 | 小 | 所有新增字段需同步 `contract-tests/fixtures/wire-format.json` 及各 binding wire 测试(go `wire_format_test.go`、python `test_wrapper.py`、node `__test__`) |
+
+### 7.4 文档跟踪状态
+
+- §2/§4 是唯一系统记录缺口的文档;本 RFC 创建后未随实施更新(§2 表格仍把 H2/M1 标 ❌、按 `RequestBodyOverride` 描述 M4/M5),本节起作为修正与追踪入口
+- `docs/plan/backlog.md` 仅跟踪 RFC-0017 阶段 2 项,无本 RFC 条目;`docs/api/gaps.md` 是 binding 多模态差距(已闭合),与本 RFC 无关
+- 内部审计(QUALITY_REVIEW/REMEDIATION)顺带提到 H1 未接线及 core util.rs `AbortSignal` 缺陷(全仓零调用,建议删除改 `tokio_util::CancellationToken`),未覆盖其余缺口
+- 后续实施建议:本表逐条勾销;若进入排期,迁移到 `docs/plan/backlog.md` 分区跟踪
