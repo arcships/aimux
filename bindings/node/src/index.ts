@@ -41,7 +41,8 @@ import type {
 
 // Re-export the raw napi constructors/factories so consumers can do everything
 // from a single import: `import { openai, generateText } from 'aimux'`.
-export { Model, StreamTextGenerator, openai, anthropic, deepseek } from '../index.js'
+export { Model, StreamTextGenerator, openai, anthropic, deepseek, provider } from '../index.js'
+export type { ProviderName } from './types/ProviderName'
 
 // Public type surface — typed objects, no `any`.
 export type {

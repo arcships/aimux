@@ -226,6 +226,10 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
         /** Create an Anthropic-backed [TypedModel] with a custom base URL; owns its [Model]. */
         fun anthropic(apiKey: String, modelId: String, baseUrl: String): TypedModel =
             TypedModel(Model.anthropic(apiKey, modelId, baseUrl), ownsModel = true)
+
+        /** Create a registry-backed [TypedModel] (RFC-0017 phase 4) that owns its [Model]. */
+        fun provider(name: String, apiKey: String? = null, modelId: String, configJson: String? = null): TypedModel =
+            TypedModel(Model.provider(name, apiKey, modelId, configJson), ownsModel = true)
     }
 }
 

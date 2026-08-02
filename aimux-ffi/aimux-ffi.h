@@ -80,8 +80,28 @@ uint64_t aimux_anthropic_new_with_base(const char *api_key,
                                        const char *model_id,
                                        const char *base_url);
 
-/** Create a DeepSeek language model instance. */
-uint64_t aimux_deepseek_new(const char *api_key, const char *model_id);
+/**
+ * Create a model from the provider registry by name (RFC-0017 phase 4).
+ *
+ * @param name        NUL-terminated registry provider name (e.g. "deepseek", "groq").
+ * @param api_key     NUL-terminated API key, or NULL to read the provider's
+ *                    env var from the registry entry.
+ * @param model_id    NUL-terminated model ID.
+ * @param config_json Optional JSON object of ProviderOptions
+ *                    ({"base_url": "...", "headers": {...}, "max_retries": 0,
+ *                     "body_overrides": {...}});
+ *                    NULL / empty / "null" for defaults.
+ * @return Opaque handle (>0 on success, 0 on failure: unknown provider,
+ *         bad config, missing env key, or invalid model id).
+ */
+uint64_t aimux_provider_new(const char *name, const char *api_key,
+                            const char *model_id, const char *config_json);
+
+/**
+ * Convenience: create a model by provider name, reading the API key from the
+ * provider's env var. Returns 0 on failure.
+ */
+uint64_t aimux_provider_from_env(const char *name, const char *model_id);
 
 /* ── Generation ─────────────────────────────────────────────────────────── */
 

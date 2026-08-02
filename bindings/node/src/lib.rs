@@ -294,51 +294,82 @@ pub async fn anthropic(
     })
 }
 
-/// Create a DeepSeek model instance.
+/// Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4).
 #[napi]
 pub async fn deepseek(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
 ) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::deepseek::{DeepSeekConfig, DeepSeekProvider};
-
-    let mut cfg = DeepSeekConfig::new(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
-        }
-        Some(Either::B(opts)) => {
-            if let Some(url) = &opts.base_url {
-                cfg = cfg.with_base_url(url);
-            }
-            if let Some(ref json_str) = opts.headers {
-                if let Ok(h) = serde_json::from_str::<std::collections::HashMap<String, String>>(json_str) {
-                    cfg = cfg.with_headers(h);
-                }
-            }
-            if let Some(max) = opts.max_retries {
-                cfg = cfg.with_retry_config(aimux_provider_utils::RetryConfig {
-                    max_retries: max,
-                    ..aimux_provider_utils::RetryConfig::default()
-                });
-            }
-            if let Some(ref json_str) = opts.body_overrides {
-                if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    cfg = DeepSeekConfig(cfg.0.with_body_overrides(overrides));
-                }
-            }
-        }
-        None => {}
-    }
-    let provider = DeepSeekProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
+    let options = provider_options_from_config(config)?;
+    let model = aimux_providers::provider("deepseek", Some(api_key), &model_id, options)
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
     })
+}
+
+/// Create a language model from the built-in registry by provider name
+/// (RFC-0017 phase 4). `api_key` may be empty/null to read the provider's env
+/// var from the registry entry.
+#[napi]
+pub async fn provider(
+    name: String,
+    api_key: Option<String>,
+    model_id: String,
+    config: Option<ProviderConfig>,
+) -> Result<Model> {
+    let options = match config {
+        Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
+        None => None,
+    };
+    let model = aimux_providers::provider(&name, api_key, &model_id, options)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
+fn provider_options_from_config(
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Option<aimux_providers::ProviderOptions>> {
+    let opts = match config {
+        None => None,
+        Some(Either::A(url)) => Some(aimux_providers::ProviderOptions {
+            base_url: Some(url),
+            ..Default::default()
+        }),
+        Some(Either::B(cfg)) => {
+            let mut o = aimux_providers::ProviderOptions::default();
+            if let Some(url) = cfg.base_url {
+                o.base_url = Some(url);
+            }
+            if let Some(ref json_str) = cfg.headers {
+                if let Ok(h) =
+                    serde_json::from_str::<std::collections::HashMap<String, String>>(json_str)
+                {
+                    o.headers = Some(h);
+                }
+            }
+            if let Some(org) = cfg.organization {
+                o.organization = Some(org);
+            }
+            if let Some(proj) = cfg.project {
+                o.project = Some(proj);
+            }
+            if let Some(max) = cfg.max_retries {
+                o.max_retries = Some(max);
+            }
+            if let Some(ref json_str) = cfg.body_overrides {
+                if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    o.body_overrides = Some(overrides);
+                }
+            }
+            Some(o)
+        }
+    };
+    Ok(opts)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

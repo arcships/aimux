@@ -101,13 +101,49 @@ public class Model implements Closeable {
         return new Model(h);
     }
 
-    /** Create a DeepSeek model instance. */
-    public static Model deepseek(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_deepseek_new(apiKey, modelId);
+    /**
+     * Create a model from the provider registry by name (RFC-0017 phase 4).
+     *
+     * @param name       Registry provider name (e.g. "deepseek", "groq").
+     * @param apiKey     API key, or {@code null} to read the provider's env var
+     *                   from the registry entry.
+     * @param modelId    Model id.
+     * @param configJson Optional JSON object of ProviderOptions
+     *                   ({@code {"base_url": "...", "headers": {...}, "max_retries": 0,
+     *                   "body_overrides": {...}}}); {@code null} for defaults.
+     * @return A new {@link Model}.
+     * @throws IllegalArgumentException if the provider could not be constructed
+     *                                  (unknown provider, bad config, missing env key).
+     */
+    public static Model provider(String name, String apiKey, String modelId, String configJson) {
+        long h = AimuxFFI.INSTANCE.aimux_provider_new(name, apiKey, modelId, configJson);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create DeepSeek model");
+            throw new IllegalArgumentException("Failed to create provider model: " + name);
         }
         return new Model(h);
+    }
+
+    /**
+     * Create a model from the provider registry, reading the API key from the
+     * provider's env var (RFC-0017 phase 4).
+     */
+    public static Model providerFromEnv(String name, String modelId) {
+        long h = AimuxFFI.INSTANCE.aimux_provider_from_env(name, modelId);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create provider model from env: " + name);
+        }
+        return new Model(h);
+    }
+
+    /**
+     * Create a DeepSeek model instance.
+     *
+     * <p>The retired {@code aimux_deepseek_new} C symbol has been removed; this
+     * now routes through {@link #provider(String, String, String, String)} with
+     * the registry name {@code "deepseek"} (RFC-0017 phase 4).
+     */
+    public static Model deepseek(String apiKey, String modelId) {
+        return provider("deepseek", apiKey, modelId, null);
     }
 
     // ── Generation ─────────────────────────────────────────────────────────

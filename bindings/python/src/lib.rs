@@ -175,20 +175,36 @@ fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<
     })
 }
 
-/// Create a DeepSeek model instance.
+/// Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4).
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
 fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::deepseek::{DeepSeekConfig, DeepSeekProvider};
+    let options = base_url.map(|url| aimux_providers::ProviderOptions {
+        base_url: Some(url.to_string()),
+        ..Default::default()
+    });
+    let model = aimux_providers::provider("deepseek", Some(api_key.to_string()), model_id, options)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
 
-    let mut config = DeepSeekConfig::new(api_key);
-    if let Some(url) = base_url {
-        config = config.with_base_url(url);
-    }
-    let provider = DeepSeekProvider::new(config);
-    let model = provider
-        .language_model(model_id)
+/// Create a language model from the built-in registry by provider name
+/// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
+#[pyfunction]
+#[pyo3(signature = (name, api_key, model_id, base_url=None))]
+fn provider(
+    name: &str,
+    api_key: Option<String>,
+    model_id: &str,
+    base_url: Option<&str>,
+) -> PyResult<Model> {
+    let options = base_url.map(|url| aimux_providers::ProviderOptions {
+        base_url: Some(url.to_string()),
+        ..Default::default()
+    });
+    let model = aimux_providers::provider(name, api_key, model_id, options)
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
@@ -206,6 +222,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;
+    m.add_function(wrap_pyfunction!(provider, m)?)?;
 
     // Multimodal classes.
     m.add_class::<EmbeddingModel>()?;

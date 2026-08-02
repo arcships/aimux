@@ -38,7 +38,13 @@ public interface AimuxFFI extends Library {
 
     long aimux_anthropic_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_deepseek_new(String apiKey, String modelId);
+    // ── Registry provider (RFC-0017 phase 4) ──────────────────────────────────
+    // apiKey may be null (read the provider's env var from the registry entry);
+    // configJson may be null (defaults) or a JSON object of ProviderOptions.
+
+    long aimux_provider_new(String name, String apiKey, String modelId, String configJson);
+
+    long aimux_provider_from_env(String name, String modelId);
 
     // ── Generation ──────────────────────────────────────────────────────────
 
