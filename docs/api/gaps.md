@@ -146,7 +146,7 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 | `aimux_cohere_embedding_new` | ❌ |
 | `aimux_google_embedding_new` | ❌ |
 | `aimux_google_image_new` | ❌ |
-| `aimux_deepseek_new` | 无(设计如此——DeepSeek 固定官方 URL) |
+| ~~`aimux_deepseek_new`~~ | 已删除(2026-08,RFC-0017 phase 4)——改用 `aimux_provider_new("deepseek", api_key, model_id, NULL)` |
 
 修法:在 [lib.rs](../../aimux-ffi/src/lib.rs) 补 3 个 `_with_base` 变体(照
 `aimux_openai_embedding_new_with_base` 的模式),并在
