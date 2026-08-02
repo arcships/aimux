@@ -1,326 +1,328 @@
-id,display_name,implemented_in_aimux,provider_kind,tier,protocol,openai_compatible,sources,base_urls,model_count,capabilities
-abacus,Abacus,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://routellm.abacus.ai/v1,100,chat
-abliteration_ai,abliteration.ai,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.abliteration.ai/v1,2,chat
-advanced_custom,Advanced Custom,false,model_vendor,unknown,unknown,,new_api,,0,chat
-ai21,Ai21,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,12,chat;completion
-ai302,302.AI,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.302.ai/v1,97,chat;image_generation
-ai_router,AI-ROUTER,false,model_vendor,unknown,unknown,,mastra_registry,https://api.ai-router.dev/v1,5,chat
-aiand,ai&,false,model_vendor,unknown,unknown,,mastra_registry,https://api.aiand.com/v1,10,chat
-aigc2d,AIGC2D,true,model_vendor,unknown,unknown,,new_api,https://api.aigc2d.com,0,chat
-aihubmix,AIHubMix,true,model_vendor,L2,openai,True,rust_genai;tokenhub,,787,audio_speech;chat;embedding;image_generation;rerank
-ails,AILS,true,model_vendor,unknown,unknown,,new_api,https://api.caipacity.com,0,chat
-aiml,Aiml,true,model_vendor,L3,unknown,True,litellm_constants;litellm_prices,,13,image_generation
-aiproxy,AIProxy,false,model_vendor,unknown,unknown,,new_api,https://api.aiproxy.io,0,chat
-aiproxy_library,AIProxyLibrary,false,model_vendor,unknown,unknown,,new_api,https://api.aiproxy.io,0,chat
-aki_io,AKI.IO,false,model_vendor,unknown,unknown,,mastra_registry,https://aki.io/v1,6,chat
-ali,Ali,false,model_vendor,unknown,unknown,,new_api,https://dashscope.aliyuncs.com,0,chat
-alibaba,Alibaba,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;rust_genai;tokenhub,https://dashscope-intl.aliyuncs.com/compatible-mode/v1,114,chat;image_generation
-alibaba_cn,Alibaba (China),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://dashscope.aliyuncs.com/compatible-mode/v1,112,chat
-alibaba_coding_plan,Alibaba Coding Plan,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://coding-intl.dashscope.aliyuncs.com/v1,12,chat
-alibaba_coding_plan_cn,Alibaba Coding Plan (China),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://coding.dashscope.aliyuncs.com/v1,12,chat
-alibaba_token_plan,Alibaba Token Plan,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1,22,chat;image_generation
-alibaba_token_plan_cn,Alibaba Token Plan (China),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,22,chat;image_generation
-ambient,Ambient,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.ambient.xyz/v1,9,chat
-anthropic,Anthropic,true,model_vendor,L1,anthropic,False,litellm_constants;litellm_prices;mastra_registry;new_api;pydantic_ai;rust_genai;tokenhub,https://api.anthropic.com,33,chat
-anthropic_text,Anthropic Text,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-anyapi,AnyAPI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.anyapi.ai/v1,30,chat
-anyscale,Anyscale,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,12,chat
-apertis,Apertis,false,model_vendor,L2,openai,True,litellm_constants,,0,
-api2gpt,API2GPT,true,model_vendor,unknown,unknown,,new_api,https://api.api2gpt.com,0,chat
-apiserpent,Apiserpent,true,model_vendor,L3,unknown,,litellm_prices,,2,search
-assemblyai,Assemblyai,true,model_vendor,L3,unknown,,litellm_prices,,2,audio_transcription
-atlascloud,Atlascloud,true,model_vendor,L2,openai,True,rust_genai,,0,chat
-atomic_chat,Atomic Chat,false,local_runtime,unknown,unknown,,mastra_registry;tokenhub,http://127.0.0.1:1337/v1,5,chat
-auriko,Auriko,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.auriko.ai/v1,15,chat
-aws,AWS,false,model_vendor,unknown,unknown,,new_api,,0,chat
-aws_polly,AWS Polly,false,model_vendor,L3,unknown,,litellm_prices,,4,audio_speech
-azure,Azure,true,cloud_platform,L1,azure_openai,False,litellm_constants;litellm_prices;new_api;tokenhub,,323,audio_speech;audio_transcription;chat;embedding;image_generation;realtime;responses;video_generation
-azure_ai,Azure AI,true,cloud_platform,L2,openai,True,litellm_constants;litellm_prices,,97,chat;embedding;image_generation;other;rerank;responses
-azure_cognitive_services,Azure Cognitive Services,false,model_vendor,unknown,unknown,,tokenhub,,94,chat;embedding
-azure_text,Azure Text,false,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,3,chat;completion
-baidu,Baidu,true,model_vendor,L2,openai,True,new_api;rust_genai,https://aip.baidubce.com,0,chat
-baidu_v2,BaiduV2,false,model_vendor,unknown,unknown,,new_api,https://qianfan.baidubce.com,0,chat
-bailing,Bailing,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.tbox.cn/api/llm/v1/chat/completions,2,chat
-baseten,Baseten,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://inference.baseten.co/v1,27,chat
-bedrock,Amazon Bedrock,true,cloud_platform,L1,aws_bedrock,False,litellm_constants;litellm_prices;pydantic_ai;rust_genai;tokenhub,,423,chat;embedding;image_edit;image_generation;rerank
-bedrock_mantle,Bedrock Mantle,false,model_vendor,unknown,unknown,,litellm_prices;pydantic_ai,,24,chat;responses
-berget,Berget.AI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.berget.ai/v1,8,chat
-bigmodel,Zhipu AI,true,model_vendor,L2,openai,True,mastra_registry;new_api;rust_genai;tokenhub,https://open.bigmodel.cn;https://open.bigmodel.cn/api/paas/v4,13,chat
-black_forest_labs,Black Forest Labs,true,model_vendor,L3,unknown,,litellm_prices,,8,image_edit;image_generation
-blueclaw,Blue Claw,false,model_vendor,unknown,unknown,,mastra_registry,https://openai.blueclaw.network/v1,2,chat
-burncloud,burncloud,false,model_vendor,unknown,unknown,,tokenhub,,34,audio_speech;chat;image_generation;video_generation
-bytedance,Bytedance,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,12,chat;embedding
-bytez,Bytez,true,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-cerebras,Cerebras,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;pydantic_ai;tokenhub,,12,chat
-chat_gpt_subscription_codex,ChatGPT Subscription (Codex),false,model_vendor,unknown,unknown,,new_api,https://chatgpt.com,0,chat
-chatgpt,Chatgpt,true,subscription_proxy,L2,openai,True,litellm_constants;litellm_prices,,10,chat;responses
-cherryin,cherryin,false,model_vendor,unknown,unknown,,tokenhub,,125,chat;completion;embedding;image_generation;rerank
-chutes,Chutes,false,model_vendor,L2,openai,True,litellm_constants;mastra_registry;tokenhub,https://llm.chutes.ai/v1,43,chat
-clarifai,Clarifai,true,model_vendor,L2,openai,True,litellm_constants;mastra_registry;tokenhub,https://api.clarifai.com/v2/ext/openai/v1,12,chat
-claudinio,Claudinio,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.claudin.io/v1,2,chat
-cline_pass,ClinePass,true,model_vendor,unknown,unknown,,mastra_registry,https://api.cline.bot/api/v1,11,chat
-cloudferro_sherlock,CloudFerro Sherlock,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api-sherlock.cloudferro.com/openai/v1,5,chat
-cloudflare,Cloudflare,false,cloud_platform,unknown,unknown,,litellm_constants;litellm_prices;new_api,https://api.cloudflare.com,30,chat
-cloudflare_ai_gateway,Cloudflare AI Gateway,false,model_vendor,unknown,unknown,,tokenhub,,77,chat;embedding;rerank
-cloudflare_workers_ai,Cloudflare Workers AI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1,22,chat
-codestral,Codestral,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,2,chat
-cohere,Cohere,true,model_vendor,L1,cohere,False,litellm_constants;litellm_prices;new_api;pydantic_ai;rust_genai;tokenhub,https://api.cohere.ai,29,chat;completion;embedding;rerank
-cohere_chat,Cohere Chat,false,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,7,chat
-cometapi,Cometapi,true,model_vendor,L2,openai,True,litellm_constants,,0,chat
-copilot,GitHub Copilot,true,subscription_proxy,L2,openai,True,litellm_constants;litellm_prices;rust_genai;tokenhub,https://api.githubcopilot.com,56,chat;completion;embedding;responses
-cortecs,Cortecs,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.cortecs.ai/v1,58,chat
-coze,Coze,true,model_vendor,unknown,unknown,,new_api,https://api.coze.cn,0,chat
-crof,CrofAI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://crof.ai/v1,26,chat
-crossmodel,CrossModel,false,model_vendor,unknown,unknown,,mastra_registry,https://api.crossmodel.ai/v1,46,chat
-crusoe,Crusoe,false,model_vendor,unknown,unknown,,litellm_prices,,7,chat
-custom_provider,custom provider,false,model_vendor,unknown,unknown,,tokenhub,,30,chat
-daoxe,DaoXE,false,model_vendor,unknown,unknown,,mastra_registry,https://daoxe.com/v1,9,chat
-darkbloom,Darkbloom,false,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,2,chat
-databricks,Databricks,true,cloud_platform,unknown,unknown,,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://${databricks_host}/ai-gateway/mlflow/v1,58,chat;embedding
-dataforseo,Dataforseo,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-datarobot,Datarobot,true,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-deepgram,Deepgram,true,model_vendor,L3,unknown,,litellm_prices,,36,audio_transcription
-deepinfra,Deep Infra,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,,108,chat
-deepseek,DeepSeek,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;new_api;pydantic_ai;rust_genai;tokenhub,https://api.deepseek.com,12,chat
-dify,Dify,false,model_vendor,unknown,unknown,,new_api,https://api.dify.ai,0,chat
-digitalocean,DigitalOcean,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://inference.do-ai.run/v1,82,chat;embedding;rerank
-dinference,DInference,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.dinference.com/v1,6,chat
-docker_model_runner,Docker Model Runner,true,local_runtime,L2,openai,True,litellm_constants,,0,chat
-doubao,Doubao,false,model_vendor,unknown,unknown,,tokenhub,,33,chat;embedding;image_generation;video_generation
-doubao_video,DoubaoVideo,false,model_vendor,unknown,unknown,,new_api,https://ark.cn-beijing.volces.com,0,chat
-drun,D.Run (China),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://chat.d.run/v1,3,chat
-duckduckgo,Duckduckgo,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-ebcloud,EBCloud,false,model_vendor,unknown,unknown,,mastra_registry,https://maas-api.ebcloud.com/v1,4,chat
-elevenlabs,Elevenlabs,true,model_vendor,L3,unknown,,litellm_prices,,4,audio_speech;audio_transcription
-empiriolabs,EmpirioLabs AI,false,model_vendor,unknown,unknown,,mastra_registry,https://api.empiriolabs.ai/v1,36,chat
-empower,Empower,false,model_vendor,L2,openai,True,litellm_constants,,0,chat
-evroc,evroc,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://models.think.evroc.com/v1,21,chat;embedding
-exa_ai,EXA AI,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-fal,FAL,true,model_vendor,L3,unknown,,litellm_prices,,14,image_generation
-fastgpt,FastGPT,true,model_vendor,unknown,unknown,,new_api,https://fastgpt.run/api/openapi,0,chat
-fastrouter,FastRouter,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://go.fastrouter.ai/api/v1,47,chat;image_generation
-featherless_ai,Featherless AI,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,2,chat
-firecrawl,Firecrawl,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-firepass,Fireworks (Firepass),false,model_vendor,unknown,unknown,,tokenhub,https://api.fireworks.ai/inference/v1,1,chat
-fireworks,Fireworks AI,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;rust_genai;tokenhub,https://api.fireworks.ai/inference/v1,318,audio_transcription;chat;embedding;image_generation;rerank
-freemodel,FreeModel,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://cc.freemodel.dev/v1,10,chat
-friendliai,Friendli,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://api.friendli.ai/serverless/v1,11,chat
-frogbot,FrogBot,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://app.frogbot.ai/api/v1,26,chat
-galadriel,Galadriel,true,model_vendor,L2,openai,True,litellm_constants,,0,chat
-gdc,GDC,true,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-gigachat,Gigachat,true,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,6,chat;embedding
-github,GitHub Models,true,model_vendor,L2,openai,True,litellm_constants;mastra_registry;tokenhub,https://models.github.ai/inference,55,chat
-gitlab,GitLab Duo,false,model_vendor,unknown,unknown,,tokenhub,,18,chat
-gmi,GMI,false,model_vendor,unknown,unknown,,litellm_prices,,17,chat
-gmicloud,GMI Cloud,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.gmi-serving.com/v1,13,chat
-google,Google,true,model_vendor,L1,google_gemini,False,litellm_constants;litellm_prices;mastra_registry;new_api;pydantic_ai;rust_genai;tokenhub,https://generativelanguage.googleapis.com,114,audio_speech;chat;embedding;image_generation;realtime;video_generation
-google_pse,Google PSE,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-google_vertex,Vertex,false,model_vendor,unknown,unknown,,tokenhub,,35,chat;embedding
-google_vertex_anthropic,Vertex (Anthropic),false,model_vendor,unknown,unknown,,tokenhub,,11,chat
-gradient_ai,Gradient AI,true,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,13,chat
-groq,Groq,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;pydantic_ai;rust_genai;tokenhub,https://api.groq.com/openai/v1,33,audio_speech;audio_transcription;chat
-helicone,Helicone,true,gateway_aggregator,L4,mixed,True,litellm_constants;mastra_registry;tokenhub,https://ai-gateway.helicone.ai/v1,90,chat
-heroku,Heroku,true,model_vendor,unknown,unknown,,litellm_constants;litellm_prices;pydantic_ai,,27,chat
-hetzner,Hetzner,false,model_vendor,unknown,unknown,,mastra_registry,https://inference.hetzner.com/api/v1,1,chat
-hosted_vllm,Hosted Vllm,true,deployment_platform,L2,openai,True,litellm_constants,,0,chat
-hpc_ai,HPC-AI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.hpc-ai.com/inference/v1,9,chat
-huggingface,Hugging Face,true,deployment_platform,unknown,unknown,,litellm_constants;mastra_registry;pydantic_ai;tokenhub,https://router.huggingface.co/v1,57,chat;embedding
-hyper,Charm Hyper,false,model_vendor,unknown,unknown,,mastra_registry,https://hyper.charm.land/v1,20,chat
-hyperbolic,Hyperbolic,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,16,chat
-iflowcn,iFlow,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://apis.iflow.cn/v1,14,chat
-inception,Inception,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://api.inceptionlabs.ai/v1,3,chat
-inceptron,Inceptron,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.inceptron.io/v1,7,chat
-inference_net,Inference,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://inference.net/v1,9,chat;embedding
-inferx,InferX,false,model_vendor,unknown,unknown,,mastra_registry,https://model.inferx.net/endpoints/v1,6,chat
-io_net,IO.NET,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.intelligence.io.solutions/api/v1,17,chat
-jiekou,Jiekou.AI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.jiekou.ai/openai,153,chat
-jimeng,Jimeng,false,model_vendor,unknown,unknown,,new_api,https://visual.volcengineapi.com,0,chat
-jina,Jina,false,model_vendor,unknown,unknown,,new_api,https://api.jina.ai,0,chat
-jina_ai,Jina AI,false,model_vendor,L3,unknown,,litellm_prices,,1,rerank
-kenari,Kenari,false,model_vendor,unknown,unknown,,mastra_registry,https://kenari.id/v1,38,chat
-kilo,Kilo Gateway,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.kilo.ai/api/gateway,346,chat;image_generation
-kimi,Kimi,false,model_vendor,unknown,unknown,,rust_genai,,0,chat
-kimi_for_coding,Kimi For Coding,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.kimi.com/coding/v1,4,chat
-kling,Kling,false,model_vendor,unknown,unknown,,new_api,https://api.klingai.com,0,chat
-kuae_cloud_coding_plan,KUAE Cloud Coding Plan,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://coding-plan-endpoint.kuaecloud.net/v1,1,chat
-lambda_ai,Lambda AI,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,20,chat
-lemonade,Lemonade,false,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,5,chat
-libertai,Libertai,false,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,12,chat;embedding
-lilac,Lilac,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.getlilac.com/v1,6,chat
-lingyiwanwu,LingYiWanWu,true,model_vendor,unknown,unknown,,new_api,https://api.lingyiwanwu.com,0,chat
-linkup,Linkup,false,model_vendor,L3,unknown,,litellm_prices,,2,search
-litellm_proxy,Litellm Proxy,true,gateway_aggregator,L4,mixed,True,litellm_constants,,0,chat
-llama,Llama,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.llama.com/compat/v1,7,chat
-llamafile,Llamafile,true,local_runtime,L2,openai,True,litellm_constants,,0,chat
-llamagate,Llamagate,false,model_vendor,unknown,unknown,,litellm_prices,,16,chat;embedding
-llmgateway,LLM Gateway,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.llmgateway.io/v1,224,chat
-llmtr,LLMTR,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://llmtr.com/v1,6,chat
-lmstudio,LMStudio,true,local_runtime,L2,openai,True,litellm_constants;mastra_registry;tokenhub,http://127.0.0.1:1234/v1,3,chat
-longcat,LongCat,true,model_vendor,unknown,unknown,,mastra_registry,https://api.longcat.chat/openai,1,chat
-lucidquery,LucidQuery,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.lucidquery.com/v1;https://lucidquery.com/api/v1,4,chat
-lynkr,Lynkr,false,local_runtime,unknown,unknown,,mastra_registry,http://127.0.0.1:8081/v1,1,chat
-maritalk,Maritalk,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-meganova,Meganova,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.meganova.ai/v1,19,chat
-merge_gateway,Merge Gateway,false,model_vendor,unknown,unknown,,tokenhub,,83,chat
-meta,Meta,false,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry,https://api.meta.ai/v1,2,chat
-meta_llama,Meta Llama,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,4,chat
-midjourney,Midjourney,false,model_vendor,unknown,unknown,,new_api,https://oa.api2d.net,0,chat
-midjourney_plus,MidjourneyPlus,false,model_vendor,unknown,unknown,,new_api,https://api.openai-sb.com,0,chat
-mimo,Mimo,false,model_vendor,unknown,unknown,,rust_genai,,0,chat
-minimax,MiniMax (minimax.io),true,model_vendor,unknown,unknown,,litellm_prices;mastra_registry;new_api;rust_genai;tokenhub,https://api.minimax.chat;https://api.minimax.io/anthropic/v1,17,audio_speech;chat
-minimax_cn,MiniMax (minimaxi.com),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.minimaxi.com/anthropic/v1,7,chat
-minimax_cn_coding_plan,MiniMax Token Plan (minimaxi.com),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.minimaxi.com/anthropic/v1,7,chat
-minimax_coding_plan,MiniMax Token Plan (minimax.io),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.minimax.io/anthropic/v1,7,chat
-mistral,Mistral,true,model_vendor,L1,mistral,False,litellm_constants;litellm_prices;mastra_registry;new_api;pydantic_ai;tokenhub,https://api.mistral.ai;https://api.mistral.ai/v1,89,chat;embedding;other
-mixlayer,Mixlayer,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://models.mixlayer.ai/v1,5,chat
-moark,Moark,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://moark.com/v1,2,chat
-model_oracle_ai,Model Oracle AI,false,model_vendor,unknown,unknown,,mastra_registry,https://api.modeloracle.com/api/v1,15,chat
-modelscope,ModelScope,true,model_vendor,L2,openai,True,litellm_constants;mastra_registry;tokenhub,https://api-inference.modelscope.cn/v1,7,chat
-moka_ai,MokaAI,false,model_vendor,unknown,unknown,,new_api,https://api.moka.ai,0,chat
-moonshotai,Moonshot AI,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;new_api;pydantic_ai;rust_genai;tokenhub,https://api.moonshot.ai/anthropic/v1;https://api.moonshot.ai/v1;https://api.moonshot.cn;https://api.moonshot.cn/v1,41,chat
-moonshotai_cn,Moonshot AI (China),false,model_vendor,unknown,unknown,,mastra_registry,https://api.moonshot.cn/anthropic/v1,10,chat
-morph,Morph,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://api.morphllm.com/v1,5,chat
-nanogpt,NanoGPT,true,model_vendor,L2,openai,True,litellm_constants;mastra_registry;tokenhub,https://nano-gpt.com/api/v1,617,chat;image_generation
-nearai,NEAR AI Cloud,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://cloud-api.near.ai/v1,37,chat;embedding;rerank
-nebius,Nebius Token Factory,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;rust_genai;tokenhub,https://api.tokenfactory.nebius.com/v1,63,chat;embedding
-neon,Neon,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,,37,chat
-netlify,Netlify,false,model_vendor,unknown,unknown,,mastra_registry,,68,chat
-neuralwatt,Neuralwatt,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.neuralwatt.com/v1,24,chat
-new_api,New API,false,model_vendor,unknown,unknown,,new_api,,0,chat
-nlp_cloud,NLP Cloud,true,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,2,chat;completion
-nova,Nova,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.nova.amazon.com/v1,2,chat
-novita,NovitaAI,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://api.novita.ai/openai,192,chat;embedding;rerank
-nscale,Nscale,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,16,chat;image_generation
-nvidia_nim,Nvidia,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://integrate.api.nvidia.com/v1,107,chat;embedding;image_generation;rerank
-oci,OCI,false,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,44,chat;embedding
-ofox,Ofox,false,model_vendor,unknown,unknown,,mastra_registry,https://api.ofox.ai/v1,13,chat
-ohmygpt,OhMyGPT,true,model_vendor,unknown,unknown,,new_api,https://api.ohmygpt.com,0,chat
-ollama,Ollama Cloud,true,local_runtime,L2,openai,True,litellm_constants;litellm_prices;new_api;rust_genai;tokenhub,http://localhost:11434;https://ollama.com/v1,590,chat;completion;embedding
-ollama_chat,Ollama Chat,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-ollama_cloud,Ollama Cloud,true,model_vendor,L2,openai,True,mastra_registry;rust_genai,https://ollama.com/v1,19,chat
-omlx,Omlx,true,local_runtime,L2,openai,True,rust_genai,,0,chat
-oobabooga,Oobabooga,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-openai,OpenAI,true,model_vendor,L1,openai,,litellm_constants;litellm_prices;mastra_registry;new_api;pydantic_ai;rust_genai;tokenhub,https://api.openai.com,223,audio_speech;audio_transcription;chat;embedding;image_generation;moderation;realtime;responses;video_generation
-openaimax,OpenAIMax,true,model_vendor,unknown,unknown,,new_api,https://api.openaimax.com,0,chat
-opencode,OpenCode Zen,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://opencode.ai/zen/v1,85,chat
-opencode_go,OpenCode Go,true,model_vendor,unknown,unknown,,mastra_registry;rust_genai;tokenhub,https://opencode.ai/zen/go/v1,22,chat
-openrouter,OpenRouter,true,gateway_aggregator,L4,mixed,True,litellm_constants;litellm_prices;mastra_registry;new_api;rust_genai;tokenhub,https://openrouter.ai/api;https://openrouter.ai/api/v1,472,audio_speech;chat;image_generation
-orcarouter,OrcaRouter,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.orcarouter.ai/v1,81,chat
-ovhcloud,OVHcloud AI Endpoints,true,model_vendor,unknown,unknown,,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://oai.endpoints.kepler.ai.cloud.ovh.net/v1,30,chat
-pa_lm,PaLM,false,model_vendor,unknown,unknown,,new_api,,0,chat
-palm,Palm,false,model_vendor,unknown,unknown,,litellm_prices,,6,chat;completion
-parallel_ai,Parallel AI,false,model_vendor,L3,unknown,,litellm_prices,,2,search
-parasail,Parasail,true,model_vendor,L2,openai,True,litellm_constants,,0,
-perplexity,Perplexity,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;new_api;tokenhub,https://api.perplexity.ai,45,chat;embedding;responses;search
-perplexity_agent,Perplexity Agent,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.perplexity.ai/v1,18,chat
-petals,Petals,true,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-pinstripes,Pinstripes,false,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,6,chat
-pioneer,Pioneer,true,model_vendor,unknown,unknown,,mastra_registry,https://api.pioneer.ai/v1,76,chat
-poe,Poe,false,model_vendor,L2,openai,True,litellm_constants;mastra_registry;tokenhub,https://api.poe.com/v1,137,chat;image_generation
-poolside,Poolside,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://inference.poolside.ai/v1,4,chat
-ppinfra,PPInfra,false,model_vendor,unknown,unknown,,tokenhub,,101,chat
-predibase,Predibase,true,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-privatemode_ai,Privatemode AI,false,local_runtime,unknown,unknown,,mastra_registry;tokenhub,http://localhost:8080/v1,7,chat;embedding
-publicai,Publicai,false,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,9,chat
-qihang_ai,QiHang,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.qhaigc.net/v1,9,chat
-qihoo360,360,true,model_vendor,unknown,unknown,,new_api,https://api.360.cn,0,chat
-qiniu_ai,Qiniu,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.qnaigc.com/v1,91,chat;image_generation
-ragflow,Ragflow,false,model_vendor,L2,openai,True,litellm_constants,,0,
-recraft,Recraft,false,model_vendor,L3,unknown,,litellm_prices,,2,image_generation
-reducto,Reducto,false,model_vendor,L3,unknown,,litellm_prices,,2,other
-regolo_ai,Regolo AI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.regolo.ai/v1,13,chat;embedding;image_generation;rerank
-replicate,Replicate,true,model_vendor,unknown,unknown,,litellm_constants;litellm_prices;new_api,https://api.replicate.com,40,chat
-requesty,Requesty,true,gateway_aggregator,L4,mixed,,mastra_registry;tokenhub,https://router.requesty.ai/v1,38,chat
-routing_run,routing.run,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://ai.routing.sh/v1;https://api.routing.run/v1,41,chat
-runwayml,Runwayml,false,model_vendor,L3,unknown,,litellm_prices,,6,audio_speech;image_generation;video_generation
-sagemaker,Sagemaker,false,cloud_platform,unknown,unknown,,litellm_constants;litellm_prices,,6,chat;completion
-sagemaker_chat,Sagemaker Chat,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-sagemaker_nova,Sagemaker Nova,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-sakana,Sakana AI,true,model_vendor,unknown,unknown,,mastra_registry,https://api.sakana.ai/v1,3,chat
-sambanova,Sambanova,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,19,chat
-sap_ai_core,SAP AI Core,false,model_vendor,unknown,unknown,,tokenhub,,26,chat
-sarvam,Sarvam AI,true,model_vendor,unknown,unknown,,litellm_prices;mastra_registry;tokenhub,https://api.sarvam.ai/v1,3,chat
-scaleway,Scaleway,true,model_vendor,unknown,unknown,,litellm_prices;mastra_registry;tokenhub,https://api.scaleway.ai/v1,34,audio_transcription;chat;embedding
-searxng,Searxng,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-serper,Serper,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-siliconflow,SiliconFlow,true,model_vendor,unknown,unknown,,mastra_registry;new_api;tokenhub,https://api.siliconflow.cn;https://api.siliconflow.cn/v1;https://api.siliconflow.com/v1,174,audio_speech;chat;embedding;image_edit;other;rerank;video_generation
-snowflake,Snowflake,false,model_vendor,unknown,unknown,,litellm_prices,,37,chat;embedding
-snowflake_cortex,Snowflake Cortex,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://${snowflake_account}.snowflakecomputing.com/api/v2/cortex/v1,21,chat
-soniox,Soniox,false,model_vendor,L3,unknown,,litellm_prices,,2,audio_transcription
-sora,Sora,false,model_vendor,unknown,unknown,,new_api,https://api.openai.com,0,chat
-stability,Stability,false,model_vendor,L3,unknown,,litellm_prices,,23,image_edit;image_generation
-stackit,STACKIT,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1,10,chat
-stepfun,StepFun (Global),true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.stepfun.ai/step_plan/v1;https://api.stepfun.ai/v1;https://api.stepfun.com/v1,8,chat
-stepfun_ai_step_plan,StepFun Step Plan (Global),false,model_vendor,unknown,unknown,,mastra_registry,https://api.stepfun.ai/step_plan/v1,3,chat
-stepfun_step_plan,StepFun Step Plan (China),false,model_vendor,unknown,unknown,,mastra_registry,https://api.stepfun.com/step_plan/v1,4,chat
-sub2_api,Sub2API,false,model_vendor,unknown,unknown,,new_api,,0,chat
-subconscious,Subconscious,false,model_vendor,unknown,unknown,,mastra_registry,https://api.subconscious.dev/v1,2,chat
-submodel,submodel,true,model_vendor,unknown,unknown,,mastra_registry;new_api;tokenhub,https://llm.submodel.ai;https://llm.submodel.ai/v1,9,chat
-suno_api,SunoAPI,false,model_vendor,unknown,unknown,,new_api,,0,chat
-synthetic,Synthetic,false,model_vendor,L2,openai,True,litellm_constants;mastra_registry;tokenhub,https://api.synthetic.new/openai/v1,38,chat
-tavily,Tavily,false,model_vendor,L3,unknown,,litellm_prices,,2,search
-tencent,Tencent,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;new_api,https://hunyuan.tencentcloudapi.com,2,chat
-tencent_coding_plan,Tencent Coding Plan (China),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.lkeap.cloud.tencent.com/coding/v3,8,chat
-tencent_token_plan,Tencent Token Plan,false,model_vendor,unknown,unknown,,mastra_registry,https://api.lkeap.cloud.tencent.com/plan/v3,1,chat
-tencent_token_plan_enterprise_auto,腾讯云 Token Plan / Token Plan 企业版轻享套餐,false,model_vendor,unknown,unknown,,tokenhub,https://tokenhub.tencentmaas.com/plan/v3,1,chat
-tencent_token_plan_enterprise_pro,腾讯云 Token Plan / Token Plan 企业版专业套餐,false,model_vendor,unknown,unknown,,tokenhub,https://tokenhub.tencentmaas.com/plan/v3,16,chat
-tencent_token_plan_general_personal,腾讯云 Token Plan / 通用 Token Plan（个人版）,false,model_vendor,unknown,unknown,,tokenhub,https://api.lkeap.cloud.tencent.com/plan/v3,8,chat
-tencent_token_plan_hy_personal,腾讯云 Token Plan / Hy Token Plan（个人版）,false,model_vendor,unknown,unknown,,tokenhub,https://api.lkeap.cloud.tencent.com/plan/v3,2,chat
-tencent_tokenhub,Tencent TokenHub,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://tokenhub.tencentmaas.com/v1,2,chat
-tensormesh,Tensormesh,false,model_vendor,L2,openai,True,litellm_constants;litellm_prices,,10,chat
-text_completion_codestral,Text Completion Codestral,false,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,2,chat;completion
-text_completion_inception,Text Completion Inception,false,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,1,chat;completion
-the_grid_ai,The Grid AI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.thegrid.ai/v1,9,chat
-thinkingmachines,Thinking Machines,false,model_vendor,unknown,unknown,,mastra_registry,https://tinker.thinkingmachines.dev/services/tinker-prod/anthropic/api/v1,2,chat
-tinfoil,Tinfoil,false,model_vendor,unknown,unknown,,mastra_registry,https://inference.tinfoil.sh/v1,7,chat
-tinyfish,Tinyfish,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-togetherai,Together AI,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;rust_genai;tokenhub,,77,chat;embedding
-tokenflux,Tokenflux,false,model_vendor,unknown,unknown,,tokenhub,,164,chat
-triton,Triton,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-trustedrouter,TrustedRouter,false,model_vendor,unknown,unknown,,mastra_registry,https://api.trustedrouter.com/v1,7,chat
-umans_ai,Umans AI,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.code.umans.ai/v1,6,chat
-umans_ai_coding_plan,Umans AI Coding Plan,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.code.umans.ai/v1,7,chat
-unorouter,UnoRouter,false,model_vendor,unknown,unknown,,mastra_registry,https://api.unorouter.com/v1,23,chat
-upstage,Upstage,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.upstage.ai/v1/solar,3,chat
-v0,v0,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;tokenhub,,6,chat
-venice,Venice AI,false,model_vendor,unknown,unknown,,tokenhub,,75,chat
-vercel,Vercel AI Gateway,true,gateway_aggregator,L4,mixed,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,,426,chat;embedding;image_generation
-vertex,VertexAI,true,cloud_platform,L1,google_vertex,False,litellm_constants;litellm_prices;new_api;pydantic_ai;rust_genai,,60,audio_speech;audio_transcription;chat;embedding;image_generation;other;video_generation
-vertex_ai_ai21_models,Vertex AI Ai21 Models,false,model_vendor,unknown,unknown,,litellm_prices,,5,chat
-vertex_ai_anthropic_models,Vertex AI Anthropic Models,false,model_vendor,unknown,unknown,,litellm_prices,,37,chat
-vertex_ai_deepseek_models,Vertex AI Deepseek Models,false,model_vendor,unknown,unknown,,litellm_prices,,3,chat
-vertex_ai_language_models,Vertex AI Language Models,false,model_vendor,unknown,unknown,,litellm_prices,,42,chat;embedding;image_generation;realtime
-vertex_ai_llama_models,Vertex AI Llama Models,false,model_vendor,unknown,unknown,,litellm_prices,,11,chat
-vertex_ai_minimax_models,Vertex AI Minimax Models,false,model_vendor,unknown,unknown,,litellm_prices,,1,chat
-vertex_ai_mistral_models,Vertex AI Mistral Models,false,model_vendor,unknown,unknown,,litellm_prices,,19,chat
-vertex_ai_moonshot_models,Vertex AI Moonshot Models,false,model_vendor,unknown,unknown,,litellm_prices,,1,chat
-vertex_ai_openai_models,Vertex AI Openai Models,false,model_vendor,unknown,unknown,,litellm_prices,,3,chat
-vertex_ai_qwen_models,Vertex AI Qwen Models,false,model_vendor,unknown,unknown,,litellm_prices,,4,chat
-vertex_ai_text_models,Vertex AI Text Models,false,model_vendor,unknown,unknown,,litellm_prices,,2,completion
-vertex_ai_zai_models,Vertex AI ZAI Models,false,model_vendor,unknown,unknown,,litellm_prices,,2,chat
-vidu,Vidu,false,model_vendor,unknown,unknown,,new_api,https://api.vidu.cn,0,chat
-vivgrid,Vivgrid,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.vivgrid.com/v1,17,chat
-vllm,Vllm,true,local_runtime,L2,openai,True,litellm_constants,,0,chat
-volc_engine,VolcEngine,false,model_vendor,unknown,unknown,,new_api,https://ark.cn-beijing.volces.com,0,chat
-voyage,Voyage,true,model_vendor,L3,voyage,False,litellm_prices,,19,embedding;rerank
-vultr,Vultr,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.vultrinference.com/v1,12,chat
-wafer,Wafer,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://pass.wafer.ai/v1,10,chat
-wandb,Weights & Biases,false,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;tokenhub,https://api.inference.wandb.ai/v1,48,chat
-watsonx,Watsonx,false,model_vendor,unknown,unknown,,litellm_constants;litellm_prices,,29,audio_transcription;chat
-watsonx_text,Watsonx Text,false,model_vendor,unknown,unknown,,litellm_constants,,0,chat
-xai,xAI,true,model_vendor,L1,xai,True,litellm_constants;litellm_prices;mastra_registry;new_api;pydantic_ai;rust_genai;tokenhub,https://api.x.ai,87,chat
-xiaomi_token_plan_ams,Xiaomi Token Plan (Europe),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://token-plan-ams.xiaomimimo.com/v1,8,chat
-xiaomi_token_plan_cn,Xiaomi Token Plan (China),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://token-plan-cn.xiaomimimo.com/v1,8,chat
-xiaomi_token_plan_sgp,Xiaomi Token Plan (Singapore),false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://token-plan-sgp.xiaomimimo.com/v1,8,chat
-xiaomimimo,Xiaomi,true,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.xiaomimimo.com/v1,6,chat
-xinference,Xinference,true,local_runtime,L2,openai,True,litellm_constants;new_api,,0,chat
-xpersona,Xpersona,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://www.xpersona.co/v1,3,chat
-xunfei,Xunfei,false,model_vendor,unknown,unknown,,new_api,,0,chat
-you_com,YOU COM,false,model_vendor,L3,unknown,,litellm_prices,,1,search
-zai,Z.AI,true,model_vendor,L2,openai,True,litellm_constants;litellm_prices;mastra_registry;pydantic_ai;rust_genai;tokenhub,https://api.z.ai/api/paas/v4,33,chat
-zai_coding_plan,Z.AI Coding Plan,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.z.ai/api/coding/paas/v4,6,chat
-zeldoc,Zeldoc,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://api.zeldoc.ai/v1,1,chat
-zenifra,Zenifra,false,model_vendor,unknown,unknown,,mastra_registry,https://ai.zenifra.com/v1,1,chat
-zenmux,ZenMux,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://zenmux.ai/api/v1,164,chat;embedding;image_generation
-zhipu_v4,ZhipuV4,false,model_vendor,unknown,unknown,,new_api,https://open.bigmodel.cn,0,chat
-zhipuai_coding_plan,Zhipu AI Coding Plan,false,model_vendor,unknown,unknown,,mastra_registry;tokenhub,https://open.bigmodel.cn/api/coding/paas/v4,7,chat
+﻿id,display_name,implemented_in_aimux,provider_kind,tier,protocol,openai_compatible,sources,base_urls,model_count,capabilities,audit_projects,audit_count,integration_candidate
+abacus,Abacus,False,model_vendor,unknown,unknown,,,https://routellm.abacus.ai/v1,100,chat,mastra;opencode,2,
+abliteration_ai,abliteration.ai,False,model_vendor,unknown,unknown,,,https://api.abliteration.ai/v1,2,chat,mastra;opencode,2,
+advanced_custom,Advanced Custom,False,model_vendor,unknown,unknown,,,,0,chat,new-api,1,
+ai21,Ai21,True,model_vendor,L2,openai,True,,,12,chat;completion,ferro-ai-gateway;langchain;litellm;llama_index;portkey-gateway,5,
+ai302,302.AI,True,model_vendor,unknown,unknown,,,https://api.302.ai/v1,97,chat;image_generation,mastra;opencode;portkey-gateway,3,
+ai_router,AI-ROUTER,False,model_vendor,unknown,unknown,,,https://api.ai-router.dev/v1,5,chat,mastra;opencode,2,
+aiand,ai&,False,model_vendor,unknown,unknown,,,https://api.aiand.com/v1,10,chat,mastra;opencode,2,
+aigc2d,AIGC2D,True,model_vendor,unknown,unknown,,,https://api.aigc2d.com,0,chat,one-api,1,
+aihubmix,AIHubMix,True,gateway_aggregator,L2,openai,True,,,787,audio_speech;chat;embedding;image_generation;rerank,awaken;axonhub;cc-switch;cline;mastra;opencode;rust-genai,7,
+ails,AILS,True,model_vendor,unknown,unknown,,,https://api.caipacity.com,0,chat,one-api,1,
+aiml,Aiml,True,model_vendor,L3,unknown,True,,,13,image_generation,litellm,1,
+aiproxy,AIProxy,False,model_vendor,unknown,unknown,,,https://api.aiproxy.io,0,chat,one-api,1,
+aiproxy_library,AIProxyLibrary,False,model_vendor,unknown,unknown,,,https://api.aiproxy.io,0,chat,one-api,1,
+aki_io,AKI.IO,False,model_vendor,unknown,unknown,,,https://aki.io/v1,6,chat,mastra;opencode,2,
+ali,Ali,False,model_vendor,unknown,unknown,,,https://dashscope.aliyuncs.com,0,chat,aiproxy,1,
+alibaba,Alibaba,True,model_vendor,L2,openai,True,,https://dashscope-intl.aliyuncs.com/compatible-mode/v1,114,chat;image_generation,agent-of-empires;ai;aisuite;APIPark;awaken;axonhub;ccs-nicremo;cc-switch;chats;cline;eino;ferro-ai-gateway;higress;langchain4j;langchain-rust;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencodex;OpenHands;otari;portkey-gateway;Roo-Code;rust-genai;simple-one-api;swiftide,46,
+alibaba_cn,Alibaba (China),False,model_vendor,unknown,unknown,,,https://dashscope.aliyuncs.com/compatible-mode/v1,112,chat,agent-of-empires;ai;aisuite;APIPark;awaken;axonhub;ccs-nicremo;cc-switch;chats;cline;eino;ferro-ai-gateway;higress;langchain4j;langchain-rust;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencodex;OpenHands;otari;portkey-gateway;Roo-Code;rust-genai;simple-one-api;swiftide,46,
+alibaba_coding_plan,Alibaba Coding Plan,False,model_vendor,unknown,unknown,,,https://coding-intl.dashscope.aliyuncs.com/v1,12,chat,agent-of-empires;ai;aisuite;APIPark;awaken;axonhub;ccs-nicremo;cc-switch;chats;cline;eino;ferro-ai-gateway;higress;langchain4j;langchain-rust;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencodex;OpenHands;otari;portkey-gateway;Roo-Code;rust-genai;simple-one-api;swiftide,46,
+alibaba_coding_plan_cn,Alibaba Coding Plan (China),False,model_vendor,unknown,unknown,,,https://coding.dashscope.aliyuncs.com/v1,12,chat,agent-of-empires;ai;aisuite;APIPark;awaken;axonhub;ccs-nicremo;cc-switch;chats;cline;eino;ferro-ai-gateway;higress;langchain4j;langchain-rust;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencodex;OpenHands;otari;portkey-gateway;Roo-Code;rust-genai;simple-one-api;swiftide,46,
+alibaba_token_plan,Alibaba Token Plan,False,model_vendor,unknown,unknown,,,https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1,22,chat;image_generation,agent-of-empires;ai;aisuite;APIPark;awaken;axonhub;ccs-nicremo;cc-switch;chats;cline;eino;ferro-ai-gateway;higress;langchain4j;langchain-rust;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencodex;OpenHands;otari;portkey-gateway;Roo-Code;rust-genai;simple-one-api;swiftide,46,
+alibaba_token_plan_cn,Alibaba Token Plan (China),False,model_vendor,unknown,unknown,,,https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1,22,chat;image_generation,agent-of-empires;ai;aisuite;APIPark;awaken;axonhub;ccs-nicremo;cc-switch;chats;cline;eino;ferro-ai-gateway;higress;langchain4j;langchain-rust;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencodex;OpenHands;otari;portkey-gateway;Roo-Code;rust-genai;simple-one-api;swiftide,46,
+ambient,Ambient,False,model_vendor,unknown,unknown,,,https://api.ambient.xyz/v1,9,chat,mastra;opencode,2,
+anthropic,Anthropic,True,model_vendor,L1,anthropic,False,,https://api.anthropic.com,33,chat,agent-of-empires;agentsdk;ai;ai.rs;aider;aiproxy;aisuite;APIPark;async-anthropic;autogen;AutoGPT;awaken;axonhub;bifrost;chats;claude-code-router;cline;coai;continue;crewAI;dspy;edgequake-llm;eino;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;instructor-go;kalosm;langchain;langchain4j;LangChain-csharp;langchaingo;langchainjs;langchain-rust;litellm;litellm-rust;llama_index;LlamaIndexTS;llm-connector;llmgateway;llmrust;manifest;mastra;mirascope;multi-llm;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;otari;outlines;pi;pinchbench;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust_ai_sdk;rust-genai;semantic-kernel;simple-one-api;smg;spring-ai;swiftide;tensorzero;textgrad;traceloop-hub;unia;uni-api,85,
+anthropic_text,Anthropic Text,False,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+anyapi,AnyAPI,False,model_vendor,unknown,unknown,,,https://api.anyapi.ai/v1,30,chat,mastra;opencode,2,
+anyscale,Anyscale,True,deployment_platform,L2,openai,True,,,12,chat,dspy;instructor;litellm;llama_index;portkey-gateway,5,
+apertis,Apertis,False,model_vendor,L2,openai,True,,,0,,litellm;llama_index,2,
+api2gpt,API2GPT,True,model_vendor,unknown,unknown,,,https://api.api2gpt.com,0,chat,one-api,1,
+apiserpent,Apiserpent,True,model_vendor,L3,unknown,,,,2,search,litellm,1,
+assemblyai,Assemblyai,True,model_vendor,L3,unknown,,,,2,audio_transcription,,,
+atlascloud,Atlascloud,True,model_vendor,L2,openai,True,,,0,chat,awaken;axonhub;llmgateway;rust-genai,4,
+atomic_chat,Atomic Chat,False,local_runtime,unknown,unknown,,,http://127.0.0.1:1337/v1,5,chat,mastra;opencode,2,
+auriko,Auriko,False,model_vendor,unknown,unknown,,,https://api.auriko.ai/v1,15,chat,mastra;opencode,2,
+aws,AWS,False,model_vendor,unknown,unknown,,,,0,chat,agentsdk;ai;aider;aiproxy;aisuite;APIPark;awaken;bifrost;cc-switch;claude-code;cline;codex;continue;crewAI;edgequake-llm;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;langchain;langchain4j;langchaingo;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencode-ai;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;semantic-kernel;smg;spring-ai;swiftide;tensorzero;textgrad;traceloop-hub;uni-api,62,
+aws_polly,AWS Polly,False,model_vendor,L3,unknown,,,,4,audio_speech,litellm,1,
+azure,Azure,True,cloud_platform,L1,azure_openai,False,,,323,audio_speech;audio_transcription;chat;embedding;image_generation;realtime;responses;video_generation,ai;aider;aiproxy;aisuite;APIPark;autogen;bifrost;cc-switch;coai;codex;continue;crewAI;dotnet-extensions;dspy;edgequake-llm;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;guidance;haystack;higress;instructor;langchain;langchain4j;LangChain-csharp;langchaingo;langchainjs;langchain-rust;litellm;llama_index;LlamaIndexTS;llm-connector;llmgateway;mastra;new-api;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;plano;portkey-gateway;rig;rllm;semantic-kernel;semantic-kernel-java;simple-one-api;smg;swiftide;tensorzero;textgrad;traceloop-hub;uni-api,55,
+azure_ai,Azure AI,True,cloud_platform,L2,openai,True,,,97,chat;embedding;image_generation;other;rerank;responses,langchain;litellm;portkey-gateway,3,
+azure_cognitive_services,Azure Cognitive Services,False,model_vendor,unknown,unknown,,,,94,chat;embedding,opencode,1,
+azure_text,Azure Text,False,model_vendor,unknown,unknown,,,,3,chat;completion,,,
+baidu,Baidu,True,model_vendor,L2,openai,True,,https://aip.baidubce.com,0,chat,aiproxy;awaken;eino;higress;langchain4j;langchaingo;langchain-swift;llama_index;one-api;one-hub;opencodex;rust-genai;simple-one-api,16,
+baidu_v2,BaiduV2,False,model_vendor,unknown,unknown,,,https://qianfan.baidubce.com,0,chat,new-api,1,
+bailing,Bailing,False,model_vendor,unknown,unknown,,,https://api.tbox.cn/api/llm/v1/chat/completions,2,chat,cc-switch;mastra;opencode,3,
+baseten,Baseten,True,deployment_platform,L2,openai,True,,https://inference.baseten.co/v1,27,chat,ai;cline;langchain;litellm;llama_index;mastra;opencode;Roo-Code,8,
+bedrock,Amazon Bedrock,True,cloud_platform,L1,aws_bedrock,False,,,423,chat;embedding;image_edit;image_generation;rerank,agentsdk;ai;aider;aiproxy;aisuite;APIPark;awaken;bifrost;cc-switch;claude-code;cline;codex;continue;crewAI;edgequake-llm;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;langchain;langchain4j;langchaingo;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencode-ai;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;semantic-kernel;smg;spring-ai;swiftide;tensorzero;textgrad;traceloop-hub;uni-api,62,
+bedrock_mantle,Bedrock Mantle,False,model_vendor,unknown,unknown,,,,24,chat;responses,agentsdk;ai;aider;aiproxy;aisuite;APIPark;awaken;bifrost;cc-switch;claude-code;cline;codex;continue;crewAI;edgequake-llm;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;langchain;langchain4j;langchaingo;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;manifest;mastra;new-api;one-hub;opencode;opencode-ai;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;semantic-kernel;smg;spring-ai;swiftide;tensorzero;textgrad;traceloop-hub;uni-api,62,
+berget,Berget.AI,False,model_vendor,unknown,unknown,,,https://api.berget.ai/v1,8,chat,mastra;opencode,2,
+bigmodel,Zhipu AI,True,model_vendor,L2,openai,True,,https://open.bigmodel.cn;https://open.bigmodel.cn/api/paas/v4,13,chat,aiproxy;APIPark;awaken;axonhub;chats;higress;langchain4j;langchain-swift;llama_index;mastra;one-api;one-hub;opencode;OpenHands;plano;portkey-gateway;rust-genai;simple-one-api,22,
+black_forest_labs,Black Forest Labs,True,model_vendor,L3,unknown,,,,8,image_edit;image_generation,litellm,1,
+blueclaw,Blue Claw,False,model_vendor,unknown,unknown,,,https://openai.blueclaw.network/v1,2,chat,mastra;opencode,2,
+burncloud,burncloud,False,model_vendor,unknown,unknown,,,,34,audio_speech;chat;image_generation;video_generation,axonhub,1,
+bytedance,Bytedance,True,model_vendor,L2,openai,True,,,12,chat;embedding,llmgateway,1,
+bytez,Bytez,True,model_vendor,unknown,unknown,,,,0,chat,litellm;portkey-gateway,2,
+cerebras,Cerebras,True,deployment_platform,L2,openai,True,,,12,chat,agentsdk;ai;aisuite;axonhub;bifrost;cline;continue;crewAI;ferro-ai-gateway;instructor;langchain;langchainjs;litellm;llama_index;llmgateway;manifest;mastra;oh-my-opencode-slim;opencode;opencodex;otari;pi;portkey-gateway;pydantic-ai;Roo-Code,25,
+chat_gpt_subscription_codex,ChatGPT Subscription (Codex),False,model_vendor,unknown,unknown,,,https://chatgpt.com,0,chat,,,
+chatgpt,Chatgpt,True,subscription_proxy,L2,openai,True,,,10,chat;responses,litellm;plano;rig,3,
+cherryin,cherryin,False,model_vendor,unknown,unknown,,,,125,chat;completion;embedding;image_generation;rerank,,,
+chutes,Chutes,False,model_vendor,L2,openai,True,,https://llm.chutes.ai/v1,43,chat,litellm;mastra;opencode;Roo-Code,4,
+clarifai,Clarifai,True,model_vendor,L2,openai,True,,https://api.clarifai.com/v2/ext/openai/v1,12,chat,litellm;llama_index;mastra;opencode,4,
+claudinio,Claudinio,False,model_vendor,unknown,unknown,,,https://api.claudin.io/v1,2,chat,mastra;opencode,2,
+cline_pass,ClinePass,True,model_vendor,unknown,unknown,,,https://api.cline.bot/api/v1,11,chat,cline;manifest;mastra;opencode,4,
+cloudferro_sherlock,CloudFerro Sherlock,False,model_vendor,unknown,unknown,,,https://api-sherlock.cloudferro.com/openai/v1,5,chat,mastra;opencode,2,
+cloudflare,Cloudflare,False,cloud_platform,unknown,unknown,,,https://api.cloudflare.com,30,chat,aiproxy;continue;ferro-ai-gateway;higress;langchain;langchain4j;langchaingo;langchainjs;litellm;mastra;one-api;opencode;opencodex;pi;portkey-gateway;simple-one-api;uni-api,17,
+cloudflare_ai_gateway,Cloudflare AI Gateway,False,model_vendor,unknown,unknown,,,,77,chat;embedding;rerank,agentsdk;llama_index;mastra;new-api;opencode;opencodex;pi,7,
+cloudflare_workers_ai,Cloudflare Workers AI,False,model_vendor,unknown,unknown,,,https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1,22,chat,aiproxy;continue;ferro-ai-gateway;higress;langchain;langchain4j;langchaingo;langchainjs;litellm;mastra;one-api;opencode;opencodex;pi;portkey-gateway;simple-one-api;uni-api,17,
+codestral,Codestral,True,model_vendor,L2,openai,True,,,2,chat,litellm,1,
+cohere,Cohere,True,model_vendor,L1,cohere,False,,https://api.cohere.ai,29,chat;completion;embedding;rerank,agentsdk;ai;aider;aiproxy;aisuite;APIPark;awaken;bifrost;continue;edgequake-llm;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;haystack;higress;instructor;instructor-go;langchain;langchain4j;langchaingo;langchainjs;litellm;llama_index;mastra;new-api;one-api;one-hub;opencode;otari;portkey-gateway;pydantic-ai;rig;rllm;rust-genai;textgrad;uni-api,36,
+cohere_chat,Cohere Chat,False,model_vendor,unknown,unknown,,,,7,chat,litellm,1,
+cometapi,Cometapi,True,model_vendor,L2,openai,True,,,0,chat,continue;haystack;litellm;llama_index;portkey-gateway,5,
+copilot,GitHub Copilot,True,subscription_proxy,L2,openai,True,,https://api.githubcopilot.com,56,chat;completion;embedding;responses,agent-of-empires;agentsdk;ai.rs;aider;awaken;axonhub;litellm;manifest;oh-my-opencode-slim;opencode;opencode-ai;opencodex;pi;rig;rust-genai,15,
+cortecs,Cortecs,False,model_vendor,unknown,unknown,,,https://api.cortecs.ai/v1,58,chat,mastra;opencode,2,
+coze,Coze,True,gateway_aggregator,unknown,unknown,,,https://api.coze.cn,0,chat,aiproxy;coai;higress;new-api;one-api;one-hub,6,
+crof,CrofAI,False,model_vendor,unknown,unknown,,,https://crof.ai/v1,26,chat,mastra;opencode,2,
+crossmodel,CrossModel,False,model_vendor,unknown,unknown,,,https://api.crossmodel.ai/v1,46,chat,mastra;opencode,2,
+crusoe,Crusoe,False,model_vendor,unknown,unknown,,,,7,chat,aisuite;langchain,2,
+custom_provider,custom provider,False,model_vendor,unknown,unknown,,,,30,chat,awaken;claude-code-router;litellm;litellm-rust;llmgateway;manifest;one-api;one-hub;rust-genai;smg,10,
+daoxe,DaoXE,False,model_vendor,unknown,unknown,,,https://daoxe.com/v1,9,chat,mastra;opencode,2,
+darkbloom,Darkbloom,False,model_vendor,L2,openai,True,,,2,chat,litellm,1,
+databricks,Databricks,True,cloud_platform,unknown,unknown,,,https://${databricks_host}/ai-gateway/mlflow/v1,58,chat;embedding,bifrost;dspy;ferro-ai-gateway;instructor;langchain;litellm;llama_index;mastra;one-hub;opencode;otari;uni-api,12,
+dataforseo,Dataforseo,False,model_vendor,L3,unknown,,,,1,search,litellm,1,
+datarobot,Datarobot,True,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+deepgram,Deepgram,True,modal_service,L3,unknown,,,,36,audio_transcription,aisuite;litellm,2,
+deepinfra,Deep Infra,True,deployment_platform,L2,openai,True,,,108,chat,agentsdk;ai;axonhub;continue;envoy-ai-gateway;ferro-ai-gateway;litellm;llama_index;LlamaIndexTS;llmgateway;mastra;opencode;otari;portkey-gateway;Roo-Code,15,
+deepseek,DeepSeek,True,model_vendor,L2,openai,True,,https://api.deepseek.com,12,chat,ai;aider;aiproxy;aisuite;APIPark;awaken;axonhub;bifrost;ccs-nicremo;cc-switch;ccswitch-deepseek;chats;claude-code-router;cline;coai;continue;crewAI;eino;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;helicone-ai-gateway;higress;instructor;langchain;langchainjs;langchain-rust;litellm;llama_index;LlamaIndexTS;llm-connector;llmgateway;llmrust;manifest;mastra;new-api;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;simple-one-api;spring-ai;tensorzero;unia,54,
+dify,Dify,False,gateway_aggregator,unknown,unknown,,,https://api.dify.ai,0,chat,cline;coai;higress;new-api;simple-one-api,5,
+digitalocean,DigitalOcean,False,model_vendor,unknown,unknown,,,https://inference.do-ai.run/v1,82,chat;embedding;rerank,mastra;opencode;plano,3,
+dinference,DInference,False,model_vendor,unknown,unknown,,,https://api.dinference.com/v1,6,chat,mastra;opencode,2,
+docker_model_runner,Docker Model Runner,True,local_runtime,L2,openai,True,,,0,chat,litellm,1,
+doubao,Doubao,False,model_vendor,unknown,unknown,,,,33,chat;embedding;image_generation;video_generation,aiproxy;axonhub;chats;cline;eino;higress;litellm;new-api;one-api;Roo-Code;simple-one-api,13,
+doubao_video,DoubaoVideo,False,model_vendor,unknown,unknown,,,https://ark.cn-beijing.volces.com,0,chat,,,
+drun,D.Run (China),False,model_vendor,unknown,unknown,,,https://chat.d.run/v1,3,chat,mastra;opencode,2,
+duckduckgo,Duckduckgo,False,model_vendor,L3,unknown,,,,1,search,litellm,1,
+ebcloud,EBCloud,False,model_vendor,unknown,unknown,,,https://maas-api.ebcloud.com/v1,4,chat,mastra;opencode,2,
+elevenlabs,Elevenlabs,True,modal_service,L3,unknown,,,,4,audio_speech;audio_transcription,bifrost;graniet-llm;litellm;llmgateway;rllm;spring-ai,6,
+empiriolabs,EmpirioLabs AI,False,model_vendor,unknown,unknown,,,https://api.empiriolabs.ai/v1,36,chat,langchain;mastra;opencode,3,
+empower,Empower,False,model_vendor,L2,openai,True,,,0,chat,litellm,1,
+evroc,evroc,False,model_vendor,unknown,unknown,,,https://models.think.evroc.com/v1,21,chat;embedding,mastra;opencode,2,
+exa_ai,EXA AI,False,model_vendor,L3,unknown,,,,1,search,litellm,1,
+fal,FAL,True,model_vendor,L3,unknown,,,,14,image_generation,edgequake-llm,1,
+fastgpt,FastGPT,True,model_vendor,unknown,unknown,,,https://fastgpt.run/api/openapi,0,chat,one-api,1,
+fastrouter,FastRouter,True,model_vendor,unknown,unknown,,,https://go.fastrouter.ai/api/v1,47,chat;image_generation,mastra;opencode,2,
+featherless_ai,Featherless AI,True,model_vendor,L2,openai,True,,,2,chat,langchain;litellm;portkey-gateway,3,
+firecrawl,Firecrawl,False,model_vendor,L3,unknown,,,,1,search,litellm,1,
+firepass,Fireworks (Firepass),False,model_vendor,unknown,unknown,,,https://api.fireworks.ai/inference/v1,1,chat,opencodex,1,
+fireworks,Fireworks AI,True,deployment_platform,L2,openai,True,,https://api.fireworks.ai/inference/v1,318,audio_transcription;chat;embedding;image_generation;rerank,ai;aisuite;APIPark;awaken;axonhub;bifrost;continue;ferro-ai-gateway;higress;instructor;langchain;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;manifest;mastra;oh-my-opencode-slim;opencode;opencodex;otari;pi;portkey-gateway;pydantic-ai;Roo-Code;rust-genai;tensorzero;unia,29,
+freemodel,FreeModel,False,model_vendor,unknown,unknown,,,https://cc.freemodel.dev/v1,10,chat,mastra;opencode,2,
+friendliai,Friendli,True,model_vendor,L2,openai,True,,https://api.friendli.ai/serverless/v1,11,chat,litellm,1,
+frogbot,FrogBot,False,model_vendor,unknown,unknown,,,https://app.frogbot.ai/api/v1,26,chat,mastra;opencode,2,
+galadriel,Galadriel,True,model_vendor,L2,openai,True,,,0,chat,litellm,1,
+gdc,GDC,True,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+gigachat,Gigachat,True,model_vendor,unknown,unknown,,,,6,chat;embedding,litellm;llama_index,2,
+github,GitHub Models,True,model_vendor,L2,openai,True,,https://models.github.ai/inference,55,chat,axonhub;chats;higress;langchain4j;litellm;mastra;one-hub;opencode;plano;portkey-gateway,10,
+gitlab,GitLab Duo,False,cloud_platform,unknown,unknown,,,,18,chat,agentsdk;opencode,2,
+gmi,GMI,False,model_vendor,unknown,unknown,,,,17,chat,mastra;opencode,2,
+gmicloud,GMI Cloud,False,model_vendor,unknown,unknown,,,https://api.gmi-serving.com/v1,13,chat,mastra;opencode,2,
+google,Google,True,model_vendor,L1,google_gemini,False,,https://generativelanguage.googleapis.com,114,audio_speech;chat;embedding;image_generation;realtime;video_generation,agent-of-empires;agentsdk;ai;aider;aiproxy;aisuite;APIPark;async-openai;autogen;awaken;axonhub;bifrost;CCSwitcher;chats;claude-code-router;claude-worker-proxy;cline;continue;crewAI;dspy;edgequake-llm;eino;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;instructor-go;langchain;langchain4j;LangChain-csharp;langchainjs;langchain-swift;litellm;litellm-rust;llama_index;LlamaIndexTS;llm-connector;llmrust;manifest;mastra;mirascope;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;otari;outlines;pi;plano;portkey-gateway;rig;rllm;Roo-Code;rust_ai_sdk;rust-genai;semantic-kernel;simple-one-api;smg;spring-ai;swiftide;textgrad;unia;uni-api,73,
+google_pse,Google PSE,False,model_vendor,L3,unknown,,,,1,search,litellm,1,
+google_vertex,Vertex,False,model_vendor,unknown,unknown,,,,35,chat;embedding,agentsdk;ai;aider;aiproxy;APIPark;awaken;bifrost;cc-switch;cline;continue;dspy;edgequake-llm;ferro-ai-gateway;haystack;higress;instructor;langchain;langchaingo;langchainjs;litellm;llama_index;llmgateway;mastra;new-api;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;otari;pi;portkey-gateway;rig;Roo-Code;rust-genai;semantic-kernel;simple-one-api;traceloop-hub,39,
+google_vertex_anthropic,Vertex (Anthropic),False,model_vendor,unknown,unknown,,,,11,chat,agent-of-empires;agentsdk;ai;ai.rs;aider;aiproxy;aisuite;APIPark;async-anthropic;autogen;AutoGPT;awaken;axonhub;bifrost;chats;claude-code-router;cline;coai;continue;crewAI;dspy;edgequake-llm;eino;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;instructor-go;kalosm;langchain;langchain4j;LangChain-csharp;langchaingo;langchainjs;langchain-rust;litellm;litellm-rust;llama_index;LlamaIndexTS;llm-connector;llmgateway;llmrust;manifest;mastra;mirascope;multi-llm;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;otari;outlines;pi;pinchbench;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust_ai_sdk;rust-genai;semantic-kernel;simple-one-api;smg;spring-ai;swiftide;tensorzero;textgrad;traceloop-hub;unia;uni-api,85,
+gradient_ai,Gradient AI,True,model_vendor,unknown,unknown,,,,13,chat,litellm,1,
+groq,Groq,True,model_vendor,L2,openai,True,,https://api.groq.com/openai/v1,33,audio_speech;audio_transcription;chat,agentsdk;ai;aider;aiproxy;aisuite;APIPark;AutoGPT;awaken;bifrost;cline;coai;continue;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;helicone-ai-gateway;higress;instructor;langchain;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;manifest;mastra;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;simple-one-api;swiftide;tensorzero;textgrad;unia,46,
+helicone,Helicone,True,gateway_aggregator,L4,mixed,True,,https://ai-gateway.helicone.ai/v1,90,chat,litellm;llama_index;mastra;opencode,4,
+heroku,Heroku,True,model_vendor,unknown,unknown,,,,27,chat,litellm;llama_index;pydantic-ai,3,
+hetzner,Hetzner,False,model_vendor,unknown,unknown,,,https://inference.hetzner.com/api/v1,1,chat,mastra;opencode,2,
+hosted_vllm,Hosted Vllm,True,deployment_platform,L2,openai,True,,,0,chat,litellm,1,
+hpc_ai,HPC-AI,False,model_vendor,unknown,unknown,,,https://api.hpc-ai.com/inference/v1,9,chat,mastra;opencode,2,
+huggingface,Hugging Face,True,deployment_platform,unknown,unknown,,,https://router.huggingface.co/v1,57,chat;embedding,ai;aisuite;bifrost;cline;continue;edgequake-llm;ferro-ai-gateway;graniet-llm;haystack;langchain;langchain4j;LangChain-csharp;langchaingo;langchain-swift;litellm;llama_index;LlamaIndexTS;manifest;mastra;opencode;opencodex;otari;pi;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;semantic-kernel;semantic-kernel-java,32,
+hyper,Charm Hyper,False,model_vendor,unknown,unknown,,,https://hyper.charm.land/v1,20,chat,mastra;opencode,2,
+hyperbolic,Hyperbolic,True,deployment_platform,L2,openai,True,,,16,chat,helicone-ai-gateway;litellm;portkey-gateway;rig;tensorzero;unia,6,
+iflowcn,iFlow,False,model_vendor,unknown,unknown,,,https://apis.iflow.cn/v1,14,chat,mastra;opencode,2,
+inception,Inception,True,model_vendor,L2,openai,True,,https://api.inceptionlabs.ai/v1,3,chat,aisuite;continue;litellm;mastra;opencode;otari,6,
+inceptron,Inceptron,False,model_vendor,unknown,unknown,,,https://api.inceptron.io/v1,7,chat,mastra;opencode,2,
+inference_net,Inference,True,model_vendor,unknown,unknown,,,https://inference.net/v1,9,chat;embedding,llmgateway;portkey-gateway,2,
+inferx,InferX,False,model_vendor,unknown,unknown,,,https://model.inferx.net/endpoints/v1,6,chat,mastra;opencode,2,
+io_net,IO.NET,False,model_vendor,unknown,unknown,,,https://api.intelligence.io.solutions/api/v1,17,chat,mastra;opencode,2,
+jiekou,Jiekou.AI,False,model_vendor,unknown,unknown,,,https://api.jiekou.ai/openai,153,chat,mastra;opencode,2,
+jimeng,Jimeng,False,model_vendor,unknown,unknown,,,https://visual.volcengineapi.com,0,chat,new-api,1,
+jina,Jina,False,embedding,unknown,unknown,,,https://api.jina.ai,0,chat,aiproxy;axonhub;edgequake-llm;haystack;new-api;one-hub;portkey-gateway,7,
+jina_ai,Jina AI,False,model_vendor,L3,unknown,,,,1,rerank,litellm,1,
+kenari,Kenari,False,model_vendor,unknown,unknown,,,https://kenari.id/v1,38,chat,mastra;opencode,2,
+kilo,Kilo Gateway,True,model_vendor,unknown,unknown,,,https://api.kilo.ai/api/gateway,346,chat;image_generation,cline;manifest;mastra;opencode;opencodex;pinchbench,6,
+kimi,Kimi,False,model_vendor,unknown,unknown,,,,0,chat,agent-of-empires;ai;aiproxy;APIPark;awaken;axonhub;chats;cline;coai;continue;ferro-ai-gateway;higress;langchain;litellm;llm-connector;llmgateway;llmrust;manifest;mastra;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;Roo-Code;rust-genai;unia,43,
+kimi_for_coding,Kimi For Coding,False,model_vendor,unknown,unknown,,,https://api.kimi.com/coding/v1,4,chat,agent-of-empires;ai;aiproxy;APIPark;awaken;axonhub;chats;cline;coai;continue;ferro-ai-gateway;higress;langchain;litellm;llm-connector;llmgateway;llmrust;manifest;mastra;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;Roo-Code;rust-genai;unia,43,
+kling,Kling,False,model_vendor,unknown,unknown,,,https://api.klingai.com,0,chat,new-api;one-hub,2,
+kuae_cloud_coding_plan,KUAE Cloud Coding Plan,False,model_vendor,unknown,unknown,,,https://coding-plan-endpoint.kuaecloud.net/v1,1,chat,mastra;opencode,2,
+lambda_ai,Lambda AI,True,model_vendor,L2,openai,True,,,20,chat,litellm,1,
+lemonade,Lemonade,False,model_vendor,unknown,unknown,,,,5,chat,continue;litellm,2,
+libertai,Libertai,False,model_vendor,L2,openai,True,,,12,chat;embedding,litellm,1,
+lilac,Lilac,False,model_vendor,unknown,unknown,,,https://api.getlilac.com/v1,6,chat,mastra;opencode,2,
+lingyiwanwu,LingYiWanWu,True,model_vendor,unknown,unknown,,,https://api.lingyiwanwu.com,0,chat,aiproxy;new-api;one-api,3,
+linkup,Linkup,False,model_vendor,L3,unknown,,,,2,search,litellm,1,
+litellm_proxy,Litellm Proxy,True,gateway_aggregator,L4,mixed,True,,,0,chat,cline;haystack;instructor;langchain;litellm;llama_index;opencodex;OpenHands;pydantic-ai;Roo-Code;textgrad,11,
+llama,Llama,False,model_vendor,unknown,unknown,,,https://api.llama.com/compat/v1,7,chat,mastra;opencode,2,
+llamafile,Llamafile,True,local_runtime,L2,openai,True,,,0,chat,continue;langchaingo;litellm;llama_index;otari;rig,6,
+llamagate,Llamagate,False,model_vendor,unknown,unknown,,,,16,chat;embedding,,,
+llmgateway,LLM Gateway,False,gateway_aggregator,unknown,unknown,,,https://api.llmgateway.io/v1,224,chat,llmgateway;mastra;opencode,3,
+llmtr,LLMTR,False,model_vendor,unknown,unknown,,,https://llmtr.com/v1,6,chat,mastra;opencode,2,
+lmstudio,LMStudio,True,local_runtime,L2,openai,True,,http://127.0.0.1:1234/v1,3,chat,aider;aisuite;APIPark;cline;codex;continue;edgequake-llm;langchain-swift;litellm;llama_index;manifest;mastra;multi-llm;opencode;opencodex;otari;outlines;Roo-Code,18,
+longcat,LongCat,True,model_vendor,unknown,unknown,,,https://api.longcat.chat/openai,1,chat,axonhub;cc-switch;llm-connector;mastra;opencode,5,
+lucidquery,LucidQuery,False,model_vendor,unknown,unknown,,,https://api.lucidquery.com/v1;https://lucidquery.com/api/v1,4,chat,mastra;opencode,2,
+lynkr,Lynkr,False,local_runtime,unknown,unknown,,,http://127.0.0.1:8081/v1,1,chat,mastra;opencode,2,
+maritalk,Maritalk,False,model_vendor,unknown,unknown,,,,0,chat,litellm;llama_index,2,
+meganova,Meganova,False,model_vendor,unknown,unknown,,,https://api.meganova.ai/v1,19,chat,mastra;opencode,2,
+merge_gateway,Merge Gateway,False,model_vendor,unknown,unknown,,,,83,chat,opencode,1,
+meta,Meta,False,model_vendor,L2,openai,True,,https://api.meta.ai/v1,2,chat,haystack;langchain;litellm;llama_index;llmgateway;mastra;opencode;plano,9,
+meta_llama,Meta Llama,True,model_vendor,L2,openai,True,,,4,chat,haystack;langchain;litellm;llama_index;llmgateway;mastra;opencode;plano,9,
+midjourney,Midjourney,False,modal_service,unknown,unknown,,,https://oa.api2d.net,0,chat,coai;one-hub,2,
+midjourney_plus,MidjourneyPlus,False,model_vendor,unknown,unknown,,,https://api.openai-sb.com,0,chat,,,
+mimo,Mimo,False,model_vendor,unknown,unknown,,,,0,chat,awaken;continue;rust-genai,3,
+minimax,MiniMax (minimax.io),True,model_vendor,unknown,unknown,,,https://api.minimax.chat;https://api.minimax.io/anthropic/v1,17,audio_speech;chat,ai;aiproxy;APIPark;awaken;axonhub;ccs-nicremo;chats;cline;continue;higress;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;rig;Roo-Code;rust-genai;simple-one-api,37,
+minimax_cn,MiniMax (minimaxi.com),False,model_vendor,unknown,unknown,,,https://api.minimaxi.com/anthropic/v1,7,chat,ai;aiproxy;APIPark;awaken;axonhub;ccs-nicremo;chats;cline;continue;higress;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;rig;Roo-Code;rust-genai;simple-one-api,37,
+minimax_cn_coding_plan,MiniMax Token Plan (minimaxi.com),False,model_vendor,unknown,unknown,,,https://api.minimaxi.com/anthropic/v1,7,chat,ai;aiproxy;APIPark;awaken;axonhub;ccs-nicremo;chats;cline;continue;higress;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;rig;Roo-Code;rust-genai;simple-one-api,37,
+minimax_coding_plan,MiniMax Token Plan (minimax.io),False,model_vendor,unknown,unknown,,,https://api.minimax.io/anthropic/v1,7,chat,ai;aiproxy;APIPark;awaken;axonhub;ccs-nicremo;chats;cline;continue;higress;litellm;llama_index;llm-connector;llmgateway;manifest;mastra;new-api;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;rig;Roo-Code;rust-genai;simple-one-api,37,
+mistral,Mistral,True,model_vendor,L1,mistral,False,,https://api.mistral.ai;https://api.mistral.ai/v1,89,chat;embedding;other,agentsdk;ai;aider;aiproxy;aisuite;APIPark;bifrost;claude-code-router;cline;continue;edgequake-llm;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;langchain;langchain4j;langchaingo;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;manifest;mastra;new-api;one-api;one-hub;opencode;opencodex;OpenGateLLM;OpenHands;otari;outlines;pi;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;semantic-kernel;spring-ai;tensorzero;unia,48,
+mixlayer,Mixlayer,False,model_vendor,unknown,unknown,,,https://models.mixlayer.ai/v1,5,chat,mastra;opencode,2,
+moark,Moark,False,model_vendor,unknown,unknown,,,https://moark.com/v1,2,chat,mastra;opencode,2,
+model_oracle_ai,Model Oracle AI,False,model_vendor,unknown,unknown,,,https://api.modeloracle.com/api/v1,15,chat,mastra;opencode,2,
+modelscope,ModelScope,True,model_vendor,L2,openai,True,,https://api-inference.modelscope.cn/v1,7,chat,axonhub;cc-switch;langchain;litellm;llama_index;mastra;opencode,7,
+moka_ai,MokaAI,False,model_vendor,unknown,unknown,,,https://api.moka.ai,0,chat,,,
+moonshotai,Moonshot AI,True,model_vendor,L2,openai,True,,https://api.moonshot.ai/anthropic/v1;https://api.moonshot.ai/v1;https://api.moonshot.cn;https://api.moonshot.cn/v1,41,chat,agent-of-empires;ai;aiproxy;APIPark;awaken;axonhub;chats;cline;coai;continue;ferro-ai-gateway;higress;langchain;litellm;llm-connector;llmgateway;llmrust;manifest;mastra;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;Roo-Code;rust-genai;unia,43,
+moonshotai_cn,Moonshot AI (China),False,model_vendor,unknown,unknown,,,https://api.moonshot.cn/anthropic/v1,10,chat,agent-of-empires;ai;aiproxy;APIPark;awaken;axonhub;chats;cline;coai;continue;ferro-ai-gateway;higress;langchain;litellm;llm-connector;llmgateway;llmrust;manifest;mastra;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencodex;OpenHands;otari;pi;plano;portkey-gateway;pydantic-ai;rig;Roo-Code;rust-genai;unia,43,
+morph,Morph,True,model_vendor,L2,openai,True,,https://api.morphllm.com/v1,5,chat,litellm;mastra;opencode,3,
+nanogpt,NanoGPT,True,model_vendor,L2,openai,True,,https://nano-gpt.com/api/v1,617,chat;image_generation,axonhub;litellm;llmgateway;mastra;opencode;opencodex,6,
+nearai,NEAR AI Cloud,False,model_vendor,unknown,unknown,,,https://cloud-api.near.ai/v1,37,chat;embedding;rerank,mastra;opencode,2,
+nebius,Nebius Token Factory,True,deployment_platform,L2,openai,True,,https://api.tokenfactory.nebius.com/v1,63,chat;embedding,aisuite;awaken;bifrost;cline;continue;langchain;litellm;llama_index;llmgateway;mastra;opencode;otari;portkey-gateway;pydantic-ai;rust-genai,15,
+neon,Neon,False,model_vendor,unknown,unknown,,,,37,chat,mastra;opencode,2,
+netlify,Netlify,False,model_vendor,unknown,unknown,,,,68,chat,mastra,1,
+neuralwatt,Neuralwatt,False,model_vendor,unknown,unknown,,,https://api.neuralwatt.com/v1,24,chat,langchain;mastra;opencode;opencodex,4,
+new_api,New API,False,gateway_aggregator,unknown,unknown,,,,0,chat,new-api,1,
+nlp_cloud,NLP Cloud,True,model_vendor,unknown,unknown,,,,2,chat;completion,litellm,1,
+nova,Nova,False,model_vendor,unknown,unknown,,,https://api.nova.amazon.com/v1,2,chat,mastra;opencode,2,
+novita,NovitaAI,True,model_vendor,L2,openai,True,,https://api.novita.ai/openai,192,chat;embedding;rerank,aiproxy;APIPark;cc-switch;chats;continue;ferro-ai-gateway;litellm;llama_index;llmgateway;mastra;one-api;opencode;portkey-gateway,13,
+nscale,Nscale,True,model_vendor,L2,openai,True,,,16,chat;image_generation,litellm;portkey-gateway,2,
+nvidia_nim,Nvidia,True,model_vendor,L2,openai,True,,https://integrate.api.nvidia.com/v1,107,chat;embedding;image_generation;rerank,APIPark;AutoGPT;cc-switch;claude-code-router;continue;edgequake-llm;ferro-ai-gateway;haystack;langchain;litellm;llama_index;manifest;mastra;oh-my-opencode-slim;opencode;opencodex;OpenHands;pi;semantic-kernel;simple-one-api,20,
+oci,OCI,False,model_vendor,unknown,unknown,,,,44,chat;embedding,litellm,1,
+ofox,Ofox,False,model_vendor,unknown,unknown,,,https://api.ofox.ai/v1,13,chat,mastra;opencode,2,
+ohmygpt,OhMyGPT,True,model_vendor,unknown,unknown,,,https://api.ohmygpt.com,0,chat,one-api,1,
+ollama,Ollama Cloud,True,local_runtime,L2,openai,True,,http://localhost:11434;https://ollama.com/v1,590,chat;completion;embedding,agentsdk;aider;aiproxy;aisuite;APIPark;async-openai;autogen;AutoGPT;awaken;axonhub;bifrost;chats;cline;codex;continue;crewAI;dotnet-extensions;dspy;edgequake-llm;eino;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;instructor-go;langchain;langchain4j;LangChain-csharp;langchaingo;langchainjs;langchain-rust;langchain-swift;litellm;llama_index;LlamaIndexTS;llm-connector;llmrust;manifest;mastra;mirascope;multi-llm;new-api;ollama-rs;one-api;one-hub;opencode;opencodex;OpenHands;otari;outlines;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;semantic-kernel;simple-one-api;smg;spring-ai;swiftide;textgrad;unia,73,
+ollama_chat,Ollama Chat,False,model_vendor,unknown,unknown,,,,0,chat,agentsdk;aider;aiproxy;aisuite;APIPark;async-openai;autogen;AutoGPT;awaken;axonhub;bifrost;chats;cline;codex;continue;crewAI;dotnet-extensions;dspy;edgequake-llm;eino;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;instructor-go;langchain;langchain4j;LangChain-csharp;langchaingo;langchainjs;langchain-rust;langchain-swift;litellm;llama_index;LlamaIndexTS;llm-connector;llmrust;manifest;mastra;mirascope;multi-llm;new-api;ollama-rs;one-api;one-hub;opencode;opencodex;OpenHands;otari;outlines;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;semantic-kernel;simple-one-api;smg;spring-ai;swiftide;textgrad;unia,73,
+ollama_cloud,Ollama Cloud,True,model_vendor,L2,openai,True,,https://ollama.com/v1,19,chat,agentsdk;aider;aiproxy;aisuite;APIPark;async-openai;autogen;AutoGPT;awaken;axonhub;bifrost;chats;cline;codex;continue;crewAI;dotnet-extensions;dspy;edgequake-llm;eino;ferro-ai-gateway;graniet-llm;haystack;helicone-ai-gateway;higress;instructor;instructor-go;langchain;langchain4j;LangChain-csharp;langchaingo;langchainjs;langchain-rust;langchain-swift;litellm;llama_index;LlamaIndexTS;llm-connector;llmrust;manifest;mastra;mirascope;multi-llm;new-api;ollama-rs;one-api;one-hub;opencode;opencodex;OpenHands;otari;outlines;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;semantic-kernel;simple-one-api;smg;spring-ai;swiftide;textgrad;unia,73,
+omlx,Omlx,True,local_runtime,L2,openai,True,,,0,chat,awaken;edgequake-llm;rust-genai,3,
+oobabooga,Oobabooga,False,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+openai,OpenAI,True,model_vendor,L1,openai,,,https://api.openai.com,223,audio_speech;audio_transcription;chat;embedding;image_generation;moderation;realtime;responses;video_generation,ai;ai.rs;aider;aiproxy;aisuite;APIPark;async-openai;autogen;AutoGPT;awaken;axonhub;bifrost;chats;claude-code-router;claude-worker-proxy;cline;coai;codex;continue;crewAI;dotnet-extensions;dspy;edgequake-llm;eino;envoy-ai-gateway;ferro-ai-gateway;graniet-llm;guidance;haystack;helicone-ai-gateway;higress;instructor;instructor-go;kalosm;langchain;langchain4j;LangChain-csharp;langchaingo;langchainjs;langchain-rust;langchain-swift;litellm;litellm-rust;llama_index;LlamaIndexTS;llm-chain;llm-connector;llmgateway;llmrust;manifest;mastra;mirascope;multi-llm;new-api;oh-my-opencode-slim;one-api;one-hub;opencode;opencode-ai;opencodex;OpenGateLLM;OpenHands;otari;outlines;pi;pinchbench;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust_ai_sdk;rust-genai;semantic-kernel;semantic-kernel-java;simple-one-api;smg;spring-ai;swiftide;tensorzero;textgrad;traceloop-hub;unia,92,
+openaimax,OpenAIMax,True,model_vendor,unknown,unknown,,,https://api.openaimax.com,0,chat,one-api,1,
+opencode,OpenCode Zen,False,model_vendor,unknown,unknown,,,https://opencode.ai/zen/v1,85,chat,agent-of-empires;bifrost;claude-code-router;cline;mastra;opencode;pi,7,
+opencode_go,OpenCode Go,True,model_vendor,unknown,unknown,,,https://opencode.ai/zen/go/v1,22,chat,awaken;axonhub;manifest;mastra;opencode;opencodex;pi;rust-genai,8,
+openrouter,OpenRouter,True,gateway_aggregator,L4,mixed,True,,https://openrouter.ai/api;https://openrouter.ai/api/v1,472,audio_speech;chat;image_generation,agentsdk;ai.rs;aider;aiproxy;aisuite;APIPark;AutoGPT;awaken;axonhub;bifrost;cc-switch;chats;claude-code-router;cline;continue;crewAI;dspy;edgequake-llm;eino;ferro-ai-gateway;graniet-llm;haystack;higress;instructor;kalosm;langchain;LangChain-csharp;langchainjs;litellm;litellm-rust;llama_index;llm-connector;llmrust;manifest;mastra;mirascope;new-api;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;otari;outlines;pi;pinchbench;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;simple-one-api;swiftide;tensorzero;unia;uni-api,59,
+orcarouter,OrcaRouter,True,model_vendor,unknown,unknown,,,https://api.orcarouter.ai/v1,81,chat,haystack;mastra;opencode;opencodex;outlines,5,
+ovhcloud,OVHcloud AI Endpoints,True,model_vendor,unknown,unknown,,,https://oai.endpoints.kepler.ai.cloud.ovh.net/v1,30,chat,continue;litellm;llama_index;LlamaIndexTS;mastra;opencode;portkey-gateway;pydantic-ai,8,
+pa_lm,PaLM,False,model_vendor,unknown,unknown,,,,0,chat,,,
+palm,Palm,False,model_vendor,unknown,unknown,,,,6,chat;completion,litellm;llama_index;one-api;one-hub;portkey-gateway,5,
+parallel_ai,Parallel AI,False,model_vendor,L3,unknown,,,,2,search,,,
+parasail,Parasail,True,model_vendor,L2,openai,True,,,0,,bifrost;litellm,2,
+perplexity,Perplexity,True,model_vendor,L2,openai,True,,https://api.perplexity.ai,45,chat;embedding;responses;search,agentsdk;ai;bifrost;ferro-ai-gateway;haystack;instructor;langchain;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;mastra;new-api;opencode;otari;rig;unia,20,
+perplexity_agent,Perplexity Agent,False,model_vendor,unknown,unknown,,,https://api.perplexity.ai/v1,18,chat,agentsdk;ai;bifrost;ferro-ai-gateway;haystack;instructor;langchain;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;mastra;new-api;opencode;otari;rig;unia,20,
+petals,Petals,True,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+pinstripes,Pinstripes,False,model_vendor,L2,openai,True,,,6,chat,litellm,1,
+pioneer,Pioneer,True,model_vendor,unknown,unknown,,,https://api.pioneer.ai/v1,76,chat,manifest;mastra;opencode,3,
+poe,Poe,False,model_vendor,L2,openai,True,,https://api.poe.com/v1,137,chat;image_generation,litellm;mastra;opencode;Roo-Code,4,
+poolside,Poolside,False,model_vendor,unknown,unknown,,,https://inference.poolside.ai/v1,4,chat,cline;mastra;opencode,3,
+ppinfra,PPInfra,False,model_vendor,unknown,unknown,,,,101,chat,,,
+predibase,Predibase,True,model_vendor,unknown,unknown,,,,0,chat,litellm;llama_index;portkey-gateway,3,
+privatemode_ai,Privatemode AI,False,local_runtime,unknown,unknown,,,http://localhost:8080/v1,7,chat;embedding,mastra;opencode,2,
+publicai,Publicai,False,model_vendor,L2,openai,True,,,9,chat,litellm,1,
+qihang_ai,QiHang,False,model_vendor,unknown,unknown,,,https://api.qhaigc.net/v1,9,chat,mastra;opencode,2,
+qihoo360,360,True,model_vendor,unknown,unknown,,,https://api.360.cn,0,chat,,,
+qiniu_ai,Qiniu,True,model_vendor,unknown,unknown,,,https://api.qnaigc.com/v1,91,chat;image_generation,mastra;opencode,2,
+ragflow,Ragflow,False,model_vendor,L2,openai,True,,,0,,litellm,1,
+recraft,Recraft,False,model_vendor,L3,unknown,,,,2,image_generation,litellm;one-hub,2,
+reducto,Reducto,False,model_vendor,L3,unknown,,,,2,other,litellm,1,
+regolo_ai,Regolo AI,False,model_vendor,unknown,unknown,,,https://api.regolo.ai/v1,13,chat;embedding;image_generation;rerank,mastra;opencode,2,
+replicate,Replicate,True,deployment_platform,unknown,unknown,,,https://api.replicate.com,40,chat,bifrost;continue;ferro-ai-gateway;litellm;llama_index;LlamaIndexTS;new-api;one-api;one-hub;portkey-gateway,10,
+requesty,Requesty,True,gateway_aggregator,L4,mixed,,,https://router.requesty.ai/v1,38,chat,aisuite;cline;mastra;opencode;outlines;Roo-Code,6,
+routing_run,routing.run,False,model_vendor,unknown,unknown,,,https://ai.routing.sh/v1;https://api.routing.run/v1,41,chat,mastra;opencode,2,
+runwayml,Runwayml,False,model_vendor,L3,unknown,,,,6,audio_speech;image_generation;video_generation,litellm,1,
+sagemaker,Sagemaker,False,cloud_platform,unknown,unknown,,,,6,chat;completion,continue;dspy;litellm;llama_index;llm-chain;otari;portkey-gateway,7,
+sagemaker_chat,Sagemaker Chat,False,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+sagemaker_nova,Sagemaker Nova,False,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+sakana,Sakana AI,True,model_vendor,unknown,unknown,,,https://api.sakana.ai/v1,3,chat,llmgateway;mastra;opencode,3,
+sambanova,Sambanova,True,deployment_platform,L2,openai,True,,,19,chat,aisuite;cline;continue;envoy-ai-gateway;ferro-ai-gateway;instructor;langchain;litellm;otari;portkey-gateway;pydantic-ai;Roo-Code,12,
+sap_ai_core,SAP AI Core,False,model_vendor,unknown,unknown,,,,26,chat,agentsdk;opencode,2,
+sarvam,Sarvam AI,True,model_vendor,unknown,unknown,,,https://api.sarvam.ai/v1,3,chat,bifrost;langchain;llama_index;mastra;opencode,5,
+scaleway,Scaleway,True,model_vendor,unknown,unknown,,,https://api.scaleway.ai/v1,34,audio_transcription;chat;embedding,continue;mastra;opencode,3,
+searxng,Searxng,False,model_vendor,L3,unknown,,,,1,search,litellm,1,
+serper,Serper,False,search_provider,L3,unknown,,,,1,search,litellm,1,
+siliconflow,SiliconFlow,True,model_vendor,unknown,unknown,,,https://api.siliconflow.cn;https://api.siliconflow.cn/v1;https://api.siliconflow.com/v1,174,audio_speech;chat;embedding;image_edit;other;rerank;video_generation,aiproxy;APIPark;axonhub;chats;claude-code-router;continue;llama_index;mastra;new-api;one-api;one-hub;opencode;opencodex;portkey-gateway;simple-one-api,17,
+snowflake,Snowflake,False,cloud_platform,unknown,unknown,,,,37,chat;embedding,crewAI;litellm;mastra;opencode,4,
+snowflake_cortex,Snowflake Cortex,False,model_vendor,unknown,unknown,,,https://${snowflake_account}.snowflakecomputing.com/api/v2/cortex/v1,21,chat,crewAI;litellm;mastra;opencode,4,
+soniox,Soniox,False,model_vendor,L3,unknown,,,,2,audio_transcription,litellm,1,
+sora,Sora,False,model_vendor,unknown,unknown,,,https://api.openai.com,0,chat,new-api,1,
+stability,Stability,False,modal_service,L3,unknown,,,,23,image_edit;image_generation,litellm;one-hub;portkey-gateway;spring-ai,4,
+stackit,STACKIT,False,model_vendor,unknown,unknown,,,https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1,10,chat,haystack;mastra;opencode,3,
+stepfun,StepFun (Global),True,model_vendor,unknown,unknown,,,https://api.stepfun.ai/step_plan/v1;https://api.stepfun.ai/v1;https://api.stepfun.com/v1,8,chat,aiproxy;APIPark;cc-switch;higress;llama_index;mastra;one-api;opencode,14,
+stepfun_ai_step_plan,StepFun Step Plan (Global),False,model_vendor,unknown,unknown,,,https://api.stepfun.ai/step_plan/v1,3,chat,aiproxy;APIPark;cc-switch;higress;llama_index;mastra;one-api;opencode,14,
+stepfun_step_plan,StepFun Step Plan (China),False,model_vendor,unknown,unknown,,,https://api.stepfun.com/step_plan/v1,4,chat,aiproxy;APIPark;cc-switch;higress;llama_index;mastra;one-api;opencode,14,
+sub2_api,Sub2API,False,model_vendor,unknown,unknown,,,,0,chat,,,
+subconscious,Subconscious,False,model_vendor,unknown,unknown,,,https://api.subconscious.dev/v1,2,chat,mastra;opencode,2,
+submodel,submodel,True,model_vendor,unknown,unknown,,,https://llm.submodel.ai;https://llm.submodel.ai/v1,9,chat,mastra;new-api;opencode,3,
+suno_api,SunoAPI,False,model_vendor,unknown,unknown,,,,0,chat,new-api;one-hub,2,
+synthetic,Synthetic,False,model_vendor,L2,openai,True,,https://api.synthetic.new/openai/v1,38,chat,litellm;mastra;opencode;opencodex,4,
+tavily,Tavily,False,search_provider,L3,unknown,,,,2,search,langchainjs;litellm,2,
+tencent,Tencent,True,model_vendor,L2,openai,True,,https://hunyuan.tencentcloudapi.com,2,chat,aiproxy;APIPark;chats;cline;coai;higress;litellm;llm-connector;mastra;new-api;one-api;one-hub;opencode;opencodex;simple-one-api,19,
+tencent_coding_plan,Tencent Coding Plan (China),False,model_vendor,unknown,unknown,,,https://api.lkeap.cloud.tencent.com/coding/v3,8,chat,aiproxy;APIPark;chats;cline;coai;higress;litellm;llm-connector;mastra;new-api;one-api;one-hub;opencode;opencodex;simple-one-api,19,
+tencent_token_plan,Tencent Token Plan,False,model_vendor,unknown,unknown,,,https://api.lkeap.cloud.tencent.com/plan/v3,1,chat,aiproxy;APIPark;chats;cline;coai;higress;litellm;llm-connector;mastra;new-api;one-api;one-hub;opencode;opencodex;simple-one-api,19,
+tencent_token_plan_enterprise_auto,腾讯云 Token Plan / Token Plan 企业版轻享套餐,False,model_vendor,unknown,unknown,,,https://tokenhub.tencentmaas.com/plan/v3,1,chat,,,
+tencent_token_plan_enterprise_pro,腾讯云 Token Plan / Token Plan 企业版专业套餐,False,model_vendor,unknown,unknown,,,https://tokenhub.tencentmaas.com/plan/v3,16,chat,,,
+tencent_token_plan_general_personal,腾讯云 Token Plan / 通用 Token Plan（个人版）,False,model_vendor,unknown,unknown,,,https://api.lkeap.cloud.tencent.com/plan/v3,8,chat,,,
+tencent_token_plan_hy_personal,腾讯云 Token Plan / Hy Token Plan（个人版）,False,model_vendor,unknown,unknown,,,https://api.lkeap.cloud.tencent.com/plan/v3,2,chat,,,
+tencent_tokenhub,Tencent TokenHub,False,model_vendor,unknown,unknown,,,https://tokenhub.tencentmaas.com/v1,2,chat,aiproxy;APIPark;chats;cline;coai;higress;litellm;llm-connector;mastra;new-api;one-api;one-hub;opencode;opencodex;simple-one-api,19,
+tensormesh,Tensormesh,False,model_vendor,L2,openai,True,,,10,chat,litellm,1,
+text_completion_codestral,Text Completion Codestral,False,model_vendor,unknown,unknown,,,,2,chat;completion,litellm,1,
+text_completion_inception,Text Completion Inception,False,model_vendor,unknown,unknown,,,,1,chat;completion,litellm,1,
+the_grid_ai,The Grid AI,False,model_vendor,unknown,unknown,,,https://api.thegrid.ai/v1,9,chat,mastra;opencode,2,
+thinkingmachines,Thinking Machines,False,model_vendor,unknown,unknown,,,https://tinker.thinkingmachines.dev/services/tinker-prod/anthropic/api/v1,2,chat,mastra;opencode,2,
+tinfoil,Tinfoil,False,model_vendor,unknown,unknown,,,https://inference.tinfoil.sh/v1,7,chat,mastra;opencode,2,
+tinyfish,Tinyfish,False,model_vendor,L3,unknown,,,,1,search,,,
+togetherai,Together AI,True,model_vendor,L2,openai,True,,,77,chat;embedding,agentsdk;ai;aisuite;awaken;cline;continue;dspy;envoy-ai-gateway;ferro-ai-gateway;haystack;higress;instructor;langchain;langchainjs;litellm;llama_index;LlamaIndexTS;llmgateway;mastra;mirascope;one-api;opencode;opencodex;otari;pi;plano;portkey-gateway;pydantic-ai;rig;rust-genai;tensorzero;textgrad;unia,33,
+tokenflux,Tokenflux,False,model_vendor,unknown,unknown,,,,164,chat,,,
+triton,Triton,False,model_vendor,unknown,unknown,,,,0,chat,higress;litellm;portkey-gateway,3,
+trustedrouter,TrustedRouter,False,model_vendor,unknown,unknown,,,https://api.trustedrouter.com/v1,7,chat,mastra;opencode,2,
+umans_ai,Umans AI,False,model_vendor,unknown,unknown,,,https://api.code.umans.ai/v1,6,chat,mastra;opencode,2,
+umans_ai_coding_plan,Umans AI Coding Plan,False,model_vendor,unknown,unknown,,,https://api.code.umans.ai/v1,7,chat,mastra;opencode,2,
+unorouter,UnoRouter,False,model_vendor,unknown,unknown,,,https://api.unorouter.com/v1,23,chat,mastra;opencode,2,
+upstage,Upstage,True,model_vendor,unknown,unknown,,,https://api.upstage.ai/v1/solar,3,chat,APIPark;langchain;llama_index;mastra;opencode;portkey-gateway,6,
+v0,v0,True,model_vendor,L2,openai,True,,,6,chat,agentsdk;ai;AutoGPT;axonhub;cline;litellm;llama_index;LlamaIndexTS;mastra;opencode;opencodex;pi;plano;pydantic-ai;Roo-Code,18,
+venice,Venice AI,False,model_vendor,unknown,unknown,,,,75,chat,continue;opencode;opencodex,3,
+vercel,Vercel AI Gateway,True,gateway_aggregator,L4,mixed,True,,,426,chat;embedding;image_generation,agentsdk;ai;AutoGPT;axonhub;cline;litellm;llama_index;LlamaIndexTS;mastra;opencode;opencodex;pi;plano;pydantic-ai;Roo-Code,18,
+vertex,VertexAI,True,cloud_platform,L1,google_vertex,False,,,60,audio_speech;audio_transcription;chat;embedding;image_generation;other;video_generation,agentsdk;ai;aider;aiproxy;APIPark;awaken;bifrost;cc-switch;cline;continue;dspy;edgequake-llm;ferro-ai-gateway;haystack;higress;instructor;langchain;langchaingo;langchainjs;litellm;llama_index;llmgateway;mastra;new-api;one-api;one-hub;opencode;opencode-ai;opencodex;OpenHands;otari;pi;portkey-gateway;rig;Roo-Code;rust-genai;semantic-kernel;simple-one-api;traceloop-hub,39,
+vertex_ai_ai21_models,Vertex AI Ai21 Models,False,model_vendor,unknown,unknown,,,,5,chat,,,
+vertex_ai_anthropic_models,Vertex AI Anthropic Models,False,model_vendor,unknown,unknown,,,,37,chat,,,
+vertex_ai_deepseek_models,Vertex AI Deepseek Models,False,model_vendor,unknown,unknown,,,,3,chat,,,
+vertex_ai_language_models,Vertex AI Language Models,False,model_vendor,unknown,unknown,,,,42,chat;embedding;image_generation;realtime,,,
+vertex_ai_llama_models,Vertex AI Llama Models,False,model_vendor,unknown,unknown,,,,11,chat,,,
+vertex_ai_minimax_models,Vertex AI Minimax Models,False,model_vendor,unknown,unknown,,,,1,chat,,,
+vertex_ai_mistral_models,Vertex AI Mistral Models,False,model_vendor,unknown,unknown,,,,19,chat,,,
+vertex_ai_moonshot_models,Vertex AI Moonshot Models,False,model_vendor,unknown,unknown,,,,1,chat,,,
+vertex_ai_openai_models,Vertex AI Openai Models,False,model_vendor,unknown,unknown,,,,3,chat,,,
+vertex_ai_qwen_models,Vertex AI Qwen Models,False,model_vendor,unknown,unknown,,,,4,chat,,,
+vertex_ai_text_models,Vertex AI Text Models,False,model_vendor,unknown,unknown,,,,2,completion,,,
+vertex_ai_zai_models,Vertex AI ZAI Models,False,model_vendor,unknown,unknown,,,,2,chat,,,
+vidu,Vidu,False,model_vendor,unknown,unknown,,,https://api.vidu.cn,0,chat,new-api,1,
+vivgrid,Vivgrid,False,model_vendor,unknown,unknown,,,https://api.vivgrid.com/v1,17,chat,mastra;opencode,2,
+vllm,Vllm,True,local_runtime,L2,openai,True,,,0,chat,bifrost;continue;dynamo;haystack;langchain;litellm;llama_index;LlamaIndexTS;opencodex;OpenGateLLM;otari;outlines;smg;tensorzero;textgrad,15,
+volc_engine,VolcEngine,False,model_vendor,unknown,unknown,,,https://ark.cn-beijing.volces.com,0,chat,aiproxy;axonhub;chats;cline;eino;higress;litellm;new-api;one-api;Roo-Code;simple-one-api,13,
+voyage,Voyage,True,embedding,L3,voyage,False,,,19,embedding;rerank,continue;litellm;otari;portkey-gateway;pydantic-ai;rig,6,
+vultr,Vultr,False,model_vendor,unknown,unknown,,,https://api.vultrinference.com/v1,12,chat,mastra;opencode,2,
+wafer,Wafer,True,model_vendor,unknown,unknown,,,https://pass.wafer.ai/v1,10,chat,bifrost,1,
+wandb,Weights & Biases,False,model_vendor,L2,openai,True,,https://api.inference.wandb.ai/v1,48,chat,cline;litellm;mastra;opencode,4,
+watsonx,Watsonx,False,cloud_platform,unknown,unknown,,,,29,audio_transcription;chat,aisuite;continue;haystack;langchain4j;langchaingo;langchainjs;litellm;llama_index;otari,9,
+watsonx_text,Watsonx Text,False,model_vendor,unknown,unknown,,,,0,chat,litellm,1,
+xai,xAI,True,model_vendor,L1,xai,True,,https://api.x.ai,87,chat,agentsdk;ai;aider;aiproxy;aisuite;awaken;axonhub;bifrost;cc-switch;chats;cline;continue;edgequake-llm;ferro-ai-gateway;graniet-llm;helicone-ai-gateway;instructor;langchain;langchainjs;litellm;litellm-rust;LlamaIndexTS;llmgateway;manifest;mastra;mirascope;new-api;one-api;one-hub;opencode;opencode-ai;opencodex;otari;pi;plano;portkey-gateway;pydantic-ai;rig;rllm;Roo-Code;rust-genai;smg;tensorzero;unia,44,
+xiaomi_token_plan_ams,Xiaomi Token Plan (Europe),False,model_vendor,unknown,unknown,,,https://token-plan-ams.xiaomimimo.com/v1,8,chat,axonhub;chats;cline;llm-connector;llmgateway;manifest;mastra;opencode;opencodex;pi;plano,20,
+xiaomi_token_plan_cn,Xiaomi Token Plan (China),False,model_vendor,unknown,unknown,,,https://token-plan-cn.xiaomimimo.com/v1,8,chat,axonhub;chats;cline;llm-connector;llmgateway;manifest;mastra;opencode;opencodex;pi;plano,20,
+xiaomi_token_plan_sgp,Xiaomi Token Plan (Singapore),False,model_vendor,unknown,unknown,,,https://token-plan-sgp.xiaomimimo.com/v1,8,chat,axonhub;chats;cline;llm-connector;llmgateway;manifest;mastra;opencode;opencodex;pi;plano,20,
+xiaomimimo,Xiaomi,True,model_vendor,unknown,unknown,,,https://api.xiaomimimo.com/v1,6,chat,rig,1,
+xinference,Xinference,True,local_runtime,L2,openai,True,,,0,chat,APIPark;langchain;langchain4j;litellm;llama_index;llm-connector;new-api,7,
+xpersona,Xpersona,False,model_vendor,unknown,unknown,,,https://www.xpersona.co/v1,3,chat,mastra;opencode,2,
+xunfei,Xunfei,False,model_vendor,unknown,unknown,,,,0,chat,aiproxy;APIPark;higress;new-api;one-api;one-hub,6,
+you_com,YOU COM,False,model_vendor,L3,unknown,,,,1,search,litellm,1,
+zai,Z.AI,True,model_vendor,L2,openai,True,,https://api.z.ai/api/paas/v4,33,chat,awaken;axonhub;cline;continue;litellm;litellm-rust;llmgateway;manifest;mastra;oh-my-opencode-slim;opencode;opencodex;pi;pydantic-ai;rig;Roo-Code;rust-genai,20,
+zai_coding_plan,Z.AI Coding Plan,False,model_vendor,unknown,unknown,,,https://api.z.ai/api/coding/paas/v4,6,chat,awaken;axonhub;cline;continue;litellm;litellm-rust;llmgateway;manifest;mastra;oh-my-opencode-slim;opencode;opencodex;pi;pydantic-ai;rig;Roo-Code;rust-genai,20,
+zeldoc,Zeldoc,False,model_vendor,unknown,unknown,,,https://api.zeldoc.ai/v1,1,chat,mastra;opencode,2,
+zenifra,Zenifra,False,model_vendor,unknown,unknown,,,https://ai.zenifra.com/v1,1,chat,mastra;opencode,2,
+zenmux,ZenMux,False,model_vendor,unknown,unknown,,,https://zenmux.ai/api/v1,164,chat;embedding;image_generation,agentsdk;mastra;opencode;opencodex,4,
+zhipu_v4,ZhipuV4,False,model_vendor,unknown,unknown,,,https://open.bigmodel.cn,0,chat,,,
+zhipuai_coding_plan,Zhipu AI Coding Plan,False,model_vendor,unknown,unknown,,,https://open.bigmodel.cn/api/coding/paas/v4,7,chat,aiproxy;APIPark;awaken;axonhub;chats;higress;langchain4j;langchain-swift;llama_index;mastra;one-api;one-hub;opencode;OpenHands;plano;portkey-gateway;rust-genai;simple-one-api,22,
+codex,codex,False,subscription_proxy,unknown,unknown,,,,,,agent-of-empires;axonhub;CCSwitcher;cline;pi;Roo-Code;uni-api,7,high
+azure_ai_foundry,azure (AI Foundry),False,cloud_platform,unknown,unknown,,,,,,chats;dotnet-extensions;ferro-ai-gateway;guidance;llmgateway;pydantic-ai,6,high
