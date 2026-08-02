@@ -337,6 +337,14 @@ public class TypedModel implements Closeable {
         return new TypedModel(Model.anthropicWithBase(apiKey, modelId, baseUrl), true);
     }
 
+    /**
+     * Create a registry-backed {@link TypedModel} (RFC-0017 phase 4) that owns
+     * its {@link Model}. See {@link Model#provider(String, String, String, String)}.
+     */
+    public static TypedModel provider(String name, String apiKey, String modelId, String configJson) {
+        return new TypedModel(Model.provider(name, apiKey, modelId, configJson), true);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────
 
     private static String encodeOptions(Types.GenerateTextOptions options) {

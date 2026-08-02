@@ -24,6 +24,12 @@ internal interface AimuxFFI : Library {
     fun aimux_openai_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
     fun aimux_anthropic_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
 
+    // ── Registry provider (RFC-0017 phase 4) ───────────────────────────────
+    // apiKey may be null (read the provider's env var from the registry entry);
+    // configJson may be null (defaults) or a JSON object of ProviderOptions.
+    fun aimux_provider_new(name: String, apiKey: String?, modelId: String, configJson: String?): Long
+    fun aimux_provider_from_env(name: String, modelId: String): Long
+
     fun aimux_generate_text(handle: Long, promptJson: String, optsJson: String?): Pointer?
     fun aimux_stream_text(
         handle: Long,
@@ -150,6 +156,30 @@ class Model private constructor(handle: Long) : Closeable {
         fun anthropic(apiKey: String, modelId: String, baseUrl: String): Model {
             val h = FFI.lib.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl)
             require(h != 0L) { "Failed to create Anthropic model" }
+            return Model(h)
+        }
+
+        /**
+         * Create a model from the provider registry by name (RFC-0017 phase 4).
+         *
+         * @param name       Registry provider name (e.g. `"deepseek"`, `"groq"`).
+         * @param apiKey     API key, or null to read the provider's env var from
+         *                   the registry entry.
+         * @param modelId    Model id.
+         * @param configJson Optional JSON object of ProviderOptions
+         *                   (`{"base_url": "...", "headers": {...}, "max_retries": 0,
+         *                   "body_overrides": {...}}`); null for defaults.
+         */
+        fun provider(name: String, apiKey: String? = null, modelId: String, configJson: String? = null): Model {
+            val h = FFI.lib.aimux_provider_new(name, apiKey, modelId, configJson)
+            require(h != 0L) { "Failed to create provider model '$name'" }
+            return Model(h)
+        }
+
+        /** Create a model from the provider registry, reading the API key from the provider's env var. */
+        fun providerFromEnv(name: String, modelId: String): Model {
+            val h = FFI.lib.aimux_provider_from_env(name, modelId)
+            require(h != 0L) { "Failed to create provider model '$name' from env" }
             return Model(h)
         }
     }

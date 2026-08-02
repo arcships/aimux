@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Perplexity provider.
+//! Provider-specific tests for the Perplexity provider.
 //!
 //! Translated from the TypeScript suites:
 //! - `packages/perplexity/src/perplexity-language-model.test.ts`
@@ -32,12 +32,11 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{PerplexityConfig, PerplexityProvider};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -93,9 +92,17 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> PerplexityProvider {
-    let config = PerplexityConfig::new("test-api-key").with_base_url(server.uri());
-    PerplexityProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "perplexity",
+        Some("test-api-key".to_string()),
+        "sonar",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("perplexity provider should build")
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -104,10 +111,10 @@ fn make_provider(server: &MockServer) -> PerplexityProvider {
 
 /// TS: `createPerplexity()` produces a provider whose name is "perplexity".
 #[test]
-fn provider_name_is_perplexity() {
-    let config = PerplexityConfig::new("test-key");
-    let provider = PerplexityProvider::new(config);
-    assert_eq!(provider.name(), "perplexity");
+fn provider_builds_perplexity_model() {
+    let model = provider("perplexity", Some("test-key".to_string()), "sonar", None)
+        .expect("perplexity provider should build");
+    assert_eq!(model.model_id(), "sonar");
 }
 
 /// TS: custom API key is sent in the `Authorization: Bearer` header.
@@ -121,9 +128,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = PerplexityConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = PerplexityProvider::new(config);
-    let model = provider.model("sonar");
+    let model = provider(
+        "perplexity",
+        Some("my-custom-key".to_string()),
+        "sonar",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("perplexity provider should build");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -142,9 +156,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = PerplexityConfig::new("test-key").with_base_url(server.uri());
-    let provider = PerplexityProvider::new(config);
-    let model = provider.model("sonar");
+    let model = provider(
+        "perplexity",
+        Some("test-key".to_string()),
+        "sonar",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("perplexity provider should build");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -173,11 +194,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = PerplexityConfig::new("test-key").with_base_url(server.uri());
-    let provider = PerplexityProvider::new(config);
-    let model = provider
-        .language_model("sonar")
-        .expect("language_model should succeed");
+    let model = provider(
+        "perplexity",
+        Some("test-key".to_string()),
+        "sonar",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("provider should build a model");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -194,8 +220,8 @@ fn from_env_loads_perplexity_api_key() {
         std::env::set_var("PERPLEXITY_API_KEY", "env-test-key");
     }
 
-    let config = PerplexityConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider_from_env("perplexity", "sonar", None);
+    assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
         match saved {
@@ -214,8 +240,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("PERPLEXITY_API_KEY");
     }
 
-    let config = PerplexityConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider_from_env("perplexity", "sonar", None);
+    assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -239,8 +265,7 @@ async fn sends_correct_request_body() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -277,8 +302,7 @@ async fn stream_request_body_has_stream_flag() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
     let _ = model
         .do_stream(&default_options(test_prompt()))
         .await
@@ -304,8 +328,7 @@ async fn extracts_usage() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
     let result = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -329,8 +352,7 @@ async fn do_generate_returns_text() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -370,8 +392,7 @@ async fn do_stream_returns_text() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -401,8 +422,7 @@ async fn status_401_maps_to_auth_error() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -423,8 +443,7 @@ async fn status_429_maps_to_rate_limited() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -447,8 +466,7 @@ async fn exposes_response_headers() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("sonar");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))

@@ -19,6 +19,22 @@ result = generate_text(model, "What is Rust?")
 print(result["text"])
 ```
 
+## Built-in Providers (RFC-0017 phase 4)
+
+```python
+from aimux import provider, generate_text
+
+# Key from the provider's env var (GROQ_API_KEY etc.):
+model = provider("groq", None, "llama-3.3-70b")
+# Explicit key + base URL override:
+model = provider("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
+result = generate_text(model, "Hello")
+```
+
+`provider(name, api_key, model_id, base_url=None)` covers all 250 built-in
+OpenAI-compatible providers. `openai` / `anthropic` / `deepseek` factories
+remain (deepseek is now registry-backed).
+
 ## Text Generation
 
 Non-streaming text generation; returns the complete result.

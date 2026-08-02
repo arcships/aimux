@@ -44,7 +44,7 @@ use aimux_providers::cohere::{CohereConfig, CohereProvider};
 use aimux_providers::google::{GoogleConfig, GoogleProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
-use aimux_providers::{DeepSeekConfig, DeepSeekProvider};
+use aimux_providers::{ProviderOptions, provider};
 
 use futures::StreamExt;
 use tokio::runtime::Runtime;
@@ -361,14 +361,57 @@ pub extern "C" fn aimux_anthropic_new_with_base(
         .unwrap_or(0)
 }
 
-/// Create a DeepSeek language model instance. Returns `0` on failure.
+/// Create a language model from the registry by provider name (RFC-0017 phase 4).
+///
+/// - `name` — registry provider name, e.g. `"groq"` / `"deepseek"`.
+/// - `api_key` — may be NULL to read the provider's env var from the registry
+///   entry (replaces the retired `aimux_deepseek_new` etc.).
+/// - `model_id` — model id string.
+/// - `config_json` — optional JSON object of `ProviderOptions`
+///   (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`);
+///   NULL / empty / "null" for defaults.
+///
+/// Returns the opaque handle (0 on failure: unknown provider, bad config,
+/// missing env key, or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_deepseek_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+pub extern "C" fn aimux_provider_new(
+    name: *const c_char,
+    api_key: *const c_char,
+    model_id: *const c_char,
+    config_json: *const c_char,
+) -> u64 {
+    let Some(name) = cstr_to_string(name) else {
         return 0;
     };
-    DeepSeekProvider::new(DeepSeekConfig::new(api_key))
-        .language_model(&model_id)
+    let Some(model_id) = cstr_to_string(model_id) else {
+        return 0;
+    };
+    let key = cstr_to_string(api_key); // None => env var from registry entry
+    let opts = match cstr_to_string(config_json) {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            match serde_json::from_str::<ProviderOptions>(&s) {
+                Ok(o) => Some(o),
+                Err(_) => return 0,
+            }
+        }
+        _ => None,
+    };
+    provider(&name, key, &model_id, opts)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Convenience: create a language model by provider name, reading the API key
+/// from the provider's env var. Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_provider_from_env(name: *const c_char, model_id: *const c_char) -> u64 {
+    let Some(name) = cstr_to_string(name) else {
+        return 0;
+    };
+    let Some(model_id) = cstr_to_string(model_id) else {
+        return 0;
+    };
+    provider(&name, None, &model_id, None)
         .map(|m| intern_model(Arc::from(m)))
         .unwrap_or(0)
 }

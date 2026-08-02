@@ -1,4 +1,4 @@
-﻿//! Conformance tests using real recorded API responses (cassettes).
+//! Conformance tests using real recorded API responses (cassettes).
 //!
 //! These tests mount cassette files from `tests/cassettes/<provider>/` and
 //! verify that our provider implementations correctly parse real-world API
@@ -24,15 +24,12 @@ use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 
 use aimux_providers::{
-    AnthropicConfig, AnthropicProvider, BedrockProvider, BedrockProviderConfig, CerebrasConfig,
-    CerebrasProvider, CohereConfig, CohereProvider, CopilotConfig, CopilotProvider, DeepSeekConfig,
-    DeepSeekProvider, DoublewordConfig, DoublewordProvider, GithubConfig, GithubProvider,
-    GoogleConfig, GoogleProvider, GroqConfig, GroqProvider, HuggingFaceConfig, HuggingFaceProvider,
+    AnthropicConfig, AnthropicProvider, BedrockProvider, BedrockProviderConfig, CohereConfig,
+    CohereProvider, GoogleConfig, GoogleProvider, HuggingFaceConfig, HuggingFaceProvider,
     LlamafileConfig, LlamafileProvider, LmStudioConfig, LmStudioProvider, MistralConfig,
     MistralProvider, MistralrsConfig, MistralrsProvider, OllamaConfig, OllamaProvider,
-    OpenAIConfig, OpenAIProvider, OpenRouterConfig, OpenRouterProvider, PerplexityConfig,
-    PerplexityProvider, SambaNovaConfig, SambaNovaProvider, SiliconFlowConfig, SiliconFlowProvider,
-    XAIConfig, XAIProvider, ZaiConfig, ZaiProvider,
+    OpenAIConfig, OpenAIProvider, OpenRouterConfig, OpenRouterProvider, ProviderOptions, XAIConfig,
+    XAIProvider, provider,
 };
 
 // 閳光偓閳光偓 helpers 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
@@ -281,9 +278,17 @@ mod openai_conformance {
 mod deepseek_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> DeepSeekProvider {
-        let config = DeepSeekConfig::new("test-key").with_base_url(server.uri());
-        DeepSeekProvider::new(config)
+    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+        provider(
+            "deepseek",
+            Some("test-key".to_string()),
+            "deepseek-chat",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("deepseek should construct from registry")
     }
 
     #[tokio::test]
@@ -291,8 +296,7 @@ mod deepseek_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/deepseek").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("deepseek-chat");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -365,12 +369,19 @@ mod xai_conformance {
 mod groq_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> GroqProvider {
+    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
         // Cassettes record paths under /openai/v1/chat/completions, matching
         // Groq's default base URL https://api.groq.com/openai/v1.
-        let config =
-            GroqConfig::new("test-key").with_base_url(format!("{}/openai/v1", server.uri()));
-        GroqProvider::new(config)
+        provider(
+            "groq",
+            Some("test-key".to_string()),
+            "llama-3.3-70b-versatile",
+            Some(ProviderOptions {
+                base_url: Some(format!("{}/openai/v1", server.uri())),
+                ..Default::default()
+            }),
+        )
+        .expect("groq should construct from registry")
     }
 
     #[tokio::test]
@@ -378,8 +389,7 @@ mod groq_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/groq").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("llama-3.3-70b-versatile");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -452,9 +462,17 @@ mod mistral_conformance {
 mod perplexity_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> PerplexityProvider {
-        let config = PerplexityConfig::new("test-key").with_base_url(server.uri());
-        PerplexityProvider::new(config)
+    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+        provider(
+            "perplexity",
+            Some("test-key".to_string()),
+            "sonar",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("perplexity should construct from registry")
     }
 
     #[tokio::test]
@@ -462,8 +480,7 @@ mod perplexity_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/perplexity").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("sonar");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -606,12 +623,20 @@ mod openrouter_conformance {
 mod copilot_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> CopilotProvider {
+    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
         // Copilot's base URL has no `/v1` prefix; the OpenAIProvider appends
         // `/chat/completions` directly, matching the cassette path
         // `/chat/completions`.
-        let config = CopilotConfig::new("test-key").with_base_url(server.uri());
-        CopilotProvider::new(config)
+        provider(
+            "copilot",
+            Some("test-key".to_string()),
+            "gpt-4o",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("copilot should construct from registry")
     }
 
     #[tokio::test]
@@ -619,8 +644,7 @@ mod copilot_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/copilot").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gpt-4o");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -650,13 +674,20 @@ mod copilot_conformance {
 mod doubleword_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> DoublewordProvider {
+    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
         // Doubleword's base URL includes `/v1`; the OpenAIProvider appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
-        let config =
-            DoublewordConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        DoublewordProvider::new(config)
+        provider(
+            "doubleword",
+            Some("test-key".to_string()),
+            "Qwen/Qwen3.5-9B",
+            Some(ProviderOptions {
+                base_url: Some(format!("{}/v1", server.uri())),
+                ..Default::default()
+            }),
+        )
+        .expect("doubleword should construct from registry")
     }
 
     #[tokio::test]
@@ -664,8 +695,7 @@ mod doubleword_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/doubleword").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("Qwen/Qwen3.5-9B");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -855,11 +885,19 @@ mod bedrock_conformance {
 mod cerebras_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> CerebrasProvider {
+    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
         // Cassettes record paths under /v1/chat/completions, matching Cerebras's
         // default base URL https://api.cerebras.ai/v1.
-        let config = CerebrasConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        CerebrasProvider::new(config)
+        provider(
+            "cerebras",
+            Some("test-key".to_string()),
+            "llama-3.3-70b",
+            Some(ProviderOptions {
+                base_url: Some(format!("{}/v1", server.uri())),
+                ..Default::default()
+            }),
+        )
+        .expect("cerebras should construct from registry")
     }
 
     #[tokio::test]
@@ -867,8 +905,7 @@ mod cerebras_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/cerebras").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("llama-3.3-70b");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -986,12 +1023,19 @@ mod huggingface_conformance {
 mod zai_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> ZaiProvider {
+    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
         // Cassettes record paths under /api/paas/v4/chat/completions, matching
         // Zai's base URL https://api.z.ai/api/paas/v4.
-        let config =
-            ZaiConfig::new("test-key").with_base_url(format!("{}/api/paas/v4", server.uri()));
-        ZaiProvider::new(config)
+        provider(
+            "zai",
+            Some("test-key".to_string()),
+            "glm-4.7",
+            Some(ProviderOptions {
+                base_url: Some(format!("{}/api/paas/v4", server.uri())),
+                ..Default::default()
+            }),
+        )
+        .expect("zai should construct from registry")
     }
 
     #[tokio::test]
@@ -999,8 +1043,7 @@ mod zai_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/zai").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("glm-4.7");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -1027,8 +1070,7 @@ mod zai_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/zai").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("glm-4.7");
+        let model = make_provider(&server);
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -1188,164 +1230,180 @@ mod chatgpt_conformance {
 
 /// Generates a conformance module for an OpenAI-compatible thin-wrapper provider.
 /// Each gets a generate + stream test.
+///
+/// Two arms:
+/// - native arm (`$provider:ty, $config:ty`): providers with their own src/
+///   implementation (e.g. LmStudio) keep the config/provider construction.
+/// - registry arm (`$name:literal`): the retired phase-4 shell types are built
+///   through the registry-backed `provider(name, ...)` entry point.
 macro_rules! thin_wrapper_conformance {
     ($mod_name:ident, $provider:ty, $config:ty, $cassette_dir:expr, $base_url_prefix:expr, $model_id:expr) => {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> $provider {
-                let config = <$config>::new("test-key").with_base_url(format!(
-                    "{}{}",
-                    server.uri(),
-                    $base_url_prefix
-                ));
-                <$provider>::new(config)
+            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+                Box::new(
+                    <$provider>::new(<$config>::new("test-key").with_base_url(format!(
+                        "{}{}",
+                        server.uri(),
+                        $base_url_prefix
+                    )))
+                    .model($model_id),
+                )
             }
 
-            #[tokio::test]
-            async fn do_generate_returns_text() {
-                let server = MockServer::start().await;
-                mount_cassettes(&server, $cassette_dir).await;
+            thin_wrapper_tests!($cassette_dir);
+        }
+    };
+    ($mod_name:ident, $name:literal, $cassette_dir:expr, $base_url_prefix:expr, $model_id:expr) => {
+        mod $mod_name {
+            use super::*;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+                provider(
+                    $name,
+                    Some("test-key".to_string()),
+                    $model_id,
+                    Some(ProviderOptions {
+                        base_url: Some(format!("{}{}", server.uri(), $base_url_prefix)),
+                        ..Default::default()
+                    }),
+                )
+                .expect("registry provider should construct")
+            }
 
-                let result = model.do_generate(&default_options(test_prompt())).await;
+            thin_wrapper_tests!($cassette_dir);
+        }
+    };
+}
 
-                match result {
-                    Ok(r) => {
-                        assert!(
-                            has_text(&r.content)
-                                || has_tool_call(&r.content)
-                                || has_reasoning(&r.content),
-                            "expected content, got {:?}",
-                            r.content
-                        );
+/// The two conformance tests shared by every thin-wrapper module.
+macro_rules! thin_wrapper_tests {
+    ($cassette_dir:expr) => {
+        #[tokio::test]
+        async fn do_generate_returns_text() {
+            let server = MockServer::start().await;
+            mount_cassettes(&server, $cassette_dir).await;
+
+            let model = make_provider(&server);
+
+            let result = model.do_generate(&default_options(test_prompt())).await;
+
+            match result {
+                Ok(r) => {
+                    assert!(
+                        has_text(&r.content)
+                            || has_tool_call(&r.content)
+                            || has_reasoning(&r.content),
+                        "expected content, got {:?}",
+                        r.content
+                    );
+                }
+                Err(e) => {
+                    if is_infrastructure_error(&e) {
+                        panic!("request did not match any cassette (404): {e:?}");
                     }
-                    Err(e) => {
-                        if is_infrastructure_error(&e) {
-                            panic!("request did not match any cassette (404): {e:?}");
-                        }
-                        let msg = e.to_string();
-                        assert!(!msg.contains("panic"), "unexpected error: {}", msg);
-                    }
+                    let msg = e.to_string();
+                    assert!(!msg.contains("panic"), "unexpected error: {}", msg);
                 }
             }
+        }
 
-            #[tokio::test]
-            async fn do_stream_returns_parts() {
-                let server = MockServer::start().await;
-                mount_cassettes(&server, $cassette_dir).await;
+        #[tokio::test]
+        async fn do_stream_returns_parts() {
+            let server = MockServer::start().await;
+            mount_cassettes(&server, $cassette_dir).await;
 
-                let provider = make_provider(&server);
-                let model = provider.model($model_id);
+            let model = make_provider(&server);
 
-                let result = model.do_stream(&default_options(test_prompt())).await;
+            let result = model.do_stream(&default_options(test_prompt())).await;
 
-                match result {
-                    Ok(stream_result) => {
-                        let parts = collect_stream(stream_result).await;
-                        assert!(
-                            has_finish(&parts) || !parts.is_empty(),
-                            "stream should produce some parts"
-                        );
+            match result {
+                Ok(stream_result) => {
+                    let parts = collect_stream(stream_result).await;
+                    assert!(
+                        has_finish(&parts) || !parts.is_empty(),
+                        "stream should produce some parts"
+                    );
+                }
+                Err(e) => {
+                    if is_infrastructure_error(&e) {
+                        panic!("request did not match any cassette (404): {e:?}");
                     }
-                    Err(e) => {
-                        if is_infrastructure_error(&e) {
-                            panic!("request did not match any cassette (404): {e:?}");
-                        }
-                        let msg = e.to_string();
-                        assert!(!msg.contains("panic"), "unexpected error: {}", msg);
-                    }
+                    let msg = e.to_string();
+                    assert!(!msg.contains("panic"), "unexpected error: {}", msg);
                 }
             }
         }
     };
 }
 
-use aimux_providers::{
-    AlibabaConfig, AlibabaProvider, BasetenConfig, BasetenProvider, ByteDanceConfig,
-    ByteDanceProvider, DeepInfraConfig, DeepInfraProvider, FireworksConfig, FireworksProvider,
-    MoonshotAIConfig, MoonshotAIProvider, TogetherAIConfig, TogetherAIProvider, VercelConfig,
-    VercelProvider,
-};
-
 thin_wrapper_conformance!(
     alibaba_conformance,
-    AlibabaProvider,
-    AlibabaConfig,
+    "alibaba",
     "tests/cassettes/alibaba",
     "/compatible-mode/v1",
     "qwen-plus"
 );
 thin_wrapper_conformance!(
     baseten_conformance,
-    BasetenProvider,
-    BasetenConfig,
+    "baseten",
     "tests/cassettes/baseten",
     "/v1",
     "meta-llama/Llama-3.1-8B-Instruct"
 );
 thin_wrapper_conformance!(
     bytedance_conformance,
-    ByteDanceProvider,
-    ByteDanceConfig,
+    "bytedance",
     "tests/cassettes/bytedance",
     "/api/v3",
     "doubao-pro-32k"
 );
 thin_wrapper_conformance!(
     deepinfra_conformance,
-    DeepInfraProvider,
-    DeepInfraConfig,
+    "deepinfra",
     "tests/cassettes/deepinfra",
     "/v1/openai",
     "meta-llama/Llama-3.1-8B-Instruct"
 );
 thin_wrapper_conformance!(
     fireworks_conformance,
-    FireworksProvider,
-    FireworksConfig,
+    "fireworks",
     "tests/cassettes/fireworks",
     "/inference/v1",
     "llama-v3p1-8b-instruct"
 );
 thin_wrapper_conformance!(
     moonshotai_conformance,
-    MoonshotAIProvider,
-    MoonshotAIConfig,
+    "moonshotai",
     "tests/cassettes/moonshotai",
     "/v1",
     "moonshot-v1-8k"
 );
 thin_wrapper_conformance!(
     togetherai_conformance,
-    TogetherAIProvider,
-    TogetherAIConfig,
+    "togetherai",
     "tests/cassettes/togetherai",
     "/v1",
     "meta-llama/Llama-3.1-8B-Instruct-Turbo"
 );
 thin_wrapper_conformance!(
     vercel_conformance,
-    VercelProvider,
-    VercelConfig,
+    "vercel",
     "tests/cassettes/vercel",
     "/v1",
     "gpt-4o"
 );
 thin_wrapper_conformance!(
     github_conformance,
-    GithubProvider,
-    GithubConfig,
+    "github",
     "tests/cassettes/github",
     "",
     "gpt-4o"
 );
 thin_wrapper_conformance!(
     siliconflow_conformance,
-    SiliconFlowProvider,
-    SiliconFlowConfig,
+    "siliconflow",
     "tests/cassettes/siliconflow",
     "/v1",
     "Qwen/Qwen2.5-7B-Instruct"
@@ -1360,8 +1418,7 @@ thin_wrapper_conformance!(
 );
 thin_wrapper_conformance!(
     sambanova_conformance,
-    SambaNovaProvider,
-    SambaNovaConfig,
+    "sambanova",
     "tests/cassettes/sambanova",
     "/v1",
     "Meta-Llama-3.1-8B-Instruct"

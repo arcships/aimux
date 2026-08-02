@@ -51,6 +51,15 @@ class ModelTest {
         }
     }
 
+    @Test
+    void providerCreatesModelInstanceFromRegistry() {
+        // Registry-backed construction (deepseek is in the provider registry);
+        // the key is validated on the first API call, not construction.
+        try (Model model = Model.provider("deepseek", "sk-test-fake-key", "deepseek-chat", null)) {
+            assertThat(model).isNotNull();
+        }
+    }
+
     // ── generation ──────────────────────────────────────────────────────────
 
     @Test

@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Alibaba (DashScope / Qwen) provider.
+//! Provider-specific tests for the Alibaba (DashScope / Qwen) provider.
 //!
 //! Translated from the TypeScript suites:
 //! - `packages/alibaba/src/alibaba-provider.test.ts`
@@ -36,12 +36,11 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{AlibabaConfig, AlibabaProvider};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -99,9 +98,17 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> AlibabaProvider {
-    let config = AlibabaConfig::new("test-api-key").with_base_url(server.uri());
-    AlibabaProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "alibaba",
+        Some("test-api-key".to_string()),
+        "qwen-plus",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("alibaba provider should build")
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -110,10 +117,10 @@ fn make_provider(server: &MockServer) -> AlibabaProvider {
 
 /// TS: `createAlibaba()` produces a provider whose name is "alibaba".
 #[test]
-fn provider_name_is_alibaba() {
-    let config = AlibabaConfig::new("test-key");
-    let provider = AlibabaProvider::new(config);
-    assert_eq!(provider.name(), "alibaba");
+fn provider_builds_alibaba_model() {
+    let model = provider("alibaba", Some("test-key".to_string()), "qwen-plus", None)
+        .expect("alibaba provider should build");
+    assert_eq!(model.model_id(), "qwen-plus");
 }
 
 /// TS: `createAlibaba({ apiKey: 'custom-key' })` �?the custom key is sent in
@@ -128,9 +135,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = AlibabaConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = AlibabaProvider::new(config);
-    let model = provider.model("qwen-plus");
+    let model = provider(
+        "alibaba",
+        Some("my-custom-key".to_string()),
+        "qwen-plus",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("alibaba provider should build");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -150,9 +164,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = AlibabaConfig::new("test-key").with_base_url(server.uri());
-    let provider = AlibabaProvider::new(config);
-    let model = provider.model("qwen-plus");
+    let model = provider(
+        "alibaba",
+        Some("test-key".to_string()),
+        "qwen-plus",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("alibaba provider should build");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -178,11 +199,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = AlibabaConfig::new("test-key").with_base_url(server.uri());
-    let provider = AlibabaProvider::new(config);
-    let model = provider
-        .language_model("qwen-plus")
-        .expect("language_model should succeed");
+    let model = provider(
+        "alibaba",
+        Some("test-key".to_string()),
+        "qwen-plus",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("provider should build a model");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -199,8 +225,8 @@ fn from_env_loads_alibaba_api_key() {
         std::env::set_var("ALIBABA_API_KEY", "env-test-key");
     }
 
-    let config = AlibabaConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider_from_env("alibaba", "qwen-plus", None);
+    assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
         match saved {
@@ -219,8 +245,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("ALIBABA_API_KEY");
     }
 
-    let config = AlibabaConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider_from_env("alibaba", "qwen-plus", None);
+    assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -244,8 +270,7 @@ async fn sends_correct_request_body() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -270,8 +295,7 @@ async fn converts_tool_call_and_tool_result_messages() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let prompt: LanguageModelPrompt = vec![
         LanguageModelPromptMessage {
@@ -351,8 +375,7 @@ async fn extracts_usage_with_cache_tokens() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
     let result = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -395,8 +418,7 @@ async fn extracts_usage_with_reasoning_tokens() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
     let result = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -424,8 +446,7 @@ async fn top_level_reasoning_maps_to_reasoning_effort() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let mut options = default_options(test_prompt());
     options.reasoning = Some(ReasoningEffort::High);
@@ -449,8 +470,7 @@ async fn do_generate_returns_text() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -493,8 +513,7 @@ async fn do_generate_extracts_tool_call() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -543,8 +562,7 @@ async fn do_stream_returns_text() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let result = model
         .do_stream(&default_options(test_prompt()))
@@ -592,8 +610,7 @@ async fn status_401_maps_to_auth_error() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -614,8 +631,7 @@ async fn status_429_maps_to_rate_limited() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
@@ -638,8 +654,7 @@ async fn exposes_response_headers() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("qwen-plus");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))

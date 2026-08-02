@@ -52,6 +52,17 @@ int main(void) {
     aimux_stream_text(handle, "\"Write a haiku about Rust.\"", NULL,
                       on_part, on_done, on_error);
 
+    // 3.5 Registry provider (RFC-0017 phase 4): construct DeepSeek via the
+    // provider registry. NULL api_key reads DEEPSEEK_API_KEY from the env.
+    uint64_t ds_handle = aimux_provider_new("deepseek", NULL, "deepseek-chat", NULL);
+    if (ds_handle != 0) {
+        printf("DeepSeek (registry): handle=%lu\n", (unsigned long)ds_handle);
+        aimux_drop_handle(ds_handle);
+    } else {
+        fprintf(stderr, "Failed to create DeepSeek via registry "
+                        "(is DEEPSEEK_API_KEY set?)\n");
+    }
+
     // 4. Cleanup
     aimux_drop_handle(handle);
     printf("Handle dropped\n");

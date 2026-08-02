@@ -94,6 +94,24 @@ public final class Model: @unchecked Sendable {
         return Model(handle: handle)
     }
 
+    /// Create a model from the provider registry by name (RFC-0017 phase 4).
+    ///
+    /// - Parameters:
+    ///   - name: Registry provider name (e.g. `"deepseek"`, `"groq"`).
+    ///   - apiKey: API key, or `nil` to read the provider's env var from the
+    ///     registry entry.
+    ///   - modelId: Model id.
+    ///   - configJson: Optional JSON object of `ProviderOptions`
+    ///     (`{"base_url": "...", "headers": {...}, "max_retries": 0,
+    ///     "body_overrides": {...}}`); `nil` for defaults.
+    public static func provider(name: String, apiKey: String? = nil, modelId: String, configJson: String? = nil) throws -> Model {
+        let handle = aimux_provider_new(name, apiKey, modelId, configJson)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
     // ── Generation ─────────────────────────────────────────────────────────
 
     /// Generate text (non-streaming).

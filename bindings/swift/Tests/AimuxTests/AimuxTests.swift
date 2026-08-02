@@ -18,6 +18,15 @@ final class AimuxTests: XCTestCase {
         XCTAssertNotNil(model)
     }
 
+    func testProviderModelCreation() throws {
+        // Registry-backed construction: deepseek is in the provider registry
+        // (key is validated on first API call, not construction).
+        let model = try Model.provider(
+            name: "deepseek", apiKey: "sk-test-fake-key", modelId: "deepseek-chat"
+        )
+        XCTAssertNotNil(model)
+    }
+
     func testInvalidPromptThrows() throws {
         let model = try Model.openai(apiKey: "sk-test-fake-key", modelId: "gpt-4o-mini")
         XCTAssertThrowsError(try model.generateText(prompt: "{invalid json}"))

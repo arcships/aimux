@@ -42,17 +42,11 @@ pub struct OpenAICompatProfile {
     pub supports_response_format: bool,
     /// 流式 usage 的特殊 key。Groq 用 "x_groq"，大多数厂商用顶层 "usage"（留 None）。
     pub stream_usage_key: Option<&'static str>,
-    /// 请求体后处理：某些厂商需要在 OpenAI 基础请求体上追加额外字段
-    ///（如 DeepSeek 的 `thinking` 和重映射的 `reasoning_effort`）。
-    /// 设为 None 时不做后处理。
-    pub request_body_override: Option<RequestBodyOverride>,
-}
-
-/// 请求体后处理类型。标记哪些厂商需要特殊请求体处理。
-#[derive(Debug, Clone)]
-pub enum RequestBodyOverride {
-    /// DeepSeek：追加 `thinking` 字段，重映射 `reasoning_effort`。
-    DeepSeek,
+    /// max-token 字段的 key（内部数据，非用户概念；RFC-0017 阶段 2）。
+    /// - `Some("max_tokens")`            → 只发 `max_tokens`
+    /// - `Some("max_completion_tokens")` → 只发 `max_completion_tokens`
+    /// - `None`                          → 按模型推断（推理模型 mct / 非推理 max_tokens）
+    pub max_tokens_key: Option<&'static str>,
 }
 
 impl OpenAICompatProfile {
@@ -64,30 +58,34 @@ impl OpenAICompatProfile {
             supports_tools: true,
             supports_response_format: true,
             stream_usage_key: None,
-            request_body_override: None,
+            max_tokens_key: None,
         }
     }
 
-    /// Groq profile：不支持 top_k，流式 usage 在 x_groq 字段。
+    /// Groq profile：不支持 top_k，流式 usage 在 x_groq 字段；
+    /// `max_tokens` 已弃用，只发 `max_completion_tokens`（backlog B9）。
     pub fn groq() -> Self {
         Self {
             supports_top_k: false,
             supports_tools: true,
             supports_response_format: true,
             stream_usage_key: Some("x_groq"),
-            request_body_override: None,
+            max_tokens_key: Some("max_completion_tokens"),
         }
     }
 
-    /// DeepSeek profile：追加 thinking 字段，重映射 reasoning_effort。
+    /// 设置 `max_tokens_key`（内部数据，非用户概念）：`"max_tokens"` 或
+    /// `"max_completion_tokens"`。注册表薄封装行用此构建差异 profile。
+    pub fn with_max_tokens_key(mut self, key: &'static str) -> Self {
+        self.max_tokens_key = Some(key);
+        self
+    }
+
+    /// DeepSeek profile：特化已退役（RFC-0017 阶段 2），回归 `full()`——
+    /// thinking / effort 映射等厂商差异由用户 bodyOverrides 定义。
+    /// 保留此薄封装以维持注册表与调用方结构不变。
     pub fn deepseek() -> Self {
-        Self {
-            supports_top_k: true,
-            supports_tools: true,
-            supports_response_format: true,
-            stream_usage_key: None,
-            request_body_override: Some(RequestBodyOverride::DeepSeek),
-        }
+        Self::full()
     }
 }
 

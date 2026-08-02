@@ -22,6 +22,15 @@ class ModelTest {
     }
 
     @Test
+    fun `provider creates model instance from registry`() {
+        // Registry-backed construction (deepseek is in the provider registry);
+        // the key is validated on the first API call, not construction.
+        Model.provider("deepseek", apiKey = "sk-test-fake-key", modelId = "deepseek-chat").use { model ->
+            assertThat(model).isNotNull
+        }
+    }
+
+    @Test
     fun `generateText rejects invalid prompt`() {
         Model.openai("sk-test-fake-key", "gpt-4o-mini").use { model ->
             assertThatThrownBy {

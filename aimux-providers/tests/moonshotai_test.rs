@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Moonshot AI (Kimi) provider.
+//! Provider-specific tests for the Moonshot AI (Kimi) provider.
 //!
 //! Translated from the TypeScript suites:
 //! - `packages/moonshotai/src/moonshotai-provider.test.ts`
@@ -28,12 +28,11 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
 
-use aimux_providers::{MoonshotAIConfig, MoonshotAIProvider};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -90,9 +89,17 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     parts
 }
 
-fn make_provider(server: &MockServer) -> MoonshotAIProvider {
-    let config = MoonshotAIConfig::new("test-api-key").with_base_url(server.uri());
-    MoonshotAIProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "moonshotai",
+        Some("test-api-key".to_string()),
+        "moonshot-v1-8k",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("moonshotai provider should build")
 }
 
 /// Run a do_generate against a mock returning the given usage, returning the
@@ -105,8 +112,7 @@ async fn usage_for(usage: Value) -> aimux_core::types::Usage {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("moonshot-v1-8k");
+    let model = make_provider(&server);
     model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -120,10 +126,15 @@ async fn usage_for(usage: Value) -> aimux_core::types::Usage {
 
 /// TS: `createMoonshotAI()` produces a provider whose name is "moonshotai".
 #[test]
-fn provider_name_is_moonshotai() {
-    let config = MoonshotAIConfig::new("test-key");
-    let provider = MoonshotAIProvider::new(config);
-    assert_eq!(provider.name(), "moonshotai");
+fn provider_builds_moonshotai_model() {
+    let model = provider(
+        "moonshotai",
+        Some("test-key".to_string()),
+        "moonshot-v1-8k",
+        None,
+    )
+    .expect("moonshotai provider should build");
+    assert_eq!(model.model_id(), "moonshot-v1-8k");
 }
 
 /// TS: custom API key is sent in the `Authorization: Bearer` header.
@@ -141,9 +152,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = MoonshotAIConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = MoonshotAIProvider::new(config);
-    let model = provider.model("moonshot-v1-8k");
+    let model = provider(
+        "moonshotai",
+        Some("my-custom-key".to_string()),
+        "moonshot-v1-8k",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("moonshotai provider should build");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -166,9 +184,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = MoonshotAIConfig::new("test-key").with_base_url(server.uri());
-    let provider = MoonshotAIProvider::new(config);
-    let model = provider.model("moonshot-v1-8k");
+    let model = provider(
+        "moonshotai",
+        Some("test-key".to_string()),
+        "moonshot-v1-8k",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("moonshotai provider should build");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -197,11 +222,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = MoonshotAIConfig::new("test-key").with_base_url(server.uri());
-    let provider = MoonshotAIProvider::new(config);
-    let model = provider
-        .language_model("moonshot-v1-8k")
-        .expect("language_model should succeed");
+    let model = provider(
+        "moonshotai",
+        Some("test-key".to_string()),
+        "moonshot-v1-8k",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("provider should build a model");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -218,8 +248,8 @@ fn from_env_loads_moonshot_api_key() {
         std::env::set_var("MOONSHOT_API_KEY", "env-test-key");
     }
 
-    let config = MoonshotAIConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider_from_env("moonshotai", "moonshot-v1-8k", None);
+    assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
         match saved {
@@ -238,8 +268,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("MOONSHOT_API_KEY");
     }
 
-    let config = MoonshotAIConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider_from_env("moonshotai", "moonshot-v1-8k", None);
+    assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -370,8 +400,7 @@ async fn do_generate_returns_text() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("moonshot-v1-8k");
+    let model = make_provider(&server);
 
     let result = model
         .do_generate(&default_options(test_prompt()))
@@ -408,8 +437,7 @@ async fn do_stream_returns_text() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("moonshot-v1-8k");
+    let model = make_provider(&server);
 
     let result = model
         .do_stream(&default_options(test_prompt()))

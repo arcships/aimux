@@ -63,6 +63,10 @@ uint64_t aimux_google_embedding_new(const char *api_key, const char *model_id);
 uint64_t aimux_google_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_embed(uint64_t handle, const char *values_json, const char *opts_json);
 
+// Registry provider (RFC-0017 phase 4): name + optional api_key/env + config JSON
+uint64_t aimux_provider_new(const char *name, const char *api_key, const char *model_id, const char *config_json);
+uint64_t aimux_provider_from_env(const char *name, const char *model_id);
+
 // Speech (TTS)
 uint64_t aimux_openai_speech_new(const char *api_key, const char *model_id);
 uint64_t aimux_openai_speech_new_with_base(const char *api_key, const char *model_id, const char *base_url);
@@ -242,6 +246,44 @@ func newModel(apiKey, modelID, baseURL string, anthropic bool) (*Model, error) {
 	m.handle = uint64(h)
 
 	// Set finalizer as a safety net; callers should still use Close().
+	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
+	return m, nil
+}
+
+// Provider creates a model from the built-in registry by provider name
+// (RFC-0017 phase 4). apiKey may be "" to read the provider's env var.
+//
+//	m, err := aimux.Provider("groq", "", "llama-3.3-70b")
+func Provider(name, apiKey, modelID string) (*Model, error) {
+	return ProviderWithBase(name, apiKey, modelID, "")
+}
+
+// ProviderWithBase is Provider with a base URL override (config_json).
+func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
+	m := &Model{}
+	cName := C.CString(name)
+	cModel := C.CString(modelID)
+	defer C.free(unsafe.Pointer(cName))
+	defer C.free(unsafe.Pointer(cModel))
+
+	var cKey *C.char
+	if apiKey != "" {
+		cKey = C.CString(apiKey)
+		defer C.free(unsafe.Pointer(cKey))
+	}
+
+	var cConfig *C.char
+	if baseURL != "" {
+		cfg := `{"base_url":"` + baseURL + `"}`
+		cConfig = C.CString(cfg)
+		defer C.free(unsafe.Pointer(cConfig))
+	}
+
+	h := C.aimux_provider_new(cName, cKey, cModel, cConfig)
+	if h == 0 {
+		return nil, fmt.Errorf("aimux: failed to create provider %q (handle=0)", name)
+	}
+	m.handle = uint64(h)
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
 	return m, nil
 }

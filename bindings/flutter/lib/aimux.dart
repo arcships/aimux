@@ -26,6 +26,14 @@ typedef _NewWithBaseC = Uint64 Function(
 typedef _NewWithBaseDart = int Function(
     Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
 
+// Registry provider constructor (aimux_provider_new, RFC-0017 phase 4).
+// name/model_id are required; apiKey (null → provider env var from the
+// registry entry) and configJson (null → defaults) are optional.
+typedef _ProviderNewC = Uint64 Function(
+    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
+typedef _ProviderNewDart = int Function(
+    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
+
 typedef _GenerateTextC = Pointer<Utf8> Function(
     Uint64 handle, Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson);
 typedef _GenerateTextDart = Pointer<Utf8> Function(
@@ -51,6 +59,7 @@ final class _AimuxFFI {
   final int Function(Pointer<Utf8>, Pointer<Utf8>) anthropicNew;
   final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>) openaiNewWithBase;
   final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>) anthropicNewWithBase;
+  final int Function(Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>, Pointer<Utf8>?) providerNew;
   final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) generateText;
   final void Function(int, Pointer<Utf8>, Pointer<Utf8>?,
       Pointer<NativeFunction<_OnPartC>>, Pointer<NativeFunction<_OnDoneC>>,
@@ -63,6 +72,7 @@ final class _AimuxFFI {
       this.anthropicNew,
       this.openaiNewWithBase,
       this.anthropicNewWithBase,
+      this.providerNew,
       this.generateText,
       this.streamText,
       this.dropHandle,
@@ -77,6 +87,7 @@ final class _AimuxFFI {
       dylib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_anthropic_new'),
       dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_openai_new_with_base'),
       dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_anthropic_new_with_base'),
+      dylib.lookupFunction<_ProviderNewC, _ProviderNewDart>('aimux_provider_new'),
       dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_text'),
       dylib.lookupFunction<
           _StreamTextC,
@@ -187,6 +198,30 @@ class Model {
       });
     });
     if (h == 0) throw StateError('Failed to create Anthropic model');
+    return Model._(h, ffi);
+  }
+
+  /// Create a model from the provider registry by name (RFC-0017 phase 4).
+  ///
+  /// [apiKey] may be null to read the provider's env var from the registry
+  /// entry. [configJson] is an optional JSON object of ProviderOptions
+  /// (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`).
+  factory Model.provider(String name, String modelId,
+      {String? apiKey, String? configJson}) {
+    final ffi = _AimuxFFI();
+    final h = _withUtf8(name, (namePtr) {
+      return _withUtf8(modelId, (idPtr) {
+        final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
+        final cfgPtr = configJson != null ? configJson.toNativeUtf8() : nullptr;
+        try {
+          return ffi.providerNew(namePtr, keyPtr, idPtr, cfgPtr);
+        } finally {
+          if (keyPtr != nullptr) calloc.free(keyPtr);
+          if (cfgPtr != nullptr) calloc.free(cfgPtr);
+        }
+      });
+    });
+    if (h == 0) throw StateError('Failed to create provider model');
     return Model._(h, ffi);
   }
 

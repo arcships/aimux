@@ -4,12 +4,13 @@
 //!
 //! Each provider implements the `LanguageModel` trait from `aimux-core`.
 
-// Macro-generated OpenAI-compatible thin-wrapper providers (RFC-0012 §3.1/3.2).
-// Adding a compatible vendor now only requires one line in
-// `openai_compat_registry.rs` — no new file, no `lib.rs` edit.
-mod openai_compat;
-mod openai_compat_registry;
-pub use openai_compat_registry::*;
+// Registry-backed provider construction (RFC-0017 phase 4): all built-in
+// OpenAI-compatible providers are looked up by name from `provider_registry.json`.
+// The 250 per-provider `XxxConfig`/`XxxProvider` shell types were retired in
+// phase 4 — use [`provider`] / [`provider_from_env`] instead.
+pub mod provider;
+pub mod provider_name;
+pub use provider::{ProviderOptions, provider, provider_from_env, provider_registry_entry};
 
 pub mod anthropic;
 pub mod anthropic_aws;

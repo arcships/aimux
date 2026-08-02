@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the DeepInfra provider.
+//! Provider-specific tests for the DeepInfra provider.
 //!
 //! Translated from `packages/deepinfra/src/deepinfra-provider.test.ts`.
 //!
@@ -30,9 +30,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 
-use aimux_providers::{DeepInfraConfig, DeepInfraProvider};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -61,17 +60,30 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn make_provider(server: &MockServer) -> DeepInfraProvider {
-    let config = DeepInfraConfig::new("test-api-key").with_base_url(server.uri());
-    DeepInfraProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "deepinfra",
+        Some("test-api-key".to_string()),
+        "meta-llama/Meta-Llama-3-70B-Instruct",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("deepinfra provider should build")
 }
 
-/// TS: `createDeepInfra()` produces a provider whose name is "deepinfra".
+/// TS: `createDeepInfra()` produces a model for the "deepinfra" registry entry.
 #[test]
-fn provider_name_is_deepinfra() {
-    let config = DeepInfraConfig::new("test-key");
-    let provider = DeepInfraProvider::new(config);
-    assert_eq!(provider.name(), "deepinfra");
+fn provider_builds_deepinfra_model() {
+    let model = provider(
+        "deepinfra",
+        Some("test-key".to_string()),
+        "meta-llama/Meta-Llama-3-70B-Instruct",
+        None,
+    )
+    .expect("deepinfra provider should build");
+    assert_eq!(model.model_id(), "meta-llama/Meta-Llama-3-70B-Instruct");
 }
 
 /// TS: the default base URL appends `/chat/completions`.
@@ -84,8 +96,7 @@ async fn request_hits_chat_completions_path() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("meta-llama/Meta-Llama-3-70B-Instruct");
+    let model = make_provider(&server);
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -106,9 +117,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = DeepInfraConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = DeepInfraProvider::new(config);
-    let model = provider.model("meta-llama/Meta-Llama-3-70B-Instruct");
+    let model = provider(
+        "deepinfra",
+        Some("my-custom-key".to_string()),
+        "meta-llama/Meta-Llama-3-70B-Instruct",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("deepinfra provider should build");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -128,9 +146,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = DeepInfraConfig::new("test-key").with_base_url(server.uri());
-    let provider = DeepInfraProvider::new(config);
-    let model = provider.model("meta-llama/Meta-Llama-3-70B-Instruct");
+    let model = provider(
+        "deepinfra",
+        Some("test-key".to_string()),
+        "meta-llama/Meta-Llama-3-70B-Instruct",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("deepinfra provider should build");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -155,11 +180,7 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = DeepInfraConfig::new("test-key").with_base_url(server.uri());
-    let provider = DeepInfraProvider::new(config);
-    let model = provider
-        .language_model("meta-llama/Meta-Llama-3-70B-Instruct")
-        .expect("language_model should succeed");
+    let model = make_provider(&server);
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -176,8 +197,8 @@ fn from_env_loads_deepinfra_api_key() {
         std::env::set_var("DEEPINFRA_API_KEY", "env-test-key");
     }
 
-    let config = DeepInfraConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider_from_env("deepinfra", "meta-llama/Meta-Llama-3-70B-Instruct", None);
+    assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
         match saved {
@@ -196,8 +217,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("DEEPINFRA_API_KEY");
     }
 
-    let config = DeepInfraConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider_from_env("deepinfra", "meta-llama/Meta-Llama-3-70B-Instruct", None);
+    assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -227,8 +248,7 @@ async fn request_body_and_usage() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("meta-llama/Meta-Llama-3-70B-Instruct");
+    let model = make_provider(&server);
     let result = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -254,8 +274,7 @@ async fn status_401_maps_to_auth_error() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("meta-llama/Meta-Llama-3-70B-Instruct");
+    let model = make_provider(&server);
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(

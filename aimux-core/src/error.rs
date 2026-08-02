@@ -44,6 +44,9 @@ pub enum AiMuxError {
     #[error("no such model: {0}")]
     NoSuchModel(String),
 
+    #[error("unknown provider: {0}")]
+    UnknownProvider(String),
+
     #[error("API call error: {0}")]
     ApiCall(String),
 
@@ -98,6 +101,7 @@ impl AiMuxError {
             AiMuxError::ModelNotFound(_) => "ModelNotFound",
             AiMuxError::Unsupported(_) => "Unsupported",
             AiMuxError::NoSuchModel(_) => "NoSuchModel",
+            AiMuxError::UnknownProvider(_) => "UnknownProvider",
             AiMuxError::ApiCall(_) => "ApiCall",
             AiMuxError::Other(_) => "Other",
         }

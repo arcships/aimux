@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Cerebras provider.
+//! Provider-specific tests for the Cerebras provider.
 //!
 //! Translated from the TypeScript suites:
 //! - `packages/cerebras/src/cerebras-provider.test.ts`
@@ -31,9 +31,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 
-use aimux_providers::{CerebrasConfig, CerebrasProvider};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -62,17 +61,30 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn make_provider(server: &MockServer) -> CerebrasProvider {
-    let config = CerebrasConfig::new("test-api-key").with_base_url(server.uri());
-    CerebrasProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "cerebras",
+        Some("test-api-key".to_string()),
+        "llama-3.3-70b",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("cerebras provider should build")
 }
 
 /// TS: `createCerebras()` produces a provider whose name is "cerebras".
 #[test]
-fn provider_name_is_cerebras() {
-    let config = CerebrasConfig::new("test-key");
-    let provider = CerebrasProvider::new(config);
-    assert_eq!(provider.name(), "cerebras");
+fn provider_builds_cerebras_model() {
+    let model = provider(
+        "cerebras",
+        Some("test-key".to_string()),
+        "llama-3.3-70b",
+        None,
+    )
+    .expect("cerebras provider should build");
+    assert_eq!(model.model_id(), "llama-3.3-70b");
 }
 
 /// TS: the default base URL appends `/chat/completions`.
@@ -85,8 +97,7 @@ async fn request_hits_chat_completions_path() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("llama-3.3-70b");
+    let model = make_provider(&server);
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -107,9 +118,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = CerebrasConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = CerebrasProvider::new(config);
-    let model = provider.model("llama-3.3-70b");
+    let model = provider(
+        "cerebras",
+        Some("my-custom-key".to_string()),
+        "llama-3.3-70b",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("cerebras provider should build");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -129,9 +147,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = CerebrasConfig::new("test-key").with_base_url(server.uri());
-    let provider = CerebrasProvider::new(config);
-    let model = provider.model("llama-3.3-70b");
+    let model = provider(
+        "cerebras",
+        Some("test-key".to_string()),
+        "llama-3.3-70b",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("cerebras provider should build");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -156,11 +181,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = CerebrasConfig::new("test-key").with_base_url(server.uri());
-    let provider = CerebrasProvider::new(config);
-    let model = provider
-        .language_model("llama-3.3-70b")
-        .expect("language_model should succeed");
+    let model = provider(
+        "cerebras",
+        Some("test-key".to_string()),
+        "llama-3.3-70b",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("provider should build a model");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -177,8 +207,8 @@ fn from_env_loads_cerebras_api_key() {
         std::env::set_var("CEREBRAS_API_KEY", "env-test-key");
     }
 
-    let config = CerebrasConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider_from_env("cerebras", "llama-3.3-70b", None);
+    assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
         match saved {
@@ -197,8 +227,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("CEREBRAS_API_KEY");
     }
 
-    let config = CerebrasConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider_from_env("cerebras", "llama-3.3-70b", None);
+    assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -234,8 +264,7 @@ async fn extracts_usage_with_details() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("llama-3.3-70b");
+    let model = make_provider(&server);
     let result = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -259,8 +288,7 @@ async fn status_401_maps_to_auth_error() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("llama-3.3-70b");
+    let model = make_provider(&server);
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(

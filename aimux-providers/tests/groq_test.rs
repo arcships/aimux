@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK Groq provider tests.
+//! Rust translations of the AI SDK Groq provider tests.
 //!
 //! Sources (TS → Rust):
 //! - `packages/groq/src/convert-to-groq-chat-messages.test.ts` → message
@@ -14,8 +14,9 @@
 //!
 //! Groq is an OpenAI-compatible thin wrapper. The Rust implementation reuses
 //! `OpenAIProvider` but sets `provider = "groq"` in the config, which enables
-//! groq-specific behaviour in the shared request builder (reasoning-effort
-//! mapping, provider-options key, browser_search tool, stream_options, etc.).
+//! groq-specific behaviour in the shared request builder (provider-options key,
+//! browser_search tool, stream_options, etc.). Reasoning effort is a direct
+//! passthrough — no vendor normalization.
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -32,7 +33,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-use aimux_providers::{GroqConfig, GroqProvider};
+use aimux_providers::{ProviderOptions, provider};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -51,9 +52,17 @@ fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
 }
 
 /// Build a provider pointed at the mock server.
-fn make_provider(server: &MockServer) -> GroqProvider {
-    let config = GroqConfig::new("test-api-key").with_base_url(server.uri());
-    GroqProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "groq",
+        Some("test-api-key".to_string()),
+        "gemma2-9b-it",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("groq provider should build")
 }
 
 /// A standard non-streaming chat-completion JSON body returning "Hello, World!".
@@ -224,8 +233,7 @@ mod convert_messages {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
             role: Role::User,
@@ -255,8 +263,7 @@ mod convert_messages {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -276,8 +283,7 @@ mod convert_messages {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![
             LanguageModelPromptMessage {
@@ -323,8 +329,7 @@ mod convert_messages {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
             role: Role::Assistant,
@@ -353,8 +358,7 @@ mod convert_messages {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
             role: Role::Assistant,
@@ -377,8 +381,7 @@ mod convert_messages {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
             role: Role::User,
@@ -430,8 +433,7 @@ mod convert_usage {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -469,8 +471,7 @@ mod convert_usage {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -508,8 +509,7 @@ mod convert_usage {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -545,8 +545,7 @@ mod convert_usage {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -583,8 +582,7 @@ mod convert_usage {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -621,8 +619,7 @@ mod convert_usage {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -654,8 +651,7 @@ mod convert_usage {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -680,8 +676,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool {
             name: "testFunction".to_string(),
@@ -713,8 +708,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
             id: "some.unsupported_tool".to_string(),
@@ -742,8 +736,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool {
             name: "testFunction".to_string(),
@@ -769,8 +762,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool {
             name: "testFunction".to_string(),
@@ -796,8 +788,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new("testFunction", json!({"type": "object", "properties": {}}))
             .with_description("A test function");
@@ -817,8 +808,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
@@ -840,8 +830,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
@@ -861,8 +850,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
@@ -882,8 +870,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new("testFunction", json!({})).with_description("Test");
         let options = CallOptions {
@@ -906,8 +893,16 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("openai/gpt-oss-120b");
+        let model = provider(
+            "groq",
+            Some("test-api-key".to_string()),
+            "openai/gpt-oss-120b",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("groq provider should build");
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
             id: "groq.browser_search".to_string(),
@@ -930,8 +925,7 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = Tool::Provider(aimux_core::tool::ProviderTool {
             id: "groq.browser_search".to_string(),
@@ -961,8 +955,16 @@ mod prepare_tools {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("openai/gpt-oss-20b");
+        let model = provider(
+            "groq",
+            Some("test-api-key".to_string()),
+            "openai/gpt-oss-20b",
+            Some(ProviderOptions {
+                base_url: Some(server.uri()),
+                ..Default::default()
+            }),
+        )
+        .expect("groq provider should build");
 
         let func_tool = FunctionTool::new("test-tool", json!({"type":"object","properties":{}}))
             .with_description("A test tool");
@@ -990,8 +992,16 @@ mod prepare_tools {
             let server = MockServer::start().await;
             mock_json(&server, text_completion_body()).await;
 
-            let provider = make_provider(&server);
-            let model = provider.model(model_id);
+            let model = provider(
+                "groq",
+                Some("test-api-key".to_string()),
+                model_id,
+                Some(ProviderOptions {
+                    base_url: Some(server.uri()),
+                    ..Default::default()
+                }),
+            )
+            .expect("groq provider should build");
 
             let tool = Tool::Provider(aimux_core::tool::ProviderTool {
                 id: "groq.browser_search".to_string(),
@@ -1023,8 +1033,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1045,8 +1054,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         model
             .do_generate(&default_options(test_prompt()))
@@ -1065,8 +1073,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_tool_call_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1093,8 +1100,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_reasoning_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1115,8 +1121,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::High),
@@ -1128,14 +1133,13 @@ mod do_generate {
         assert_eq!(body["reasoning_effort"], "high");
     }
 
-    /// TS: "should coerce top-level reasoning minimal to low"
+    /// v3: minimal 直传(不再归一到 low)
     #[tokio::test]
-    async fn reasoning_effort_minimal_to_low() {
+    async fn reasoning_effort_minimal_passthrough() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::Minimal),
@@ -1144,17 +1148,16 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["reasoning_effort"], "minimal");
     }
 
-    /// TS: "should coerce top-level reasoning xhigh to high"
+    /// v3: xhigh 直传(不再归一到 high)
     #[tokio::test]
-    async fn reasoning_effort_xhigh_to_high() {
+    async fn reasoning_effort_xhigh_passthrough() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::Xhigh),
@@ -1163,17 +1166,16 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "high");
+        assert_eq!(body["reasoning_effort"], "xhigh");
     }
 
-    /// TS: "should not pass top-level reasoning none as reasoning_effort"
+    /// v3: none 直传为 "none"(不再跳过)
     #[tokio::test]
-    async fn reasoning_none_not_sent() {
+    async fn reasoning_none_passthrough() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let options = CallOptions {
             reasoning: Some(ReasoningEffort::None),
@@ -1182,7 +1184,7 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert!(body.get("reasoning_effort").is_none() || body["reasoning_effort"].is_null());
+        assert_eq!(body["reasoning_effort"], "none");
     }
 
     /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
@@ -1191,8 +1193,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let mut provider_opts = std::collections::HashMap::new();
         provider_opts.insert("groq".to_string(), json!({"reasoningEffort": "high"}));
@@ -1213,8 +1214,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1246,8 +1246,7 @@ mod do_generate {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1284,8 +1283,7 @@ mod do_generate {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1303,8 +1301,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_reasoning_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1338,8 +1335,7 @@ mod do_generate {
         )
         .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1356,8 +1352,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let mut provider_opts = std::collections::HashMap::new();
         provider_opts.insert(
@@ -1386,8 +1381,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let mut provider_opts = std::collections::HashMap::new();
         provider_opts.insert("groq".to_string(), json!({"serviceTier": "flex"}));
@@ -1407,8 +1401,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let mut provider_opts = std::collections::HashMap::new();
         provider_opts.insert("groq".to_string(), json!({"serviceTier": "performance"}));
@@ -1428,8 +1421,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new(
             "test-tool",
@@ -1463,8 +1455,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let options = CallOptions {
             response_format: Some(ResponseFormat::Json {
@@ -1495,8 +1486,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let mut provider_opts = std::collections::HashMap::new();
         provider_opts.insert("groq".to_string(), json!({"structuredOutputs": false}));
@@ -1532,8 +1522,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let mut provider_opts = std::collections::HashMap::new();
         provider_opts.insert("groq".to_string(), json!({"strictJsonSchema": false}));
@@ -1563,8 +1552,7 @@ mod do_generate {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_generate(&default_options(test_prompt()))
@@ -1601,8 +1589,7 @@ mod do_stream {
         ]);
         mock_sse(&server, body).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1643,8 +1630,7 @@ mod do_stream {
         ]);
         mock_sse(&server, body).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         model
             .do_stream(&default_options(test_prompt()))
@@ -1679,8 +1665,7 @@ mod do_stream {
         ]);
         mock_sse(&server, body).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new(
             "test-tool",
@@ -1730,8 +1715,7 @@ mod do_stream {
         )]);
         mock_sse(&server, body).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model.do_stream(&default_options(test_prompt())).await;
         // Groq error in first chunk should reject the promise
@@ -1752,8 +1736,7 @@ mod do_stream {
         ]);
         mock_sse(&server, body).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let tool = FunctionTool::new(
             "test-tool",
@@ -1787,8 +1770,7 @@ mod do_stream {
         ]);
         mock_sse(&server, body).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model
             .do_stream(&default_options(test_prompt()))
@@ -1826,8 +1808,7 @@ mod auth {
             .mount(&server)
             .await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         let result = model.do_generate(&default_options(test_prompt())).await;
         assert!(result.is_err());
@@ -1844,8 +1825,7 @@ mod auth {
         let server = MockServer::start().await;
         mock_json(&server, text_completion_body()).await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gemma2-9b-it");
+        let model = make_provider(&server);
 
         model
             .do_generate(&default_options(test_prompt()))

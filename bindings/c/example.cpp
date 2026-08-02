@@ -35,6 +35,19 @@ public:
         return AimuxModel(handle);
     }
 
+    // Registry-backed provider (RFC-0017 phase 4). api_key == nullptr reads the
+    // provider's env var from the registry entry; config_json == nullptr uses
+    // default ProviderOptions.
+    static AimuxModel provider(const std::string &name, const std::string &model_id,
+                               const char *api_key = nullptr,
+                               const char *config_json = nullptr) {
+        auto handle = aimux_provider_new(name.c_str(), api_key, model_id.c_str(), config_json);
+        if (handle == 0) {
+            throw std::runtime_error("Failed to create provider model: " + name);
+        }
+        return AimuxModel(handle);
+    }
+
     ~AimuxModel() {
         if (handle_) {
             aimux_drop_handle(handle_);

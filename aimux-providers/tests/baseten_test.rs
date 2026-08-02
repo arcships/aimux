@@ -1,4 +1,4 @@
-﻿//! Provider-specific tests for the Baseten provider.
+//! Provider-specific tests for the Baseten provider.
 //!
 //! Translated from `packages/baseten/src/baseten-provider.unit.test.ts`.
 //!
@@ -31,9 +31,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::CallOptions;
-use aimux_core::provider::Provider;
 
-use aimux_providers::{BasetenConfig, BasetenProvider};
+use aimux_providers::{ProviderOptions, provider, provider_from_env};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelPromptMessage {
@@ -62,17 +61,30 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn make_provider(server: &MockServer) -> BasetenProvider {
-    let config = BasetenConfig::new("test-api-key").with_base_url(server.uri());
-    BasetenProvider::new(config)
+fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    provider(
+        "baseten",
+        Some("test-api-key".to_string()),
+        "deepseek-ai/DeepSeek-V3-0324",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("baseten provider should build")
 }
 
 /// TS: `createBaseten()` produces a provider whose name is "baseten".
 #[test]
-fn provider_name_is_baseten() {
-    let config = BasetenConfig::new("test-key");
-    let provider = BasetenProvider::new(config);
-    assert_eq!(provider.name(), "baseten");
+fn provider_builds_baseten_model() {
+    let model = provider(
+        "baseten",
+        Some("test-key".to_string()),
+        "deepseek-ai/DeepSeek-V3-0324",
+        None,
+    )
+    .expect("baseten provider should build");
+    assert_eq!(model.model_id(), "deepseek-ai/DeepSeek-V3-0324");
 }
 
 /// TS: the default base URL appends `/chat/completions` (verified via the mock
@@ -86,8 +98,7 @@ async fn request_hits_chat_completions_path() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-ai/DeepSeek-V3-0324");
+    let model = make_provider(&server);
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
@@ -110,9 +121,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let config = BasetenConfig::new("my-custom-key").with_base_url(server.uri());
-    let provider = BasetenProvider::new(config);
-    let model = provider.model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider(
+        "baseten",
+        Some("my-custom-key".to_string()),
+        "deepseek-ai/DeepSeek-V3-0324",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("baseten provider should build");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -132,9 +150,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let config = BasetenConfig::new("test-key").with_base_url(server.uri());
-    let provider = BasetenProvider::new(config);
-    let model = provider.model("deepseek-ai/DeepSeek-V3-0324");
+    let model = provider(
+        "baseten",
+        Some("test-key".to_string()),
+        "deepseek-ai/DeepSeek-V3-0324",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("baseten provider should build");
 
     let mut options = default_options(test_prompt());
     options.headers = Some(
@@ -160,11 +185,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let config = BasetenConfig::new("test-key").with_base_url(server.uri());
-    let provider = BasetenProvider::new(config);
-    let model = provider
-        .language_model("deepseek-ai/DeepSeek-V3-0324")
-        .expect("language_model should succeed");
+    let model = provider(
+        "baseten",
+        Some("test-key".to_string()),
+        "deepseek-ai/DeepSeek-V3-0324",
+        Some(ProviderOptions {
+            base_url: Some(server.uri()),
+            ..Default::default()
+        }),
+    )
+    .expect("provider should build a model");
 
     model
         .do_generate(&default_options(test_prompt()))
@@ -181,8 +211,8 @@ fn from_env_loads_baseten_api_key() {
         std::env::set_var("BASETEN_API_KEY", "env-test-key");
     }
 
-    let config = BasetenConfig::from_env();
-    assert!(config.is_ok(), "from_env should succeed with env var set");
+    let model = provider_from_env("baseten", "deepseek-ai/DeepSeek-V3-0324", None);
+    assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
         match saved {
@@ -201,8 +231,8 @@ fn from_env_fails_without_env_var() {
         std::env::remove_var("BASETEN_API_KEY");
     }
 
-    let config = BasetenConfig::from_env();
-    assert!(config.is_err(), "from_env should fail without env var");
+    let model = provider_from_env("baseten", "deepseek-ai/DeepSeek-V3-0324", None);
+    assert!(model.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {
@@ -221,8 +251,7 @@ async fn request_body_carries_model_id() {
         .mount(&server)
         .await;
 
-    let provider = make_provider(&server);
-    let model = provider.model("deepseek-ai/DeepSeek-V3-0324");
+    let model = make_provider(&server);
     let _ = model
         .do_generate(&default_options(test_prompt()))
         .await
