@@ -20,6 +20,7 @@
 | [stage2-001](tasks/stage2-001.md) | 退役 + max_tokens_key + warning 删除（机制层） | — | ✅ done（merge 4745542） |
 | [stage2-002](tasks/stage2-002.md) | 测试套件 + 厂商 max_tokens_key 数据接线（含 B9） | 001 | ✅ done（merge 9a8c115） |
 | [stage2-003](tasks/stage2-003.md) | 用户手册 + 全量回归 + 文档收尾 | 002 | ✅ done |
+| [stage2-004](tasks/stage2-004.md) | registry base_url P0 修复（7 处，backlog B5） | — | ✅ done（merge 7a84fb4） |
 
 依赖图：
 
