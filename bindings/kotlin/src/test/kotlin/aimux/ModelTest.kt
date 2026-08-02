@@ -31,6 +31,14 @@ class ModelTest {
     }
 
     @Test
+    fun `provider creates model with ProviderName constant (recommended)`() {
+        // Recommended typed spelling: ProviderName.GROQ constant, env-var key.
+        Model.provider(name = ProviderName.GROQ, modelId = "llama-3.3-70b").use { model ->
+            assertThat(model).isNotNull
+        }
+    }
+
+    @Test
     fun `generateText rejects invalid prompt`() {
         Model.openai("sk-test-fake-key", "gpt-4o-mini").use { model ->
             assertThatThrownBy {

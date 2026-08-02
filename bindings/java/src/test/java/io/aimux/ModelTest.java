@@ -60,6 +60,14 @@ class ModelTest {
         }
     }
 
+    @Test
+    void providerCreatesModelWithProviderNameConstant() {
+        // Recommended typed spelling: ProviderName.GROQ constant, env-var key.
+        try (Model model = Model.providerFromEnv(ProviderName.GROQ, "llama-3.3-70b")) {
+            assertThat(model).isNotNull();
+        }
+    }
+
     // ── generation ──────────────────────────────────────────────────────────
 
     @Test
