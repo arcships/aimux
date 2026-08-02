@@ -18,8 +18,8 @@
 | 任务 | 内容 | 依赖 | 状态 |
 |---|---|---|---|
 | [stage2-001](tasks/stage2-001.md) | 退役 + max_tokens_key + warning 删除（机制层） | — | ✅ done（merge 4745542） |
-| [stage2-002](tasks/stage2-002.md) | 测试套件 + 厂商 max_tokens_key 数据接线（含 B9） | 001 | pending |
-| [stage2-003](tasks/stage2-003.md) | 用户手册 + 全量回归 + 文档收尾 | 002 | pending |
+| [stage2-002](tasks/stage2-002.md) | 测试套件 + 厂商 max_tokens_key 数据接线（含 B9） | 001 | ✅ done（merge 9a8c115） |
+| [stage2-003](tasks/stage2-003.md) | 用户手册 + 全量回归 + 文档收尾 | 002 | ✅ done |
 
 依赖图：
 

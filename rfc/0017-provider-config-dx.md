@@ -267,6 +267,13 @@ await generateText(model, prompt, {
 - **文档交付** — 调研矩阵 → `docs/provider-config-manual.md` 用户手册(每厂商"关思考/字段差异"的 bodyOverrides 配置示例,含 DeepSeek V4 官方三档 effort 机制)
 - **不做**:不新增任何用户可见概念;不内置任何厂商映射
 
+**实施状态(2026-08-02)**:✅ 完成
+- 退役:`RequestBodyOverride`/`apply_deepseek_override`/effort 归一化已删除(含 groq 特化),`deepseek()`/`groq()` 回归 full() 语义
+- `max_tokens_key`:内部字段 + 8 家厂商接线(6 家 `"max_tokens"` + groq/heroku `"max_completion_tokens"`,stage2-002)
+- warning 块删除(直传语义下不可达,v3 无"未翻译"状态)
+- 用户手册:`docs/provider-config-manual.md`(DeepSeek V4 官方机制 2026-08 核实)
+- 测试:`cargo test --workspace` 全绿(EXIT=0);绑定层零改动
+
 ### 阶段 3(新任务): 全网 model request config 调研 + 与 aimux 现状对比
 
 **目标**:统计**全部** OpenAI 兼容厂商(registry 中 ~120 家 thin wrapper + 原生协议厂商的 OpenAI 兼容入口)的 request 强相关特殊配置,输出可追溯的数据清单;并**逐项与 aimux 已实现对比**,得出差距清单,作为 `OpenAICompatProfile` 扩展(思考开关内置映射、`max_tokens_key` 等能力字段)的唯一依据。
