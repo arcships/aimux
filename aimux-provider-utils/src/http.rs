@@ -331,7 +331,15 @@ pub async fn send_stream_timed(
         .map_err(|_| AiMuxError::Timeout(format!("total timeout after {ms}ms")))??,
         None => send_stream(request.clone(), retry_config, error_structure).await?,
     };
-    if timeout.total_ms.is_none() && timeout.first_chunk_ms.is_none() && timeout.chunk_ms.is_none() {
+    // Wrap the body whenever timeouts OR an abort signal are in play: the
+    // wrapper is what makes the body phase honor abort, so bypassing it when
+    // only an abort signal is set would drop body cancellation (RFC-0016
+    // review S1).
+    if timeout.total_ms.is_none()
+        && timeout.first_chunk_ms.is_none()
+        && timeout.chunk_ms.is_none()
+        && request.abort_signal.is_none()
+    {
         return Ok(resp);
     }
 
@@ -421,25 +429,31 @@ struct TimeoutBodyStream {
 
 impl TimeoutBodyStream {
     /// The earliest applicable deadline and what it is, or `None` when no
-    /// limit is set. Deadline values were validated at the send entry point,
-    /// so plain `Instant + Duration` cannot overflow here.
+    /// limit is set.
+    ///
+    /// `checked_add` guards the chunk-idle case: `last_chunk_at` moves
+    /// forward with every chunk, so a value that passed entry validation
+    /// (relative to that moment) could still overflow later. On overflow the
+    /// limit is treated as total-immediate (the earliest possible deadline).
     fn next_deadline(&self) -> Option<(Instant, TimeoutKind)> {
         let phase = if self.first {
-            self.first_chunk_ms.map(|ms| {
-                (
-                    self.start + Duration::from_millis(ms),
-                    TimeoutKind::FirstChunk,
-                )
+            self.first_chunk_ms.and_then(|ms| {
+                self.start
+                    .checked_add(Duration::from_millis(ms))
+                    .map(|d| (d, TimeoutKind::FirstChunk))
             })
         } else {
             self.chunk_ms.and_then(|ms| {
                 self.last_chunk_at
-                    .map(|t| (t + Duration::from_millis(ms), TimeoutKind::ChunkIdle))
+                    .and_then(|t| t.checked_add(Duration::from_millis(ms)))
+                    .map(|d| (d, TimeoutKind::ChunkIdle))
             })
         };
-        let total = self
-            .total_ms
-            .map(|ms| (self.start + Duration::from_millis(ms), TimeoutKind::Total));
+        let total = self.total_ms.and_then(|ms| {
+            self.start
+                .checked_add(Duration::from_millis(ms))
+                .map(|d| (d, TimeoutKind::Total))
+        });
         match (phase, total) {
             (Some((pd, pk)), Some((td, _))) => {
                 if pd <= td {
@@ -449,7 +463,18 @@ impl TimeoutBodyStream {
                 }
             }
             (Some(x), None) | (None, Some(x)) => Some(x),
-            (None, None) => None,
+            // (None, None): either nothing applies in the current phase
+            // (→ no deadline) or an applicable limit overflowed its
+            // representable range (→ treat as already expired).
+            (None, None) => {
+                let phase_configured = if self.first {
+                    self.first_chunk_ms.is_some()
+                } else {
+                    self.chunk_ms.is_some()
+                };
+                (phase_configured || self.total_ms.is_some())
+                    .then_some((self.start, TimeoutKind::Total))
+            }
         }
     }
 }
@@ -567,6 +592,28 @@ impl Stream for TimeoutBodyStream {
 // retry 核心
 // ════════════════════════════════════════════════════════════════════════════
 
+/// Read an error-response body honoring abort (RFC-0016 review S2).
+///
+/// Body reads for 429/5xx/other failures are awaited before the next retry
+/// decision; without this, an abort during the read would be ignored until
+/// the next attempt.
+async fn read_error_body(
+    resp: reqwest::Response,
+    request: &HttpRequest,
+) -> Result<String, AiMuxError> {
+    match &request.abort_signal {
+        Some(signal) => {
+            let text = resp.text();
+            tokio::select! {
+                biased;
+                _ = signal.cancelled() => Err(AiMuxError::Aborted),
+                t = text => Ok(t.unwrap_or_default()),
+            }
+        }
+        None => Ok(resp.text().await.unwrap_or_default()),
+    }
+}
+
 /// retry 核心：反复 `.send()` 直到拿到 2xx 响应或耗尽重试。
 ///
 /// 这是 http 层内部函数——`reqwest::Response` 不外泄。每次重试从 `&request`
@@ -598,17 +645,17 @@ async fn send_with_retry_raw(
                             .and_then(|v| v.to_str().ok()),
                         SystemTime::now(),
                     );
-                    let _ = resp.text().await; // 消费 body
+                    let _ = read_error_body(resp, request).await?; // 消费 body
                     last_error = AiMuxError::RateLimited {
                         retry_after_ms: hint.unwrap_or(1000).max(0) as u64,
                     };
                 } else if resp.status().is_server_error() {
                     // 5xx: 可重试。
-                    let body = resp.text().await.unwrap_or_default();
+                    let body = read_error_body(resp, request).await?;
                     last_error = AiMuxError::ApiCall(format!("HTTP {}: {}", status_code, body));
                 } else {
                     // 非 4xx 非 5xx：不可重试，立即返回。
-                    let body = resp.text().await.unwrap_or_default();
+                    let body = read_error_body(resp, request).await?;
                     return Err(parse_provider_error(status_code, &body, error_structure));
                 }
             }
@@ -626,7 +673,20 @@ async fn send_with_retry_raw(
             let mut rng = rand::thread_rng();
             get_retry_delay_ms_with_jitter(hint, exponential_delay_ms, &mut rng)
         };
-        tokio::time::sleep(Duration::from_millis(delay_ms.max(0) as u64)).await;
+        // Backoff must also be abortable: aborting during a long backoff
+        // window (e.g. a large Retry-After) must not be delayed until the
+        // next attempt.
+        let delay = Duration::from_millis(delay_ms.max(0) as u64);
+        match &request.abort_signal {
+            Some(signal) => {
+                tokio::select! {
+                    biased;
+                    _ = signal.cancelled() => return Err(AiMuxError::Aborted),
+                    _ = tokio::time::sleep(delay) => {}
+                }
+            }
+            None => tokio::time::sleep(delay).await,
+        }
         exponential_delay_ms =
             exponential_delay_ms.saturating_mul(retry_config.backoff_factor as i64);
     }
@@ -925,7 +985,9 @@ mod tests {
     #[tokio::test]
     async fn abort_wakes_pending_timeout_stream() {
         // Abort while the inner stream is Pending must end the stream
-        // promptly (event-driven, no 50ms polling).
+        // promptly (event-driven, no 50ms polling). No deadline configured —
+        // this is the "abort without timeout" streaming path (RFC-0016
+        // review S1): the wrapper must still honor the signal.
         let signal = AbortSignal::new();
         let inner = futures::stream::pending::<Result<Bytes, AiMuxError>>().boxed();
         let mut timed = TimeoutBodyStream {
@@ -943,15 +1005,21 @@ mod tests {
         };
 
         let handle = tokio::spawn(async move {
-            let _ = timed.next().await;
+            let item = timed.next().await;
+            (item, timed)
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         signal.abort();
 
-        tokio::time::timeout(Duration::from_secs(2), handle)
+        let (item, mut timed) = tokio::time::timeout(Duration::from_secs(2), handle)
             .await
             .expect("abort must wake the pending stream within 2s")
             .expect("task must finish cleanly");
+        let item = item.expect("stream must yield an item");
+        assert!(matches!(item, Err(AiMuxError::Aborted)), "got {item:?}");
+        // Fused after abort.
+        let next = timed.next().await;
+        assert!(next.is_none(), "stream must be fused after abort");
     }
 
     #[tokio::test]

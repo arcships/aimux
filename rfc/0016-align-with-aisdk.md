@@ -225,6 +225,22 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 
 新增错误变体 `AiMuxError::Aborted`(error_type "Aborted",不可重试),取代散落的 `Other("request aborted")`。
 
+### 7.7 二轮 review(2026-08-02)与修复
+
+修复提交 e483d5d 后再由同组独立 agent 复验(glm-5.2 设计 / gpt-5.6-sol 代码)。上轮 P0/P1 多数确认已修复(CancellationToken 事件驱动、熔断状态机、Aborted 分类、多模态 bridge);新发现 P1 一个 + P2 若干,已全修:
+
+| # | Review 发现 | 严重度 | 修复 |
+|---|-------------|--------|------|
+| S1 | 流式 body abort 只在配了 timeout 时生效:`send_stream_timed` 早返回条件只查 timeout 字段、不查 `abort_signal`——"abort 不配 timeout"(最常见用法)丢失 body 取消。`TimeoutBodyStream` 的 no-deadline 分支本就支持 abort,被闸门挡住 | P1(两 agent 独立收敛) | 早返回条件加 `&& request.abort_signal.is_none()`([http.rs:334](../aimux-provider-utils/src/http.rs#L334));`abort_wakes_pending_timeout_stream` 单测覆盖无 timeout + abort 场景并断言 `Aborted` + 熔断 |
+| S2 | retry 错误 body(429/5xx/其他)读取与 backoff sleep 期间 abort 不生效(大 `Retry-After` 窗口内无法取消) | P2 | `read_error_body` + backoff `select!{biased; abort, sleep}`([http.rs:600](../aimux-provider-utils/src/http.rs#L600)) |
+| S3 | `validate_timeout` 校验基准与 `last_chunk_at + ms` 实际基准不一致,极限值仍可能 panic | P2 | `next_deadline` 全改 `checked_add`;溢出按"当前阶段有配置"→立即超时,否则无 deadline |
+| S4 | `abort_wakes_pending_timeout_stream` 丢弃结果、不断言错误类型 | P2 | spawn 返回 item + stream,断言 `Aborted` + 熔断 |
+| S5 | `abort_wins_over_total_timeout` 未测真 tie(90ms abort vs 100ms deadline),flaky;timed 层 tie-break 依赖 tokio 内部 poll 顺序 | P2 | 测试注释明示语义范围(严格先到,非同拍 tie);tie 依赖 tokio 实现细节已文档化 |
+| S6 | core 依赖过宽:`tokio(full)` + `tokio-util(rt)`;CancellationToken 纯 std 实现、只需 tokio-util 默认 features | P2 | core 删除 tokio 依赖,`tokio-util = "0.7"`(默认 features),core 保持 runtime-agnostic |
+| S7 | first_chunk wiremock 测试实际测的是 header 延迟,注释误导 | P2 | 注释修正并指明 body-pending 路径由单测覆盖 |
+
+未采纳(记录):Node 多模态缺 signal→bridge TS 包装层(P2/nit,裸 napi 层已一致,包装层可后续补);`send_timed`/`send_stream_timed` 建连阶段显式 `select!{biased}` 替代 `tokio::time::timeout`(P2,当前内层先 poll 使 Aborted 赢,已文档化依赖)。
+
 ### 7.5 明确不做(2026-08-02 决策)
 
 | # | 缺口 | 决策 | 理由 |

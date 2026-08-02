@@ -374,8 +374,13 @@ async fn send_timed_within_budget_succeeds() {
 
 #[tokio::test]
 async fn send_stream_timed_first_chunk_timeout() {
-    // Response starts streaming only after 500ms — the first-chunk deadline
-    // (100ms) must fire while waiting for the first byte.
+    // wiremock's `set_delay` delays the whole response (headers included), so
+    // this test covers "the first-byte budget includes response-header
+    // latency" — the first-chunk timer counts from request start. The
+    // body-pending wakeup path itself is covered by the unit tests
+    // (`timeout_stream_yields_after_first_chunk_deadline` and
+    // `timeout_stream_enforces_chunk_idle_deadline`), which use a pending
+    // inner stream.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat"))
@@ -473,8 +478,11 @@ async fn send_timed_zero_total_fails_immediately() {
 
 #[tokio::test]
 async fn abort_wins_over_total_timeout() {
-    // When abort and the total deadline race, the abort must be reported
-    // (biased select) — RFC-0016 review P1 (stable error classification).
+    // Abort fires strictly before the 100ms total deadline, so the call must
+    // report Aborted — verifying the documented "abort wins" semantics for
+    // the connect phase (biased select inside send_request). A true
+    // same-instant tie is not exercised here (that depends on tokio's
+    // internal poll order); see RFC-0016 §7.6 S5.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat"))
