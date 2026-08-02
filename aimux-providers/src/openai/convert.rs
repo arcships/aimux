@@ -1007,7 +1007,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
 
 /// Convert `CallOptions` to an OpenAI request body, returning warnings.
 /// `provider` controls provider-specific behaviour (e.g. groq reads provider
-/// options from the `"groq"` key and applies a reasoning-effort map).
+/// options from the `"groq"` key).
 /// `profile` declares provider capability differences (top_k, tools, etc.).
 pub fn build_request_body_with_warnings_fallible(
     model_id: &str,
@@ -1038,23 +1038,15 @@ pub fn build_request_body_with_warnings_fallible(
         openai_option(provider_opts, key)
     };
 
-    // Resolve reasoning effort.
-    // Groq maps minimal→low, xhigh→high, and skips 'none' (no reasoning_effort
-    // sent). Other providers use the raw value.
+    // Resolve reasoning effort — direct passthrough (v3: no built-in vendor
+    // normalization). Top-level `reasoning` maps verbatim to `reasoning_effort`
+    // (all levels sent as-is, including none/minimal/xhigh);
+    // `providerOptions.reasoningEffort` wins over top-level `reasoning`.
     let resolved_reasoning_effort: Option<String> = popt("reasoningEffort")
         .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()))
         .or_else(|| {
             if is_custom_reasoning(&options.reasoning) {
-                if provider == "groq" {
-                    match options.reasoning? {
-                        ReasoningEffort::None => None,
-                        ReasoningEffort::Minimal => Some("low".to_string()),
-                        ReasoningEffort::Xhigh => Some("high".to_string()),
-                        other => Some(other.to_string()),
-                    }
-                } else {
-                    options.reasoning.map(|r| r.to_string())
-                }
+                options.reasoning.map(|r| r.to_string())
             } else {
                 None
             }

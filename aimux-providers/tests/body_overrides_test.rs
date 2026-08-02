@@ -220,9 +220,9 @@ fn max_tokens_key_max_completion_tokens_non_reasoning() {
 
 // ── warning: reasoning 无映射提示 (stage2-001, RFC-0017 phase 2 §2.4) ────────
 
-/// 未发 effort 路径（groq 跳过 'none'）→ warning 透出（不静默）。
+/// 直传路径: groq 不再特化归一化(`none` 原样透传 'none')→ 已发 effort,不 warning。
 #[test]
-fn warning_when_reasoning_not_translated() {
+fn groq_none_passthrough_no_warning() {
     let opts = CallOptions {
         prompt: user_prompt(),
         reasoning: Some(ReasoningEffort::None),
@@ -235,13 +235,13 @@ fn warning_when_reasoning_not_translated() {
         "groq",
         &aimux_providers::openai::OpenAICompatProfile::groq(),
     );
-    assert!(result.body.get("reasoning_effort").is_none());
+    assert_eq!(result.body["reasoning_effort"], json!("none"));
     let reasoning_warning = result.warnings.iter().find(|w| {
         matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning")
     });
     assert!(
-        reasoning_warning.is_some(),
-        "reasoning 设置了但未发 effort 时应 warning(不静默): {:?}",
+        reasoning_warning.is_none(),
+        "已发 effort 时不应 warning(防误报): {:?}",
         result.warnings
     );
 }

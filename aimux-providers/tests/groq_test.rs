@@ -14,8 +14,9 @@
 //!
 //! Groq is an OpenAI-compatible thin wrapper. The Rust implementation reuses
 //! `OpenAIProvider` but sets `provider = "groq"` in the config, which enables
-//! groq-specific behaviour in the shared request builder (reasoning-effort
-//! mapping, provider-options key, browser_search tool, stream_options, etc.).
+//! groq-specific behaviour in the shared request builder (provider-options key,
+//! browser_search tool, stream_options, etc.). Reasoning effort is a direct
+//! passthrough — no vendor normalization.
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -1128,9 +1129,9 @@ mod do_generate {
         assert_eq!(body["reasoning_effort"], "high");
     }
 
-    /// TS: "should coerce top-level reasoning minimal to low"
+    /// v3: minimal 直传(不再归一到 low)
     #[tokio::test]
-    async fn reasoning_effort_minimal_to_low() {
+    async fn reasoning_effort_minimal_passthrough() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
@@ -1144,12 +1145,12 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["reasoning_effort"], "minimal");
     }
 
-    /// TS: "should coerce top-level reasoning xhigh to high"
+    /// v3: xhigh 直传(不再归一到 high)
     #[tokio::test]
-    async fn reasoning_effort_xhigh_to_high() {
+    async fn reasoning_effort_xhigh_passthrough() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
@@ -1163,12 +1164,12 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "high");
+        assert_eq!(body["reasoning_effort"], "xhigh");
     }
 
-    /// TS: "should not pass top-level reasoning none as reasoning_effort"
+    /// v3: none 直传为 "none"(不再跳过)
     #[tokio::test]
-    async fn reasoning_none_not_sent() {
+    async fn reasoning_none_passthrough() {
         let server = MockServer::start().await;
         mock_json(&server, groq_text_body()).await;
 
@@ -1182,7 +1183,7 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert!(body.get("reasoning_effort").is_none() || body["reasoning_effort"].is_null());
+        assert_eq!(body["reasoning_effort"], "none");
     }
 
     /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
