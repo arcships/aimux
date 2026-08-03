@@ -218,8 +218,12 @@ jobs:
 
   # ── Go binding: build FFI static archive + vet/test ───────────────────────
   go-binding:
-    name: Go binding
-    runs-on: ubuntu-latest
+    name: Go binding (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -10,7 +10,10 @@ package aimux
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../aimux-ffi
-#cgo LDFLAGS: -L${SRCDIR}/../../target/release -Wl,-Bstatic -laimux_ffi -Wl,-Bdynamic -lpthread -ldl -lm
+// GNU ld (Linux/mingw/BSD) needs -Bstatic/-Bdynamic to prefer the static
+// archive; ld64 (macOS) rejects those flags, so link the .a explicitly there.
+#cgo !darwin LDFLAGS: -L${SRCDIR}/../../target/release -Wl,-Bstatic -laimux_ffi -Wl,-Bdynamic -lpthread -ldl -lm
+#cgo darwin LDFLAGS: ${SRCDIR}/../../target/release/libaimux_ffi.a -lpthread -ldl -lm
 
 #include <stdint.h>
 #include <stdlib.h>
