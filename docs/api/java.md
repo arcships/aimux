@@ -4,7 +4,7 @@
 
 The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
 toolchain is needed at build time, and the native library ships as per-platform
-classifier JARs. Artifact: `io.aimux:aimux-java:0.1.0`, Java 8+ (compiled with
+classifier JARs. Artifact: `io.aimux:aimux-java:0.2.0`, Java 8+ (compiled with
 `--release 8`). See [RFC-0013](../../rfc/0013-java-bindings.md) for the design.
 
 Shared reference — parameter tables, result shapes, factory functions, and the
