@@ -503,22 +503,19 @@ impl Stream for TimeoutBodyStream {
 
         // Lazy-create the event-driven abort waiter so an abort wakes us
         // while Pending (the signal's `Notify` stores the waker).
-        if this.abort_wait.is_none() && this.abort_signal.is_some() {
-            this.abort_wait = Some(Box::pin(
-                this.abort_signal
-                    .as_ref()
-                    .expect("checked above")
-                    .cancelled(),
-            ));
+        if this.abort_wait.is_none()
+            && let Some(signal) = this.abort_signal.as_ref()
+        {
+            this.abort_wait = Some(Box::pin(signal.cancelled()));
         }
 
         let Some((deadline, kind)) = this.next_deadline() else {
             // No timeout configured: pass through (abort still honored).
-            if let Some(wait) = this.abort_wait.as_mut() {
-                if wait.as_mut().poll(cx).is_ready() {
-                    this.done = true;
-                    return Poll::Ready(Some(Err(AiMuxError::Aborted)));
-                }
+            if let Some(wait) = this.abort_wait.as_mut()
+                && wait.as_mut().poll(cx).is_ready()
+            {
+                this.done = true;
+                return Poll::Ready(Some(Err(AiMuxError::Aborted)));
             }
             let result = this.inner.as_mut().poll_next(cx);
             match &result {
@@ -549,21 +546,21 @@ impl Stream for TimeoutBodyStream {
             this.sleep = Some(Box::pin(tokio::time::sleep_until(deadline.into())));
         }
 
-        loop {
+        {
             // Abort wins over any deadline.
-            if let Some(wait) = this.abort_wait.as_mut() {
-                if wait.as_mut().poll(cx).is_ready() {
-                    this.done = true;
-                    this.sleep = None;
-                    return Poll::Ready(Some(Err(AiMuxError::Aborted)));
-                }
+            if let Some(wait) = this.abort_wait.as_mut()
+                && wait.as_mut().poll(cx).is_ready()
+            {
+                this.done = true;
+                this.sleep = None;
+                return Poll::Ready(Some(Err(AiMuxError::Aborted)));
             }
-            if let Some(sleep) = this.sleep.as_mut() {
-                if sleep.as_mut().poll(cx).is_ready() {
-                    this.done = true;
-                    this.sleep = None;
-                    return Poll::Ready(Some(Err(AiMuxError::Timeout(kind.message().to_string()))));
-                }
+            if let Some(sleep) = this.sleep.as_mut()
+                && sleep.as_mut().poll(cx).is_ready()
+            {
+                this.done = true;
+                this.sleep = None;
+                return Poll::Ready(Some(Err(AiMuxError::Timeout(kind.message().to_string()))));
             }
             match this.inner.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(bytes))) => {
@@ -572,19 +569,19 @@ impl Stream for TimeoutBodyStream {
                     // Reset the idle window: the next poll re-creates the
                     // timer with a fresh `now + chunk_ms` deadline.
                     this.sleep = None;
-                    return Poll::Ready(Some(Ok(bytes)));
+                    Poll::Ready(Some(Ok(bytes)))
                 }
                 Poll::Ready(Some(Err(e))) => {
                     this.done = true;
                     this.sleep = None;
-                    return Poll::Ready(Some(Err(e)));
+                    Poll::Ready(Some(Err(e)))
                 }
                 Poll::Ready(None) => {
                     this.done = true;
                     this.sleep = None;
-                    return Poll::Ready(None);
+                    Poll::Ready(None)
                 }
-                Poll::Pending => return Poll::Pending,
+                Poll::Pending => Poll::Pending,
             }
         }
     }
