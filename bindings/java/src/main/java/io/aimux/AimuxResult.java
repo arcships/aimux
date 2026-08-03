@@ -36,6 +36,48 @@ final class AimuxResult {
     }
 
     /**
+     * Read a constructor's JSON result ({@code {"handle":<u64>}} on success,
+     * {@code {"error":"..."}} on failure), free the pointer, and return the
+     * native handle.
+     *
+     * @param ptr     the pointer returned by an {@code aimux_*_new*} function
+     *                (may be null)
+     * @param context description of what was being constructed, used to
+     *                prefix the thrown message (e.g. "Failed to create OpenAI
+     *                model")
+     * @return the non-zero handle
+     * @throws IllegalArgumentException if construction failed, with the
+     *         underlying engine error appended when available
+     */
+    static long extractHandle(com.sun.jna.Pointer ptr, String context) {
+        if (ptr == null) {
+            throw new IllegalArgumentException(context + ": constructor returned null");
+        }
+        String result;
+        try {
+            result = ptr.getString(0, "UTF-8");
+        } finally {
+            AimuxFFI.INSTANCE.aimux_free_string(ptr);
+        }
+        try {
+            JsonNode node = Types.AimuxJson.MAPPER.readTree(result);
+            JsonNode err = node.get("error");
+            if (err != null && err.isTextual()) {
+                throw new IllegalArgumentException(context + ": " + err.asText());
+            }
+            JsonNode handle = node.get("handle");
+            if (handle != null && handle.isIntegralNumber()) {
+                return handle.asLong();
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception ignored) {
+            // Not valid JSON — fall through to the generic error below.
+        }
+        throw new IllegalArgumentException(context + ": invalid constructor response: " + result);
+    }
+
+    /**
      * If {@code result} is a {@code {"error":"..."}} envelope, throw
      * {@link AimuxException} with the message. Otherwise return.
      */

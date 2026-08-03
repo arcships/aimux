@@ -23,24 +23,26 @@ import 'package:ffi/ffi.dart';
 
 // Constructors taking (api_key, model_id) → handle. Shared by every embedding,
 // speech, image, transcription, reranking, video, and search provider.
-typedef _NewC = Uint64 Function(Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
-typedef _NewDart = int Function(Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
+typedef _NewC = Pointer<Utf8> Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
+typedef _NewDart = Pointer<Utf8> Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
 
 // Constructors taking (api_key, model_id, base_url) → handle (the _with_base
 // variants). Same signature for every provider.
-typedef _NewWithBaseC = Uint64 Function(
+typedef _NewWithBaseC = Pointer<Utf8> Function(
     Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
-typedef _NewWithBaseDart = int Function(
+typedef _NewWithBaseDart = Pointer<Utf8> Function(
     Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
 
 // Files constructors take only (api_key) — no model_id.
-typedef _FilesNewC = Uint64 Function(Pointer<Utf8> apiKey);
-typedef _FilesNewDart = int Function(Pointer<Utf8> apiKey);
+typedef _FilesNewC = Pointer<Utf8> Function(Pointer<Utf8> apiKey);
+typedef _FilesNewDart = Pointer<Utf8> Function(Pointer<Utf8> apiKey);
 
 // Files constructors with a custom base URL: (api_key, base_url).
-typedef _FilesNewWithBaseC = Uint64 Function(
+typedef _FilesNewWithBaseC = Pointer<Utf8> Function(
     Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl);
-typedef _FilesNewWithBaseDart = int Function(
+typedef _FilesNewWithBaseDart = Pointer<Utf8> Function(
     Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl);
 
 // aimux_embed(handle, values_json, opts_json) — opts nullable.
@@ -58,10 +60,10 @@ typedef _GenerateOpts1Dart = Pointer<Utf8> Function(
 
 // Three-arg generate functions: (handle, a, b, opts_json) → string, opts
 // nullable. Covers transcription_generate and file_upload.
-typedef _GenerateOpts3C = Pointer<Utf8> Function(Uint64 handle, Pointer<Utf8> a,
-    Pointer<Utf8> b, Pointer<Utf8>? optsJson);
-typedef _GenerateOpts3Dart = Pointer<Utf8> Function(int handle, Pointer<Utf8> a,
-    Pointer<Utf8> b, Pointer<Utf8>? optsJson);
+typedef _GenerateOpts3C = Pointer<Utf8> Function(
+    Uint64 handle, Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8>? optsJson);
+typedef _GenerateOpts3Dart = Pointer<Utf8> Function(
+    int handle, Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8>? optsJson);
 
 // Resource management (same as aimux.dart).
 typedef _DropHandleC = Void Function(Uint64);
@@ -75,42 +77,44 @@ typedef _FreeStringDart = void Function(Pointer<Utf8>);
 
 final class _MultimodalFFI {
   // Constructors — (api_key, model_id)
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) openaiEmbeddingNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) cohereEmbeddingNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) googleEmbeddingNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) openaiSpeechNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) openaiImageNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) googleImageNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) openaiTranscriptionNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) cohereRerankingNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) googleVideoNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) tavilySearchNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiEmbeddingNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) cohereEmbeddingNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) googleEmbeddingNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiSpeechNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiImageNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) googleImageNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)
+      openaiTranscriptionNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) cohereRerankingNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) googleVideoNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) tavilySearchNew;
 
   // Constructors — (api_key, model_id, base_url)
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       openaiEmbeddingNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       cohereEmbeddingNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       googleEmbeddingNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       openaiSpeechNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       openaiImageNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       googleImageNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       openaiTranscriptionNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       cohereRerankingNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       googleVideoNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
       tavilySearchNewWithBase;
 
   // Files constructors
-  final int Function(Pointer<Utf8>) openaiFilesNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) openaiFilesNewWithBase;
+  final Pointer<Utf8> Function(Pointer<Utf8>) openaiFilesNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)
+      openaiFilesNewWithBase;
 
   // Generate / embed / rerank / search / upload
   final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) embed;
@@ -119,10 +123,10 @@ final class _MultimodalFFI {
   final Pointer<Utf8> Function(int, Pointer<Utf8>) videoGenerate;
   final Pointer<Utf8> Function(int, Pointer<Utf8>) rerank;
   final Pointer<Utf8> Function(int, Pointer<Utf8>) search;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?)
-      transcriptionGenerate;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?)
-      fileUpload;
+  final Pointer<Utf8> Function(
+      int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?) transcriptionGenerate;
+  final Pointer<Utf8> Function(
+      int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?) fileUpload;
 
   // Resource management
   final void Function(int) dropHandle;
@@ -265,6 +269,24 @@ String _readResult(_MultimodalFFI ffi, Pointer<Utf8> ptr) {
   return result;
 }
 
+// Parse a constructor's JSON result (`{"handle":<u64>}` on success,
+// `{"error":"..."}` on failure), free the pointer, and return the handle.
+// Mirrors aimux.dart's `_extractHandle` (duplicated here to keep this file
+// self-contained, same as `_withUtf8`).
+int _extractHandle(_MultimodalFFI ffi, Pointer<Utf8> ptr) {
+  if (ptr == nullptr) throw StateError('constructor returned null');
+  final result = ptr.toDartString();
+  ffi.freeString(ptr);
+  final decoded = jsonDecode(result);
+  if (decoded is Map<String, dynamic>) {
+    final error = decoded['error'];
+    if (error is String) throw StateError(error);
+    final handle = decoded['handle'];
+    if (handle is int) return handle;
+  }
+  throw StateError('invalid constructor response: $result');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // EmbeddingModel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -286,51 +308,54 @@ class EmbeddingModel {
   factory EmbeddingModel.openai(String apiKey, String modelId,
       {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.openaiEmbeddingNew(keyPtr, idPtr);
         }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.openaiEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
+        return _withUtf8(
+            baseUrl,
+            (basePtr) =>
+                ffi.openaiEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create OpenAI embedding model');
-    return EmbeddingModel._(h, ffi);
+    return EmbeddingModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a Cohere embedding model (e.g. embed-english-v3.0).
   factory EmbeddingModel.cohere(String apiKey, String modelId,
       {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.cohereEmbeddingNew(keyPtr, idPtr);
         }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.cohereEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
+        return _withUtf8(
+            baseUrl,
+            (basePtr) =>
+                ffi.cohereEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Cohere embedding model');
-    return EmbeddingModel._(h, ffi);
+    return EmbeddingModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a Google embedding model (e.g. gemini-embedding-001).
   factory EmbeddingModel.google(String apiKey, String modelId,
       {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.googleEmbeddingNew(keyPtr, idPtr);
         }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.googleEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
+        return _withUtf8(
+            baseUrl,
+            (basePtr) =>
+                ffi.googleEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Google embedding model');
-    return EmbeddingModel._(h, ffi);
+    return EmbeddingModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Generate embeddings for [valuesJson] (a JSON array of strings).
@@ -378,10 +403,9 @@ class SpeechModel {
   SpeechModel._(this._handle, this._ffi);
 
   /// Create an OpenAI speech (TTS) model.
-  factory SpeechModel.openai(String apiKey, String modelId,
-      {String? baseUrl}) {
+  factory SpeechModel.openai(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.openaiSpeechNew(keyPtr, idPtr);
@@ -390,8 +414,7 @@ class SpeechModel {
             (basePtr) => ffi.openaiSpeechNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create OpenAI speech model');
-    return SpeechModel._(h, ffi);
+    return SpeechModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Generate speech audio from [optsJson] (serialized SpeechCallOptions).
@@ -436,17 +459,18 @@ class TranscriptionModel {
   factory TranscriptionModel.openai(String apiKey, String modelId,
       {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.openaiTranscriptionNew(keyPtr, idPtr);
         }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.openaiTranscriptionNewWithBase(keyPtr, idPtr, basePtr));
+        return _withUtf8(
+            baseUrl,
+            (basePtr) =>
+                ffi.openaiTranscriptionNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create OpenAI transcription model');
-    return TranscriptionModel._(h, ffi);
+    return TranscriptionModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Transcribe audio to text.
@@ -501,7 +525,7 @@ class ImageModel {
   /// Create an OpenAI image model (e.g. dall-e-3).
   factory ImageModel.openai(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.openaiImageNew(keyPtr, idPtr);
@@ -510,14 +534,13 @@ class ImageModel {
             (basePtr) => ffi.openaiImageNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create OpenAI image model');
-    return ImageModel._(h, ffi);
+    return ImageModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a Google image model (e.g. gemini-2.5-flash-image).
   factory ImageModel.google(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.googleImageNew(keyPtr, idPtr);
@@ -526,8 +549,7 @@ class ImageModel {
             (basePtr) => ffi.googleImageNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Google image model');
-    return ImageModel._(h, ffi);
+    return ImageModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Generate images from [optsJson] (serialized ImageCallOptions).
@@ -571,7 +593,7 @@ class VideoModel {
   /// Create a Google video model (e.g. veo-3.0).
   factory VideoModel.google(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.googleVideoNew(keyPtr, idPtr);
@@ -580,8 +602,7 @@ class VideoModel {
             (basePtr) => ffi.googleVideoNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Google video model');
-    return VideoModel._(h, ffi);
+    return VideoModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Generate videos from [optsJson] (serialized VideoCallOptions).
@@ -626,17 +647,18 @@ class RerankingModel {
   factory RerankingModel.cohere(String apiKey, String modelId,
       {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.cohereRerankingNew(keyPtr, idPtr);
         }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.cohereRerankingNewWithBase(keyPtr, idPtr, basePtr));
+        return _withUtf8(
+            baseUrl,
+            (basePtr) =>
+                ffi.cohereRerankingNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Cohere reranking model');
-    return RerankingModel._(h, ffi);
+    return RerankingModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Rerank documents against a query.
@@ -682,7 +704,7 @@ class SearchModel {
   /// ID is needed — an empty string is passed (the C ABI ignores it).
   factory SearchModel.tavily(String apiKey, {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8('', (idPtr) {
         if (baseUrl == null) {
           return ffi.tavilySearchNew(keyPtr, idPtr);
@@ -691,8 +713,7 @@ class SearchModel {
             (basePtr) => ffi.tavilySearchNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Tavily search model');
-    return SearchModel._(h, ffi);
+    return SearchModel._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Perform a web search.
@@ -737,15 +758,14 @@ class Files {
   /// Create an OpenAI files manager. Files take only an API key (no model ID).
   factory Files.openai(String apiKey, {String? baseUrl}) {
     final ffi = _MultimodalFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       if (baseUrl == null) {
         return ffi.openaiFilesNew(keyPtr);
       }
       return _withUtf8(
           baseUrl, (basePtr) => ffi.openaiFilesNewWithBase(keyPtr, basePtr));
     });
-    if (h == 0) throw StateError('Failed to create OpenAI files manager');
-    return Files._(h, ffi);
+    return Files._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Upload a file to the provider.

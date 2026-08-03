@@ -57,53 +57,53 @@ static void do_stream(uint64_t handle, const char* prompt, const char* opts, int
 //    exported as C symbols from libaimux_ffi.a) ────────────────────────────
 
 // Embedding
-uint64_t aimux_openai_embedding_new(const char *api_key, const char *model_id);
-uint64_t aimux_openai_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
-uint64_t aimux_cohere_embedding_new(const char *api_key, const char *model_id);
-uint64_t aimux_cohere_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
-uint64_t aimux_google_embedding_new(const char *api_key, const char *model_id);
-uint64_t aimux_google_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_openai_embedding_new(const char *api_key, const char *model_id);
+char *aimux_openai_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_cohere_embedding_new(const char *api_key, const char *model_id);
+char *aimux_cohere_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_google_embedding_new(const char *api_key, const char *model_id);
+char *aimux_google_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_embed(uint64_t handle, const char *values_json, const char *opts_json);
 
 // Registry provider (RFC-0017 phase 4): name + optional api_key/env + config JSON
-uint64_t aimux_provider_new(const char *name, const char *api_key, const char *model_id, const char *config_json);
-uint64_t aimux_provider_from_env(const char *name, const char *model_id);
+char *aimux_provider_new(const char *name, const char *api_key, const char *model_id, const char *config_json);
+char *aimux_provider_from_env(const char *name, const char *model_id);
 
 // Speech (TTS)
-uint64_t aimux_openai_speech_new(const char *api_key, const char *model_id);
-uint64_t aimux_openai_speech_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_openai_speech_new(const char *api_key, const char *model_id);
+char *aimux_openai_speech_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_speech_generate(uint64_t handle, const char *opts_json);
 
 // Image
-uint64_t aimux_openai_image_new(const char *api_key, const char *model_id);
-uint64_t aimux_openai_image_new_with_base(const char *api_key, const char *model_id, const char *base_url);
-uint64_t aimux_google_image_new(const char *api_key, const char *model_id);
-uint64_t aimux_google_image_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_openai_image_new(const char *api_key, const char *model_id);
+char *aimux_openai_image_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_google_image_new(const char *api_key, const char *model_id);
+char *aimux_google_image_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_image_generate(uint64_t handle, const char *opts_json);
 
 // Transcription (STT)
-uint64_t aimux_openai_transcription_new(const char *api_key, const char *model_id);
-uint64_t aimux_openai_transcription_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_openai_transcription_new(const char *api_key, const char *model_id);
+char *aimux_openai_transcription_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_transcription_generate(uint64_t handle, const char *audio_base64, const char *media_type, const char *opts_json);
 
 // Files
-uint64_t aimux_openai_files_new(const char *api_key);
-uint64_t aimux_openai_files_new_with_base(const char *api_key, const char *base_url);
+char *aimux_openai_files_new(const char *api_key);
+char *aimux_openai_files_new_with_base(const char *api_key, const char *base_url);
 char *aimux_file_upload(uint64_t handle, const char *data_base64, const char *media_type, const char *opts_json);
 
 // Reranking
-uint64_t aimux_cohere_reranking_new(const char *api_key, const char *model_id);
-uint64_t aimux_cohere_reranking_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_cohere_reranking_new(const char *api_key, const char *model_id);
+char *aimux_cohere_reranking_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_rerank(uint64_t handle, const char *opts_json);
 
 // Video
-uint64_t aimux_google_video_new(const char *api_key, const char *model_id);
-uint64_t aimux_google_video_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_google_video_new(const char *api_key, const char *model_id);
+char *aimux_google_video_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_video_generate(uint64_t handle, const char *opts_json);
 
 // Search
-uint64_t aimux_tavily_search_new(const char *api_key, const char *model_id);
-uint64_t aimux_tavily_search_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+char *aimux_tavily_search_new(const char *api_key, const char *model_id);
+char *aimux_tavily_search_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_search(uint64_t handle, const char *opts_json);
 */
 import "C"
@@ -309,56 +309,68 @@ func mustNew(m *Model, err error) *Model {
 	return m
 }
 
+// parseHandleJSON parses a constructor's JSON result
+// (`{"handle":<u64>}` on success, `{"error":...}` on failure), freeing the
+// C string. Mirrors extractError, which does the same for GenerateText.
+func parseHandleJSON(ptr *C.char) (uint64, error) {
+	if ptr == nil {
+		return 0, errors.New("aimux: constructor returned null")
+	}
+	defer C.aimux_free_string(ptr)
+	result := C.GoString(ptr)
+	if msg := extractError(result); msg != "" {
+		return 0, fmt.Errorf("aimux: %s", msg)
+	}
+	var envelope struct {
+		Handle uint64 `json:"handle"`
+	}
+	if err := json.Unmarshal([]byte(result), &envelope); err != nil {
+		return 0, fmt.Errorf("aimux: failed to parse constructor result: %w", err)
+	}
+	if envelope.Handle == 0 {
+		return 0, fmt.Errorf("aimux: constructor returned neither handle nor error: %s", result)
+	}
+	return envelope.Handle, nil
+}
+
 func newModel(apiKey, modelID, baseURL, kind string) (*Model, error) {
-	// Constructor + last_error read must run on the same OS thread
-	// (aimux_last_error is thread-local). Constructors are pure config
-	// building, so pinning the thread is cheap.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	m := &Model{}
 	cKey := C.CString(apiKey)
 	cModel := C.CString(modelID)
 	defer C.free(unsafe.Pointer(cKey))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var h C.uint64_t
+	var ptr *C.char
 	if baseURL == "" {
 		switch kind {
 		case "anthropic":
-			h = C.aimux_anthropic_new(cKey, cModel)
+			ptr = C.aimux_anthropic_new(cKey, cModel)
 		case "cohere":
-			h = C.aimux_cohere_new(cKey, cModel)
+			ptr = C.aimux_cohere_new(cKey, cModel)
 		case "mistral":
-			h = C.aimux_mistral_new(cKey, cModel)
+			ptr = C.aimux_mistral_new(cKey, cModel)
 		case "xai":
-			h = C.aimux_xai_new(cKey, cModel)
+			ptr = C.aimux_xai_new(cKey, cModel)
 		default:
-			h = C.aimux_openai_new(cKey, cModel)
+			ptr = C.aimux_openai_new(cKey, cModel)
 		}
 	} else {
 		cBase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cBase))
 		switch kind {
 		case "anthropic":
-			h = C.aimux_anthropic_new_with_base(cKey, cModel, cBase)
+			ptr = C.aimux_anthropic_new_with_base(cKey, cModel, cBase)
 		case "cohere":
-			h = C.aimux_cohere_new_with_base(cKey, cModel, cBase)
+			ptr = C.aimux_cohere_new_with_base(cKey, cModel, cBase)
 		case "mistral":
-			h = C.aimux_mistral_new_with_base(cKey, cModel, cBase)
+			ptr = C.aimux_mistral_new_with_base(cKey, cModel, cBase)
 		case "xai":
-			h = C.aimux_xai_new_with_base(cKey, cModel, cBase)
+			ptr = C.aimux_xai_new_with_base(cKey, cModel, cBase)
 		default:
-			h = C.aimux_openai_new_with_base(cKey, cModel, cBase)
+			ptr = C.aimux_openai_new_with_base(cKey, cModel, cBase)
 		}
 	}
-	if h == 0 {
-		return nil, takeLastError("aimux: failed to create model (handle=0)")
-	}
-	m.handle = uint64(h)
-
-	// Set finalizer as a safety net; callers should still use Close().
-	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
-	return m, nil
+	return wrapHandle(m, ptr)
 }
 
 func newBedrockModel(accessKeyID, secretAccessKey, region, modelID, baseURL string) (*Model, error) {
@@ -372,15 +384,15 @@ func newBedrockModel(accessKeyID, secretAccessKey, region, modelID, baseURL stri
 	defer C.free(unsafe.Pointer(cRegion))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var h C.uint64_t
+	var ptr *C.char
 	if baseURL == "" {
-		h = C.aimux_bedrock_new(cAccess, cSecret, cRegion, cModel)
+		ptr = C.aimux_bedrock_new(cAccess, cSecret, cRegion, cModel)
 	} else {
 		cBase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cBase))
-		h = C.aimux_bedrock_new_with_base(cAccess, cSecret, cRegion, cModel, cBase)
+		ptr = C.aimux_bedrock_new_with_base(cAccess, cSecret, cRegion, cModel, cBase)
 	}
-	return wrapHandle(m, h)
+	return wrapHandle(m, ptr)
 }
 
 func newVertexModel(accessToken, project, location, modelID, baseURL string) (*Model, error) {
@@ -394,15 +406,15 @@ func newVertexModel(accessToken, project, location, modelID, baseURL string) (*M
 	defer C.free(unsafe.Pointer(cLocation))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var h C.uint64_t
+	var ptr *C.char
 	if baseURL == "" {
-		h = C.aimux_vertex_new(cToken, cProject, cLocation, cModel)
+		ptr = C.aimux_vertex_new(cToken, cProject, cLocation, cModel)
 	} else {
 		cBase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cBase))
-		h = C.aimux_vertex_new_with_base(cToken, cProject, cLocation, cModel, cBase)
+		ptr = C.aimux_vertex_new_with_base(cToken, cProject, cLocation, cModel, cBase)
 	}
-	return wrapHandle(m, h)
+	return wrapHandle(m, ptr)
 }
 
 func newAnthropicAwsModel(apiKey, region, modelID, baseURL string) (*Model, error) {
@@ -414,15 +426,15 @@ func newAnthropicAwsModel(apiKey, region, modelID, baseURL string) (*Model, erro
 	defer C.free(unsafe.Pointer(cRegion))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var h C.uint64_t
+	var ptr *C.char
 	if baseURL == "" {
-		h = C.aimux_anthropic_aws_new(cKey, cRegion, cModel)
+		ptr = C.aimux_anthropic_aws_new(cKey, cRegion, cModel)
 	} else {
 		cBase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cBase))
-		h = C.aimux_anthropic_aws_new_with_base(cKey, cRegion, cModel, cBase)
+		ptr = C.aimux_anthropic_aws_new_with_base(cKey, cRegion, cModel, cBase)
 	}
-	return wrapHandle(m, h)
+	return wrapHandle(m, ptr)
 }
 
 func newAzureModel(apiKey, resourceOrBase, deployment, apiVersion string, useBase bool) (*Model, error) {
@@ -436,24 +448,23 @@ func newAzureModel(apiKey, resourceOrBase, deployment, apiVersion string, useBas
 	defer C.free(unsafe.Pointer(cDeployment))
 	defer C.free(unsafe.Pointer(cVersion))
 
-	var h C.uint64_t
+	var ptr *C.char
 	if useBase {
-		h = C.aimux_azure_new_with_base(cKey, cResource, cDeployment, cVersion)
+		ptr = C.aimux_azure_new_with_base(cKey, cResource, cDeployment, cVersion)
 	} else {
-		h = C.aimux_azure_new(cKey, cResource, cDeployment, cVersion)
+		ptr = C.aimux_azure_new(cKey, cResource, cDeployment, cVersion)
 	}
-	return wrapHandle(m, h)
+	return wrapHandle(m, ptr)
 }
 
-func wrapHandle(m *Model, h C.uint64_t) (*Model, error) {
-	// Constructor + last_error read must run on the same OS thread
-	// (aimux_last_error is thread-local).
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	if h == 0 {
-		return nil, takeLastError("aimux: failed to create model (handle=0)")
+// wrapHandle parses a constructor's JSON result into m, with a finalizer as
+// a safety net (callers should still use Close).
+func wrapHandle(m *Model, ptr *C.char) (*Model, error) {
+	h, err := parseHandleJSON(ptr)
+	if err != nil {
+		return nil, err
 	}
-	m.handle = uint64(h)
+	m.handle = h
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
 	return m, nil
 }
@@ -468,10 +479,6 @@ func Provider(name, apiKey, modelID string) (*Model, error) {
 
 // ProviderWithBase is Provider with a base URL override (config_json).
 func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
-	// Constructor + last_error read must run on the same OS thread
-	// (aimux_last_error is thread-local).
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 	m := &Model{}
 	cName := C.CString(name)
 	cModel := C.CString(modelID)
@@ -491,13 +498,8 @@ func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
 		defer C.free(unsafe.Pointer(cConfig))
 	}
 
-	h := C.aimux_provider_new(cName, cKey, cModel, cConfig)
-	if h == 0 {
-		return nil, takeLastError(fmt.Sprintf("aimux: failed to create provider %q (handle=0)", name))
-	}
-	m.handle = uint64(h)
-	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
-	return m, nil
+	ptr := C.aimux_provider_new(cName, cKey, cModel, cConfig)
+	return wrapHandle(m, ptr)
 }
 
 // ── Non-streaming generation ────────────────────────────────────────────────
@@ -556,21 +558,6 @@ func extractError(result string) string {
 	return ""
 }
 
-// takeLastError reads the FFI thread-local last-constructor error (issue #17)
-// and wraps it into a Go error. The failed constructor and this read must run
-// on the same OS thread — callers wrap both in runtime.LockOSThread.
-func takeLastError(fallback string) error {
-	if eptr := C.aimux_last_error(); eptr != nil {
-		defer C.aimux_free_string(eptr)
-		msg := C.GoString(eptr)
-		if extracted := extractError(msg); extracted != "" {
-			return fmt.Errorf("aimux: %s", extracted)
-		}
-		return fmt.Errorf("aimux: %s", msg)
-	}
-	return errors.New(fallback)
-}
-
 // ── Streaming generation ─────────────────────────────────────────────────────
 
 // streamEntry holds the channel and error for an active stream.
@@ -622,8 +609,12 @@ func (e *streamEntry) closeParts() {
 // Consume parts via the Parts() channel; check Err() after the channel closes.
 //
 // The channel is buffered (256). If the caller stops consuming, the native
-// stream will block on the 257th part — always drain the channel or use
-// StreamTextContext with a context to cancel.
+// stream will block on the 257th part and the stream goroutine (plus the
+// underlying model call) will stall until the stream ends or times out —
+// always drain the channel. There is no context-cancel API (the C ABI
+// stream is synchronous and has no abort hook); the only interruption
+// mechanism is a per-call timeout via GenerateTextOptions.Timeout
+// (RFC-0016 H3).
 type Stream struct {
 	parts <-chan string
 	entry *streamEntry
@@ -653,9 +644,12 @@ func (s *Stream) Err() error {
 //	    log.Fatal(err)
 //	}
 //
-// You MUST drain the Parts() channel (or cancel via StreamTextContext).
-// If you stop reading, the native callback blocks once the 256-part buffer
-// fills, stalling the stream goroutine and the model.
+// You MUST drain the Parts() channel. If you stop reading, the native
+// callback blocks once the 256-part buffer fills, stalling the stream
+// goroutine and the model until the stream ends or the per-call timeout
+// fires (GenerateTextOptions.Timeout, RFC-0016 H3). There is no
+// context-cancel API — the C ABI stream is synchronous and has no abort
+// hook.
 func (m *Model) StreamText(promptJson, optsJson string) *Stream {
 	entry, id := registerStream()
 

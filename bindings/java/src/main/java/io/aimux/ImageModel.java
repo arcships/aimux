@@ -51,8 +51,8 @@ public final class ImageModel implements Closeable {
      * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
      */
     public static ImageModel openai(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_image_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI image model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_image_new(apiKey, modelId), "Failed to create OpenAI image model");
         return new ImageModel(h);
     }
 
@@ -65,8 +65,9 @@ public final class ImageModel implements Closeable {
      * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
      */
     public static ImageModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI image model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create OpenAI image model");
         return new ImageModel(h);
     }
 
@@ -78,8 +79,8 @@ public final class ImageModel implements Closeable {
      * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
      */
     public static ImageModel google(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_google_image_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Google image model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_google_image_new(apiKey, modelId), "Failed to create Google image model");
         return new ImageModel(h);
     }
 
@@ -92,8 +93,9 @@ public final class ImageModel implements Closeable {
      * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
      */
     public static ImageModel googleWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_google_image_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Google image model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_google_image_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create Google image model");
         return new ImageModel(h);
     }
 

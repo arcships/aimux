@@ -28,51 +28,51 @@ public interface AimuxFFI extends Library {
 
     AimuxFFI INSTANCE = Native.load("aimux_ffi", AimuxFFI.class);
 
-    // ── Provider constructors (return opaque handle, >0 on success, 0 on failure) ──
+    // ── Provider constructors (return JSON envelope: {"handle":N} on success, {"error":...} on failure; free with aimux_free_string) ──
 
-    long aimux_openai_new(String apiKey, String modelId);
+    Pointer aimux_openai_new(String apiKey, String modelId);
 
-    long aimux_openai_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_openai_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_anthropic_new(String apiKey, String modelId);
+    Pointer aimux_anthropic_new(String apiKey, String modelId);
 
-    long aimux_anthropic_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_anthropic_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_cohere_new(String apiKey, String modelId);
+    Pointer aimux_cohere_new(String apiKey, String modelId);
 
-    long aimux_cohere_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_cohere_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_mistral_new(String apiKey, String modelId);
+    Pointer aimux_mistral_new(String apiKey, String modelId);
 
-    long aimux_mistral_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_mistral_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_xai_new(String apiKey, String modelId);
+    Pointer aimux_xai_new(String apiKey, String modelId);
 
-    long aimux_xai_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_xai_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_bedrock_new(String accessKeyId, String secretAccessKey, String region, String modelId);
+    Pointer aimux_bedrock_new(String accessKeyId, String secretAccessKey, String region, String modelId);
 
-    long aimux_bedrock_new_with_base(String accessKeyId, String secretAccessKey, String region, String modelId, String baseUrl);
+    Pointer aimux_bedrock_new_with_base(String accessKeyId, String secretAccessKey, String region, String modelId, String baseUrl);
 
-    long aimux_vertex_new(String accessToken, String project, String location, String modelId);
+    Pointer aimux_vertex_new(String accessToken, String project, String location, String modelId);
 
-    long aimux_vertex_new_with_base(String accessToken, String project, String location, String modelId, String baseUrl);
+    Pointer aimux_vertex_new_with_base(String accessToken, String project, String location, String modelId, String baseUrl);
 
-    long aimux_anthropic_aws_new(String apiKey, String region, String modelId);
+    Pointer aimux_anthropic_aws_new(String apiKey, String region, String modelId);
 
-    long aimux_anthropic_aws_new_with_base(String apiKey, String region, String modelId, String baseUrl);
+    Pointer aimux_anthropic_aws_new_with_base(String apiKey, String region, String modelId, String baseUrl);
 
-    long aimux_azure_new(String apiKey, String resourceName, String deployment, String apiVersion);
+    Pointer aimux_azure_new(String apiKey, String resourceName, String deployment, String apiVersion);
 
-    long aimux_azure_new_with_base(String apiKey, String baseUrl, String deployment, String apiVersion);
+    Pointer aimux_azure_new_with_base(String apiKey, String baseUrl, String deployment, String apiVersion);
 
     // ── Registry provider (RFC-0017 phase 4) ──────────────────────────────────
     // apiKey may be null (read the provider's env var from the registry entry);
     // configJson may be null (defaults) or a JSON object of ProviderOptions.
 
-    long aimux_provider_new(String name, String apiKey, String modelId, String configJson);
+    Pointer aimux_provider_new(String name, String apiKey, String modelId, String configJson);
 
-    long aimux_provider_from_env(String name, String modelId);
+    Pointer aimux_provider_from_env(String name, String modelId);
 
     // ── Generation ──────────────────────────────────────────────────────────
 
@@ -100,79 +100,79 @@ public interface AimuxFFI extends Library {
 
     // ── Embedding ───────────────────────────────────────────────────────────
 
-    long aimux_openai_embedding_new(String apiKey, String modelId);
+    Pointer aimux_openai_embedding_new(String apiKey, String modelId);
 
-    long aimux_openai_embedding_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_openai_embedding_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_cohere_embedding_new(String apiKey, String modelId);
+    Pointer aimux_cohere_embedding_new(String apiKey, String modelId);
 
-    long aimux_cohere_embedding_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_cohere_embedding_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_google_embedding_new(String apiKey, String modelId);
+    Pointer aimux_google_embedding_new(String apiKey, String modelId);
 
-    long aimux_google_embedding_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_google_embedding_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_embed(long handle, String valuesJson, String optsJson);
 
     // ── Speech (TTS) ────────────────────────────────────────────────────────
 
-    long aimux_openai_speech_new(String apiKey, String modelId);
+    Pointer aimux_openai_speech_new(String apiKey, String modelId);
 
-    long aimux_openai_speech_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_openai_speech_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_speech_generate(long handle, String optsJson);
 
     // ── Image ───────────────────────────────────────────────────────────────
 
-    long aimux_openai_image_new(String apiKey, String modelId);
+    Pointer aimux_openai_image_new(String apiKey, String modelId);
 
-    long aimux_openai_image_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_openai_image_new_with_base(String apiKey, String modelId, String baseUrl);
 
-    long aimux_google_image_new(String apiKey, String modelId);
+    Pointer aimux_google_image_new(String apiKey, String modelId);
 
-    long aimux_google_image_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_google_image_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_image_generate(long handle, String optsJson);
 
     // ── Transcription (STT, non-streaming) ──────────────────────────────────
 
-    long aimux_openai_transcription_new(String apiKey, String modelId);
+    Pointer aimux_openai_transcription_new(String apiKey, String modelId);
 
-    long aimux_openai_transcription_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_openai_transcription_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_transcription_generate(long handle, String audioBase64,
                                          String mediaType, String optsJson);
 
     // ── Files ───────────────────────────────────────────────────────────────
 
-    long aimux_openai_files_new(String apiKey);
+    Pointer aimux_openai_files_new(String apiKey);
 
-    long aimux_openai_files_new_with_base(String apiKey, String baseUrl);
+    Pointer aimux_openai_files_new_with_base(String apiKey, String baseUrl);
 
     Pointer aimux_file_upload(long handle, String dataBase64,
                               String mediaType, String optsJson);
 
     // ── Reranking ───────────────────────────────────────────────────────────
 
-    long aimux_cohere_reranking_new(String apiKey, String modelId);
+    Pointer aimux_cohere_reranking_new(String apiKey, String modelId);
 
-    long aimux_cohere_reranking_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_cohere_reranking_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_rerank(long handle, String optsJson);
 
     // ── Video ───────────────────────────────────────────────────────────────
 
-    long aimux_google_video_new(String apiKey, String modelId);
+    Pointer aimux_google_video_new(String apiKey, String modelId);
 
-    long aimux_google_video_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_google_video_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_video_generate(long handle, String optsJson);
 
     // ── Search ──────────────────────────────────────────────────────────────
 
-    long aimux_tavily_search_new(String apiKey, String modelId);
+    Pointer aimux_tavily_search_new(String apiKey, String modelId);
 
-    long aimux_tavily_search_new_with_base(String apiKey, String modelId, String baseUrl);
+    Pointer aimux_tavily_search_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_search(long handle, String optsJson);
 

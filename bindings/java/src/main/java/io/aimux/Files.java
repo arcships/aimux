@@ -50,8 +50,8 @@ public final class Files implements Closeable {
      * @return a new Files; throws {@link IllegalArgumentException} on failure.
      */
     public static Files openai(String apiKey) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_files_new(apiKey);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI files manager");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_files_new(apiKey), "Failed to create OpenAI files manager");
         return new Files(h);
     }
 
@@ -63,8 +63,9 @@ public final class Files implements Closeable {
      * @return a new Files; throws {@link IllegalArgumentException} on failure.
      */
     public static Files openaiWithBase(String apiKey, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_files_new_with_base(apiKey, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI files manager");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_files_new_with_base(apiKey, baseUrl),
+            "Failed to create OpenAI files manager");
         return new Files(h);
     }
 

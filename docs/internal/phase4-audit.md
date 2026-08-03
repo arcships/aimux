@@ -36,7 +36,7 @@
 | Kotlin | ✅ | `Model.provider(name, apiKey=null, modelId, configJson=null)` + `providerFromEnv` [bindings/kotlin/src/main/kotlin/aimux/Model.kt](D:/code/aimux/bindings/kotlin/src/main/kotlin/aimux/Model.kt#L173)(L180);未知名字同 Java,无列表 |
 | Swift | ✅ | `Model.provider(name:apiKey:modelId:configJson:)` [bindings/swift/Sources/Aimux/Aimux.swift](D:/code/aimux/bindings/swift/Sources/Aimux/Aimux.swift#L107);apiKey nil → env;未知名字 → `AimuxError.invalidHandle`,无列表 |
 | Flutter | ✅ | `Model.provider(name, modelId, {apiKey, configJson})` [bindings/flutter/lib/aimux.dart](D:/code/aimux/bindings/flutter/lib/aimux.dart#L209);未知名字 → `StateError`,无列表 |
-| C ABI | ✅ | `aimux_provider_new` [aimux-ffi/src/lib.rs](D:/code/aimux/aimux-ffi/src/lib.rs#L377)(L407);config_json 解析 `ProviderOptions`(L390-397);失败返回 0(文档化,无错误详情) |
+| C ABI | ✅ | `aimux_provider_new` [aimux-ffi/src/lib.rs](D:/code/aimux/aimux-ffi/src/lib.rs#L377)(L407);config_json 解析 `ProviderOptions`(L390-397);失败返回错误 JSON 信封(含 error/error_type/status_code 详情;经 explore/aimux-ffi-json-constructors 修复,原为返回 0 无详情) |
 
 #### b. ProviderName 派生类型
 

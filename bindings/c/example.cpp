@@ -3,8 +3,11 @@
 // Build: g++ -std=c++17 -o example_cpp example.cpp -L../../target/debug -laimux_ffi -lpthread -ldl -lm
 // Run:   OPENAI_API_KEY=sk-... ./example_cpp
 
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <functional>
 
@@ -16,22 +19,37 @@ thread_local const std::function<void()> *current_on_done = nullptr;
 thread_local const std::function<void(const std::string &)> *current_on_error = nullptr;
 }
 
+// Parse a constructor's JSON result (`{"handle":<u64>}` on success,
+// `{"error":"..."}` on failure). Frees the string via aimux_free_string and
+// throws std::runtime_error carrying the detailed engine error on failure
+// (a crude substring scan, not a JSON parse -- avoids a JSON dependency for
+// this demo; production bindings use a real JSON library).
+static uint64_t extract_handle(char *json, const std::string &what) {
+    if (!json) {
+        throw std::runtime_error(what + ": constructor returned null");
+    }
+    std::string result(json);
+    aimux_free_string(json);
+    if (result.find("\"error\":") != std::string::npos) {
+        throw std::runtime_error(what + ": " + result);
+    }
+    auto h_pos = result.find("\"handle\":");
+    if (h_pos == std::string::npos) {
+        throw std::runtime_error(what + ": invalid constructor response: " + result);
+    }
+    return std::strtoull(result.c_str() + h_pos + std::strlen("\"handle\":"), nullptr, 10);
+}
+
 // RAII wrapper for model handle
 class AimuxModel {
 public:
     static AimuxModel openai(const std::string &api_key, const std::string &model_id) {
-        auto handle = aimux_openai_new(api_key.c_str(), model_id.c_str());
-        if (handle == 0) {
-            throw std::runtime_error("Failed to create OpenAI model");
-        }
+        auto handle = extract_handle(aimux_openai_new(api_key.c_str(), model_id.c_str()), "openai");
         return AimuxModel(handle);
     }
 
     static AimuxModel anthropic(const std::string &api_key, const std::string &model_id) {
-        auto handle = aimux_anthropic_new(api_key.c_str(), model_id.c_str());
-        if (handle == 0) {
-            throw std::runtime_error("Failed to create Anthropic model");
-        }
+        auto handle = extract_handle(aimux_anthropic_new(api_key.c_str(), model_id.c_str()), "anthropic");
         return AimuxModel(handle);
     }
 
@@ -41,10 +59,8 @@ public:
     static AimuxModel provider(const std::string &name, const std::string &model_id,
                                const char *api_key = nullptr,
                                const char *config_json = nullptr) {
-        auto handle = aimux_provider_new(name.c_str(), api_key, model_id.c_str(), config_json);
-        if (handle == 0) {
-            throw std::runtime_error("Failed to create provider model: " + name);
-        }
+        auto handle = extract_handle(
+            aimux_provider_new(name.c_str(), api_key, model_id.c_str(), config_json), "provider '" + name + "'");
         return AimuxModel(handle);
     }
 
