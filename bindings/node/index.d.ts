@@ -126,6 +126,27 @@ export declare class VideoModel {
 /** Create an Anthropic model instance. */
 export declare function anthropic(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
+/** Create an Anthropic-on-AWS model instance (API key + region). */
+export declare function anthropicAws(apiKey: string, region: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/** Create an Azure OpenAI model instance (API key + resource name). */
+export declare function azure(apiKey: string, resourceName: string, deployment: string, apiVersion?: string | undefined | null, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/** Create a Bedrock model instance (AWS SigV4 credentials). */
+export declare function bedrock(accessKeyId: string, secretAccessKey: string, region: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/** Create a Cohere model instance. */
+export declare function cohere(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/** Create a Mistral model instance. */
+export declare function mistral(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/** Create a Vertex AI model instance (GCP bearer token). */
+export declare function vertex(accessToken: string, project: string, location: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/** Create an xAI model instance. */
+export declare function xai(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
 /** Create a Cohere embedding model instance. */
 export declare function cohereEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
 

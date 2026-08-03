@@ -12,6 +12,7 @@
 // The raw napi API (`index.js` / `index.d.ts`, auto-generated) is untouched.
 // This is purely an extra TypeScript layer on top.
 
+import { AbortBridge } from '../index.js'
 import type { Model } from '../index.js'
 
 // Canonical ts-rs generated types (local copy, packaged with the npm tarball).

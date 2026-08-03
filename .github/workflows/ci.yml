@@ -116,6 +116,10 @@ jobs:
         if: matrix.settings.test
         working-directory: bindings/node
         run: npm test
+      - name: Typecheck typed wrapper (tsc)
+        if: matrix.settings.test
+        working-directory: bindings/node
+        run: npm run build:typed
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
