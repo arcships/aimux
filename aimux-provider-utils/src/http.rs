@@ -829,14 +829,14 @@ async fn send_request(
         header_count = request.headers.len(),
         "request"
     );
-    if body_logging_enabled() {
-        if let HttpBody::Json(value) = &request.body {
-            tracing::trace!(
-                target: "aimux_provider_utils::http",
-                body = %redact_body(&value.to_string()),
-                "request_body"
-            );
-        }
+    if body_logging_enabled()
+        && let HttpBody::Json(value) = &request.body
+    {
+        tracing::trace!(
+            target: "aimux_provider_utils::http",
+            body = %redact_body(&value.to_string()),
+            "request_body"
+        );
     }
 
     if let Some(signal) = &request.abort_signal {

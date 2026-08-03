@@ -88,10 +88,10 @@ pub fn body_logging_enabled() -> bool {
 /// [`init_once`]. Unparseable directives fall back to `warn` rather than
 /// panicking.
 fn build_filter(level: Option<&str>) -> EnvFilter {
-    if let Ok(directive) = std::env::var("AIMUX_LOG") {
-        if !directive.trim().is_empty() {
-            return EnvFilter::try_new(directive).unwrap_or_else(|_| EnvFilter::new(DEFAULT_LEVEL));
-        }
+    if let Ok(directive) = std::env::var("AIMUX_LOG")
+        && !directive.trim().is_empty()
+    {
+        return EnvFilter::try_new(directive).unwrap_or_else(|_| EnvFilter::new(DEFAULT_LEVEL));
     }
     let level = std::env::var("AIMUX_LOG_LEVEL")
         .ok()
