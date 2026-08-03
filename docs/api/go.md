@@ -16,13 +16,13 @@ feature coverage matrix — lives in the [API overview](../API.md).
 // cgo statically links libaimux_ffi.a, producing a single binary (the Rust core is compiled into the executable)
 model := aimux.OpenAIWithBase("sk-...", "gpt-4o", "http://localhost:3000")
 defer model.Close()
-result, err := model.GenerateText(`"What is Rust?"`)
+result, err := model.GenerateText(`"What is Rust?"`, "")
 if err != nil {
     log.Fatal(err)
 }
 fmt.Println(result)
 // streaming (typed: model.Stream(prompt, opts) yields *StreamPart values)
-stream := model.StreamText(`"Write a haiku"`)
+stream := model.StreamText(`"Write a haiku"`, "")
 for part := range stream.Parts() {
     fmt.Println(part) // StreamPart JSON
 }
@@ -39,8 +39,8 @@ All 250 registry-backed OpenAI-compatible providers are reachable by name;
 > Full list: [providers.md](providers.md).
 
 ```go
-// 推荐:ProviderName.Groq 常量(类型检查 + 补全)
-model, err := aimux.Provider(aimux.ProviderName.Groq, "", "llama-3.3-70b")
+// 推荐:aimux.Groq 类型常量(类型检查 + 补全)
+model, err := aimux.Provider(string(aimux.Groq), "", "llama-3.3-70b")
 if err != nil { log.Fatal(err) }
 defer model.Close()
 
@@ -59,7 +59,7 @@ Non-streaming text generation; returns the complete result.
 ```go
 model := aimux.OpenAIWithBase("sk-...", "gpt-4o", "http://localhost:3000")
 defer model.Close()
-result, err := model.GenerateText(`"What is Rust?"`)
+result, err := model.GenerateText(`"What is Rust?"`, "")
 if err != nil {
     log.Fatal(err)
 }
@@ -74,7 +74,7 @@ fmt.Println(result)
 Returns generated content as a stream, output chunk by chunk.
 
 ```go
-stream := model.StreamText(`"Write a haiku"`)
+stream := model.StreamText(`"Write a haiku"`, "")
 for part := range stream.Parts() {
     fmt.Println(part) // StreamPart JSON
 }
