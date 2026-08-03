@@ -175,4 +175,8 @@ public interface AimuxFFI extends Library {
     long aimux_tavily_search_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_search(long handle, String optsJson);
+
+    // Logging (RFC-0014).
+
+    int aimux_init_logging(String level);
 }

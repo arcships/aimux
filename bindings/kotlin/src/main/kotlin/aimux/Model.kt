@@ -106,6 +106,10 @@ internal interface AimuxFFI : Library {
     fun aimux_tavily_search_new(apiKey: String, modelId: String): Long
     fun aimux_tavily_search_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
     fun aimux_search(handle: Long, optsJson: String): Pointer?
+
+    // Logging (RFC-0014).
+
+    fun aimux_init_logging(level: String): Int
 }
 
 internal object FFI {

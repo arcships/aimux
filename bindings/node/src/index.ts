@@ -46,6 +46,7 @@ export {
   Model,
   StreamTextGenerator,
   AbortBridge,
+  initLogging,
   openai,
   anthropic,
   deepseek,

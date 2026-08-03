@@ -365,6 +365,26 @@ init_logging("debug"); // idempotent; no-op if a global subscriber exists
 aimux_init_logging("debug"); // aimux-ffi.h, idempotent, logs to stderr
 ```
 
+### Per-language entry points
+
+Every binding exposes the same idempotent `init_logging(level)` entry:
+
+| Language | Entry |
+|----------|-------|
+| Rust | `aimux_providers::init_logging("debug")` |
+| C | `aimux_init_logging("debug")` |
+| Python | `aimux.init_logging("debug")` |
+| Node | `initLogging("debug")` |
+| Go | `aimux.InitLogging("debug")` |
+| Java | `Aimux.initLogging("debug")` |
+| Kotlin | `initLogging("debug")` |
+| Swift | `Aimux.initLogging(level: "debug")` |
+| Flutter | `initLogging("debug")` |
+
+`level` accepts `off | error | warn | info | debug | trace` (empty/null
+defaults to `warn`). All entries are no-ops when the host already registered
+its own subscriber, and the `AIMUX_LOG*` env vars always take precedence.
+
 ### What is logged
 
 - `generate` span (provider / model / modality) around every top-level call

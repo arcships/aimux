@@ -268,6 +268,16 @@ fn apply_provider_config_openai(
     config
 }
 
+/// 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
+/// subscriber 时 no-op。级别：off|error|warn|info|debug|trace（空串回退
+/// warn）。`AIMUX_LOG` / `AIMUX_LOG_LEVEL` 环境变量优先级更高。
+/// 日志输出到 stderr。
+#[napi]
+pub fn init_logging(level: String) {
+    let level = if level.trim().is_empty() { "warn".to_string() } else { level };
+    aimux_providers::init_logging(&level);
+}
+
 /// Create an OpenAI model instance.
 #[napi]
 pub async fn openai(
