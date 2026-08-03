@@ -1,6 +1,6 @@
 # aimux · Go API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 290+ AI providers
 
 The Go binding goes through the `aimux-ffi` C ABI: cgo statically links
 `libaimux_ffi.a`, so the Rust core is compiled into the executable and the

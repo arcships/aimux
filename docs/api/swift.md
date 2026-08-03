@@ -1,6 +1,6 @@
 # aimux · Swift API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 290+ AI providers
 
 Swift wraps the Rust core through the `aimux-ffi` C ABI (module `CAimuxFFI`),
 with ARC-managed model handles.

@@ -1,6 +1,6 @@
 # aimux · Java API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 290+ AI providers
 
 The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
 toolchain is needed at build time, and the native library ships as per-platform

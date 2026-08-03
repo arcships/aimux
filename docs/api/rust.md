@@ -1,6 +1,6 @@
 # aimux · Rust API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 290+ AI providers
 
 This is the core implementation language. Shared reference — parameter tables,
 result shapes, factory functions, and the feature coverage matrix — lives in

@@ -1,6 +1,6 @@
 # aimux · Python API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 290+ AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).

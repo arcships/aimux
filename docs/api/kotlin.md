@@ -1,6 +1,6 @@
 # aimux · Kotlin API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 290+ AI providers
 
 Kotlin wraps the Rust core through the `aimux-ffi` C ABI (via JNA).
 
