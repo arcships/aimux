@@ -46,6 +46,7 @@ fn request(url: String) -> HttpRequest {
 async fn retry_chain_logged_with_redaction() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let subscriber = fmt()
+        .with_ansi(false)
         .with_env_filter(EnvFilter::try_new("aimux_provider_utils=warn").unwrap())
         .with_writer(CaptureWriter(captured.clone()))
         .finish();
@@ -92,6 +93,7 @@ async fn retry_chain_logged_with_redaction() {
 async fn debug_level_shows_request_response_summary() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let subscriber = fmt()
+        .with_ansi(false)
         .with_env_filter(EnvFilter::try_new("aimux_provider_utils=debug").unwrap())
         .with_writer(CaptureWriter(captured.clone()))
         .finish();
@@ -139,6 +141,7 @@ async fn body_logging_redacts_secrets() {
     unsafe { std::env::set_var("AIMUX_LOG_BODY", "1") };
     let captured = Arc::new(Mutex::new(Vec::new()));
     let subscriber = fmt()
+        .with_ansi(false)
         .with_env_filter(EnvFilter::try_new("aimux_provider_utils=trace").unwrap())
         .with_writer(CaptureWriter(captured.clone()))
         .finish();
@@ -179,6 +182,7 @@ async fn body_logging_redacts_secrets() {
 async fn stream_events_are_emitted() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let subscriber = fmt()
+        .with_ansi(false)
         .with_env_filter(EnvFilter::try_new("aimux_provider_utils=debug").unwrap())
         .with_writer(CaptureWriter(captured.clone()))
         .finish();

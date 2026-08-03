@@ -215,6 +215,7 @@ mod tests {
     ) {
         let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let subscriber = fmt()
+            .with_ansi(false)
             .with_env_filter(filter)
             .with_writer(CaptureWriter(captured.clone()))
             .finish();
