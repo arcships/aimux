@@ -79,7 +79,7 @@ provider(name, api_key?, model_id, config?)   // all languages
 
   ```text
   Rust:   provider(ProviderName::Groq, ...)        TS:     provider(ProviderName.groq, ...)
-  Go:     Provider(ProviderName.Groq, ...)         Java:   Model.provider(ProviderName.GROQ, ...)
+  Go:     Provider(string(ProviderName.Groq), ...)  Java:   Model.provider(ProviderName.GROQ, ...)
   Swift:  Aimux.provider(name: ProviderName.groq.rawValue, ...)
   Dart:   Model.provider(ProviderName.groq, ...)
   ```

@@ -43,7 +43,7 @@ func main() {
     }
     defer p.Close()
 
-    text, err := p.GenerateText("Explain Rust ownership in one sentence.", "")
+    text, err := p.GenerateText(`"Explain Rust ownership in one sentence."`, "")
     if err != nil {
         log.Fatal(err)
     }
