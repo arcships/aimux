@@ -1,5 +1,5 @@
 // Package aimux provides Go bindings for the aimux unified LLM service layer
-// (172+ AI providers via a single API).
+// (325 AI providers via a single API).
 //
 // This is the C ABI path (RFC-0001 §3.2) — same as Swift/Kotlin/Flutter/C.
 // Go calls aimux-ffi via cgo, statically linking libaimux_ffi.a. The result is
@@ -170,23 +170,99 @@ func (m *Model) acquireHandle() (uint64, func(), error) {
 //	if err != nil { ... }
 //	defer m.Close()
 func NewOpenAI(apiKey, modelID string) (*Model, error) {
-	return newModel(apiKey, modelID, "", false)
+	return newModel(apiKey, modelID, "", "openai")
 }
 
 // NewOpenAIWithBase creates an OpenAI model with a custom base URL
 // (for Ollama, OpenRouter, local proxies, etc.).
 func NewOpenAIWithBase(apiKey, modelID, baseURL string) (*Model, error) {
-	return newModel(apiKey, modelID, baseURL, false)
+	return newModel(apiKey, modelID, baseURL, "openai")
 }
 
 // NewAnthropic creates an Anthropic model instance.
 func NewAnthropic(apiKey, modelID string) (*Model, error) {
-	return newModel(apiKey, modelID, "", true)
+	return newModel(apiKey, modelID, "", "anthropic")
 }
 
 // NewAnthropicWithBase creates an Anthropic model with a custom base URL.
 func NewAnthropicWithBase(apiKey, modelID, baseURL string) (*Model, error) {
-	return newModel(apiKey, modelID, baseURL, true)
+	return newModel(apiKey, modelID, baseURL, "anthropic")
+}
+
+// NewCohere creates a Cohere model instance.
+func NewCohere(apiKey, modelID string) (*Model, error) {
+	return newModel(apiKey, modelID, "", "cohere")
+}
+
+// NewCohereWithBase creates a Cohere model with a custom base URL.
+func NewCohereWithBase(apiKey, modelID, baseURL string) (*Model, error) {
+	return newModel(apiKey, modelID, baseURL, "cohere")
+}
+
+// NewMistral creates a Mistral model instance.
+func NewMistral(apiKey, modelID string) (*Model, error) {
+	return newModel(apiKey, modelID, "", "mistral")
+}
+
+// NewMistralWithBase creates a Mistral model with a custom base URL.
+func NewMistralWithBase(apiKey, modelID, baseURL string) (*Model, error) {
+	return newModel(apiKey, modelID, baseURL, "mistral")
+}
+
+// NewXai creates an xAI model instance.
+func NewXai(apiKey, modelID string) (*Model, error) {
+	return newModel(apiKey, modelID, "", "xai")
+}
+
+// NewXaiWithBase creates an xAI model with a custom base URL.
+func NewXaiWithBase(apiKey, modelID, baseURL string) (*Model, error) {
+	return newModel(apiKey, modelID, baseURL, "xai")
+}
+
+// NewBedrock creates a Bedrock model instance (AWS SigV4 credentials).
+func NewBedrock(accessKeyID, secretAccessKey, region, modelID string) (*Model, error) {
+	return newBedrockModel(accessKeyID, secretAccessKey, region, modelID, "")
+}
+
+// NewBedrockWithBase creates a Bedrock model with a custom base URL.
+func NewBedrockWithBase(accessKeyID, secretAccessKey, region, modelID, baseURL string) (*Model, error) {
+	return newBedrockModel(accessKeyID, secretAccessKey, region, modelID, baseURL)
+}
+
+// NewVertex creates a Vertex AI model instance (GCP bearer token).
+func NewVertex(accessToken, project, location, modelID string) (*Model, error) {
+	return newVertexModel(accessToken, project, location, modelID, "")
+}
+
+// NewVertexWithBase creates a Vertex AI model with a custom base URL.
+func NewVertexWithBase(accessToken, project, location, modelID, baseURL string) (*Model, error) {
+	return newVertexModel(accessToken, project, location, modelID, baseURL)
+}
+
+// NewAnthropicAws creates an Anthropic-on-AWS model instance (API key + region).
+func NewAnthropicAws(apiKey, region, modelID string) (*Model, error) {
+	return newAnthropicAwsModel(apiKey, region, modelID, "")
+}
+
+// NewAnthropicAwsWithBase creates an Anthropic-on-AWS model with a custom base URL.
+func NewAnthropicAwsWithBase(apiKey, region, modelID, baseURL string) (*Model, error) {
+	return newAnthropicAwsModel(apiKey, region, modelID, baseURL)
+}
+
+// NewAzure creates an Azure OpenAI model instance (API key + resource name).
+// The deployment name is passed as modelID; apiVersion "" uses the default.
+func NewAzure(apiKey, resourceName, deployment string) (*Model, error) {
+	return newAzureModel(apiKey, resourceName, deployment, "", false)
+}
+
+// NewAzureWithVersion creates an Azure OpenAI model with an explicit api-version.
+func NewAzureWithVersion(apiKey, resourceName, deployment, apiVersion string) (*Model, error) {
+	return newAzureModel(apiKey, resourceName, deployment, apiVersion, false)
+}
+
+// NewAzureWithBase creates an Azure OpenAI model with a custom base URL.
+func NewAzureWithBase(apiKey, baseURL, deployment string) (*Model, error) {
+	return newAzureModel(apiKey, baseURL, deployment, "", true)
 }
 
 // OpenAI creates an OpenAI model instance, panicking on failure.
@@ -217,28 +293,36 @@ func mustNew(m *Model, err error) *Model {
 	return m
 }
 
-func newModel(apiKey, modelID, baseURL string, anthropic bool) (*Model, error) {
+func newModel(apiKey, modelID, baseURL, kind string) (*Model, error) {
 	m := &Model{}
 	cKey := C.CString(apiKey)
 	cModel := C.CString(modelID)
 	defer C.free(unsafe.Pointer(cKey))
 	defer C.free(unsafe.Pointer(cModel))
 
+	newFn := C.aimux_openai_new
+	newWithBaseFn := C.aimux_openai_new_with_base
+	switch kind {
+	case "anthropic":
+		newFn = C.aimux_anthropic_new
+		newWithBaseFn = C.aimux_anthropic_new_with_base
+	case "cohere":
+		newFn = C.aimux_cohere_new
+		newWithBaseFn = C.aimux_cohere_new_with_base
+	case "mistral":
+		newFn = C.aimux_mistral_new
+		newWithBaseFn = C.aimux_mistral_new_with_base
+	case "xai":
+		newFn = C.aimux_xai_new
+		newWithBaseFn = C.aimux_xai_new_with_base
+	}
 	var h C.uint64_t
 	if baseURL == "" {
-		if anthropic {
-			h = C.aimux_anthropic_new(cKey, cModel)
-		} else {
-			h = C.aimux_openai_new(cKey, cModel)
-		}
+		h = newFn(cKey, cModel)
 	} else {
 		cBase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cBase))
-		if anthropic {
-			h = C.aimux_anthropic_new_with_base(cKey, cModel, cBase)
-		} else {
-			h = C.aimux_openai_new_with_base(cKey, cModel, cBase)
-		}
+		h = newWithBaseFn(cKey, cModel, cBase)
 	}
 	if h == 0 {
 		return nil, errors.New("aimux: failed to create model (handle=0)")
@@ -246,6 +330,99 @@ func newModel(apiKey, modelID, baseURL string, anthropic bool) (*Model, error) {
 	m.handle = uint64(h)
 
 	// Set finalizer as a safety net; callers should still use Close().
+	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
+	return m, nil
+}
+
+func newBedrockModel(accessKeyID, secretAccessKey, region, modelID, baseURL string) (*Model, error) {
+	m := &Model{}
+	cAccess := C.CString(accessKeyID)
+	cSecret := C.CString(secretAccessKey)
+	cRegion := C.CString(region)
+	cModel := C.CString(modelID)
+	defer C.free(unsafe.Pointer(cAccess))
+	defer C.free(unsafe.Pointer(cSecret))
+	defer C.free(unsafe.Pointer(cRegion))
+	defer C.free(unsafe.Pointer(cModel))
+
+	var h C.uint64_t
+	if baseURL == "" {
+		h = C.aimux_bedrock_new(cAccess, cSecret, cRegion, cModel)
+	} else {
+		cBase := C.CString(baseURL)
+		defer C.free(unsafe.Pointer(cBase))
+		h = C.aimux_bedrock_new_with_base(cAccess, cSecret, cRegion, cModel, cBase)
+	}
+	return wrapHandle(m, h)
+}
+
+func newVertexModel(accessToken, project, location, modelID, baseURL string) (*Model, error) {
+	m := &Model{}
+	cToken := C.CString(accessToken)
+	cProject := C.CString(project)
+	cLocation := C.CString(location)
+	cModel := C.CString(modelID)
+	defer C.free(unsafe.Pointer(cToken))
+	defer C.free(unsafe.Pointer(cProject))
+	defer C.free(unsafe.Pointer(cLocation))
+	defer C.free(unsafe.Pointer(cModel))
+
+	var h C.uint64_t
+	if baseURL == "" {
+		h = C.aimux_vertex_new(cToken, cProject, cLocation, cModel)
+	} else {
+		cBase := C.CString(baseURL)
+		defer C.free(unsafe.Pointer(cBase))
+		h = C.aimux_vertex_new_with_base(cToken, cProject, cLocation, cModel, cBase)
+	}
+	return wrapHandle(m, h)
+}
+
+func newAnthropicAwsModel(apiKey, region, modelID, baseURL string) (*Model, error) {
+	m := &Model{}
+	cKey := C.CString(apiKey)
+	cRegion := C.CString(region)
+	cModel := C.CString(modelID)
+	defer C.free(unsafe.Pointer(cKey))
+	defer C.free(unsafe.Pointer(cRegion))
+	defer C.free(unsafe.Pointer(cModel))
+
+	var h C.uint64_t
+	if baseURL == "" {
+		h = C.aimux_anthropic_aws_new(cKey, cRegion, cModel)
+	} else {
+		cBase := C.CString(baseURL)
+		defer C.free(unsafe.Pointer(cBase))
+		h = C.aimux_anthropic_aws_new_with_base(cKey, cRegion, cModel, cBase)
+	}
+	return wrapHandle(m, h)
+}
+
+func newAzureModel(apiKey, resourceOrBase, deployment, apiVersion string, useBase bool) (*Model, error) {
+	m := &Model{}
+	cKey := C.CString(apiKey)
+	cResource := C.CString(resourceOrBase)
+	cDeployment := C.CString(deployment)
+	cVersion := C.CString(apiVersion)
+	defer C.free(unsafe.Pointer(cKey))
+	defer C.free(unsafe.Pointer(cResource))
+	defer C.free(unsafe.Pointer(cDeployment))
+	defer C.free(unsafe.Pointer(cVersion))
+
+	var h C.uint64_t
+	if useBase {
+		h = C.aimux_azure_new_with_base(cKey, cResource, cDeployment, cVersion)
+	} else {
+		h = C.aimux_azure_new(cKey, cResource, cDeployment, cVersion)
+	}
+	return wrapHandle(m, h)
+}
+
+func wrapHandle(m *Model, h C.uint64_t) (*Model, error) {
+	if h == 0 {
+		return nil, errors.New("aimux: failed to create model (handle=0)")
+	}
+	m.handle = uint64(h)
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
 	return m, nil
 }

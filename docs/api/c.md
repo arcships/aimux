@@ -28,6 +28,13 @@ aimux_drop_handle(handle);
 | `aimux_openai_new_with_base(api_key, model_id, base_url)` | Create an OpenAI language model (custom base_url, for mock testing) |
 | `aimux_anthropic_new(api_key, model_id)` | Create an Anthropic language model |
 | `aimux_anthropic_new_with_base(api_key, model_id, base_url)` | Create an Anthropic language model (custom base_url) |
+| `aimux_cohere_new(api_key, model_id)` / `aimux_cohere_new_with_base(...)` | Create a Cohere language model |
+| `aimux_mistral_new(api_key, model_id)` / `aimux_mistral_new_with_base(...)` | Create a Mistral language model |
+| `aimux_xai_new(api_key, model_id)` / `aimux_xai_new_with_base(...)` | Create an xAI language model |
+| `aimux_bedrock_new(access_key_id, secret_access_key, region, model_id)` / `aimux_bedrock_new_with_base(..., base_url)` | Create a Bedrock language model (AWS SigV4 credentials) |
+| `aimux_vertex_new(access_token, project, location, model_id)` / `aimux_vertex_new_with_base(..., base_url)` | Create a Vertex AI language model (GCP bearer token) |
+| `aimux_anthropic_aws_new(api_key, region, model_id)` / `aimux_anthropic_aws_new_with_base(..., base_url)` | Create an Anthropic-on-AWS language model |
+| `aimux_azure_new(api_key, resource_name, deployment, api_version)` / `aimux_azure_new_with_base(api_key, base_url, deployment, api_version)` | Create an Azure OpenAI language model (`api_version` NULL = default) |
 | `aimux_provider_new(name, api_key, model_id, config_json)` | Create a language model from the built-in registry by provider name (`api_key` may be NULL to read the provider's env var; `config_json` optional `{"base_url":...}` JSON or NULL) |
 | `aimux_provider_from_env(name, model_id)` | Create a registry language model, reading the API key from the provider's env var |
 | `aimux_generate_text(handle, prompt_json, opts_json)` | Non-streaming generation (returns a JSON string) |

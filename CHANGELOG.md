@@ -50,6 +50,10 @@ cancellation + timeout control. See [Removed](#removed) for migration.
   `xhigh→max` normalization is gone; all 7 levels are sent as documented (e.g.
   Groq's effort values). Setting `reasoning` without an effort value now
   produces a warning instead of silently doing nothing.
+- **Native protocol constructors in every binding** — Bedrock, Vertex,
+  Azure, Cohere, Mistral, xAI and Anthropic-AWS now ship LLM constructors
+  across the C ABI and all 8 bindings (previously Rust-only). Python's
+  `google()` factory is now exported.
 - **Correct `max_tokens` field per vendor** — providers that expect
   `max_completion_tokens` (Groq, Heroku) or `max_tokens` (Perplexity,
   SiliconFlow, StepFun, …) get the right key automatically.
@@ -60,9 +64,9 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 
 - **250 per-provider shell types retired** (`GroqConfig`, `DeepSeekProvider`,
   …) in Rust and all bindings — migrate to `provider(name, ...)` /
-  `ProviderName` (examples above). The 11 native protocol providers (OpenAI,
-  Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, DeepSeek,
-  Anthropic-AWS) keep their existing types.
+  `ProviderName` (examples above). The 10 native protocol providers (OpenAI,
+  Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
+  Anthropic-AWS) keep their existing types; DeepSeek is registry-backed.
 - **`RequestBodyOverride`** and the `request_body_override` profile field
   removed — use `body_overrides` instead.
 - **Reasoning-effort normalization** removed (values now pass through).

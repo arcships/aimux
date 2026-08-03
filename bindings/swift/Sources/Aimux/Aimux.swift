@@ -94,6 +94,147 @@ public final class Model: @unchecked Sendable {
         return Model(handle: handle)
     }
 
+    /// Create a Cohere model instance.
+    public static func cohere(apiKey: String, modelId: String) throws -> Model {
+        let handle = aimux_cohere_new(apiKey, modelId)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a Cohere model instance with a custom base URL.
+    public static func cohere(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
+        let handle = aimux_cohere_new_with_base(apiKey, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a Mistral model instance.
+    public static func mistral(apiKey: String, modelId: String) throws -> Model {
+        let handle = aimux_mistral_new(apiKey, modelId)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a Mistral model instance with a custom base URL.
+    public static func mistral(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
+        let handle = aimux_mistral_new_with_base(apiKey, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create an xAI model instance.
+    public static func xai(apiKey: String, modelId: String) throws -> Model {
+        let handle = aimux_xai_new(apiKey, modelId)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create an xAI model instance with a custom base URL.
+    public static func xai(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
+        let handle = aimux_xai_new_with_base(apiKey, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a Bedrock model instance (AWS SigV4 credentials).
+    public static func bedrock(
+        accessKeyId: String, secretAccessKey: String, region: String, modelId: String
+    ) throws -> Model {
+        let handle = aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a Bedrock model instance with a custom base URL.
+    public static func bedrock(
+        accessKeyId: String, secretAccessKey: String, region: String, modelId: String, baseUrl: String
+    ) throws -> Model {
+        let handle = aimux_bedrock_new_with_base(accessKeyId, secretAccessKey, region, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a Vertex AI model instance (GCP bearer token).
+    public static func vertex(
+        accessToken: String, project: String, location: String, modelId: String
+    ) throws -> Model {
+        let handle = aimux_vertex_new(accessToken, project, location, modelId)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a Vertex AI model instance with a custom base URL.
+    public static func vertex(
+        accessToken: String, project: String, location: String, modelId: String, baseUrl: String
+    ) throws -> Model {
+        let handle = aimux_vertex_new_with_base(accessToken, project, location, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create an Anthropic-on-AWS model instance (API key + region).
+    public static func anthropicAws(apiKey: String, region: String, modelId: String) throws -> Model {
+        let handle = aimux_anthropic_aws_new(apiKey, region, modelId)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create an Anthropic-on-AWS model instance with a custom base URL.
+    public static func anthropicAws(
+        apiKey: String, region: String, modelId: String, baseUrl: String
+    ) throws -> Model {
+        let handle = aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create an Azure OpenAI model instance (API key + resource name).
+    /// The deployment name is passed as `modelId`; `apiVersion` is optional.
+    public static func azure(
+        apiKey: String, resourceName: String, deployment: String, apiVersion: String? = nil
+    ) throws -> Model {
+        let handle = aimux_azure_new(apiKey, resourceName, deployment, apiVersion)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create an Azure OpenAI model instance with a custom base URL.
+    public static func azureWithBase(
+        apiKey: String, baseUrl: String, deployment: String, apiVersion: String? = nil
+    ) throws -> Model {
+        let handle = aimux_azure_new_with_base(apiKey, baseUrl, deployment, apiVersion)
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return Model(handle: handle)
+    }
+
     /// Create a model from the provider registry by name (RFC-0017 phase 4).
     ///
     /// - Parameters:

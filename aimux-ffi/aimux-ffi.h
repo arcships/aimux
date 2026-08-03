@@ -81,6 +81,73 @@ uint64_t aimux_anthropic_new_with_base(const char *api_key,
                                        const char *base_url);
 
 /**
+ * Create a Cohere model instance (API key + model ID).
+ */
+uint64_t aimux_cohere_new(const char *api_key, const char *model_id);
+uint64_t aimux_cohere_new_with_base(const char *api_key,
+                                    const char *model_id,
+                                    const char *base_url);
+
+/**
+ * Create a Mistral model instance (API key + model ID).
+ */
+uint64_t aimux_mistral_new(const char *api_key, const char *model_id);
+uint64_t aimux_mistral_new_with_base(const char *api_key,
+                                     const char *model_id,
+                                     const char *base_url);
+
+/**
+ * Create an xAI model instance (API key + model ID).
+ */
+uint64_t aimux_xai_new(const char *api_key, const char *model_id);
+uint64_t aimux_xai_new_with_base(const char *api_key,
+                                 const char *model_id,
+                                 const char *base_url);
+
+/**
+ * Create a Bedrock model instance (AWS SigV4 credentials).
+ */
+uint64_t aimux_bedrock_new(const char *access_key_id,
+                           const char *secret_access_key,
+                           const char *region,
+                           const char *model_id);
+uint64_t aimux_bedrock_new_with_base(const char *access_key_id,
+                                     const char *secret_access_key,
+                                     const char *region,
+                                     const char *model_id,
+                                     const char *base_url);
+
+/**
+ * Create a Vertex AI model instance (GCP bearer token).
+ */
+uint64_t aimux_vertex_new(const char *access_token,
+                          const char *project,
+                          const char *location,
+                          const char *model_id);
+uint64_t aimux_vertex_new_with_base(const char *access_token,
+                                    const char *project,
+                                    const char *location,
+                                    const char *model_id,
+                                    const char *base_url);
+
+/**
+ * Create an Anthropic-on-AWS model instance (API key + region).
+ */
+uint64_t aimux_anthropic_aws_new(const char *api_key, const char *region,
+                                 const char *model_id);
+uint64_t aimux_anthropic_aws_new_with_base(const char *api_key, const char *region,
+                                           const char *model_id, const char *base_url);
+
+/**
+ * Create an Azure OpenAI model instance (API key + resource name; deployment
+ * passed as model_id; api_version NULL uses the provider default).
+ */
+uint64_t aimux_azure_new(const char *api_key, const char *resource_name,
+                         const char *deployment, const char *api_version);
+uint64_t aimux_azure_new_with_base(const char *api_key, const char *base_url,
+                                   const char *deployment, const char *api_version);
+
+/**
  * Create a model from the provider registry by name (RFC-0017 phase 4).
  *
  * @param name        NUL-terminated registry provider name (e.g. "deepseek", "groq").

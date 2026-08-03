@@ -49,19 +49,16 @@
 | Anthropic | `AnthropicProvider::new(AnthropicConfig::new(key))` | `anthropic(apiKey, model, baseUrl?)` | `NewAnthropic(...)` / `Model.anthropic(...)` | `Model.anthropic(...)` / `Aimux.anthropic(apiKey:modelId:)` | `aimux_anthropic_new` |
 | Google | `GoogleProvider` | `google(apiKey, model, baseUrl?)` | — | — | — |
 | DeepSeek (registry) | `provider("deepseek", ...)` | `deepseek(...)` | `NewDeepSeek(...)` / `Model.deepseek(...)` | — | `aimux_provider_new("deepseek", ...)` |
-| Bedrock | `BedrockProvider` | — | — | — | — |
-| Vertex | `VertexProvider` | — | — | — | — |
-| Azure | `AzureProvider` | — | — | — | — |
-| Cohere | `CohereProvider` | — | — | — | — |
-| Mistral | `MistralProvider` | — | — | — | — |
-| xAI | `XAIProvider` | — | — | — | — |
-| Anthropic-AWS | `AnthropicAwsProvider` | — | — | — | — |
+| Cohere | `CohereProvider` | `cohere(apiKey, model, baseUrl?)` | `NewCohere(...)` / `Model.cohere(...)` | `Model.cohere(...)` / `Aimux.cohere(...)` | `aimux_cohere_new` |
+| Mistral | `MistralProvider` | `mistral(apiKey, model, baseUrl?)` | `NewMistral(...)` / `Model.mistral(...)` | `Model.mistral(...)` / `Aimux.mistral(...)` | `aimux_mistral_new` |
+| xAI | `XAIProvider` | `xai(apiKey, model, baseUrl?)` | `NewXai(...)` / `Model.xai(...)` | `Model.xai(...)` / `Aimux.xai(...)` | `aimux_xai_new` |
+| Bedrock | `BedrockProvider` | `bedrock(accessKeyId, secretKey, region, model, baseUrl?)` | `NewBedrock(...)` / `Model.bedrock(...)` | `Model.bedrock(...)` / `Aimux.bedrock(...)` | `aimux_bedrock_new` |
+| Vertex | `VertexProvider` | `vertex(accessToken, project, location, model, baseUrl?)` | `NewVertex(...)` / `Model.vertex(...)` | `Model.vertex(...)` / `Aimux.vertex(...)` | `aimux_vertex_new` |
+| Anthropic-AWS | `AnthropicAwsProvider` | `anthropicAws(apiKey, region, model, baseUrl?)` | `NewAnthropicAws(...)` / `Model.anthropicAws(...)` | `Model.anthropicAws(...)` / `Aimux.anthropicAws(...)` | `aimux_anthropic_aws_new` |
+| Azure | `AzureProvider` | `azure(apiKey, resource, deployment, apiVersion?, baseUrl?)` | `NewAzure(...)` / `Model.azure(...)` | `Model.azure(...)` / `Aimux.azure(...)` | `aimux_azure_new` |
 
-`—` = not exposed in that binding yet. Bedrock / Vertex / Azure / Cohere /
-Mistral / xAI / Anthropic-AWS currently exist only in Rust (typed
-constructors); the other bindings ship OpenAI / Anthropic shortcuts. Note:
-Python's `google()` exists in the Rust layer but is not exported from the
-package yet.
+`—` = not exposed in that binding yet (Google is Rust / Node / Python only).
+Every constructor has a base-URL variant (`WithBase` / `baseUrl` overload).
 
 The remaining 65 providers (speech, transcription, image, video, local
 inference, search, standalone OpenAI-compatible, Vertex-hosted) each have a
