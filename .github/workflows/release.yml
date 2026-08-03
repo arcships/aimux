@@ -267,6 +267,11 @@ jobs:
         with:
           targets: ${{ matrix.settings.target }}
       - uses: Swatinem/rust-cache@v2
+      # macos-13 runners do not preinstall Go (ubuntu/windows do) — pin it
+      # explicitly so every host has the same toolchain.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
       - name: Build static archive
         run: cargo build -p aimux-ffi --release --target ${{ matrix.settings.target }}
       - name: Test Go binding
