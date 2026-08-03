@@ -366,7 +366,10 @@ fn parse_json_arg<T: DeserializeOwned>(json: *const c_char, name: &str) -> Resul
 pub extern "C" fn aimux_openai_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     intern_or_record_lang(OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id))
@@ -384,7 +387,10 @@ pub extern "C" fn aimux_openai_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = OpenAIConfig::new(api_key);
@@ -401,7 +407,10 @@ pub extern "C" fn aimux_openai_new_with_base(
 pub extern "C" fn aimux_anthropic_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     intern_or_record_lang(
@@ -421,7 +430,10 @@ pub extern "C" fn aimux_anthropic_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = AnthropicConfig::new(api_key);
@@ -450,7 +462,10 @@ pub extern "C" fn aimux_anthropic_aws_new(
         _ => None,
     };
     let Some((api_key, region, model_id)) = parsed else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     intern_or_record_lang(
@@ -477,7 +492,10 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
         _ => None,
     };
     let Some((api_key, region, model_id)) = parsed else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
@@ -508,7 +526,10 @@ pub extern "C" fn aimux_azure_new(
         _ => None,
     };
     let Some((api_key, resource_name, deployment)) = parsed else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = AzureConfig::new()
@@ -541,7 +562,10 @@ pub extern "C" fn aimux_azure_new_with_base(
         _ => None,
     };
     let Some((api_key, base_url, deployment)) = parsed else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = AzureConfig::new()
@@ -568,15 +592,20 @@ pub extern "C" fn aimux_bedrock_new(
     let Some((access_key_id, secret_access_key, region, model_id)) =
         (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
     else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
-    intern_or_record_lang(BedrockProvider::new(BedrockProviderConfig::new(
-        access_key_id,
-        secret_access_key,
-        region,
-    ))
-    .language_model(&model_id))
+    intern_or_record_lang(
+        BedrockProvider::new(BedrockProviderConfig::new(
+            access_key_id,
+            secret_access_key,
+            region,
+        ))
+        .language_model(&model_id),
+    )
 }
 
 /// Create a Bedrock model instance with a custom base URL.
@@ -592,7 +621,10 @@ pub extern "C" fn aimux_bedrock_new_with_base(
     let Some((access_key_id, secret_access_key, region, model_id)) =
         (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
     else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
@@ -617,7 +649,10 @@ pub extern "C" fn aimux_vertex_new(
     let Some((access_token, project, location, model_id)) =
         (unsafe { parse_four_args(access_token, project, location, model_id) })
     else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     intern_or_record_lang(
@@ -639,7 +674,10 @@ pub extern "C" fn aimux_vertex_new_with_base(
     let Some((access_token, project, location, model_id)) =
         (unsafe { parse_four_args(access_token, project, location, model_id) })
     else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = VertexProviderConfig::new(access_token, project, location);
@@ -656,12 +694,13 @@ pub extern "C" fn aimux_vertex_new_with_base(
 pub extern "C" fn aimux_cohere_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
-    intern_or_record_lang(
-        CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id),
-    )
+    intern_or_record_lang(CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id))
 }
 
 /// Create a Cohere model instance with a custom base URL.
@@ -673,7 +712,10 @@ pub extern "C" fn aimux_cohere_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = CohereConfig::new(api_key);
@@ -690,7 +732,10 @@ pub extern "C" fn aimux_cohere_new_with_base(
 pub extern "C" fn aimux_mistral_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     intern_or_record_lang(
@@ -707,7 +752,10 @@ pub extern "C" fn aimux_mistral_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = MistralConfig::new(api_key);
@@ -724,7 +772,10 @@ pub extern "C" fn aimux_mistral_new_with_base(
 pub extern "C" fn aimux_xai_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     intern_or_record_lang(XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id))
@@ -739,7 +790,10 @@ pub extern "C" fn aimux_xai_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = XAIConfig::new(api_key);
@@ -770,11 +824,17 @@ pub extern "C" fn aimux_provider_new(
 ) -> u64 {
     begin_constructor();
     let Some(name) = cstr_to_string(name) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let Some(model_id) = cstr_to_string(model_id) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let key = cstr_to_string(api_key); // None => env var from registry entry
@@ -799,11 +859,17 @@ pub extern "C" fn aimux_provider_new(
 pub extern "C" fn aimux_provider_from_env(name: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some(name) = cstr_to_string(name) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let Some(model_id) = cstr_to_string(model_id) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     intern_or_record_lang(provider(&name, None, &model_id, None))
@@ -998,7 +1064,10 @@ pub extern "C" fn aimux_openai_embedding_new(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).embedding_model(&model_id);
@@ -1013,7 +1082,10 @@ pub extern "C" fn aimux_openai_embedding_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = OpenAIConfig::new(api_key);
@@ -1031,7 +1103,10 @@ pub extern "C" fn aimux_cohere_embedding_new(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
@@ -1046,7 +1121,10 @@ pub extern "C" fn aimux_cohere_embedding_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = CohereConfig::new(api_key);
@@ -1064,7 +1142,10 @@ pub extern "C" fn aimux_google_embedding_new(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
@@ -1079,7 +1160,10 @@ pub extern "C" fn aimux_google_embedding_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = GoogleConfig::new(api_key);
@@ -1132,7 +1216,10 @@ pub extern "C" fn aimux_embed(
 pub extern "C" fn aimux_openai_speech_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).speech(&model_id);
@@ -1147,7 +1234,10 @@ pub extern "C" fn aimux_openai_speech_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = OpenAIConfig::new(api_key);
@@ -1180,7 +1270,10 @@ pub extern "C" fn aimux_speech_generate(handle: u64, opts_json: *const c_char) -
 pub extern "C" fn aimux_openai_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).image(&model_id);
@@ -1195,7 +1288,10 @@ pub extern "C" fn aimux_openai_image_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = OpenAIConfig::new(api_key);
@@ -1210,7 +1306,10 @@ pub extern "C" fn aimux_openai_image_new_with_base(
 pub extern "C" fn aimux_google_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
@@ -1225,7 +1324,10 @@ pub extern "C" fn aimux_google_image_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = GoogleConfig::new(api_key);
@@ -1261,7 +1363,10 @@ pub extern "C" fn aimux_openai_transcription_new(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).transcription(&model_id);
@@ -1276,7 +1381,10 @@ pub extern "C" fn aimux_openai_transcription_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = OpenAIConfig::new(api_key);
@@ -1324,7 +1432,10 @@ pub extern "C" fn aimux_transcription_generate(
 pub extern "C" fn aimux_openai_files_new(api_key: *const c_char) -> u64 {
     begin_constructor();
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let files = OpenAIProvider::new(OpenAIConfig::new(api_key)).files();
@@ -1338,7 +1449,10 @@ pub extern "C" fn aimux_openai_files_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = OpenAIConfig::new(api_key);
@@ -1389,7 +1503,10 @@ pub extern "C" fn aimux_cohere_reranking_new(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = CohereProvider::new(CohereConfig::new(api_key)).reranking_model(&model_id);
@@ -1404,7 +1521,10 @@ pub extern "C" fn aimux_cohere_reranking_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = CohereConfig::new(api_key);
@@ -1441,7 +1561,10 @@ pub extern "C" fn aimux_rerank(handle: u64, opts_json: *const c_char) -> *mut c_
 pub extern "C" fn aimux_google_video_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).video(&model_id);
@@ -1456,7 +1579,10 @@ pub extern "C" fn aimux_google_video_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = GoogleConfig::new(api_key);
@@ -1494,7 +1620,10 @@ pub extern "C" fn aimux_video_generate(handle: u64, opts_json: *const c_char) ->
 pub extern "C" fn aimux_tavily_search_new(api_key: *const c_char, _model_id: *const c_char) -> u64 {
     begin_constructor();
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let model = TavilyProvider::new(TavilyConfig::new(api_key)).search_model();
@@ -1509,7 +1638,10 @@ pub extern "C" fn aimux_tavily_search_new_with_base(
 ) -> u64 {
     begin_constructor();
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg("invalid argument: null or invalid UTF-8 string", "InvalidArgument");
+        record_error_msg(
+            "invalid argument: null or invalid UTF-8 string",
+            "InvalidArgument",
+        );
         return 0;
     };
     let mut config = TavilyConfig::new(api_key);

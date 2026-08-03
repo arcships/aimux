@@ -84,7 +84,7 @@ public class Model implements Closeable {
         }
         // Envelope: {"error":"<msg>","error_type":"<type>","status_code":...}.
         // Extract the "error" field so the exception message stays readable.
-        Matcher m = ERROR_FIELD.matcher(detail);
+        java.util.regex.Matcher m = ERROR_FIELD.matcher(detail);
         if (m.find()) {
             return m.group(1).replace("\\\"", "\"").replace("\\\\", "\\");
         }

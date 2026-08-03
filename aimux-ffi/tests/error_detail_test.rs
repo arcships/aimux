@@ -97,7 +97,10 @@ extern "C" fn on_done() {}
 
 extern "C" fn on_error(json: *const std::os::raw::c_char) {
     // SAFETY: the FFI layer guarantees the pointer is valid during the call.
-    let s = unsafe { CStr::from_ptr(json) }.to_str().unwrap().to_string();
+    let s = unsafe { CStr::from_ptr(json) }
+        .to_str()
+        .unwrap()
+        .to_string();
     STREAM_ERRORS.lock().unwrap().push(s);
 }
 
@@ -106,7 +109,14 @@ fn stream_text_invalid_prompt_json_carries_serde_detail() {
     let h = valid_handle();
     STREAM_ERRORS.lock().unwrap().clear();
 
-    aimux_stream_text(h, c("hello").as_ptr(), ptr::null(), on_part, on_done, on_error);
+    aimux_stream_text(
+        h,
+        c("hello").as_ptr(),
+        ptr::null(),
+        on_part,
+        on_done,
+        on_error,
+    );
 
     let errors = STREAM_ERRORS.lock().unwrap().clone();
     assert_eq!(errors.len(), 1, "expected exactly one on_error callback");
@@ -116,7 +126,10 @@ fn stream_text_invalid_prompt_json_carries_serde_detail() {
         msg.starts_with("invalid prompt_json:"),
         "expected serde detail in message, got: {msg}"
     );
-    assert!(msg.contains("line"), "expected serde line detail, got: {msg}");
+    assert!(
+        msg.contains("line"),
+        "expected serde line detail, got: {msg}"
+    );
 
     aimux_drop_handle(h);
 }
@@ -152,7 +165,13 @@ fn invalid_config_json_reports_json_error_type() {
     assert_eq!(h, 0, "malformed config_json must fail");
 
     let env = take_envelope().expect("last_error must be set");
-    assert!(env["error"].as_str().unwrap().starts_with("invalid config_json:"), "got: {env}");
+    assert!(
+        env["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("invalid config_json:"),
+        "got: {env}"
+    );
     assert_eq!(env["error_type"], "Json");
 }
 
@@ -164,7 +183,10 @@ fn null_arguments_report_invalid_argument_type() {
     let env = take_envelope().expect("last_error must be set");
     assert_eq!(env["error_type"], "InvalidArgument");
     assert!(
-        env["error"].as_str().unwrap().contains("null or invalid UTF-8"),
+        env["error"]
+            .as_str()
+            .unwrap()
+            .contains("null or invalid UTF-8"),
         "got: {env}"
     );
 }
@@ -175,7 +197,12 @@ fn azure_missing_required_argument_reports_invalid_argument() {
     // boundary with an InvalidArgument envelope (the Azure provider's own
     // InvalidArgument can't be reached from the FFI layer because the
     // argument is mandatory).
-    let h = aimux_azure_new(c("k").as_ptr(), ptr::null(), c("deploy").as_ptr(), ptr::null());
+    let h = aimux_azure_new(
+        c("k").as_ptr(),
+        ptr::null(),
+        c("deploy").as_ptr(),
+        ptr::null(),
+    );
     assert_eq!(h, 0);
 
     let env = take_envelope().expect("last_error must be set");
@@ -214,7 +241,10 @@ fn successful_constructor_clears_previous_error() {
         c("llama-3.3-70b").as_ptr(),
         ptr::null(),
     );
-    assert!(h != 0, "a registered provider with a fake key must construct");
+    assert!(
+        h != 0,
+        "a registered provider with a fake key must construct"
+    );
 
     // 3. The success must have cleared the stale error.
     assert!(
@@ -241,7 +271,10 @@ fn last_error_is_overwritten_and_read_once() {
 
     // Last write wins.
     let env = take_envelope().expect("last_error must be set");
-    assert!(env["error"].as_str().unwrap().contains("no-such-b"), "got: {env}");
+    assert!(
+        env["error"].as_str().unwrap().contains("no-such-b"),
+        "got: {env}"
+    );
 
     // Read-and-clear: a second read returns NULL.
     assert!(take_last_error().is_none(), "second read must be NULL");
