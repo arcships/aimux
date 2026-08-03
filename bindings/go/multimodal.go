@@ -98,9 +98,13 @@ func callFFIString(h *multimodalHandle, fn func(handle C.uint64_t) *C.char) (str
 
 // newMultimodalHandle calls a C constructor and returns a handle wrapper.
 func newMultimodalHandle(fn func() C.uint64_t) (*multimodalHandle, error) {
+	// Constructor + last_error read must run on the same OS thread
+	// (aimux_last_error is thread-local).
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	h := C.uint64_t(fn())
 	if h == 0 {
-		return nil, errors.New("aimux: failed to create model (handle=0)")
+		return nil, takeLastError("aimux: failed to create model (handle=0)")
 	}
 	mh := &multimodalHandle{handle: uint64(h)}
 	return mh, nil

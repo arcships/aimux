@@ -1,5 +1,7 @@
 package io.aimux;
 
+import com.sun.jna.Pointer;
+
 import java.io.Closeable;
 import java.util.Spliterator;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -63,13 +65,42 @@ public class Model implements Closeable {
         return h;
     }
 
+    /**
+     * Build a constructor-failure message from the FFI thread-local error
+     * (issue #17). Must be called immediately after a constructor returned 0.
+     *
+     * @param fallback Message used when the native layer has no detail.
+     */
+    private static String constructorFailure(String fallback) {
+        Pointer ptr = AimuxFFI.INSTANCE.aimux_last_error();
+        if (ptr == null) {
+            return fallback;
+        }
+        String detail;
+        try {
+            detail = ptr.getString(0, "UTF-8");
+        } finally {
+            AimuxFFI.INSTANCE.aimux_free_string(ptr);
+        }
+        // Envelope: {"error":"<msg>","error_type":"<type>","status_code":...}.
+        // Extract the "error" field so the exception message stays readable.
+        Matcher m = ERROR_FIELD.matcher(detail);
+        if (m.find()) {
+            return m.group(1).replace("\\\"", "\"").replace("\\\\", "\\");
+        }
+        return detail;
+    }
+
+    private static final java.util.regex.Pattern ERROR_FIELD = java.util.regex.Pattern.compile(
+        "\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+
     // ── Provider constructors ──────────────────────────────────────────────
 
     /** Create an OpenAI model instance. */
     public static Model openai(String apiKey, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_openai_new(apiKey, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create OpenAI model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create OpenAI model"));
         }
         return new Model(h);
     }
@@ -78,7 +109,7 @@ public class Model implements Closeable {
     public static Model openaiWithBase(String apiKey, String modelId, String baseUrl) {
         long h = AimuxFFI.INSTANCE.aimux_openai_new_with_base(apiKey, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create OpenAI model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create OpenAI model"));
         }
         return new Model(h);
     }
@@ -87,7 +118,7 @@ public class Model implements Closeable {
     public static Model anthropic(String apiKey, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_anthropic_new(apiKey, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Anthropic model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Anthropic model"));
         }
         return new Model(h);
     }
@@ -96,7 +127,7 @@ public class Model implements Closeable {
     public static Model anthropicWithBase(String apiKey, String modelId, String baseUrl) {
         long h = AimuxFFI.INSTANCE.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Anthropic model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Anthropic model"));
         }
         return new Model(h);
     }
@@ -105,7 +136,7 @@ public class Model implements Closeable {
     public static Model cohere(String apiKey, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_cohere_new(apiKey, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Cohere model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Cohere model"));
         }
         return new Model(h);
     }
@@ -114,7 +145,7 @@ public class Model implements Closeable {
     public static Model cohereWithBase(String apiKey, String modelId, String baseUrl) {
         long h = AimuxFFI.INSTANCE.aimux_cohere_new_with_base(apiKey, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Cohere model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Cohere model"));
         }
         return new Model(h);
     }
@@ -123,7 +154,7 @@ public class Model implements Closeable {
     public static Model mistral(String apiKey, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_mistral_new(apiKey, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Mistral model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Mistral model"));
         }
         return new Model(h);
     }
@@ -132,7 +163,7 @@ public class Model implements Closeable {
     public static Model mistralWithBase(String apiKey, String modelId, String baseUrl) {
         long h = AimuxFFI.INSTANCE.aimux_mistral_new_with_base(apiKey, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Mistral model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Mistral model"));
         }
         return new Model(h);
     }
@@ -141,7 +172,7 @@ public class Model implements Closeable {
     public static Model xai(String apiKey, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_xai_new(apiKey, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create xAI model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create xAI model"));
         }
         return new Model(h);
     }
@@ -150,7 +181,7 @@ public class Model implements Closeable {
     public static Model xaiWithBase(String apiKey, String modelId, String baseUrl) {
         long h = AimuxFFI.INSTANCE.aimux_xai_new_with_base(apiKey, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create xAI model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create xAI model"));
         }
         return new Model(h);
     }
@@ -159,7 +190,7 @@ public class Model implements Closeable {
     public static Model bedrock(String accessKeyId, String secretAccessKey, String region, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Bedrock model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Bedrock model"));
         }
         return new Model(h);
     }
@@ -170,7 +201,7 @@ public class Model implements Closeable {
         long h = AimuxFFI.INSTANCE.aimux_bedrock_new_with_base(
             accessKeyId, secretAccessKey, region, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Bedrock model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Bedrock model"));
         }
         return new Model(h);
     }
@@ -179,7 +210,7 @@ public class Model implements Closeable {
     public static Model vertex(String accessToken, String project, String location, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_vertex_new(accessToken, project, location, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Vertex model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Vertex model"));
         }
         return new Model(h);
     }
@@ -190,7 +221,7 @@ public class Model implements Closeable {
         long h = AimuxFFI.INSTANCE.aimux_vertex_new_with_base(
             accessToken, project, location, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Vertex model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Vertex model"));
         }
         return new Model(h);
     }
@@ -199,7 +230,7 @@ public class Model implements Closeable {
     public static Model anthropicAws(String apiKey, String region, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_anthropic_aws_new(apiKey, region, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Anthropic AWS model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Anthropic AWS model"));
         }
         return new Model(h);
     }
@@ -208,7 +239,7 @@ public class Model implements Closeable {
     public static Model anthropicAwsWithBase(String apiKey, String region, String modelId, String baseUrl) {
         long h = AimuxFFI.INSTANCE.aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Anthropic AWS model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Anthropic AWS model"));
         }
         return new Model(h);
     }
@@ -217,7 +248,7 @@ public class Model implements Closeable {
     public static Model azure(String apiKey, String resourceName, String deployment) {
         long h = AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, null);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Azure model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Azure model"));
         }
         return new Model(h);
     }
@@ -227,7 +258,7 @@ public class Model implements Closeable {
                                          String apiVersion) {
         long h = AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, apiVersion);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Azure model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Azure model"));
         }
         return new Model(h);
     }
@@ -236,7 +267,7 @@ public class Model implements Closeable {
     public static Model azureWithBase(String apiKey, String baseUrl, String deployment) {
         long h = AimuxFFI.INSTANCE.aimux_azure_new_with_base(apiKey, baseUrl, deployment, null);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create Azure model");
+            throw new IllegalArgumentException(constructorFailure("Failed to create Azure model"));
         }
         return new Model(h);
     }
@@ -258,7 +289,8 @@ public class Model implements Closeable {
     public static Model provider(String name, String apiKey, String modelId, String configJson) {
         long h = AimuxFFI.INSTANCE.aimux_provider_new(name, apiKey, modelId, configJson);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create provider model: " + name);
+            throw new IllegalArgumentException(
+                constructorFailure("Failed to create provider model: " + name));
         }
         return new Model(h);
     }
@@ -270,7 +302,8 @@ public class Model implements Closeable {
     public static Model providerFromEnv(String name, String modelId) {
         long h = AimuxFFI.INSTANCE.aimux_provider_from_env(name, modelId);
         if (h == 0L) {
-            throw new IllegalArgumentException("Failed to create provider model from env: " + name);
+            throw new IllegalArgumentException(
+                constructorFailure("Failed to create provider model from env: " + name));
         }
         return new Model(h);
     }

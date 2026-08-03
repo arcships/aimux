@@ -21,3 +21,6 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 # Needed to drive `Stream::next` while consuming `stream_text` output.
 futures = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

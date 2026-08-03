@@ -24,6 +24,18 @@ static void on_error(const char *err_json) {
     fprintf(stderr, "STREAM ERROR: %s\n", err_json);
 }
 
+// Print the thread-local last-constructor error (issue #17), if any, then
+// free it. Call right after a constructor returned 0, on the same thread.
+static void print_last_error(const char *fallback) {
+    char *err = aimux_last_error();
+    if (err) {
+        fprintf(stderr, "%s — %s\n", fallback, err);
+        aimux_free_string(err);
+    } else {
+        fprintf(stderr, "%s\n", fallback);
+    }
+}
+
 int main(void) {
     const char *api_key = getenv("OPENAI_API_KEY");
     if (!api_key) {
@@ -34,7 +46,7 @@ int main(void) {
     // 1. Create model
     uint64_t handle = aimux_openai_new(api_key, "gpt-4o-mini");
     if (handle == 0) {
-        fprintf(stderr, "Failed to create model\n");
+        print_last_error("Failed to create model");
         return 1;
     }
     printf("Model created: handle=%lu\n", (unsigned long)handle);
@@ -59,8 +71,8 @@ int main(void) {
         printf("DeepSeek (registry): handle=%lu\n", (unsigned long)ds_handle);
         aimux_drop_handle(ds_handle);
     } else {
-        fprintf(stderr, "Failed to create DeepSeek via registry "
-                        "(is DEEPSEEK_API_KEY set?)\n");
+        print_last_error("Failed to create DeepSeek via registry "
+                         "(is DEEPSEEK_API_KEY set?)");
     }
 
     // 4. Cleanup
