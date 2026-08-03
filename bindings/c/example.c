@@ -24,16 +24,24 @@ static void on_error(const char *err_json) {
     fprintf(stderr, "STREAM ERROR: %s\n", err_json);
 }
 
-// Print the thread-local last-constructor error (issue #17), if any, then
-// free it. Call right after a constructor returned 0, on the same thread.
-static void print_last_error(const char *fallback) {
-    char *err = aimux_last_error();
-    if (err) {
-        fprintf(stderr, "%s — %s\n", fallback, err);
-        aimux_free_string(err);
-    } else {
-        fprintf(stderr, "%s\n", fallback);
+// Parse a constructor's JSON result (`{"handle":<u64>}` on success,
+// `{"error":"..."}` on failure). Frees the string. On failure, prints the
+// detailed engine error to stderr (the whole point of the JSON envelope vs.
+// the old bare-u64-handle ABI, which had no room for one) and returns 0.
+static uint64_t extract_handle(char *json) {
+    if (!json) {
+        fprintf(stderr, "constructor returned null\n");
+        return 0;
     }
+    uint64_t handle = 0;
+    if (strstr(json, "\"error\":")) {
+        fprintf(stderr, "construction failed: %s\n", json);
+    } else {
+        const char *h = strstr(json, "\"handle\":");
+        if (h) handle = strtoull(h + strlen("\"handle\":"), NULL, 10);
+    }
+    aimux_free_string(json);
+    return handle;
 }
 
 int main(void) {
@@ -44,9 +52,9 @@ int main(void) {
     }
 
     // 1. Create model
-    uint64_t handle = aimux_openai_new(api_key, "gpt-4o-mini");
+    uint64_t handle = extract_handle(aimux_openai_new(api_key, "gpt-4o-mini"));
     if (handle == 0) {
-        print_last_error("Failed to create model");
+        fprintf(stderr, "Failed to create model\n");
         return 1;
     }
     printf("Model created: handle=%lu\n", (unsigned long)handle);
@@ -66,14 +74,13 @@ int main(void) {
 
     // 3.5 Registry provider (RFC-0017 phase 4): construct DeepSeek via the
     // provider registry. NULL api_key reads DEEPSEEK_API_KEY from the env.
-    uint64_t ds_handle = aimux_provider_new("deepseek", NULL, "deepseek-chat", NULL);
+    uint64_t ds_handle = extract_handle(aimux_provider_new("deepseek", NULL, "deepseek-chat", NULL));
     if (ds_handle != 0) {
         printf("DeepSeek (registry): handle=%lu\n", (unsigned long)ds_handle);
         aimux_drop_handle(ds_handle);
-    } else {
-        print_last_error("Failed to create DeepSeek via registry "
-                         "(is DEEPSEEK_API_KEY set?)");
     }
+    // On failure extract_handle already printed the detailed engine error
+    // (e.g. "is DEEPSEEK_API_KEY set?" is now part of that message).
 
     // 4. Cleanup
     aimux_drop_handle(handle);
