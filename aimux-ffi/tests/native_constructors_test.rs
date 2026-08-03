@@ -37,7 +37,10 @@ fn simple_key_constructors() {
     }
     let model = c("mistral-large-latest");
     unsafe {
-        expect_handle(aimux_mistral_new(key.as_ptr(), model.as_ptr()), "mistral_new");
+        expect_handle(
+            aimux_mistral_new(key.as_ptr(), model.as_ptr()),
+            "mistral_new",
+        );
         let base = c("https://example.com/v1");
         expect_handle(
             aimux_mistral_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr()),
@@ -63,7 +66,12 @@ fn credential_constructors() {
     let model = c("anthropic.claude-3-5-sonnet-20240620-v1:0");
     unsafe {
         expect_handle(
-            aimux_bedrock_new(access.as_ptr(), secret.as_ptr(), region.as_ptr(), model.as_ptr()),
+            aimux_bedrock_new(
+                access.as_ptr(),
+                secret.as_ptr(),
+                region.as_ptr(),
+                model.as_ptr(),
+            ),
             "bedrock_new",
         );
         let base = c("https://example.com");
@@ -85,7 +93,12 @@ fn credential_constructors() {
     let model = c("gemini-2.0-flash");
     unsafe {
         expect_handle(
-            aimux_vertex_new(token.as_ptr(), project.as_ptr(), location.as_ptr(), model.as_ptr()),
+            aimux_vertex_new(
+                token.as_ptr(),
+                project.as_ptr(),
+                location.as_ptr(),
+                model.as_ptr(),
+            ),
             "vertex_new",
         );
         let base = c("https://example.com");
@@ -129,7 +142,12 @@ fn azure_constructors() {
     let deployment = c("gpt-4o");
     unsafe {
         expect_handle(
-            aimux_azure_new(key.as_ptr(), resource.as_ptr(), deployment.as_ptr(), std::ptr::null()),
+            aimux_azure_new(
+                key.as_ptr(),
+                resource.as_ptr(),
+                deployment.as_ptr(),
+                std::ptr::null(),
+            ),
             "azure_new (default api_version)",
         );
         let version = c("2024-06-01");
@@ -162,12 +180,7 @@ fn invalid_args_return_zero() {
     unsafe {
         assert_eq!(aimux_cohere_new(key.as_ptr(), std::ptr::null()), 0);
         assert_eq!(
-            aimux_bedrock_new(
-                key.as_ptr(),
-                key.as_ptr(),
-                key.as_ptr(),
-                std::ptr::null()
-            ),
+            aimux_bedrock_new(key.as_ptr(), key.as_ptr(), key.as_ptr(), std::ptr::null()),
             0
         );
     }

@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK OpenAI provider HTTP-level tests.
+//! Rust translations of the AI SDK OpenAI provider HTTP-level tests.
 //!
 //! Sources (TS → Rust):
 //! - `packages/openai/src/chat/openai-chat-language-model.test.ts`
@@ -146,7 +146,11 @@ async fn mock_json_response(server: &MockServer, body: Value) {
 async fn mock_json_response_with_delay(server: &MockServer, body: Value, delay: Duration) {
     Mock::given(method("POST"))
         .and(path("/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(body).set_delay(delay))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(body)
+                .set_delay(delay),
+        )
         .mount(server)
         .await;
 }
@@ -1586,9 +1590,7 @@ async fn abort_signal_cancels_in_flight_generate() {
     let mut options = default_options(test_prompt());
     options.abort_signal = Some(signal_clone);
 
-    let handle = tokio::spawn(async move {
-        model.do_generate(&options).await
-    });
+    let handle = tokio::spawn(async move { model.do_generate(&options).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
     signal.abort();

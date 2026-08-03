@@ -462,8 +462,9 @@ pub extern "C" fn aimux_azure_new(
     let Some((api_key, resource_name, deployment)) = parsed else {
         return 0;
     };
-    let mut config =
-        AzureConfig::new().with_api_key(api_key).with_resource_name(resource_name);
+    let mut config = AzureConfig::new()
+        .with_api_key(api_key)
+        .with_resource_name(resource_name);
     if let Some(version) = parse_base_url(api_version) {
         config = config.with_api_version(version);
     }
@@ -498,7 +499,9 @@ pub extern "C" fn aimux_azure_new_with_base(
     let Some((api_key, base_url, deployment)) = parsed else {
         return 0;
     };
-    let mut config = AzureConfig::new().with_api_key(api_key).with_base_url(base_url);
+    let mut config = AzureConfig::new()
+        .with_api_key(api_key)
+        .with_base_url(base_url);
     if let Some(version) = parse_base_url(api_version) {
         config = config.with_api_version(version);
     }

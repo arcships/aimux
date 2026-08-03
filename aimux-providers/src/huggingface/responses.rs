@@ -1,4 +1,4 @@
-﻿//! Hugging Face Responses API language model.
+//! Hugging Face Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the Hugging Face Responses
 //! API (`POST /responses`). This is the lightest Responses implementation in
@@ -35,7 +35,7 @@ use aimux_core::types::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_timed, send_stream_timed};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
 use super::HuggingFaceConfig;

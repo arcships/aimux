@@ -1,4 +1,4 @@
-﻿//! HTTP-level tests for the Google Gemini provider.
+//! HTTP-level tests for the Google Gemini provider.
 //!
 //! These tests spin up a `wiremock` mock server, configure it with a JSON or
 //! SSE response, point a `GoogleProvider` at the mock, and assert on the
@@ -1806,9 +1806,11 @@ mod request_body {
         assert_eq!(fc["name"], "weather");
         assert_eq!(fc["args"]["location"], "SF");
         // No signature on the part → no thoughtSignature emitted.
-        assert!(body["contents"][1]["parts"][0]
-            .get("thoughtSignature")
-            .is_none());
+        assert!(
+            body["contents"][1]["parts"][0]
+                .get("thoughtSignature")
+                .is_none()
+        );
     }
 
     // ── assistant tool call with thought signature → part sibling ─────────────
@@ -1828,8 +1830,7 @@ mod request_body {
                     tool_name: "weather".to_string(),
                     input: json!({ "location": "SF" }),
                     thought_signature: Some(
-                        "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"
-                            .to_string(),
+                        "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH".to_string(),
                     ),
                     provider_options: None,
                 }],
@@ -1845,9 +1846,7 @@ mod request_body {
             part["thoughtSignature"],
             "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"
         );
-        assert!(part["functionCall"]
-            .get("thoughtSignature")
-            .is_none());
+        assert!(part["functionCall"].get("thoughtSignature").is_none());
     }
 
     // ── tool result → functionResponse part in a user message ─────────────────

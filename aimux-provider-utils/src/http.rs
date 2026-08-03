@@ -242,7 +242,10 @@ pub async fn send(
                 b = bytes => b.map_err(|e| AiMuxError::Http(e.to_string()))?,
             }
         }
-        None => resp.bytes().await.map_err(|e| AiMuxError::Http(e.to_string()))?,
+        None => resp
+            .bytes()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?,
     };
 
     Ok(HttpResponse {
@@ -502,7 +505,10 @@ impl Stream for TimeoutBodyStream {
         // while Pending (the signal's `Notify` stores the waker).
         if this.abort_wait.is_none() && this.abort_signal.is_some() {
             this.abort_wait = Some(Box::pin(
-                this.abort_signal.as_ref().expect("checked above").cancelled(),
+                this.abort_signal
+                    .as_ref()
+                    .expect("checked above")
+                    .cancelled(),
             ));
         }
 
@@ -531,9 +537,7 @@ impl Stream for TimeoutBodyStream {
         if Instant::now() >= deadline {
             this.done = true;
             this.sleep = None;
-            return Poll::Ready(Some(Err(AiMuxError::Timeout(
-                kind.message().to_string(),
-            ))));
+            return Poll::Ready(Some(Err(AiMuxError::Timeout(kind.message().to_string()))));
         }
 
         // (Re)create the timer if missing or pointed at a different deadline.
@@ -558,9 +562,7 @@ impl Stream for TimeoutBodyStream {
                 if sleep.as_mut().poll(cx).is_ready() {
                     this.done = true;
                     this.sleep = None;
-                    return Poll::Ready(Some(Err(AiMuxError::Timeout(
-                        kind.message().to_string(),
-                    ))));
+                    return Poll::Ready(Some(Err(AiMuxError::Timeout(kind.message().to_string()))));
                 }
             }
             match this.inner.as_mut().poll_next(cx) {
@@ -891,7 +893,11 @@ mod tests {
             .expect("first-chunk deadline must fire within 5s")
             .expect("stream must yield an error");
         assert!(matches!(item, Err(AiMuxError::Timeout(_))));
-        assert!(item.unwrap_err().to_string().contains("first chunk timeout"));
+        assert!(
+            item.unwrap_err()
+                .to_string()
+                .contains("first chunk timeout")
+        );
     }
 
     #[tokio::test]
@@ -923,16 +929,17 @@ mod tests {
             .expect("chunk idle timeout must fire within 5s")
             .expect("stream must yield an error");
         assert!(matches!(second, Err(AiMuxError::Timeout(_))));
-        assert!(second.unwrap_err().to_string().contains("chunk idle timeout"));
+        assert!(
+            second
+                .unwrap_err()
+                .to_string()
+                .contains("chunk idle timeout")
+        );
     }
 
     #[tokio::test]
     async fn timeout_stream_early_chunks_pass_within_budget() {
-        let inner = futures::stream::iter(vec![
-            Ok(Bytes::from("a")),
-            Ok(Bytes::from("b")),
-        ])
-        .boxed();
+        let inner = futures::stream::iter(vec![Ok(Bytes::from("a")), Ok(Bytes::from("b"))]).boxed();
         let mut timed = TimeoutBodyStream {
             inner,
             start: Instant::now(),
@@ -1042,7 +1049,10 @@ mod tests {
         };
         let item = timed.next().await.expect("must yield an error");
         assert!(matches!(item, Err(AiMuxError::Aborted)));
-        assert!(timed.next().await.is_none(), "stream must be fused after abort");
+        assert!(
+            timed.next().await.is_none(),
+            "stream must be fused after abort"
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-﻿//! OpenAI Responses API language model.
+//! OpenAI Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the `/v1/responses`
 //! endpoint. The Responses API uses a different request/response format from
@@ -44,7 +44,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_timed, send_stream_timed};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
 use super::OpenAIConfig;

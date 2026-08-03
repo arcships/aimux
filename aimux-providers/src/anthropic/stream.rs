@@ -157,7 +157,8 @@ pub(crate) async fn anthropic_generate_core(
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let request =
+        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
     let resp = send_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let data: AnthropicResponse =
@@ -253,7 +254,8 @@ pub(crate) async fn anthropic_stream_core(
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
 ) -> Result<StreamResult, AiMuxError> {
-    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let request =
+        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
     let resp = send_stream_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let response_headers = resp.headers;

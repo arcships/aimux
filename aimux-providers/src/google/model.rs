@@ -1,4 +1,4 @@
-﻿//! Google Gemini language model — implements `LanguageModel`.
+//! Google Gemini language model — implements `LanguageModel`.
 
 use std::collections::HashMap;
 
@@ -14,7 +14,9 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 
 use super::GoogleConfig;

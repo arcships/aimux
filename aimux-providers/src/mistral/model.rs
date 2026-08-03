@@ -1,4 +1,4 @@
-﻿//! Mistral language model — implements `LanguageModel` trait.
+//! Mistral language model — implements `LanguageModel` trait.
 //!
 //! Mirrors the TS `mistral-chat-language-model.ts`. Key differences from the
 //! OpenAI model:
@@ -24,7 +24,9 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 
 use super::MistralConfig;

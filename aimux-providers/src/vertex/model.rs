@@ -1,4 +1,4 @@
-﻿//! Google Vertex AI language model — implements `LanguageModel`.
+//! Google Vertex AI language model — implements `LanguageModel`.
 //!
 //! Reuses the shared [`crate::google::convert`] message conversion logic and
 //! [`crate::google::types`] response types. Only the endpoint construction and
@@ -18,7 +18,9 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 
 use crate::google::convert::{build_request_body, convert_usage, parse_finish_reason};
