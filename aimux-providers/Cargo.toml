@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "aimux-providers"
 version.workspace = true
 edition.workspace = true

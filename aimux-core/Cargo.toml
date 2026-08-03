@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "aimux-core"
 version.workspace = true
 edition.workspace = true

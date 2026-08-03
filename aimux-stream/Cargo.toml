@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "aimux-stream"
 version.workspace = true
 edition.workspace = true
