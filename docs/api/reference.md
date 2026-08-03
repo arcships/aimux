@@ -41,6 +41,28 @@
 
 ## Functions
 
+### Native protocols
+
+| Provider | Rust | Node / Python | Go / Java | Kotlin / Swift / Flutter | C ABI |
+|----------|------|--------------|-----------|--------------------------|-------|
+| OpenAI | `OpenAIProvider::new(OpenAIConfig::new(key))` | `openai(apiKey, model, baseUrl?)` | `NewOpenAI(...)` / `Model.openai(...)` | `Model.openai(...)` / `Aimux.openai(apiKey:modelId:)` | `aimux_openai_new` |
+| Anthropic | `AnthropicProvider::new(AnthropicConfig::new(key))` | `anthropic(apiKey, model, baseUrl?)` | `NewAnthropic(...)` / `Model.anthropic(...)` | `Model.anthropic(...)` / `Aimux.anthropic(apiKey:modelId:)` | `aimux_anthropic_new` |
+| Google | `GoogleProvider` | `google(apiKey, model, baseUrl?)` | — | — | — |
+| DeepSeek (registry) | `provider("deepseek", ...)` | `deepseek(...)` | `NewDeepSeek(...)` / `Model.deepseek(...)` | — | `aimux_provider_new("deepseek", ...)` |
+| Bedrock | `BedrockProvider` | — | — | — | — |
+| Vertex | `VertexProvider` | — | — | — | — |
+| Azure | `AzureProvider` | — | — | — | — |
+| Cohere | `CohereProvider` | — | — | — | — |
+| Mistral | `MistralProvider` | — | — | — | — |
+| xAI | `XAIProvider` | — | — | — | — |
+| Anthropic-AWS | `AnthropicAwsProvider` | — | — | — | — |
+
+`—` = not exposed in that binding yet. Bedrock / Vertex / Azure / Cohere /
+Mistral / xAI / Anthropic-AWS currently exist only in Rust (typed
+constructors); the other bindings ship OpenAI / Anthropic shortcuts. Note:
+Python's `google()` exists in the Rust layer but is not exported from the
+package yet.
+
 ### Core (Rust, `aimux_providers` / `aimux_core`)
 
 | Function | Signature (abridged) | Notes |
