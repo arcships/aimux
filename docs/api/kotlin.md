@@ -12,7 +12,7 @@ Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
 }
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Built-in Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `aimux.ProviderName` holds the constants:

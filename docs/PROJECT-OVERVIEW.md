@@ -123,7 +123,7 @@ The comparison between aimux and the OpenAI official SDK is truly equivalent —
 
 See [rfc/0004-provider-inventory.md](../rfc/0004-provider-inventory.md) for the full list.
 All registry providers are accessed via the unified `provider(name, ...)` entry point
-(RFC-0017 phase 4) — see [API.md](API.md#built-in-providers-rfc-0017-phase-4).
+— see [API.md](API.md#built-in-providers).
 
 ### Data model (aligned with AI SDK V4)
 

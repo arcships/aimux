@@ -27,7 +27,7 @@ difference: aimux is an access layer, those are orchestration layers.
 ## Why aimux
 
 - **325 provider modules** — 250 registry-backed OpenAI-compatible
-  (unified `provider(name, ...)` entry, RFC-0017 phase 4) + 10 native protocol
+  (unified `provider(name, ...)` entry) + 10 native protocol
   implementations (OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere,
   Mistral, xAI, Anthropic-AWS) + 65 standalone/modality/local/search providers
   (OpenRouter, DeepSeek, Ollama, vLLM, ElevenLabs, KlingAI, Tavily, …).
@@ -39,7 +39,7 @@ difference: aimux is an access layer, those are orchestration layers.
 - **Config-driven provider registry** — `provider-registry.json` describes
   each of the 250 OpenAI-compatible providers (base URL, env var, profile
   quirks: top_k, tools, response_format, streaming usage, max_tokens key);
-  one unified `provider(name, ...)` entry in every binding (RFC-0017 phase 4).
+  one unified `provider(name, ...)` entry in every binding.
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
 - **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
@@ -177,8 +177,8 @@ while let Some(part) = stream.next().await {
 ## Switch providers
 
 ```rust
-// OpenAI → DeepSeek: only the provider name changes (RFC-0017 phase 4 —
-// registry-backed; key read from the provider's env var)
+// OpenAI → DeepSeek: only the provider name changes (registry-backed;
+// key read from the provider's env var)
 use aimux_providers::{provider, provider_from_env, ProviderName};
 
 // 推荐:类型化 ProviderName(IDE 补全 + 编译期检查)
@@ -191,7 +191,7 @@ let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 All 250 OpenAI-compatible providers are registry-backed: `provider(name, ...)`
 in every binding, with typed `ProviderName` (enum/union/consts per language).
 The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
-see [docs/API.md](docs/API.md#built-in-providers-rfc-0017-phase-4).
+see [docs/API.md](docs/API.md#built-in-providers).
 
 > **Scope note:** `provider(name, ...)` covers exactly those 250
 > OpenAI-compatible providers. Native protocols (Anthropic, Google, Bedrock,
@@ -200,7 +200,7 @@ see [docs/API.md](docs/API.md#built-in-providers-rfc-0017-phase-4).
 > typed factories (`AnthropicProvider`, `OllamaProvider`, …). Custom
 > OpenAI-compatible endpoints: reuse a registry name with a `base_url`
 > override, or the OpenAI typed path. See
-> [docs/API.md — Scope](docs/API.md#built-in-providers-rfc-0017-phase-4).
+> [docs/API.md — Scope](docs/API.md#built-in-providers).
 
 ## Provider coverage
 

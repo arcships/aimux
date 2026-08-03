@@ -28,7 +28,7 @@ aimux_drop_handle(handle);
 | `aimux_openai_new_with_base(api_key, model_id, base_url)` | Create an OpenAI language model (custom base_url, for mock testing) |
 | `aimux_anthropic_new(api_key, model_id)` | Create an Anthropic language model |
 | `aimux_anthropic_new_with_base(api_key, model_id, base_url)` | Create an Anthropic language model (custom base_url) |
-| `aimux_provider_new(name, api_key, model_id, config_json)` | Create a language model from the built-in registry by provider name (RFC-0017 phase 4; `api_key` may be NULL to read the provider's env var; `config_json` optional `{"base_url":...}` JSON or NULL) |
+| `aimux_provider_new(name, api_key, model_id, config_json)` | Create a language model from the built-in registry by provider name (`api_key` may be NULL to read the provider's env var; `config_json` optional `{"base_url":...}` JSON or NULL) |
 | `aimux_provider_from_env(name, model_id)` | Create a registry language model, reading the API key from the provider's env var |
 | `aimux_generate_text(handle, prompt_json, opts_json)` | Non-streaming generation (returns a JSON string) |
 | `aimux_stream_text(handle, prompt_json, opts_json, on_part, on_done, on_error)` | Streaming generation (push callback) |

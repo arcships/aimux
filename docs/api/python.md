@@ -19,7 +19,7 @@ result = generate_text(model, "What is Rust?")
 print(result["text"])
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Built-in Providers
 
 ```python
 from aimux import provider, generate_text

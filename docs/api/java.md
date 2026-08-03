@@ -18,7 +18,7 @@ try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:30
 }
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Built-in Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:

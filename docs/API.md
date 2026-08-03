@@ -51,24 +51,21 @@ language guide and follow its Quick Start:
 [C/C++](api/c.md#quick-start) · [Swift](api/swift.md#quick-start) ·
 [Kotlin](api/kotlin.md#quick-start) · [Flutter/Dart](api/flutter.md#quick-start)
 
-## Built-in Providers (RFC-0017 phase 4)
+## Built-in Providers
 
-All 250 built-in OpenAI-compatible providers are registry-backed
-(`provider-registry.json` is the single source of truth). Every binding exposes
-a unified `provider(name, ...)` entry point — the per-provider shell types
-(`GroqConfig`/`DeepSeekProvider` etc.) were retired in phase 4:
+All 250 OpenAI-compatible providers are constructed with one function in
+every binding (Rust, Node, Python, Go, Kotlin, Swift, Flutter, C):
 
 ```text
 provider(name, api_key?, model_id, config?)   // all languages
-  name     — registry name; 推荐使用类型化 ProviderName（见下），字符串同样可用
-  api_key  — optional; omitted/None reads the provider's env var from the registry
+  name     — provider name; 推荐使用类型化 ProviderName（见下），字符串同样可用
+  api_key  — optional; omitted/None reads the provider's env var
   config   — optional overrides (base_url / headers / maxRetries / body_overrides)
 ```
 
 - Unknown names fail with an error that lists the available providers.
-- **推荐写法**:`ProviderName` is generated from the registry (Rust enum, TS
-  const object, Go/Java/Kotlin consts, Swift enum, Dart consts) —
-  IDE-completable and typo-proof:
+- **推荐写法**:`ProviderName` (Rust enum, TS const object, Go/Java/Kotlin
+  consts, Swift enum, Dart consts) — IDE-completable and typo-proof:
 
   ```text
   Rust:   provider(ProviderName::Groq, ...)        TS:     provider(ProviderName.groq, ...)
@@ -119,7 +116,7 @@ Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-
 | `reasoning` | `ReasoningEffort?` | Reasoning effort |
 | `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = provider default, 2) |
 | `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
-| `body_overrides` | `object?` | Per-call request-body overrides, deep-merged (RFC-0017); `null` values delete keys |
+| `body_overrides` | `object?` | Per-call request-body overrides, deep-merged; `null` values delete keys |
 | `headers` | `object?` | Extra HTTP headers |
 
 Node.js additionally accepts an `AbortSignal` as the 4th argument of
