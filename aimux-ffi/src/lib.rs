@@ -790,8 +790,11 @@ pub extern "C" fn aimux_generate_text(
         Some(m) => m,
         None => return error_json_raw("invalid handle"),
     };
-    let prompt = match cstr_to_string(prompt_json).and_then(|s| parse_prompt(&s).ok()) {
-        Some(p) => p,
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => return error_json_raw(format!("invalid prompt_json: {e}")),
+        },
         None => return error_json_raw("invalid prompt_json"),
     };
     let opts = match cstr_to_string(opts_json) {
@@ -839,8 +842,14 @@ pub extern "C" fn aimux_stream_text(
         }
     };
 
-    let prompt = match cstr_to_string(prompt_json).and_then(|s| parse_prompt(&s).ok()) {
-        Some(p) => p,
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => {
+                fire_error(on_error, format!("invalid prompt_json: {e}"));
+                return;
+            }
+        },
         None => {
             fire_error(on_error, "invalid prompt_json");
             return;
