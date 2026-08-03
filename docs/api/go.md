@@ -33,6 +33,14 @@ for part := range stream.Parts() {
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `aimux.ProviderName` holds typed constants:
 
+> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
+> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
+> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
+> are **not** name-addressable — use their dedicated constructors (e.g.
+> `NewAnthropic(apiKey, model)`). Custom OpenAI-compatible endpoints: registry
+> name + `WithBase` variant, or `NewOpenAIWithBase(apiKey, model, baseURL)`.
+> See [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+
 ```go
 // 推荐:ProviderName.Groq 常量(类型检查 + 补全)
 model, err := aimux.Provider(aimux.ProviderName.Groq, "", "llama-3.3-70b")

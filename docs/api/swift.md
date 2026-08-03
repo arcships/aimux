@@ -20,6 +20,14 @@ print(result)
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` is an enum with one case per provider:
 
+> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
+> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
+> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
+> are **not** name-addressable — use their dedicated factories (e.g.
+> `Aimux.anthropic(apiKey:modelId:)`). Custom OpenAI-compatible endpoints:
+> registry name + base-URL variant, or `Aimux.openai(apiKey:modelId:baseUrl:)`.
+> See [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+
 ```swift
 // 推荐:ProviderName enum case(类型检查 + 补全)
 let model = try Aimux.provider(name: ProviderName.groq.rawValue, modelId: "llama-3.3-70b")

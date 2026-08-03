@@ -44,6 +44,14 @@ const result = await generateText(model, 'Hello')
 registry-backed). For custom providers not in the registry, build from the
 base classes with `createProvider`-style config via the base-URL override.
 
+> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
+> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
+> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
+> are **not** name-addressable — use their dedicated factories (e.g.
+> `anthropic(apiKey, model)`). Custom OpenAI-compatible endpoints: registry
+> name + `baseUrl` override, or `openai(apiKey, model, baseUrl)`. See
+> [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+
 ## Desktop and Electron compatibility
 
 The package ships one Node-API 8 binary per desktop OS and architecture. The

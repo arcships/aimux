@@ -27,6 +27,15 @@ async fn main() -> Result<(), AiMuxError> {
 All 250 built-in OpenAI-compatible providers are registry-backed: no per-provider
 `XxxConfig`/`XxxProvider` types. Look them up by name (or by the `ProviderName` enum):
 
+> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
+> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
+> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
+> are **not** name-addressable — use their dedicated types (e.g.
+> `AnthropicProvider::new(AnthropicConfig::new(key))`). Custom
+> OpenAI-compatible endpoints: registry name + `ProviderOptions.base_url`, or
+> `OpenAIConfig::new(key).with_base_url(url)`. See
+> [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+
 ```rust
 use aimux_providers::{provider, provider_from_env, ProviderName, ProviderOptions};
 

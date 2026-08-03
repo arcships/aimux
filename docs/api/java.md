@@ -23,6 +23,14 @@ try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:30
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:
 
+> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
+> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
+> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
+> are **not** name-addressable — use their dedicated factories (e.g.
+> `Model.anthropic(apiKey, modelId)`). Custom OpenAI-compatible endpoints:
+> registry name + base-URL variant, or `Model.openaiWithBase(apiKey, modelId, baseUrl)`.
+> See [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+
 ```java
 import io.aimux.Model;
 import io.aimux.ProviderName;
