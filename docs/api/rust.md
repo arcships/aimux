@@ -1,6 +1,6 @@
 # aimux · Rust API
 
-> Unified LLM service access layer — one API to access 290+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 This is the core implementation language. Shared reference — parameter tables,
 result shapes, factory functions, and the feature coverage matrix — lives in
@@ -27,14 +27,11 @@ async fn main() -> Result<(), AiMuxError> {
 All 250 built-in OpenAI-compatible providers are registry-backed: no per-provider
 `XxxConfig`/`XxxProvider` types. Look them up by name (or by the `ProviderName` enum):
 
-> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
-> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
-> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
-> are **not** name-addressable — use their dedicated types (e.g.
-> `AnthropicProvider::new(AnthropicConfig::new(key))`). Custom
-> OpenAI-compatible endpoints: registry name + `ProviderOptions.base_url`, or
-> `OpenAIConfig::new(key).with_base_url(url)`. See
-> [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`AnthropicProvider::new(..)`); custom endpoints →
+> `ProviderOptions.base_url` / `OpenAIConfig::with_base_url`.
+> Full list: [providers.md](providers.md).
 
 ```rust
 use aimux_providers::{provider, provider_from_env, ProviderName, ProviderOptions};

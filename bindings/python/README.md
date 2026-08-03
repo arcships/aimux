@@ -1,6 +1,6 @@
 # aimux (Python)
 
-Unified LLM service layer for Python — one API for **290+ AI providers**
+Unified LLM service layer for Python — one API for **325 AI providers**
 (OpenAI, Anthropic, Google, Bedrock, Vertex, DeepSeek, …), powered by a Rust
 core.
 

@@ -1,6 +1,6 @@
 # aimux · Python API
 
-> Unified LLM service access layer — one API to access 290+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
@@ -35,13 +35,10 @@ result = generate_text(model, "Hello")
 OpenAI-compatible providers. `openai` / `anthropic` / `deepseek` factories
 remain (deepseek is now registry-backed).
 
-> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
-> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
-> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
-> are **not** name-addressable — use their dedicated factories (e.g.
-> `anthropic(api_key, model)`). Custom OpenAI-compatible endpoints: registry
-> name + `base_url`, or `openai(api_key, model, base_url)`. See
-> [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`anthropic(api_key, model)`); custom endpoints → `base_url` param.
+> Full list: [providers.md](providers.md).
 
 ## Text Generation
 

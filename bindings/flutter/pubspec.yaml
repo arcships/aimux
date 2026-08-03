@@ -1,5 +1,5 @@
 name: aimux
-description: Unified LLM service layer for Flutter/Dart (Rust core, 290+ providers, C ABI via dart:ffi)
+description: Unified LLM service layer for Flutter/Dart (Rust core, 325 providers, C ABI via dart:ffi)
 version: 0.2.0
 publish_to: none
 

@@ -1,6 +1,6 @@
 # aimux · Node.js API
 
-> Unified LLM service access layer — one API to access 290+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
@@ -44,13 +44,10 @@ const result = await generateText(model, 'Hello')
 registry-backed). For custom providers not in the registry, build from the
 base classes with `createProvider`-style config via the base-URL override.
 
-> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
-> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
-> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
-> are **not** name-addressable — use their dedicated factories (e.g.
-> `anthropic(apiKey, model)`). Custom OpenAI-compatible endpoints: registry
-> name + `baseUrl` override, or `openai(apiKey, model, baseUrl)`. See
-> [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`anthropic(apiKey, model)`); custom endpoints → `baseUrl` override.
+> Full list: [providers.md](providers.md).
 
 ## Desktop and Electron compatibility
 

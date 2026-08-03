@@ -102,7 +102,7 @@ The comparison between aimux and the OpenAI official SDK is truly equivalent —
 
 | Trait | Capability | Example Providers |
 |-------|------|-------------|
-| `LanguageModel` | Text generation + streaming + tool calling | OpenAI / Anthropic / Google / DeepSeek / 290+ providers |
+| `LanguageModel` | Text generation + streaming + tool calling | OpenAI / Anthropic / Google / DeepSeek / 325 providers |
 | `EmbeddingModel` | Vector embeddings | OpenAI / Cohere / Voyage / generic-compatible |
 | `ImageModel` | Image generation | Black Forest Labs / Replicate / Fal / KlingAI |
 | `VideoModel` | Video generation | Google Veo / Replicate |
@@ -158,7 +158,7 @@ aimux/
 │   ├── ImageModel / VideoModel
 │   ├── SpeechModel / TranscriptionModel
 │   └── RerankingModel / SearchModel
-├── aimux-providers          # 290+ provider implementations
+├── aimux-providers          # 325 provider implementations
 │   ├── 11 native protocols   #   standalone model + convert, handles provider-specific differences
 │   ├── 250 OpenAI compatible #   registry-backed: provider-registry.json + provider(name, ...) entry (RFC-0017 phase 4)
 │   └── modalities/search     #   voice / image / video / search implementations
@@ -270,10 +270,10 @@ Fundamental difference: **aimux is an access layer, LangChain/Mastra is an orche
 Your app
   └── Orchestration layer (LangChain / Mastra / custom loop)
         └── Access layer (aimux) ← here
-              └── 290+ AI providers
+              └── 325 AI providers
 ```
 
-aimux does not compete with LangChain; instead it serves as the layer beneath LangChain — LangChain handles the agent loop / RAG / chain, while aimux handles unified access to 290+ providers. Running the access layer in Rust delivers performance and memory behavior far exceeding a JS-implemented access layer.
+aimux does not compete with LangChain; instead it serves as the layer beneath LangChain — LangChain handles the agent loop / RAG / chain, while aimux handles unified access to 325 providers. Running the access layer in Rust delivers performance and memory behavior far exceeding a JS-implemented access layer.
 
 ### aimux vs rig / rust-genai
 
@@ -405,7 +405,7 @@ Not a single trick, but systematic design choices:
 | Does not do | Zod validation / middleware / telemetry | Does | Extra CPU per request |
 | Compilation | AOT compiled to native code | JIT | Cold start + steady state |
 
-### 3. The way to unify 290+ providers
+### 3. The way to unify 325 providers
 
 Don't write an independent model for each provider — that would explode. Use `OpenAICompatProfile` to describe the differences:
 
@@ -436,7 +436,7 @@ aimux's type design directly targets Vercel AI SDK V4 provider types — the `Ge
 
 ### Completed
 
-- [x] 290+ providers integrated (11 native + 250 registry-backed OpenAI-compatible + voice/image/video/search)
+- [x] 325 providers integrated (10 native + 250 registry-backed OpenAI-compatible + voice/image/video/search)
 - [x] 8 modality traits (text/embedding/image/video/speech/transcription/reranking/search)
 - [x] 7 language bindings (Node/Python/Swift/Kotlin/Flutter/C/Rust)
 - [x] 2650 cassette recorded tests

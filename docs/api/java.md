@@ -1,6 +1,6 @@
 # aimux · Java API
 
-> Unified LLM service access layer — one API to access 290+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
 toolchain is needed at build time, and the native library ships as per-platform
@@ -23,13 +23,10 @@ try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:30
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:
 
-> **Scope:** `provider(name, ...)` covers exactly these 250 OpenAI-compatible
-> providers. Native protocols (Anthropic, Google, Bedrock, …), multimodal
-> providers (ElevenLabs, Deepgram, …) and local inference (Ollama, vLLM, …)
-> are **not** name-addressable — use their dedicated factories (e.g.
-> `Model.anthropic(apiKey, modelId)`). Custom OpenAI-compatible endpoints:
-> registry name + base-URL variant, or `Model.openaiWithBase(apiKey, modelId, baseUrl)`.
-> See [API.md §Scope](../API.md#built-in-providers-rfc-0017-phase-4).
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
+> Full list: [providers.md](providers.md).
 
 ```java
 import io.aimux.Model;

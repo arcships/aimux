@@ -1,6 +1,6 @@
 # aimux API Documentation
 
-> Unified LLM service access layer — one API to access 290+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 ## Table of Contents
 
@@ -80,11 +80,9 @@ provider(name, api_key?, model_id, config?)   // all languages
   字符串形式（`provider("groq", ...)`）在全部语言中同样可用——两种写法等价。
 #### Scope: what `provider(name, ...)` covers — and what it doesn't
 
-`provider(name, ...)` covers **exactly** the 250 registry-backed
-OpenAI-compatible providers (`ProviderName` lists all of them). Providers
-outside that list are **not** addressable by name — calling
-`provider("anthropic", ...)` fails with `UnknownProvider`. Use the typed
-factories for everything else:
+`provider(name, ...)` covers **only** the 250 registry-backed OpenAI-compatible
+providers (`ProviderName` lists them). Any other name fails with
+`UnknownProvider` — use the typed factories:
 
 | Your provider | How to construct it |
 |---|---|
@@ -94,9 +92,9 @@ factories for everything else:
 | **Local inference**: Ollama, vLLM, SGLang, Llama.cpp, LM Studio… | Typed factories — Rust: `OllamaProvider::new(..)`; equivalents exist per binding |
 | **Custom / relay endpoint** (OpenAI-compatible) | Either ① reuse a registry name + `base_url` override in `provider()`, or ② the OpenAI typed path — Rust: `OpenAIConfig::new(key).with_base_url(url)`; Node/Python: `openai(apiKey, model, baseUrl)` |
 
-The `openai()` / `anthropic()` shortcuts shipped by the bindings are the
-native typed path; `deepseek()` is a shortcut to the registry entry
-(`provider("deepseek", ...)`).
+Full provider list (all 325, with entry points): [providers.md](api/providers.md).
+Type & function lookup: [reference.md](api/reference.md). The `openai()` /
+`anthropic()` shortcuts are the native path; `deepseek()` is registry-backed.
 
 ## Features
 
