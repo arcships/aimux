@@ -218,8 +218,14 @@ jobs:
 
   # ── Go binding: build FFI static archive + vet/test ───────────────────────
   go-binding:
-    name: Go binding
-    runs-on: ubuntu-latest
+    name: Go binding (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS included because the cgo LDFLAGS are platform-specific
+        # (ld64 rejects GNU -Bstatic/-Bdynamic; see bindings/go/aimux.go).
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
