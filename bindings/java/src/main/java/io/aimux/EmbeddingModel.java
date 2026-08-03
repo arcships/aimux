@@ -49,38 +49,41 @@ public final class EmbeddingModel implements Closeable {
     // ── Provider constructors ──────────────────────────────────────────────
 
     public static EmbeddingModel openai(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_embedding_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI embedding model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_embedding_new(apiKey, modelId), "Failed to create OpenAI embedding model");
         return new EmbeddingModel(h);
     }
 
     public static EmbeddingModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI embedding model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create OpenAI embedding model");
         return new EmbeddingModel(h);
     }
 
     public static EmbeddingModel cohere(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_cohere_embedding_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Cohere embedding model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_cohere_embedding_new(apiKey, modelId), "Failed to create Cohere embedding model");
         return new EmbeddingModel(h);
     }
 
     public static EmbeddingModel cohereWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Cohere embedding model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create Cohere embedding model");
         return new EmbeddingModel(h);
     }
 
     public static EmbeddingModel google(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_google_embedding_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Google embedding model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_google_embedding_new(apiKey, modelId), "Failed to create Google embedding model");
         return new EmbeddingModel(h);
     }
 
     public static EmbeddingModel googleWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Google embedding model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create Google embedding model");
         return new EmbeddingModel(h);
     }
 

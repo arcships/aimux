@@ -16,23 +16,25 @@ import 'package:ffi/ffi.dart';
 // FFI type aliases
 // ─────────────────────────────────────────────────────────────────────────────
 
-typedef _OpenaiNewC = Uint64 Function(Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
-typedef _OpenaiNewDart = int Function(Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
+typedef _OpenaiNewC = Pointer<Utf8> Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
+typedef _OpenaiNewDart = Pointer<Utf8> Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
 
 // Constructors with a custom base URL (aimux_*_new_with_base). The same
 // signature covers both OpenAI and Anthropic.
-typedef _NewWithBaseC = Uint64 Function(
+typedef _NewWithBaseC = Pointer<Utf8> Function(
     Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
-typedef _NewWithBaseDart = int Function(
+typedef _NewWithBaseDart = Pointer<Utf8> Function(
     Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
 
 // Registry provider constructor (aimux_provider_new, RFC-0017 phase 4).
 // name/model_id are required; apiKey (null → provider env var from the
 // registry entry) and configJson (null → defaults) are optional.
-typedef _ProviderNewC = Uint64 Function(
-    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
-typedef _ProviderNewDart = int Function(
-    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
+typedef _ProviderNewC = Pointer<Utf8> Function(Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
+typedef _ProviderNewDart = Pointer<Utf8> Function(Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
 
 typedef _GenerateTextC = Pointer<Utf8> Function(
     Uint64 handle, Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson);
@@ -46,14 +48,20 @@ typedef _FreeStringC = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
 
 // Multi-arg constructor C signatures (bedrock/vertex/azure).
-typedef _FourStrC = Uint64 Function(
+typedef _FourStrC = Pointer<Utf8> Function(
     Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _FourStrDart = int Function(
+typedef _FourStrDart = Pointer<Utf8> Function(
     Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _FiveStrC = Uint64 Function(
+typedef _FiveStrC = Pointer<Utf8> Function(
     Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _FiveStrDart = int Function(
+typedef _FiveStrDart = Pointer<Utf8> Function(
     Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+// Azure constructor C signatures: 3 required strings + a nullable
+// api_version (the C ABI's `const char *api_version` may be NULL).
+typedef _FourStrOptC = Pointer<Utf8> Function(
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?);
+typedef _FourStrOptDart = Pointer<Utf8> Function(
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?);
 
 // Stream callback C signatures
 typedef _OnPartC = Void Function(Pointer<Utf8>);
@@ -66,14 +74,21 @@ typedef _OnErrorC = Void Function(Pointer<Utf8>);
 
 final class _AimuxFFI {
   final DynamicLibrary _lib;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) openaiNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>) anthropicNew;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>) openaiNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>) anthropicNewWithBase;
-  final int Function(Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>, Pointer<Utf8>?) providerNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) anthropicNew;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+      openaiNewWithBase;
+  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
+      anthropicNewWithBase;
+  final Pointer<Utf8> Function(
+      Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>, Pointer<Utf8>?) providerNew;
   final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) generateText;
-  final void Function(int, Pointer<Utf8>, Pointer<Utf8>?,
-      Pointer<NativeFunction<_OnPartC>>, Pointer<NativeFunction<_OnDoneC>>,
+  final void Function(
+      int,
+      Pointer<Utf8>,
+      Pointer<Utf8>?,
+      Pointer<NativeFunction<_OnPartC>>,
+      Pointer<NativeFunction<_OnDoneC>>,
       Pointer<NativeFunction<_OnErrorC>>) streamText;
   final void Function(int) dropHandle;
   final void Function(Pointer<Utf8>) freeString;
@@ -98,13 +113,15 @@ final class _AimuxFFI {
       dylib,
       dylib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_openai_new'),
       dylib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_anthropic_new'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_openai_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_anthropic_new_with_base'),
-      dylib.lookupFunction<_ProviderNewC, _ProviderNewDart>('aimux_provider_new'),
-      dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_text'),
-      dylib.lookupFunction<
-          _StreamTextC,
-          _StreamTextDart>('aimux_stream_text'),
+      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_openai_new_with_base'),
+      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_anthropic_new_with_base'),
+      dylib.lookupFunction<_ProviderNewC, _ProviderNewDart>(
+          'aimux_provider_new'),
+      dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
+          'aimux_generate_text'),
+      dylib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text'),
       dylib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle'),
       dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
     );
@@ -119,39 +136,58 @@ final class _AimuxFFI {
 
   // ── Native protocol constructors (C ABI 0.2.0) ──────────────────────────
 
-  int cohereNew(Pointer<Utf8> key, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_cohere_new')(key, model);
-  int cohereNewWithBase(Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_cohere_new_with_base')(key, model, base);
-  int mistralNew(Pointer<Utf8> key, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_mistral_new')(key, model);
-  int mistralNewWithBase(Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_mistral_new_with_base')(key, model, base);
-  int xaiNew(Pointer<Utf8> key, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_xai_new')(key, model);
-  int xaiNewWithBase(Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_xai_new_with_base')(key, model, base);
-  int bedrockNew(Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_bedrock_new')(a, b, c, model);
-  int bedrockNewWithBase(
-          Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_FiveStrC, _FiveStrDart>('aimux_bedrock_new_with_base')(a, b, c, model, base);
-  int vertexNew(Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_vertex_new')(a, b, c, model);
-  int vertexNewWithBase(
-          Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_FiveStrC, _FiveStrDart>('aimux_vertex_new_with_base')(a, b, c, model, base);
-  int anthropicAwsNew(Pointer<Utf8> key, Pointer<Utf8> region, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>('aimux_anthropic_aws_new')(key, region, model);
-  int anthropicAwsNewWithBase(
-          Pointer<Utf8> key, Pointer<Utf8> region, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_anthropic_aws_new_with_base')(key, region, model, base);
-  int azureNew(
-          Pointer<Utf8> key, Pointer<Utf8> resource, Pointer<Utf8> deployment, Pointer<Utf8>? version) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_azure_new')(key, resource, deployment, version);
-  int azureNewWithBase(
-          Pointer<Utf8> key, Pointer<Utf8> base, Pointer<Utf8> deployment, Pointer<Utf8>? version) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_azure_new_with_base')(key, base, deployment, version);
+  Pointer<Utf8> cohereNew(Pointer<Utf8> key, Pointer<Utf8> model) =>
+      _lib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_cohere_new')(
+          key, model);
+  Pointer<Utf8> cohereNewWithBase(
+          Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
+      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_cohere_new_with_base')(key, model, base);
+  Pointer<Utf8> mistralNew(Pointer<Utf8> key, Pointer<Utf8> model) =>
+      _lib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_mistral_new')(
+          key, model);
+  Pointer<Utf8> mistralNewWithBase(
+          Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
+      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_mistral_new_with_base')(key, model, base);
+  Pointer<Utf8> xaiNew(Pointer<Utf8> key, Pointer<Utf8> model) => _lib
+      .lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_xai_new')(key, model);
+  Pointer<Utf8> xaiNewWithBase(
+          Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
+      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_xai_new_with_base')(key, model, base);
+  Pointer<Utf8> bedrockNew(Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c,
+          Pointer<Utf8> model) =>
+      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_bedrock_new')(
+          a, b, c, model);
+  Pointer<Utf8> bedrockNewWithBase(Pointer<Utf8> a, Pointer<Utf8> b,
+          Pointer<Utf8> c, Pointer<Utf8> model, Pointer<Utf8> base) =>
+      _lib.lookupFunction<_FiveStrC, _FiveStrDart>(
+          'aimux_bedrock_new_with_base')(a, b, c, model, base);
+  Pointer<Utf8> vertexNew(Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c,
+          Pointer<Utf8> model) =>
+      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_vertex_new')(
+          a, b, c, model);
+  Pointer<Utf8> vertexNewWithBase(Pointer<Utf8> a, Pointer<Utf8> b,
+          Pointer<Utf8> c, Pointer<Utf8> model, Pointer<Utf8> base) =>
+      _lib.lookupFunction<_FiveStrC, _FiveStrDart>(
+          'aimux_vertex_new_with_base')(a, b, c, model, base);
+  Pointer<Utf8> anthropicAwsNew(
+          Pointer<Utf8> key, Pointer<Utf8> region, Pointer<Utf8> model) =>
+      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_anthropic_aws_new')(key, region, model);
+  Pointer<Utf8> anthropicAwsNewWithBase(Pointer<Utf8> key, Pointer<Utf8> region,
+          Pointer<Utf8> model, Pointer<Utf8> base) =>
+      _lib.lookupFunction<_FourStrC, _FourStrDart>(
+          'aimux_anthropic_aws_new_with_base')(key, region, model, base);
+  Pointer<Utf8> azureNew(Pointer<Utf8> key, Pointer<Utf8> resource,
+          Pointer<Utf8> deployment, Pointer<Utf8>? version) =>
+      _lib.lookupFunction<_FourStrOptC, _FourStrOptDart>('aimux_azure_new')(
+          key, resource, deployment, version);
+  Pointer<Utf8> azureNewWithBase(Pointer<Utf8> key, Pointer<Utf8> base,
+          Pointer<Utf8> deployment, Pointer<Utf8>? version) =>
+      _lib.lookupFunction<_FourStrOptC, _FourStrOptDart>(
+          'aimux_azure_new_with_base')(key, base, deployment, version);
 }
 
 // Stream ABI type (can't use typedef with Pointer<NativeFunction> inline easily)
@@ -201,6 +237,22 @@ void _onError(Pointer<Utf8> errPtr) {
 // Model
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Parse a constructor's JSON result (`{"handle":<u64>}` on success,
+// `{"error":"..."}` on failure), free the pointer, and return the handle.
+int _extractHandle(_AimuxFFI ffi, Pointer<Utf8> ptr) {
+  if (ptr == nullptr) throw StateError('constructor returned null');
+  final result = ptr.toDartString();
+  ffi.freeString(ptr);
+  final decoded = jsonDecode(result);
+  if (decoded is Map<String, dynamic>) {
+    final error = decoded['error'];
+    if (error is String) throw StateError(error);
+    final handle = decoded['handle'];
+    if (handle is int) return handle;
+  }
+  throw StateError('invalid constructor response: $result');
+}
+
 /// A model instance backed by a Rust `Arc<dyn LanguageModel>`.
 ///
 /// Call [close] to release the native handle.
@@ -218,7 +270,7 @@ class Model {
   /// used via `aimux_openai_new`.
   factory Model.openai(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.openaiNew(keyPtr, idPtr);
@@ -227,8 +279,7 @@ class Model {
             (basePtr) => ffi.openaiNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create OpenAI model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create an Anthropic model instance.
@@ -237,7 +288,7 @@ class Model {
   /// null, the provider's standard URL is used via `aimux_anthropic_new`.
   factory Model.anthropic(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.anthropicNew(keyPtr, idPtr);
@@ -246,14 +297,13 @@ class Model {
             (basePtr) => ffi.anthropicNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Anthropic model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a Cohere model instance.
   factory Model.cohere(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.cohereNew(keyPtr, idPtr);
@@ -262,14 +312,13 @@ class Model {
             (basePtr) => ffi.cohereNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Cohere model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a Mistral model instance.
   factory Model.mistral(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.mistralNew(keyPtr, idPtr);
@@ -278,24 +327,22 @@ class Model {
             (basePtr) => ffi.mistralNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create Mistral model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create an xAI model instance.
   factory Model.xai(String apiKey, String modelId, {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(modelId, (idPtr) {
         if (baseUrl == null) {
           return ffi.xaiNew(keyPtr, idPtr);
         }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.xaiNewWithBase(keyPtr, idPtr, basePtr));
+        return _withUtf8(
+            baseUrl, (basePtr) => ffi.xaiNewWithBase(keyPtr, idPtr, basePtr));
       });
     });
-    if (h == 0) throw StateError('Failed to create xAI model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a Bedrock model instance (AWS SigV4 credentials).
@@ -303,7 +350,7 @@ class Model {
       String accessKeyId, String secretAccessKey, String region, String modelId,
       {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(accessKeyId, (aPtr) {
+    final ptr = _withUtf8(accessKeyId, (aPtr) {
       return _withUtf8(secretAccessKey, (bPtr) {
         return _withUtf8(region, (cPtr) {
           return _withUtf8(modelId, (idPtr) {
@@ -311,13 +358,14 @@ class Model {
               return ffi.bedrockNew(aPtr, bPtr, cPtr, idPtr);
             }
             return _withUtf8(
-                baseUrl, (basePtr) => ffi.bedrockNewWithBase(aPtr, bPtr, cPtr, idPtr, basePtr));
+                baseUrl,
+                (basePtr) =>
+                    ffi.bedrockNewWithBase(aPtr, bPtr, cPtr, idPtr, basePtr));
           });
         });
       });
     });
-    if (h == 0) throw StateError('Failed to create Bedrock model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a Vertex AI model instance (GCP bearer token).
@@ -325,7 +373,7 @@ class Model {
       String accessToken, String project, String location, String modelId,
       {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(accessToken, (aPtr) {
+    final ptr = _withUtf8(accessToken, (aPtr) {
       return _withUtf8(project, (bPtr) {
         return _withUtf8(location, (cPtr) {
           return _withUtf8(modelId, (idPtr) {
@@ -333,31 +381,34 @@ class Model {
               return ffi.vertexNew(aPtr, bPtr, cPtr, idPtr);
             }
             return _withUtf8(
-                baseUrl, (basePtr) => ffi.vertexNewWithBase(aPtr, bPtr, cPtr, idPtr, basePtr));
+                baseUrl,
+                (basePtr) =>
+                    ffi.vertexNewWithBase(aPtr, bPtr, cPtr, idPtr, basePtr));
           });
         });
       });
     });
-    if (h == 0) throw StateError('Failed to create Vertex model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create an Anthropic-on-AWS model instance (API key + region).
-  factory Model.anthropicAws(String apiKey, String region, String modelId, {String? baseUrl}) {
+  factory Model.anthropicAws(String apiKey, String region, String modelId,
+      {String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(region, (rPtr) {
         return _withUtf8(modelId, (idPtr) {
           if (baseUrl == null) {
             return ffi.anthropicAwsNew(keyPtr, rPtr, idPtr);
           }
           return _withUtf8(
-              baseUrl, (basePtr) => ffi.anthropicAwsNewWithBase(keyPtr, rPtr, idPtr, basePtr));
+              baseUrl,
+              (basePtr) =>
+                  ffi.anthropicAwsNewWithBase(keyPtr, rPtr, idPtr, basePtr));
         });
       });
     });
-    if (h == 0) throw StateError('Failed to create Anthropic AWS model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create an Azure OpenAI model instance (API key + resource name).
@@ -365,7 +416,7 @@ class Model {
   factory Model.azure(String apiKey, String resourceName, String deployment,
       {String? apiVersion, String? baseUrl}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(apiKey, (keyPtr) {
+    final ptr = _withUtf8(apiKey, (keyPtr) {
       return _withUtf8(deployment, (dPtr) {
         final vPtr = apiVersion != null ? apiVersion.toNativeUtf8() : nullptr;
         try {
@@ -373,15 +424,14 @@ class Model {
             return _withUtf8(
                 resourceName, (rPtr) => ffi.azureNew(keyPtr, rPtr, dPtr, vPtr));
           }
-          return _withUtf8(
-              baseUrl, (bPtr) => ffi.azureNewWithBase(keyPtr, bPtr, dPtr, vPtr));
+          return _withUtf8(baseUrl,
+              (bPtr) => ffi.azureNewWithBase(keyPtr, bPtr, dPtr, vPtr));
         } finally {
           if (vPtr != nullptr) calloc.free(vPtr);
         }
       });
     });
-    if (h == 0) throw StateError('Failed to create Azure model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Create a model from the provider registry by name (RFC-0017 phase 4).
@@ -392,7 +442,7 @@ class Model {
   factory Model.provider(String name, String modelId,
       {String? apiKey, String? configJson}) {
     final ffi = _AimuxFFI();
-    final h = _withUtf8(name, (namePtr) {
+    final ptr = _withUtf8(name, (namePtr) {
       return _withUtf8(modelId, (idPtr) {
         final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
         final cfgPtr = configJson != null ? configJson.toNativeUtf8() : nullptr;
@@ -404,8 +454,7 @@ class Model {
         }
       });
     });
-    if (h == 0) throw StateError('Failed to create provider model');
-    return Model._(h, ffi);
+    return Model._(_extractHandle(ffi, ptr), ffi);
   }
 
   /// Generate text (non-streaming).
@@ -425,7 +474,8 @@ class Model {
       final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
       try {
         final resultPtr = _ffi.generateText(_handle, promptPtr, optsPtr);
-        if (resultPtr == nullptr) throw StateError('generate_text returned null');
+        if (resultPtr == nullptr)
+          throw StateError('generate_text returned null');
         final result = resultPtr.toDartString();
         _ffi.freeString(resultPtr);
         return result;

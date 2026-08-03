@@ -101,43 +101,46 @@ class EmbeddingModel private constructor(handle: Long) : Closeable {
     companion object {
         /** Create an OpenAI embedding model (e.g. `text-embedding-3-small`). */
         fun openai(apiKey: String, modelId: String): EmbeddingModel {
-            val h = FFI.lib.aimux_openai_embedding_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create OpenAI embedding model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_embedding_new(apiKey, modelId), "Failed to create OpenAI embedding model")
             return EmbeddingModel(h)
         }
 
         /** Create an OpenAI embedding model with a custom base URL. */
         fun openai(apiKey: String, modelId: String, baseUrl: String): EmbeddingModel {
-            val h = FFI.lib.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create OpenAI embedding model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create OpenAI embedding model")
             return EmbeddingModel(h)
         }
 
         /** Create a Cohere embedding model (e.g. `embed-english-v3.0`). */
         fun cohere(apiKey: String, modelId: String): EmbeddingModel {
-            val h = FFI.lib.aimux_cohere_embedding_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create Cohere embedding model" }
+            val h = extractHandle(
+                FFI.lib.aimux_cohere_embedding_new(apiKey, modelId), "Failed to create Cohere embedding model")
             return EmbeddingModel(h)
         }
 
         /** Create a Cohere embedding model with a custom base URL. */
         fun cohere(apiKey: String, modelId: String, baseUrl: String): EmbeddingModel {
-            val h = FFI.lib.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create Cohere embedding model" }
+            val h = extractHandle(
+                FFI.lib.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create Cohere embedding model")
             return EmbeddingModel(h)
         }
 
         /** Create a Google embedding model (e.g. `gemini-embedding-001`). */
         fun google(apiKey: String, modelId: String): EmbeddingModel {
-            val h = FFI.lib.aimux_google_embedding_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create Google embedding model" }
+            val h = extractHandle(
+                FFI.lib.aimux_google_embedding_new(apiKey, modelId), "Failed to create Google embedding model")
             return EmbeddingModel(h)
         }
 
         /** Create a Google embedding model with a custom base URL. */
         fun google(apiKey: String, modelId: String, baseUrl: String): EmbeddingModel {
-            val h = FFI.lib.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create Google embedding model" }
+            val h = extractHandle(
+                FFI.lib.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create Google embedding model")
             return EmbeddingModel(h)
         }
     }
@@ -187,15 +190,16 @@ class SpeechModel private constructor(handle: Long) : Closeable {
     companion object {
         /** Create an OpenAI speech (TTS) model. */
         fun openai(apiKey: String, modelId: String): SpeechModel {
-            val h = FFI.lib.aimux_openai_speech_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create OpenAI speech model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_speech_new(apiKey, modelId), "Failed to create OpenAI speech model")
             return SpeechModel(h)
         }
 
         /** Create an OpenAI speech model with a custom base URL. */
         fun openai(apiKey: String, modelId: String, baseUrl: String): SpeechModel {
-            val h = FFI.lib.aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create OpenAI speech model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create OpenAI speech model")
             return SpeechModel(h)
         }
     }
@@ -242,15 +246,17 @@ class TranscriptionModel private constructor(handle: Long) : Closeable {
     companion object {
         /** Create an OpenAI transcription (STT) model. */
         fun openai(apiKey: String, modelId: String): TranscriptionModel {
-            val h = FFI.lib.aimux_openai_transcription_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create OpenAI transcription model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_transcription_new(apiKey, modelId),
+                "Failed to create OpenAI transcription model")
             return TranscriptionModel(h)
         }
 
         /** Create an OpenAI transcription model with a custom base URL. */
         fun openai(apiKey: String, modelId: String, baseUrl: String): TranscriptionModel {
-            val h = FFI.lib.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create OpenAI transcription model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create OpenAI transcription model")
             return TranscriptionModel(h)
         }
     }
@@ -299,29 +305,31 @@ class ImageModel private constructor(handle: Long) : Closeable {
     companion object {
         /** Create an OpenAI image model (e.g. `dall-e-3`). */
         fun openai(apiKey: String, modelId: String): ImageModel {
-            val h = FFI.lib.aimux_openai_image_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create OpenAI image model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_image_new(apiKey, modelId), "Failed to create OpenAI image model")
             return ImageModel(h)
         }
 
         /** Create an OpenAI image model with a custom base URL. */
         fun openai(apiKey: String, modelId: String, baseUrl: String): ImageModel {
-            val h = FFI.lib.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create OpenAI image model" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create OpenAI image model")
             return ImageModel(h)
         }
 
         /** Create a Google image model (e.g. `gemini-2.5-flash-image`). */
         fun google(apiKey: String, modelId: String): ImageModel {
-            val h = FFI.lib.aimux_google_image_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create Google image model" }
+            val h = extractHandle(
+                FFI.lib.aimux_google_image_new(apiKey, modelId), "Failed to create Google image model")
             return ImageModel(h)
         }
 
         /** Create a Google image model with a custom base URL. */
         fun google(apiKey: String, modelId: String, baseUrl: String): ImageModel {
-            val h = FFI.lib.aimux_google_image_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create Google image model" }
+            val h = extractHandle(
+                FFI.lib.aimux_google_image_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create Google image model")
             return ImageModel(h)
         }
     }
@@ -368,15 +376,16 @@ class VideoModel private constructor(handle: Long) : Closeable {
     companion object {
         /** Create a Google video model (e.g. `veo-3.0`). */
         fun google(apiKey: String, modelId: String): VideoModel {
-            val h = FFI.lib.aimux_google_video_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create Google video model" }
+            val h = extractHandle(
+                FFI.lib.aimux_google_video_new(apiKey, modelId), "Failed to create Google video model")
             return VideoModel(h)
         }
 
         /** Create a Google video model with a custom base URL. */
         fun google(apiKey: String, modelId: String, baseUrl: String): VideoModel {
-            val h = FFI.lib.aimux_google_video_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create Google video model" }
+            val h = extractHandle(
+                FFI.lib.aimux_google_video_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create Google video model")
             return VideoModel(h)
         }
     }
@@ -423,15 +432,16 @@ class RerankingModel private constructor(handle: Long) : Closeable {
     companion object {
         /** Create a Cohere reranking model (e.g. `rerank-v3.0`). */
         fun cohere(apiKey: String, modelId: String): RerankingModel {
-            val h = FFI.lib.aimux_cohere_reranking_new(apiKey, modelId)
-            require(h != 0L) { "Failed to create Cohere reranking model" }
+            val h = extractHandle(
+                FFI.lib.aimux_cohere_reranking_new(apiKey, modelId), "Failed to create Cohere reranking model")
             return RerankingModel(h)
         }
 
         /** Create a Cohere reranking model with a custom base URL. */
         fun cohere(apiKey: String, modelId: String, baseUrl: String): RerankingModel {
-            val h = FFI.lib.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl)
-            require(h != 0L) { "Failed to create Cohere reranking model" }
+            val h = extractHandle(
+                FFI.lib.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl),
+                "Failed to create Cohere reranking model")
             return RerankingModel(h)
         }
     }
@@ -482,15 +492,16 @@ class SearchModel private constructor(handle: Long) : Closeable {
          * passed and ignored).
          */
         fun tavily(apiKey: String): SearchModel {
-            val h = FFI.lib.aimux_tavily_search_new(apiKey, "")
-            require(h != 0L) { "Failed to create Tavily search model" }
+            val h = extractHandle(
+                FFI.lib.aimux_tavily_search_new(apiKey, ""), "Failed to create Tavily search model")
             return SearchModel(h)
         }
 
         /** Create a Tavily search model with a custom base URL (e.g. for mocks). */
         fun tavily(apiKey: String, baseUrl: String): SearchModel {
-            val h = FFI.lib.aimux_tavily_search_new_with_base(apiKey, "", baseUrl)
-            require(h != 0L) { "Failed to create Tavily search model" }
+            val h = extractHandle(
+                FFI.lib.aimux_tavily_search_new_with_base(apiKey, "", baseUrl),
+                "Failed to create Tavily search model")
             return SearchModel(h)
         }
     }
@@ -537,15 +548,14 @@ class Files private constructor(handle: Long) : Closeable {
     companion object {
         /** Create an OpenAI files manager. */
         fun openai(apiKey: String): Files {
-            val h = FFI.lib.aimux_openai_files_new(apiKey)
-            require(h != 0L) { "Failed to create OpenAI files manager" }
+            val h = extractHandle(FFI.lib.aimux_openai_files_new(apiKey), "Failed to create OpenAI files manager")
             return Files(h)
         }
 
         /** Create an OpenAI files manager with a custom base URL. */
         fun openai(apiKey: String, baseUrl: String): Files {
-            val h = FFI.lib.aimux_openai_files_new_with_base(apiKey, baseUrl)
-            require(h != 0L) { "Failed to create OpenAI files manager" }
+            val h = extractHandle(
+                FFI.lib.aimux_openai_files_new_with_base(apiKey, baseUrl), "Failed to create OpenAI files manager")
             return Files(h)
         }
     }

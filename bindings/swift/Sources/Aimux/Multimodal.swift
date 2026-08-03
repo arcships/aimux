@@ -75,43 +75,37 @@ public final class EmbeddingModel: @unchecked Sendable {
 
     /// Create an OpenAI embedding model instance (e.g. text-embedding-3-small).
     public static func openai(apiKey: String, modelId: String) throws -> EmbeddingModel {
-        let handle = aimux_openai_embedding_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_embedding_new(apiKey, modelId))
         return EmbeddingModel(handle: handle)
     }
 
     /// Create an OpenAI embedding model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> EmbeddingModel {
-        let handle = aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl))
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Cohere embedding model instance (e.g. embed-english-v3.0).
     public static func cohere(apiKey: String, modelId: String) throws -> EmbeddingModel {
-        let handle = aimux_cohere_embedding_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_cohere_embedding_new(apiKey, modelId))
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Cohere embedding model instance with a custom base URL.
     public static func cohere(apiKey: String, modelId: String, baseUrl: String) throws -> EmbeddingModel {
-        let handle = aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl))
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Google embedding model instance (e.g. gemini-embedding-001).
     public static func google(apiKey: String, modelId: String) throws -> EmbeddingModel {
-        let handle = aimux_google_embedding_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_google_embedding_new(apiKey, modelId))
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Google embedding model instance with a custom base URL.
     public static func google(apiKey: String, modelId: String, baseUrl: String) throws -> EmbeddingModel {
-        let handle = aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl))
         return EmbeddingModel(handle: handle)
     }
 
@@ -157,15 +151,13 @@ public final class SpeechModel: @unchecked Sendable {
 
     /// Create an OpenAI speech (TTS) model instance.
     public static func openai(apiKey: String, modelId: String) throws -> SpeechModel {
-        let handle = aimux_openai_speech_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_speech_new(apiKey, modelId))
         return SpeechModel(handle: handle)
     }
 
     /// Create an OpenAI speech model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> SpeechModel {
-        let handle = aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl))
         return SpeechModel(handle: handle)
     }
 
@@ -209,15 +201,13 @@ public final class TranscriptionModel: @unchecked Sendable {
 
     /// Create an OpenAI transcription (STT) model instance.
     public static func openai(apiKey: String, modelId: String) throws -> TranscriptionModel {
-        let handle = aimux_openai_transcription_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_transcription_new(apiKey, modelId))
         return TranscriptionModel(handle: handle)
     }
 
     /// Create an OpenAI transcription model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> TranscriptionModel {
-        let handle = aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl))
         return TranscriptionModel(handle: handle)
     }
 
@@ -264,29 +254,25 @@ public final class ImageModel: @unchecked Sendable {
 
     /// Create an OpenAI image model instance (e.g. dall-e-3).
     public static func openai(apiKey: String, modelId: String) throws -> ImageModel {
-        let handle = aimux_openai_image_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_image_new(apiKey, modelId))
         return ImageModel(handle: handle)
     }
 
     /// Create an OpenAI image model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> ImageModel {
-        let handle = aimux_openai_image_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_image_new_with_base(apiKey, modelId, baseUrl))
         return ImageModel(handle: handle)
     }
 
     /// Create a Google image model instance (e.g. gemini-2.5-flash-image).
     public static func google(apiKey: String, modelId: String) throws -> ImageModel {
-        let handle = aimux_google_image_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_google_image_new(apiKey, modelId))
         return ImageModel(handle: handle)
     }
 
     /// Create a Google image model instance with a custom base URL.
     public static func google(apiKey: String, modelId: String, baseUrl: String) throws -> ImageModel {
-        let handle = aimux_google_image_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_google_image_new_with_base(apiKey, modelId, baseUrl))
         return ImageModel(handle: handle)
     }
 
@@ -330,15 +316,13 @@ public final class VideoModel: @unchecked Sendable {
 
     /// Create a Google video model instance (e.g. veo-3.0).
     public static func google(apiKey: String, modelId: String) throws -> VideoModel {
-        let handle = aimux_google_video_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_google_video_new(apiKey, modelId))
         return VideoModel(handle: handle)
     }
 
     /// Create a Google video model instance with a custom base URL.
     public static func google(apiKey: String, modelId: String, baseUrl: String) throws -> VideoModel {
-        let handle = aimux_google_video_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_google_video_new_with_base(apiKey, modelId, baseUrl))
         return VideoModel(handle: handle)
     }
 
@@ -382,15 +366,13 @@ public final class RerankingModel: @unchecked Sendable {
 
     /// Create a Cohere reranking model instance (e.g. rerank-v3.0).
     public static func cohere(apiKey: String, modelId: String) throws -> RerankingModel {
-        let handle = aimux_cohere_reranking_new(apiKey, modelId)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_cohere_reranking_new(apiKey, modelId))
         return RerankingModel(handle: handle)
     }
 
     /// Create a Cohere reranking model instance with a custom base URL.
     public static func cohere(apiKey: String, modelId: String, baseUrl: String) throws -> RerankingModel {
-        let handle = aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl))
         return RerankingModel(handle: handle)
     }
 
@@ -435,16 +417,14 @@ public final class SearchModel: @unchecked Sendable {
     /// Create a Tavily search model instance. Tavily uses a fixed endpoint, so
     /// no model ID is needed (the C ABI's `model_id` argument is ignored).
     public static func tavily(apiKey: String) throws -> SearchModel {
-        let handle = aimux_tavily_search_new(apiKey, "")
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_tavily_search_new(apiKey, ""))
         return SearchModel(handle: handle)
     }
 
     /// Create a Tavily search model instance with a custom base URL (useful for
     /// testing against a mock server).
     public static func tavily(apiKey: String, baseUrl: String) throws -> SearchModel {
-        let handle = aimux_tavily_search_new_with_base(apiKey, "", baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_tavily_search_new_with_base(apiKey, "", baseUrl))
         return SearchModel(handle: handle)
     }
 
@@ -488,15 +468,13 @@ public final class Files: @unchecked Sendable {
 
     /// Create an OpenAI files manager instance. No model ID is required.
     public static func openai(apiKey: String) throws -> Files {
-        let handle = aimux_openai_files_new(apiKey)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_files_new(apiKey))
         return Files(handle: handle)
     }
 
     /// Create an OpenAI files manager instance with a custom base URL.
     public static func openai(apiKey: String, baseUrl: String) throws -> Files {
-        let handle = aimux_openai_files_new_with_base(apiKey, baseUrl)
-        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let handle = try Model.extractHandle(aimux_openai_files_new_with_base(apiKey, baseUrl))
         return Files(handle: handle)
     }
 

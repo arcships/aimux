@@ -51,8 +51,9 @@ public final class TranscriptionModel implements Closeable {
      * @return a new TranscriptionModel; throws {@link IllegalArgumentException} on failure.
      */
     public static TranscriptionModel openai(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_transcription_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI transcription model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_transcription_new(apiKey, modelId),
+            "Failed to create OpenAI transcription model");
         return new TranscriptionModel(h);
     }
 
@@ -65,8 +66,9 @@ public final class TranscriptionModel implements Closeable {
      * @return a new TranscriptionModel; throws {@link IllegalArgumentException} on failure.
      */
     public static TranscriptionModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI transcription model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create OpenAI transcription model");
         return new TranscriptionModel(h);
     }
 
