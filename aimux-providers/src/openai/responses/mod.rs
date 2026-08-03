@@ -67,7 +67,10 @@ impl OpenAIResponsesModel {
         Self { model_id, config }
     }
 
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
+    pub(crate) fn build_headers(
+        &self,
+        extra: Option<&HashMap<String, String>>,
+    ) -> HashMap<String, String> {
         let mut headers = HashMap::new();
         headers.insert(
             "Authorization".to_string(),

@@ -35,6 +35,13 @@ pub enum AiMuxError {
     #[error("authentication failed: {0}")]
     Auth(String),
 
+    /// The access token has expired (or was invalidated) and must be refreshed
+    /// by the caller. RFC-0018 subscription mode: the library maps a 401 from
+    /// the Codex subscription endpoint to this variant; the integrator
+    /// orchestrates `codex_refresh` + retry.
+    #[error("token expired: {0}")]
+    TokenExpired(String),
+
     #[error("model not found: {0}")]
     ModelNotFound(String),
 
@@ -104,6 +111,7 @@ impl AiMuxError {
             AiMuxError::InvalidPrompt(_) => "InvalidPrompt",
             AiMuxError::RateLimited { .. } => "RateLimited",
             AiMuxError::Auth(_) => "Auth",
+            AiMuxError::TokenExpired(_) => "TokenExpired",
             AiMuxError::ModelNotFound(_) => "ModelNotFound",
             AiMuxError::Unsupported(_) => "Unsupported",
             AiMuxError::NoSuchModel(_) => "NoSuchModel",

@@ -1423,3 +1423,30 @@ pub extern "C" fn aimux_search(handle: u64, opts_json: *const c_char) -> *mut c_
         };
     run_and_serialize("search", async move { model.do_search(&opts).await })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Codex subscription helper (RFC-0018 §3.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Refresh a Codex subscription access token (RFC-0018 §3.2).
+///
+/// Stateless: performs one OAuth `refresh_token` grant against
+/// `auth.openai.com/oauth/token`. Returns
+/// `{"access_token","refresh_token","expires_in_secs"}` JSON on success, or
+/// the standard error JSON (caller must free with `aimux_free_string`).
+/// The caller owns token persistence and the 401 → refresh → retry
+/// orchestration — the library never stores credentials.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_codex_refresh(
+    refresh_token: *const c_char,
+    client_id: *const c_char,
+) -> *mut c_char {
+    let (Some(refresh_token), Some(client_id)) =
+        (cstr_to_string(refresh_token), cstr_to_string(client_id))
+    else {
+        return error_json_raw("invalid arguments");
+    };
+    run_and_serialize("codex_refresh", async move {
+        aimux_providers::codex_refresh(&refresh_token, &client_id).await
+    })
+}
