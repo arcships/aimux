@@ -52,8 +52,8 @@ public final class SpeechModel implements Closeable {
      *         native constructor fails (handle == 0).
      */
     public static SpeechModel openai(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_speech_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI speech model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_speech_new(apiKey, modelId), "Failed to create OpenAI speech model");
         return new SpeechModel(h);
     }
 
@@ -66,8 +66,9 @@ public final class SpeechModel implements Closeable {
      * @return a new SpeechModel; throws {@link IllegalArgumentException} on failure.
      */
     public static SpeechModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create OpenAI speech model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create OpenAI speech model");
         return new SpeechModel(h);
     }
 

@@ -52,8 +52,8 @@ public final class SearchModel implements Closeable {
      * @return a new SearchModel; throws {@link IllegalArgumentException} on failure.
      */
     public static SearchModel tavily(String apiKey) {
-        long h = AimuxFFI.INSTANCE.aimux_tavily_search_new(apiKey, "");
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Tavily search model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_tavily_search_new(apiKey, ""), "Failed to create Tavily search model");
         return new SearchModel(h);
     }
 
@@ -65,8 +65,9 @@ public final class SearchModel implements Closeable {
      * @return a new SearchModel; throws {@link IllegalArgumentException} on failure.
      */
     public static SearchModel tavilyWithBase(String apiKey, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_tavily_search_new_with_base(apiKey, "", baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Tavily search model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_tavily_search_new_with_base(apiKey, "", baseUrl),
+            "Failed to create Tavily search model");
         return new SearchModel(h);
     }
 

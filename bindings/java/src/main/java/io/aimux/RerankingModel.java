@@ -52,8 +52,8 @@ public final class RerankingModel implements Closeable {
      * @return a new RerankingModel; throws {@link IllegalArgumentException} on failure.
      */
     public static RerankingModel cohere(String apiKey, String modelId) {
-        long h = AimuxFFI.INSTANCE.aimux_cohere_reranking_new(apiKey, modelId);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Cohere reranking model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_cohere_reranking_new(apiKey, modelId), "Failed to create Cohere reranking model");
         return new RerankingModel(h);
     }
 
@@ -66,8 +66,9 @@ public final class RerankingModel implements Closeable {
      * @return a new RerankingModel; throws {@link IllegalArgumentException} on failure.
      */
     public static RerankingModel cohereWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxFFI.INSTANCE.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl);
-        if (h == 0L) throw new IllegalArgumentException("Failed to create Cohere reranking model");
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl),
+            "Failed to create Cohere reranking model");
         return new RerankingModel(h);
     }
 
