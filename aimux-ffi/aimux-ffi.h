@@ -219,6 +219,31 @@ void aimux_drop_handle(uint64_t handle);
  */
 void aimux_free_string(char *ptr);
 
+/**
+ * Take (read-and-clear) the last constructor error on this thread.
+ *
+ * Constructors return a bare handle with 0 reserved for failure, so callers
+ * cannot distinguish "unknown provider" from "bad config" from "missing env
+ * var". On failure, the constructor records the full error JSON envelope
+ * `{"error","error_type","status_code"}`; callers read it back with this
+ * function and feed it through their existing error-JSON parser.
+ *
+ * Semantics:
+ * - Returns NULL if the last constructor call on this thread succeeded.
+ * - Destructive read: a second call returns NULL.
+ * - The returned pointer is owned by the caller; MUST be freed with
+ *   aimux_free_string.
+ * - Only set by aimux_*_new / aimux_provider_new / aimux_provider_from_env.
+ *
+ * Threading: the constructor and this read must run on the SAME OS thread,
+ * with no other aimux_*_new call in between. Runtimes that can migrate work
+ * between OS threads between native calls (Go goroutines, Java virtual
+ * threads, Kotlin coroutines) must pin both calls to one thread.
+ *
+ * @return Error JSON envelope, or NULL (no error).
+ */
+char *aimux_last_error(void);
+
 /* ── Embedding ───────────────────────────────────────────────────────────── */
 
 uint64_t aimux_openai_embedding_new(const char *api_key, const char *model_id);

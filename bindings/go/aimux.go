@@ -296,6 +296,11 @@ func mustNew(m *Model, err error) *Model {
 }
 
 func newModel(apiKey, modelID, baseURL, kind string) (*Model, error) {
+	// Constructor + last_error read must run on the same OS thread
+	// (aimux_last_error is thread-local). Constructors are pure config
+	// building, so pinning the thread is cheap.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	m := &Model{}
 	cKey := C.CString(apiKey)
 	cModel := C.CString(modelID)
@@ -333,7 +338,7 @@ func newModel(apiKey, modelID, baseURL, kind string) (*Model, error) {
 		}
 	}
 	if h == 0 {
-		return nil, errors.New("aimux: failed to create model (handle=0)")
+		return nil, takeLastError("aimux: failed to create model (handle=0)")
 	}
 	m.handle = uint64(h)
 
@@ -427,8 +432,12 @@ func newAzureModel(apiKey, resourceOrBase, deployment, apiVersion string, useBas
 }
 
 func wrapHandle(m *Model, h C.uint64_t) (*Model, error) {
+	// Constructor + last_error read must run on the same OS thread
+	// (aimux_last_error is thread-local).
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if h == 0 {
-		return nil, errors.New("aimux: failed to create model (handle=0)")
+		return nil, takeLastError("aimux: failed to create model (handle=0)")
 	}
 	m.handle = uint64(h)
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
@@ -445,6 +454,10 @@ func Provider(name, apiKey, modelID string) (*Model, error) {
 
 // ProviderWithBase is Provider with a base URL override (config_json).
 func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
+	// Constructor + last_error read must run on the same OS thread
+	// (aimux_last_error is thread-local).
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	m := &Model{}
 	cName := C.CString(name)
 	cModel := C.CString(modelID)
@@ -466,7 +479,7 @@ func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
 
 	h := C.aimux_provider_new(cName, cKey, cModel, cConfig)
 	if h == 0 {
-		return nil, fmt.Errorf("aimux: failed to create provider %q (handle=0)", name)
+		return nil, takeLastError(fmt.Sprintf("aimux: failed to create provider %q (handle=0)", name))
 	}
 	m.handle = uint64(h)
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
@@ -527,6 +540,21 @@ func extractError(result string) string {
 		return *envelope.Error
 	}
 	return ""
+}
+
+// takeLastError reads the FFI thread-local last-constructor error (issue #17)
+// and wraps it into a Go error. The failed constructor and this read must run
+// on the same OS thread — callers wrap both in runtime.LockOSThread.
+func takeLastError(fallback string) error {
+	if eptr := C.aimux_last_error(); eptr != nil {
+		defer C.aimux_free_string(eptr)
+		msg := C.GoString(eptr)
+		if extracted := extractError(msg); extracted != "" {
+			return fmt.Errorf("aimux: %s", extracted)
+		}
+		return fmt.Errorf("aimux: %s", msg)
+	}
+	return errors.New(fallback)
 }
 
 // ── Streaming generation ─────────────────────────────────────────────────────
