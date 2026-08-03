@@ -44,6 +44,9 @@ typedef _GenerateTextDart = Pointer<Utf8> Function(
 typedef _DropHandleC = Void Function(Uint64);
 typedef _DropHandleDart = void Function(int);
 
+typedef _InitLoggingC = Void Function(Pointer<Utf8> level);
+typedef _InitLoggingDart = void Function(Pointer<Utf8> level);
+
 typedef _FreeStringC = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
 
@@ -92,6 +95,7 @@ final class _AimuxFFI {
       Pointer<NativeFunction<_OnErrorC>>) streamText;
   final void Function(int) dropHandle;
   final void Function(Pointer<Utf8>) freeString;
+  final void Function(Pointer<Utf8>) initLogging;
 
   _AimuxFFI._(
       this._lib,
@@ -103,7 +107,8 @@ final class _AimuxFFI {
       this.generateText,
       this.streamText,
       this.dropHandle,
-      this.freeString);
+      this.freeString,
+      this.initLogging);
 
   factory _AimuxFFI() {
     final libName = _platformLibName();
@@ -124,6 +129,7 @@ final class _AimuxFFI {
       dylib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text'),
       dylib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle'),
       dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
+      dylib.lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging'),
     );
   }
 
@@ -555,4 +561,19 @@ T _withUtf8<T>(String s, T Function(Pointer<Utf8>) fn) {
   } finally {
     calloc.free(ptr);
   }
+}
+
+/// Initialize the global logger (RFC-0014).
+///
+/// Idempotent — safe to call any number of times from any thread; only the
+/// first call has an effect. If the host already registered its own
+/// `tracing` subscriber, this is a no-op (aimux never overrides a consumer's
+/// logger).
+///
+/// [level]: "off" | "error" | "warn" | "info" | "debug" | "trace"; empty
+/// defaults to "warn". The `AIMUX_LOG` / `AIMUX_LOG_LEVEL` environment
+/// variables take precedence when set. Logs go to stderr.
+void initLogging(String level) {
+  final ffi = _AimuxFFI();
+  _withUtf8(level.isEmpty ? 'warn' : level, ffi.initLogging);
 }

@@ -278,6 +278,20 @@ func OpenAIWithBase(apiKey, modelID, baseURL string) *Model {
 	return mustNew(NewOpenAIWithBase(apiKey, modelID, baseURL))
 }
 
+// InitLogging initializes the global logger (RFC-0014). Idempotent — safe to
+// call any number of times; no-op if the host already registered its own
+// subscriber. level: "off"|"error"|"warn"|"info"|"debug"|"trace" (empty
+// defaults to "warn"). The AIMUX_LOG / AIMUX_LOG_LEVEL env vars take
+// precedence. Logs go to stderr.
+func InitLogging(level string) {
+	if level == "" {
+		level = "warn"
+	}
+	cLevel := C.CString(level)
+	defer C.free(unsafe.Pointer(cLevel))
+	C.aimux_init_logging(cLevel)
+}
+
 // Anthropic creates an Anthropic model instance, panicking on failure.
 func Anthropic(apiKey, modelID string) *Model {
 	return mustNew(NewAnthropic(apiKey, modelID))

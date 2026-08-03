@@ -410,10 +410,21 @@ fn provider(
 // Module
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
+/// subscriber 时 no-op。级别：off|error|warn|info|debug|trace（空串回退
+/// warn）。`AIMUX_LOG` / `AIMUX_LOG_LEVEL` 环境变量优先级更高。
+/// 日志输出到 stderr。
+#[pyfunction]
+fn init_logging(level: &str) {
+    let level = if level.trim().is_empty() { "warn" } else { level };
+    aimux_providers::init_logging(level);
+}
+
 #[pymodule]
 fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<StreamIterator>()?;
+    m.add_function(wrap_pyfunction!(init_logging, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;

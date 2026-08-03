@@ -77,6 +77,20 @@ public final class Model: @unchecked Sendable {
 
     // ── Provider constructors ──────────────────────────────────────────────
 
+    /// Initialize the global logger (RFC-0014).
+    ///
+    /// Idempotent — safe to call any number of times from any thread; only the
+    /// first call has an effect. If the host already registered its own
+    /// `tracing` subscriber, this is a no-op (aimux never overrides a
+    /// consumer's logger).
+    ///
+    /// - Parameter level: "off" | "error" | "warn" | "info" | "debug" |
+    ///   "trace"; empty defaults to "warn". The `AIMUX_LOG` / `AIMUX_LOG_LEVEL`
+    ///   environment variables take precedence when set. Logs go to stderr.
+    public static func initLogging(level: String) {
+        aimux_init_logging(level.isEmpty ? "warn" : level)
+    }
+
     /// Create an OpenAI model instance.
     public static func openai(apiKey: String, modelId: String) throws -> Model {
         let handle = try extractHandle(aimux_openai_new(apiKey, modelId))

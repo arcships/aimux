@@ -243,6 +243,31 @@ void aimux_drop_handle(uint64_t handle);
  */
 void aimux_free_string(char *ptr);
 
+/**
+ * Take (read-and-clear) the last constructor error on this thread.
+ *
+ * Constructors return a bare handle with 0 reserved for failure, so callers
+ * cannot distinguish "unknown provider" from "bad config" from "missing env
+ * var". On failure, the constructor records the full error JSON envelope
+ * `{"error","error_type","status_code"}`; callers read it back with this
+ * function and feed it through their existing error-JSON parser.
+ *
+ * Semantics:
+ * - Returns NULL if the last constructor call on this thread succeeded.
+ * - Destructive read: a second call returns NULL.
+ * - The returned pointer is owned by the caller; MUST be freed with
+ *   aimux_free_string.
+ * - Only set by aimux_*_new / aimux_provider_new / aimux_provider_from_env.
+ *
+ * Threading: the constructor and this read must run on the SAME OS thread,
+ * with no other aimux_*_new call in between. Runtimes that can migrate work
+ * between OS threads between native calls (Go goroutines, Java virtual
+ * threads, Kotlin coroutines) must pin both calls to one thread.
+ *
+ * @return Error JSON envelope, or NULL (no error).
+ */
+char *aimux_last_error(void);
+
 /* ── Embedding ───────────────────────────────────────────────────────────── */
 
 char *aimux_openai_embedding_new(const char *api_key, const char *model_id);
@@ -304,6 +329,15 @@ char *aimux_search(uint64_t handle, const char *opts_json);
    JSON; caller frees with aimux_free_string. Caller owns token persistence
    and the 401 -> refresh -> retry orchestration. */
 char *aimux_codex_refresh(const char *refresh_token, const char *client_id);
+
+/* Logging (RFC-0014) */
+
+/* Initialize the global logger (idempotent, thread-safe, no-op if the host
+   already registered its own subscriber). level: "off"|"error"|"warn"|
+   "info"|"debug"|"trace" (NULL = default "warn"); AIMUX_LOG and
+   AIMUX_LOG_LEVEL env vars take precedence. Logs go to stderr.
+   Returns 0. */
+int aimux_init_logging(const char *level);
 
 #ifdef __cplusplus
 } /* extern "C" */

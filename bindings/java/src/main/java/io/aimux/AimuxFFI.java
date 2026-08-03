@@ -89,6 +89,15 @@ public interface AimuxFFI extends Library {
 
     void aimux_free_string(Pointer ptr);
 
+    /**
+     * Take (read-and-clear) the last constructor error on this thread.
+     *
+     * @return Error JSON envelope {@code {"error","error_type","status_code"}},
+     *         or {@code null} if the last constructor call on this thread
+     *         succeeded. Caller MUST free with {@link #aimux_free_string}.
+     */
+    Pointer aimux_last_error();
+
     // ── Embedding ───────────────────────────────────────────────────────────
 
     Pointer aimux_openai_embedding_new(String apiKey, String modelId);
@@ -166,4 +175,8 @@ public interface AimuxFFI extends Library {
     Pointer aimux_tavily_search_new_with_base(String apiKey, String modelId, String baseUrl);
 
     Pointer aimux_search(long handle, String optsJson);
+
+    // Logging (RFC-0014).
+
+    int aimux_init_logging(String level);
 }

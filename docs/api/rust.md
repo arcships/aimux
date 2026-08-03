@@ -332,3 +332,66 @@ Rust types are the canonical definitions — one module per feature in
 | `search_model` | `SearchModel`, `SearchCallOptions`, `SearchResult` |
 | `files_model` | `Files`, `UploadFileCallOptions`, `UploadFileResult` |
 | `error` | `AiMuxError` |
+
+## Logging (RFC-0014)
+
+aimux ships a unified `tracing`-based logging layer. It is **off by default**
+(only retries and failures are logged at the default `warn` level) and never
+overrides a subscriber the host application installed itself.
+
+### Env vars (zero-code setup)
+
+| Env var | Effect |
+|---------|--------|
+| `AIMUX_LOG` | RUST_LOG-style directives, e.g. `AIMUX_LOG=aimux=debug,aimux_provider_utils::http=trace` |
+| `AIMUX_LOG_LEVEL` | Simple level name: `off` / `error` / `warn` / `info` / `debug` / `trace` |
+| `AIMUX_LOG_BODY` | `=1` to also log request/response bodies (requires `trace` level; bodies are truncated to 4KB and auth fields are redacted) |
+
+The subscriber is lazily registered on the first HTTP call, only when an
+`AIMUX_LOG*` var is present and no global subscriber exists yet. Logs go to
+stderr.
+
+### Programmatic API
+
+```rust
+use aimux_providers::init_logging;
+
+init_logging("debug"); // idempotent; no-op if a global subscriber exists
+```
+
+### C ABI
+
+```c
+aimux_init_logging("debug"); // aimux-ffi.h, idempotent, logs to stderr
+```
+
+### Per-language entry points
+
+Every binding exposes the same idempotent `init_logging(level)` entry:
+
+| Language | Entry |
+|----------|-------|
+| Rust | `aimux_providers::init_logging("debug")` |
+| C | `aimux_init_logging("debug")` |
+| Python | `aimux.init_logging("debug")` |
+| Node | `initLogging("debug")` |
+| Go | `aimux.InitLogging("debug")` |
+| Java | `Aimux.initLogging("debug")` |
+| Kotlin | `initLogging("debug")` |
+| Swift | `Aimux.initLogging(level: "debug")` |
+| Flutter | `initLogging("debug")` |
+
+`level` accepts `off | error | warn | info | debug | trace` (empty/null
+defaults to `warn`). All entries are no-ops when the host already registered
+its own subscriber, and the `AIMUX_LOG*` env vars always take precedence.
+
+### What is logged
+
+- `generate` span (provider / model / modality) around every top-level call
+- `http_request` span (method / host / attempt) at the HTTP throat — all
+  providers share it
+- `request` / `response` events at `debug`: URL **without query string**,
+  body size, header **count** (values are never logged)
+- `retry` (warn) / `failed` (error) events with status, attempt, delay, reason
+- Stream events at `debug`: `stream_connected`, `stream_first_byte` (TTFB),
+  `stream_end` (chunk count + duration)
