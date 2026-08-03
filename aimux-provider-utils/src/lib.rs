@@ -8,6 +8,7 @@
 pub mod api_key;
 pub mod headers;
 pub mod http;
+pub mod logging;
 pub mod multipart;
 pub mod response;
 pub mod retry;
@@ -20,6 +21,7 @@ pub use http::{
     RequestTimeout, TimeoutConfig, send, send_stream, send_stream_timed, send_timed, shared_client,
     shared_streaming_client,
 };
+pub use logging::{body_logging_enabled, init_logging, redact_body};
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use response::{
     DEFAULT_ERROR_STRUCTURE, ErrorStructure, api_call_to_provider_error, parse_provider_error,

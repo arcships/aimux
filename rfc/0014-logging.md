@@ -1,6 +1,6 @@
 # RFC-0014: 统一日志体系（tracing 接通）
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (2026-08-03 阶段1+2+3 完成:logging.rs + http 埋点 + generate span + 流观测 + C ABI + 测试全绿)
 > **Date**: 2026-08-01
 > **Scope**: 把已声明但零调用的 `tracing` 依赖真正接通——在 HTTP 咽喉点、顶层 generate 入口、FFI 层建立 span 树与事件，提供零成本（关闭时）可配置（env / 编程 / C ABI）的诊断日志
 > **Related**: [RFC-0009](0009-request-resilience.md) request resilience（retry/timeout 的日志埋点依赖本 RFC），[cache-tracing](../docs/internal/cache-tracing/00-research-plan.md) 缓存命中审计（结构化子系统，建立在本 RFC 的 span 树之上）
@@ -183,23 +183,21 @@ generate_text / stream_text          [aimux-core/generate.rs]
 
 ## 5. 实施计划
 
-### 阶段 1：接通最小可用（MVP）
-1. `aimux-provider-utils/src/logging.rs`：`init_logging()` + env 自动初始化 + `Once` 守护
-2. `http.rs`：`http_request` span + 4 个核心事件（request/response/retry/error）
-3. `aimux-ffi`：`aimux_init_logging` C ABI 导出
-4. 脱敏：header 值、URL query、body 默认不打
-5. 文档：`docs/api/rust.md` 加「Logging」段，FFI 头文件加 `aimux_init_logging` 声明
+### 阶段 1：接通最小可用（MVP）—— ✅ 完成 (2026-08-03)
+1. ✅ `aimux-provider-utils/src/logging.rs`：`init_logging()` + env 自动初始化 + `Once` 守护
+2. ✅ `http.rs`：`http_request` span + 4 个核心事件（request/response/retry/failed）
+3. ✅ `aimux-ffi`：`aimux_init_logging` C ABI 导出
+4. ✅ 脱敏：header 值、URL query、body 默认不打
+5. ✅ 文档：`docs/api/rust.md` 「Logging」段，FFI 头文件 `aimux_init_logging` 声明
 
-**MVP 完成即可 debug 90% 的问题**：看到重试、状态码、耗时。
+### 阶段 2：覆盖面 —— ✅ 完成 (2026-08-03)
+6. ✅ `aimux-core/generate.rs`：顶层 `generate` span + `generate_end` 事件
+7. ✅ 流式观测：`ObservedByteStream`（首字节 TTFB / 断流 / 事件计数，http.rs 内实现，aimux-stream 保持零依赖）
+8. ✅ `AIMUX_LOG_BODY` 可选体日志 + 脱敏（JSON 字段 `authorization`/`api-key`/`key`/`token` → `***`，截断 4KB）
 
-### 阶段 2：覆盖面
-6. `aimux-core/generate.rs`：顶层 `generate` span
-7. `aimux-stream`：流式首字节/断流/事件计数
-8. `AIMUX_LOG_BODY` 可选体日志 + 脱敏
-
-### 阶段 3：验证
-9. 单测：`init_logging` 幂等、env filter 生效、脱敏正确（用 `tracing-subscriber` 的 `Vec` layer 捕获事件断言）
-10. 手测：故意触发 429（mock）验证 retry 日志链
+### 阶段 3：验证 —— ✅ 完成 (2026-08-03)
+9. ✅ 单测：`init_logging` 幂等、env filter 生效（行为断言）、脱敏正确（`CaptureWriter` 捕获 + `set_default`）
+10. ✅ 集成测试：429 retry 日志链（warn 级）、request/response 摘要（debug 级）、body 脱敏（trace 级）、流事件（`tests/logging_test.rs`，wiremock）
 
 ### 工作量估计
 - 阶段 1：~150 行（logging.rs ~60，http.rs 埋点 ~50，ffi ~20，文档）
@@ -222,9 +220,9 @@ generate_text / stream_text          [aimux-core/generate.rs]
 
 ## 7. 开放问题
 
-1. **是否需要 feature gate**：`tracing-subscriber` 是否放 feature（`logging`，默认开）以便嵌入场景关闭？倾向：默认开，feature gate 作为逃生口。
-2. **span 字段命名**：`provider`/`model` 还是 `provider.id`/`model.id`？倾向扁平，与 `tracing` 惯例一致。
-3. **是否在本 RFC 一并加 `#[instrument]` 到各 provider 的 `do_generate`**：172 个 provider 改造成本高，且 http 层已覆盖核心信息。倾向阶段 1 不做，仅 core 顶层 + http 层。
+1. ~~**是否需要 feature gate**~~：**已解决 (2026-08-03)**——不 gate。`tracing-subscriber` 只进 `aimux-provider-utils`（core 零新增依赖），嵌入场景可依赖排除该 crate 或接受 ~1s 编译增量；逃生口保留为未来选项。
+2. ~~**span 字段命名**~~：**已解决**——扁平 `provider`/`model`/`modality`，与 `tracing` 惯例一致。
+3. ~~**是否在本 RFC 一并加 `#[instrument]` 到各 provider 的 `do_generate`**~~：**已解决**——阶段 1/2 均不做（172 provider 改造成本高），http 层 + core 顶层已覆盖核心信息。
 
 ---
 

@@ -28,6 +28,7 @@ use aimux_core::AiMuxError;
 use aimux_core::options::TimeoutConfiguration;
 use aimux_core::shared::AbortSignal;
 
+use crate::logging::{auto_init_from_env, body_logging_enabled, redact_body};
 use crate::response::{ErrorStructure, parse_provider_error};
 use crate::retry::{RetryConfig, get_retry_delay_ms_with_jitter, parse_retry_after};
 
@@ -138,6 +139,19 @@ pub enum HttpMethod {
     Patch,
 }
 
+impl HttpMethod {
+    /// 方法名（小写），用于日志。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HttpMethod::Get => "get",
+            HttpMethod::Post => "post",
+            HttpMethod::Put => "put",
+            HttpMethod::Delete => "delete",
+            HttpMethod::Patch => "patch",
+        }
+    }
+}
+
 /// HTTP 请求体（纯数据）。
 #[derive(Debug, Clone)]
 pub enum HttpBody {
@@ -227,6 +241,7 @@ pub async fn send(
     retry_config: RetryConfig,
     error_structure: &ErrorStructure,
 ) -> Result<HttpResponse, AiMuxError> {
+    auto_init_from_env();
     let client = shared_client();
     let resp = send_with_retry_raw(client, &request, retry_config, error_structure).await?;
 
@@ -248,6 +263,14 @@ pub async fn send(
             .map_err(|e| AiMuxError::Http(e.to_string()))?,
     };
 
+    if body_logging_enabled() {
+        tracing::trace!(
+            target: "aimux_provider_utils::http",
+            body = %redact_body(&String::from_utf8_lossy(&body)),
+            "response_body"
+        );
+    }
+
     Ok(HttpResponse {
         status,
         headers,
@@ -264,21 +287,80 @@ pub async fn send_stream(
     retry_config: RetryConfig,
     error_structure: &ErrorStructure,
 ) -> Result<HttpStreamResponse, AiMuxError> {
+    auto_init_from_env();
     let client = shared_streaming_client();
     let resp = send_with_retry_raw(client, &request, retry_config, error_structure).await?;
 
     let status = resp.status().as_u16();
     let headers = collect_headers(resp.headers());
-    let body = resp
-        .bytes_stream()
-        .map(|item| item.map_err(|e| AiMuxError::Http(e.to_string())))
-        .boxed();
+    tracing::debug!(
+        target: "aimux_provider_utils::http",
+        status = status,
+        "stream_connected"
+    );
+    let body = ObservedByteStream {
+        inner: resp
+            .bytes_stream()
+            .map(|item| item.map_err(|e| AiMuxError::Http(e.to_string())))
+            .boxed(),
+        started: false,
+        start: Instant::now(),
+        chunks: 0u64,
+        done: false,
+    }
+    .boxed();
 
     Ok(HttpStreamResponse {
         status,
         headers,
         body,
     })
+}
+
+/// 流式响应体观测包装：发出「首字节」与「流结束」两个 debug 事件
+/// （RFC-0014 §4.2 stream 行）。零成本——事件只在开启时格式化。
+struct ObservedByteStream {
+    inner: BoxStream<'static, Result<Bytes, AiMuxError>>,
+    started: bool,
+    start: Instant,
+    chunks: u64,
+    done: bool,
+}
+
+impl Stream for ObservedByteStream {
+    type Item = Result<Bytes, AiMuxError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.as_mut().get_mut();
+        if this.done {
+            return Poll::Ready(None);
+        }
+        let result = this.inner.as_mut().poll_next(cx);
+        match &result {
+            Poll::Ready(Some(Ok(_))) => {
+                if !this.started {
+                    this.started = true;
+                    tracing::debug!(
+                        target: "aimux_provider_utils::http",
+                        ttfb_ms = this.start.elapsed().as_millis() as u64,
+                        "stream_first_byte"
+                    );
+                }
+                this.chunks += 1;
+            }
+            Poll::Ready(Some(Err(_))) | Poll::Ready(None) => {
+                this.done = true;
+                tracing::debug!(
+                    target: "aimux_provider_utils::http",
+                    chunks = this.chunks,
+                    duration_ms = this.start.elapsed().as_millis() as u64,
+                    "stream_end"
+                );
+            }
+            Poll::Pending => {}
+        }
+        result
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -623,16 +705,37 @@ async fn send_with_retry_raw(
     retry_config: RetryConfig,
     error_structure: &ErrorStructure,
 ) -> Result<reqwest::Response, AiMuxError> {
+    let span = tracing::debug_span!(
+        target: "aimux_provider_utils::http",
+        "http_request",
+        method = %request.method.as_str(),
+        host = %request_host(&request.url),
+        attempt = 0u64,
+    );
+    let _enter = span.enter();
+
     let mut last_error = AiMuxError::Other("no attempts made".to_string());
+    let mut last_status: Option<u16> = None;
     let mut exponential_delay_ms = retry_config.initial_delay.as_millis() as i64;
 
     for attempt in 0..=retry_config.max_retries {
+        let attempt_start = Instant::now();
         let resp = send_request(client, request).await;
+        let latency_ms = attempt_start.elapsed().as_millis() as u64;
 
         match resp {
-            Ok(resp) if resp.status().is_success() => return Ok(resp),
             Ok(resp) => {
                 let status_code = resp.status().as_u16();
+                last_status = Some(status_code);
+                tracing::debug!(
+                    target: "aimux_provider_utils::http",
+                    status = status_code,
+                    latency_ms = latency_ms,
+                    "response"
+                );
+                if resp.status().is_success() {
+                    return Ok(resp);
+                }
                 // 429: 读 retry-after headers（在消费 body 之前）。
                 if status_code == 429 {
                     let hint = parse_retry_after(
@@ -664,6 +767,16 @@ async fn send_with_retry_raw(
         }
 
         if !last_error.is_retryable() || attempt == retry_config.max_retries {
+            // 用户主动取消不算故障，不落 error 日志（RFC-0014 §4.2 failed 行）。
+            if !matches!(last_error, AiMuxError::Aborted) {
+                tracing::error!(
+                    target: "aimux_provider_utils::http",
+                    status = last_status.unwrap_or(0),
+                    attempts = attempt + 1,
+                    reason = %error_variant(&last_error),
+                    "failed"
+                );
+            }
             return Err(last_error);
         }
 
@@ -672,6 +785,16 @@ async fn send_with_retry_raw(
             let mut rng = rand::thread_rng();
             get_retry_delay_ms_with_jitter(hint, exponential_delay_ms, &mut rng)
         };
+        tracing::warn!(
+            target: "aimux_provider_utils::http",
+            attempt = attempt + 1,
+            max_retries = retry_config.max_retries,
+            status = last_status.unwrap_or(0),
+            delay_ms = delay_ms.max(0) as u64,
+            reason = %error_variant(&last_error),
+            "retry"
+        );
+        span.record("attempt", attempt + 1);
         // Backoff must also be abortable: aborting during a long backoff
         // window (e.g. a large Retry-After) must not be delayed until the
         // next attempt.
@@ -698,6 +821,24 @@ async fn send_request(
     client: &Client,
     request: &HttpRequest,
 ) -> Result<reqwest::Response, AiMuxError> {
+    tracing::debug!(
+        target: "aimux_provider_utils::http",
+        method = %request.method.as_str(),
+        url = %request_url_no_query(&request.url),
+        body_size = request_body_size(request),
+        header_count = request.headers.len(),
+        "request"
+    );
+    if body_logging_enabled() {
+        if let HttpBody::Json(value) = &request.body {
+            tracing::trace!(
+                target: "aimux_provider_utils::http",
+                body = %redact_body(&value.to_string()),
+                "request_body"
+            );
+        }
+    }
+
     if let Some(signal) = &request.abort_signal {
         if signal.is_aborted() {
             return Err(AiMuxError::Aborted);
@@ -759,6 +900,64 @@ fn collect_headers(headers: &reqwest::header::HeaderMap) -> HashMap<String, Stri
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
         .collect()
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 日志辅助（RFC-0014 §4.2/§4.3：URL 去 query、header 值永不落日志）
+// ════════════════════════════════════════════════════════════════════════════
+
+/// 提取 host（不含 query/path）。解析失败回退 "unknown"。
+fn request_host(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".to_owned())
+}
+
+/// URL 去掉 query string（query 可能含 key，RFC-0014 §4.3）。
+fn request_url_no_query(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            parsed.to_string()
+        }
+        Err(_) => url.split('?').next().unwrap_or(url).to_owned(),
+    }
+}
+
+/// 请求体大小（字节）。JSON 体序列化一次求长度——只在 debug 事件启用时求值。
+fn request_body_size(request: &HttpRequest) -> u64 {
+    match &request.body {
+        HttpBody::Json(value) => serde_json::to_vec(value)
+            .map(|b| b.len() as u64)
+            .unwrap_or(0),
+        HttpBody::Bytes(bytes, _) => bytes.len() as u64,
+        HttpBody::Empty => 0,
+    }
+}
+
+/// `AiMuxError` 变体的短名（日志 reason 字段用）。
+fn error_variant(e: &AiMuxError) -> &'static str {
+    match e {
+        AiMuxError::Provider(_) => "provider",
+        AiMuxError::Http(_) => "http",
+        AiMuxError::Json(_) => "json",
+        AiMuxError::Stream(_) => "stream",
+        AiMuxError::Tool(_) => "tool",
+        AiMuxError::InvalidArgument(_) => "invalid_argument",
+        AiMuxError::InvalidPrompt(_) => "invalid_prompt",
+        AiMuxError::RateLimited { .. } => "rate_limited",
+        AiMuxError::Auth(_) => "auth",
+        AiMuxError::TokenExpired(_) => "token_expired",
+        AiMuxError::ModelNotFound(_) => "model_not_found",
+        AiMuxError::Unsupported(_) => "unsupported",
+        AiMuxError::NoSuchModel(_) => "no_such_model",
+        AiMuxError::UnknownProvider(_) => "unknown_provider",
+        AiMuxError::ApiCall(_) => "api_call",
+        AiMuxError::Timeout(_) => "timeout",
+        AiMuxError::Aborted => "aborted",
+        AiMuxError::Other(_) => "other",
+    }
 }
 
 #[cfg(test)]

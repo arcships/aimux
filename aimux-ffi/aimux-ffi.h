@@ -306,6 +306,15 @@ char *aimux_search(uint64_t handle, const char *opts_json);
    and the 401 -> refresh -> retry orchestration. */
 char *aimux_codex_refresh(const char *refresh_token, const char *client_id);
 
+/* Logging (RFC-0014) */
+
+/* Initialize the global logger (idempotent, thread-safe, no-op if the host
+   already registered its own subscriber). level: "off"|"error"|"warn"|
+   "info"|"debug"|"trace" (NULL = default "warn"); AIMUX_LOG and
+   AIMUX_LOG_LEVEL env vars take precedence. Logs go to stderr.
+   Returns 0. */
+int aimux_init_logging(const char *level);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

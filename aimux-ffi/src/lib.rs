@@ -1695,3 +1695,31 @@ pub extern "C" fn aimux_codex_refresh(
         aimux_providers::codex_refresh(&refresh_token, &client_id).await
     })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: Logging (RFC-0014)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Initialize the global logger. Idempotent — safe to call any number of
+/// times from any thread; only the first call has an effect.
+///
+/// If the host already registered its own `tracing` subscriber, this is a
+/// no-op (aimux never overrides a consumer's logger).
+///
+/// @param level NUL-terminated level string: "off" / "error" / "warn" /
+///              "info" / "debug" / "trace". NULL falls back to the default
+///              ("warn"). `AIMUX_LOG` (RUST_LOG-style) and `AIMUX_LOG_LEVEL`
+///              env vars take precedence when set. Logs go to stderr.
+/// @return Always 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_init_logging(level: *const c_char) -> i32 {
+    if level.is_null() {
+        aimux_providers::init_logging("warn");
+        return 0;
+    }
+    match cstr_to_string(level) {
+        Some(level) => aimux_providers::init_logging(&level),
+        None => aimux_providers::init_logging("warn"),
+    }
+    0
+}

@@ -59,6 +59,10 @@ pub mod klingai;
 // Generic Responses API wrapper.
 pub mod open_responses;
 
+// Unified logging entry point (RFC-0014) — re-export from provider-utils so
+// Rust consumers and the FFI layer share one implementation.
+pub use aimux_provider_utils::logging::init_logging;
+
 // Bulk-generated thin-wrapper providers.
 pub mod cybertron;
 pub mod docker_model_runner;

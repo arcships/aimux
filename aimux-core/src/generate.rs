@@ -8,10 +8,12 @@
 
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::time::Instant;
 
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::Instrument;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
@@ -185,8 +187,17 @@ pub async fn generate_text(
     // 2. Build CallOptions.
     let call_options = options.into_call_options(lm_prompt);
 
-    // 3. Call provider.
-    let result = model.do_generate(&call_options).await?;
+    // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
+    //    The http layer's `http_request` span nests under this one.
+    let started = Instant::now();
+    let span = tracing::info_span!(
+        target: "aimux_core::generate",
+        "generate",
+        provider = %model.provider(),
+        model = %model.model_id(),
+        modality = "text",
+    );
+    let result = do_generate_with_logging(model, &call_options, span, started).await?;
 
     // 4. Extract text and tool calls from content.
     let mut text = String::new();
@@ -267,13 +278,42 @@ pub async fn stream_text(
     // 2. Build CallOptions.
     let call_options = options.into_call_options(lm_prompt);
 
-    // 3. Call provider.
-    let result: StreamResult = model.do_stream(&call_options).await?;
+    // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
+    let span = tracing::info_span!(
+        target: "aimux_core::generate",
+        "generate",
+        provider = %model.provider(),
+        model = %model.model_id(),
+        modality = "text",
+    );
+    let result: StreamResult = model.do_stream(&call_options).instrument(span).await?;
 
     // 4. Return stream to user.
     Ok(StreamTextResult {
         stream: result.stream,
     })
+}
+
+/// Run `do_generate` inside the RFC-0014 `generate` span and emit the
+/// `generate_end` event. A plain async fn (rather than an inline async block)
+/// so the `?` error type is pinned by the declared return type.
+async fn do_generate_with_logging(
+    model: &dyn LanguageModel,
+    call_options: &CallOptions,
+    span: tracing::Span,
+    started: Instant,
+) -> Result<GenerateResult, AiMuxError> {
+    let r = async { model.do_generate(call_options).await }
+        .instrument(span)
+        .await?;
+    tracing::info!(
+        target: "aimux_core::generate",
+        ok = true,
+        duration_ms = started.elapsed().as_millis() as u64,
+        finish_reason = ?r.finish_reason.unified,
+        "generate_end"
+    );
+    Ok(r)
 }
 
 /// Split a `ModelPrompt` into messages + optional instructions.
