@@ -12,7 +12,7 @@ package aimux
 #cgo CFLAGS: -I${SRCDIR}/../../aimux-ffi
 #cgo linux LDFLAGS: -L${SRCDIR}/../../target/release -Wl,-Bstatic -laimux_ffi -Wl,-Bdynamic -lpthread -ldl -lm
 #cgo darwin LDFLAGS: -L${SRCDIR}/../../target/release -laimux_ffi
-#cgo windows LDFLAGS: -L${SRCDIR}/../../target/release -laimux_ffi -lws2_32 -lbcrypt -lntdll -luserenv
+#cgo windows LDFLAGS: -L${SRCDIR}/../../target/release -Wl,-Bstatic -laimux_ffi -Wl,-Bdynamic -lws2_32 -lbcrypt -lntdll -luserenv
 
 #include <stdint.h>
 #include <stdlib.h>
