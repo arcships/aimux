@@ -212,6 +212,24 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: gradle test
 
+  # ── Go binding: build FFI static archive + vet/test ───────────────────────
+  go-binding:
+    name: Go binding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build static archive
+        run: cargo build -p aimux-ffi --release
+      - name: Vet + test Go binding
+        working-directory: bindings/go
+        shell: bash
+        run: |
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/release"
+          go vet ./...
+          go test ./...
+
   # ── Contract tests: shared JSON fixtures (catches cross-language type drift) ──
   contract-tests:
     name: Contract tests

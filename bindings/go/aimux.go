@@ -300,29 +300,35 @@ func newModel(apiKey, modelID, baseURL, kind string) (*Model, error) {
 	defer C.free(unsafe.Pointer(cKey))
 	defer C.free(unsafe.Pointer(cModel))
 
-	newFn := C.aimux_openai_new
-	newWithBaseFn := C.aimux_openai_new_with_base
-	switch kind {
-	case "anthropic":
-		newFn = C.aimux_anthropic_new
-		newWithBaseFn = C.aimux_anthropic_new_with_base
-	case "cohere":
-		newFn = C.aimux_cohere_new
-		newWithBaseFn = C.aimux_cohere_new_with_base
-	case "mistral":
-		newFn = C.aimux_mistral_new
-		newWithBaseFn = C.aimux_mistral_new_with_base
-	case "xai":
-		newFn = C.aimux_xai_new
-		newWithBaseFn = C.aimux_xai_new_with_base
-	}
 	var h C.uint64_t
 	if baseURL == "" {
-		h = newFn(cKey, cModel)
+		switch kind {
+		case "anthropic":
+			h = C.aimux_anthropic_new(cKey, cModel)
+		case "cohere":
+			h = C.aimux_cohere_new(cKey, cModel)
+		case "mistral":
+			h = C.aimux_mistral_new(cKey, cModel)
+		case "xai":
+			h = C.aimux_xai_new(cKey, cModel)
+		default:
+			h = C.aimux_openai_new(cKey, cModel)
+		}
 	} else {
 		cBase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cBase))
-		h = newWithBaseFn(cKey, cModel, cBase)
+		switch kind {
+		case "anthropic":
+			h = C.aimux_anthropic_new_with_base(cKey, cModel, cBase)
+		case "cohere":
+			h = C.aimux_cohere_new_with_base(cKey, cModel, cBase)
+		case "mistral":
+			h = C.aimux_mistral_new_with_base(cKey, cModel, cBase)
+		case "xai":
+			h = C.aimux_xai_new_with_base(cKey, cModel, cBase)
+		default:
+			h = C.aimux_openai_new_with_base(cKey, cModel, cBase)
+		}
 	}
 	if h == 0 {
 		return nil, errors.New("aimux: failed to create model (handle=0)")
