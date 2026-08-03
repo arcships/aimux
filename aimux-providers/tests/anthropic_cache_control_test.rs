@@ -235,6 +235,7 @@ mod assistant_message {
                     tool_call_id: "test-id".to_string(),
                     tool_name: "test-tool".to_string(),
                     input: json!({ "some": "arg" }),
+                    thought_signature: None,
                     provider_options: Some(cache_control_opts(json!({ "type": "ephemeral" }))),
                 }],
             ),

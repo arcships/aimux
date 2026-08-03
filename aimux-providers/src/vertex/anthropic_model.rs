@@ -185,6 +185,7 @@ impl LanguageModel for VertexAnthropicModel {
                         input: input.clone(),
                         provider_executed: None,
                         dynamic: None,
+                        thought_signature: None,
                         provider_metadata: None,
                     });
                 }
@@ -206,6 +207,7 @@ impl LanguageModel for VertexAnthropicModel {
                         input: input.clone(),
                         provider_executed: None,
                         dynamic: None,
+                        thought_signature: None,
                         provider_metadata: None,
                     });
                 }
@@ -437,6 +439,7 @@ impl LanguageModel for VertexAnthropicModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                thought_signature: None,
                                                 provider_metadata: None,
                                             });
                                         }

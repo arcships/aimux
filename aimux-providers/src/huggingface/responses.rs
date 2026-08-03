@@ -358,6 +358,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                thought_signature: None,
                                                 provider_metadata: None,
                                             });
 
@@ -1063,6 +1064,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
                 // Tool result — the Rust GenerateContent enum has no ToolResult
@@ -1085,6 +1087,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -1098,6 +1101,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     input: json!({ "server_label": server_label }),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }

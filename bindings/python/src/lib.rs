@@ -190,6 +190,27 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
     })
 }
 
+/// Create a Google Gemini language model instance (native `generateContent`
+/// protocol — not OpenAI-compatible, so not registry-backed).
+#[pyfunction]
+#[pyo3(signature = (api_key, model_id, base_url=None))]
+fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::google::{GoogleConfig, GoogleProvider};
+
+    let mut config = GoogleConfig::new(api_key);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = GoogleProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
 #[pyfunction]
@@ -222,6 +243,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;
+    m.add_function(wrap_pyfunction!(google, m)?)?;
     m.add_function(wrap_pyfunction!(provider, m)?)?;
 
     // Multimodal classes.

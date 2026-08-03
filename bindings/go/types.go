@@ -108,6 +108,7 @@ type ToolCall struct {
 	Input            json.RawMessage `json:"input,omitempty"`
 	ProviderExecuted *bool           `json:"provider_executed,omitempty"`
 	Dynamic          *bool           `json:"dynamic,omitempty"`
+	ThoughtSignature *string         `json:"thought_signature,omitempty"`
 }
 
 // ContentPart is a single content part in the raw response.

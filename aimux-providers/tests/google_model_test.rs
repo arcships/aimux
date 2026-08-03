@@ -430,6 +430,64 @@ mod do_generate {
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
+    // ── should extract tool call with thought signature (thinking models) ────
+
+    #[tokio::test]
+    async fn should_extract_tool_call_with_thought_signature() {
+        let server = MockServer::start().await;
+        mock_json_response(
+            &server,
+            "gemini-2.5-pro",
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "functionCall": {
+                                "id": "call-1",
+                                "name": "weather",
+                                "args": { "location": "San Francisco" }
+                            },
+                            "thoughtSignature": "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"
+                        }],
+                        "role": "model"
+                    },
+                    "finishReason": "STOP",
+                    "index": 0
+                }]
+            }),
+        )
+        .await;
+
+        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = GoogleProvider::new(config);
+        let model = provider.model("gemini-2.5-pro");
+
+        let result = model
+            .do_generate(&options_with_tools(test_prompt(), vec![weather_tool()]))
+            .await
+            .expect("do_generate should succeed");
+
+        assert_eq!(result.content.len(), 1);
+        match &result.content[0] {
+            GenerateContent::ToolCall {
+                tool_call_id,
+                tool_name,
+                input,
+                thought_signature,
+                ..
+            } => {
+                assert_eq!(tool_call_id, "call-1");
+                assert_eq!(tool_name, "weather");
+                assert_eq!(input, &json!({ "location": "San Francisco" }));
+                assert_eq!(
+                    thought_signature.as_deref(),
+                    Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
+                );
+            }
+            other => panic!("expected ToolCall, got {:?}", other),
+        }
+    }
+
     // ── should expose response id ─────────────────────────────────────────────
 
     #[tokio::test]
@@ -1131,6 +1189,44 @@ mod do_stream {
         }
     }
 
+    // ── should stream tool call with thought signature (thinking models) ──────
+
+    #[tokio::test]
+    async fn should_stream_tool_call_with_thought_signature() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"weather","args":{"location":"San Francisco"}},"thoughtSignature":"EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"}],"role":"model"},"index":0}],"responseId":"resp-2"}"#,
+            ),
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"text":""}],"role":"model"},"finishReason":"STOP","index":0}],"responseId":"resp-2"}"#,
+            ),
+        ]);
+        mock_sse_response(&server, "gemini-2.5-pro", &body).await;
+
+        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = GoogleProvider::new(config);
+        let model = provider.model("gemini-2.5-pro");
+
+        let result = model
+            .do_stream(&options_with_tools(test_prompt(), vec![weather_tool()]))
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        // The complete tool-call event carries the thought signature.
+        let tool_call = parts.iter().find(|p| {
+            matches!(p, StreamPart::ToolCall { tool_call_id, thought_signature, .. }
+                if tool_call_id == "call-1"
+                && thought_signature.as_deref()
+                    == Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"))
+        });
+        assert!(
+            tool_call.is_some(),
+            "should have ToolCall carrying the thought signature"
+        );
+    }
+
     // ── should expose usage from the final chunk ──────────────────────────────
 
     #[tokio::test]
@@ -1709,6 +1805,49 @@ mod request_body {
         assert_eq!(fc["id"], "call-1");
         assert_eq!(fc["name"], "weather");
         assert_eq!(fc["args"]["location"], "SF");
+        // No signature on the part → no thoughtSignature emitted.
+        assert!(body["contents"][1]["parts"][0]
+            .get("thoughtSignature")
+            .is_none());
+    }
+
+    // ── assistant tool call with thought signature → part sibling ─────────────
+
+    #[test]
+    fn assistant_tool_call_thought_signature_becomes_part_sibling() {
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelPromptMessage {
+                role: Role::User,
+                content: vec![ContentPart::text("What's the weather?")],
+                ..Default::default()
+            },
+            LanguageModelPromptMessage {
+                role: Role::Assistant,
+                content: vec![ContentPart::ToolCall {
+                    tool_call_id: "call-1".to_string(),
+                    tool_name: "weather".to_string(),
+                    input: json!({ "location": "SF" }),
+                    thought_signature: Some(
+                        "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"
+                            .to_string(),
+                    ),
+                    provider_options: None,
+                }],
+                ..Default::default()
+            },
+        ];
+        let body = build_request_body("gemini-2.5-pro", &default_options(prompt));
+
+        // The signature must be a SIBLING of `functionCall` on the part
+        // (matching the response shape), not nested inside `functionCall`.
+        let part = &body["contents"][1]["parts"][0];
+        assert_eq!(
+            part["thoughtSignature"],
+            "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"
+        );
+        assert!(part["functionCall"]
+            .get("thoughtSignature")
+            .is_none());
     }
 
     // ── tool result → functionResponse part in a user message ─────────────────

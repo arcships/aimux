@@ -311,6 +311,10 @@ impl LanguageModel for VertexModel {
                                         .unwrap_or_else(|| format!("call-{}", block_counter));
                                     block_counter += 1;
                                     let args = fc.get("args").cloned().unwrap_or(json!({}));
+                                    let thought_signature = part
+                                        .get("thoughtSignature")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string());
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -333,6 +337,7 @@ impl LanguageModel for VertexModel {
                                         input: args,
                                         provider_executed: None,
                                         dynamic: None,
+                                        thought_signature,
                                         provider_metadata: None,
                                     });
                                     has_tool_calls = true;
@@ -420,12 +425,17 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 .unwrap_or("")
                 .to_string();
             let input = fc.get("args").cloned().unwrap_or(json!({}));
+            let thought_signature = part
+                .get("thoughtSignature")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             content.push(GenerateContent::ToolCall {
                 tool_call_id: id,
                 tool_name: name,
                 input,
                 provider_executed: None,
                 dynamic: None,
+                thought_signature,
                 provider_metadata: None,
             });
             has_tool_calls = true;

@@ -106,6 +106,7 @@ fn parse_anthropic_content(blocks: &[ContentBlock]) -> Vec<GenerateContent> {
                     input: input.clone(),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -129,6 +130,7 @@ fn parse_anthropic_content(blocks: &[ContentBlock]) -> Vec<GenerateContent> {
                     input: input.clone(),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -448,6 +450,7 @@ pub(crate) async fn anthropic_stream_core(
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
+                                            thought_signature: None,
                                             provider_metadata: None,
                                         });
                                     }

@@ -89,6 +89,11 @@ pub enum StreamPart {
         /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dynamic: Option<bool>,
+        /// Provider-assigned thought signature (e.g. Google Gemini
+        /// `thoughtSignature`). Must be echoed back verbatim on the follow-up
+        /// turn when the tool result is sent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },

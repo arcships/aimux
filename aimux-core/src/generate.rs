@@ -198,6 +198,7 @@ pub async fn generate_text(
                 tool_call_id,
                 tool_name,
                 input,
+                thought_signature,
                 ..
             } => {
                 tool_calls.push(crate::tool::ToolCall {
@@ -206,6 +207,7 @@ pub async fn generate_text(
                     input: input.clone(),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: thought_signature.clone(),
                 });
             }
             // Sources / citations are not text or tool calls; skip them here.

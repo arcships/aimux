@@ -16,6 +16,12 @@ provider_executed?: boolean | null,
  */
 dynamic?: boolean | null, 
 /**
+ * Provider-assigned thought signature (e.g. Google Gemini
+ * `thoughtSignature`). Must be echoed back verbatim on the follow-up
+ * turn when the tool result is sent.
+ */
+thought_signature?: string | null, 
+/**
  * Additional provider-specific metadata for the tool call.
  */
 provider_metadata?: JsonValue | null, } } | { "Source": { id: string, source_type: string, url: string | null, title: string | null, provider_metadata?: JsonValue | null, } } | { "Reasoning": { text: string, provider_metadata: JsonValue | null, } } | { "File": { data: FileData, media_type: string, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 

@@ -359,6 +359,41 @@ pub async fn deepseek(
     })
 }
 
+/// Create a Google Gemini language model instance.
+///
+/// Google speaks the native `generateContent` protocol (not OpenAI-compatible),
+/// so it is **not** registry-backed — `provider("google", ...)` fails with
+/// `UnknownProvider`. This factory is the only entry point.
+#[napi]
+pub async fn google(
+    api_key: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::google::{GoogleConfig, GoogleProvider};
+
+    let mut cfg = GoogleConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+        }
+        None => {}
+    }
+    let provider = GoogleProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key` may be empty/null to read the provider's env
 /// var from the registry entry.

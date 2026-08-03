@@ -140,6 +140,7 @@ impl LanguageModel for XaiResponsesModel {
                     input: Value::String(String::new()),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
 
@@ -196,6 +197,7 @@ impl LanguageModel for XaiResponsesModel {
                     input: Value::String(tool_input),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
                 continue;
@@ -253,6 +255,7 @@ impl LanguageModel for XaiResponsesModel {
                         input,
                         provider_executed: None,
                         dynamic: None,
+                        thought_signature: None,
                         provider_metadata: None,
                     });
                 }
@@ -731,6 +734,7 @@ impl LanguageModel for XaiResponsesModel {
                                         input: Value::String(String::new()),
                                         provider_executed: None,
                                         dynamic: None,
+                                        thought_signature: None,
                                         provider_metadata: None,
                                     });
                                 }
@@ -801,6 +805,7 @@ impl LanguageModel for XaiResponsesModel {
                                         input: Value::String(tool_input),
                                         provider_executed: None,
                                         dynamic: None,
+                                        thought_signature: None,
                                         provider_metadata: None,
                                     });
                                 }
@@ -892,6 +897,7 @@ impl LanguageModel for XaiResponsesModel {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
+                                        thought_signature: None,
                                         provider_metadata: None,
                                     });
                                 }

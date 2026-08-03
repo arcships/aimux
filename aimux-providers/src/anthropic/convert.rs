@@ -435,6 +435,7 @@ fn convert_part_to_anthropic(
             tool_name,
             input,
             provider_options,
+            ..
         } => {
             // Anthropic requires `input` to be a JSON object. The SDK wraps any
             // non-object (e.g. malformed JSON the model produced) in
