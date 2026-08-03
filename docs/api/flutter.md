@@ -12,7 +12,7 @@ final result = model.generateText('What is Rust?');
 model.close();
 ```
 
-## Built-in Providers
+## Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:

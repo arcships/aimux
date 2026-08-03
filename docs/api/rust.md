@@ -22,7 +22,7 @@ async fn main() -> Result<(), AiMuxError> {
 }
 ```
 
-## Built-in Providers
+## Providers
 
 All 250 built-in OpenAI-compatible providers are registry-backed: no per-provider
 `XxxConfig`/`XxxProvider` types. Look them up by name (or by the `ProviderName` enum):

@@ -19,7 +19,7 @@ const result = await generateText(model, 'What is Rust?')
 console.log(result.text)
 ```
 
-## Built-in Providers
+## Providers
 
 All 250 built-in OpenAI-compatible providers are registry-backed. Look them up
 by name; the `ProviderName` type is a string-literal union generated from

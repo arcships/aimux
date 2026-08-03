@@ -28,7 +28,7 @@ for part := range stream.Parts() {
 }
 ```
 
-## Built-in Providers
+## Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `aimux.ProviderName` holds typed constants:

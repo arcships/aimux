@@ -51,10 +51,21 @@ language guide and follow its Quick Start:
 [C/C++](api/c.md#quick-start) · [Swift](api/swift.md#quick-start) ·
 [Kotlin](api/kotlin.md#quick-start) · [Flutter/Dart](api/flutter.md#quick-start)
 
-## Built-in Providers
+## Providers
 
-All 250 OpenAI-compatible providers are constructed with one function in
-every binding (Rust, Node, Python, Go, Kotlin, Swift, Flutter, C):
+### Native protocols
+
+OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
+Anthropic-AWS — one constructor per provider: `openai(apiKey, model, baseUrl?)`
+/ `anthropic(apiKey, model, baseUrl?)` (Node, Python), `NewOpenAI(apiKey,
+model)` (Go), `Model.openai(apiKey, modelId)` (Java, Kotlin, Flutter),
+`Aimux.openai(apiKey:modelId:)` (Swift), `OpenAIProvider::new(..)` (Rust).
+Multimodal, local-inference and search providers have their own constructors
+too — full list: [reference.md](api/reference.md).
+
+### OpenAI-compatible (250)
+
+One function in every binding:
 
 ```text
 provider(name, api_key?, model_id, config?)   // all languages
@@ -63,9 +74,8 @@ provider(name, api_key?, model_id, config?)   // all languages
   config   — optional overrides (base_url / headers / maxRetries / body_overrides)
 ```
 
-- Unknown names fail with an error that lists the available providers.
-- **推荐写法**:`ProviderName` (Rust enum, TS const object, Go/Java/Kotlin
-  consts, Swift enum, Dart consts) — IDE-completable and typo-proof:
+- **ProviderName** (Rust enum, TS const object, Go/Java/Kotlin consts, Swift
+  enum, Dart consts) — IDE-completable and typo-proof:
 
   ```text
   Rust:   provider(ProviderName::Groq, ...)        TS:     provider(ProviderName.groq, ...)
@@ -75,11 +85,9 @@ provider(name, api_key?, model_id, config?)   // all languages
   ```
 
   字符串形式（`provider("groq", ...)`）在全部语言中同样可用——两种写法等价。
-#### Scope
-
-- **OpenAI-compatible** (250): `provider(name, ...)` — list: [providers.md](api/providers.md)
-- **Others** (native protocols, multimodal, local inference): per-provider constructors — lookup: [reference.md](api/reference.md)
-- **Custom endpoint**: registry name + `base_url` override, or the OpenAI constructor with a base URL
+- Full list (250, name / env var / base URL): [providers.md](api/providers.md)
+- Custom endpoint: registry name + `base_url` override, or the OpenAI
+  constructor with a base URL
 
 ## Features
 

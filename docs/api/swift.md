@@ -15,7 +15,7 @@ let result = try model.generateText(prompt: "\"What is Rust?\"")
 print(result)
 ```
 
-## Built-in Providers
+## Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` is an enum with one case per provider:

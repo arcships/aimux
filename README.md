@@ -191,7 +191,7 @@ let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 All 250 OpenAI-compatible providers are registry-backed: `provider(name, ...)`
 in every binding, with typed `ProviderName` (enum/union/consts per language).
 The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
-see [docs/API.md](docs/API.md#built-in-providers).
+see [docs/API.md](docs/API.md#providers).
 
 > **Scope:** OpenAI-compatible → `provider(name, ...)`; others (Anthropic,
 > multimodal, local…) → their constructors. List:
