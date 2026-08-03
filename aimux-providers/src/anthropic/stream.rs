@@ -106,6 +106,7 @@ fn parse_anthropic_content(blocks: &[ContentBlock]) -> Vec<GenerateContent> {
                     input: input.clone(),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -129,6 +130,7 @@ fn parse_anthropic_content(blocks: &[ContentBlock]) -> Vec<GenerateContent> {
                     input: input.clone(),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -145,6 +147,7 @@ fn parse_anthropic_content(blocks: &[ContentBlock]) -> Vec<GenerateContent> {
 /// a `GenerateResult`. The usage breakdown (reasoning / text token split) is the
 /// full version, so both the standard and the AWS provider report the same
 /// detailed token accounting.
+#[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
 pub(crate) async fn anthropic_generate_core(
     endpoint: &str,
     retry_config: RetryConfig,
@@ -155,7 +158,8 @@ pub(crate) async fn anthropic_generate_core(
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let request =
+        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
     let resp = send_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let data: AnthropicResponse =
@@ -241,6 +245,7 @@ enum BlockState {
 /// `build_headers` receives the serialized body bytes and the endpoint URL —
 /// the standard path returns a Bearer/x-api-key header set (ignoring the body),
 /// the AWS path returns a SigV4-signed header set (signing over the body).
+#[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
 pub(crate) async fn anthropic_stream_core(
     endpoint: &str,
     retry_config: RetryConfig,
@@ -251,7 +256,8 @@ pub(crate) async fn anthropic_stream_core(
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
 ) -> Result<StreamResult, AiMuxError> {
-    let request = build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let request =
+        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
     let resp = send_stream_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let response_headers = resp.headers;
@@ -448,6 +454,7 @@ pub(crate) async fn anthropic_stream_core(
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
+                                            thought_signature: None,
                                             provider_metadata: None,
                                         });
                                     }

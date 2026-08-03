@@ -112,6 +112,12 @@ pub struct ToolCall {
     /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
+    /// Provider-assigned thought signature (e.g. Google Gemini
+    /// `thoughtSignature`). Must be echoed back verbatim on the follow-up turn
+    /// when the tool result is sent; thinking models reject the request
+    /// otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// The result of executing a tool call, to be sent back to the model.

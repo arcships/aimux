@@ -1,6 +1,6 @@
 # aimux · Swift API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 Swift wraps the Rust core through the `aimux-ffi` C ABI (module `CAimuxFFI`),
 with ARC-managed model handles.
@@ -15,10 +15,15 @@ let result = try model.generateText(prompt: "\"What is Rust?\"")
 print(result)
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` is an enum with one case per provider:
+
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`Aimux.anthropic(apiKey:modelId:)`); custom endpoints → base-URL variant.
+> Full list: [providers.md](providers.md).
 
 ```swift
 // 推荐:ProviderName enum case(类型检查 + 补全)

@@ -23,6 +23,24 @@ internal interface AimuxFFI : Library {
     fun aimux_anthropic_new(apiKey: String, modelId: String): Long
     fun aimux_openai_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
     fun aimux_anthropic_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_cohere_new(apiKey: String, modelId: String): Long
+    fun aimux_cohere_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_mistral_new(apiKey: String, modelId: String): Long
+    fun aimux_mistral_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_xai_new(apiKey: String, modelId: String): Long
+    fun aimux_xai_new_with_base(apiKey: String, modelId: String, baseUrl: String): Long
+    fun aimux_bedrock_new(accessKeyId: String, secretAccessKey: String, region: String, modelId: String): Long
+    fun aimux_bedrock_new_with_base(
+        accessKeyId: String, secretAccessKey: String, region: String, modelId: String, baseUrl: String
+    ): Long
+    fun aimux_vertex_new(accessToken: String, project: String, location: String, modelId: String): Long
+    fun aimux_vertex_new_with_base(
+        accessToken: String, project: String, location: String, modelId: String, baseUrl: String
+    ): Long
+    fun aimux_anthropic_aws_new(apiKey: String, region: String, modelId: String): Long
+    fun aimux_anthropic_aws_new_with_base(apiKey: String, region: String, modelId: String, baseUrl: String): Long
+    fun aimux_azure_new(apiKey: String, resourceName: String, deployment: String, apiVersion: String?): Long
+    fun aimux_azure_new_with_base(apiKey: String, baseUrl: String, deployment: String, apiVersion: String?): Long
 
     // ── Registry provider (RFC-0017 phase 4) ───────────────────────────────
     // apiKey may be null (read the provider's env var from the registry entry);
@@ -156,6 +174,115 @@ class Model private constructor(handle: Long) : Closeable {
         fun anthropic(apiKey: String, modelId: String, baseUrl: String): Model {
             val h = FFI.lib.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl)
             require(h != 0L) { "Failed to create Anthropic model" }
+            return Model(h)
+        }
+
+        /** Create a Cohere model instance. */
+        fun cohere(apiKey: String, modelId: String): Model {
+            val h = FFI.lib.aimux_cohere_new(apiKey, modelId)
+            require(h != 0L) { "Failed to create Cohere model" }
+            return Model(h)
+        }
+
+        /** Create a Cohere model instance with a custom base URL. */
+        fun cohere(apiKey: String, modelId: String, baseUrl: String): Model {
+            val h = FFI.lib.aimux_cohere_new_with_base(apiKey, modelId, baseUrl)
+            require(h != 0L) { "Failed to create Cohere model" }
+            return Model(h)
+        }
+
+        /** Create a Mistral model instance. */
+        fun mistral(apiKey: String, modelId: String): Model {
+            val h = FFI.lib.aimux_mistral_new(apiKey, modelId)
+            require(h != 0L) { "Failed to create Mistral model" }
+            return Model(h)
+        }
+
+        /** Create a Mistral model instance with a custom base URL. */
+        fun mistral(apiKey: String, modelId: String, baseUrl: String): Model {
+            val h = FFI.lib.aimux_mistral_new_with_base(apiKey, modelId, baseUrl)
+            require(h != 0L) { "Failed to create Mistral model" }
+            return Model(h)
+        }
+
+        /** Create an xAI model instance. */
+        fun xai(apiKey: String, modelId: String): Model {
+            val h = FFI.lib.aimux_xai_new(apiKey, modelId)
+            require(h != 0L) { "Failed to create xAI model" }
+            return Model(h)
+        }
+
+        /** Create an xAI model instance with a custom base URL. */
+        fun xai(apiKey: String, modelId: String, baseUrl: String): Model {
+            val h = FFI.lib.aimux_xai_new_with_base(apiKey, modelId, baseUrl)
+            require(h != 0L) { "Failed to create xAI model" }
+            return Model(h)
+        }
+
+        /** Create a Bedrock model instance (AWS SigV4 credentials). */
+        fun bedrock(accessKeyId: String, secretAccessKey: String, region: String, modelId: String): Model {
+            val h = FFI.lib.aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId)
+            require(h != 0L) { "Failed to create Bedrock model" }
+            return Model(h)
+        }
+
+        /** Create a Bedrock model instance with a custom base URL. */
+        fun bedrock(
+            accessKeyId: String, secretAccessKey: String, region: String, modelId: String, baseUrl: String
+        ): Model {
+            val h = FFI.lib.aimux_bedrock_new_with_base(accessKeyId, secretAccessKey, region, modelId, baseUrl)
+            require(h != 0L) { "Failed to create Bedrock model" }
+            return Model(h)
+        }
+
+        /** Create a Vertex AI model instance (GCP bearer token). */
+        fun vertex(accessToken: String, project: String, location: String, modelId: String): Model {
+            val h = FFI.lib.aimux_vertex_new(accessToken, project, location, modelId)
+            require(h != 0L) { "Failed to create Vertex model" }
+            return Model(h)
+        }
+
+        /** Create a Vertex AI model instance with a custom base URL. */
+        fun vertex(
+            accessToken: String, project: String, location: String, modelId: String, baseUrl: String
+        ): Model {
+            val h = FFI.lib.aimux_vertex_new_with_base(accessToken, project, location, modelId, baseUrl)
+            require(h != 0L) { "Failed to create Vertex model" }
+            return Model(h)
+        }
+
+        /** Create an Anthropic-on-AWS model instance (API key + region). */
+        fun anthropicAws(apiKey: String, region: String, modelId: String): Model {
+            val h = FFI.lib.aimux_anthropic_aws_new(apiKey, region, modelId)
+            require(h != 0L) { "Failed to create Anthropic AWS model" }
+            return Model(h)
+        }
+
+        /** Create an Anthropic-on-AWS model instance with a custom base URL. */
+        fun anthropicAws(apiKey: String, region: String, modelId: String, baseUrl: String): Model {
+            val h = FFI.lib.aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl)
+            require(h != 0L) { "Failed to create Anthropic AWS model" }
+            return Model(h)
+        }
+
+        /** Create an Azure OpenAI model instance (API key + resource name). */
+        fun azure(apiKey: String, resourceName: String, deployment: String): Model {
+            val h = FFI.lib.aimux_azure_new(apiKey, resourceName, deployment, null)
+            require(h != 0L) { "Failed to create Azure model" }
+            return Model(h)
+        }
+
+        /** Create an Azure OpenAI model instance with an explicit api-version. */
+        fun azureWithVersion(apiKey: String, resourceName: String, deployment: String, apiVersion: String): Model {
+            val h = FFI.lib.aimux_azure_new(apiKey, resourceName, deployment, apiVersion)
+            require(h != 0L) { "Failed to create Azure model" }
+            return Model(h)
+        }
+
+        /** Create an Azure OpenAI model instance with a custom base URL. */
+        fun azureWithBase(apiKey: String, baseUrl: String, deployment: String): Model {
+            val h = FFI.lib.aimux_azure_new_with_base(apiKey, baseUrl, deployment, null)
+            require(h != 0L) { "Failed to create Azure model" }
             return Model(h)
         }
 

@@ -48,11 +48,16 @@ pub struct GooglePrompt {
 /// appropriate to the Rust data model:
 /// - No Gemma special-casing (we don't know the model id here; callers that
 ///   need it can post-process).
-/// - No thought-signature / server-tool-call handling — the Rust `ContentPart`
-///   doesn't carry per-part provider metadata.
+/// - No server-tool-call handling — provider-executed `toolCall` parts have no
+///   dedicated `ContentPart` variant; callers must reconstruct them from raw
+///   results if they need to replay them.
 /// - Tool-result `output` is serialized into `functionResponse.response.content`
 ///   as a string (JSON-stringified for non-string outputs, matching the TS
 ///   `output.type === 'json'` path).
+///
+/// Thought signatures: `ContentPart::ToolCall.thought_signature` is echoed
+/// back as a `thoughtSignature` sibling of the `functionCall` part (required
+/// by Gemini thinking models on follow-up turns).
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
     let mut system_parts: Vec<Value> = Vec::new();
     let mut contents: Vec<Value> = Vec::new();
@@ -168,6 +173,7 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
                 tool_call_id,
                 tool_name,
                 input,
+                thought_signature,
                 ..
             } => {
                 let mut function_call = Map::new();
@@ -176,7 +182,16 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
                 }
                 function_call.insert("name".to_string(), json!(tool_name));
                 function_call.insert("args".to_string(), input.clone());
-                parts.push(json!({ "functionCall": function_call }));
+                let mut part_value = json!({ "functionCall": function_call });
+                // Thinking models (e.g. gemini-2.5-pro) attach a
+                // `thoughtSignature` to the part; it must be echoed back
+                // verbatim on the follow-up turn or the API rejects the
+                // request with HTTP 400. Emit it as a sibling of
+                // `functionCall` (not inside it), matching the response shape.
+                if let Some(sig) = thought_signature {
+                    part_value["thoughtSignature"] = json!(sig);
+                }
+                parts.push(part_value);
             }
             _ => {
                 // Files / images in assistant messages aren't supported by

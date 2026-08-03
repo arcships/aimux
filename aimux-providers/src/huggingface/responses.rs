@@ -1,4 +1,4 @@
-﻿//! Hugging Face Responses API language model.
+//! Hugging Face Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the Hugging Face Responses
 //! API (`POST /responses`). This is the lightest Responses implementation in
@@ -35,7 +35,7 @@ use aimux_core::types::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_timed, send_stream_timed};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
 use super::HuggingFaceConfig;
@@ -358,6 +358,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                thought_signature: None,
                                                 provider_metadata: None,
                                             });
 
@@ -1063,6 +1064,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
                 // Tool result — the Rust GenerateContent enum has no ToolResult
@@ -1085,6 +1087,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -1098,6 +1101,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     input: json!({ "server_label": server_label }),
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }

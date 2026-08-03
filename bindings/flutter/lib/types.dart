@@ -159,6 +159,8 @@ class ToolCall {
   // and mapped to the `dynamic` JSON key.
   @JsonKey(name: 'dynamic')
   final bool? isDynamic;
+  @JsonKey(name: 'thought_signature')
+  final String? thoughtSignature;
 
   ToolCall({
     required this.toolCallId,
@@ -166,6 +168,7 @@ class ToolCall {
     this.input,
     this.providerExecuted,
     this.isDynamic,
+    this.thoughtSignature,
   });
 
   factory ToolCall.fromJson(Map<String, dynamic> json) =>
@@ -336,6 +339,7 @@ final class GenerateContentToolCall extends GenerateContent {
   final dynamic input;
   final bool? providerExecuted;
   final bool? isDynamic;
+  final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
 
   GenerateContentToolCall({
@@ -344,6 +348,7 @@ final class GenerateContentToolCall extends GenerateContent {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
+    this.thoughtSignature,
     this.providerMetadata,
   });
 
@@ -357,6 +362,7 @@ final class GenerateContentToolCall extends GenerateContent {
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
+        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
       );
@@ -369,6 +375,7 @@ final class GenerateContentToolCall extends GenerateContent {
           'input': input,
           if (providerExecuted != null) 'provider_executed': providerExecuted,
           if (isDynamic != null) 'dynamic': isDynamic,
+          if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
         },
       };
@@ -1067,6 +1074,7 @@ final class StreamPartToolCall extends StreamPart {
   final dynamic input;
   final bool? providerExecuted;
   final bool? isDynamic;
+  final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
 
   StreamPartToolCall({
@@ -1075,6 +1083,7 @@ final class StreamPartToolCall extends StreamPart {
     required this.input,
     this.providerExecuted,
     this.isDynamic,
+    this.thoughtSignature,
     this.providerMetadata,
   });
 
@@ -1085,6 +1094,7 @@ final class StreamPartToolCall extends StreamPart {
         input: json['input'],
         providerExecuted: json['provider_executed'] as bool?,
         isDynamic: json['dynamic'] as bool?,
+        thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
       );
@@ -1097,6 +1107,7 @@ final class StreamPartToolCall extends StreamPart {
           'input': input,
           if (providerExecuted != null) 'provider_executed': providerExecuted,
           if (isDynamic != null) 'dynamic': isDynamic,
+          if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
         },
       };
@@ -1612,14 +1623,16 @@ final class ContentPartToolCall extends ContentPart {
   final String toolCallId;
   final String toolName;
   final dynamic input;
+  final String? thoughtSignature;
   final Map<String, dynamic>? providerOptions;
   const ContentPartToolCall(
-      {required this.toolCallId, required this.toolName, required this.input, this.providerOptions});
+      {required this.toolCallId, required this.toolName, required this.input, this.thoughtSignature, this.providerOptions});
   static ContentPartToolCall fromJson(Map<String, dynamic> json) =>
       ContentPartToolCall(
         toolCallId: json['tool_call_id'] as String,
         toolName: json['tool_name'] as String,
         input: json['input'],
+        thoughtSignature: json['thought_signature'] as String?,
         providerOptions: json['provider_options'] as Map<String, dynamic>?,
       );
   @override
@@ -1628,6 +1641,7 @@ final class ContentPartToolCall extends ContentPart {
         'tool_call_id': toolCallId,
         'tool_name': toolName,
         'input': input,
+        if (thoughtSignature != null) 'thought_signature': thoughtSignature,
         if (providerOptions != null) 'provider_options': providerOptions,
       };
 }

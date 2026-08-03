@@ -1,6 +1,6 @@
 # aimux · Rust API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 This is the core implementation language. Shared reference — parameter tables,
 result shapes, factory functions, and the feature coverage matrix — lives in
@@ -22,10 +22,16 @@ async fn main() -> Result<(), AiMuxError> {
 }
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Providers
 
 All 250 built-in OpenAI-compatible providers are registry-backed: no per-provider
 `XxxConfig`/`XxxProvider` types. Look them up by name (or by the `ProviderName` enum):
+
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`AnthropicProvider::new(..)`); custom endpoints →
+> `ProviderOptions.base_url` / `OpenAIConfig::with_base_url`.
+> Full list: [providers.md](providers.md).
 
 ```rust
 use aimux_providers::{provider, provider_from_env, ProviderName, ProviderOptions};

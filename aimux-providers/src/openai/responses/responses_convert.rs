@@ -163,6 +163,7 @@ pub fn build_responses_generate_result(
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -187,6 +188,7 @@ pub fn build_responses_generate_result(
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }
@@ -689,6 +691,7 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
+                                            thought_signature: None,
                                             provider_metadata: None,
                                         });
                                     }
@@ -723,6 +726,7 @@ where
                                             input,
                                             provider_executed: None,
                                             dynamic: None,
+                                            thought_signature: None,
                                             provider_metadata: None,
                                         });
                                     }

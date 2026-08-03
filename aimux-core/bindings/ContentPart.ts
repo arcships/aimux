@@ -22,6 +22,12 @@ provider_options?: JsonValue | null, } | { "type": "tool_call", tool_call_id: st
  */
 input: JsonValue, 
 /**
+ * Provider-assigned thought signature (e.g. Google Gemini
+ * `thoughtSignature`). Must be echoed back verbatim on the follow-up
+ * turn when the tool result is sent.
+ */
+thought_signature?: string | null, 
+/**
  * Provider-specific options for this part (e.g.
  * `anthropic.cacheControl`).
  */

@@ -359,6 +359,279 @@ pub async fn deepseek(
     })
 }
 
+/// Create a Google Gemini language model instance.
+///
+/// Google speaks the native `generateContent` protocol (not OpenAI-compatible),
+/// so it is **not** registry-backed — `provider("google", ...)` fails with
+/// `UnknownProvider`. This factory is the only entry point.
+#[napi]
+pub async fn google(
+    api_key: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::google::{GoogleConfig, GoogleProvider};
+
+    let mut cfg = GoogleConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+        }
+        None => {}
+    }
+    let provider = GoogleProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Cohere language model instance.
+#[napi]
+pub async fn cohere(
+    api_key: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::cohere::{CohereConfig, CohereProvider};
+
+    let mut cfg = CohereConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+        }
+        None => {}
+    }
+    let provider = CohereProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Mistral language model instance.
+#[napi]
+pub async fn mistral(
+    api_key: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::mistral::{MistralConfig, MistralProvider};
+
+    let mut cfg = MistralConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+        }
+        None => {}
+    }
+    let provider = MistralProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create an xAI language model instance.
+#[napi]
+pub async fn xai(
+    api_key: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::xai::{XAIConfig, XAIProvider};
+
+    let mut cfg = XAIConfig::new(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+        }
+        None => {}
+    }
+    let provider = XAIProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Bedrock language model instance (AWS SigV4 credentials).
+#[napi]
+pub async fn bedrock(
+    access_key_id: String,
+    secret_access_key: String,
+    region: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+
+    let mut cfg = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
+    if let Some(cfg_config) = config {
+        match cfg_config {
+            Either::A(url) => {
+                cfg = cfg.with_base_url(url);
+            }
+            Either::B(opts) => {
+                if let Some(url) = &opts.base_url {
+                    cfg = cfg.with_base_url(url);
+                }
+            }
+        }
+    }
+    let provider = BedrockProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Vertex AI language model instance (GCP bearer token).
+#[napi]
+pub async fn vertex(
+    access_token: String,
+    project: String,
+    location: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+
+    let mut cfg = VertexProviderConfig::new(access_token, project, location);
+    if let Some(cfg_config) = config {
+        match cfg_config {
+            Either::A(url) => {
+                cfg = cfg.with_base_url(url);
+            }
+            Either::B(opts) => {
+                if let Some(url) = &opts.base_url {
+                    cfg = cfg.with_base_url(url);
+                }
+            }
+        }
+    }
+    let provider = VertexProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create an Anthropic-on-AWS language model instance (API key + region).
+#[napi]
+pub async fn anthropic_aws(
+    api_key: String,
+    region: String,
+    model_id: String,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
+
+    let mut cfg = AnthropicAwsProviderConfig::with_api_key(api_key, region);
+    if let Some(cfg_config) = config {
+        match cfg_config {
+            Either::A(url) => {
+                cfg = cfg.with_base_url(url);
+            }
+            Either::B(opts) => {
+                if let Some(url) = &opts.base_url {
+                    cfg = cfg.with_base_url(url);
+                }
+            }
+        }
+    }
+    let provider = AnthropicAwsProvider::new(cfg);
+    let model = provider
+        .language_model(&model_id)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create an Azure OpenAI language model instance (API key + resource name).
+///
+/// The deployment name is passed as `model_id`; `api_version` is optional.
+#[napi]
+pub async fn azure(
+    api_key: String,
+    resource_name: String,
+    deployment: String,
+    api_version: Option<String>,
+    config: Option<Either<String, ProviderConfig>>,
+) -> Result<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::azure::{AzureConfig, AzureProvider};
+
+    let mut cfg = AzureConfig::new().with_api_key(api_key);
+    match config {
+        Some(Either::A(url)) => {
+            cfg = cfg.with_base_url(url);
+        }
+        Some(Either::B(opts)) => {
+            if let Some(url) = &opts.base_url {
+                cfg = cfg.with_base_url(url);
+            }
+        }
+        None => {}
+    }
+    if let Some(version) = api_version {
+        if !version.is_empty() {
+            cfg = cfg.with_api_version(version);
+        }
+    }
+    if !resource_name.is_empty() {
+        cfg = cfg.with_resource_name(resource_name);
+    }
+    let provider = AzureProvider::new(cfg)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    let model = provider
+        .language_model(&deployment)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key` may be empty/null to read the provider's env
 /// var from the registry entry.

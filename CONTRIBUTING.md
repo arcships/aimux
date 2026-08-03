@@ -8,7 +8,7 @@ to set up a development environment, run the tests, and submit changes.
 ```
 aimux/
 ├── aimux-core/            # Core abstractions: LanguageModel / Provider / Message / StreamPart
-├── aimux-providers/       # 172 provider implementations + cassettes
+├── aimux-providers/       # 325 provider implementations + cassettes
 ├── aimux-stream/          # SSE / NDJSON stream parsing
 ├── aimux-provider-utils/  # HTTP utilities: retry, backoff, error parsing, API-key loading
 ├── aimux-ffi/             # C ABI (opaque handle + JSON + push callback) for non-native bindings

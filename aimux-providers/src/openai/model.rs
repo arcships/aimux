@@ -21,7 +21,9 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 
 use super::OpenAIConfig;
@@ -321,6 +323,7 @@ pub async fn execute_generate(
                 input,
                 provider_executed: None,
                 dynamic: None,
+                thought_signature: None,
                 provider_metadata: None,
             });
         }
@@ -697,6 +700,7 @@ pub async fn execute_stream(
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
+                                        thought_signature: None,
                                         provider_metadata: None,
                                     });
                                 }
@@ -750,6 +754,7 @@ pub async fn execute_stream(
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
             }

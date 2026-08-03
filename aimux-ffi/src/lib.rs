@@ -40,10 +40,16 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::provider::Provider;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
+use aimux_providers::azure::{AzureConfig, AzureProvider};
+use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
 use aimux_providers::cohere::{CohereConfig, CohereProvider};
 use aimux_providers::google::{GoogleConfig, GoogleProvider};
+use aimux_providers::mistral::{MistralConfig, MistralProvider};
 use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
+use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+use aimux_providers::xai::{XAIConfig, XAIProvider};
 use aimux_providers::{ProviderOptions, provider};
 
 use futures::StreamExt;
@@ -251,6 +257,24 @@ unsafe fn parse_two_args(a: *const c_char, b: *const c_char) -> Option<(String, 
     }
 }
 
+/// 解析四个 C 字符串参数；任一为 null 则整体失败。
+unsafe fn parse_four_args(
+    a: *const c_char,
+    b: *const c_char,
+    c: *const c_char,
+    d: *const c_char,
+) -> Option<(String, String, String, String)> {
+    match (
+        cstr_to_string(a),
+        cstr_to_string(b),
+        cstr_to_string(c),
+        cstr_to_string(d),
+    ) {
+        (Some(w), Some(x), Some(y), Some(z)) => Some((w, x, y, z)),
+        _ => None,
+    }
+}
+
 /// 执行一个 async 操作并返回 JSON 字符串（caller 必须 free）。
 fn run_and_serialize<F, T>(_model_msg: &str, f: F) -> *mut c_char
 where
@@ -356,6 +380,333 @@ pub extern "C" fn aimux_anthropic_new_with_base(
         config = config.with_base_url(url);
     }
     AnthropicProvider::new(config)
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create an Anthropic-on-AWS model instance (API key + region).
+///
+/// Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_anthropic_aws_new(
+    api_key: *const c_char,
+    region: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let parsed = match (
+        cstr_to_string(api_key),
+        cstr_to_string(region),
+        cstr_to_string(model_id),
+    ) {
+        (Some(k), Some(r), Some(m)) => Some((k, r, m)),
+        _ => None,
+    };
+    let Some((api_key, region, model_id)) = parsed else {
+        return 0;
+    };
+    AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create an Anthropic-on-AWS model instance with a custom base URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_anthropic_aws_new_with_base(
+    api_key: *const c_char,
+    region: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let parsed = match (
+        cstr_to_string(api_key),
+        cstr_to_string(region),
+        cstr_to_string(model_id),
+    ) {
+        (Some(k), Some(r), Some(m)) => Some((k, r, m)),
+        _ => None,
+    };
+    let Some((api_key, region, model_id)) = parsed else {
+        return 0;
+    };
+    let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    AnthropicAwsProvider::new(config)
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create an Azure OpenAI model instance (API key + resource name).
+///
+/// `api_version` may be null (uses the provider default). The deployment name
+/// is passed as `model_id`. Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_azure_new(
+    api_key: *const c_char,
+    resource_name: *const c_char,
+    deployment: *const c_char,
+    api_version: *const c_char,
+) -> u64 {
+    let parsed = match (
+        cstr_to_string(api_key),
+        cstr_to_string(resource_name),
+        cstr_to_string(deployment),
+    ) {
+        (Some(k), Some(r), Some(d)) => Some((k, r, d)),
+        _ => None,
+    };
+    let Some((api_key, resource_name, deployment)) = parsed else {
+        return 0;
+    };
+    let mut config = AzureConfig::new()
+        .with_api_key(api_key)
+        .with_resource_name(resource_name);
+    if let Some(version) = parse_base_url(api_version) {
+        config = config.with_api_version(version);
+    }
+    match AzureProvider::new(config) {
+        Ok(p) => p
+            .language_model(&deployment)
+            .map(|m| intern_model(Arc::from(m)))
+            .unwrap_or(0),
+        Err(_) => 0,
+    }
+}
+
+/// Create an Azure OpenAI model instance with a custom base URL.
+///
+/// `api_version` may be null (uses the provider default). The deployment name
+/// is passed as `model_id`. Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_azure_new_with_base(
+    api_key: *const c_char,
+    base_url: *const c_char,
+    deployment: *const c_char,
+    api_version: *const c_char,
+) -> u64 {
+    let parsed = match (
+        cstr_to_string(api_key),
+        cstr_to_string(base_url),
+        cstr_to_string(deployment),
+    ) {
+        (Some(k), Some(b), Some(d)) => Some((k, b, d)),
+        _ => None,
+    };
+    let Some((api_key, base_url, deployment)) = parsed else {
+        return 0;
+    };
+    let mut config = AzureConfig::new()
+        .with_api_key(api_key)
+        .with_base_url(base_url);
+    if let Some(version) = parse_base_url(api_version) {
+        config = config.with_api_version(version);
+    }
+    match AzureProvider::new(config) {
+        Ok(p) => p
+            .language_model(&deployment)
+            .map(|m| intern_model(Arc::from(m)))
+            .unwrap_or(0),
+        Err(_) => 0,
+    }
+}
+
+/// Create a Bedrock model instance (AWS SigV4 credentials).
+///
+/// `access_key_id` / `secret_access_key` / `region` are required.
+/// Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_bedrock_new(
+    access_key_id: *const c_char,
+    secret_access_key: *const c_char,
+    region: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let Some((access_key_id, secret_access_key, region, model_id)) =
+        (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
+    else {
+        return 0;
+    };
+    BedrockProvider::new(BedrockProviderConfig::new(
+        access_key_id,
+        secret_access_key,
+        region,
+    ))
+    .language_model(&model_id)
+    .map(|m| intern_model(Arc::from(m)))
+    .unwrap_or(0)
+}
+
+/// Create a Bedrock model instance with a custom base URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_bedrock_new_with_base(
+    access_key_id: *const c_char,
+    secret_access_key: *const c_char,
+    region: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((access_key_id, secret_access_key, region, model_id)) =
+        (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
+    else {
+        return 0;
+    };
+    let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    BedrockProvider::new(config)
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create a Vertex AI model instance (GCP bearer token).
+///
+/// `access_token` / `project` / `location` are required.
+/// Returns `0` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_vertex_new(
+    access_token: *const c_char,
+    project: *const c_char,
+    location: *const c_char,
+    model_id: *const c_char,
+) -> u64 {
+    let Some((access_token, project, location, model_id)) =
+        (unsafe { parse_four_args(access_token, project, location, model_id) })
+    else {
+        return 0;
+    };
+    VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create a Vertex AI model instance with a custom base URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_vertex_new_with_base(
+    access_token: *const c_char,
+    project: *const c_char,
+    location: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((access_token, project, location, model_id)) =
+        (unsafe { parse_four_args(access_token, project, location, model_id) })
+    else {
+        return 0;
+    };
+    let mut config = VertexProviderConfig::new(access_token, project, location);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    VertexProvider::new(config)
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create a Cohere model instance, returning its opaque handle.
+///
+/// Returns `0` on failure (null arguments or invalid model id).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_cohere_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    CohereProvider::new(CohereConfig::new(api_key))
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create a Cohere model instance with a custom base URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_cohere_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    let mut config = CohereConfig::new(api_key);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    CohereProvider::new(config)
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create a Mistral model instance, returning its opaque handle.
+///
+/// Returns `0` on failure (null arguments or invalid model id).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_mistral_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    MistralProvider::new(MistralConfig::new(api_key))
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create a Mistral model instance with a custom base URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_mistral_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    let mut config = MistralConfig::new(api_key);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    MistralProvider::new(config)
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create an xAI model instance, returning its opaque handle.
+///
+/// Returns `0` on failure (null arguments or invalid model id).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_xai_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    XAIProvider::new(XAIConfig::new(api_key))
+        .language_model(&model_id)
+        .map(|m| intern_model(Arc::from(m)))
+        .unwrap_or(0)
+}
+
+/// Create an xAI model instance with a custom base URL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_xai_new_with_base(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    base_url: *const c_char,
+) -> u64 {
+    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
+        return 0;
+    };
+    let mut config = XAIConfig::new(api_key);
+    if let Some(url) = parse_base_url(base_url) {
+        config = config.with_base_url(url);
+    }
+    XAIProvider::new(config)
         .language_model(&model_id)
         .map(|m| intern_model(Arc::from(m)))
         .unwrap_or(0)

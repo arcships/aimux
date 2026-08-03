@@ -1,4 +1,4 @@
-﻿//! Anthropic partner models on Vertex AI — implements `LanguageModel`.
+//! Anthropic partner models on Vertex AI — implements `LanguageModel`.
 //!
 //! Serves Anthropic Claude models (e.g. `claude-sonnet-4-20250514`) through the
 //! Vertex AI `rawPredict` / `streamRawPredict` endpoints. These endpoints proxy
@@ -28,7 +28,9 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 
 use crate::anthropic::convert::{build_request_body, parse_stop_reason};
@@ -185,6 +187,7 @@ impl LanguageModel for VertexAnthropicModel {
                         input: input.clone(),
                         provider_executed: None,
                         dynamic: None,
+                        thought_signature: None,
                         provider_metadata: None,
                     });
                 }
@@ -206,6 +209,7 @@ impl LanguageModel for VertexAnthropicModel {
                         input: input.clone(),
                         provider_executed: None,
                         dynamic: None,
+                        thought_signature: None,
                         provider_metadata: None,
                     });
                 }
@@ -437,6 +441,7 @@ impl LanguageModel for VertexAnthropicModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                thought_signature: None,
                                                 provider_metadata: None,
                                             });
                                         }

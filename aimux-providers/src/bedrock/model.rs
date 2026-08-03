@@ -1,4 +1,4 @@
-﻿//! Amazon Bedrock language model — implements `LanguageModel`.
+//! Amazon Bedrock language model — implements `LanguageModel`.
 //!
 //! Uses the Bedrock Converse API (`/model/{model-id}/converse` and
 //! `/model/{model-id}/converse-stream`), which provides a unified interface
@@ -20,7 +20,9 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usa
 use serde_json::json;
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 
 use super::BedrockAuth;
 use super::convert::{build_request_body, convert_usage, map_finish_reason};
@@ -377,6 +379,7 @@ impl LanguageModel for BedrockModel {
                                 input,
                                 provider_executed: None,
                                 dynamic: None,
+                                thought_signature: None,
                                 provider_metadata: None,
                             });
                         } else if reasoning_id.is_some() {
@@ -475,6 +478,7 @@ fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateConten
             input: tool_use.input.clone(),
             provider_executed: None,
             dynamic: None,
+            thought_signature: None,
             provider_metadata: None,
         });
     }

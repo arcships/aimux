@@ -38,6 +38,34 @@ public interface AimuxFFI extends Library {
 
     long aimux_anthropic_new_with_base(String apiKey, String modelId, String baseUrl);
 
+    long aimux_cohere_new(String apiKey, String modelId);
+
+    long aimux_cohere_new_with_base(String apiKey, String modelId, String baseUrl);
+
+    long aimux_mistral_new(String apiKey, String modelId);
+
+    long aimux_mistral_new_with_base(String apiKey, String modelId, String baseUrl);
+
+    long aimux_xai_new(String apiKey, String modelId);
+
+    long aimux_xai_new_with_base(String apiKey, String modelId, String baseUrl);
+
+    long aimux_bedrock_new(String accessKeyId, String secretAccessKey, String region, String modelId);
+
+    long aimux_bedrock_new_with_base(String accessKeyId, String secretAccessKey, String region, String modelId, String baseUrl);
+
+    long aimux_vertex_new(String accessToken, String project, String location, String modelId);
+
+    long aimux_vertex_new_with_base(String accessToken, String project, String location, String modelId, String baseUrl);
+
+    long aimux_anthropic_aws_new(String apiKey, String region, String modelId);
+
+    long aimux_anthropic_aws_new_with_base(String apiKey, String region, String modelId, String baseUrl);
+
+    long aimux_azure_new(String apiKey, String resourceName, String deployment, String apiVersion);
+
+    long aimux_azure_new_with_base(String apiKey, String baseUrl, String deployment, String apiVersion);
+
     // ── Registry provider (RFC-0017 phase 4) ──────────────────────────────────
     // apiKey may be null (read the provider's env var from the registry entry);
     // configJson may be null (defaults) or a JSON object of ProviderOptions.

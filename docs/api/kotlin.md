@@ -1,6 +1,6 @@
 # aimux · Kotlin API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 Kotlin wraps the Rust core through the `aimux-ffi` C ABI (via JNA).
 
@@ -12,10 +12,15 @@ Model.openai("sk-...", "gpt-4o", "http://localhost:3000").use { model ->
 }
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `aimux.ProviderName` holds the constants:
+
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
+> Full list: [providers.md](providers.md).
 
 ```kotlin
 // 推荐:ProviderName.GROQ 常量(类型检查 + 补全)

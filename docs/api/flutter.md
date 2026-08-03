@@ -1,6 +1,6 @@
 # aimux · Flutter/Dart API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 Flutter/Dart wraps the Rust core through the `aimux-ffi` C ABI (via `dart:ffi`).
 
@@ -12,10 +12,15 @@ final result = model.generateText('What is Rust?');
 model.close();
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:
+
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
+> Full list: [providers.md](providers.md).
 
 ```dart
 // 推荐:ProviderName.groq 常量(补全 + 防拼写错误)

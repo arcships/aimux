@@ -101,6 +101,146 @@ public class Model implements Closeable {
         return new Model(h);
     }
 
+    /** Create a Cohere model instance. */
+    public static Model cohere(String apiKey, String modelId) {
+        long h = AimuxFFI.INSTANCE.aimux_cohere_new(apiKey, modelId);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Cohere model");
+        }
+        return new Model(h);
+    }
+
+    /** Create a Cohere model instance with a custom base URL. */
+    public static Model cohereWithBase(String apiKey, String modelId, String baseUrl) {
+        long h = AimuxFFI.INSTANCE.aimux_cohere_new_with_base(apiKey, modelId, baseUrl);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Cohere model");
+        }
+        return new Model(h);
+    }
+
+    /** Create a Mistral model instance. */
+    public static Model mistral(String apiKey, String modelId) {
+        long h = AimuxFFI.INSTANCE.aimux_mistral_new(apiKey, modelId);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Mistral model");
+        }
+        return new Model(h);
+    }
+
+    /** Create a Mistral model instance with a custom base URL. */
+    public static Model mistralWithBase(String apiKey, String modelId, String baseUrl) {
+        long h = AimuxFFI.INSTANCE.aimux_mistral_new_with_base(apiKey, modelId, baseUrl);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Mistral model");
+        }
+        return new Model(h);
+    }
+
+    /** Create an xAI model instance. */
+    public static Model xai(String apiKey, String modelId) {
+        long h = AimuxFFI.INSTANCE.aimux_xai_new(apiKey, modelId);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create xAI model");
+        }
+        return new Model(h);
+    }
+
+    /** Create an xAI model instance with a custom base URL. */
+    public static Model xaiWithBase(String apiKey, String modelId, String baseUrl) {
+        long h = AimuxFFI.INSTANCE.aimux_xai_new_with_base(apiKey, modelId, baseUrl);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create xAI model");
+        }
+        return new Model(h);
+    }
+
+    /** Create a Bedrock model instance (AWS SigV4 credentials). */
+    public static Model bedrock(String accessKeyId, String secretAccessKey, String region, String modelId) {
+        long h = AimuxFFI.INSTANCE.aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Bedrock model");
+        }
+        return new Model(h);
+    }
+
+    /** Create a Bedrock model instance with a custom base URL. */
+    public static Model bedrockWithBase(String accessKeyId, String secretAccessKey, String region,
+                                        String modelId, String baseUrl) {
+        long h = AimuxFFI.INSTANCE.aimux_bedrock_new_with_base(
+            accessKeyId, secretAccessKey, region, modelId, baseUrl);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Bedrock model");
+        }
+        return new Model(h);
+    }
+
+    /** Create a Vertex AI model instance (GCP bearer token). */
+    public static Model vertex(String accessToken, String project, String location, String modelId) {
+        long h = AimuxFFI.INSTANCE.aimux_vertex_new(accessToken, project, location, modelId);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Vertex model");
+        }
+        return new Model(h);
+    }
+
+    /** Create a Vertex AI model instance with a custom base URL. */
+    public static Model vertexWithBase(String accessToken, String project, String location,
+                                       String modelId, String baseUrl) {
+        long h = AimuxFFI.INSTANCE.aimux_vertex_new_with_base(
+            accessToken, project, location, modelId, baseUrl);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Vertex model");
+        }
+        return new Model(h);
+    }
+
+    /** Create an Anthropic-on-AWS model instance (API key + region). */
+    public static Model anthropicAws(String apiKey, String region, String modelId) {
+        long h = AimuxFFI.INSTANCE.aimux_anthropic_aws_new(apiKey, region, modelId);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Anthropic AWS model");
+        }
+        return new Model(h);
+    }
+
+    /** Create an Anthropic-on-AWS model instance with a custom base URL. */
+    public static Model anthropicAwsWithBase(String apiKey, String region, String modelId, String baseUrl) {
+        long h = AimuxFFI.INSTANCE.aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Anthropic AWS model");
+        }
+        return new Model(h);
+    }
+
+    /** Create an Azure OpenAI model instance (API key + resource name). */
+    public static Model azure(String apiKey, String resourceName, String deployment) {
+        long h = AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, null);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Azure model");
+        }
+        return new Model(h);
+    }
+
+    /** Create an Azure OpenAI model instance with an explicit api-version. */
+    public static Model azureWithVersion(String apiKey, String resourceName, String deployment,
+                                         String apiVersion) {
+        long h = AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, apiVersion);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Azure model");
+        }
+        return new Model(h);
+    }
+
+    /** Create an Azure OpenAI model instance with a custom base URL. */
+    public static Model azureWithBase(String apiKey, String baseUrl, String deployment) {
+        long h = AimuxFFI.INSTANCE.aimux_azure_new_with_base(apiKey, baseUrl, deployment, null);
+        if (h == 0L) {
+            throw new IllegalArgumentException("Failed to create Azure model");
+        }
+        return new Model(h);
+    }
+
     /**
      * Create a model from the provider registry by name (RFC-0017 phase 4).
      *

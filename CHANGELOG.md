@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-03
+
+**Breaking release.** This version replaces the 250 per-provider shell types
+with a single registry-backed `provider(name, ...)` factory, and adds request
+cancellation + timeout control. See [Removed](#removed) for migration.
+
+### Added
+
+- **Unified `provider(name, ...)` factory** (RFC-0017 phase 4) — every one of
+  the 250 OpenAI-compatible providers is now described in one
+  `provider_registry.json` (base URL, API-key env var, per-vendor quirks) and
+  constructed through a single entry point in **every binding**: Rust, Node,
+  Python, Go, Kotlin, Swift, Java, Flutter, C.
+
+  ```rust
+  // before: remember a class per provider
+  // let model = GroqProvider::new(GroqConfig::new(key)).model("llama-3.3-70b");
+
+  // after: one factory — typed name, explicit key
+  let model = provider(ProviderName::Groq, Some(key), "llama-3.3-70b", None)?;
+  // or plain string; key falls back to the provider's env var
+  let model = provider_from_env("groq", "llama-3.3-70b", None)?;
+  ```
+
+  ```ts
+  // Node: same factory, typed ProviderName (lowercase keys)
+  const model = await provider(ProviderName.groq, apiKey, 'llama-3.3-70b')
+  ```
+
+- **Typed `ProviderName` in 8 languages** — enum/union/const in Rust,
+  TypeScript, Python, Go, Java, Kotlin, Swift, Flutter. Gives autocomplete and
+  compile-time checking; plain strings still work everywhere.
+- **Request cancellation** — Node: pass a standard `AbortSignal` as the 4th
+  argument of `generateText` / `streamText`; Rust: `abort_signal` on
+  `GenerateTextOptions`. Aborting cancels the in-flight HTTP request.
+- **Timeout control** — new `timeout` option on `GenerateTextOptions` /
+  `CallOptions` (works in all bindings): `total_ms` (whole call),
+  `first_chunk_ms` (time to first token), `chunk_ms` (idle gap between stream
+  chunks). Timeouts surface as `AiMuxError::Timeout` and are not retried.
+- **Reasoning effort passes through verbatim** — the old `minimal→low` /
+  `xhigh→max` normalization is gone; all 7 levels are sent as documented (e.g.
+  Groq's effort values). Setting `reasoning` without an effort value now
+  produces a warning instead of silently doing nothing.
+- **Native protocol constructors in every binding** — Bedrock, Vertex,
+  Azure, Cohere, Mistral, xAI and Anthropic-AWS now ship LLM constructors
+  across the C ABI and all 8 bindings (previously Rust-only). Python's
+  `google()` factory is now exported.
+- **Correct `max_tokens` field per vendor** — providers that expect
+  `max_completion_tokens` (Groq, Heroku) or `max_tokens` (Perplexity,
+  SiliconFlow, StepFun, …) get the right key automatically.
+- New design docs: RFC-0014 (logging), RFC-0015 (cache-hit audit & request
+  tracing), RFC-0018 (Codex subscription channel), RFC-0019 (session affinity).
+
+### Removed (breaking)
+
+- **250 per-provider shell types retired** (`GroqConfig`, `DeepSeekProvider`,
+  …) in Rust and all bindings — migrate to `provider(name, ...)` /
+  `ProviderName` (examples above). The 10 native protocol providers (OpenAI,
+  Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
+  Anthropic-AWS) keep their existing types; DeepSeek is registry-backed.
+- **`RequestBodyOverride`** and the `request_body_override` profile field
+  removed — use `body_overrides` instead.
+- **Reasoning-effort normalization** removed (values now pass through).
+
+### Fixed
+
+- **Streaming timeouts could silently never fire** — a pending deadline was
+  dropped before it could trigger; streaming now enforces `total_ms` /
+  `first_chunk_ms` / `chunk_ms` reliably.
+- **7 wrong `base_url` entries in the provider registry** corrected (they
+  would have failed at request time).
+- Provider factory missing from some bindings' public surface (Python
+  exports, Node npm package, Go DeepSeek).
+- CI/test hygiene: formatting drift, clippy warnings, and tests that no
+  longer depend on ambient environment variables.
+
+### Changed
+
+- All provider tests now go through the unified `provider()` entry; new test
+  coverage for timeouts, cancellation, and registry wiring.
+
 ## [0.1.5] - 2026-08-01
 
 ### Added

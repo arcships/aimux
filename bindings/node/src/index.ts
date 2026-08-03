@@ -48,6 +48,14 @@ export {
   openai,
   anthropic,
   deepseek,
+  google,
+  cohere,
+  mistral,
+  xai,
+  bedrock,
+  vertex,
+  anthropicAws,
+  azure,
   provider,
 } from '../index.js'
 export type { ProviderName } from './types/ProviderName'

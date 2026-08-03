@@ -242,7 +242,10 @@ pub async fn send(
                 b = bytes => b.map_err(|e| AiMuxError::Http(e.to_string()))?,
             }
         }
-        None => resp.bytes().await.map_err(|e| AiMuxError::Http(e.to_string()))?,
+        None => resp
+            .bytes()
+            .await
+            .map_err(|e| AiMuxError::Http(e.to_string()))?,
     };
 
     Ok(HttpResponse {
@@ -500,19 +503,19 @@ impl Stream for TimeoutBodyStream {
 
         // Lazy-create the event-driven abort waiter so an abort wakes us
         // while Pending (the signal's `Notify` stores the waker).
-        if this.abort_wait.is_none() && this.abort_signal.is_some() {
-            this.abort_wait = Some(Box::pin(
-                this.abort_signal.as_ref().expect("checked above").cancelled(),
-            ));
+        if this.abort_wait.is_none()
+            && let Some(signal) = this.abort_signal.as_ref()
+        {
+            this.abort_wait = Some(Box::pin(signal.cancelled()));
         }
 
         let Some((deadline, kind)) = this.next_deadline() else {
             // No timeout configured: pass through (abort still honored).
-            if let Some(wait) = this.abort_wait.as_mut() {
-                if wait.as_mut().poll(cx).is_ready() {
-                    this.done = true;
-                    return Poll::Ready(Some(Err(AiMuxError::Aborted)));
-                }
+            if let Some(wait) = this.abort_wait.as_mut()
+                && wait.as_mut().poll(cx).is_ready()
+            {
+                this.done = true;
+                return Poll::Ready(Some(Err(AiMuxError::Aborted)));
             }
             let result = this.inner.as_mut().poll_next(cx);
             match &result {
@@ -531,9 +534,7 @@ impl Stream for TimeoutBodyStream {
         if Instant::now() >= deadline {
             this.done = true;
             this.sleep = None;
-            return Poll::Ready(Some(Err(AiMuxError::Timeout(
-                kind.message().to_string(),
-            ))));
+            return Poll::Ready(Some(Err(AiMuxError::Timeout(kind.message().to_string()))));
         }
 
         // (Re)create the timer if missing or pointed at a different deadline.
@@ -545,23 +546,21 @@ impl Stream for TimeoutBodyStream {
             this.sleep = Some(Box::pin(tokio::time::sleep_until(deadline.into())));
         }
 
-        loop {
+        {
             // Abort wins over any deadline.
-            if let Some(wait) = this.abort_wait.as_mut() {
-                if wait.as_mut().poll(cx).is_ready() {
-                    this.done = true;
-                    this.sleep = None;
-                    return Poll::Ready(Some(Err(AiMuxError::Aborted)));
-                }
+            if let Some(wait) = this.abort_wait.as_mut()
+                && wait.as_mut().poll(cx).is_ready()
+            {
+                this.done = true;
+                this.sleep = None;
+                return Poll::Ready(Some(Err(AiMuxError::Aborted)));
             }
-            if let Some(sleep) = this.sleep.as_mut() {
-                if sleep.as_mut().poll(cx).is_ready() {
-                    this.done = true;
-                    this.sleep = None;
-                    return Poll::Ready(Some(Err(AiMuxError::Timeout(
-                        kind.message().to_string(),
-                    ))));
-                }
+            if let Some(sleep) = this.sleep.as_mut()
+                && sleep.as_mut().poll(cx).is_ready()
+            {
+                this.done = true;
+                this.sleep = None;
+                return Poll::Ready(Some(Err(AiMuxError::Timeout(kind.message().to_string()))));
             }
             match this.inner.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(bytes))) => {
@@ -570,19 +569,19 @@ impl Stream for TimeoutBodyStream {
                     // Reset the idle window: the next poll re-creates the
                     // timer with a fresh `now + chunk_ms` deadline.
                     this.sleep = None;
-                    return Poll::Ready(Some(Ok(bytes)));
+                    Poll::Ready(Some(Ok(bytes)))
                 }
                 Poll::Ready(Some(Err(e))) => {
                     this.done = true;
                     this.sleep = None;
-                    return Poll::Ready(Some(Err(e)));
+                    Poll::Ready(Some(Err(e)))
                 }
                 Poll::Ready(None) => {
                     this.done = true;
                     this.sleep = None;
-                    return Poll::Ready(None);
+                    Poll::Ready(None)
                 }
-                Poll::Pending => return Poll::Pending,
+                Poll::Pending => Poll::Pending,
             }
         }
     }
@@ -891,7 +890,11 @@ mod tests {
             .expect("first-chunk deadline must fire within 5s")
             .expect("stream must yield an error");
         assert!(matches!(item, Err(AiMuxError::Timeout(_))));
-        assert!(item.unwrap_err().to_string().contains("first chunk timeout"));
+        assert!(
+            item.unwrap_err()
+                .to_string()
+                .contains("first chunk timeout")
+        );
     }
 
     #[tokio::test]
@@ -923,16 +926,17 @@ mod tests {
             .expect("chunk idle timeout must fire within 5s")
             .expect("stream must yield an error");
         assert!(matches!(second, Err(AiMuxError::Timeout(_))));
-        assert!(second.unwrap_err().to_string().contains("chunk idle timeout"));
+        assert!(
+            second
+                .unwrap_err()
+                .to_string()
+                .contains("chunk idle timeout")
+        );
     }
 
     #[tokio::test]
     async fn timeout_stream_early_chunks_pass_within_budget() {
-        let inner = futures::stream::iter(vec![
-            Ok(Bytes::from("a")),
-            Ok(Bytes::from("b")),
-        ])
-        .boxed();
+        let inner = futures::stream::iter(vec![Ok(Bytes::from("a")), Ok(Bytes::from("b"))]).boxed();
         let mut timed = TimeoutBodyStream {
             inner,
             start: Instant::now(),
@@ -1042,7 +1046,10 @@ mod tests {
         };
         let item = timed.next().await.expect("must yield an error");
         assert!(matches!(item, Err(AiMuxError::Aborted)));
-        assert!(timed.next().await.is_none(), "stream must be fused after abort");
+        assert!(
+            timed.next().await.is_none(),
+            "stream must be fused after abort"
+        );
     }
 
     #[test]

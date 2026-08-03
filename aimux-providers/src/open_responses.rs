@@ -1,4 +1,4 @@
-﻿//! Open Responses provider - a generic Responses API wrapper.
+//! Open Responses provider - a generic Responses API wrapper.
 //!
 //! Works with any OpenAI Responses-compatible API endpoint (LM Studio,
 //! OpenAI, etc.). Unlike the OpenAI Chat Completions provider, this speaks
@@ -28,7 +28,9 @@ use aimux_core::types::{
 };
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 
 // == Config ==
@@ -291,6 +293,7 @@ impl LanguageModel for OpenResponsesModel {
                             input,
                             provider_executed: None,
                             dynamic: None,
+                            thought_signature: None,
                             provider_metadata: None,
                         });
                     }
@@ -574,6 +577,7 @@ impl LanguageModel for OpenResponsesModel {
                                                 input,
                                                 provider_executed: None,
                                                 dynamic: None,
+                                                thought_signature: None,
                                                 provider_metadata: None,
                                             });
                                             has_tool_calls = true;

@@ -29,7 +29,13 @@ provider_executed?: boolean | null,
 /**
  * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
  */
-dynamic?: boolean | null, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
+dynamic?: boolean | null, 
+/**
+ * Provider-assigned thought signature (e.g. Google Gemini
+ * `thoughtSignature`). Must be echoed back verbatim on the follow-up
+ * turn when the tool result is sent.
+ */
+thought_signature?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
 /**
  * Whether the result is an error or error message.
  */

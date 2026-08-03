@@ -4,12 +4,12 @@
   <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
 </p>
 
-> **A unified LLM access layer written in Rust. One API for 172+ AI providers.**
+> **A unified LLM access layer written in Rust. One API for 325 AI providers.**
 
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Providers](https://img.shields.io/badge/providers-172%2B-green.svg)](rfc/0004-provider-inventory.md)
+[![Providers](https://img.shields.io/badge/providers-325-green.svg)](docs/api/providers.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
@@ -26,11 +26,12 @@ difference: aimux is an access layer, those are orchestration layers.
 
 ## Why aimux
 
-- **290+ provider modules** — 11 native protocol implementations
-  (OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
-  DeepSeek, Anthropic-AWS) + **250 registry-backed OpenAI-compatible providers**
-  (unified `provider(name, ...)` entry, RFC-0017 phase 4) + modality-specific
-  (speech/image/video/search).
+- **325 provider modules** — 250 registry-backed OpenAI-compatible
+  (unified `provider(name, ...)` entry) + 10 native protocol
+  implementations (OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere,
+  Mistral, xAI, Anthropic-AWS) + 65 standalone/modality/local/search providers
+  (OpenRouter, DeepSeek, Ollama, vLLM, ElevenLabs, KlingAI, Tavily, …).
+  Full list: [docs/api/providers.md](docs/api/providers.md).
 - **Unified, object-safe interface** — the `LanguageModel` trait supports
   `Box<dyn>` so providers are interchangeable without changing call sites.
 - **Full multimodal** — text, streaming, tool calling, embeddings, image,
@@ -38,7 +39,7 @@ difference: aimux is an access layer, those are orchestration layers.
 - **Config-driven provider registry** — `provider-registry.json` describes
   each of the 250 OpenAI-compatible providers (base URL, env var, profile
   quirks: top_k, tools, response_format, streaming usage, max_tokens key);
-  one unified `provider(name, ...)` entry in every binding (RFC-0017 phase 4).
+  one unified `provider(name, ...)` entry in every binding.
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
 - **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
@@ -105,7 +106,7 @@ cargo add aimux-core aimux-providers
 | Crate | Description | crates.io |
 |-------|-------------|-----------|
 | `aimux-core` | Core abstractions: `LanguageModel` / `Provider` / `Message` / `StreamPart` | [crates.io](https://crates.io/crates/aimux-core) |
-| `aimux-providers` | 172+ provider implementations | [crates.io](https://crates.io/crates/aimux-providers) |
+| `aimux-providers` | 325 provider implementations | [crates.io](https://crates.io/crates/aimux-providers) |
 | `aimux-stream` | SSE / NDJSON stream parsing | [crates.io](https://crates.io/crates/aimux-stream) |
 | `aimux-provider-utils` | HTTP utilities: retry, backoff, error parsing | [crates.io](https://crates.io/crates/aimux-provider-utils) |
 | `aimux-ffi` | C ABI for non-native bindings | [crates.io](https://crates.io/crates/aimux-ffi) |
@@ -176,8 +177,8 @@ while let Some(part) = stream.next().await {
 ## Switch providers
 
 ```rust
-// OpenAI → DeepSeek: only the provider name changes (RFC-0017 phase 4 —
-// registry-backed; key read from the provider's env var)
+// OpenAI → DeepSeek: only the provider name changes (registry-backed;
+// key read from the provider's env var)
 use aimux_providers::{provider, provider_from_env, ProviderName};
 
 // 推荐:类型化 ProviderName(IDE 补全 + 编译期检查)
@@ -190,16 +191,23 @@ let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 All 250 OpenAI-compatible providers are registry-backed: `provider(name, ...)`
 in every binding, with typed `ProviderName` (enum/union/consts per language).
 The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
-see [docs/API.md](docs/API.md#built-in-providers-rfc-0017-phase-4).
+see [docs/API.md](docs/API.md#providers).
+
+> **Scope:** OpenAI-compatible → `provider(name, ...)`; others (Anthropic,
+> multimodal, local…) → their constructors. List:
+> [docs/api/providers.md](docs/api/providers.md).
 
 ## Provider coverage
 
 | Type | Count | Examples |
 |------|:-----:|----------|
-| Native protocol | 11 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, DeepSeek |
-| OpenAI-compatible (registry) | 250 | Groq, Fireworks, Together, Perplexity, Ollama, OpenRouter, Alibaba Tongyi, Zhipu, Baidu, Tencent, iFlytek, Moonshot, SiliconFlow… |
-| Speech / transcription | 7 | ElevenLabs, Deepgram, AssemblyAI, Cartesia… |
-| Image / video | 8 | Black Forest Labs, Replicate, Fal, KlingAI… |
+| Native protocol | 10 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, Anthropic-AWS |
+| OpenAI-compatible (registry) | 250 | Groq, Fireworks, Together, Perplexity, Ollama Cloud, DeepSeek, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot, SiliconFlow… |
+| OpenAI-compatible (standalone + Vertex-hosted) | 32 | OpenRouter, Hugging Face, Ollama, vLLM, SGLang, Llama.cpp, LiteLLM Proxy, Vertex-hosted DeepSeek/Qwen/Llama… |
+| Speech / transcription | 10 | ElevenLabs, Deepgram, AssemblyAI, AWS Polly, Cartesia, Hume, Gladia, RevAI, LMNT, Fal |
+| Image / video | 8 | Black Forest Labs, Replicate, Luma, Prodia, KlingAI, Recraft, Stability, RunwayML |
+| Embeddings / rerank / search | 13 | Voyage, Jina, Tavily, Exa, Firecrawl, Serper, SearXNG, You.com… |
+| Other (Responses API, Bedrock/Mantle) | 2 | generic Responses API wrapper, Bedrock Mantle |
 
 Full list: [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md).
 
@@ -234,6 +242,8 @@ Tests run on cassette playback — no network and no keys. See
 | Doc | Contents |
 |-----|----------|
 | [docs/API.md](docs/API.md) | **API overview** — shared reference + links to per-language guides |
+| [docs/api/reference.md](docs/api/reference.md) | **API reference** — public types & functions lookup |
+| [docs/api/providers.md](docs/api/providers.md) | **Provider list** — all 325 providers with entry points (generated) |
 | [docs/api/](docs/api/) | **Per-language API guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter |
 | [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | Project overview, design decisions, benchmarks |
 | [docs/PERF-RESULTS.md](docs/PERF-RESULTS.md) | Performance benchmark results |

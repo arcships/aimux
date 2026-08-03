@@ -190,6 +190,201 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
     })
 }
 
+/// Create a Google Gemini language model instance (native `generateContent`
+/// protocol — not OpenAI-compatible, so not registry-backed).
+#[pyfunction]
+#[pyo3(signature = (api_key, model_id, base_url=None))]
+fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::google::{GoogleConfig, GoogleProvider};
+
+    let mut config = GoogleConfig::new(api_key);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = GoogleProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Cohere language model instance.
+#[pyfunction]
+#[pyo3(signature = (api_key, model_id, base_url=None))]
+fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::cohere::{CohereConfig, CohereProvider};
+
+    let mut config = CohereConfig::new(api_key);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = CohereProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Mistral language model instance.
+#[pyfunction]
+#[pyo3(signature = (api_key, model_id, base_url=None))]
+fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::mistral::{MistralConfig, MistralProvider};
+
+    let mut config = MistralConfig::new(api_key);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = MistralProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create an xAI language model instance.
+#[pyfunction]
+#[pyo3(signature = (api_key, model_id, base_url=None))]
+fn xai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::xai::{XAIConfig, XAIProvider};
+
+    let mut config = XAIConfig::new(api_key);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = XAIProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Bedrock language model instance (AWS SigV4 credentials).
+#[pyfunction]
+#[pyo3(signature = (access_key_id, secret_access_key, region, model_id, base_url=None))]
+fn bedrock(
+    access_key_id: &str,
+    secret_access_key: &str,
+    region: &str,
+    model_id: &str,
+    base_url: Option<&str>,
+) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+
+    let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = BedrockProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create a Vertex AI language model instance (GCP bearer token).
+#[pyfunction]
+#[pyo3(signature = (access_token, project, location, model_id, base_url=None))]
+fn vertex(
+    access_token: &str,
+    project: &str,
+    location: &str,
+    model_id: &str,
+    base_url: Option<&str>,
+) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+
+    let mut config = VertexProviderConfig::new(access_token, project, location);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = VertexProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create an Anthropic-on-AWS language model instance (API key + region).
+#[pyfunction]
+#[pyo3(signature = (api_key, region, model_id, base_url=None))]
+fn anthropic_aws(
+    api_key: &str,
+    region: &str,
+    model_id: &str,
+    base_url: Option<&str>,
+) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
+
+    let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    let provider = AnthropicAwsProvider::new(config);
+    let model = provider
+        .language_model(model_id)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
+/// Create an Azure OpenAI language model instance (API key + resource name).
+///
+/// The deployment name is passed as `model_id`; `api_version` is optional.
+#[pyfunction]
+#[pyo3(signature = (api_key, resource_name, deployment, api_version=None, base_url=None))]
+fn azure(
+    api_key: &str,
+    resource_name: &str,
+    deployment: &str,
+    api_version: Option<&str>,
+    base_url: Option<&str>,
+) -> PyResult<Model> {
+    use aimux_core::provider::Provider;
+    use aimux_providers::azure::{AzureConfig, AzureProvider};
+
+    let mut config = AzureConfig::new().with_api_key(api_key);
+    if let Some(url) = base_url {
+        config = config.with_base_url(url);
+    }
+    if let Some(version) = api_version {
+        if !version.is_empty() {
+            config = config.with_api_version(version);
+        }
+    }
+    if !resource_name.is_empty() {
+        config = config.with_resource_name(resource_name);
+    }
+    let provider = AzureProvider::new(config)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    let model = provider
+        .language_model(deployment)
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    Ok(Model {
+        inner: Arc::from(model),
+    })
+}
+
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
 #[pyfunction]
@@ -222,6 +417,14 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;
+    m.add_function(wrap_pyfunction!(google, m)?)?;
+    m.add_function(wrap_pyfunction!(cohere, m)?)?;
+    m.add_function(wrap_pyfunction!(mistral, m)?)?;
+    m.add_function(wrap_pyfunction!(xai, m)?)?;
+    m.add_function(wrap_pyfunction!(bedrock, m)?)?;
+    m.add_function(wrap_pyfunction!(vertex, m)?)?;
+    m.add_function(wrap_pyfunction!(anthropic_aws, m)?)?;
+    m.add_function(wrap_pyfunction!(azure, m)?)?;
     m.add_function(wrap_pyfunction!(provider, m)?)?;
 
     // Multimodal classes.

@@ -1,4 +1,4 @@
-"""aimux — Unified LLM service layer for Python (Rust core, 172+ providers).
+"""aimux — Unified LLM service layer for Python (Rust core, 325 providers).
 
 This wrapper layer parses JSON strings from the native layer into Python dicts,
 providing a Pythonic API surface.
@@ -13,6 +13,14 @@ from .aimux import (
     openai,
     anthropic,
     deepseek,
+    google,
+    cohere,
+    mistral,
+    xai,
+    bedrock,
+    vertex,
+    anthropic_aws,
+    azure,
     provider,
     EmbeddingModel,
     SpeechModel,
@@ -40,6 +48,14 @@ __all__ = [
     "openai",
     "anthropic",
     "deepseek",
+    "google",
+    "cohere",
+    "mistral",
+    "xai",
+    "bedrock",
+    "vertex",
+    "anthropic_aws",
+    "azure",
     "provider",
     "EmbeddingModel",
     "SpeechModel",

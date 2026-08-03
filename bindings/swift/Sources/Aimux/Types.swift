@@ -626,6 +626,9 @@ public struct ToolCall: Codable, Equatable {
     public var input: JSONValue
     public var providerExecuted: Bool?
     public var dynamic: Bool?
+    /// Provider-assigned thought signature (e.g. Google Gemini
+    /// `thoughtSignature`); must be echoed back verbatim on follow-up turns.
+    public var thoughtSignature: String?
 
     enum CodingKeys: String, CodingKey {
         case toolCallId = "tool_call_id"
@@ -633,12 +636,15 @@ public struct ToolCall: Codable, Equatable {
         case input
         case providerExecuted = "provider_executed"
         case dynamic
+        case thoughtSignature = "thought_signature"
     }
 
     public init(toolCallId: String, toolName: String, input: JSONValue,
-                providerExecuted: Bool? = nil, dynamic: Bool? = nil) {
+                providerExecuted: Bool? = nil, dynamic: Bool? = nil,
+                thoughtSignature: String? = nil) {
         self.toolCallId = toolCallId; self.toolName = toolName; self.input = input
         self.providerExecuted = providerExecuted; self.dynamic = dynamic
+        self.thoughtSignature = thoughtSignature
     }
 }
 

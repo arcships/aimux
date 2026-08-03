@@ -4,8 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "aimux"
-version = "0.1.5"
-description = "Unified LLM service layer for Python (Rust core, 172+ providers)"
+version = "0.2.0"
+description = "Unified LLM service layer for Python (Rust core, 325 providers)"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.8"

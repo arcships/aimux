@@ -714,6 +714,7 @@ module.exports.anthropic = nativeBinding.anthropic
 module.exports.cohereEmbedding = nativeBinding.cohereEmbedding
 module.exports.cohereReranking = nativeBinding.cohereReranking
 module.exports.deepseek = nativeBinding.deepseek
+module.exports.google = nativeBinding.google
 module.exports.googleEmbedding = nativeBinding.googleEmbedding
 module.exports.googleImage = nativeBinding.googleImage
 module.exports.googleVideo = nativeBinding.googleVideo

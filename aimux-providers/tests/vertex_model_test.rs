@@ -201,6 +201,64 @@ async fn vertex_generate_tool_call() {
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
 
+/// Vertex Gemini thinking models echo `thoughtSignature` on `functionCall`
+/// parts the same way the public Gemini API does — it must be preserved.
+#[tokio::test]
+async fn vertex_generate_tool_call_with_thought_signature() {
+    let server = MockServer::start().await;
+    mock_generate_content(
+        &server,
+        json!({
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [{
+                        "functionCall": {
+                            "name": "getWeather",
+                            "id": "call_1",
+                            "args": { "location": "Tokyo" }
+                        },
+                        "thoughtSignature": "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"
+                    }]
+                },
+                "finishReason": "STOP"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 5,
+                "candidatesTokenCount": 5
+            }
+        }),
+    )
+    .await;
+
+    let model = make_model(&server);
+    let result = model
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("do_generate should succeed");
+
+    assert_eq!(result.content.len(), 1);
+    match &result.content[0] {
+        GenerateContent::ToolCall {
+            tool_call_id,
+            tool_name,
+            input,
+            thought_signature,
+            ..
+        } => {
+            assert_eq!(tool_call_id, "call_1");
+            assert_eq!(tool_name, "getWeather");
+            assert_eq!(input["location"], "Tokyo");
+            assert_eq!(
+                thought_signature.as_deref(),
+                Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
+            );
+        }
+        other => panic!("expected ToolCall, got {:?}", other),
+    }
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+}
+
 /// Test: HTTP error status is propagated.
 #[tokio::test]
 async fn vertex_generate_error() {

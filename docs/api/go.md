@@ -1,6 +1,6 @@
 # aimux · Go API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 The Go binding goes through the `aimux-ffi` C ABI: cgo statically links
 `libaimux_ffi.a`, so the Rust core is compiled into the executable and the
@@ -28,10 +28,15 @@ for part := range stream.Parts() {
 }
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Providers
 
 All 250 registry-backed OpenAI-compatible providers are reachable by name;
 `aimux.ProviderName` holds typed constants:
+
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed constructors
+> (`NewAnthropic(apiKey, model)`); custom endpoints → `WithBase` variant.
+> Full list: [providers.md](providers.md).
 
 ```go
 // 推荐:ProviderName.Groq 常量(类型检查 + 补全)

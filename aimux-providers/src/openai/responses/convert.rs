@@ -271,6 +271,7 @@ pub fn convert_to_responses_input(
                             tool_name,
                             input: tool_input,
                             provider_options,
+                            ..
                         } => {
                             let id = item_id(provider_options);
                             if has_previous_response_id && id.is_some() {

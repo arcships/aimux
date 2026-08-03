@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.5"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/arcships/aimux"
@@ -18,7 +18,7 @@ description = "Rust alternative to Vercel AI SDK - unified provider interface fo
 rust-version = "1.85"
 
 # Release profile: minimize binary size for FFI bindings.
-# - lto + codegen-units=1: cross-crate dead-code elimination across 172 providers
+# - lto + codegen-units=1: cross-crate dead-code elimination across 325 providers
 # - panic="abort": drop .eh_frame unwind tables (~9% of binary)
 # - strip: remove symbol tables
 # - opt-level="z": optimize for size
@@ -67,10 +67,10 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 
 # Internal crates
-aimux-core = { path = "aimux-core", version = "0.1.5" }
-aimux-providers = { path = "aimux-providers", version = "0.1.5" }
-aimux-stream = { path = "aimux-stream", version = "0.1.5" }
-aimux-provider-utils = { path = "aimux-provider-utils", version = "0.1.5" }
+aimux-core = { path = "aimux-core", version = "0.2.0" }
+aimux-providers = { path = "aimux-providers", version = "0.2.0" }
+aimux-stream = { path = "aimux-stream", version = "0.2.0" }
+aimux-provider-utils = { path = "aimux-provider-utils", version = "0.2.0" }
 
 # HTTP date parsing (Retry-After header)
 httpdate = "1"

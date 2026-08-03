@@ -1,6 +1,6 @@
 # aimux · Node.js API
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
@@ -19,7 +19,7 @@ const result = await generateText(model, 'What is Rust?')
 console.log(result.text)
 ```
 
-## Built-in Providers (RFC-0017 phase 4)
+## Providers
 
 All 250 built-in OpenAI-compatible providers are registry-backed. Look them up
 by name; the `ProviderName` type is a string-literal union generated from
@@ -43,6 +43,11 @@ const result = await generateText(model, 'Hello')
 `openai` / `anthropic` / `deepseek` factories remain (deepseek is now
 registry-backed). For custom providers not in the registry, build from the
 base classes with `createProvider`-style config via the base-URL override.
+
+> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> providers; Anthropic/Google/multimodal/local → typed factories
+> (`anthropic(apiKey, model)`); custom endpoints → `baseUrl` override.
+> Full list: [providers.md](providers.md).
 
 ## Desktop and Electron compatibility
 

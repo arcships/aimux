@@ -1,7 +1,7 @@
 # aimux-go
 
 Go bindings for [aimux](https://github.com/arcships/aimux) — a unified LLM
-access layer for 172+ AI providers, built on a Rust core.
+access layer for 325 AI providers, built on a Rust core.
 
 ## Install
 
@@ -54,7 +54,7 @@ func main() {
 ## Features
 
 - Typed API for text, streaming, embeddings, tools, images, speech, and more
-- One API for 172+ providers (OpenAI, Anthropic, Google, Bedrock, …)
+- One API for 325 providers (OpenAI, Anthropic, Google, Bedrock, …)
 - Single static binary — the Rust core is linked in, no runtime deps
 
 See the [API docs](https://github.com/arcships/aimux/blob/master/docs/API.md)

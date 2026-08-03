@@ -1,4 +1,4 @@
-﻿//! Google Gemini language model — implements `LanguageModel`.
+//! Google Gemini language model — implements `LanguageModel`.
 
 use std::collections::HashMap;
 
@@ -14,7 +14,9 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed};
+use aimux_provider_utils::{
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+};
 use aimux_stream::SseStream;
 
 use super::GoogleConfig;
@@ -365,6 +367,10 @@ impl LanguageModel for GoogleModel {
                                         .unwrap_or_else(|| format!("call-{}", block_counter));
                                     block_counter += 1;
                                     let args = fc.get("args").cloned().unwrap_or(json!({}));
+                                    let thought_signature = part
+                                        .get("thoughtSignature")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string());
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -387,6 +393,7 @@ impl LanguageModel for GoogleModel {
                                         input: args,
                                         provider_executed: None,
                                         dynamic: None,
+                                        thought_signature,
                                         provider_metadata: None,
                                     });
                                     has_tool_calls = true;
@@ -407,6 +414,7 @@ impl LanguageModel for GoogleModel {
                                             input: ec.clone(),
                                             provider_executed: None,
                                             dynamic: None,
+                                            thought_signature: None,
                                             provider_metadata: None,
                                         });
                                         // provider-executed → does NOT set has_tool_calls
@@ -454,6 +462,7 @@ impl LanguageModel for GoogleModel {
                                         input: args,
                                         provider_executed: None,
                                         dynamic: None,
+                                        thought_signature: None,
                                         provider_metadata: None,
                                     });
                                     // provider-executed → does NOT set has_tool_calls
@@ -591,12 +600,17 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     .unwrap_or("")
                     .to_string();
                 let input = fc.get("args").cloned().unwrap_or(json!({}));
+                let thought_signature = part
+                    .get("thoughtSignature")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: name,
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature,
                     provider_metadata: None,
                 });
                 has_tool_calls = true;
@@ -615,6 +629,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                         input: ec.clone(),
                         provider_executed: None,
                         dynamic: None,
+                        thought_signature: None,
                         provider_metadata: None,
                     });
                     // provider-executed → does NOT set has_tool_calls
@@ -637,6 +652,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     input,
                     provider_executed: None,
                     dynamic: None,
+                    thought_signature: None,
                     provider_metadata: None,
                 });
                 // provider-executed → does NOT set has_tool_calls

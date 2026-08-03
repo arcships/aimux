@@ -99,6 +99,11 @@ pub enum ContentPart {
         tool_name: String,
         /// Arguments as a JSON value (usually an object).
         input: Value,
+        /// Provider-assigned thought signature (e.g. Google Gemini
+        /// `thoughtSignature`). Must be echoed back verbatim on the follow-up
+        /// turn when the tool result is sent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -156,6 +161,7 @@ impl ContentPart {
             tool_call_id: tool_call_id.into(),
             tool_name: tool_name.into(),
             input,
+            thought_signature: None,
             provider_options: None,
         }
     }

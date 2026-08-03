@@ -1,4 +1,4 @@
-﻿//! Azure OpenAI Responses API language model.
+//! Azure OpenAI Responses API language model.
 //!
 //! Implements the [`LanguageModel`] trait against the Azure OpenAI
 //! `/responses` endpoint. Azure speaks the same Responses API wire format as
@@ -37,8 +37,8 @@ use aimux_core::result::{GenerateResult, StreamResult};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_timed, send_stream_timed, with_user_agent_suffix,
-    without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+    with_user_agent_suffix, without_trailing_slash,
 };
 use aimux_stream::SseStream;
 

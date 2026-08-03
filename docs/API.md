@@ -1,6 +1,6 @@
 # aimux API Documentation
 
-> Unified LLM service access layer — one API to access 172+ AI providers
+> Unified LLM service access layer — one API to access 325 AI providers
 
 ## Table of Contents
 
@@ -51,24 +51,31 @@ language guide and follow its Quick Start:
 [C/C++](api/c.md#quick-start) · [Swift](api/swift.md#quick-start) ·
 [Kotlin](api/kotlin.md#quick-start) · [Flutter/Dart](api/flutter.md#quick-start)
 
-## Built-in Providers (RFC-0017 phase 4)
+## Providers
 
-All 250 built-in OpenAI-compatible providers are registry-backed
-(`provider-registry.json` is the single source of truth). Every binding exposes
-a unified `provider(name, ...)` entry point — the per-provider shell types
-(`GroqConfig`/`DeepSeekProvider` etc.) were retired in phase 4:
+### Native protocols
+
+OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI,
+Anthropic-AWS — one constructor per provider: `openai(apiKey, model, baseUrl?)`
+/ `anthropic(apiKey, model, baseUrl?)` (Node, Python), `NewOpenAI(apiKey,
+model)` (Go), `Model.openai(apiKey, modelId)` (Java, Kotlin, Flutter),
+`Aimux.openai(apiKey:modelId:)` (Swift), `OpenAIProvider::new(..)` (Rust).
+Multimodal, local-inference and search providers have their own constructors
+too — full list: [reference.md](api/reference.md).
+
+### OpenAI-compatible (250)
+
+One function in every binding:
 
 ```text
 provider(name, api_key?, model_id, config?)   // all languages
-  name     — registry name; 推荐使用类型化 ProviderName（见下），字符串同样可用
-  api_key  — optional; omitted/None reads the provider's env var from the registry
+  name     — provider name; 推荐使用类型化 ProviderName（见下），字符串同样可用
+  api_key  — optional; omitted/None reads the provider's env var
   config   — optional overrides (base_url / headers / maxRetries / body_overrides)
 ```
 
-- Unknown names fail with an error that lists the available providers.
-- **推荐写法**:`ProviderName` is generated from the registry (Rust enum, TS
-  const object, Go/Java/Kotlin consts, Swift enum, Dart consts) —
-  IDE-completable and typo-proof:
+- **ProviderName** (Rust enum, TS const object, Go/Java/Kotlin consts, Swift
+  enum, Dart consts) — IDE-completable and typo-proof:
 
   ```text
   Rust:   provider(ProviderName::Groq, ...)        TS:     provider(ProviderName.groq, ...)
@@ -78,9 +85,9 @@ provider(name, api_key?, model_id, config?)   // all languages
   ```
 
   字符串形式（`provider("groq", ...)`）在全部语言中同样可用——两种写法等价。
-- The native `openai` / `anthropic` / `deepseek` factories remain as shortcuts.
-- Custom/relay providers: build from the base classes (`OpenAIConfig` +
-  `OpenAIProvider` in Rust) or use the `base_url` override in `provider()`.
+- Full list (250, name / env var / base URL): [providers.md](api/providers.md)
+- Custom endpoint: registry name + `base_url` override, or the OpenAI
+  constructor with a base URL
 
 ## Features
 
@@ -105,7 +112,7 @@ Examples: [Node.js](api/node.md#text-generation) · [Python](api/python.md#text-
 | `reasoning` | `ReasoningEffort?` | Reasoning effort |
 | `max_retries` | `number?` | Per-call retry override; `0` disables retries (`None` = provider default, 2) |
 | `timeout` | `TimeoutConfiguration?` | Per-call timeouts (total / first-chunk / chunk idle) — see [Timeouts](#timeouts) |
-| `body_overrides` | `object?` | Per-call request-body overrides, deep-merged (RFC-0017); `null` values delete keys |
+| `body_overrides` | `object?` | Per-call request-body overrides, deep-merged; `null` values delete keys |
 | `headers` | `object?` | Extra HTTP headers |
 
 Node.js additionally accepts an `AbortSignal` as the 4th argument of
