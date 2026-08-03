@@ -174,6 +174,7 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 - ~~**H4** 多步工具循环~~ — 已移出:明确不做,见 [§7.5](#75-明确不做2026-08-02-决策)
 
 **中优先级:**
+> 逐项用户影响、范围修正与实施排序见 [§7.8](#78-中优先级缺口复审2026-08-02双-review-后逐项核定)(2026-08-02 核定:M6 缩窄为 proxy、M7 实锤差距、M11/M12 澄清、M13 拆分)
 - **M2** includeRawChunks — `StreamPart::Raw` 已定义但全仓 0 处 emit;`CallOptions` 无字段
 - **M3** logprobs 请求 — 仅响应侧解析([model.rs:363](../aimux-providers/src/openai/model.rs#L363)),请求体不写 `logprobs`/`top_logprobs`
 - **M6** 自定义 fetch / proxy — 仍是进程级共享 reqwest client
@@ -240,6 +241,37 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | S7 | first_chunk wiremock 测试实际测的是 header 延迟,注释误导 | P2 | 注释修正并指明 body-pending 路径由单测覆盖 |
 
 未采纳(记录):Node 多模态缺 signal→bridge TS 包装层(P2/nit,裸 napi 层已一致,包装层可后续补);`send_timed`/`send_stream_timed` 建连阶段显式 `select!{biased}` 替代 `tokio::time::timeout`(P2,当前内层先 poll 使 Aborted 赢,已文档化依赖)。
+
+### 7.8 中优先级缺口复审(2026-08-02,双 review 后逐项核定)
+
+> 本节对 §7.2 中优先级(M2–M13)逐项核定:用户影响、范围修正、实施建议。§7.2 保持起草原样;本节为排期依据。证据来源:Vercel AI SDK 官方文档(ai-sdk.dev)与 reqwest 0.12.28 源码。
+
+**范围修正(与起草时不同):**
+
+| # | 修正 | 证据 |
+|---|------|------|
+| M6 | **缩窄为 proxy 配置支持,不做自定义 fetch**——统一 Rust 请求是 aimux 定位,跨语言注入宿主 fetch 不现实 | — |
+| M6 | env 代理**已自动生效**:reqwest 默认 `auto_sys_proxy=true`,自动读 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY`;缺的是代码级 `ClientBuilder::proxy()`(显式 URL)、`Proxy::custom_http_auth`(代理认证)、`NoProxy::from_string`(白名单)。实现面:provider-utils `build_client` 加 `ProxyConfig`,ProviderConfig 透传 | reqwest-0.12.28 client.rs:309/419、proxy.rs:255/317 |
+| M7 | **实锤差距**:Vercel `generateText` 返回**顶层**含 `reasoning`/`reasoningText`/`sources`/`files`/`responseMessages`——与多步 loop 无关(loop 专属字段是 `steps`/`finalStep`);aimux 只提 text/tool_calls | ai-sdk.dev generate-text 文档 Returns |
+| M11 | **澄清,非做错**:aimux streamText yield StreamPart 等价 Vercel `fullStream`(底层流,对标正确);缺的是上层聚合器(`.text`/`.reasoning`/usage 汇总)——core 已有 `StreamTextResult::text()`,Node 侧补齐即可 | — |
+| M12 | **澄清,非缺类型**:aimux 类型齐全;缺的是结构化 output 的**类型化路径**(SDK 层 parse + schema 校验 + 类型化返回)。可做纯绑定层(复用 generate_text + options 字段,§7.3 降级为类别①) | — |
+| M13 | **不全是 loop 的**:`onStart`/`onEnd`/`onFinish`/`onLanguageModelCallStart`/`onLanguageModelCallEnd` **单步 generateText 就有**;仅 `onStepStart`/`onStepEnd`/`onStepFinish`/`onToolExecution*` 依赖 step/tool(与 H4 一并排除) | ai-sdk.dev generate-text 文档 callbacks |
+
+**用户影响与实施排序:**
+
+| 排序 | # | 用户影响 | 阻塞性 | 实施建议 |
+|------|---|---------|--------|---------|
+| 第一批 | M3 | logprobs 是 opt-in,不请求永不返回;`provider_options.logprobs` 被白名单**静默丢弃**(唯一"悄悄不生效"点);`body_overrides` 可绕过 | 功能性 | 白名单加 `logprobs`/`top_logprobs`(顺带修静默丢弃) |
+| 第一批 | M10 | provider 原始 usage 的厂商专属字段全丢(审计/计费核对场景) | 中等 | `convert_usage` 的 `raw: None` → `Some(usage)`;流式 raw usage 同步(一行级) |
+| 第一批 | M9(流式) | 流式 warnings 恒空,不支持参数提示被吞(非流式已透传) | 低 | `StreamStart{warnings}` 接线(一行级) |
+| 第一批 | M2 | 调试型用户拿不到原始 SSE chunk;TS 编译期可见(迁移友好);普通用户零影响 | 低 | 需设计 Raw emit 形态(整行/累积 delta),工作量最大 |
+| 第二批 | M7 | reasoning/files/sources 要翻 raw.content;多轮对话手工拼 assistant messages(易错) | 实际痛点 | core 结果结构 + binding 透传(类别①),responseMessages 优先 |
+| 第二批 | M6(proxy) | 企业 mTLS/自签证书场景 TLS 失败无法注入;env 已覆盖 80% 场景 | 特定场景硬阻塞 | `ProxyConfig` + ProviderConfig 透传;TLS 证书注入另议 |
+| 第二批 | M12 | response_format 可用,缺 parse/校验/类型化便利 | DX/安全 | 纯绑定层 generateObject |
+| 第二批 | M11 | 流式聚合样板代码 | DX | Node 便利函数 |
+| 最后 | M13 | 埋点/耗时自包(流式可自推断) | DX/可观测性 | 需宿主回调注册(类别②,全 wrapper 成本最高);只做 onStart/onEnd/onFinish |
+
+**下一步建议**:第一批(M3→M10→M9→M2)与第二批(M7→M6→M12→M11)均不碰 FFI wire(类别①/③/④),可走与 H1/H3 相同的双 agent review 流程。
 
 ### 7.5 明确不做(2026-08-02 决策)
 
