@@ -5,6 +5,20 @@
 Swift wraps the Rust core through the `aimux-ffi` C ABI (module `CAimuxFFI`),
 with ARC-managed model handles.
 
+## Install
+
+Add the package via SPM (the git tag is the version):
+
+```swift
+.package(url: "https://github.com/arcships/aimux", from: "0.2.0"),
+.target(name: "Aimux", dependencies: ["Aimux"])
+```
+
+The binding loads `libaimux_ffi.dylib` at runtime — make it available via
+pkg-config (`aimux-ffi.pc`) or put the prebuilt library from
+[GitHub Releases](https://github.com/arcships/aimux/releases) on the loader
+path (`DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH`).
+
 ## Quick Start
 
 ```swift

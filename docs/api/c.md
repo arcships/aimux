@@ -5,6 +5,19 @@
 Shared reference — feature descriptions, factory functions, and the coverage
 matrix — lives in the [API overview](../API.md).
 
+## Install
+
+Get `aimux-ffi.h` + the platform shared library from
+[GitHub Releases](https://github.com/arcships/aimux/releases)
+(`libaimux_ffi-linux-x64.so` / `libaimux_ffi-macos-arm64.dylib` /
+`aimux_ffi-windows-x64.dll`), then link against it:
+
+```bash
+gcc -o example example.c -L. -laimux_ffi -lpthread -ldl -lm   # Linux
+```
+
+Header: [aimux-ffi.h](../../aimux-ffi/aimux-ffi.h).
+
 ## Quick Start
 
 ```c

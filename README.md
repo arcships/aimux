@@ -215,16 +215,16 @@ Full list: [rfc/0004-provider-inventory.md](rfc/0004-provider-inventory.md).
 
 aimux ships 8 bindings that share the same Rust core:
 
-| Binding | Path | Tool | Package | Directory |
-|---------|------|------|---------|-----------|
-| **Node.js** | native | napi-rs v3 | `@arcships/aimux` on [npm](https://www.npmjs.com/package/@arcships/aimux) | [bindings/node/](bindings/node/) |
-| **Python** | native | PyO3 + maturin | `arcships-aimux` on PyPI (pending) | [bindings/python/](bindings/python/) |
-| **Swift** | C ABI | Swift Package | SPM (pending) | [bindings/swift/](bindings/swift/) |
-| **Kotlin** | C ABI | JNA | `io.aimux:aimux-kotlin` on Maven Central (pending) | [bindings/kotlin/](bindings/kotlin/) |
-| **Flutter** | C ABI | dart:ffi | pub.dev (pending) | [bindings/flutter/](bindings/flutter/) |
-| **Go** | C ABI | cgo (static link, single binary) | GitHub Release `.a` | [bindings/go/](bindings/go/) |
-| **Java** | C ABI | JNA | `io.aimux:aimux-java` on Maven Central (pending) | [bindings/java/](bindings/java/) |
-| **C / C++** | C ABI | direct link | GitHub Release shared libs | [bindings/c/](bindings/c/) |
+| Binding | Path | Tool | Get it | Native library |
+|---------|------|------|--------|---------------|
+| **Node.js** | native | napi-rs v3 | `npm install @arcships/aimux` — [npm](https://www.npmjs.com/package/@arcships/aimux) | bundled in the package, nothing to do |
+| **Python** | native | PyO3 + maturin | `pip install arcships-aimux` — [PyPI](https://pypi.org/project/arcships-aimux/) | bundled in the wheel, nothing to do |
+| **Go** | C ABI | cgo (static link) | `go get github.com/arcships/aimux/bindings/go` then `go generate` | auto-downloaded `.a` from [GitHub Releases](https://github.com/arcships/aimux/releases) |
+| **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.2.0"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
+| **Kotlin** | C ABI | JNA | `io.aimux:aimux-kotlin` — Maven Central (publishing) | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
+| **Java** | C ABI | JNA | `io.aimux:aimux-java` — Maven Central (publishing) | same as Kotlin — see [guide](docs/api/java.md#install) |
+| **Flutter** | C ABI | dart:ffi | pub.dev (pending) | platform library, see [guide](docs/api/flutter.md#install) |
+| **C / C++** | C ABI | direct link | `.so`/`.dylib`/`.dll` + `aimux-ffi.h` from [GitHub Releases](https://github.com/arcships/aimux/releases) | link against it — see [guide](docs/api/c.md#install) |
 
 See [bindings/README.md](bindings/README.md) and the [API docs](docs/API.md).
 
