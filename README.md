@@ -13,6 +13,10 @@
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
+[![PyPI](https://img.shields.io/pypi/v/arcships-aimux)](https://pypi.org/project/arcships-aimux/)
+[![Go Reference](https://pkg.go.dev/badge/github.com/arcships/aimux/bindings/go.svg)](https://pkg.go.dev/github.com/arcships/aimux/bindings/go)
+[![GitHub Release](https://img.shields.io/github/v/release/arcships/aimux)](https://github.com/arcships/aimux/releases)
+[![Maven Central](https://img.shields.io/maven-central/v/io.aimux/aimux-java)](https://central.sonatype.com/artifact/io.aimux/aimux-java)
 
 aimux is a Rust implementation of a unified LLM provider access layer. It
 collapses the HTTP APIs of every AI provider into a single
