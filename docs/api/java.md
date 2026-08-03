@@ -3,9 +3,22 @@
 > Unified LLM service access layer — one API to access 325 AI providers
 
 The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
-toolchain is needed at build time, and the native library ships as per-platform
-classifier JARs. Artifact: `io.aimux:aimux-java:0.2.0`, Java 8+ (compiled with
-`--release 8`). See [RFC-0013](../../rfc/0013-java-bindings.md) for the design.
+toolchain is needed at build time. Artifact: `io.aimux:aimux-java:0.2.0`,
+Java 8+ (compiled with `--release 8`). See [RFC-0013](../../rfc/0013-java-bindings.md)
+for the design.
+
+## Install
+
+Maven Central (publishing):
+
+```groovy
+implementation("io.aimux:aimux-java:0.2.0")
+```
+
+JNA loads `aimux_ffi` by name — provide the native library
+(`libaimux_ffi.so` / `libaimux_ffi.dylib` / `aimux_ffi.dll`) from
+[GitHub Releases](https://github.com/arcships/aimux/releases) on the JNA search
+path (`-Djava.library.path=...` or `LD_LIBRARY_PATH`).
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).

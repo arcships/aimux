@@ -10,6 +10,17 @@ for the design.
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
 
+## Install
+
+```bash
+go get github.com/arcships/aimux/bindings/go
+go generate github.com/arcships/aimux/bindings/go   # downloads libaimux_ffi.a for your platform
+go build ./...
+```
+
+Details (version pinning, unsupported platforms):
+[bindings/go/README.md](../../bindings/go/README.md).
+
 ## Quick Start
 
 ```go

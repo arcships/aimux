@@ -4,6 +4,20 @@
 
 Flutter/Dart wraps the Rust core through the `aimux-ffi` C ABI (via `dart:ffi`).
 
+## Install
+
+pub.dev (pending). Until published, depend on the path:
+
+```yaml
+dependencies:
+  aimux:
+    path: bindings/flutter
+```
+
+The binding loads the platform library at runtime
+(`libaimux_ffi.so` / `libaimux_ffi.dylib` / `aimux_ffi.dll`) — ship it with
+your app or place it where the loader can find it.
+
 ## Quick Start
 
 ```dart
