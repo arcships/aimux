@@ -75,23 +75,11 @@ provider(name, api_key?, model_id, config?)   // all languages
   ```
 
   字符串形式（`provider("groq", ...)`）在全部语言中同样可用——两种写法等价。
-#### Scope: what `provider(name, ...)` covers — and what it doesn't
+#### Scope
 
-`provider(name, ...)` covers **only** the 250 registry-backed OpenAI-compatible
-providers (`ProviderName` lists them). Any other name fails with
-`UnknownProvider` — use the typed factories:
-
-| Your provider | How to construct it |
-|---|---|
-| In the `ProviderName` list (250 OpenAI-compatible) | `provider(name, ...)` / `ProviderName.*` |
-| **Native protocols**: OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, Anthropic-AWS | Typed factories — Rust: `AnthropicProvider::new(AnthropicConfig::new(key)).model(..)`; Node/Python/Go: `anthropic(apiKey, model)` |
-| **Multimodal**: speech/transcription (ElevenLabs, Deepgram, AssemblyAI…), image/video (Black Forest Labs, Replicate, KlingAI…), embeddings (Voyage) | The binding's modality factories — see [Provider Factory Functions](#provider-factory-functions) and the [language guides](#language-guides) |
-| **Local inference**: Ollama, vLLM, SGLang, Llama.cpp, LM Studio… | Typed factories — Rust: `OllamaProvider::new(..)`; equivalents exist per binding |
-| **Custom / relay endpoint** (OpenAI-compatible) | Either ① reuse a registry name + `base_url` override in `provider()`, or ② the OpenAI typed path — Rust: `OpenAIConfig::new(key).with_base_url(url)`; Node/Python: `openai(apiKey, model, baseUrl)` |
-
-Full provider list (all 325, with entry points): [providers.md](api/providers.md).
-Type & function lookup: [reference.md](api/reference.md). The `openai()` /
-`anthropic()` shortcuts are the native path; `deepseek()` is registry-backed.
+- **OpenAI-compatible** (250): `provider(name, ...)` — list: [providers.md](api/providers.md)
+- **Others** (native protocols, multimodal, local inference): per-provider constructors — lookup: [reference.md](api/reference.md)
+- **Custom endpoint**: registry name + `base_url` override, or the OpenAI constructor with a base URL
 
 ## Features
 

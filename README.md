@@ -193,14 +193,9 @@ in every binding, with typed `ProviderName` (enum/union/consts per language).
 The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
 see [docs/API.md](docs/API.md#built-in-providers).
 
-> **Scope note:** `provider(name, ...)` covers exactly those 250
-> OpenAI-compatible providers. Native protocols (Anthropic, Google, Bedrock,
-> …), multimodal providers (ElevenLabs, Deepgram, …) and local inference
-> (Ollama, vLLM, …) are **not** name-addressable — they keep their dedicated
-> typed factories (`AnthropicProvider`, `OllamaProvider`, …). Custom
-> OpenAI-compatible endpoints: reuse a registry name with a `base_url`
-> override, or the OpenAI typed path. See
-> [docs/API.md — Scope](docs/API.md#built-in-providers).
+> **Scope:** OpenAI-compatible → `provider(name, ...)`; others (Anthropic,
+> multimodal, local…) → their constructors. List:
+> [docs/api/providers.md](docs/api/providers.md).
 
 ## Provider coverage
 
