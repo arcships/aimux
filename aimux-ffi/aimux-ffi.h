@@ -273,6 +273,14 @@ uint64_t aimux_tavily_search_new(const char *api_key, const char *model_id);
 uint64_t aimux_tavily_search_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_search(uint64_t handle, const char *opts_json);
 
+/* Codex (RFC-0018) */
+
+/* Refresh a Codex subscription access token (stateless OAuth helper).
+   Returns JSON {"access_token","refresh_token","expires_in_secs"} or error
+   JSON; caller frees with aimux_free_string. Caller owns token persistence
+   and the 401 -> refresh -> retry orchestration. */
+char *aimux_codex_refresh(const char *refresh_token, const char *client_id);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

@@ -23,6 +23,7 @@ pub mod openai;
 pub mod vertex;
 pub mod voyage;
 
+pub mod codex;
 pub mod openrouter;
 pub mod xai;
 
@@ -100,6 +101,11 @@ pub use vertex::{
 };
 pub use voyage::{VoyageConfig, VoyageEmbeddingModel, VoyageProvider};
 
+pub use codex::{
+    CODEX_API_BASE_URL, CODEX_API_KEY_ENV_VAR, CODEX_OAUTH_TOKEN_URL, CODEX_SUBSCRIPTION_BASE_URL,
+    CodexConfig, CodexMode, CodexModel, CodexProvider, CodexTokens, codex_refresh,
+    codex_refresh_at,
+};
 pub use openrouter::{OpenRouterConfig, OpenRouterProvider};
 pub use xai::{XAIConfig, XAIProvider};
 
