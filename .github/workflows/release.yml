@@ -371,6 +371,13 @@ jobs:
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     steps:
       - uses: actions/checkout@v4
+      # workflow_dispatch runs have no tag ref; resolve it from Cargo.toml so
+      # softprops/action-gh-release can target the right tag either way.
+      - name: Resolve version
+        id: version
+        run: |
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -381,5 +388,6 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: release-assets/**
           generate_release_notes: true
