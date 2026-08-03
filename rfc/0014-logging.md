@@ -44,7 +44,7 @@
 2. **零成本关闭**：默认关闭时，每个事件开销 = 一次原子读 + 分支（`tracing` 的 max-level 过滤）。LLM 调用是网络绑定（数十 ms+），tracing 开销（纳秒级）是噪声。
 3. **可配置**：env 变量 + 编程 API + C ABI 三种入口，覆盖纯 Rust 消费者、原生绑定（Python/Node）、FFI 绑定（Swift/Kotlin/C）。
 4. **隐私安全**：API key、header 值、用户请求体绝不默认落日志。
-5. **集中埋点**：在 HTTP 咽喉点统一埋点，而非 172 个 provider 各打各的。
+5. **集中埋点**：在 HTTP 咽喉点统一埋点，而非 250 个 registry provider 各打各的。
 
 ### 2.2 非目标
 
@@ -78,7 +78,7 @@ aimux 是**库**，不是二进制。但被两种方式消费：
 
 ### 3.3 埋点位置：HTTP 咽喉点集中化
 
-所有 172 provider 汇流到 `aimux-provider-utils/src/http.rs` 的三个函数：
+所有 registry provider（当前 250 个）汇流到 `aimux-provider-utils/src/http.rs` 的三个函数：
 
 ```
 send()            → send_with_retry_raw()  → send_request()   (非流式)
@@ -86,7 +86,7 @@ send_stream()     → send_with_retry_raw()  → send_request()   (流式)
 ```
 
 **只在这层埋点**，不在每个 provider 重复。这保证：
-- 172 provider 自动获得一致的日志，无需逐个改造
+- 所有 provider 自动获得一致的日志，无需逐个改造
 - retry/timeout 逻辑（RFC-0009）的观测点与实现同处一文件，不会漂移
 
 ### 3.4 性能预算
@@ -222,7 +222,7 @@ generate_text / stream_text          [aimux-core/generate.rs]
 
 1. ~~**是否需要 feature gate**~~：**已解决 (2026-08-03)**——不 gate。`tracing-subscriber` 只进 `aimux-provider-utils`（core 零新增依赖），嵌入场景可依赖排除该 crate 或接受 ~1s 编译增量；逃生口保留为未来选项。
 2. ~~**span 字段命名**~~：**已解决**——扁平 `provider`/`model`/`modality`，与 `tracing` 惯例一致。
-3. ~~**是否在本 RFC 一并加 `#[instrument]` 到各 provider 的 `do_generate`**~~：**已解决**——阶段 1/2 均不做（172 provider 改造成本高），http 层 + core 顶层已覆盖核心信息。
+3. ~~**是否在本 RFC 一并加 `#[instrument]` 到各 provider 的 `do_generate`**~~：**已解决**——阶段 1/2 均不做（250 个 provider 改造成本高），http 层 + core 顶层已覆盖核心信息。
 
 ---
 
