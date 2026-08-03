@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "aimux"
+name = "arcships-aimux"
 version = "0.2.0"
 description = "Unified LLM service layer for Python (Rust core, 325 providers)"
 readme = "README.md"

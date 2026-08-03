@@ -218,7 +218,7 @@ aimux ships 8 bindings that share the same Rust core:
 | Binding | Path | Tool | Package | Directory |
 |---------|------|------|---------|-----------|
 | **Node.js** | native | napi-rs v3 | `@arcships/aimux` on [npm](https://www.npmjs.com/package/@arcships/aimux) | [bindings/node/](bindings/node/) |
-| **Python** | native | PyO3 + maturin | `aimux` on PyPI (pending) | [bindings/python/](bindings/python/) |
+| **Python** | native | PyO3 + maturin | `arcships-aimux` on PyPI (pending) | [bindings/python/](bindings/python/) |
 | **Swift** | C ABI | Swift Package | SPM (pending) | [bindings/swift/](bindings/swift/) |
 | **Kotlin** | C ABI | JNA | `io.aimux:aimux-kotlin` on Maven Central (pending) | [bindings/kotlin/](bindings/kotlin/) |
 | **Flutter** | C ABI | dart:ffi | pub.dev (pending) | [bindings/flutter/](bindings/flutter/) |

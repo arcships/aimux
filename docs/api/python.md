@@ -8,7 +8,7 @@ feature coverage matrix — lives in the [API overview](../API.md).
 ## Quick Start
 
 ```bash
-pip install aimux
+pip install arcships-aimux
 ```
 
 ```python

@@ -34,7 +34,9 @@
    - 登录 https://pypi.org/ → 右上角头像 → **Account settings** → **Publishing** 区
      → **Add a new publisher**。
    - 填写（**逐字匹配，不能错**）：
-     - Distribution project name：`aimux`
+     - Distribution project name：`arcships-aimux`（PyPI 上 `aimux` 已被其他项目占用；
+       `@arcships/aimux` 这种 npm 格式 PyPI 不允许。发行名 ≠ import 名：安装
+       `pip install arcships-aimux`，代码里仍是 `from aimux import ...`）
      - GitHub owner：`arcships`
      - GitHub repository：`aimux`
      - Workflow name：`release.yml`
@@ -43,7 +45,7 @@
 
 3. **验证**
    - 触发发布：`gh workflow run release.yml --ref master -f python=true`
-   - 成功后 `pip install aimux==0.2.0` 可安装。
+   - 成功后 `pip install arcships-aimux==0.2.0` 可安装（import 仍是 `from aimux import ...`）。
 
 > 不需要 PyPI API token，也不需要改 workflow。
 

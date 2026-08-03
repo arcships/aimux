@@ -7,7 +7,7 @@ core.
 ## Install
 
 ```bash
-pip install aimux
+pip install arcships-aimux
 ```
 
 Pre-built wheels for Linux, macOS, and Windows (Python ≥ 3.8). No Rust

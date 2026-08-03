@@ -336,7 +336,7 @@ const deepseekModel = await deepseek(DEEPSEEK_API_KEY, 'deepseek-chat')
 ### Python
 
 ```bash
-pip install aimux
+pip install arcships-aimux
 ```
 
 ```python
