@@ -26,7 +26,6 @@
 // design: the C ABI contract requires callers to pass valid pointers (see
 // memory-ownership docs above), so the functions are safe only on the C side.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -102,19 +101,6 @@ fn intern_handle(h: ModelHandle) -> u64 {
         .expect("aimux-ffi: registry mutex poisoned")
         .insert(handle, h);
     handle
-}
-
-/// Uniform constructor exit (issue #17): on success register the model and
-/// return its handle; on failure record the error in the thread-local slot
-/// (see [`aimux_last_error`]) and return 0.
-fn intern_or_record_lang(result: Result<Box<dyn LanguageModel>, AiMuxError>) -> u64 {
-    match result {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => {
-            record_error(&e);
-            0
-        }
-    }
 }
 
 /// Look up a model by handle, cloning the `Arc` out of the registry.
@@ -203,77 +189,41 @@ fn into_cstring_raw(s: String) -> *mut c_char {
         .unwrap_or(std::ptr::null_mut())
 }
 
-/// Build an error JSON envelope string.
-///
-/// Output: `{"error":"<message>","error_type":"<variant>","status_code":<u16|null>}`
-fn raw_error_json_string(msg: impl std::fmt::Display) -> String {
+/// Build the error envelope every FFI error path returns:
+/// `{"error":"<message>","error_type":"<variant>","status_code":<u16|null>}`.
+fn error_json(msg: impl std::fmt::Display, error_type: &str, status_code: Option<u16>) -> String {
     serde_json::json!({
         "error": msg.to_string(),
-        "error_type": "Other",
-        "status_code": null,
+        "error_type": error_type,
+        "status_code": status_code,
     })
     .to_string()
 }
 
-/// Build an error JSON envelope string from an `AiMuxError`, preserving the
-/// variant name and HTTP status code for programmatic use by bindings.
-fn error_json_string(err: &AiMuxError) -> String {
-    serde_json::json!({
-        "error": err.to_string(),
-        "error_type": err.error_type(),
-        "status_code": err.status_code(),
-    })
-    .to_string()
-}
-
-/// Build an error JSON string with error type, message, and optional status code.
-///
-/// Output: `{"error":"<message>","error_type":"<variant>","status_code":<u16|null>}`
+/// Build an owned error JSON string for a plain message (`error_type: "Other"`).
 fn error_json_raw(msg: impl std::fmt::Display) -> *mut c_char {
-    into_cstring_raw(raw_error_json_string(msg))
+    into_cstring_raw(error_json(msg, "Other", None))
 }
 
 /// Build an error JSON string from an `AiMuxError`, preserving the variant
 /// name and HTTP status code for programmatic use by bindings.
 fn error_json_from(err: &AiMuxError) -> *mut c_char {
-    into_cstring_raw(error_json_string(err))
+    into_cstring_raw(error_json(err, err.error_type(), err.status_code()))
 }
 
-// Thread-local last-constructor-error slot (issue #17).
-//
-// Constructors return a bare `u64` handle with `0` reserved for failure, so
-// they have no error channel of their own; failures record the full error
-// JSON envelope here and callers read it back with `aimux_last_error`.
-// Always stores a JSON envelope (never plain text) so bindings can parse
-// every value with their existing envelope parser.
-thread_local! {
-    static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
+/// Build the success envelope every constructor returns: `{"handle":<u64>}`.
+/// `handle` is always >0 (0 is never interned).
+fn handle_json(handle: u64) -> *mut c_char {
+    into_cstring_raw(serde_json::json!({ "handle": handle }).to_string())
 }
 
-/// Must be called at the entry of every constructor: clears any stale error
-/// left on this thread by a previous failed constructor.
-fn begin_constructor() {
-    LAST_ERROR.with(|slot| *slot.borrow_mut() = None);
-}
+/// Recorded when a constructor's C-string arguments are null or not UTF-8.
+const INVALID_ARGS: &str = "missing or invalid required argument(s): null or invalid UTF-8";
 
-/// Record a constructor failure as an `AiMuxError` envelope.
-fn record_error(err: &AiMuxError) {
-    LAST_ERROR.with(|slot| *slot.borrow_mut() = Some(error_json_string(err)));
-}
-
-/// Record a synthetic constructor failure (null / invalid-UTF-8 arguments,
-/// config JSON parse errors) as an envelope with the given error type.
-fn record_error_msg(msg: impl std::fmt::Display, error_type: &str) {
-    LAST_ERROR.with(|slot| {
-        *slot.borrow_mut() = Some(
-            serde_json::json!({
-                "error": msg.to_string(),
-                "error_type": error_type,
-                "status_code": null,
-            })
-            .to_string(),
-        )
-    });
+/// Error envelope for null / invalid-UTF-8 constructor arguments
+/// (`error_type: "InvalidArgument"`).
+fn invalid_args_json() -> *mut c_char {
+    into_cstring_raw(error_json(INVALID_ARGS, "InvalidArgument", None))
 }
 
 /// Invoke the `on_error` callback with an error JSON string.
@@ -281,14 +231,14 @@ fn record_error_msg(msg: impl std::fmt::Display, error_type: &str) {
 /// The pointer is valid only for the duration of the callback (no leak: the
 /// backing `CString` is freed when this function returns).
 fn fire_error(on_error: extern "C" fn(*const c_char), msg: impl std::fmt::Display) {
-    if let Ok(cstr) = CString::new(raw_error_json_string(msg)) {
+    if let Ok(cstr) = CString::new(error_json(msg, "Other", None)) {
         on_error(cstr.as_ptr());
     }
 }
 
 /// Like `fire_error` but preserves the `AiMuxError` variant name and status code.
 fn fire_error_struct(on_error: extern "C" fn(*const c_char), err: &AiMuxError) {
-    if let Ok(cstr) = CString::new(error_json_string(err)) {
+    if let Ok(cstr) = CString::new(error_json(err, err.error_type(), err.status_code())) {
         on_error(cstr.as_ptr());
     }
 }
@@ -359,100 +309,90 @@ fn parse_json_arg<T: DeserializeOwned>(json: *const c_char, name: &str) -> Resul
 // C ABI: provider constructors
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Create an OpenAI model instance, returning its opaque handle.
+/// Create an OpenAI model instance.
 ///
-/// Returns `0` on failure (null arguments or invalid model id).
+/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_openai_new(api_key: *const c_char, model_id: *const c_char) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id))
+    match OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create an OpenAI model instance with a custom base URL.
 ///
 /// `base_url` may be null (defaults to the provider's standard URL).
-/// Returns `0` on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(OpenAIProvider::new(config).language_model(&model_id))
+    match OpenAIProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
-/// Create an Anthropic model instance, returning its opaque handle.
+/// Create an Anthropic model instance.
 ///
-/// Returns `0` on failure (null arguments or invalid model id).
+/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_anthropic_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_anthropic_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(
-        AnthropicProvider::new(AnthropicConfig::new(api_key)).language_model(&model_id),
-    )
+    match AnthropicProvider::new(AnthropicConfig::new(api_key)).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create an Anthropic model instance with a custom base URL.
 ///
 /// `base_url` may be null (defaults to the provider's standard URL).
-/// Returns `0` on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_anthropic_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = AnthropicConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(AnthropicProvider::new(config).language_model(&model_id))
+    match AnthropicProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create an Anthropic-on-AWS model instance (API key + region).
-///
-/// Returns `0` on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_anthropic_aws_new(
     api_key: *const c_char,
     region: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(region),
@@ -462,16 +402,14 @@ pub extern "C" fn aimux_anthropic_aws_new(
         _ => None,
     };
     let Some((api_key, region, model_id)) = parsed else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(
-        AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
-            .language_model(&model_id),
-    )
+    match AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
+        .language_model(&model_id)
+    {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create an Anthropic-on-AWS model instance with a custom base URL.
@@ -481,8 +419,7 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
     region: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(region),
@@ -492,31 +429,29 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
         _ => None,
     };
     let Some((api_key, region, model_id)) = parsed else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(AnthropicAwsProvider::new(config).language_model(&model_id))
+    match AnthropicAwsProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create an Azure OpenAI model instance (API key + resource name).
 ///
-/// `api_version` may be null (uses the provider default). The deployment name
-/// is passed as `model_id`. Returns `0` on failure.
+/// `api_version` may be null (uses the provider default). The deployment
+/// name is passed as `model_id`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_azure_new(
     api_key: *const c_char,
     resource_name: *const c_char,
     deployment: *const c_char,
     api_version: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(resource_name),
@@ -526,11 +461,7 @@ pub extern "C" fn aimux_azure_new(
         _ => None,
     };
     let Some((api_key, resource_name, deployment)) = parsed else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = AzureConfig::new()
         .with_api_key(api_key)
@@ -538,21 +469,26 @@ pub extern "C" fn aimux_azure_new(
     if let Some(version) = parse_base_url(api_version) {
         config = config.with_api_version(version);
     }
-    intern_or_record_lang(AzureProvider::new(config).and_then(|p| p.language_model(&deployment)))
+    match AzureProvider::new(config) {
+        Ok(p) => match p.language_model(&deployment) {
+            Ok(m) => handle_json(intern_model(Arc::from(m))),
+            Err(e) => error_json_from(&e),
+        },
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create an Azure OpenAI model instance with a custom base URL.
 ///
-/// `api_version` may be null (uses the provider default). The deployment name
-/// is passed as `model_id`. Returns `0` on failure.
+/// `api_version` may be null (uses the provider default). The deployment
+/// name is passed as `model_id`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_azure_new_with_base(
     api_key: *const c_char,
     base_url: *const c_char,
     deployment: *const c_char,
     api_version: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(base_url),
@@ -562,11 +498,7 @@ pub extern "C" fn aimux_azure_new_with_base(
         _ => None,
     };
     let Some((api_key, base_url, deployment)) = parsed else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = AzureConfig::new()
         .with_api_key(api_key)
@@ -574,38 +506,40 @@ pub extern "C" fn aimux_azure_new_with_base(
     if let Some(version) = parse_base_url(api_version) {
         config = config.with_api_version(version);
     }
-    intern_or_record_lang(AzureProvider::new(config).and_then(|p| p.language_model(&deployment)))
+    match AzureProvider::new(config) {
+        Ok(p) => match p.language_model(&deployment) {
+            Ok(m) => handle_json(intern_model(Arc::from(m))),
+            Err(e) => error_json_from(&e),
+        },
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create a Bedrock model instance (AWS SigV4 credentials).
 ///
 /// `access_key_id` / `secret_access_key` / `region` are required.
-/// Returns `0` on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_bedrock_new(
     access_key_id: *const c_char,
     secret_access_key: *const c_char,
     region: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((access_key_id, secret_access_key, region, model_id)) =
         (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
     else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(
-        BedrockProvider::new(BedrockProviderConfig::new(
-            access_key_id,
-            secret_access_key,
-            region,
-        ))
-        .language_model(&model_id),
-    )
+    match BedrockProvider::new(BedrockProviderConfig::new(
+        access_key_id,
+        secret_access_key,
+        region,
+    ))
+    .language_model(&model_id)
+    {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create a Bedrock model instance with a custom base URL.
@@ -616,49 +550,43 @@ pub extern "C" fn aimux_bedrock_new_with_base(
     region: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((access_key_id, secret_access_key, region, model_id)) =
         (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
     else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(BedrockProvider::new(config).language_model(&model_id))
+    match BedrockProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create a Vertex AI model instance (GCP bearer token).
 ///
 /// `access_token` / `project` / `location` are required.
-/// Returns `0` on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_vertex_new(
     access_token: *const c_char,
     project: *const c_char,
     location: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((access_token, project, location, model_id)) =
         (unsafe { parse_four_args(access_token, project, location, model_id) })
     else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(
-        VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
-            .language_model(&model_id),
-    )
+    match VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
+        .language_model(&model_id)
+    {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create a Vertex AI model instance with a custom base URL.
@@ -669,38 +597,35 @@ pub extern "C" fn aimux_vertex_new_with_base(
     location: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((access_token, project, location, model_id)) =
         (unsafe { parse_four_args(access_token, project, location, model_id) })
     else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = VertexProviderConfig::new(access_token, project, location);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(VertexProvider::new(config).language_model(&model_id))
+    match VertexProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
-/// Create a Cohere model instance, returning its opaque handle.
+/// Create a Cohere model instance.
 ///
-/// Returns `0` on failure (null arguments or invalid model id).
+/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_cohere_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_cohere_new(api_key: *const c_char, model_id: *const c_char) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id))
+    match CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create a Cohere model instance with a custom base URL.
@@ -709,38 +634,36 @@ pub extern "C" fn aimux_cohere_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = CohereConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(CohereProvider::new(config).language_model(&model_id))
+    match CohereProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
-/// Create a Mistral model instance, returning its opaque handle.
+/// Create a Mistral model instance.
 ///
-/// Returns `0` on failure (null arguments or invalid model id).
+/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_mistral_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_mistral_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(
-        MistralProvider::new(MistralConfig::new(api_key)).language_model(&model_id),
-    )
+    match MistralProvider::new(MistralConfig::new(api_key)).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create a Mistral model instance with a custom base URL.
@@ -749,36 +672,33 @@ pub extern "C" fn aimux_mistral_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = MistralConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(MistralProvider::new(config).language_model(&model_id))
+    match MistralProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
-/// Create an xAI model instance, returning its opaque handle.
+/// Create an xAI model instance.
 ///
-/// Returns `0` on failure (null arguments or invalid model id).
+/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_xai_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_xai_new(api_key: *const c_char, model_id: *const c_char) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id))
+    match XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create an xAI model instance with a custom base URL.
@@ -787,20 +707,18 @@ pub extern "C" fn aimux_xai_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = XAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
-    intern_or_record_lang(XAIProvider::new(config).language_model(&model_id))
+    match XAIProvider::new(config).language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Create a language model from the registry by provider name (RFC-0017 phase 4).
@@ -813,29 +731,20 @@ pub extern "C" fn aimux_xai_new_with_base(
 ///   (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`);
 ///   NULL / empty / "null" for defaults.
 ///
-/// Returns the opaque handle (0 on failure: unknown provider, bad config,
-/// missing env key, or invalid model id).
+/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (unknown
+/// provider, bad config, missing env key, or invalid model id).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_new(
     name: *const c_char,
     api_key: *const c_char,
     model_id: *const c_char,
     config_json: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some(name) = cstr_to_string(name) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let Some(model_id) = cstr_to_string(model_id) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let key = cstr_to_string(api_key); // None => env var from registry entry
     let opts = match cstr_to_string(config_json) {
@@ -843,36 +752,39 @@ pub extern "C" fn aimux_provider_new(
             match serde_json::from_str::<ProviderOptions>(&s) {
                 Ok(o) => Some(o),
                 Err(e) => {
-                    record_error_msg(format!("invalid config_json: {e}"), "Json");
-                    return 0;
+                    return into_cstring_raw(error_json(
+                        format!("invalid config_json: {e}"),
+                        "Json",
+                        None,
+                    ));
                 }
             }
         }
         _ => None,
     };
-    intern_or_record_lang(provider(&name, key, &model_id, opts))
+    match provider(&name, key, &model_id, opts) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 /// Convenience: create a language model by provider name, reading the API key
-/// from the provider's env var. Returns `0` on failure.
+/// from the provider's env var.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_provider_from_env(name: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_provider_from_env(
+    name: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
     let Some(name) = cstr_to_string(name) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let Some(model_id) = cstr_to_string(model_id) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
-    intern_or_record_lang(provider(&name, None, &model_id, None))
+    match provider(&name, None, &model_id, None) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1034,44 +946,21 @@ pub unsafe extern "C" fn aimux_free_string(ptr: *mut c_char) {
     drop(unsafe { CString::from_raw(ptr) });
 }
 
-/// Take (read-and-clear) the last constructor error recorded on this thread.
-///
-/// - Returns the error JSON envelope `{"error","error_type","status_code"}`
-///   from the most recent failed constructor on this thread, or NULL if the
-///   most recent constructor call succeeded.
-/// - The returned pointer is owned by the caller and MUST be freed with
-///   [`aimux_free_string`].
-/// - Destructive read: a second call returns NULL.
-/// - Must be called on the same OS thread as the failed constructor,
-///   immediately after it returned 0. Bindings whose runtime can migrate
-///   work between OS threads (Go goroutines, Java virtual threads, Kotlin
-///   coroutines) must pin both calls to one thread.
-#[unsafe(no_mangle)]
-pub extern "C" fn aimux_last_error() -> *mut c_char {
-    let s = LAST_ERROR.with(|slot| slot.borrow_mut().take());
-    s.map(into_cstring_raw).unwrap_or(std::ptr::null_mut())
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // C ABI: Embedding
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Create an OpenAI embedding model instance. Returns 0 on failure.
+/// Create an OpenAI embedding model instance.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1079,38 +968,28 @@ pub extern "C" fn aimux_openai_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_cohere_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1118,38 +997,28 @@ pub extern "C" fn aimux_cohere_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = CohereConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = CohereProvider::new(config).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1157,21 +1026,16 @@ pub extern "C" fn aimux_google_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = GoogleConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = GoogleProvider::new(config).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
 }
 
 /// Generate embeddings. `values_json` is a JSON array of strings.
@@ -1213,17 +1077,15 @@ pub extern "C" fn aimux_embed(
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_speech_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_openai_speech_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).speech(&model_id);
-    intern_handle(ModelHandle::Speech(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Speech(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1231,21 +1093,16 @@ pub extern "C" fn aimux_openai_speech_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).speech(&model_id);
-    intern_handle(ModelHandle::Speech(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Speech(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1267,17 +1124,15 @@ pub extern "C" fn aimux_speech_generate(handle: u64, opts_json: *const c_char) -
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_openai_image_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1285,35 +1140,28 @@ pub extern "C" fn aimux_openai_image_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_google_image_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_google_image_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1321,21 +1169,16 @@ pub extern "C" fn aimux_google_image_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = GoogleConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = GoogleProvider::new(config).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1360,17 +1203,12 @@ pub extern "C" fn aimux_image_generate(handle: u64, opts_json: *const c_char) ->
 pub extern "C" fn aimux_openai_transcription_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).transcription(&model_id);
-    intern_handle(ModelHandle::Transcription(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Transcription(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1378,21 +1216,16 @@ pub extern "C" fn aimux_openai_transcription_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).transcription(&model_id);
-    intern_handle(ModelHandle::Transcription(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Transcription(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1429,38 +1262,28 @@ pub extern "C" fn aimux_transcription_generate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_files_new(api_key: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_openai_files_new(api_key: *const c_char) -> *mut c_char {
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let files = OpenAIProvider::new(OpenAIConfig::new(api_key)).files();
-    intern_handle(ModelHandle::Files(Arc::new(files)))
+    handle_json(intern_handle(ModelHandle::Files(Arc::new(files))))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_files_new_with_base(
     api_key: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let files = OpenAIProvider::new(config).files();
-    intern_handle(ModelHandle::Files(Arc::new(files)))
+    handle_json(intern_handle(ModelHandle::Files(Arc::new(files))))
 }
 
 #[unsafe(no_mangle)]
@@ -1495,22 +1318,17 @@ pub extern "C" fn aimux_file_upload(
 // C ABI: Reranking
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Create a Cohere reranking model instance. Returns 0 on failure.
+/// Create a Cohere reranking model instance.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_cohere_reranking_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = CohereProvider::new(CohereConfig::new(api_key)).reranking_model(&model_id);
-    intern_handle(ModelHandle::Reranking(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Reranking(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1518,21 +1336,16 @@ pub extern "C" fn aimux_cohere_reranking_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = CohereConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = CohereProvider::new(config).reranking_model(&model_id);
-    intern_handle(ModelHandle::Reranking(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Reranking(Arc::new(model))))
 }
 
 /// Rerank documents. `opts_json` is JSON-serialized `RerankingCallOptions`
@@ -1556,19 +1369,17 @@ pub extern "C" fn aimux_rerank(handle: u64, opts_json: *const c_char) -> *mut c_
 // C ABI: Video
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Create a Google video model instance. Returns 0 on failure.
+/// Create a Google video model instance.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_google_video_new(api_key: *const c_char, model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_google_video_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).video(&model_id);
-    intern_handle(ModelHandle::Video(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Video(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1576,21 +1387,16 @@ pub extern "C" fn aimux_google_video_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = GoogleConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = GoogleProvider::new(config).video(&model_id);
-    intern_handle(ModelHandle::Video(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Video(Arc::new(model))))
 }
 
 /// Generate video. `opts_json` is JSON-serialized `VideoCallOptions`
@@ -1615,19 +1421,17 @@ pub extern "C" fn aimux_video_generate(handle: u64, opts_json: *const c_char) ->
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Create a Tavily search model instance. `model_id` is accepted for API
-/// symmetry but ignored (Tavily uses a fixed endpoint). Returns 0 on failure.
+/// symmetry but ignored (Tavily uses a fixed endpoint).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_tavily_search_new(api_key: *const c_char, _model_id: *const c_char) -> u64 {
-    begin_constructor();
+pub extern "C" fn aimux_tavily_search_new(
+    api_key: *const c_char,
+    _model_id: *const c_char,
+) -> *mut c_char {
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let model = TavilyProvider::new(TavilyConfig::new(api_key)).search_model();
-    intern_handle(ModelHandle::Search(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Search(Arc::new(model))))
 }
 
 #[unsafe(no_mangle)]
@@ -1635,21 +1439,16 @@ pub extern "C" fn aimux_tavily_search_new_with_base(
     api_key: *const c_char,
     _model_id: *const c_char,
     base_url: *const c_char,
-) -> u64 {
-    begin_constructor();
+) -> *mut c_char {
     let Some(api_key) = cstr_to_string(api_key) else {
-        record_error_msg(
-            "invalid argument: null or invalid UTF-8 string",
-            "InvalidArgument",
-        );
-        return 0;
+        return invalid_args_json();
     };
     let mut config = TavilyConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = TavilyProvider::new(config).search_model();
-    intern_handle(ModelHandle::Search(Arc::new(model)))
+    handle_json(intern_handle(ModelHandle::Search(Arc::new(model))))
 }
 
 /// Execute a search. `opts_json` is JSON-serialized `SearchCallOptions`

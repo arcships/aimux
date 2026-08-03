@@ -2,25 +2,66 @@
 //! (cohere / mistral / xai / bedrock / vertex / anthropic_aws / azure).
 //!
 //! Constructing a model only builds a config + provider — no network is
-//! touched, so fake keys are fine. A non-zero handle means the constructor
-//! wired the provider correctly.
+//! touched, so fake keys are fine. Constructors return a JSON string
+//! (`{"handle":<u64>}` on success, `{"error":...}` on failure).
 
 use std::ffi::CString;
+use std::os::raw::c_char;
 
 use aimux_ffi::{
     aimux_anthropic_aws_new, aimux_anthropic_aws_new_with_base, aimux_azure_new,
     aimux_azure_new_with_base, aimux_bedrock_new, aimux_bedrock_new_with_base, aimux_cohere_new,
-    aimux_cohere_new_with_base, aimux_drop_handle, aimux_mistral_new, aimux_mistral_new_with_base,
-    aimux_vertex_new, aimux_vertex_new_with_base, aimux_xai_new, aimux_xai_new_with_base,
+    aimux_cohere_new_with_base, aimux_drop_handle, aimux_free_string, aimux_mistral_new,
+    aimux_mistral_new_with_base, aimux_vertex_new, aimux_vertex_new_with_base, aimux_xai_new,
+    aimux_xai_new_with_base,
 };
 
 fn c(s: &str) -> CString {
     CString::new(s).unwrap()
 }
 
-fn expect_handle(h: u64, name: &str) {
-    assert!(h != 0, "{name}: expected non-zero handle");
-    aimux_drop_handle(h);
+/// Copy a constructor's JSON result into an owned `String`, freeing the
+/// native pointer.
+fn take_json(json_ptr: *mut c_char, name: &str) -> String {
+    assert!(!json_ptr.is_null(), "{name}: null result pointer");
+    let json = unsafe { std::ffi::CStr::from_ptr(json_ptr) }
+        .to_str()
+        .unwrap()
+        .to_string();
+    unsafe { aimux_free_string(json_ptr) };
+    json
+}
+
+/// Assert a constructor's JSON result is `{"handle":<u64>}` (not an error
+/// envelope) and release the handle.
+fn expect_handle(json_ptr: *mut c_char, name: &str) {
+    let json = take_json(json_ptr, name);
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap_or_else(|e| {
+        panic!("{name}: result is not valid JSON ({e}): {json}");
+    });
+    assert!(
+        value.get("error").is_none(),
+        "{name}: expected success, got error envelope: {json}"
+    );
+    let handle = value
+        .get("handle")
+        .and_then(|h| h.as_u64())
+        .unwrap_or_else(|| panic!("{name}: expected {{\"handle\":<u64>}}, got {json}"));
+    assert!(handle != 0, "{name}: handle should never be 0 on success");
+    aimux_drop_handle(handle);
+}
+
+/// Assert a constructor's JSON result is an error envelope
+/// (`{"error":...}`), not a handle.
+fn expect_error(json_ptr: *mut c_char, name: &str) {
+    let json = take_json(json_ptr, name);
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap_or_else(|e| {
+        panic!("{name}: result is not valid JSON ({e}): {json}");
+    });
+    assert!(
+        value.get("error").is_some(),
+        "{name}: expected error envelope, got {json}"
+    );
 }
 
 #[test]
@@ -157,12 +198,15 @@ fn azure_constructors() {
 }
 
 #[test]
-fn invalid_args_return_zero() {
-    // Null model_id must fail cleanly (returns 0, no panic).
+fn invalid_args_return_error() {
+    // Null model_id must fail cleanly (error envelope, no panic).
     let key = c("sk-test-fake-key");
-    assert_eq!(aimux_cohere_new(key.as_ptr(), std::ptr::null()), 0);
-    assert_eq!(
+    expect_error(
+        aimux_cohere_new(key.as_ptr(), std::ptr::null()),
+        "cohere_new(null model_id)",
+    );
+    expect_error(
         aimux_bedrock_new(key.as_ptr(), key.as_ptr(), key.as_ptr(), std::ptr::null()),
-        0
+        "bedrock_new(null model_id)",
     );
 }
