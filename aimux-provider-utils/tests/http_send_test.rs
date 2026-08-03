@@ -318,12 +318,21 @@ async fn send_timed_total_timeout_fails() {
 
 #[tokio::test]
 async fn send_timed_total_timeout_covers_retries() {
-    // A 429 (retryable) + a slow success: the total deadline must bound the
-    // whole retry sequence, not just one attempt.
+    // A retryable 429 whose response takes longer than the total budget:
+    // the total deadline must bound the whole call (connect + response +
+    // retry backoff), not just one attempt.
+    //
+    // The response is delayed past the budget on purpose: a fast 429 would
+    // race with the jittered retry backoff (Full Jitter ∈ [0, retry-after)),
+    // making this test flaky depending on the random delay drawn.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat"))
-        .respond_with(ResponseTemplate::new(429).insert_header("retry-after-ms", "200"))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after-ms", "200")
+                .set_delay(Duration::from_millis(500)),
+        )
         .mount(&server)
         .await;
 
