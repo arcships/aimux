@@ -151,6 +151,25 @@ func TestWireFormatConsistency(t *testing.T) {
 					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
 				}
 
+			case "TimeoutConfiguration":
+				var tc3 TimeoutConfiguration
+				if err := json.Unmarshal([]byte(wireJSON), &tc3); err != nil {
+					t.Fatalf("failed to unmarshal TimeoutConfiguration: %v", err)
+				}
+				if tc3.TotalMs == nil || *tc3.TotalMs != 5000 {
+					t.Error("expected TotalMs=5000")
+				}
+				if tc3.FirstChunkMs == nil || *tc3.FirstChunkMs != 1000 {
+					t.Error("expected FirstChunkMs=1000")
+				}
+				if tc3.ChunkMs == nil || *tc3.ChunkMs != 500 {
+					t.Error("expected ChunkMs=500")
+				}
+				reencoded, _ := json.Marshal(tc3)
+				if string(reencoded) != wireJSON {
+					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
+				}
+
 			default:
 				t.Fatalf("unsupported fixture type: %s (add Go support for this wire type)", tc.Type)
 			}

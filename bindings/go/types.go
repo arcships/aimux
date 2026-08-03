@@ -188,6 +188,14 @@ func MarshalMessages(msgs []ModelMessage) (string, error) {
 // GenerateTextOptions is the typed options for text generation.
 // All fields are optional (pointer types) to match the engine's schema.
 // Mirrors Kotlin GenerateTextOptions (Types.kt:561-579).
+// TimeoutConfiguration sets per-call timeouts (RFC-0016 H3).
+type TimeoutConfiguration struct {
+	TotalMs      *uint64 `json:"total_ms,omitempty"`
+	FirstChunkMs *uint64 `json:"first_chunk_ms,omitempty"`
+	ChunkMs      *uint64 `json:"chunk_ms,omitempty"`
+}
+
+// GenerateTextOptions mirrors the shared wire options.
 type GenerateTextOptions struct {
 	MaxOutputTokens  *uint32           `json:"max_output_tokens,omitempty"`
 	Temperature       *float64          `json:"temperature,omitempty"`
@@ -206,6 +214,7 @@ type GenerateTextOptions struct {
 	Instructions       *string           `json:"instructions,omitempty"`
 	BodyOverrides     json.RawMessage   `json:"body_overrides,omitempty"`
 	MaxRetries        *uint32           `json:"max_retries,omitempty"`
+	Timeout           *TimeoutConfiguration `json:"timeout,omitempty"`
 }
 
 // Tool is a function tool definition (the "function" variant).
