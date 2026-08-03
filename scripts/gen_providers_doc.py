@@ -164,8 +164,8 @@ def main():
     w(
         "These providers are **not** name-addressable: `provider(\"anthropic\", ...)` "
         "fails with `UnknownProvider`. Use the typed entry points below "
-        "(Rust type names; every binding ships an equivalent factory — "
-        "see [reference.md](reference.md))."
+        "(Rust type names; other bindings cover a subset — see "
+        "[reference.md](reference.md))."
     )
     w("")
     for title, mods in sections:

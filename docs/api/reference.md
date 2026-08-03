@@ -63,6 +63,12 @@ constructors); the other bindings ship OpenAI / Anthropic shortcuts. Note:
 Python's `google()` exists in the Rust layer but is not exported from the
 package yet.
 
+The remaining 65 providers (speech, transcription, image, video, local
+inference, search, standalone OpenAI-compatible, Vertex-hosted) each have a
+typed Rust constructor — full list, one entry per provider:
+[providers.md](providers.md). Their per-binding modality factories are in the
+function tables below.
+
 ### Core (Rust, `aimux_providers` / `aimux_core`)
 
 | Function | Signature (abridged) | Notes |
