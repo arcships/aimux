@@ -314,8 +314,15 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
-          echo '--- Pods aimux layout ---'
-          find ios/Pods -maxdepth 4 -name 'aimux_ffi*' -o -maxdepth 4 -name 'aimux_ffi.framework' | head -10
+          echo '--- Podfile.lock aimux ---'
+          grep -A4 'aimux' ios/Podfile.lock || true
+          echo '--- Pods dir ---'
+          ls ios/Pods/ 2>&1 | head -10
+          echo '--- Pods aimux content ---'
+          ls -la ios/Pods/aimux/ 2>&1 | head -15
+          echo '--- Runner xcconfig flags ---'
+          grep -rE 'force_load|aimux_ffi|OTHER_LDFLAGS' ios/Pods/Target\ Support\ Files/Pods-Runner/ 2>/dev/null | head -10
+          echo '--- symbol check ---'
           nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
             || { echo 'Rust symbols missing from app binary'; nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20; exit 1; }
       - name: Build example (Android)
