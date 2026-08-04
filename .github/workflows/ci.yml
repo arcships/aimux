@@ -326,10 +326,17 @@ jobs:
           file "$PDIR/aimux" 2>/dev/null || true
           echo '--- app frameworks dir (embed?) ---'
           ls build/ios/iphonesimulator/Runner.app/Frameworks/ 2>/dev/null || true
-          echo '--- symbols in pod ---'
-          nm -g "$PDIR/aimux" 2>/dev/null | grep -c aimux || true
-          echo '--- symbols in Runner ---'
-          nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -c aimux || true
+          echo '--- symbols in pod (raw) ---'
+          nm -g "$PDIR/aimux" 2>&1 | grep 'aimux_' | head -5 || echo 'NONE in pod'
+          echo '--- symbols in Runner (raw) ---'
+          nm -g build/ios/iphonesimulator/Runner.app/Runner 2>&1 | grep 'aimux_' | head -5 || echo 'NONE in Runner'
+          echo '=== FINAL SYMBOL CHECK ==='
+          if nm -g build/ios/iphonesimulator/Runner.app/Runner 2>/dev/null | grep -q 'aimux_openai_new'; then
+            echo 'OK: aimux_openai_new found in Runner'
+          else
+            echo 'FAIL: aimux_openai_new missing from Runner'
+            exit 1
+          fi
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
