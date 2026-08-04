@@ -14,6 +14,7 @@ dart:ffi.
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.swift_version    = '5.0'
+  s.dependency       'Flutter'
   s.platform         = :ios, '12.0'
 
   # Static framework slices (device arm64 + simulator arm64), produced by
