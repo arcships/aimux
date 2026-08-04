@@ -387,18 +387,29 @@ fn azure(
 
 /// Create a language model from the built-in registry by provider name
 /// (RFC-0017 phase 4). `api_key=None` reads the provider's env var.
+/// `config_json` is a serialized `ProviderOptions` object (`base_url` /
+/// `headers` / `organization` / `project` / `max_retries` /
+/// `body_overrides`); the `base_url` parameter wins over the JSON field.
 #[pyfunction]
-#[pyo3(signature = (name, api_key, model_id, base_url=None))]
+#[pyo3(signature = (name, api_key, model_id, base_url=None, config_json=None))]
 fn provider(
     name: &str,
     api_key: Option<String>,
     model_id: &str,
     base_url: Option<&str>,
+    config_json: Option<&str>,
 ) -> PyResult<Model> {
-    let options = base_url.map(|url| aimux_providers::ProviderOptions {
-        base_url: Some(url.to_string()),
-        ..Default::default()
-    });
+    let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            Some(serde_json::from_str(s).map_err(|e| {
+                PyRuntimeError::new_err(format!("[Json] invalid config: {e}"))
+            })?)
+        }
+        _ => None,
+    };
+    if let Some(url) = base_url {
+        options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
+    }
     let model = aimux_providers::provider(name, api_key, model_id, options)
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {

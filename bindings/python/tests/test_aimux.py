@@ -38,6 +38,54 @@ def test_provider_unknown_name_raises():
         provider("no-such-provider", "k", "m")
 
 
+def test_provider_accepts_full_config():
+    """provider() accepts a full ProviderOptions config dict (RFC-0017 §3.4)."""
+    from aimux import provider
+
+    model = provider(
+        "groq",
+        "sk-test-fake-key",
+        "llama-3.3-70b",
+        config={
+            "base_url": "https://example.com/v1",
+            "headers": {"X-Custom": "1"},
+            "organization": "org-1",
+            "project": "proj-1",
+            "max_retries": 0,
+            "body_overrides": {"temperature": 0.1},
+        },
+    )
+    assert model is not None
+    assert hasattr(model, "generate_text")
+
+
+def test_provider_base_url_param_wins_over_config():
+    """Explicit base_url parameter overrides config["base_url"]."""
+    from aimux import provider
+
+    model = provider(
+        "groq",
+        "sk-test-fake-key",
+        "llama-3.3-70b",
+        base_url="https://param.example.com/v1",
+        config={"base_url": "https://config.example.com/v1"},
+    )
+    assert model is not None
+
+
+def test_provider_invalid_config_raises():
+    """provider() rejects a config with wrong field types."""
+    from aimux import provider
+
+    with pytest.raises(Exception, match="invalid config"):
+        provider(
+            "groq",
+            "sk-test-fake-key",
+            "llama-3.3-70b",
+            config={"max_retries": "not-a-number"},
+        )
+
+
 def test_provider_missing_env_key_raises():
     """provider() with api_key=None reads the env var and fails clearly when unset."""
     from aimux import provider
