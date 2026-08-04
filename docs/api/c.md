@@ -13,7 +13,7 @@ Get `aimux-ffi.h` + the platform shared library from
 `aimux_ffi-windows-x64.dll`), then link against it:
 
 ```bash
-gcc -o example example.c -L. -laimux_ffi -lpthread -ldl -lm   # Linux
+gcc -o example example.c -I. -L. -laimux_ffi -lpthread -ldl -lm   # Linux (aimux-ffi.h in the same directory)
 ```
 
 Header: [aimux-ffi.h](../../aimux-ffi/aimux-ffi.h).

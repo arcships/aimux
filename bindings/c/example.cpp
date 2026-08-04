@@ -1,6 +1,6 @@
 // example.cpp — C++ RAII wrapper example using aimux-ffi
 //
-// Build: g++ -std=c++17 -o example_cpp example.cpp -L../../target/debug -laimux_ffi -lpthread -ldl -lm
+// Build: g++ -std=c++17 -o example_cpp example.cpp -I../../aimux-ffi -L../../target/debug -laimux_ffi -lpthread -ldl -lm
 // Run:   OPENAI_API_KEY=sk-... ./example_cpp
 
 #include <cstdlib>

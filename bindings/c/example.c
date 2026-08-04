@@ -1,6 +1,6 @@
 // example.c — C example using aimux-ffi
 //
-// Build: gcc -o example example.c -L../../target/debug -laimux_ffi -lpthread -ldl -lm
+// Build: gcc -o example example.c -I../../aimux-ffi -L../../target/debug -laimux_ffi -lpthread -ldl -lm
 // Run:   OPENAI_API_KEY=sk-... ./example
 
 #include <stdio.h>
