@@ -32,10 +32,14 @@ flutter:
   plugin:
     platforms:
       ios:
+        # Both pluginClass and dartPluginClass: the (empty) native class makes
+        # Flutter add the plugin to the Podfile, which is what installs the
+        # podspec with its vendored xcframework + force_load. Without it,
+        # dartPluginClass-only plugins never reach pod install.
+        pluginClass: AimuxPlugin
         dartPluginClass: AimuxPlugin
       android:
-        # Both pluginClass and dartPluginClass: the (empty) native class makes
-        # Flutter wire the plugin into the Gradle build, which is what packages
-        # android/src/main/jniLibs/*/libaimux_ffi.so into the APK.
+        # Same pattern as iOS: the (empty) native class wires the plugin into
+        # the Gradle build, which packages jniLibs/*/libaimux_ffi.so into the APK.
         pluginClass: AimuxPlugin
         dartPluginClass: AimuxPlugin
