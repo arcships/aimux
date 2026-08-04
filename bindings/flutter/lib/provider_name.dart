@@ -110,6 +110,7 @@ class ProviderName {
   static const Inception = 'inception';
   static const Inceptron = 'inceptron';
   static const InferenceNet = 'inference_net';
+  static const Inferencehub = 'inferencehub';
   static const Inferx = 'inferx';
   static const Infinity = 'infinity';
   static const IoNet = 'io_net';

@@ -112,6 +112,7 @@ export const ProviderName = {
   inception: 'inception',
   inceptron: 'inceptron',
   inference_net: 'inference_net',
+  inferencehub: 'inferencehub',
   inferx: 'inferx',
   infinity: 'infinity',
   io_net: 'io_net',

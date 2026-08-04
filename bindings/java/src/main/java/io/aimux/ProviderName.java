@@ -112,6 +112,7 @@ public final class ProviderName {
     public static final String INCEPTION = "inception";
     public static final String INCEPTRON = "inceptron";
     public static final String INFERENCENET = "inference_net";
+    public static final String INFERENCEHUB = "inferencehub";
     public static final String INFERX = "inferx";
     public static final String INFINITY = "infinity";
     public static final String IONET = "io_net";

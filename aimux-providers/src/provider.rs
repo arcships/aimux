@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn registry_entries_are_valid() {
         let entries = registry();
-        assert_eq!(entries.len(), 250);
+        assert_eq!(entries.len(), 251);
         for e in entries {
             assert!(e.name.starts_with(|c: char| c.is_ascii_lowercase()));
             assert!(!e.base_url.is_empty());
@@ -306,7 +306,7 @@ mod tests {
         );
         assert_eq!("nope".parse::<ProviderName>().ok(), None);
         assert!(ProviderName::all_names().contains("groq"));
-        assert_eq!(ProviderName::ALL.len(), 250);
+        assert_eq!(ProviderName::ALL.len(), 251);
     }
 
     #[test]

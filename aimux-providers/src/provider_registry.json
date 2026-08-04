@@ -748,6 +748,13 @@
     "profile": {}
   },
   {
+    "name": "inferencehub",
+    "display": "InferenceHub",
+    "base_url": "https://app.inferencehub.tech/v1",
+    "env_var": "INFERENCEHUB_API_KEY",
+    "profile": {}
+  },
+  {
     "name": "inferx",
     "display": "InferX",
     "base_url": "https://model.inferx.net/v1",

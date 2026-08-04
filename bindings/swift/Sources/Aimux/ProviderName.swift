@@ -109,6 +109,7 @@ public enum ProviderName: String, CaseIterable, Sendable {
     case Inception
     case Inceptron
     case InferenceNet
+    case Inferencehub
     case Inferx
     case Infinity
     case IoNet
