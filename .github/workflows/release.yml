@@ -445,8 +445,10 @@ jobs:
           done
       - name: Embed iOS xcframework
         run: |
-          test -f mobile-artifacts/ios/aimux_ffi.xcframework/Info.plist
-          cp -r mobile-artifacts/ios/aimux_ffi.xcframework bindings/flutter/ios/
+          # flutter-ffi-mobile (ios) uploads staging/ contents, so the
+          # artifact lands at the root (no ios/ prefix).
+          test -f mobile-artifacts/aimux_ffi.xcframework/Info.plist
+          cp -r mobile-artifacts/aimux_ffi.xcframework bindings/flutter/ios/
       - name: Build host FFI library (for tests)
         run: cargo build -p aimux-ffi --release
       - name: Test
