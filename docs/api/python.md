@@ -28,14 +28,20 @@ from aimux import provider, generate_text
 model = provider("groq", None, "llama-3.3-70b")
 # Explicit key + base URL override:
 model = provider("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
+# Full ProviderOptions via config dict:
+model = provider("groq", "sk-...", "llama-3.3-70b",
+                 config={"headers": {"X-Custom": "1"}, "max_retries": 0})
 result = generate_text(model, "Hello")
 ```
 
-`provider(name, api_key, model_id, base_url=None)` covers all 250 built-in
-OpenAI-compatible providers. `openai` / `anthropic` / `deepseek` factories
+`provider(name, api_key, model_id, base_url=None, config=None)` covers all
+251 built-in OpenAI-compatible providers. `config` takes the full
+`ProviderOptions` shape (`base_url` / `headers` / `organization` / `project` /
+`max_retries` / `body_overrides`); the `base_url` parameter wins over
+`config["base_url"]`. `openai` / `anthropic` / `deepseek` factories
 remain (deepseek is now registry-backed).
 
-> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`anthropic(api_key, model)`); custom endpoints → `base_url` param.
 > Full list: [providers.md](providers.md).

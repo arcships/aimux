@@ -58,6 +58,13 @@ defer model.Close()
 // 字符串形式同样可用 + base URL 覆盖:
 model2, err := aimux.ProviderWithBase("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
 defer model2.Close()
+
+// 完整 ProviderOptions(base_url / headers / organization / project /
+// max_retries / body_overrides):
+model3, err := aimux.ProviderWithConfig("groq", "sk-...", "llama-3.3-70b", &aimux.ProviderConfig{
+	Headers: map[string]string{"X-Custom": "1"},
+})
+defer model3.Close()
 ```
 
 `NewDeepSeek` / `DeepSeek` remain as shortcuts (registry-backed). Unknown

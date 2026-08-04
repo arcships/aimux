@@ -21,7 +21,7 @@ from .aimux import (
     vertex,
     anthropic_aws,
     azure,
-    provider,
+    provider as _native_provider,
     EmbeddingModel,
     SpeechModel,
     ImageModel,
@@ -79,6 +79,27 @@ __all__ = [
     "generate_text",
     "stream_text",
 ]
+
+
+def provider(
+    name: str,
+    api_key: Optional[str],
+    model_id: str,
+    base_url: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Model:
+    """Create a language model from the built-in registry by provider name.
+
+    Args:
+        name: Registry provider name (e.g. "deepseek", "groq").
+        api_key: API key; None reads the provider's env var.
+        model_id: Model ID.
+        base_url: Base-URL override (wins over config["base_url"]).
+        config: Full ProviderOptions dict — base_url / headers / organization /
+            project / max_retries / body_overrides.
+    """
+    config_json = json.dumps(config) if config is not None else None
+    return _native_provider(name, api_key, model_id, base_url, config_json)
 
 
 def _prompt_to_json(prompt: Union[str, List[Dict[str, Any]]]) -> str:

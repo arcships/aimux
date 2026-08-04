@@ -8,6 +8,7 @@
 package aimux
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -102,4 +103,41 @@ func TestStreamTextReturnsStream(t *testing.T) {
 	}
 	// Err() should be safe to call after drain.
 	_ = s.Err()
+}
+
+func TestProviderWithConfigFullOptions(t *testing.T) {
+	retries := uint32(0)
+	m, err := ProviderWithConfig("groq", "sk-test-fake-key", "llama-3.3-70b", &ProviderConfig{
+		BaseURL:       "https://example.com/v1",
+		Headers:       map[string]string{"X-Custom": "1"},
+		Organization:  "org-1",
+		Project:       "proj-1",
+		MaxRetries:    &retries,
+		BodyOverrides: map[string]any{"temperature": 0.1},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	defer m.Close()
+	if m.handle == 0 {
+		t.Fatal("expected non-zero handle")
+	}
+}
+
+func TestProviderWithConfigNil(t *testing.T) {
+	m, err := ProviderWithConfig("groq", "sk-test-fake-key", "llama-3.3-70b", nil)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	defer m.Close()
+}
+
+func TestProviderWithBaseQuotedURLDoesNotInjectJSON(t *testing.T) {
+	// A baseURL containing a quote must not produce malformed config JSON
+	// (the old string concatenation would). The provider layer may reject
+	// the URL itself, but the error must not be a JSON parse failure.
+	_, err := ProviderWithBase("groq", "sk-test-fake-key", "llama-3.3-70b", `https://example.com/"v1`)
+	if err != nil && strings.Contains(err.Error(), "invalid provider config JSON") {
+		t.Fatalf("config JSON injection: %v", err)
+	}
 }
