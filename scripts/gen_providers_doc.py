@@ -2,7 +2,7 @@
 """Generate docs/api/providers.md — the full provider lookup reference.
 
 Single source of truth:
-- aimux-providers/src/provider_registry.json  (250 OpenAI-compatible entries)
+- aimux-providers/src/provider_registry.json  (registry of OpenAI-compatible entries)
 - aimux-providers/src/lib.rs                   (non-registry modules + categories)
 
 Usage:
@@ -152,7 +152,7 @@ def main():
         "(construct via the typed factories listed below)."
     )
     w("")
-    w("## Registry-backed (OpenAI-compatible) — 250")
+    w(f"## Registry-backed (OpenAI-compatible) — {len(registry)}")
     w("")
     w("| name | display | env var | base_url |")
     w("|------|---------|---------|----------|")

@@ -16,7 +16,7 @@
 | `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../aimux-core/bindings/ReasoningEffort.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [shared.rs](../../aimux-core/src/shared.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
 | `ProviderOptions` | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `max_retries` / `body_overrides` |
-| `ProviderName` | [provider_name.rs](../../aimux-providers/src/provider_name.rs) | [ProviderName.ts](../../bindings/node/src/types/ProviderName.ts) | one constant per registry provider (250) |
+| `ProviderName` | [provider_name.rs](../../aimux-providers/src/provider_name.rs) | [ProviderName.ts](../../bindings/node/src/types/ProviderName.ts) | one constant per registry provider (251); also generated for Go / Python / Java / Kotlin / Swift / Dart (`scripts/gen_provider_names.py`) |
 | `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../aimux-core/bindings/GenerateTextResult.ts) | `text`, `tool_calls`, `usage`, `warnings`, `raw` |
 | `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `StreamPart` while iterating |
 | `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../aimux-core/bindings/StreamPart.ts) | TextDelta / ToolCallDelta / Finish / … |
@@ -86,7 +86,7 @@ Per-modality entry points are trait methods on the model types
 |----------|-------|
 | `generateText(model, prompt, options?, signal?)` / `streamText(...)` | typed wrappers; `signal` = `AbortSignal` |
 | `openai()` / `anthropic()` / `deepseek()` / `google()` | native typed path; `deepseek()` is registry-backed |
-| `provider(name, apiKey?, modelId, config?)` | registry-backed (250); typed `ProviderName` |
+| `provider(name, apiKey?, modelId, config?)` | registry-backed (251); typed `ProviderName` |
 | `openaiEmbedding` / `cohereEmbedding` / `googleEmbedding` | embeddings |
 | `openaiSpeech` / `openaiTranscription` | speech / STT |
 | `openaiImage` / `googleImage` / `googleVideo` | image / video |
@@ -133,8 +133,8 @@ model constructors (`openai_new`, `anthropic_new`, …), `*_generate`,
 
 ## Providers
 
-The complete list — 250 registry-backed (name / display / env var / base URL)
-and 75 typed-factory providers grouped by category — is in
+The complete list — 251 registry-backed (name / display / env var / base URL)
+and 76 typed-factory providers grouped by category — is in
 [providers.md](providers.md). It is generated from
 `aimux-providers/src/provider_registry.json` + `aimux-providers/src/lib.rs`:
 `python scripts/gen_providers_doc.py`.

@@ -347,6 +347,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: ProviderName generator drift (checked-in files must match generator output)
+        run: python3 scripts/gen_provider_names.py --check
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
