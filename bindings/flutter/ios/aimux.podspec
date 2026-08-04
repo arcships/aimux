@@ -29,7 +29,9 @@ dart:ffi.
   # names follow xcodebuild's convention (ios-arm64 / ios-arm64-simulator);
   # CI verifies them before publishing.
   s.vendored_frameworks = 'aimux_ffi.xcframework'
-  s.pod_target_xcconfig = {
+  # user_target_xcconfig: the force_load must reach the APP link command;
+  # pod_target_xcconfig only affects the pod's own target build.
+  s.user_target_xcconfig = {
     'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
     'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
   }
