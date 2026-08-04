@@ -12,20 +12,37 @@ dart:ffi.
   s.license          = { :type => 'MIT', :file => '../LICENSE' }
   s.author           = { 'aimux contributors' => 'ericted8810@gmail.com' }
   s.source           = { :path => '.' }
+  s.source_files     = 'Classes/**/*'
+  s.swift_version    = '5.0'
+  s.dependency       'Flutter'
   s.platform         = :ios, '12.0'
 
-  # Rust static library xcframework (device arm64 + simulator arm64 slices),
-  # produced by the release pipeline and vendored here before
+  # Static framework slices (device arm64 + simulator arm64), produced by
+  # scripts/build-ios-xcframework.sh and vendored here before
   # `dart pub publish`.
   #
-  # Dart resolves symbols via DynamicLibrary.process(), so every slice must be
-  # force-loaded — otherwise the linker drops unreferenced archive objects and
-  # lookupFunction fails at runtime. The xcframework slice names follow
-  # xcodebuild's convention (ios-arm64 / ios-arm64-simulator); CI verifies
-  # them before publishing.
-  s.vendored_libraries = 'aimux_ffi.xcframework'
-  s.pod_target_xcconfig = {
-    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a'],
-    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a']
+  # NOTE: Flutter's SwiftPM integration does not link plugin binary targets
+  # (as of Flutter 3.44), so iOS integration goes through CocoaPods — the
+  # official fallback. Flutter automatically uses it for podspec-only
+  # plugins.
+  #
+  # Dart resolves symbols via DynamicLibrary.process(), so every slice must
+  # be force-loaded — otherwise the linker drops unreferenced archive
+  # objects and lookupFunction fails at runtime. The xcframework slice
+  # names follow xcodebuild's convention (ios-arm64 / ios-arm64-simulator);
+  # CI verifies them before publishing.
+  s.vendored_frameworks = 'aimux_ffi.xcframework'
+  # user_target_xcconfig: the force_load must reach the APP link command;
+  # pod_target_xcconfig only affects the pod's own target build.
+  s.user_target_xcconfig = {
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
+    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
+  }
+
+  # App Store privacy manifest (2024-05+ requirement for SDKs). aimux-ffi
+  # uses no required-reason APIs — the manifest is an explicit empty
+  # declaration.
+  s.resource_bundles = {
+    'aimux_privacy' => ['PrivacyInfo.xcprivacy']
   }
 end
