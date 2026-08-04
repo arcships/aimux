@@ -110,17 +110,21 @@ publishing {
 
     repositories {
         if (ossrhUsername != null && ossrhPassword != null) {
+            // Central Publisher Portal — OSSRH Staging API compatibility
+            // service (s01.oss.sonatype.org is deprecated; it returns 402).
+            // After uploading, release.yml POSTs /manual/upload/defaultRepository
+            // to move the deployment into the Portal.
             maven {
-                name = "OSSRH"
-                url = uri("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/")
+                name = "CentralPortal"
+                url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
                 credentials {
                     username = ossrhUsername
                     password = ossrhPassword
                 }
             }
             maven {
-                name = "OSSRHSnapshots"
-                url = uri("https://s01.oss.sonatype.org/content/repositories/snapshots/")
+                name = "CentralPortalSnapshots"
+                url = uri("https://central.sonatype.com/repository/maven-snapshots/")
                 credentials {
                     username = ossrhUsername
                     password = ossrhPassword

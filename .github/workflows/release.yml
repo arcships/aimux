@@ -412,6 +412,19 @@ jobs:
           ORG_GRADLE_PROJECT_ossrhPassword: ${{ secrets.OSSRH_PASSWORD }}
           ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.SIGNING_PASSWORD }}
+      - name: Submit deployments to Central Portal
+        # The OSSRH Staging API compatibility service only stages uploads;
+        # this POST (same IP, same runner) moves them into the Portal for
+        # the ai.arcships namespace.
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+        run: |
+          curl -sS -u "$OSSRH_USERNAME:$OSSRH_PASSWORD" \
+            -X POST "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/ai.arcships" \
+            -w '\nHTTP %{http_code}\n'
+          # 201/202 = accepted; the deployment then appears in the Portal
+          # (central.sonatype.com/publishing) for release.
 
   # ── Flutter plugin: embed mobile FFI libs, test, publish to pub.dev ───────
   # Publisher: arcships.ai (pub.dev). The native core (Android .so per ABI +
