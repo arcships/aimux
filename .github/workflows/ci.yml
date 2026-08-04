@@ -310,18 +310,25 @@ jobs:
           done
       - name: Build example (iOS — CocoaPods; Flutter SPM can't link plugin binaries)
         if: matrix.platform == 'ios'
-        # KNOWN LIMITATION (tracked in #25): CocoaPods' use_frameworks mode
-        # fails to link the vendored aimux_ffi.xcframework ('Framework
-        # aimux_ffi not found'). The pod integrates, Swift compiles, and the
-        # xcconfig flags are correct — the link resolution needs real-device
-        # debugging. Non-blocking for now; Android is fully verified.
-        continue-on-error: true
         working-directory: bindings/flutter/example
         run: |
           flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
-          nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
-            || { echo 'Rust symbols missing from app binary'; nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20; exit 1; }
+          # Debug builds link the app code into Runner.debug.dylib; the
+          # Runner stub carries no symbols — scan every executable in the app.
+          FOUND=""
+          while IFS= read -r f; do
+            if nm -g "$f" 2>/dev/null | grep -q 'aimux_openai_new'; then
+              echo "FOUND aimux_openai_new in: $f"
+              FOUND=yes
+            fi
+          done < <(find build/ios/iphonesimulator/Runner.app -type f -perm -111 2>/dev/null)
+          if [ -n "$FOUND" ]; then
+            echo 'OK: aimux symbols present'
+          else
+            echo 'FAIL: aimux_openai_new missing from all app binaries'
+            exit 1
+          fi
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
