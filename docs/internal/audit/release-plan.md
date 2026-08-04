@@ -421,16 +421,19 @@ dart:ffi 是纯 Dart，但 pub.dev 上的纯 Dart 包**不携带 native 二进�
 
 - `pubspec.yaml` 声明 `flutter.plugin.platforms`（iOS + Android，`dartPluginClass: AimuxPlugin`——纯 Dart 插件，无 platform channel）。
 - **Android**：`android/src/main/jniLibs/<abi>/libaimux_ffi.so`（arm64-v8a / armeabi-v7a / x86_64），Dart 侧 `DynamicLibrary.open('libaimux_ffi.so')`。
-- **iOS**：`ios/aimux_ffi.xcframework`（真机 arm64 + 模拟器 arm64 双 slice，`xcodebuild -create-xcframework`），podspec `vendored_libraries` + 条件 `-force_load`（Dart 侧 `DynamicLibrary.process()` 从进程符号表解析）。
+- **iOS（CocoaPods 路径）**：`ios/aimux_ffi.xcframework`（真机 arm64 + 模拟器 arm64 双 slice），podspec `vendored_libraries` + 条件 `-force_load`。
+- **iOS（SwiftPM 路径，✅ 2026-08-04 补）**：`ios/aimux/Package.swift` —— `binaryTarget` 引用同一 xcframework，Swift 空 target 用 `-all_load` 全量链接（Dart 侧 `DynamicLibrary.process()` 解析符号）。
+- **隐私清单**：`ios/aimux/Sources/aimux/PrivacyInfo.xcprivacy`（空声明，podspec `resource_bundles` + SPM `resources` 双路打包，App Store 2024-05+ 要求）。
 - **桌面端**（Linux/macOS/Windows）：开发/测试用，从平台库路径加载（非插件打包）。
 
 ### 10.3 发布前必修项
 
 1. ✅ **定义 native 库分发方案**——已选方案 A（Flutter plugin，发布时打进二进制）。
 2. ✅ **改 `publish_to`**——已移除 `none`（默认发布到 pub.dev）。
-3. ✅ **加 Flutter CI**——`ci.yml` 加 `flutter-binding` job（test + analyze）；`release.yml` 加 `flutter-ffi-mobile`（Android 3 ABI + iOS xcframework）+ `flutter-publish`（嵌入二进制 → 测试 → `flutter pub publish`）。
-4. 🟡 **补 `StreamPart` 完整类型化**（audit-003 遗留）——当前是 raw Map + 访问器，非 17 变体完整类型化（其他 4 语言均已完整）。
-5. ✅ **补 README + CHANGELOG**——`bindings/flutter/README.md` 已建（示例/截图可后续补充）。
+3. ✅ **加 Flutter CI**——`ci.yml` 加 `flutter-binding`（桌面测试/analyze）+ `flutter-example-build`（iOS SPM 构建 + `nm` 符号验证；Android APK + `.so` 逐 ABI 验证）；`release.yml` 加 `flutter-ffi-mobile`（制品构建）+ `flutter-publish`（嵌入二进制 → 测试 → `flutter pub publish --force`）。
+4. ✅ **补 example/ + README + CHANGELOG**——`example/` 为集成验证载体（demo + widget test + CI 构建）。
+5. 🟡 **补 `StreamPart` 完整类型化**（audit-003 遗留）——当前是 raw Map + 访问器，非 17 变体完整类型化（其他 4 语言均已完整）。
+6. 🟡 **发布体积监控**——嵌入二进制后包体预计显著增大（Rust release `.so`/`.a` 未 strip），发布时确认 <100MB gzip；超限需加 `strip`/`lto` 优化。
 
 ### 10.4 发布流程
 
@@ -701,8 +704,9 @@ xcrun stapler staple AimuxFFI.xcframework
 
 ### Flutter
 - ✅ 定义 native 库分发方案——已选 Flutter plugin（iOS + Android 二进制打进包，桌面端开发/测试用）
-- ✅ `pubspec.yaml` 改 `publish_to`（已移除 none，加 flutter plugin 声明）
-- ✅ CI 加 Flutter/Dart job（ci.yml `flutter-binding` + release.yml `flutter-ffi-mobile` / `flutter-publish`）
+- ✅ `pubspec.yaml` 改 `publish_to`（已移除 none，加 flutter plugin 声明 + flutter SDK 约束）
+- ✅ CI 加 Flutter/Dart job（ci.yml `flutter-binding` + `flutter-example-build`；release.yml `flutter-ffi-mobile` / `flutter-publish`）
+- ✅ SPM 支持（`ios/aimux/Package.swift`）+ PrivacyInfo.xcprivacy + example/
 - 🟡 补 `StreamPart` 完整类型化（17 变体）
 
 ### Go

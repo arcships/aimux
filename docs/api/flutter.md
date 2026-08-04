@@ -15,6 +15,8 @@ flutter pub add aimux
 The package is a Flutter plugin: the Rust core ships inside it —
 `libaimux_ffi.so` per ABI (Android) and `aimux_ffi.xcframework` (iOS) are
 embedded at publish time, so no extra download or build step is needed.
+iOS integrates via SwiftPM (default on Flutter 3.44+, `ios/aimux/Package.swift`)
+or CocoaPods fallback (`ios/aimux.podspec`).
 
 While developing against the repo, depend on the path:
 

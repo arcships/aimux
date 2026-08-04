@@ -1,0 +1,23 @@
+name: aimux_example
+description: "aimux Flutter plugin demo — unified LLM service layer (Rust core, dart:ffi C ABI)"
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.4.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  aimux:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

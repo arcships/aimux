@@ -268,6 +268,72 @@ jobs:
         working-directory: bindings/flutter
         run: flutter analyze
 
+  # ── Flutter example: real iOS/Android builds validate plugin integration ──
+  # iOS build uses the default SwiftPM integration (Flutter 3.44+) and checks
+  # the Rust symbols actually made it into the app binary (-all_load path).
+  # Android build verifies the .so files reach the APK per ABI.
+  flutter-example-build:
+    name: Flutter example (${{ matrix.platform }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ios
+            host: macos-latest
+            targets: aarch64-apple-ios aarch64-apple-ios-sim
+          - platform: android
+            host: ubuntu-latest
+            targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build iOS xcframework
+        if: matrix.platform == 'ios'
+        run: |
+          cargo build -p aimux-ffi --release --target aarch64-apple-ios
+          cargo build -p aimux-ffi --release --target aarch64-apple-ios-sim
+          xcodebuild -create-xcframework \
+            -library target/aarch64-apple-ios/release/libaimux_ffi.a \
+            -library target/aarch64-apple-ios-sim/release/libaimux_ffi.a \
+            -output bindings/flutter/ios/aimux_ffi.xcframework
+          # Slice layout must match the podspec force_load paths.
+          test -f bindings/flutter/ios/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a
+          test -f bindings/flutter/ios/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a
+      - name: Build Android .so per ABI
+        if: matrix.platform == 'android'
+        run: |
+          cargo install cargo-ndk
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
+            -o bindings/flutter/android/src/main/jniLibs build -p aimux-ffi --release
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            test -f bindings/flutter/android/src/main/jniLibs/$abi/libaimux_ffi.so \
+              || { echo "Missing $abi" >&2; exit 1; }
+          done
+      - name: Build example (iOS — SwiftPM, debug keeps symbols)
+        if: matrix.platform == 'ios'
+        working-directory: bindings/flutter/example
+        run: |
+          flutter build ios --debug --no-codesign --simulator
+          nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
+            || { echo 'Rust symbols missing from app binary' >&2; exit 1; }
+      - name: Build example (Android)
+        if: matrix.platform == 'android'
+        working-directory: bindings/flutter/example
+        run: |
+          flutter build apk --debug
+          unzip -l build/app/outputs/flutter-apk/app-debug.apk | \
+            grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/libaimux_ffi\.so'
+      - name: Example tests
+        working-directory: bindings/flutter/example
+        run: flutter test
+
   # ── Contract tests: shared JSON fixtures (catches cross-language type drift) ──
   contract-tests:
     name: Contract tests

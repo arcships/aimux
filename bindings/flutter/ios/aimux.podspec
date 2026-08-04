@@ -28,4 +28,11 @@ dart:ffi.
     'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a'],
     'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a']
   }
+
+  # App Store privacy manifest (2024-05+ requirement for SDKs). aimux-ffi
+  # uses no required-reason APIs — the manifest is an explicit empty
+  # declaration, bundled for both CocoaPods and SwiftPM consumers.
+  s.resource_bundles = {
+    'aimux_privacy' => ['aimux/Sources/aimux/PrivacyInfo.xcprivacy']
+  }
 end
