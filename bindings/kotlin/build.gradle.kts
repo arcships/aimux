@@ -100,20 +100,26 @@ publishing {
             // service (s01.oss.sonatype.org is deprecated; it returns 402).
             // After uploading, release.yml POSTs /manual/upload/defaultRepository
             // to move the deployment into the Portal.
-            maven {
-                name = "CentralPortal"
-                url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
-                credentials {
-                    username = ossrhUsername
-                    password = ossrhPassword
+            // Snapshot versions go to the snapshots repository; release
+            // versions to the staging service (the snapshots repo rejects
+            // non-SNAPSHOT versions with 403).
+            if (version.toString().endsWith("SNAPSHOT")) {
+                maven {
+                    name = "CentralPortal"
+                    url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+                    credentials {
+                        username = ossrhUsername
+                        password = ossrhPassword
+                    }
                 }
-            }
-            maven {
-                name = "CentralPortalSnapshots"
-                url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-                credentials {
-                    username = ossrhUsername
-                    password = ossrhPassword
+            } else {
+                maven {
+                    name = "CentralPortal"
+                    url = uri("https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/")
+                    credentials {
+                        username = ossrhUsername
+                        password = ossrhPassword
+                    }
                 }
             }
         }
