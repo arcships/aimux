@@ -36,7 +36,9 @@ let package = Package(
         ),
         .binaryTarget(
             name: "aimux_ffi",
-            path: "../aimux_ffi.xcframework"
+            // Inside the package directory so Flutter's SPM mirroring
+            // (ephemeral/Packages) carries the artifact along.
+            path: "Sources/aimux_ffi.xcframework"
         )
     ]
 )

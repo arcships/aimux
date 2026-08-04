@@ -6,6 +6,10 @@
 //
 // This is the C ABI path (RFC §3.2) — same as Swift and Kotlin.
 
+// The Flutter tool resolves `dartPluginClass` from the package's main
+// library, so the plugin registration class must be visible here.
+export 'aimux_plugin.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';

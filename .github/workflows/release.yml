@@ -455,7 +455,7 @@ jobs:
       - name: Embed iOS xcframework
         run: |
           test -f mobile-artifacts/ios/aimux_ffi.xcframework/Info.plist
-          cp -r mobile-artifacts/ios/aimux_ffi.xcframework bindings/flutter/ios/
+          cp -r mobile-artifacts/ios/aimux_ffi.xcframework bindings/flutter/ios/aimux/Sources/
       - name: Build host FFI library (for tests)
         run: cargo build -p aimux-ffi --release
       - name: Test

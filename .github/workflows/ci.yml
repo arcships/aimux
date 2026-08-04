@@ -302,10 +302,10 @@ jobs:
           xcodebuild -create-xcframework \
             -library target/aarch64-apple-ios/release/libaimux_ffi.a \
             -library target/aarch64-apple-ios-sim/release/libaimux_ffi.a \
-            -output bindings/flutter/ios/aimux_ffi.xcframework
+            -output bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework
           # Slice layout must match the podspec force_load paths.
-          test -f bindings/flutter/ios/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a
-          test -f bindings/flutter/ios/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a
+          test -f bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a
+          test -f bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a
       - name: Build Android .so per ABI
         if: matrix.platform == 'android'
         run: |
