@@ -313,9 +313,14 @@ jobs:
         working-directory: bindings/flutter/example
         run: |
           flutter config --no-enable-swift-package-manager
-          flutter build ios --debug --no-codesign --simulator
+          echo '=== build products ==='
+          ls build/ios/Debug-iphonesimulator/ 2>/dev/null | head -15 || true
+          echo '=== verbose link command ==='
+          set -o pipefail
+          flutter build ios --debug --no-codesign --simulator -v 2>&1 | grep -E '^/.*ld |force_load|aimux_ffi' | tail -15 || true
+          set +o pipefail
           echo '=== Runner xcconfig ==='
-          grep -hE 'OTHER_LDFLAGS|FRAMEWORK_SEARCH' 'Pods/Target Support Files/Pods-Runner/'*.xcconfig 2>/dev/null || true
+          grep -hE 'OTHER_LDFLAGS|FRAMEWORK_SEARCH' Pods/Target\ Support\ Files/Pods-Runner/*.xcconfig 2>/dev/null || true
           echo '=== staged slices ==='
           find build ios -path '*XCFrameworkIntermediates*' -name 'aimux_ffi*' 2>/dev/null | head -10 || true
           echo '=== app frameworks ==='
