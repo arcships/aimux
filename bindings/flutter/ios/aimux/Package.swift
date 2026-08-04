@@ -19,14 +19,20 @@ let package = Package(
             name: "aimux",
             dependencies: [
                 .product(name: "FlutterFramework", package: "FlutterFramework"),
-                "aimux_ffi"
+                "aimux_ffi",
+                "aimux_ffi_shim"
             ],
             resources: [
                 .process("PrivacyInfo.xcprivacy")
-            ],
-            // shim.c references every aimux-ffi symbol (see file), so the
-            // static archive objects are pulled into the app link even though
-            // Dart resolves them at runtime via DynamicLibrary.process().
+            ]
+        ),
+        // References every aimux-ffi symbol (see shim.c), pulling the static
+        // archive objects into the app link — Dart resolves them at runtime
+        // via DynamicLibrary.process() and nothing else references them.
+        // Separate C target: SwiftPM rejects mixed-language targets.
+        .target(
+            name: "aimux_ffi_shim",
+            dependencies: ["aimux_ffi"],
             cSettings: [
                 .headerSearchPath("include")
             ]

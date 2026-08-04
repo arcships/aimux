@@ -344,3 +344,5 @@ int aimux_init_logging(const char *level);
 #endif
 
 #endif /* AIMUX_FFI_H */
+
+extern void *const aimux_ffi_all_symbols[];

@@ -1,9 +1,12 @@
 // shim.c - generated: references every aimux-ffi C symbol so the
 // linker keeps the static archive objects (Dart resolves them via
-// DynamicLibrary.process(); nothing in Swift/Dart-at-link-time references them).
+// DynamicLibrary.process(); nothing else references them).
+//
+// `used` keeps the array in the object file; aimux.swift additionally
+// references it so the linker pulls this object into the app binary.
 #include "aimux_ffi.h"
 
-void *const aimux_ffi_all_symbols[] = {
+__attribute__((used)) void *const aimux_ffi_all_symbols[] = {
     (void *)&aimux_anthropic_aws_new,
     (void *)&aimux_anthropic_aws_new_with_base,
     (void *)&aimux_anthropic_new,
