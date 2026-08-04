@@ -297,15 +297,7 @@ jobs:
       - name: Build iOS xcframework
         if: matrix.platform == 'ios'
         run: |
-          cargo build -p aimux-ffi --release --target aarch64-apple-ios
-          cargo build -p aimux-ffi --release --target aarch64-apple-ios-sim
-          xcodebuild -create-xcframework \
-            -library target/aarch64-apple-ios/release/libaimux_ffi.a \
-            -library target/aarch64-apple-ios-sim/release/libaimux_ffi.a \
-            -output bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework
-          # Slice layout must match the podspec force_load paths.
-          test -f bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a
-          test -f bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a
+          bash scripts/build-ios-xcframework.sh bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework
       - name: Build Android .so per ABI
         if: matrix.platform == 'android'
         run: |

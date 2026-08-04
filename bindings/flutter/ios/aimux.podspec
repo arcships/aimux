@@ -23,10 +23,12 @@ dart:ffi.
   # lookupFunction fails at runtime. The xcframework slice names follow
   # xcodebuild's convention (ios-arm64 / ios-arm64-simulator); CI verifies
   # them before publishing.
-  s.vendored_libraries = 'aimux/Sources/aimux_ffi.xcframework'
+  # Static framework slices (framework-type binaries link reliably in
+  # Xcode/SPM; bare .a slices did not reach the app link).
+  s.vendored_frameworks = 'aimux/Sources/aimux_ffi.xcframework'
   s.pod_target_xcconfig = {
-    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux/Sources/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a'],
-    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux/Sources/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a']
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux/Sources/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
+    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux/Sources/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
   }
 
   # App Store privacy manifest (2024-05+ requirement for SDKs). aimux-ffi
