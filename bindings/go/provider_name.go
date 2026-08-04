@@ -112,6 +112,7 @@ const (
 	Inception                       ProviderName = "inception"
 	Inceptron                       ProviderName = "inceptron"
 	InferenceNet                    ProviderName = "inference_net"
+	Inferencehub                    ProviderName = "inferencehub"
 	Inferx                          ProviderName = "inferx"
 	Infinity                        ProviderName = "infinity"
 	IoNet                           ProviderName = "io_net"

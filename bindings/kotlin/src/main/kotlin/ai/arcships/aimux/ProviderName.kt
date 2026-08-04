@@ -110,6 +110,7 @@ object ProviderName {
     const val INCEPTION = "inception"
     const val INCEPTRON = "inceptron"
     const val INFERENCENET = "inference_net"
+    const val INFERENCEHUB = "inferencehub"
     const val INFERX = "inferx"
     const val INFINITY = "infinity"
     const val IONET = "io_net"

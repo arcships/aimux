@@ -131,6 +131,7 @@ iflowcn,iFlow,False,model_vendor,unknown,unknown,,,https://apis.iflow.cn/v1,14,c
 inception,Inception,True,model_vendor,L2,openai,True,,https://api.inceptionlabs.ai/v1,3,chat,aisuite;continue;litellm;mastra;opencode;otari,6,
 inceptron,Inceptron,False,model_vendor,unknown,unknown,,,https://api.inceptron.io/v1,7,chat,mastra;opencode,2,
 inference_net,Inference,True,model_vendor,unknown,unknown,,,https://inference.net/v1,9,chat;embedding,llmgateway;portkey-gateway,2,
+inferencehub,InferenceHub,True,gateway_aggregator,L2,openai,True,,https://app.inferencehub.tech/v1,43,chat;embedding;image_generation;rerank,,,
 inferx,InferX,False,model_vendor,unknown,unknown,,,https://model.inferx.net/endpoints/v1,6,chat,mastra;opencode,2,
 io_net,IO.NET,False,model_vendor,unknown,unknown,,,https://api.intelligence.io.solutions/api/v1,17,chat,mastra;opencode,2,
 jiekou,Jiekou.AI,False,model_vendor,unknown,unknown,,,https://api.jiekou.ai/openai,153,chat,mastra;opencode,2,
