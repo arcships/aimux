@@ -14,27 +14,30 @@ dart:ffi.
   s.source           = { :path => '.' }
   s.platform         = :ios, '12.0'
 
-  # Rust static library xcframework (device arm64 + simulator arm64 slices),
-  # produced by the release pipeline and vendored here before
+  # Static framework slices (device arm64 + simulator arm64), produced by
+  # scripts/build-ios-xcframework.sh and vendored here before
   # `dart pub publish`.
   #
-  # Dart resolves symbols via DynamicLibrary.process(), so every slice must be
-  # force-loaded — otherwise the linker drops unreferenced archive objects and
-  # lookupFunction fails at runtime. The xcframework slice names follow
-  # xcodebuild's convention (ios-arm64 / ios-arm64-simulator); CI verifies
-  # them before publishing.
-  # Static framework slices (framework-type binaries link reliably in
-  # Xcode/SPM; bare .a slices did not reach the app link).
-  s.vendored_frameworks = 'aimux/Sources/aimux_ffi.xcframework'
+  # NOTE: Flutter's SwiftPM integration does not link plugin binary targets
+  # (as of Flutter 3.44), so iOS integration goes through CocoaPods — the
+  # official fallback. Flutter automatically uses it for podspec-only
+  # plugins.
+  #
+  # Dart resolves symbols via DynamicLibrary.process(), so every slice must
+  # be force-loaded — otherwise the linker drops unreferenced archive
+  # objects and lookupFunction fails at runtime. The xcframework slice
+  # names follow xcodebuild's convention (ios-arm64 / ios-arm64-simulator);
+  # CI verifies them before publishing.
+  s.vendored_frameworks = 'aimux_ffi.xcframework'
   s.pod_target_xcconfig = {
-    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux/Sources/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
-    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux/Sources/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
+    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
   }
 
   # App Store privacy manifest (2024-05+ requirement for SDKs). aimux-ffi
   # uses no required-reason APIs — the manifest is an explicit empty
-  # declaration, bundled for both CocoaPods and SwiftPM consumers.
+  # declaration.
   s.resource_bundles = {
-    'aimux_privacy' => ['aimux/Sources/aimux/PrivacyInfo.xcprivacy']
+    'aimux_privacy' => ['PrivacyInfo.xcprivacy']
   }
 end

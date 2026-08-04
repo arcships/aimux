@@ -297,7 +297,7 @@ jobs:
       - name: Build iOS xcframework
         if: matrix.platform == 'ios'
         run: |
-          bash scripts/build-ios-xcframework.sh bindings/flutter/ios/aimux/Sources/aimux_ffi.xcframework
+          bash scripts/build-ios-xcframework.sh bindings/flutter/ios/aimux_ffi.xcframework
       - name: Build Android .so per ABI
         if: matrix.platform == 'android'
         run: |
@@ -308,10 +308,11 @@ jobs:
             test -f bindings/flutter/android/src/main/jniLibs/$abi/libaimux_ffi.so \
               || { echo "Missing $abi" >&2; exit 1; }
           done
-      - name: Build example (iOS — SwiftPM, debug keeps symbols)
+      - name: Build example (iOS — CocoaPods; Flutter SPM can't link plugin binaries)
         if: matrix.platform == 'ios'
         working-directory: bindings/flutter/example
         run: |
+          flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
           nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
             || { echo 'Rust symbols missing from app binary'; nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20; exit 1; }
