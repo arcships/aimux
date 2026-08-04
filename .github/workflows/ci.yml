@@ -322,14 +322,15 @@ jobs:
         run: |
           flutter build ios --debug --no-codesign --simulator
           nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
-            || { echo 'Rust symbols missing from app binary' >&2; exit 1; }
+            || { echo 'Rust symbols missing from app binary'; nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20; exit 1; }
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
         run: |
           flutter build apk --debug
           unzip -l build/app/outputs/flutter-apk/app-debug.apk | \
-            grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/libaimux_ffi\.so'
+            grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/libaimux_ffi\.so' || \
+            { echo '--- APK lib contents ---'; unzip -l build/app/outputs/flutter-apk/app-debug.apk | grep 'lib/'; exit 1; }
       - name: Example tests
         working-directory: bindings/flutter/example
         run: flutter test

@@ -26,7 +26,7 @@ dev_dependencies:
 
 # Flutter plugin — the Rust core (aimux-ffi) ships inside the package:
 #   - Android: libaimux_ffi.so per ABI under android/src/main/jniLibs
-#   - iOS:     libaimux_ffi.a (device + simulator fat) vendored via ios/aimux.podspec
+#   - iOS:     aimux_ffi.xcframework (SwiftPM + CocoaPods)
 # No platform channels — dart:ffi calls the C ABI directly.
 flutter:
   plugin:
@@ -34,4 +34,8 @@ flutter:
       ios:
         dartPluginClass: AimuxPlugin
       android:
+        # Both pluginClass and dartPluginClass: the (empty) native class makes
+        # Flutter wire the plugin into the Gradle build, which is what packages
+        # android/src/main/jniLibs/*/libaimux_ffi.so into the APK.
+        pluginClass: AimuxPlugin
         dartPluginClass: AimuxPlugin

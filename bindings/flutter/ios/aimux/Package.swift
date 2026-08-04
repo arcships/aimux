@@ -24,14 +24,11 @@ let package = Package(
             resources: [
                 .process("PrivacyInfo.xcprivacy")
             ],
-            linkerSettings: [
-                // The Rust static library ships in aimux_ffi.xcframework and is
-                // consumed from Dart via DynamicLibrary.process(). Nothing in
-                // Swift references its symbols, so link the archive fully —
-                // otherwise dead-stripping drops the objects and symbol lookup
-                // fails at runtime. -all_load applies to every static archive
-                // in the app link (harmless; Flutter's engine is dynamic).
-                .unsafeFlags(["-all_load"])
+            // shim.c references every aimux-ffi symbol (see file), so the
+            // static archive objects are pulled into the app link even though
+            // Dart resolves them at runtime via DynamicLibrary.process().
+            cSettings: [
+                .headerSearchPath("include")
             ]
         ),
         .binaryTarget(
