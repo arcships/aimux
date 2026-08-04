@@ -9,7 +9,7 @@ Kotlin wraps the Rust core through the `aimux-ffi` C ABI (via JNA).
 Maven Central (publishing):
 
 ```kotlin
-implementation("ai.arcships:aimux-kotlin:0.2.0")
+implementation("ai.arcships:aimux-kotlin:0.2.1")
 ```
 
 JNA loads `aimux_ffi` by name — provide the native library

@@ -3,7 +3,7 @@
 > Unified LLM service access layer — one API to access 325 AI providers
 
 The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
-toolchain is needed at build time. Artifact: `ai.arcships:aimux-java:0.2.0`,
+toolchain is needed at build time. Artifact: `ai.arcships:aimux-java:0.2.1`,
 Java 8+ (compiled with `--release 8`). See [RFC-0013](../../rfc/0013-java-bindings.md)
 for the design.
 
@@ -12,7 +12,7 @@ for the design.
 Maven Central (publishing):
 
 ```groovy
-implementation("ai.arcships:aimux-java:0.2.0")
+implementation("ai.arcships:aimux-java:0.2.1")
 ```
 
 JNA loads `aimux_ffi` by name — provide the native library

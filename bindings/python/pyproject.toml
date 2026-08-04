@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "arcships-aimux"
-version = "0.2.0"
+version = "0.2.1"
 description = "Unified LLM service layer for Python (Rust core, 325 providers)"
 readme = "README.md"
 license = "MIT"

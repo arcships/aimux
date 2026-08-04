@@ -224,7 +224,7 @@ aimux ships 8 bindings that share the same Rust core:
 | **Node.js** | native | napi-rs v3 | `npm install @arcships/aimux` — [npm](https://www.npmjs.com/package/@arcships/aimux) | bundled in the package, nothing to do |
 | **Python** | native | PyO3 + maturin | `pip install arcships-aimux` — [PyPI](https://pypi.org/project/arcships-aimux/) | bundled in the wheel, nothing to do |
 | **Go** | C ABI | cgo (static link) | `go get github.com/arcships/aimux/bindings/go` then `go generate` | auto-downloaded `.a` from [GitHub Releases](https://github.com/arcships/aimux/releases) |
-| **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.2.0"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
+| **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.2.1"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
 | **Kotlin** | C ABI | JNA | `ai.arcships:aimux-kotlin` — Maven Central (publishing) | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
 | **Java** | C ABI | JNA | `ai.arcships:aimux-java` — Maven Central (publishing) | same as Kotlin — see [guide](docs/api/java.md#install) |
 | **Flutter** | C ABI | dart:ffi | `aimux` on pub.dev — Flutter plugin, native core embedded (publisher `arcships.ai`) | iOS/Android 开箱即用，桌面端开发/测试 — see [guide](docs/api/flutter.md#install) |
