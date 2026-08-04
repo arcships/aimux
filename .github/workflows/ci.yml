@@ -310,12 +310,6 @@ jobs:
           done
       - name: Build example (iOS — CocoaPods; Flutter SPM can't link plugin binaries)
         if: matrix.platform == 'ios'
-        # KNOWN LIMITATION (tracked in #25): CocoaPods' use_frameworks mode
-        # fails to link the vendored aimux_ffi.xcframework ('Framework
-        # aimux_ffi not found'). The pod integrates, Swift compiles, and the
-        # xcconfig flags are correct — the link resolution needs real-device
-        # debugging. Non-blocking for now; Android is fully verified.
-        continue-on-error: true
         working-directory: bindings/flutter/example
         run: |
           flutter config --no-enable-swift-package-manager

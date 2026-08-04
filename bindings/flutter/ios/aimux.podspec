@@ -26,17 +26,29 @@ dart:ffi.
   # official fallback. Flutter automatically uses it for podspec-only
   # plugins.
   #
-  # Dart resolves symbols via DynamicLibrary.process(), so every slice must
-  # be force-loaded — otherwise the linker drops unreferenced archive
-  # objects and lookupFunction fails at runtime. The xcframework slice
-  # names follow xcodebuild's convention (ios-arm64 / ios-arm64-simulator);
-  # CI verifies them before publishing.
+  # Dart resolves symbols via DynamicLibrary.process(), so the static
+  # archive must be force-loaded — otherwise the linker drops unreferenced
+  # objects and lookupFunction fails at runtime.
   s.vendored_frameworks = 'aimux_ffi.xcframework'
+
+  # CocoaPods' own xcframework script is not mounted in Flutter projects
+  # (base configuration conflict — see issue #25), so the selected slice is
+  # staged into PODS_XCFRAMEWORKS_BUILD_DIR/aimux by this script_phase,
+  # which runs as part of the pod target build.
+  s.script_phase = {
+    :name => 'Stage aimux_ffi xcframework slice',
+    :script => 'bash "$PODS_TARGET_SRCROOT/embed-xcframework.sh"',
+    :execution_position => :before_compile,
+    :input_files => ['${PODS_TARGET_SRCROOT}/aimux_ffi.xcframework/Info.plist'],
+    :output_files => ['${PODS_XCFRAMEWORKS_BUILD_DIR}/aimux/aimux_ffi.framework/aimux_ffi'],
+  }
+
   # user_target_xcconfig: the force_load must reach the APP link command;
-  # pod_target_xcconfig only affects the pod's own target build.
+  # pod_target_xcconfig only affects the pod's own target build. The staged
+  # slice lives under PODS_XCFRAMEWORKS_BUILD_DIR (which is already in the
+  # app's FRAMEWORK_SEARCH_PATHS).
   s.user_target_xcconfig = {
-    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
-    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
+    'OTHER_LDFLAGS' => ['-force_load', '$(PODS_XCFRAMEWORKS_BUILD_DIR)/aimux/aimux_ffi.framework/aimux_ffi'],
   }
 
   # App Store privacy manifest (2024-05+ requirement for SDKs). aimux-ffi
