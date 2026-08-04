@@ -328,13 +328,20 @@ jobs:
           ls build/ios/iphonesimulator/Runner.app/Frameworks/ 2>/dev/null || true
           echo '--- symbols in pod (raw) ---'
           nm -g "$PDIR/aimux" 2>&1 | grep 'aimux_' | head -5 || echo 'NONE in pod'
-          echo '--- symbols in Runner (raw) ---'
-          nm -g build/ios/iphonesimulator/Runner.app/Runner 2>&1 | grep 'aimux_' | head -5 || echo 'NONE in Runner'
-          echo '=== FINAL SYMBOL CHECK ==='
-          if nm -g build/ios/iphonesimulator/Runner.app/Runner 2>/dev/null | grep -q 'aimux_openai_new'; then
-            echo 'OK: aimux_openai_new found in Runner'
+          echo '--- all Mach-O in Runner.app ---'
+          find build/ios/iphonesimulator/Runner.app -type f -perm -111 2>/dev/null | head -10
+          echo '=== FINAL SYMBOL CHECK (scan whole app) ==='
+          FOUND=""
+          while IFS= read -r f; do
+            if nm -g "$f" 2>/dev/null | grep -q 'aimux_openai_new'; then
+              echo "FOUND aimux_openai_new in: $f"
+              FOUND=yes
+            fi
+          done < <(find build/ios/iphonesimulator/Runner.app -type f -perm -111 2>/dev/null)
+          if [ -n "$FOUND" ]; then
+            echo 'OK: aimux symbols present'
           else
-            echo 'FAIL: aimux_openai_new missing from Runner'
+            echo 'FAIL: aimux_openai_new missing from all app binaries'
             exit 1
           fi
       - name: Build example (Android)
