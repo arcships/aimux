@@ -7,8 +7,9 @@
 //!
 //! ## Memory ownership
 //!
-//! - [`aimux_generate_text`] returns a `*mut c_char` owned by the caller; the
-//!   caller MUST free it with [`aimux_free_string`].
+//! - Every function returning `*mut c_char` — constructors included —
+//!   transfers ownership to the caller, who MUST free it with
+//!   [`aimux_free_string`].
 //! - [`aimux_stream_text`] callbacks receive `*const c_char` pointers that are
 //!   valid **only for the duration of the callback**. The callback must copy
 //!   the data synchronously; the backing buffer is freed when the callback
@@ -930,13 +931,14 @@ pub extern "C" fn aimux_drop_handle(handle: u64) {
     }
 }
 
-/// Free a C string previously returned by [`aimux_generate_text`].
+/// Free a C string previously returned by any aimux function that returns
+/// `*mut c_char` — constructors, [`aimux_generate_text`], multimodal calls.
 ///
 /// # Safety
 ///
-/// `ptr` must be null or a pointer previously produced by
-/// [`aimux_generate_text`] (i.e. via `CString::into_raw`). Passing any other
-/// pointer is undefined behavior.
+/// `ptr` must be null or a pointer previously produced by an aimux `char*`
+/// return (i.e. via `CString::into_raw`). Passing any other pointer is
+/// undefined behavior.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aimux_free_string(ptr: *mut c_char) {
     if ptr.is_null() {

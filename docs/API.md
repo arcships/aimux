@@ -63,7 +63,7 @@ model)` (Go), `Model.openai(apiKey, modelId)` (Java, Kotlin, Flutter),
 Multimodal, local-inference and search providers have their own constructors
 too — full list: [reference.md](api/reference.md).
 
-### OpenAI-compatible (250)
+### OpenAI-compatible (251)
 
 One function in every binding:
 
@@ -85,7 +85,7 @@ provider(name, api_key?, model_id, config?)   // all languages
   ```
 
   字符串形式（`provider("groq", ...)`）在全部语言中同样可用——两种写法等价。
-- Full list (250, name / env var / base URL): [providers.md](api/providers.md)
+- Full list (251, name / env var / base URL): [providers.md](api/providers.md)
 - Custom endpoint: registry name + `base_url` override, or the OpenAI
   constructor with a base URL
 

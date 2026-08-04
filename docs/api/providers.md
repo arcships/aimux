@@ -5,7 +5,7 @@
 
 **251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **76 non-registry providers** (construct via the typed factories listed below).
 
-## Registry-backed (OpenAI-compatible) — 250
+## Registry-backed (OpenAI-compatible) — 251
 
 | name | display | env var | base_url |
 |------|---------|---------|----------|

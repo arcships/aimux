@@ -9,7 +9,9 @@
  *
  * Every function that returns `char*` — constructors included — returns a
  * string owned by the caller; the caller MUST free it with
- * `aimux_free_string`. `aimux_stream_text` callbacks receive `const char*`
+ * `aimux_free_string`. A `char*`-returning function returns NULL only if the
+ * result string could not be allocated; `aimux_free_string(NULL)` is safe.
+ * `aimux_stream_text` callbacks receive `const char*`
  * pointers that are valid **only for the duration of the callback**. The
  * callback must copy the data synchronously.
  *
@@ -18,16 +20,27 @@
  * All functions are synchronous (block until the operation completes).
  * Callbacks execute on the same thread; do not re-enter the FFI layer
  * from a callback (would deadlock the tokio runtime).
+ * `opts_json.timeout` (`{"total_ms","first_chunk_ms","chunk_ms"}`,
+ * milliseconds; the latter two streaming-only) is the only way to bound a
+ * call — there is no abort/cancel entry point over the C ABI. Without it a
+ * hung provider blocks the calling thread indefinitely.
  *
  * ## Wire format
  *
- * - `prompt_json`: bare prompt value (`"text"` or `[{...}]`) or `{"prompt": <value>}`
- * - `opts_json`: serialized GenerateTextOptions (empty/null for defaults)
- * - Results: serialized JSON of GenerateTextResult, or `{"error":"..."}`
+ * - Errors: every failure is the envelope
+ *   `{"error":"...","error_type":"...","status_code":<u16|null>}` —
+ *   constructors, `aimux_generate_text`, `on_error`, all of them.
+ * - `prompt_json`: bare prompt value (`"text"` or `[{...}]`), or a
+ *   single-key wrapper `{"prompt": <value>}` (any extra key disables
+ *   unwrapping and the whole object is parsed as the prompt)
+ * - `opts_json` for `aimux_generate_text`/`aimux_stream_text`: serialized
+ *   GenerateTextOptions (empty/null for defaults). Multimodal calls
+ *   (`aimux_speech_generate`, `aimux_image_generate`, `aimux_rerank`,
+ *   `aimux_video_generate`, `aimux_search`) REQUIRE a valid JSON object —
+ *   NULL or empty returns an error envelope.
+ * - Results: serialized JSON of GenerateTextResult, or an error envelope
  * - Stream parts: serialized JSON of StreamPart
- * - Constructors: `{"handle":<u64>}` on success, or
- *   `{"error":"...","error_type":"...","status_code":<u16|null>}` on failure
- *   (the same envelope shape `aimux_generate_text` returns on failure).
+ * - Constructors: `{"handle":<u64>}` on success, or an error envelope
  */
 
 #ifndef AIMUX_FFI_H
@@ -90,7 +103,8 @@ char *aimux_anthropic_new_with_base(const char *api_key,
 /**
  * Create a Cohere model instance (API key + model ID). Returns a JSON
  * string (caller MUST free with aimux_free_string): `{"handle":<u64>}` on
- * success, `{"error":...}` on failure.
+ * success, `{"error":...}` on failure. `_with_base` adds `base_url`
+ * (NULL or empty uses the provider default).
  */
 char *aimux_cohere_new(const char *api_key, const char *model_id);
 char *aimux_cohere_new_with_base(const char *api_key,
@@ -100,7 +114,8 @@ char *aimux_cohere_new_with_base(const char *api_key,
 /**
  * Create a Mistral model instance (API key + model ID). Returns a JSON
  * string (caller MUST free with aimux_free_string): `{"handle":<u64>}` on
- * success, `{"error":...}` on failure.
+ * success, `{"error":...}` on failure. `_with_base` adds `base_url`
+ * (NULL or empty uses the provider default).
  */
 char *aimux_mistral_new(const char *api_key, const char *model_id);
 char *aimux_mistral_new_with_base(const char *api_key,
@@ -110,7 +125,8 @@ char *aimux_mistral_new_with_base(const char *api_key,
 /**
  * Create an xAI model instance (API key + model ID). Returns a JSON
  * string (caller MUST free with aimux_free_string): `{"handle":<u64>}` on
- * success, `{"error":...}` on failure.
+ * success, `{"error":...}` on failure. `_with_base` adds `base_url`
+ * (NULL or empty uses the provider default).
  */
 char *aimux_xai_new(const char *api_key, const char *model_id);
 char *aimux_xai_new_with_base(const char *api_key,
@@ -120,7 +136,8 @@ char *aimux_xai_new_with_base(const char *api_key,
 /**
  * Create a Bedrock model instance (AWS SigV4 credentials). Returns a JSON
  * string (caller MUST free with aimux_free_string): `{"handle":<u64>}` on
- * success, `{"error":...}` on failure.
+ * success, `{"error":...}` on failure. `_with_base` adds `base_url`
+ * (NULL or empty uses the provider default).
  */
 char *aimux_bedrock_new(const char *access_key_id,
                         const char *secret_access_key,
@@ -135,7 +152,8 @@ char *aimux_bedrock_new_with_base(const char *access_key_id,
 /**
  * Create a Vertex AI model instance (GCP bearer token). Returns a JSON
  * string (caller MUST free with aimux_free_string): `{"handle":<u64>}` on
- * success, `{"error":...}` on failure.
+ * success, `{"error":...}` on failure. `_with_base` adds `base_url`
+ * (NULL or empty uses the provider default).
  */
 char *aimux_vertex_new(const char *access_token,
                        const char *project,
@@ -150,7 +168,8 @@ char *aimux_vertex_new_with_base(const char *access_token,
 /**
  * Create an Anthropic-on-AWS model instance (API key + region). Returns a
  * JSON string (caller MUST free with aimux_free_string): `{"handle":<u64>}`
- * on success, `{"error":...}` on failure.
+ * on success, `{"error":...}` on failure. `_with_base` adds `base_url`
+ * (NULL or empty uses the provider default).
  */
 char *aimux_anthropic_aws_new(const char *api_key, const char *region,
                               const char *model_id);
@@ -159,9 +178,13 @@ char *aimux_anthropic_aws_new_with_base(const char *api_key, const char *region,
 
 /**
  * Create an Azure OpenAI model instance (API key + resource name; deployment
- * passed as model_id; api_version NULL uses the provider default). Returns a
- * JSON string (caller MUST free with aimux_free_string): `{"handle":<u64>}`
- * on success, `{"error":...}` on failure.
+ * passed as model_id; api_version NULL or empty uses the provider default).
+ * Returns a JSON string (caller MUST free with aimux_free_string):
+ * `{"handle":<u64>}` on success, `{"error":...}` on failure.
+ *
+ * `_with_base` takes an explicit `base_url` IN PLACE OF `resource_name`.
+ * Unlike other `_with_base` variants, `base_url` here is REQUIRED — NULL
+ * returns an InvalidArgument error envelope.
  */
 char *aimux_azure_new(const char *api_key, const char *resource_name,
                       const char *deployment, const char *api_version);
@@ -172,8 +195,8 @@ char *aimux_azure_new_with_base(const char *api_key, const char *base_url,
  * Create a model from the provider registry by name (RFC-0017 phase 4).
  *
  * @param name        NUL-terminated registry provider name (e.g. "deepseek", "groq").
- * @param api_key     NUL-terminated API key, or NULL to read the provider's
- *                    env var from the registry entry.
+ * @param api_key     NUL-terminated API key; NULL (or non-UTF-8) reads the
+ *                    provider's env var from the registry entry.
  * @param model_id    NUL-terminated model ID.
  * @param config_json Optional JSON object of ProviderOptions
  *                    ({"base_url": "...", "headers": {...}, "max_retries": 0,
@@ -199,11 +222,15 @@ char *aimux_provider_from_env(const char *name, const char *model_id);
 /**
  * Non-streaming text generation.
  *
- * @param handle      Model handle from aimux_*_new's `{"handle":<u64>}`.
+ * @param handle      Language-model handle from aimux_*_new's `{"handle":<u64>}`
+ *                    (a handle of another modality yields "invalid handle").
  * @param prompt_json JSON prompt (see wire format above).
  * @param opts_json   JSON options (NULL or empty for defaults).
  * @return JSON result string (caller MUST free with aimux_free_string).
- *         On error: `{"error":"..."}`.
+ *         On error: the `{"error","error_type","status_code"}` envelope.
+ *         Malformed input returns `{"error":"invalid prompt_json: <detail>",
+ *         "error_type":"Other","status_code":null}` (same for opts_json)
+ *         before any network call.
  */
 char *aimux_generate_text(uint64_t handle,
                           const char *prompt_json,
@@ -243,32 +270,10 @@ void aimux_drop_handle(uint64_t handle);
  */
 void aimux_free_string(char *ptr);
 
-/**
- * Take (read-and-clear) the last constructor error on this thread.
- *
- * Constructors return a bare handle with 0 reserved for failure, so callers
- * cannot distinguish "unknown provider" from "bad config" from "missing env
- * var". On failure, the constructor records the full error JSON envelope
- * `{"error","error_type","status_code"}`; callers read it back with this
- * function and feed it through their existing error-JSON parser.
- *
- * Semantics:
- * - Returns NULL if the last constructor call on this thread succeeded.
- * - Destructive read: a second call returns NULL.
- * - The returned pointer is owned by the caller; MUST be freed with
- *   aimux_free_string.
- * - Only set by aimux_*_new / aimux_provider_new / aimux_provider_from_env.
- *
- * Threading: the constructor and this read must run on the SAME OS thread,
- * with no other aimux_*_new call in between. Runtimes that can migrate work
- * between OS threads between native calls (Go goroutines, Java virtual
- * threads, Kotlin coroutines) must pin both calls to one thread.
- *
- * @return Error JSON envelope, or NULL (no error).
- */
-char *aimux_last_error(void);
-
 /* ── Embedding ───────────────────────────────────────────────────────────── */
+/* Constructors below return the `{"handle":<u64>}` / error envelope;
+   `*_generate`-style calls return the modality's Result JSON or an error
+   envelope. All returned strings must be freed with aimux_free_string. */
 
 char *aimux_openai_embedding_new(const char *api_key, const char *model_id);
 char *aimux_openai_embedding_new_with_base(const char *api_key, const char *model_id, const char *base_url);
@@ -296,12 +301,14 @@ char *aimux_image_generate(uint64_t handle, const char *opts_json);
 
 char *aimux_openai_transcription_new(const char *api_key, const char *model_id);
 char *aimux_openai_transcription_new_with_base(const char *api_key, const char *model_id, const char *base_url);
+/* opts_json is currently IGNORED (reserved for future options). */
 char *aimux_transcription_generate(uint64_t handle, const char *audio_base64, const char *media_type, const char *opts_json);
 
 /* ── Files ──────────────────────────────────────────────────────────────── */
 
 char *aimux_openai_files_new(const char *api_key);
 char *aimux_openai_files_new_with_base(const char *api_key, const char *base_url);
+/* opts_json is currently IGNORED (reserved for future options). */
 char *aimux_file_upload(uint64_t handle, const char *data_base64, const char *media_type, const char *opts_json);
 
 /* ── Reranking ───────────────────────────────────────────────────────────── */
@@ -318,6 +325,8 @@ char *aimux_video_generate(uint64_t handle, const char *opts_json);
 
 /* ── Search ──────────────────────────────────────────────────────────────── */
 
+/* model_id is accepted for API symmetry but ignored (Tavily uses a fixed
+   endpoint). */
 char *aimux_tavily_search_new(const char *api_key, const char *model_id);
 char *aimux_tavily_search_new_with_base(const char *api_key, const char *model_id, const char *base_url);
 char *aimux_search(uint64_t handle, const char *opts_json);
