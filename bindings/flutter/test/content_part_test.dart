@@ -211,8 +211,9 @@ void main() {
       final json = {'type': 'future_variant', 'data': 'something'};
       final decoded = ContentPart.fromJson(json);
       expect(decoded, isA<ContentPartUnknown>());
-      expect((decoded as ContentPartUnknown).tag, 'future_variant');
-      expect((decoded as ContentPartUnknown).data['data'], 'something');
+      final unknown = decoded as ContentPartUnknown;
+      expect(unknown.tag, 'future_variant');
+      expect(unknown.data['data'], 'something');
     });
   });
 }
