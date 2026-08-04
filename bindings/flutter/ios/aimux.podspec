@@ -30,8 +30,8 @@ dart:ffi.
   # CI verifies them before publishing.
   s.vendored_frameworks = 'aimux_ffi.xcframework'
   s.pod_target_xcconfig = {
-    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
-    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_TARGET_SRCROOT)/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
+    'OTHER_LDFLAGS[sdk=iphoneos*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64/aimux_ffi.framework/aimux_ffi'],
+    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => ['-force_load', '$(PODS_ROOT)/aimux/aimux_ffi.xcframework/ios-arm64-simulator/aimux_ffi.framework/aimux_ffi']
   }
 
   # App Store privacy manifest (2024-05+ requirement for SDKs). aimux-ffi
