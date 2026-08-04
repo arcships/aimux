@@ -479,6 +479,27 @@ func Provider(name, apiKey, modelID string) (*Model, error) {
 
 // ProviderWithBase is Provider with a base URL override (config_json).
 func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
+	if baseURL == "" {
+		return ProviderWithConfig(name, apiKey, modelID, nil)
+	}
+	return ProviderWithConfig(name, apiKey, modelID, &ProviderConfig{BaseURL: baseURL})
+}
+
+// ProviderConfig mirrors the Rust ProviderOptions accepted by
+// aimux_provider_new's config_json (RFC-0017 §3.4). Zero-value fields are
+// omitted; MaxRetries is a pointer so 0 (disable retries) is expressible.
+type ProviderConfig struct {
+	BaseURL       string            `json:"base_url,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	Organization  string            `json:"organization,omitempty"`
+	Project       string            `json:"project,omitempty"`
+	MaxRetries    *uint32           `json:"max_retries,omitempty"`
+	BodyOverrides map[string]any    `json:"body_overrides,omitempty"`
+}
+
+// ProviderWithConfig is Provider with the full ProviderOptions config.
+// cfg may be nil for defaults.
+func ProviderWithConfig(name, apiKey, modelID string, cfg *ProviderConfig) (*Model, error) {
 	m := &Model{}
 	cName := C.CString(name)
 	cModel := C.CString(modelID)
@@ -492,9 +513,12 @@ func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
 	}
 
 	var cConfig *C.char
-	if baseURL != "" {
-		cfg := `{"base_url":"` + baseURL + `"}`
-		cConfig = C.CString(cfg)
+	if cfg != nil {
+		buf, err := json.Marshal(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("aimux: marshal provider config: %w", err)
+		}
+		cConfig = C.CString(string(buf))
 		defer C.free(unsafe.Pointer(cConfig))
 	}
 
