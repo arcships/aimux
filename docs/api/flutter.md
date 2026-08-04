@@ -6,13 +6,28 @@ Flutter/Dart wraps the Rust core through the `aimux-ffi` C ABI (via `dart:ffi`).
 
 ## Install
 
-pub.dev (pending). Until published, depend on the path:
+On [pub.dev](https://pub.dev/packages/aimux) (publisher: [`arcships.ai`](https://pub.dev/publishers/arcships.ai)):
+
+```bash
+flutter pub add aimux
+```
+
+The package is a Flutter plugin: the Rust core ships inside it —
+`libaimux_ffi.so` per ABI (Android) and `aimux_ffi.xcframework` (iOS) are
+embedded at publish time, so no extra download or build step is needed.
+
+While developing against the repo, depend on the path:
 
 ```yaml
 dependencies:
   aimux:
     path: bindings/flutter
 ```
+
+Desktop (Linux/macOS/Windows) is supported for development and tests: the
+library is resolved from the platform library path — build it once with
+`cargo build -p aimux-ffi --release` and point `LD_LIBRARY_PATH`
+(`DYLD_LIBRARY_PATH` on macOS) at `target/release`.
 
 The binding loads the platform library at runtime
 (`libaimux_ffi.so` / `libaimux_ffi.dylib` / `aimux_ffi.dll`) — ship it with

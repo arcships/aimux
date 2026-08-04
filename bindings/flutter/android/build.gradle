@@ -1,0 +1,38 @@
+// Android build for the aimux Flutter plugin.
+//
+// Pure resource plugin: no native Android code. The Rust core ships as
+// `libaimux_ffi.so` per ABI under src/main/jniLibs (produced by the release
+// pipeline before `dart pub publish`); the Android build system bundles the
+// .so files into the consuming app, and Dart loads them by name via
+// `DynamicLibrary.open('libaimux_ffi.so')`.
+
+group = 'ai.arcships'
+version = '0.2.0'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'ai.arcships.aimux'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+    }
+}
