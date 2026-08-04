@@ -3,7 +3,7 @@
 > 发布流水线 `release.yml` 的剩余渠道（PyPI / Maven Central / Go 二进制）需要
 > 账号与密钥。本文是逐步操作手册。已配置完成的渠道（crates.io、npm）标注跳过。
 >
-> 更新时间：2026-08-03（v0.2.0 发布期）
+> 更新时间：2026-08-03（v0.2.1 发布期）
 
 ## 总览
 
@@ -45,7 +45,7 @@
 
 3. **验证**
    - 触发发布：`gh workflow run release.yml --ref master -f python=true`
-   - 成功后 `pip install arcships-aimux==0.2.0` 可安装（import 仍是 `from aimux import ...`）。
+   - 成功后 `pip install arcships-aimux==0.2.1` 可安装（import 仍是 `from aimux import ...`）。
 
 > 不需要 PyPI API token，也不需要改 workflow。
 
@@ -126,13 +126,13 @@
 ```bash
 # JVM：Maven Central
 gh workflow run release.yml --ref master -f jvm=true
-# 成功后 Maven Central 上出现 ai.arcships:aimux-java:0.2.0 与 aimux-kotlin:0.2.0
+# 成功后 Maven Central 上出现 ai.arcships:aimux-java:0.2.1 与 aimux-kotlin:0.2.1
 # （首次发布在 Staging 仓库，需在 central.sonatype.com 手动 Release 一次；
 #   之后的发布自动处理——取决于 build.gradle.kts 的自动发布配置）
 
 # Flutter：pub.dev（需先配置 PUB_DEV_TOKEN，见 §2.5）
 gh workflow run release.yml --ref master -f flutter=true
-# 成功后 pub.dev 出现 aimux@0.2.0（publisher: arcships.ai）
+# 成功后 pub.dev 出现 aimux@0.2.1（publisher: arcships.ai）
 ```
 
 ---

@@ -10,7 +10,7 @@ with ARC-managed model handles.
 Add the package via SPM (the git tag is the version):
 
 ```swift
-.package(url: "https://github.com/arcships/aimux", from: "0.2.0"),
+.package(url: "https://github.com/arcships/aimux", from: "0.2.1"),
 .target(name: "Aimux", dependencies: ["Aimux"])
 ```
 
