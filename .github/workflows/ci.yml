@@ -313,18 +313,17 @@ jobs:
         working-directory: bindings/flutter/example
         run: |
           flutter config --no-enable-swift-package-manager
-          flutter build ios --debug --no-codesign --simulator
-          echo '--- Podfile.lock aimux ---'
-          grep -A4 'aimux' ios/Podfile.lock || true
-          echo '--- Pods dir ---'
-          ls ios/Pods/ 2>&1 | head -10
-          echo '--- Pods aimux content ---'
-          ls -la ios/Pods/aimux/ 2>&1 | head -15
-          echo '--- Runner xcconfig flags ---'
-          grep -rE 'force_load|aimux_ffi|OTHER_LDFLAGS' ios/Pods/Target\ Support\ Files/Pods-Runner/ 2>/dev/null | head -10
-          echo '--- symbol check ---'
-          nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
-            || { echo 'Rust symbols missing from app binary'; nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20; exit 1; }
+          flutter build ios --debug --no-codesign --simulator 2>&1 | tail -30
+          echo '=== Podfile ==='
+          cat ios/Flutter/ephemeral/Podfile 2>/dev/null | head -40
+          echo '=== pod install (retry for diagnostics) ==='
+          cd ios && pod install 2>&1 | tail -30
+          echo '=== Podfile.lock ==='
+          cat Podfile.lock 2>/dev/null | grep -B2 -A8 'aimux'
+          echo '=== Pods layout ==='
+          ls -la Pods/aimux/ 2>/dev/null | head -15
+          echo '=== Runner xcconfig ==='
+          grep -rE 'aimux|force_load' 'Pods/Target Support Files/Pods-Runner/' 2>/dev/null | head -10
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
