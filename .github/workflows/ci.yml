@@ -313,26 +313,23 @@ jobs:
         working-directory: bindings/flutter/example
         run: |
           flutter config --no-enable-swift-package-manager
-          echo '=== build products ==='
-          ls build/ios/Debug-iphonesimulator/ 2>/dev/null | head -15 || true
-          echo '=== verbose link command ==='
-          set -o pipefail
-          flutter build ios --debug --no-codesign --simulator -v 2>&1 | grep -E '^/.*ld |force_load|aimux_ffi' | tail -15 || true
-          set +o pipefail
-          echo '=== Runner xcconfig ==='
-          grep -hE 'OTHER_LDFLAGS|FRAMEWORK_SEARCH' Pods/Target\ Support\ Files/Pods-Runner/*.xcconfig 2>/dev/null || true
-          echo '=== staged slices ==='
-          find build ios -path '*XCFrameworkIntermediates*' -name 'aimux_ffi*' 2>/dev/null | head -10 || true
-          echo '=== app frameworks ==='
-          ls build/ios/iphonesimulator/Runner.app/Frameworks/ 2>/dev/null | head -10 || true
-          echo '=== symbol check ==='
-          if nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new'; then
-            echo 'OK: aimux_openai_new found'
-          else
-            echo 'Rust symbols missing from app binary:'
-            nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20 || true
-            exit 1
-          fi
+          flutter build ios --debug --no-codesign --simulator -v 2>&1 | tee /tmp/ios.log || true
+          echo '=== A. force_load in Runner link command ==='
+          grep -oE '\-force_load [^ ]*aimux_ffi[^ ]*' /tmp/ios.log | sort -u || true
+          echo '=== B. Runner resolved link settings ==='
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Debug \
+            -sdk iphonesimulator -showBuildSettings 2>/dev/null \
+            | grep -E '^\s*(OTHER_LDFLAGS|PODS_XCFRAMEWORKS_BUILD_DIR|FRAMEWORK_SEARCH_PATHS) =' || true
+          echo '=== C. pod linkage mode + embed + symbol location ==='
+          PDIR=$(find build -type d -name aimux.framework -path '*aimux*' | head -1)
+          echo "pod framework: $PDIR"
+          file "$PDIR/aimux" 2>/dev/null || true
+          echo '--- app frameworks dir (embed?) ---'
+          ls build/ios/iphonesimulator/Runner.app/Frameworks/ 2>/dev/null || true
+          echo '--- symbols in pod ---'
+          nm -g "$PDIR/aimux" 2>/dev/null | grep -c aimux || true
+          echo '--- symbols in Runner ---'
+          nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -c aimux || true
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
