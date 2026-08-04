@@ -111,6 +111,7 @@ pub enum ProviderName {
     Inception,
     Inceptron,
     InferenceNet,
+    Inferencehub,
     Inferx,
     Infinity,
     IoNet,
@@ -366,6 +367,7 @@ impl ProviderName {
         Self::Inception,
         Self::Inceptron,
         Self::InferenceNet,
+        Self::Inferencehub,
         Self::Inferx,
         Self::Infinity,
         Self::IoNet,
@@ -621,6 +623,7 @@ impl ProviderName {
             Self::Inception => "inception",
             Self::Inceptron => "inceptron",
             Self::InferenceNet => "inference_net",
+            Self::Inferencehub => "inferencehub",
             Self::Inferx => "inferx",
             Self::Infinity => "infinity",
             Self::IoNet => "io_net",
@@ -770,7 +773,7 @@ impl ProviderName {
 
     /// All registry names (for error messages / docs).
     pub const fn all_names() -> &'static str {
-        "abacus,abliteration_ai,ai21,ai302,ai_router,aiand,aibadgr,aigc2d,aihubmix,ails,aiml,aki_io,albert,alibaba,alibaba_coding_plan,alibaba_coding_plan_cn,alibaba_token_plan,alibaba_token_plan_cn,ambient,anyapi,anyscale,apertis,api2d,api2gpt,apiserpent,atlascloud,atomic_chat,auriko,azure_ai,baichuan,baidu,baidu_v2,bailing,baseten,berget,bigmodel,blueclaw,bytedance,byteplus,bytez,canopywave,cerebras,chatgpt,cherryin,chutes,clarifai,claudinio,cline_pass,closeai,cloudferro_sherlock,cloudflare,cloudflare_workers_ai,codestral,cometapi,commandcode,compactifai,copilot,cortecs,coze,crof,crossmodel,crusoe,daoxe,darkbloom,databricks,datarobot,deepbricks,deepinfra,deepseek,digitalocean,dinference,doubao,doubleword,drun,ebcloud,embercloud,empiriolabs,evroc,fastcrw,fastgpt,fastrouter,featherless_ai,firepass,fireworks,freemodel,friendliai,frogbot,galadriel,gdc,gigachat,github,gmi,gmicloud,gonka24,gradient_ai,groq,helicone,heroku,hetzner,hosted_vllm,hpc_ai,hyperbolic,iflowcn,inception,inceptron,inference_net,inferx,infinity,io_net,jiekou,kenari,kilo,kimi,kimi_for_coding,kiro,kluster_ai,krutrim,kuae_cloud_coding_plan,lambda_ai,lemonade,lemonfox_ai,libertai,lilac,lingyiwanwu,llama,llamagate,llmgateway,llmtr,longcat,lucidquery,lynkr,matterai,meganova,merge_gateway,meta,meta_llama,mimo,minimax,minimax_cn,minimax_cn_coding_plan,minimax_coding_plan,mira,mixlayer,moark,modal,model_oracle_ai,modelscope,moonshotai,moonshotai_cn,morph,nanogpt,ncompass,nearai,nebius,neon,neuralwatt,nextbit,nlp_cloud,nous_research,novita,nscale,nvidia_nim,oci,ofox,ohmygpt,ollama_cloud,openaimax,openaisb,opencode,opencode_go,opencode_zen,orcarouter,ovhcloud,parasail,perfxcloud,perplexity,perplexity_agent,petals,pinstripes,pioneer,poe,poolside,portkey,ppinfra,predibase,privatemode_ai,publicai,qihang_ai,qihoo360,qiniu_ai,regolo_ai,reka_ai,requesty,reve,routing_run,sakana,sambanova,sarvam,scaleway,scx_ai,siliconflow,snowflake,snowflake_cortex,stackit,stepfun,stepfun_ai_step_plan,stepfun_step_plan,subconscious,submodel,synthetic,tencent,tencent_coding_plan,tencent_token_plan,tencent_token_plan_enterprise_auto,tencent_token_plan_enterprise_pro,tencent_token_plan_general_personal,tencent_token_plan_hy_personal,tencent_tokenhub,tensormesh,the_grid_ai,thinkingmachines,tinfoil,togetherai,tokenflux,tokenpony,trustedrouter,tundra,umans_ai,unorouter,upstage,v0,venice,vercel,vivgrid,volc_engine,vultr,wafer,wandb,xiaomi_token_plan_ams,xiaomi_token_plan_cn,xiaomi_token_plan_sgp,xiaomimimo,xpersona,xunfei,zai,zai_coding_plan,zeldoc,zenmux,zhipu_v4,zhipuai_coding_plan"
+        "abacus,abliteration_ai,ai21,ai302,ai_router,aiand,aibadgr,aigc2d,aihubmix,ails,aiml,aki_io,albert,alibaba,alibaba_coding_plan,alibaba_coding_plan_cn,alibaba_token_plan,alibaba_token_plan_cn,ambient,anyapi,anyscale,apertis,api2d,api2gpt,apiserpent,atlascloud,atomic_chat,auriko,azure_ai,baichuan,baidu,baidu_v2,bailing,baseten,berget,bigmodel,blueclaw,bytedance,byteplus,bytez,canopywave,cerebras,chatgpt,cherryin,chutes,clarifai,claudinio,cline_pass,closeai,cloudferro_sherlock,cloudflare,cloudflare_workers_ai,codestral,cometapi,commandcode,compactifai,copilot,cortecs,coze,crof,crossmodel,crusoe,daoxe,darkbloom,databricks,datarobot,deepbricks,deepinfra,deepseek,digitalocean,dinference,doubao,doubleword,drun,ebcloud,embercloud,empiriolabs,evroc,fastcrw,fastgpt,fastrouter,featherless_ai,firepass,fireworks,freemodel,friendliai,frogbot,galadriel,gdc,gigachat,github,gmi,gmicloud,gonka24,gradient_ai,groq,helicone,heroku,hetzner,hosted_vllm,hpc_ai,hyperbolic,iflowcn,inception,inceptron,inference_net,inferencehub,inferx,infinity,io_net,jiekou,kenari,kilo,kimi,kimi_for_coding,kiro,kluster_ai,krutrim,kuae_cloud_coding_plan,lambda_ai,lemonade,lemonfox_ai,libertai,lilac,lingyiwanwu,llama,llamagate,llmgateway,llmtr,longcat,lucidquery,lynkr,matterai,meganova,merge_gateway,meta,meta_llama,mimo,minimax,minimax_cn,minimax_cn_coding_plan,minimax_coding_plan,mira,mixlayer,moark,modal,model_oracle_ai,modelscope,moonshotai,moonshotai_cn,morph,nanogpt,ncompass,nearai,nebius,neon,neuralwatt,nextbit,nlp_cloud,nous_research,novita,nscale,nvidia_nim,oci,ofox,ohmygpt,ollama_cloud,openaimax,openaisb,opencode,opencode_go,opencode_zen,orcarouter,ovhcloud,parasail,perfxcloud,perplexity,perplexity_agent,petals,pinstripes,pioneer,poe,poolside,portkey,ppinfra,predibase,privatemode_ai,publicai,qihang_ai,qihoo360,qiniu_ai,regolo_ai,reka_ai,requesty,reve,routing_run,sakana,sambanova,sarvam,scaleway,scx_ai,siliconflow,snowflake,snowflake_cortex,stackit,stepfun,stepfun_ai_step_plan,stepfun_step_plan,subconscious,submodel,synthetic,tencent,tencent_coding_plan,tencent_token_plan,tencent_token_plan_enterprise_auto,tencent_token_plan_enterprise_pro,tencent_token_plan_general_personal,tencent_token_plan_hy_personal,tencent_tokenhub,tensormesh,the_grid_ai,thinkingmachines,tinfoil,togetherai,tokenflux,tokenpony,trustedrouter,tundra,umans_ai,unorouter,upstage,v0,venice,vercel,vivgrid,volc_engine,vultr,wafer,wandb,xiaomi_token_plan_ams,xiaomi_token_plan_cn,xiaomi_token_plan_sgp,xiaomimimo,xpersona,xunfei,zai,zai_coding_plan,zeldoc,zenmux,zhipu_v4,zhipuai_coding_plan"
     }
 }
 
@@ -885,6 +888,7 @@ impl std::str::FromStr for ProviderName {
             "inception" => Ok(Self::Inception),
             "inceptron" => Ok(Self::Inceptron),
             "inference_net" => Ok(Self::InferenceNet),
+            "inferencehub" => Ok(Self::Inferencehub),
             "inferx" => Ok(Self::Inferx),
             "infinity" => Ok(Self::Infinity),
             "io_net" => Ok(Self::IoNet),

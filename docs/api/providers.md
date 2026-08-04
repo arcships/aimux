@@ -3,7 +3,7 @@
 > **GENERATED** by `scripts/gen_providers_doc.py` — do not edit by hand.
 > Regenerate with: `python scripts/gen_providers_doc.py`
 
-**250 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **75 non-registry providers** (construct via the typed factories listed below).
+**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **76 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 250
 
@@ -115,6 +115,7 @@
 | `inception` | Inception Labs | `INCEPTION_API_KEY` | `https://api.inceptionlabs.ai/v1` |
 | `inceptron` | Inceptron | `INCEPTRON_API_KEY` | `https://api.inceptron.io/v1` |
 | `inference_net` | Inference.net | `INFERENCE_NET_API_KEY` | `https://api.inference.net/v1` |
+| `inferencehub` | InferenceHub | `INFERENCEHUB_API_KEY` | `https://app.inferencehub.tech/v1` |
 | `inferx` | InferX | `INFERX_API_KEY` | `https://model.inferx.net/v1` |
 | `infinity` | Infinity AI | `INFINITY_API_KEY` | `https://infinity.ai/api/v1` |
 | `io_net` | IO.NET | `IOINTELLIGENCE_API_KEY` | `https://api.intelligence.io.solutions/api/v1` |
@@ -278,6 +279,7 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 | `openai` | `OpenAIConfig` / `OpenAIProvider` |
 | `vertex` | `VertexConfig` / `VertexProvider` |
 | `voyage` | `VoyageConfig` / `VoyageProvider` |
+| `codex` | `CodexConfig` / `CodexProvider` |
 | `openrouter` | `OpenRouterConfig` / `OpenRouterProvider` |
 | `xai` | `XAIConfig` / `XAIProvider` |
 
