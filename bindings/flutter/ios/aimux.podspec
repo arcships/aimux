@@ -43,16 +43,19 @@ dart:ffi.
     :output_files => ['${PODS_XCFRAMEWORKS_BUILD_DIR}/aimux/aimux_ffi.framework/aimux_ffi'],
   }
 
-  # use_frameworks makes aimux a dynamic framework; the vendored static
-  # library is linked INTO it at the POD target's link step. Nothing
-  # references the Rust symbols (Dart resolves them at runtime via
-  # DynamicLibrary.process()), so pod_target_xcconfig force-loads the
-  # staged archive — the flags must apply to the pod's own link, not the
-  # app's. The staged slice lives under PODS_XCFRAMEWORKS_BUILD_DIR (already
-  # in the pod's FRAMEWORK_SEARCH_PATHS via CocoaPods' xcframework wiring).
-  s.pod_target_xcconfig = {
+  # Symbol placement (consulted gpt-5.6-sol + glm-5.2, issue #25):
+  # aimux is a DYNAMIC framework under use_frameworks, and its link happens
+  # in the pod target — pod_target_xcconfig's force_load put the Rust
+  # symbols into aimux.framework, which is never embedded into the app
+  # (Runner.app/Frameworks is empty), so nothing is visible at runtime.
+  # Dart resolves via DynamicLibrary.process() (dlsym RTLD_DEFAULT): symbols
+  # must live in the MAIN executable. user_target_xcconfig reaches Runner's
+  # link (Pods xcconfig is consumed — OTHER_LDFLAGS shows -framework aimux).
+  # No -framework aimux_ffi here: force_load with an absolute path is
+  # self-sufficient, and avoids duplicate definitions if the pod link also
+  # picked it up.
+  s.user_target_xcconfig = {
     'OTHER_LDFLAGS' => [
-      '-framework', 'aimux_ffi',
       '-force_load', '$(PODS_XCFRAMEWORKS_BUILD_DIR)/aimux/aimux_ffi.framework/aimux_ffi',
     ],
   }
