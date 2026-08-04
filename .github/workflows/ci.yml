@@ -314,6 +314,13 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
+          echo '=== Pods-Runner.debug.xcconfig OTHER_LDFLAGS ==='
+          grep -E 'OTHER_LDFLAGS|FRAMEWORK_SEARCH' 'Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig' 2>/dev/null
+          echo '=== staged xcframework slices ==='
+          find ios -path '*XCFrameworkIntermediates*' -name 'aimux_ffi*' 2>/dev/null | head -10
+          echo '=== app frameworks ==='
+          ls -la build/ios/iphonesimulator/Runner.app/Frameworks/ 2>/dev/null | head -10
+          echo '=== symbol check ==='
           nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
             || { echo 'Rust symbols missing from app binary'; nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20; exit 1; }
       - name: Build example (Android)
