@@ -314,15 +314,20 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
-          echo '=== Pods-Runner.debug.xcconfig OTHER_LDFLAGS ==='
-          grep -E 'OTHER_LDFLAGS|FRAMEWORK_SEARCH' 'Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig' 2>/dev/null
-          echo '=== staged xcframework slices ==='
-          find ios -path '*XCFrameworkIntermediates*' -name 'aimux_ffi*' 2>/dev/null | head -10
-          echo '=== app frameworks ==='
-          ls -la build/ios/iphonesimulator/Runner.app/Frameworks/ 2>/dev/null | head -10
           echo '=== symbol check ==='
-          nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new' \
-            || { echo 'Rust symbols missing from app binary'; nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20; exit 1; }
+          if nm -g build/ios/iphonesimulator/Runner.app/Runner | grep -q 'aimux_openai_new'; then
+            echo 'OK: aimux_openai_new found'
+          else
+            echo 'Rust symbols missing from app binary:'
+            nm build/ios/iphonesimulator/Runner.app/Runner | grep -i aimux | head -20 || true
+            exit 1
+          fi
+          echo '=== Runner xcconfig ==='
+          grep -hE 'OTHER_LDFLAGS|FRAMEWORK_SEARCH' 'Pods/Target Support Files/Pods-Runner/'*.xcconfig 2>/dev/null || true
+          echo '=== staged slices ==='
+          find build ios -path '*XCFrameworkIntermediates*' -name 'aimux_ffi*' 2>/dev/null | head -10 || true
+          echo '=== app frameworks ==='
+          ls build/ios/iphonesimulator/Runner.app/Frameworks/ 2>/dev/null | head -10 || true
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
