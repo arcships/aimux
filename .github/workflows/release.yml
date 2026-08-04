@@ -182,6 +182,7 @@ jobs:
     if: github.event_name == 'push' || github.event.inputs.node == 'true'
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -189,6 +190,13 @@ jobs:
       - name: Install dependencies
         working-directory: bindings/node
         run: npm ci
+      - name: Build napi index.js + d.ts (regenerate from current lib.rs)
+        # index.js / index.d.ts are napi build artifacts; the committed
+        # copies may be stale (e.g. initLogging added in RFC-0014 but not
+        # re-exported in the committed index.js). Rebuild on the host to
+        # regenerate them before tsc + prepublish.
+        working-directory: bindings/node
+        run: npm run build
       - name: Create platform packages
         working-directory: bindings/node
         run: npx napi create-npm-dirs
