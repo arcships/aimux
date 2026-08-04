@@ -4,7 +4,7 @@ plugins {
     signing
 }
 
-group = "io.aimux"
+group = "ai.arcships"
 version = "0.2.0"
 
 repositories {

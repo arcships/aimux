@@ -61,13 +61,13 @@
 1. 打开 https://central.sonatype.com/ → **Sign in**（支持 GitHub/Google OAuth 或注册）。
 2. 登录后右上角头像 → **View account** → 记下用户名/邮箱。
 
-### 2.2 申请 `io.aimux` namespace（首次才需要）
+### 2.2 申请 `ai.arcships` namespace（✅ 已获批）
 
-`bindings/java` 和 `bindings/kotlin` 的 `build.gradle.kts` 里 `group = "io.aimux"`，
-所以必须拥有 `io.aimux` 这个 namespace：
+`bindings/java` 和 `bindings/kotlin` 的 `build.gradle.kts` 里 `group = "ai.arcships"`，
+所以必须拥有 `ai.arcships` 这个 namespace：
 
 1. central.sonatype.com → **Publishing** → **Namespaces** → **Add Namespace**。
-2. 输入 `io.aimux` → 按提示验证所有权（GitHub 仓库验证最方便：按要求在
+2. 输入 `ai.arcships` → 按提示验证所有权（GitHub 仓库验证最方便：按要求在
    `arcships/aimux` 下加一个 CNAME/TXT 文件或创建指定名称的 repo）。
 3. 等待审核通过（一般几小时内，有邮件通知）。
 
@@ -124,10 +124,15 @@
 ### 2.6 验证
 
 ```bash
+# JVM：Maven Central
 gh workflow run release.yml --ref master -f jvm=true
-# 成功后 Maven Central 上出现 io.aimux:aimux-java:0.2.0 与 aimux-kotlin:0.2.0
+# 成功后 Maven Central 上出现 ai.arcships:aimux-java:0.2.0 与 aimux-kotlin:0.2.0
 # （首次发布在 Staging 仓库，需在 central.sonatype.com 手动 Release 一次；
 #   之后的发布自动处理——取决于 build.gradle.kts 的自动发布配置）
+
+# Flutter：pub.dev（需先配置 PUB_DEV_TOKEN，见 §2.5）
+gh workflow run release.yml --ref master -f flutter=true
+# 成功后 pub.dev 出现 aimux@0.2.0（publisher: arcships.ai）
 ```
 
 ---

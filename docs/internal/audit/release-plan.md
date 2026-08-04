@@ -15,7 +15,7 @@ cargo add aimux-core              # Rust
 npm install @aimux/node            # Node.js
 pip install aimux                  # Python
 # SPM: .package(url: "...", from: "0.1.0")   # Swift
-# Maven: implementation("io.aimux:aimux:0.1.0") # Kotlin/Android
+# Maven: implementation("ai.arcships:aimux:0.1.0") # Kotlin/Android
 go get github.com/arcships/aimux/bindings/go@v0.1.0  # Go
 dart pub add aimux                 # Flutter/Dart
 ```
@@ -59,7 +59,7 @@ dart pub add aimux                 # Flutter/Dart
 | 签名/公证 | 无 | 🔴 Apple notarization / Android signing / npm provenance / PyPI trusted publishing 均未配 |
 | LICENSE | ❌ **根目录无 LICENSE 文件**（`Cargo.toml` 声明 MIT 但仓库无文件） | 🔴 必须补 |
 | 仓库元数据 | `Cargo.toml` 的 `repository` 仍是占位符 `yourusername/aimux`（实际是 `arcships/aimux`） | 🟡 需修正 |
-| Flutter 发布 | `publish_to: none`（明确禁止发布） | 🔴 需开放 |
+| Flutter 发布 | Flutter plugin 已改造（iOS xcframework + Android jniLibs 打进包，publisher `arcships.ai` ✅ 已注册） | 🟡 待首次发布 |
 | crates.io | 未规划 | 🔴 Rust 核心发布策略空白 |
 
 ### 2.3 双路径架构（已定型，不需改动）
@@ -85,7 +85,7 @@ dart pub add aimux                 # Flutter/Dart
 | **Node.js** | npm | `aimux`（root）+ `@aimux/node-*` | napi-rs v3 | linux-x64-gnu / linux-arm64-gnu / macos-x64 / macos-arm64 / win32-x64-msvc | napi 多平台 optionalDependencies |
 | **Python** | PyPI | `aimux` | PyO3 + maturin | manylinux x86_64/aarch64 / macOS universal2 / Windows AMD64 | platform wheel（abi3） |
 | **Swift** | Swift Package Manager | `Aimux` | SPM + xcframework | macOS arm64/x86_64 + iOS arm64 | BinaryTarget（xcframework） |
-| **Kotlin** | Maven Central | `io.aimux:aimux` | Gradle + JNA | Android arm64/armv7/x86_64 + JVM linux/mac/win | per-platform `.aar`/`.jar` |
+| **Kotlin** | Maven Central | `ai.arcships:aimux` | Gradle + JNA | Android arm64/armv7/x86_64 + JVM linux/mac/win | per-platform `.aar`/`.jar` |
 | **Flutter** | pub.dev | `aimux` | dart:ffi | iOS / Android / macOS / Windows / Linux | 纯 Dart 包 + 外部 native 库 |
 | **Go** | Go module proxy | `github.com/arcships/aimux/bindings/go` | cgo + `libaimux_ffi.a` | linux-x86_64-musl / linux-aarch64-musl / macos-x64 / macos-arm64 / win32-x64-msvc | 预编译 `.a` 随 module 或 GitHub Release |
 | **C / C++** | GitHub Release | — | cargo + cbindgen | 同 ffi 矩阵 | 预编译 `.so`/`.dylib`/`.dll` + `.h` |
@@ -350,7 +350,7 @@ xcframework 打包为 zip 上传 GitHub Release，更新 `Package.swift` 的 `ch
 
 ### 9.1 现状
 
-- `bindings/kotlin/build.gradle.kts` 配置 JNA，`group = "io.aimux"`，`version = "0.1.0"`。
+- `bindings/kotlin/build.gradle.kts` 配置 JNA，`group = "ai.arcships"`，`version = "0.1.0"`。
 - CI 仅 Linux x64，`gradle test` 带 `|| echo "skipped in CI PoC"`——**测试常被跳过**。
 - 无 Android target、无 `.aar`、无 Maven 发布配置。
 
@@ -358,21 +358,21 @@ xcframework 打包为 zip 上传 GitHub Release，更新 `Package.swift` 的 `ch
 
 Maven Central 发布需通过 **Central Publisher Portal**（原 Sonatype）：
 
-1. **注册 namespace** `io.aimux`——需验证对 `aimux.io` 域名的所有权，或用 GitHub namespace `io.github.arcships`。
+1. **注册 namespace** `ai.arcships`——✅ 已获批（central.sonatype.com → Publishing → Namespaces）。
 2. **GPG 签名**——所有 artifact 需 GPG 签名。
 3. **per-platform 分发**——像 napi-rs 那样，每个平台一个 artifact：
    ```
-   io.aimux:aimux:0.1.0                    # 纯 Kotlin（JNA 接口 + 类型）
-   io.aimux:aimux-native:0.1.0:linux-x86_64  # libaimux_ffi.so
-   io.aimux:aimux-native:0.1.0:linux-aarch64
-   io.aimux:aimux-native:0.1.0:darwin        # .dylib
-   io.aimux:aimux-native:0.1.0:windows        # .dll
-   io.aimux:aimux-native:0.1.0:android-arm64  # .so
+   ai.arcships:aimux:0.1.0                    # 纯 Kotlin（JNA 接口 + 类型）
+   ai.arcships:aimux-native:0.1.0:linux-x86_64  # libaimux_ffi.so
+   ai.arcships:aimux-native:0.1.0:linux-aarch64
+   ai.arcships:aimux-native:0.1.0:darwin        # .dylib
+   ai.arcships:aimux-native:0.1.0:windows        # .dll
+   ai.arcships:aimux-native:0.1.0:android-arm64  # .so
    ```
 
 ### 9.3 发布前必修项
 
-1. 🔴 **注册 Maven Central namespace**——`io.aimux`（需域名验证）或 `io.github.arcships`（验证 GitHub 仓库即可，更快）。
+1. 🔴 **注册 Maven Central namespace**——`ai.arcships`（✅ 已获批）。
 2. 🔴 **配置 Gradle `maven-publish` + signing 插件**——`build.gradle.kts` 加：
    ```kotlin
    plugins {
@@ -411,36 +411,37 @@ kotlin-release:
 
 ### 10.1 现状
 
-- `bindings/flutter/pubspec.yaml` 配 `publish_to: none`（**明确禁止发布**）。
+- `bindings/flutter/pubspec.yaml` 原配 `publish_to: none`（**已移除**，publisher `arcships.ai` ✅ 2026-08-04 注册，包名 `aimux` 未被占用）。
 - **完全不在 CI 矩阵中**——无 flutter/dart job。
 - dart:ffi 手写，纯 Dart 包，但运行时需 `libaimux_ffi` native 库。
 
 ### 10.2 核心难题：native 库如何随 Dart 包分发
 
-dart:ffi 是纯 Dart，但 pub.dev 上的纯 Dart 包**不携带 native 二进制**。Flutter 用户需自行获取 native 库。两个方案：
+dart:ffi 是纯 Dart，但 pub.dev 上的纯 Dart 包**不携带 native 二进制**。已选定 **方案 A：Flutter plugin 包**（✅ 2026-08-04 落地）：
 
-**方案 A：Flutter plugin 包（推荐）**
-- 改为 Flutter plugin（`pubspec.yaml` 加 `flutter.plugin.platforms`），每个平台（iOS/Android/macOS/Windows/Linux）声明 native 库来源。
-- iOS/Android：native 库打包进 plugin 的 podspec/gradle。
-- 桌面端：通过 CMake/Makefile 链接预编译库或源码编译。
-
-**方案 B：纯 Dart 包 + 文档引导**
-- 保持纯 Dart 包，README 指引用户从 GitHub Release 下载对应平台的 native 库。
-- DX 差，仅适合 PoC。
+- `pubspec.yaml` 声明 `flutter.plugin.platforms`（iOS + Android，`dartPluginClass: AimuxPlugin`——纯 Dart 插件，无 platform channel）。
+- **Android**：`android/src/main/jniLibs/<abi>/libaimux_ffi.so`（arm64-v8a / armeabi-v7a / x86_64），Dart 侧 `DynamicLibrary.open('libaimux_ffi.so')`。
+- **iOS**：`ios/aimux_ffi.xcframework`（真机 arm64 + 模拟器 arm64 双 slice，`xcodebuild -create-xcframework`），podspec `vendored_libraries` + 条件 `-force_load`（Dart 侧 `DynamicLibrary.process()` 从进程符号表解析）。
+- **桌面端**（Linux/macOS/Windows）：开发/测试用，从平台库路径加载（非插件打包）。
 
 ### 10.3 发布前必修项
 
-1. 🔴 **定义 native 库分发方案**——选方案 A（Flutter plugin）或 B（手动下载）。
-2. 🔴 **改 `publish_to`**——从 `none` 改为 `https://pub.dev`（或删除该行默认 pub.dev）。
-3. 🔴 **加 Flutter CI**——CI 矩阵加 dart/flutter 测试 job。
-4. **补 `StreamPart` 完整类型化**（audit-003 遗留）——当前是 raw Map + 访问器，非 17 变体完整类型化（其他 4 语言均已完整）。
-5. **补 README + 截图/示例**——pub.dev 需要。
+1. ✅ **定义 native 库分发方案**——已选方案 A（Flutter plugin，发布时打进二进制）。
+2. ✅ **改 `publish_to`**——已移除 `none`（默认发布到 pub.dev）。
+3. ✅ **加 Flutter CI**——`ci.yml` 加 `flutter-binding` job（test + analyze）；`release.yml` 加 `flutter-ffi-mobile`（Android 3 ABI + iOS xcframework）+ `flutter-publish`（嵌入二进制 → 测试 → `flutter pub publish`）。
+4. 🟡 **补 `StreamPart` 完整类型化**（audit-003 遗留）——当前是 raw Map + 访问器，非 17 变体完整类型化（其他 4 语言均已完整）。
+5. ✅ **补 README + CHANGELOG**——`bindings/flutter/README.md` 已建（示例/截图可后续补充）。
 
 ### 10.4 发布流程
 
 ```bash
+# CI（release.yml, flutter=true）：构建移动端制品 → 嵌入插件包 → 测试 → 发布
+# 认证方式：OAuth 凭证（dart pub login 生成的 pub-credentials.json）
+#   Windows 路径：%APPDATA%\dart\pub-credentials.json
+#   内容整体作为 GitHub secret PUB_DEV_TOKEN（release 环境）
+# 手动等价流程：
 cd bindings/flutter
-dart pub publish           # 需 Google 账号 + pub.dev 验证
+flutter pub publish --force           # 本机已 dart pub login 过，直接用
 ```
 
 ---
@@ -647,7 +648,7 @@ on:
 | Maven Central | GPG 签名 | 待配 |
 | Swift/iOS | Apple Developer 代码签名 + notarization | 待配 |
 | Android | APK/AAB signing（如发到 Play） | 待配 |
-| pub.dev | Google 账号验证 | 待配 |
+| pub.dev | publisher `arcships.ai` 已注册（arcships.ai/，ericted8810@gmail.com） | ✅ 已注册 |
 | Go module proxy | 无需签名（git tag 即来源证明） | ✅ 无需配置 |
 
 **Apple notarization**（仅 macOS/iOS 分发需要）：
@@ -699,9 +700,9 @@ xcrun stapler staple AimuxFFI.xcframework
 - 🟡 补 javadoc/sources jar
 
 ### Flutter
-- 🔴 定义 native 库分发方案（Flutter plugin vs 手动下载）
-- 🔴 `pubspec.yaml` 改 `publish_to`
-- 🔴 CI 加 Flutter/Dart job
+- ✅ 定义 native 库分发方案——已选 Flutter plugin（iOS + Android 二进制打进包，桌面端开发/测试用）
+- ✅ `pubspec.yaml` 改 `publish_to`（已移除 none，加 flutter plugin 声明）
+- ✅ CI 加 Flutter/Dart job（ci.yml `flutter-binding` + release.yml `flutter-ffi-mobile` / `flutter-publish`）
 - 🟡 补 `StreamPart` 完整类型化（17 变体）
 
 ### Go

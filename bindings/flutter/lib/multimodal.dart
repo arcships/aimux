@@ -167,7 +167,7 @@ final class _MultimodalFFI {
       this.freeString);
 
   factory _MultimodalFFI() {
-    final dylib = DynamicLibrary.open(_platformLibName());
+    final dylib = _openLibrary();
 
     return _MultimodalFFI._(
       // (api_key, model_id) constructors
@@ -224,6 +224,18 @@ final class _MultimodalFFI {
       dylib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle'),
       dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
     );
+  }
+
+  /// Opens the aimux-ffi native library for the current platform.
+  ///
+  /// Same layout as `_AimuxFFI._openLibrary` in aimux.dart:
+  ///   - Android: `libaimux_ffi.so` bundled via android/src/main/jniLibs.
+  ///   - iOS:     statically linked `libaimux_ffi.a` (process symbols).
+  ///   - Desktop: platform library path (dev/test usage).
+  static DynamicLibrary _openLibrary() {
+    if (Platform.isAndroid) return DynamicLibrary.open('libaimux_ffi.so');
+    if (Platform.isIOS) return DynamicLibrary.process();
+    return DynamicLibrary.open(_platformLibName());
   }
 
   static String _platformLibName() {

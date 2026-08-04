@@ -1,12 +1,20 @@
 name: aimux
 description: Unified LLM service layer for Flutter/Dart (Rust core, 325 providers, C ABI via dart:ffi)
 version: 0.2.0
-publish_to: none
+homepage: https://github.com/arcships/aimux
+repository: https://github.com/arcships/aimux
+issue_tracker: https://github.com/arcships/aimux/issues
+topics:
+  - ai
+  - llm
+  - ffi
 
 environment:
   sdk: ^3.4.0
 
 dependencies:
+  flutter:
+    sdk: flutter
   ffi: ^2.1.0
   json_annotation: ^4.9.0
 
@@ -14,3 +22,15 @@ dev_dependencies:
   test: ^1.25.0
   json_serializable: ^6.8.0
   build_runner: ^2.4.0
+
+# Flutter plugin — the Rust core (aimux-ffi) ships inside the package:
+#   - Android: libaimux_ffi.so per ABI under android/src/main/jniLibs
+#   - iOS:     libaimux_ffi.a (device + simulator fat) vendored via ios/aimux.podspec
+# No platform channels — dart:ffi calls the C ABI directly.
+flutter:
+  plugin:
+    platforms:
+      ios:
+        dartPluginClass: AimuxPlugin
+      android:
+        dartPluginClass: AimuxPlugin

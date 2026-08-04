@@ -25,6 +25,10 @@ on:
         description: 'Publish Java + Kotlin to Maven Central'
         type: boolean
         default: false
+      flutter:
+        description: 'Publish Flutter plugin to pub.dev (embeds mobile FFI libs)'
+        type: boolean
+        default: false
       artifacts:
         description: 'Build Go .a + C ABI libs and create GitHub Release'
         type: boolean
@@ -333,6 +337,61 @@ jobs:
           name: ${{ matrix.artifact }}
           path: staging/${{ matrix.artifact }}
 
+  # ── Flutter mobile artifacts: Android .so per ABI + iOS .xcframework ──────
+  # Built at release time and embedded into the Flutter plugin package by the
+  # flutter-publish job, so the pub.dev artifact ships with its native core.
+  flutter-ffi-mobile:
+    name: Flutter mobile FFI (${{ matrix.platform }})
+    runs-on: ${{ matrix.host }}
+    # Built for both the GitHub Release (manual integration) and the
+    # pub.dev plugin package (flutter input).
+    if: github.event_name == 'push' || github.event.inputs.artifacts == 'true' || github.event.inputs.flutter == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            host: ubuntu-latest
+            targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          - platform: ios
+            host: macos-latest
+            targets: aarch64-apple-ios aarch64-apple-ios-sim
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Android .so (cargo-ndk)
+        if: matrix.platform == 'android'
+        run: |
+          cargo install cargo-ndk
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -o staging/android \
+            build -p aimux-ffi --release
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            test -f "staging/android/$abi/libaimux_ffi.so" || { echo "Missing $abi" >&2; exit 1; }
+          done
+      - name: Build iOS xcframework
+        if: matrix.platform == 'ios'
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          cargo build -p aimux-ffi --release --target aarch64-apple-ios
+          cargo build -p aimux-ffi --release --target aarch64-apple-ios-sim
+          mkdir -p staging
+          xcodebuild -create-xcframework \
+            -library target/aarch64-apple-ios/release/libaimux_ffi.a \
+            -library target/aarch64-apple-ios-sim/release/libaimux_ffi.a \
+            -output staging/aimux_ffi.xcframework
+          # Verify the slice layout matches ios/aimux.podspec's force_load paths.
+          test -f staging/aimux_ffi.xcframework/ios-arm64/libaimux_ffi.a
+          test -f staging/aimux_ffi.xcframework/ios-arm64-simulator/libaimux_ffi.a
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-${{ matrix.platform }}
+          path: staging/
+
   # ── JVM bindings: publish aimux-java + aimux-kotlin to Maven Central ──────
   jvm-publish:
     name: Publish Java+Kotlin to Maven Central
@@ -363,10 +422,65 @@ jobs:
           ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.SIGNING_PASSWORD }}
 
+  # ── Flutter plugin: embed mobile FFI libs, test, publish to pub.dev ───────
+  # Publisher: arcships.ai (pub.dev). The native core (Android .so per ABI +
+  # iOS xcframework) is built by flutter-ffi-mobile and embedded into the
+  # package so consumers get a working plugin from `flutter pub add aimux`.
+  flutter-publish:
+    name: Publish Flutter to pub.dev
+    needs: flutter-ffi-mobile
+    runs-on: ubuntu-latest
+    environment: release
+    if: github.event_name == 'push' || github.event.inputs.flutter == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Download mobile FFI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: mobile-artifacts
+          pattern: flutter-*
+          merge-multiple: true
+      - name: Embed Android .so per ABI
+        run: |
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            test -f "mobile-artifacts/android/$abi/libaimux_ffi.so" || { echo "Missing $abi" >&2; exit 1; }
+            cp "mobile-artifacts/android/$abi/libaimux_ffi.so" \
+               "bindings/flutter/android/src/main/jniLibs/$abi/libaimux_ffi.so"
+          done
+      - name: Embed iOS xcframework
+        run: |
+          test -f mobile-artifacts/ios/aimux_ffi.xcframework/Info.plist
+          cp -r mobile-artifacts/ios/aimux_ffi.xcframework bindings/flutter/ios/
+      - name: Build host FFI library (for tests)
+        run: cargo build -p aimux-ffi --release
+      - name: Test
+        working-directory: bindings/flutter
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: flutter test
+      - name: Analyze
+        working-directory: bindings/flutter
+        run: flutter analyze
+      - name: Publish to pub.dev
+        working-directory: bindings/flutter
+        env:
+          # OAuth credentials from `dart pub login` (pub-credentials.json),
+          # stored as a single JSON secret.
+          PUB_DEV_TOKEN: ${{ secrets.PUB_DEV_TOKEN }}
+        run: |
+          mkdir -p "$HOME/.config/dart"
+          printf '%s' "$PUB_DEV_TOKEN" > "$HOME/.config/dart/pub-credentials.json"
+          flutter pub publish --force
+
   # ── GitHub Release: aggregate all binary artifacts (C ABI libs + Go .a) ──
   github-release:
     name: Create GitHub Release
-    needs: [go-build, ffi-build]
+    needs: [go-build, ffi-build, flutter-ffi-mobile]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     steps:

@@ -243,6 +243,31 @@ jobs:
           go vet ./...
           go test ./...
 
+  # ── Flutter binding: plugin structure + Dart tests (host FFI lib) ─────────
+  flutter-binding:
+    name: Flutter binding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build host FFI library
+        run: cargo build -p aimux-ffi --release
+      - name: Get dependencies
+        working-directory: bindings/flutter
+        run: flutter pub get
+      - name: Test
+        working-directory: bindings/flutter
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: flutter test
+      - name: Analyze
+        working-directory: bindings/flutter
+        run: flutter analyze
+
   # ── Contract tests: shared JSON fixtures (catches cross-language type drift) ──
   contract-tests:
     name: Contract tests

@@ -4,6 +4,11 @@ Cargo.lock
 *.swo
 .DS_Store
 
+# 发布凭证 — 防呆保护（签名密钥/OAuth 凭证，切勿提交到仓库）
+*aimux-signing-key*
+*aimux-signing-passphrase*
+pub-credentials.json
+
 # Reference sources (Vercel AI SDK + AI gateways: new-api, one-api, litellm, portkey-gateway — kept locally for design reference)
 /reference
 
@@ -21,6 +26,7 @@ bindings/python/.pytest_cache/
 bindings/python/**/*.egg-info/
 bindings/flutter/.dart_tool/
 bindings/flutter/.packages
+bindings/flutter/pubspec.lock
 bindings/node/node_modules/
 bindings/node/artifacts/
 bindings/node/npm/

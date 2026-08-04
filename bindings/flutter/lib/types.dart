@@ -223,7 +223,7 @@ class Tool {
       Tool._(type: 'provider', id: id, name: name, args: args);
 
   Map<String, dynamic> toJson() {
-    if (function != null) return {'type': 'function', ...?function!.toJson()};
+    if (function != null) return {'type': 'function', ...function!.toJson()};
     return {'type': 'provider', 'id': id!, 'name': name!, 'args': args ?? {}};
   }
   factory Tool.fromJson(Map<String, dynamic> json) {

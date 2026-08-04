@@ -1,0 +1,11 @@
+# Dart/Flutter build artifacts — dart pub publish reads THIS file (the
+# package-local .gitignore) to decide what to exclude from the package.
+.dart_tool/
+.packages
+build/
+android/.gradle/
+android/local.properties
+android/build/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/ephemeral/

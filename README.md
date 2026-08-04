@@ -16,7 +16,7 @@
 [![PyPI](https://img.shields.io/pypi/v/arcships-aimux)](https://pypi.org/project/arcships-aimux/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/arcships/aimux/bindings/go.svg)](https://pkg.go.dev/github.com/arcships/aimux/bindings/go)
 [![GitHub Release](https://img.shields.io/github/v/release/arcships/aimux)](https://github.com/arcships/aimux/releases)
-[![Maven Central](https://img.shields.io/maven-central/v/io.aimux/aimux-java)](https://central.sonatype.com/artifact/io.aimux/aimux-java)
+[![Maven Central](https://img.shields.io/maven-central/v/ai.arcships/aimux-java)](https://central.sonatype.com/artifact/ai.arcships/aimux-java)
 
 aimux is a Rust implementation of a unified LLM provider access layer. It
 collapses the HTTP APIs of every AI provider into a single
@@ -225,9 +225,9 @@ aimux ships 8 bindings that share the same Rust core:
 | **Python** | native | PyO3 + maturin | `pip install arcships-aimux` — [PyPI](https://pypi.org/project/arcships-aimux/) | bundled in the wheel, nothing to do |
 | **Go** | C ABI | cgo (static link) | `go get github.com/arcships/aimux/bindings/go` then `go generate` | auto-downloaded `.a` from [GitHub Releases](https://github.com/arcships/aimux/releases) |
 | **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.2.0"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
-| **Kotlin** | C ABI | JNA | `io.aimux:aimux-kotlin` — Maven Central (publishing) | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
-| **Java** | C ABI | JNA | `io.aimux:aimux-java` — Maven Central (publishing) | same as Kotlin — see [guide](docs/api/java.md#install) |
-| **Flutter** | C ABI | dart:ffi | pub.dev (pending) | platform library, see [guide](docs/api/flutter.md#install) |
+| **Kotlin** | C ABI | JNA | `ai.arcships:aimux-kotlin` — Maven Central (publishing) | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
+| **Java** | C ABI | JNA | `ai.arcships:aimux-java` — Maven Central (publishing) | same as Kotlin — see [guide](docs/api/java.md#install) |
+| **Flutter** | C ABI | dart:ffi | `aimux` on pub.dev — Flutter plugin, native core embedded (publisher `arcships.ai`) | iOS/Android 开箱即用，桌面端开发/测试 — see [guide](docs/api/flutter.md#install) |
 | **C / C++** | C ABI | direct link | `.so`/`.dylib`/`.dll` + `aimux-ffi.h` from [GitHub Releases](https://github.com/arcships/aimux/releases) | link against it — see [guide](docs/api/c.md#install) |
 
 See [bindings/README.md](bindings/README.md) and the [API docs](docs/API.md).
@@ -275,6 +275,7 @@ Tests run on cassette playback — no network and no keys. See
 | [0017](rfc/0017-provider-config-dx.md) | Unified provider config & request body overrides (DX) |
 | [0018](rfc/0018-codex-subscription.md) | Codex subscription channel provider (evaluation) |
 | [0019](rfc/0019-session-affinity.md) | Session affinity lightweight support |
+| [0020](rfc/0020-pi-agent-integration.md) | Pi Agent integration — aimux as a Pi package (provider registry → Pi models) |
 
 ## Contributing
 

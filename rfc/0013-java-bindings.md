@@ -31,7 +31,7 @@ A Java binding is automatically consumable from **Scala, Groovy, Clojure, and Ko
 | Original concern | Re-evaluation | Conclusion |
 |--------|---------|------|
 | "UniFFI (shared with Kotlin) or hand-written JNI" | The Kotlin binding already ships a working **JNA** wrapper (bindings/kotlin, JNA 5.14.0). JNA is pure Java (no native compile step) and maps the C ABI via an interface + `Callback` — no JNI C code to maintain. UniFFI was rejected for all bindings in RFC-0001 §5.5 (cannot reuse aimux-ffi, narrow C ABI makes codegen pointless) | JNA, parity with Kotlin |
-| "JVM GC needs `Closeable` for explicit release" | Proven pattern already in Kotlin's [Model.kt](../bindings/kotlin/src/main/kotlin/aimux/Model.kt): `AtomicLong` handle + idempotent `close()` + `finalize()` backstop | Solved by mirroring Kotlin |
+| "JVM GC needs `Closeable` for explicit release" | Proven pattern already in Kotlin's [Model.kt](../bindings/kotlin/src/main/kotlin/ai/arcships/aimux/Model.kt): `AtomicLong` handle + idempotent `close()` + `finalize()` backstop | Solved by mirroring Kotlin |
 | "Calling LLMs inside Spark" | JNA + blocking FFI call inside a worker thread is exactly the Spark executor model; no special support needed | Non-issue |
 
 All friction points are resolved. Cost is **lower than the Go binding**: the JVM side of the C ABI contract is already implemented and tested in Kotlin, and the Java wrapper is a port, not a first implementation.
@@ -114,7 +114,7 @@ try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
 Model m = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:11434");
 ```
 
-### 4.1 Raw layer — `io.aimux.Model`
+### 4.1 Raw layer — `ai.arcships.aimux.Model`
 
 - Implements `java.io.Closeable` (mirror of Kotlin's `Closeable` / Go's `io.Closer`)
 - Factories: `openai` / `openaiWithBase` / `anthropic` / `anthropicWithBase` / `deepseek` (all 39 C symbols exposed)
@@ -123,9 +123,9 @@ Model m = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:11434");
 - `streamTextStream(promptJson, optsJson)` — `Stream<String>` pull
 - Handle lifecycle: `AtomicLong` + idempotent `close()` + `finalize()` backstop (Kotlin-proven, §6.3)
 
-### 4.2 Typed layer — `io.aimux.TypedModel` + typed types
+### 4.2 Typed layer — `ai.arcships.aimux.TypedModel` + typed types
 
-Port of Kotlin's [TypedModel.kt](../bindings/kotlin/src/main/kotlin/aimux/TypedModel.kt) and [Types.kt](../bindings/kotlin/src/main/kotlin/aimux/Types.kt) (1127 lines), serialized with **Jackson 2.x** (Java 8 compatible; the natural choice for the Spring ecosystem):
+Port of Kotlin's [TypedModel.kt](../bindings/kotlin/src/main/kotlin/ai/arcships/aimux/TypedModel.kt) and [Types.kt](../bindings/kotlin/src/main/kotlin/ai/arcships/aimux/Types.kt) (1127 lines), serialized with **Jackson 2.x** (Java 8 compatible; the natural choice for the Spring ecosystem):
 
 - Text: `GenerateTextOptions` / `GenerateTextResult` / `ModelMessage` / `ContentPart` / `TokenUsage` / `Usage` / `FinishReason` / `ResponseMetadata`
 - Tools: `ToolCall` / `FunctionTool` / `ProviderTool` / `ToolChoice`
@@ -144,8 +144,8 @@ Port of Kotlin's [TypedModel.kt](../bindings/kotlin/src/main/kotlin/aimux/TypedM
 
 | Item | Value |
 |------|------|
-| Group / artifact | `io.aimux:aimux-java` (Maven Central; the Kotlin binding publishes as `io.aimux` with Kotlin-specific artifact) |
-| Package | `io.aimux` (reverse-domain convention; the Kotlin binding's flat `aimux` package is not idiomatic Java) |
+| Group / artifact | `ai.arcships:aimux-java` (Maven Central; the Kotlin binding publishes as `ai.arcships` with Kotlin-specific artifact) |
+| Package | `ai.arcships.aimux` (reverse-domain convention; the Kotlin binding uses the same `ai.arcships.aimux` package) |
 | Minimum JDK | Java 8 (compiled with `--release 8`); tested on 8/11/17/21 |
 | Dependencies | `net.java.dev.jna:jna:5.14.0` (core), `com.fasterxml.jackson.core:jackson-databind:2.x` (typed layer) |
 
@@ -238,7 +238,7 @@ When the minimum JDK moves to 21+, `java.lang.foreign` (JEP 454) can replace JNA
 
 ### 7.1 Distribution
 
-- Gradle `java-library` + `maven-publish` + signing → Maven Central (`io.aimux:aimux-java`)
+- Gradle `java-library` + `maven-publish` + signing → Maven Central (`ai.arcships:aimux-java`)
 - Native library shipped as **per-platform classifier JARs** (napi-rs pattern, RFC-0001 §7.1): `aimux-java-linux-x86_64`, `aimux-java-macos-aarch64`, `aimux-java-windows-x86_64`, …; the base JAR declares JNA as a dependency and resolves the platform artifact at runtime
 - Test-time loading: `LD_LIBRARY_PATH` pointing at `target/release` (exact Kotlin test convention, bindings/README.md §Kotlin)
 
@@ -259,7 +259,7 @@ Reuse [contract-tests/fixtures/wire-format.json](../contract-tests/fixtures/wire
 
 The pattern established in commit `5771ee38` (2026-08-01, "multimodal E2E tests for all 6 bindings") is a per-binding requirement, not a Go/Kotlin special: **local mock HTTP server replaying canned provider responses → real FFI call → wire-format result parsing assertions**. No real network access (every request hits 127.0.0.1).
 
-Java ports the Kotlin suite 1:1 — [MultimodalE2ETest.kt](../bindings/kotlin/src/test/kotlin/aimux/MultimodalE2ETest.kt), which itself mirrors [Go's multimodal_withbase_test.go](../bindings/go/multimodal_withbase_test.go). The mock server is a direct port of Kotlin's `MockProviderServer` (JDK `com.sun.net.httpserver.HttpServer` — built into Java 8, zero extra dependency):
+Java ports the Kotlin suite 1:1 — [MultimodalE2ETest.kt](../bindings/kotlin/src/test/kotlin/ai/arcships/aimux/MultimodalE2ETest.kt), which itself mirrors [Go's multimodal_withbase_test.go](../bindings/go/multimodal_withbase_test.go). The mock server is a direct port of Kotlin's `MockProviderServer` (JDK `com.sun.net.httpserver.HttpServer` — built into Java 8, zero extra dependency):
 
 | Modality | E2E coverage | Notes |
 |------|------|------|

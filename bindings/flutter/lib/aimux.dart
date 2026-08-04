@@ -111,8 +111,7 @@ final class _AimuxFFI {
       this.initLogging);
 
   factory _AimuxFFI() {
-    final libName = _platformLibName();
-    final dylib = DynamicLibrary.open(libName);
+    final dylib = _openLibrary();
 
     return _AimuxFFI._(
       dylib,
@@ -131,6 +130,21 @@ final class _AimuxFFI {
       dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
       dylib.lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging'),
     );
+  }
+
+  /// Opens the aimux-ffi native library for the current platform.
+  ///
+  /// The library ships inside this Flutter plugin package:
+  ///   - Android: `libaimux_ffi.so` per ABI under android/src/main/jniLibs,
+  ///     loaded by name (the Android build system bundles it into the APK).
+  ///   - iOS:     `libaimux_ffi.a` is statically linked into the app binary
+  ///     via ios/aimux.podspec (vendored + force_load), so symbols resolve
+  ///     from the process itself.
+  ///   - Desktop: looked up on the platform library path (dev/test usage).
+  static DynamicLibrary _openLibrary() {
+    if (Platform.isAndroid) return DynamicLibrary.open('libaimux_ffi.so');
+    if (Platform.isIOS) return DynamicLibrary.process();
+    return DynamicLibrary.open(_platformLibName());
   }
 
   static String _platformLibName() {
