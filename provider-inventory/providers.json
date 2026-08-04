@@ -169,6 +169,7 @@
     "hyperbolic",
     "inception",
     "inference_net",
+    "inferencehub",
     "infinity",
     "jlama",
     "kilo",
@@ -17718,6 +17719,95 @@
           "inference-net"
         ]
       }
+    },
+    {
+      "id": "inferencehub",
+      "display_name": "InferenceHub",
+      "aliases": [],
+      "provider_kind": "gateway_aggregator",
+      "compatibility": {
+        "tier": "L2",
+        "protocol": "openai",
+        "openai_compatible": true,
+        "confidence": 0.85
+      },
+      "trust": {
+        "status": "review",
+        "score": 60,
+        "reasons": [
+          "provider-submitted entry (aimux PR #22; submitter operates InferenceHub, disclosed)",
+          "endpoint metadata is recorded",
+          "at least one HTTPS hostname endpoint is eligible for safe probing",
+          "at least one documentation URL is recorded",
+          "at least one model identifier is recorded",
+          "protocol compatibility evidence is recorded",
+          "requires manual endpoint, protocol, and legal review"
+        ]
+      },
+      "capabilities": [
+        "chat",
+        "embedding",
+        "image_generation",
+        "rerank"
+      ],
+      "endpoints": [
+        {
+          "base_url": "https://app.inferencehub.tech/v1",
+          "models_url": "https://app.inferencehub.tech/v1/models",
+          "models_url_inferred": false,
+          "scope": "public",
+          "source_ids": [
+            "provider_submission"
+          ]
+        }
+      ],
+      "models": {
+        "count": 43,
+        "sample": [
+          "bge-m3",
+          "deepseek-v4-flash",
+          "deepseek-v4-pro",
+          "fable-5",
+          "gpt-5.6-luna",
+          "gpt-5.6-sol",
+          "gpt-5.6-terra",
+          "moonshotai-kimi-k3",
+          "sonnet-5",
+          "zai-glm-5.2"
+        ]
+      },
+      "sources": [
+        {
+          "source_id": "provider_submission",
+          "source_path": "https://github.com/arcships/aimux/pull/22",
+          "source_provider_id": "inferencehub",
+          "display_name": "InferenceHub",
+          "base_url": "https://app.inferencehub.tech/v1",
+          "documentation_url": "https://inferencehub.tech/docs/api",
+          "api_key_env_var": "INFERENCEHUB_API_KEY",
+          "model_count": 43,
+          "models": [
+            "bge-m3",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+            "fable-5",
+            "gpt-5.6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "moonshotai-kimi-k3",
+            "sonnet-5",
+            "zai-glm-5.2"
+          ],
+          "capabilities": [
+            "chat",
+            "embedding",
+            "image_generation",
+            "rerank"
+          ],
+          "compatibility_hint": "openai"
+        }
+      ],
+      "implemented_in_aimux": true
     },
     {
       "id": "inferx",
