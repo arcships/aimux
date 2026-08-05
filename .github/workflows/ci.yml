@@ -356,6 +356,8 @@ jobs:
           node-version: 22
       - name: Run Rust contract tests
         run: cargo test --test contract_test -p aimux-core
+      - name: ts-rs export drift (checked-in types must match generator output)
+        run: python3 scripts/gen_ts_types.py --check
       - name: Build Node binding
         working-directory: bindings/node
         run: |
