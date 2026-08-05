@@ -30,17 +30,17 @@ type EmbeddingResponse struct {
 
 // EmbeddingResult is the result of an embedding call.
 type EmbeddingResult struct {
-	Embeddings       [][]float32       `json:"embeddings"`
-	Usage            *EmbeddingUsage   `json:"usage,omitempty"`
-	ProviderMetadata json.RawMessage   `json:"provider_metadata,omitempty"`
+	Embeddings       [][]float32        `json:"embeddings"`
+	Usage            *EmbeddingUsage    `json:"usage,omitempty"`
+	ProviderMetadata json.RawMessage    `json:"provider_metadata,omitempty"`
 	Response         *EmbeddingResponse `json:"response,omitempty"`
-	Warnings         []Warning         `json:"warnings,omitempty"`
+	Warnings         []Warning          `json:"warnings,omitempty"`
 }
 
 // EmbeddingCallOptions is the options for an embedding call.
 type EmbeddingCallOptions struct {
 	Values          []string          `json:"values,omitempty"`
-	ProviderOptions jsonObj `json:"provider_options"`
+	ProviderOptions jsonObj           `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -49,8 +49,8 @@ type EmbeddingCallOptions struct {
 // AudioData is generated audio: base64 string or raw binary bytes.
 // Wire format: {"Base64": "string"} | {"Binary": [numbers]}
 type AudioData struct {
-	Base64 *string  `json:"Base64,omitempty"`
-	Binary []uint8  `json:"Binary,omitempty"`
+	Base64 *string `json:"Base64,omitempty"`
+	Binary []uint8 `json:"Binary,omitempty"`
 }
 
 // SpeechRequest is request metadata for speech generation.
@@ -76,13 +76,13 @@ type SpeechResult struct {
 
 // SpeechCallOptions is the options for speech generation.
 type SpeechCallOptions struct {
-	Text            string           `json:"text"`
-	Voice           *string          `json:"voice,omitempty"`
-	OutputFormat    *string          `json:"output_format,omitempty"`
-	Instructions    *string          `json:"instructions,omitempty"`
-	Speed           *float64         `json:"speed,omitempty"`
-	Language        *string          `json:"language,omitempty"`
-	ProviderOptions jsonObj `json:"provider_options"`
+	Text            string            `json:"text"`
+	Voice           *string           `json:"voice,omitempty"`
+	OutputFormat    *string           `json:"output_format,omitempty"`
+	Instructions    *string           `json:"instructions,omitempty"`
+	Speed           *float64          `json:"speed,omitempty"`
+	Language        *string           `json:"language,omitempty"`
+	ProviderOptions jsonObj           `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -90,7 +90,7 @@ type SpeechCallOptions struct {
 
 // ImageOutputs is the generated images: all base64 or all binary.
 type ImageOutputs struct {
-	Base64 []string `json:"Base64,omitempty"`
+	Base64 []string  `json:"Base64,omitempty"`
 	Binary [][]uint8 `json:"Binary,omitempty"`
 }
 
@@ -117,30 +117,30 @@ type ImageResult struct {
 
 // ImageCallOptions is the options for image generation.
 type ImageCallOptions struct {
-	Prompt           *string            `json:"prompt,omitempty"`
-	N                *int               `json:"n,omitempty"`
-	Size             *string            `json:"size,omitempty"`
-	AspectRatio      *string            `json:"aspect_ratio,omitempty"`
-	Seed             *uint64            `json:"seed,omitempty"`
-	Files            []json.RawMessage  `json:"files,omitempty"`
-	Mask             json.RawMessage    `json:"mask,omitempty"`
-	ProviderOptions jsonObj `json:"provider_options"`
-	Headers          map[string]string  `json:"headers,omitempty"`
+	Prompt          *string           `json:"prompt,omitempty"`
+	N               *int              `json:"n,omitempty"`
+	Size            *string           `json:"size,omitempty"`
+	AspectRatio     *string           `json:"aspect_ratio,omitempty"`
+	Seed            *uint64           `json:"seed,omitempty"`
+	Files           []json.RawMessage `json:"files,omitempty"`
+	Mask            json.RawMessage   `json:"mask,omitempty"`
+	ProviderOptions jsonObj           `json:"provider_options"`
+	Headers         map[string]string `json:"headers,omitempty"`
 }
 
 // ── Transcription (STT) ───────────────────────────────────────────────────────
 
 // TranscriptionSegment is a transcript segment with timing.
 type TranscriptionSegment struct {
-	Text   string   `json:"text"`
-	Start  *float64 `json:"start,omitempty"`
-	End    *float64 `json:"end,omitempty"`
+	Text  string   `json:"text"`
+	Start *float64 `json:"start,omitempty"`
+	End   *float64 `json:"end,omitempty"`
 }
 
 // TranscriptionRequest is request metadata for transcription.
 type TranscriptionRequest struct {
-	Audio   json.RawMessage `json:"audio,omitempty"`
-	MediaType *string        `json:"media_type,omitempty"`
+	Audio     json.RawMessage `json:"audio,omitempty"`
+	MediaType *string         `json:"media_type,omitempty"`
 }
 
 // TranscriptionResponse is provider response metadata for transcription.
@@ -152,21 +152,21 @@ type TranscriptionResponse struct {
 
 // TranscriptionResult is the result of a transcription call.
 type TranscriptionResult struct {
-	Text             string                 `json:"text"`
-	Segments         []TranscriptionSegment `json:"segments,omitempty"`
-	Language         *string                `json:"language,omitempty"`
-	DurationInSeconds *float64              `json:"duration_in_seconds,omitempty"`
-	Warnings         []Warning              `json:"warnings,omitempty"`
-	Request          *TranscriptionRequest  `json:"request,omitempty"`
-	Response         TranscriptionResponse  `json:"response"`
-	ProviderMetadata json.RawMessage         `json:"provider_metadata,omitempty"`
+	Text              string                 `json:"text"`
+	Segments          []TranscriptionSegment `json:"segments,omitempty"`
+	Language          *string                `json:"language,omitempty"`
+	DurationInSeconds *float64               `json:"duration_in_seconds,omitempty"`
+	Warnings          []Warning              `json:"warnings,omitempty"`
+	Request           *TranscriptionRequest  `json:"request,omitempty"`
+	Response          TranscriptionResponse  `json:"response"`
+	ProviderMetadata  json.RawMessage        `json:"provider_metadata,omitempty"`
 }
 
 // TranscriptionCallOptions is the options for transcription.
 type TranscriptionCallOptions struct {
 	Audio           json.RawMessage   `json:"audio"`
 	MediaType       string            `json:"media_type"`
-	ProviderOptions jsonObj `json:"provider_options"`
+	ProviderOptions jsonObj           `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -198,7 +198,7 @@ type RerankingCallOptions struct {
 	Documents       json.RawMessage   `json:"documents"`
 	Query           string            `json:"query"`
 	TopN            *int              `json:"top_n,omitempty"`
-	ProviderOptions jsonObj `json:"provider_options"`
+	ProviderOptions jsonObj           `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -207,9 +207,9 @@ type RerankingCallOptions struct {
 // VideoData is generated video: URL, base64, or binary.
 // Wire format: {"Url": {"url":"...", "media_type":"..."}} | {"Base64": {...}} | {"Binary": {...}}
 type VideoData struct {
-	Url      *VideoUrlData  `json:"Url,omitempty"`
-	Base64   *VideoBase64Data `json:"Base64,omitempty"`
-	Binary   *VideoBinaryData `json:"Binary,omitempty"`
+	Url    *VideoUrlData    `json:"Url,omitempty"`
+	Base64 *VideoBase64Data `json:"Base64,omitempty"`
+	Binary *VideoBinaryData `json:"Binary,omitempty"`
 }
 
 // VideoUrlData is the URL variant of VideoData.
@@ -252,7 +252,7 @@ type VideoCallOptions struct {
 	AspectRatio     *string           `json:"aspect_ratio,omitempty"`
 	Resolution      *string           `json:"resolution,omitempty"`
 	Seed            *uint64           `json:"seed,omitempty"`
-	ProviderOptions jsonObj `json:"provider_options"`
+	ProviderOptions jsonObj           `json:"provider_options"`
 	Headers         map[string]string `json:"headers,omitempty"`
 }
 
@@ -260,11 +260,11 @@ type VideoCallOptions struct {
 
 // SearchResultItem is a single search result.
 type SearchResultItem struct {
-	Title          *string `json:"title,omitempty"`
-	URL            *string `json:"url,omitempty"`
-	Content        *string `json:"content,omitempty"`
-	RawContent     *string `json:"raw_content,omitempty"`
-	Score          *float64 `json:"score,omitempty"`
+	Title      *string  `json:"title,omitempty"`
+	URL        *string  `json:"url,omitempty"`
+	Content    *string  `json:"content,omitempty"`
+	RawContent *string  `json:"raw_content,omitempty"`
+	Score      *float64 `json:"score,omitempty"`
 }
 
 // SearchResponse is provider response metadata for search.
@@ -285,14 +285,14 @@ type SearchResult struct {
 
 // SearchCallOptions is the options for a search call.
 type SearchCallOptions struct {
-	Query              string            `json:"query"`
-	MaxResults         *int              `json:"max_results,omitempty"`
-	IncludeRawContent  *bool             `json:"include_raw_content,omitempty"`
-	TimeRange          *string           `json:"time_range,omitempty"`
-	IncludeDomains     []string          `json:"include_domains,omitempty"`
-	ExcludeDomains     []string          `json:"exclude_domains,omitempty"`
-	ProviderOptions jsonObj `json:"provider_options"`
-	Headers            map[string]string `json:"headers,omitempty"`
+	Query             string            `json:"query"`
+	MaxResults        *int              `json:"max_results,omitempty"`
+	IncludeRawContent *bool             `json:"include_raw_content,omitempty"`
+	TimeRange         *string           `json:"time_range,omitempty"`
+	IncludeDomains    []string          `json:"include_domains,omitempty"`
+	ExcludeDomains    []string          `json:"exclude_domains,omitempty"`
+	ProviderOptions   jsonObj           `json:"provider_options"`
+	Headers           map[string]string `json:"headers,omitempty"`
 }
 
 // ── Files ───────────────────────────────────────────────────────────────────
@@ -300,18 +300,18 @@ type SearchCallOptions struct {
 // UploadFileResult is the result of a file upload.
 type UploadFileResult struct {
 	ProviderReference map[string]string `json:"provider_reference"`
-	MediaType         *string            `json:"media_type,omitempty"`
-	Filename          *string            `json:"filename,omitempty"`
-	ProviderMetadata  json.RawMessage    `json:"provider_metadata,omitempty"`
-	Warnings          []Warning          `json:"warnings,omitempty"`
+	MediaType         *string           `json:"media_type,omitempty"`
+	Filename          *string           `json:"filename,omitempty"`
+	ProviderMetadata  json.RawMessage   `json:"provider_metadata,omitempty"`
+	Warnings          []Warning         `json:"warnings,omitempty"`
 }
 
 // UploadFileCallOptions is the options for a file upload.
 type UploadFileCallOptions struct {
-	Data            json.RawMessage   `json:"data"`
-	MediaType       string            `json:"media_type"`
-	Filename        *string           `json:"filename,omitempty"`
-	ProviderOptions jsonObj `json:"provider_options"`
+	Data            json.RawMessage `json:"data"`
+	MediaType       string          `json:"media_type"`
+	Filename        *string         `json:"filename,omitempty"`
+	ProviderOptions jsonObj         `json:"provider_options"`
 }
 
 // jsonObj is a json.RawMessage that serializes as {} when nil (instead of null).
