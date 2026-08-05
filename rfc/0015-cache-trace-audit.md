@@ -305,6 +305,7 @@ pub struct PrefixBreak {
 5. **FFI meta 体积**:200KB request_body 序列化翻倍,建议加 `meta_cap_bytes` 配置
 6. **依赖 RFC-0014**:span 树(generate → http_request)挂载探测数据、TTFT 观测点
 7. **依赖 RFC-0024**:`CallOptions.session_id` 字段落地后,探测的 session 归组改用该字段(替代 wrapper 实例注入)
+8. **集群/路由部署(2026-08-05)**:生产模型多为集群部署,节点本地 KV 缓存不共享,路由变化即缓存失效,报 0 命中是常态。R-2.2 低命中预警在 `route_affinity_known=false`(默认)时抑制为备注;DeepSeek 磁盘全局共享缓存跨节点一致(实测表现最好)。详见 [round-5 §3.5](docs/internal/cache-tracing/rounds/round-5-source-verification.md)
 
 ---
 

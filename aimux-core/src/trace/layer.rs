@@ -334,6 +334,10 @@ impl RecordCtx {
                     .unwrap_or(false),
                 candidate_expired,
                 byte_proxy: true, // no tokenizer attached — byte proxy len/4
+                // The layer cannot know the deployment topology; route
+                // affinity is only guaranteed when the consumer opts in
+                // (single node / sticky / global cache).
+                route_affinity_known: false,
                 lcp: lcp_input,
                 system_tokens: 0, // semantic segments are not visible here
                 session_stats: Some(session_stats),

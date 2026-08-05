@@ -16,8 +16,8 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::trace::{
-    JudgmentInput, LcpInput, ProviderAuditSpec, RingTraceStore, TraceFilter, TraceLayer,
-    VerdictKind, judge, matrix as verdict_matrix,
+    JudgmentInput, LcpInput, ProviderAuditSpec, RingTraceStore, SessionStats, TraceFilter,
+    TraceLayer, VerdictKind, judge, matrix as verdict_matrix,
 };
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
 
@@ -48,6 +48,7 @@ fn base_input(spec: ProviderAuditSpec) -> JudgmentInput {
         response_cache_header_hit: false,
         candidate_expired: false,
         byte_proxy: true,
+        route_affinity_known: false,
         lcp: None,
         system_tokens: 0,
         session_stats: None,
@@ -679,4 +680,49 @@ fn aggregate_uses_lcp_upper_bound_not_full_length() {
         rate < 0.9,
         "full-length estimate would be ~1.0 — LCP evidence must cap it: {rate}"
     );
+}
+
+/// R-2.2 cluster-routing exemption: a stable prefix with zero claimed hits is
+/// the normal signature of a load-balanced cluster without sticky routing —
+/// without route-affinity evidence it must NOT be flagged as a broken prefix.
+#[test]
+fn r22_suppressed_without_route_affinity_evidence() {
+    let spec = spec_for("openai", "gpt-4o");
+    let stats = |rounds: u32| SessionStats {
+        same_session_rounds: rounds,
+        prefix_stable: true,
+        lcp_gt_1024: true,
+    };
+
+    // 4 rounds, stable prefix, claimed=0 — cluster signature.
+    let mut inp = base_input(spec);
+    inp.claimed = 0;
+    inp.session_stats = Some(stats(4));
+    inp = with_lcp(inp, 8192, true);
+    let v = judge(&inp);
+    assert_eq!(
+        v.kind,
+        VerdictKind::Trusted,
+        "no route-affinity evidence → not a broken-prefix warning: {}",
+        v.describe()
+    );
+    assert!(!v.violated.iter().any(|r| r == "R-2.2"), "{}", v.describe());
+    assert!(
+        v.notes
+            .iter()
+            .any(|n| n.contains("cluster routing artifact")),
+        "suppression must be explained: {}",
+        v.describe()
+    );
+
+    // With route affinity KNOWN (single node / sticky / global cache), the
+    // same signature IS the broken-prefix diagnostic.
+    let mut aff = base_input(spec);
+    aff.claimed = 0;
+    aff.route_affinity_known = true;
+    aff.session_stats = Some(stats(4));
+    aff = with_lcp(aff, 8192, true);
+    let va = judge(&aff);
+    assert_eq!(va.kind, VerdictKind::SuspectUnderclaim, "{}", va.describe());
+    assert_eq!(va.confidence, aimux_core::trace::VerdictConfidence::Low);
 }

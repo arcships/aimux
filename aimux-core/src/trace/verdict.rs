@@ -311,6 +311,13 @@ pub struct JudgmentInput {
     /// Token upper comes from the byte proxy (len/4) — no tokenizer. Per
     /// RFC F2, byte-proxy evidence caps R-1.1 at B(Medium), never W(High).
     pub byte_proxy: bool,
+    /// Whether the deployment guarantees cache-affine routing (single node,
+    /// sticky sessions, or a shared/global cache like DeepSeek's disk cache).
+    /// When UNKNOWN (default — models are typically served by clusters behind
+    /// load balancers), R-2.2's low-hit warning is suppressed to a note:
+    /// a stable prefix with zero claimed hits is then plausibly a routing
+    /// artifact, not a broken prefix.
+    pub route_affinity_known: bool,
     pub lcp: Option<LcpInput>,
     /// System/tools segment tokens (cross-session expectation, R-2.1).
     pub system_tokens: u64,
@@ -531,7 +538,13 @@ pub fn judge(inp: &JudgmentInput) -> Verdict {
     }
 
     // R-2.2: low-hit warning M (same session ≥3 rounds + stable prefix +
-    // LCP>1024 + claimed=0).
+    // LCP>1024 + claimed=0). This is a DIAGNOSTIC (SuspectUnderclaim, Low) —
+    // never an overclaim accusation. Cluster deployments (load-balanced
+    // multi-node, no sticky routing) legitimately produce exactly this
+    // signature: the prefix is stable but the request landed on a node
+    // without the KV cache. Without route-affinity evidence the warning is
+    // suppressed to a note; only deployments KNOWN to be cache-affine
+    // (single node / sticky / global cache) get the diagnostic.
     if !suppressed_m
         && let Some(ss) = &inp.session_stats
         && ss.same_session_rounds >= 3
@@ -539,7 +552,15 @@ pub fn judge(inp: &JudgmentInput) -> Verdict {
         && ss.lcp_gt_1024
         && claimed == 0
     {
-        v.violated.push("R-2.2".into());
+        if inp.route_affinity_known {
+            v.violated.push("R-2.2".into());
+        } else {
+            v.notes.push(
+                "stable prefix with zero claimed hits; route affinity unknown — \
+                 likely cluster routing artifact, not a broken prefix (R-2.2 suppressed)"
+                    .into(),
+            );
+        }
     }
 
     // Granularity floor: UNKNOWN unless a hard invariant fired.
