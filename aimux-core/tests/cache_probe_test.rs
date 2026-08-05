@@ -37,6 +37,9 @@ fn base_input(spec: ProviderAuditSpec) -> JudgmentInput {
         prompt_tokens: 4096,
         prompt_bytes: 16384,
         claimed: 0,
+        input_no_cache: None,
+        input_cache_read: None,
+        input_cache_write: None,
         write: Some(0),
         no_cache: None,
         hit: None,
@@ -44,6 +47,7 @@ fn base_input(spec: ProviderAuditSpec) -> JudgmentInput {
         usage_present: true,
         response_cache_header_hit: false,
         candidate_expired: false,
+        byte_proxy: true,
         lcp: None,
         system_tokens: 0,
         session_stats: None,
@@ -53,6 +57,8 @@ fn base_input(spec: ProviderAuditSpec) -> JudgmentInput {
 fn with_lcp(mut inp: JudgmentInput, lcp_bytes: u64, same_session: bool) -> JudgmentInput {
     inp.lcp = Some(LcpInput {
         lcp_bytes,
+        // Block upper bound for a single 512-byte block (test convention).
+        lcp_upper_bytes: lcp_bytes + 512,
         same_session,
         matched_exists: true,
     });
@@ -71,17 +77,49 @@ fn scenario1_append_only_loop_is_trusted() {
     assert_eq!(v.kind, VerdictKind::Trusted, "{}", v.describe());
 }
 
-/// Scenario 2: overclaim claimed = prefix × 1.1 → SuspectOverclaim (High).
+/// Scenario 2: overclaim beyond the block upper bound U=(j+1)·B.
+/// Byte-proxy evidence caps at Medium (RFC F2); exact-token evidence is High.
 #[test]
 fn scenario2_overclaim_is_suspect() {
     let spec = spec_for("openai", "gpt-5.6"); // gran=None (no quantization noise)
+    // 3 blocks shared → lower bound 1536 B (384 tokens), upper bound
+    // (3+1)·512 = 2048 B (512 tokens). claimed=600 > 512+τ → R-1.1.
     let mut inp = base_input(spec);
-    inp.claimed = 430; // > 384 + τ
+    inp.claimed = 600;
+    inp.no_cache = Some(4096 - 600); // R-1.7 equality holds (write=0)
     inp = with_lcp(inp, 1536, true);
     let v = judge(&inp);
     assert_eq!(v.kind, VerdictKind::SuspectOverclaim, "{}", v.describe());
-    assert_eq!(v.confidence, aimux_core::trace::VerdictConfidence::High);
     assert!(v.violated.iter().any(|r| r == "R-1.1"));
+    // Byte proxy caps the confidence at Medium (RFC F2).
+    assert_eq!(
+        v.confidence,
+        aimux_core::trace::VerdictConfidence::Medium,
+        "{}",
+        v.describe()
+    );
+
+    // With exact token evidence the same violation is High.
+    let mut exact = base_input(spec);
+    exact.byte_proxy = false;
+    exact.claimed = 600;
+    exact.no_cache = Some(4096 - 600);
+    exact = with_lcp(exact, 1536, true);
+    let ve = judge(&exact);
+    assert_eq!(
+        ve.confidence,
+        aimux_core::trace::VerdictConfidence::High,
+        "{}",
+        ve.describe()
+    );
+
+    // Within the block upper bound → Trusted (block-granularity ceiling).
+    let mut within = base_input(spec);
+    within.claimed = 500;
+    within.no_cache = Some(4096 - 500);
+    within = with_lcp(within, 1536, true);
+    let vw = judge(&within);
+    assert_eq!(vw.kind, VerdictKind::Trusted, "{}", vw.describe());
 }
 
 /// Scenario 3: first request with claimed > 0 → W (strict) / B (shared).
@@ -209,6 +247,73 @@ fn response_cache_header_hit_skips_audit() {
     let v = judge(&inp);
     assert_eq!(v.kind, VerdictKind::Unknown, "{}", v.describe());
     assert!(v.violated.iter().any(|r| r == "R-4.1"));
+}
+
+/// R-1.4: Anthropic three-field sum + first-request read==0.
+#[test]
+fn scenario_r14_anthropic_three_field_sum() {
+    let spec = spec_for("anthropic", "claude-3-5-sonnet");
+    // Unified usage: total == no_cache + read + write.
+    let mut ok = base_input(spec);
+    ok.prompt_tokens = 1000;
+    ok.input_no_cache = Some(500);
+    ok.input_cache_read = Some(300);
+    ok.input_cache_write = Some(200);
+    let v = judge(&ok);
+    assert!(!v.violated.iter().any(|r| r == "R-1.4"), "{}", v.describe());
+
+    // Sum violation → W.
+    let mut bad = base_input(spec);
+    bad.prompt_tokens = 1000;
+    bad.input_no_cache = Some(500);
+    bad.input_cache_read = Some(400); // 500+400+200 != 1000
+    bad.input_cache_write = Some(200);
+    let vb = judge(&bad);
+    assert!(
+        vb.violated.iter().any(|r| r == "R-1.4"),
+        "{}",
+        vb.describe()
+    );
+    assert_eq!(vb.kind, VerdictKind::SuspectOverclaim);
+
+    // First request reporting reads → R-1.4.
+    let mut first = base_input(spec);
+    first.first = true;
+    first.input_no_cache = Some(1000);
+    first.input_cache_read = Some(50);
+    first.input_cache_write = Some(0);
+    let vf = judge(&first);
+    assert!(
+        vf.violated.iter().any(|r| r == "R-1.4"),
+        "{}",
+        vf.describe()
+    );
+}
+
+/// R-1.5: Bedrock equality — total == input + read + write.
+#[test]
+fn scenario_r15_bedrock_equality() {
+    let spec = spec_for("bedrock", "claude-3-5-sonnet-v2");
+    let mut ok = base_input(spec);
+    ok.prompt_tokens = 1000;
+    ok.input_no_cache = Some(800);
+    ok.input_cache_read = Some(150);
+    ok.input_cache_write = Some(50);
+    let v = judge(&ok);
+    assert!(!v.violated.iter().any(|r| r == "R-1.5"), "{}", v.describe());
+
+    let mut bad = base_input(spec);
+    bad.prompt_tokens = 1000;
+    bad.input_no_cache = Some(800);
+    bad.input_cache_read = Some(300);
+    bad.input_cache_write = Some(50);
+    let vb = judge(&bad);
+    assert!(
+        vb.violated.iter().any(|r| r == "R-1.5"),
+        "{}",
+        vb.describe()
+    );
+    assert_eq!(vb.kind, VerdictKind::SuspectOverclaim);
 }
 
 /// R-5.1: usage missing → Unknown.
@@ -419,6 +524,49 @@ fn trace_layer_stream_records_ttft_and_usage() {
         json.contains("\"ttft_ms\":"),
         "streamed record must carry ttft_ms: {json}"
     );
+}
+
+/// StreamPart::Error (a provider-reported mid-stream error) is recorded.
+#[test]
+fn trace_layer_records_stream_part_error() {
+    struct MidStreamError;
+    #[async_trait::async_trait]
+    impl LanguageModel for MidStreamError {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "mock-stream-err"
+        }
+        async fn do_generate(&self, _: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unreachable!()
+        }
+        async fn do_stream(&self, _: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            Ok(StreamResult {
+                stream: Box::pin(async_stream::stream! {
+                    yield Ok(StreamPart::StreamStart { warnings: vec![] });
+                    yield Err(AiMuxError::Stream("mid-stream failure".into()));
+                }),
+                request_body: None,
+                response_headers: None,
+            })
+        }
+    }
+
+    let store = Arc::new(RingTraceStore::new());
+    let layer = Arc::new(TraceLayer::new(Arc::new(MidStreamError), store.clone()));
+    let mut result = block_on(layer.do_stream(&model_opts(Some("sess-err")))).unwrap();
+    while let Some(_p) = block_on(async { futures::StreamExt::next(&mut result.stream).await }) {}
+
+    let recs = store.aggregate(&TraceFilter::default());
+    assert_eq!(recs[0].requests, 1);
+    assert_eq!(recs[0].errors, 1, "provider-reported stream error recorded");
+    let json = {
+        let mut buf = Vec::new();
+        store.export_jsonl(&mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    };
+    assert!(json.contains("mid-stream failure"), "{json}");
 }
 
 /// Failures are still recorded (error field), without a verdict.

@@ -84,6 +84,7 @@ pub enum ProviderFamily {
     OpenAi,
     DeepSeek,
     Anthropic,
+    Bedrock,
     Gemini,
     Vllm,
     Generic,
@@ -169,6 +170,19 @@ pub mod matrix {
         }
     }
 
+    /// Bedrock Converse: usage-layer equality (total == input+read+write);
+    /// quota burndown needs raw usage and is best-effort.
+    pub fn bedrock() -> ProviderAuditSpec {
+        ProviderAuditSpec {
+            family: ProviderFamily::Bedrock,
+            gran: None,
+            threshold: 0,
+            ttl_ms: 24 * HOUR,
+            model56plus: false,
+            shared_ceiling_mult: None,
+        }
+    }
+
     /// Gemini/Vertex: 24h TTL, no quantization (24h conservative).
     pub fn gemini() -> ProviderAuditSpec {
         ProviderAuditSpec {
@@ -222,6 +236,9 @@ pub mod matrix {
         if p.contains("gemini") || p.contains("vertex") {
             return gemini();
         }
+        if p.contains("bedrock") {
+            return bedrock();
+        }
         if p.contains("vllm") {
             return vllm();
         }
@@ -242,7 +259,12 @@ pub mod matrix {
 /// LCP result feeding the judgment (already TTL-filtered).
 #[derive(Debug, Clone, Copy)]
 pub struct LcpInput {
+    /// Block-granularity LCP lower bound (matched_blocks × block_size).
     pub lcp_bytes: u64,
+    /// Block upper bound: `(matched_blocks + 1) × block_size` — the audit
+    /// upper bound per RFC F3 (`(j+1)·B`), capped at prompt_bytes by the
+    /// caller when computing U.
+    pub lcp_upper_bytes: u64,
     /// The matched history record belongs to the same session.
     pub same_session: bool,
     /// Whether any live history source matched.
@@ -268,6 +290,10 @@ pub struct JudgmentInput {
     pub prompt_tokens: u64,
     pub prompt_bytes: u64,
     pub claimed: u64,
+    /// Input-side breakdown (unified usage) for provider-equality rules.
+    pub input_no_cache: Option<u64>,
+    pub input_cache_read: Option<u64>,
+    pub input_cache_write: Option<u64>,
     pub write: Option<u64>,
     /// OpenAI 5.6+ delta: no_cache = prompt − claimed − write.
     pub no_cache: Option<u64>,
@@ -282,6 +308,9 @@ pub struct JudgmentInput {
     /// (true timing violation) — vs. no candidate at all (block-granularity
     /// floor, conservative UNKNOWN).
     pub candidate_expired: bool,
+    /// Token upper comes from the byte proxy (len/4) — no tokenizer. Per
+    /// RFC F2, byte-proxy evidence caps R-1.1 at B(Medium), never W(High).
+    pub byte_proxy: bool,
     pub lcp: Option<LcpInput>,
     /// System/tools segment tokens (cross-session expectation, R-2.1).
     pub system_tokens: u64,
@@ -307,12 +336,12 @@ fn tau(u: u64, gran: Option<u64>) -> u64 {
 fn is_w_level(rule: &str) -> bool {
     matches!(
         rule,
-        "R-1.1" | "R-1.1abs" | "R-1.2" | "R-1.3" | "R-1.7" | "R-1.8" | "R-3.3"
+        "R-1.1" | "R-1.1abs" | "R-1.2" | "R-1.3" | "R-1.4" | "R-1.5" | "R-1.7" | "R-1.8" | "R-3.3"
     )
 }
 
 fn is_b_level(rule: &str) -> bool {
-    matches!(rule, "R-1.1b" | "R-1.6b")
+    matches!(rule, "R-1.1b" | "R-1.6b" | "R-1.7b")
 }
 
 /// The built-in rule auditor (RFC-0015 §4.2: 8 hard invariants + diagnosis).
@@ -365,6 +394,44 @@ pub fn judge(inp: &JudgmentInput) -> Verdict {
         v.violated.push("R-1.3".into());
     }
 
+    // R-1.4: Anthropic three-field sum — input == read + creation +
+    // input_tokens(no_cache). The provider reports input_tokens excluding
+    // cache; our unified total = no_cache + read + write. History-write and
+    // TTL-tier checks degrade to skip when the data is unavailable.
+    if inp.spec.family == ProviderFamily::Anthropic {
+        let (nc, rd, wr) = (
+            inp.input_no_cache,
+            inp.input_cache_read,
+            inp.input_cache_write,
+        );
+        if let (Some(nc), Some(rd), Some(wr)) = (nc, rd, wr) {
+            let total = inp.prompt_tokens;
+            if (nc as i64 + rd as i64 + wr as i64 - total as i64).abs() > 1 {
+                v.violated.push("R-1.4".into());
+            }
+        }
+        // First request in the scope window must report zero reads.
+        if inp.first && rd.unwrap_or(0) > 0 {
+            v.violated.push("R-1.4".into());
+        }
+    }
+
+    // R-1.5: Bedrock equality — total == input + read + write. Quota
+    // burndown needs raw usage fields; degrade to skip when absent.
+    if inp.spec.family == ProviderFamily::Bedrock {
+        let (nc, rd, wr) = (
+            inp.input_no_cache,
+            inp.input_cache_read,
+            inp.input_cache_write,
+        );
+        if let (Some(nc), Some(rd), Some(wr)) = (nc, rd, wr) {
+            let total = inp.prompt_tokens;
+            if (nc as i64 + rd as i64 + wr as i64 - total as i64).abs() > 1 {
+                v.violated.push("R-1.5".into());
+            }
+        }
+    }
+
     // R-3.3: below threshold, claimed must be 0.
     if prompt < inp.spec.threshold && claimed > 0 {
         v.violated.push("R-3.3".into());
@@ -380,11 +447,22 @@ pub fn judge(inp: &JudgmentInput) -> Verdict {
     }
 
     // R-1.7: OpenAI 5.6+ write/read equality.
-    if inp.spec.model56plus
-        && let (Some(w), Some(nc)) = (inp.write, inp.no_cache)
-        && claimed + w + nc != prompt
-    {
-        v.violated.push("R-1.7".into());
+    if inp.spec.model56plus {
+        match (inp.write, inp.no_cache) {
+            (Some(w), Some(nc)) => {
+                if claimed + w + nc != prompt {
+                    v.violated.push("R-1.7".into());
+                }
+            }
+            (None, _) => {
+                // Write side missing → B(medium) per RFC (Azure reports no
+                // write side; responses-API naming differs — B, not W).
+                v.violated.push("R-1.7b".into());
+                v.notes
+                    .push("5.6+ write side missing; downgraded to medium (R-1.7)".into());
+            }
+            _ => {}
+        }
     }
 
     // R-1.2: first request in the scope window must have zero hits.
@@ -405,16 +483,18 @@ pub fn judge(inp: &JudgmentInput) -> Verdict {
         // same-session append-only chains may claim the whole prefix.
         let sys_bytes = inp.system_tokens.saturating_mul(4);
         let cap_bytes = if l.same_session {
-            l.lcp_bytes
+            l.lcp_upper_bytes
         } else {
-            l.lcp_bytes.min(sys_bytes)
+            l.lcp_upper_bytes.min(sys_bytes)
         };
         if !l.same_session && claimed.saturating_mul(4) > sys_bytes {
             v.notes
                 .push("claimed exceeds shared system segment (R-2.1)".into());
         }
-        // Byte proxy: token_upper = bytes/4 (no tokenizer attached).
-        let token_upper = cap_bytes.min(inp.prompt_bytes) / 4;
+        // Byte proxy: token_upper = bytes/4 (no tokenizer attached). The
+        // block UPPER bound ((j+1)·B, RFC F3) is the audit ceiling.
+        let upper_bytes = l.lcp_upper_bytes.min(cap_bytes).min(inp.prompt_bytes);
+        let token_upper = upper_bytes / 4;
         u = quantize_down(token_upper, inp.spec.gran).min(prompt);
     }
     if lcp_present {
@@ -483,6 +563,23 @@ pub fn judge(inp: &JudgmentInput) -> Verdict {
                     .push("no local history source; other process may have warmed (R-5.3)".into());
                 return v;
             }
+        }
+    }
+
+    // Byte-proxy cap (RFC F2): without a tokenizer, R-1.1 evidence can
+    // never rise above Medium — byte length overestimates token sharing for
+    // non-4-bytes/token corpora.
+    if inp.byte_proxy && has_w && !v.violated.iter().any(|r| r == "R-1.1abs") {
+        let byte_proxy_only = v
+            .violated
+            .iter()
+            .filter(|r| is_w_level(r))
+            .all(|r| r == "R-1.1");
+        if byte_proxy_only {
+            has_w = false;
+            has_b = true;
+            v.notes
+                .push("byte-proxy evidence caps at medium (RFC F2)".into());
         }
     }
 

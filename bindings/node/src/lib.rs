@@ -94,7 +94,7 @@ impl Model {
     /// auditor (RFC-0015 §4). `strict` = strict mode (self-hosted single
     /// instance); `false` = shared mode (safe default).
     #[napi]
-    pub fn traceAudited(&self, strict: bool) -> Model {
+    pub fn trace_audited(&self, strict: bool) -> Model {
         let store = Arc::new(aimux_core::trace::RingTraceStore::new());
         let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
             .with_rules_auditor(strict);
@@ -107,7 +107,7 @@ impl Model {
     /// Aggregated probe statistics (RFC-0015 §5.3), filtered by a JSON
     /// `TraceFilter` (optional). Returns a JSON `TraceStats[]` string.
     #[napi]
-    pub fn traceAggregate(&self, filter_json: Option<String>) -> Result<String> {
+    pub fn trace_aggregate(&self, filter_json: Option<String>) -> Result<String> {
         let Some(store) = &self.trace_store else {
             return Err(Error::from_reason(
                 "[Trace] model is not traced; call trace() first",
@@ -125,7 +125,7 @@ impl Model {
     /// One session's chain view (RFC-0015 §5.3). Returns a JSON
     /// `SessionChainView` string or an error when the session is unknown.
     #[napi]
-    pub fn traceSessionChain(&self, session_id: String) -> Result<String> {
+    pub fn trace_session_chain(&self, session_id: String) -> Result<String> {
         let Some(store) = &self.trace_store else {
             return Err(Error::from_reason(
                 "[Trace] model is not traced; call trace() first",
@@ -140,7 +140,7 @@ impl Model {
 
     /// Export all probe records as JSONL (one `TraceRecord` per line).
     #[napi]
-    pub fn traceExportJsonl(&self) -> Result<String> {
+    pub fn trace_export_jsonl(&self) -> Result<String> {
         let Some(store) = &self.trace_store else {
             return Err(Error::from_reason(
                 "[Trace] model is not traced; call trace() first",
@@ -155,7 +155,7 @@ impl Model {
 
     /// Clear all probe records of this traced model.
     #[napi]
-    pub fn traceClear(&self) {
+    pub fn trace_clear(&self) {
         if let Some(store) = &self.trace_store {
             store.clear();
         }
@@ -226,7 +226,23 @@ impl Model {
             match stream_text(&*model, prompt, opts).await {
                 Ok(stream_result) => {
                     use futures::StreamExt;
+                    // RFC-0015 P0-1: emit a synthetic Raw(aimux_meta) part
+                    // right after StreamStart carrying request_body /
+                    // response_headers (same contract as the FFI stream).
+                    let meta = if stream_result.request_body.is_some()
+                        || stream_result.response_headers.is_some()
+                    {
+                        Some(serde_json::json!({
+                            "Raw": { "raw_value": { "aimux_meta": {
+                                "request_body": stream_result.request_body,
+                                "response_headers": stream_result.response_headers,
+                            } } }
+                        }))
+                    } else {
+                        None
+                    };
                     let mut stream = stream_result.stream;
+                    let mut first = true;
                     while let Some(item) = stream.next().await {
                         match item {
                             Ok(part) => {
@@ -234,6 +250,16 @@ impl Model {
                                     .unwrap_or_else(|_| "{}".to_string());
                                 if tx.send(Ok(json)).await.is_err() {
                                     break; // receiver dropped (JS stopped iterating)
+                                }
+                                if first {
+                                    first = false;
+                                    if let Some(m) = &meta {
+                                        let mjson = serde_json::to_string(m)
+                                            .unwrap_or_else(|_| "{}".to_string());
+                                        if tx.send(Ok(mjson)).await.is_err() {
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                             Err(e) => {

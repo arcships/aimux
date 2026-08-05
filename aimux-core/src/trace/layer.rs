@@ -7,6 +7,9 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Process-unique trace id sequence (trace ids are `trace-{pid}-{mono}-{seq}`).
+static TRACE_SEQ: AtomicU64 = AtomicU64::new(0);
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -72,6 +75,8 @@ struct RequestCtx {
     session_id: Option<String>,
     scope_key: u64,
     sent_at_unix_ms: i64,
+    /// Monotonic clock ms — same clock domain as the store's TTL lookups.
+    monotonic_ms: u64,
 }
 
 /// Clone of the layer's recording state — lives inside the stream closure
@@ -151,6 +156,7 @@ impl TraceLayer {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
+        let monotonic_ms = self.monotonic_origin.elapsed().as_millis() as u64;
         RecordCtx {
             provider: self.inner.provider().to_string(),
             model: self.inner.model_id().to_string(),
@@ -164,6 +170,7 @@ impl TraceLayer {
                 session_id,
                 scope_key,
                 sent_at_unix_ms,
+                monotonic_ms,
             },
             request_body,
             response_headers,
@@ -213,9 +220,9 @@ impl RecordCtx {
     }
 
     /// LCP lookup against the sink's history (no-op for non-ring sinks).
-    fn lookup_lcp(&self, chain: &Chain, ttl_ms: u64) -> (Option<LcpInput>, u64, bool) {
+    fn lookup_lcp(&self, chain: &Chain, ttl_ms: u64) -> (Option<LcpInput>, u64, u64, bool) {
         let Some(store) = self.ring_store() else {
-            return (None, 0, false);
+            return (None, 0, 0, false);
         };
         let now_mono = self.monotonic_origin.elapsed().as_millis() as u64;
         let lcp: LcpResult = store.lookup(self.ctx.scope_key, chain, now_mono, ttl_ms);
@@ -226,10 +233,17 @@ impl RecordCtx {
             .unwrap_or(false);
         let input = lcp.matched.map(|_| LcpInput {
             lcp_bytes: lcp.lcp_bytes,
+            // RFC F3: audit ceiling is the block UPPER bound (j+1)·B.
+            lcp_upper_bytes: (lcp.matched_blocks as u64 + 1) * chain.block_size as u64,
             same_session,
             matched_exists: true,
         });
-        (input, lcp.lcp_bytes, lcp.candidate_expired)
+        (
+            input,
+            lcp.lcp_bytes,
+            (lcp.matched_blocks as u64 + 1) * chain.block_size as u64,
+            lcp.candidate_expired,
+        )
     }
 
     /// Build and record the trace for a completed call.
@@ -259,12 +273,12 @@ impl RecordCtx {
             ),
         };
 
-        let (lcp_input, lcp_bytes, candidate_expired) =
+        let (lcp_input, lcp_bytes, lcp_upper_bytes, candidate_expired) =
             if error.is_none() && !chain.block_hashes.is_empty() {
-                let (li, lb, ce) = self.lookup_lcp(&chain, spec.ttl_ms);
-                (li, lb, ce)
+                let (li, lb, lu, ce) = self.lookup_lcp(&chain, spec.ttl_ms);
+                (li, lb, lu, ce)
             } else {
-                (None, 0, false)
+                (None, 0, 0, false)
             };
 
         let sid = self
@@ -281,6 +295,9 @@ impl RecordCtx {
             let inp = JudgmentInput {
                 spec,
                 strict: self.strict,
+                input_no_cache: usage.input_tokens.no_cache.map(u64::from),
+                input_cache_read: usage.input_tokens.cache_read.map(u64::from),
+                input_cache_write: usage.input_tokens.cache_write.map(u64::from),
                 first: self
                     .ring_store()
                     .map(|s| s.records_in_scope(self.ctx.scope_key) == 0)
@@ -312,6 +329,7 @@ impl RecordCtx {
                     })
                     .unwrap_or(false),
                 candidate_expired,
+                byte_proxy: true, // no tokenizer attached — byte proxy len/4
                 lcp: lcp_input,
                 system_tokens: 0, // semantic segments are not visible here
                 session_stats: Some(session_stats),
@@ -328,16 +346,31 @@ impl RecordCtx {
             Some(ttft_ms)
         };
 
+        // Client-side LCP token upper bound (for aggregation; None when no
+        // history matched). Derived from the block upper bound.
+        let lcp_token_upper = if lcp_upper_bytes > 0 {
+            Some(
+                (lcp_upper_bytes.min(fingerprint.len_bytes) / 4)
+                    .min(usage.input_tokens.total.unwrap_or(0) as u64),
+            )
+        } else {
+            None
+        };
+
         let rec = TraceRecord {
             provider: self.provider.clone(),
             model: self.model.clone(),
             request_id,
             session_id: self.ctx.session_id.clone(),
             trace_id: format!(
-                "trace-{}-{}",
-                self.ctx.sent_at_unix_ms, fingerprint.len_bytes
+                "trace-{}-{}-{}",
+                std::process::id(),
+                self.ctx.monotonic_ms,
+                TRACE_SEQ.fetch_add(1, Ordering::Relaxed)
             ),
             sent_at_unix_ms: self.ctx.sent_at_unix_ms,
+            monotonic_sent_ms: self.ctx.monotonic_ms,
+            lcp_token_upper,
             ttft_ms,
             fingerprint,
             usage: Self::usage_snapshot(usage),
@@ -403,11 +436,20 @@ impl LanguageModel for TraceLayer {
         let ttft_obs = ttft.clone();
         let started = Instant::now();
 
-        // Wrap the stream: observe TTFT on the first part, then record once
-        // the caller consumed it (usage arrives in the Finish part).
+        // Wrap the stream: observe TTFT on the first MODEL-OUTPUT part
+        // (TextDelta / Reasoning / ToolCall — not StreamStart or meta), then
+        // record once the caller consumed it (usage arrives in Finish).
         let stream = result.stream.map(move |item| {
             if ttft_obs.load(Ordering::Relaxed) == u64::MAX {
-                ttft_obs.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+                let is_model_output = matches!(
+                    &item,
+                    Ok(StreamPart::TextDelta { .. })
+                        | Ok(StreamPart::ReasoningDelta { .. })
+                        | Ok(StreamPart::ToolCall { .. })
+                );
+                if is_model_output {
+                    ttft_obs.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+                }
             }
             item
         });
@@ -420,6 +462,9 @@ impl LanguageModel for TraceLayer {
                 while let Some(item) = s.next().await {
                     match &item {
                         Ok(StreamPart::Finish { usage: u, .. }) => usage = u.clone(),
+                        Ok(StreamPart::Error { error: e }) => {
+                            error.get_or_insert_with(|| e.to_string());
+                        }
                         Err(e) => {
                             error.get_or_insert_with(|| e.to_string());
                         }

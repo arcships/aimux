@@ -285,13 +285,10 @@ impl LanguageModel for VertexAnthropicModel {
                         match serde_json::from_str::<StreamEvent>(&sse_event.data) {
                             Ok(StreamEvent::MessageStart { message }) => {
                                 if let Some(usage) = &message.usage {
-                                    final_usage = Usage {
-                                        input_tokens: aimux_core::types::TokenUsage {
-                                            total: usage.input_tokens,
-                                            ..Default::default()
-                                        },
-                                        ..Default::default()
-                                    };
+                                    // RFC-0015 P0-2: full input side incl.
+                                    // cache fields + raw (same as Anthropic).
+                                    final_usage =
+                                        crate::anthropic::usage::usage_from_anthropic(usage);
                                 }
                                 if !response_meta_emitted {
                                     yield Ok(StreamPart::ResponseMetadata {

@@ -4,4 +4,4 @@
  * Provider family (only families with distinct invariants need dispatch;
  * gran/threshold/ttl live in `ProviderAuditSpec`).
  */
-export type ProviderFamily = "OpenAi" | "DeepSeek" | "Anthropic" | "Gemini" | "Vllm" | "Generic";
+export type ProviderFamily = "OpenAi" | "DeepSeek" | "Anthropic" | "Bedrock" | "Gemini" | "Vllm" | "Generic";

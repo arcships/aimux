@@ -123,11 +123,18 @@ fn get_handle(handle: u64) -> Option<ModelHandle> {
 }
 
 /// Remove a handle from the registry (the model drops when the last ref goes).
+/// Trace stores bound to the handle are released with it.
 fn drop_handle(handle: u64) {
     registry()
         .lock()
         .expect("aimux-ffi: registry mutex poisoned")
         .remove(&handle);
+    if let Some(stores) = TRACE_STORES.get() {
+        stores
+            .lock()
+            .expect("aimux-ffi: trace registry mutex poisoned")
+            .remove(&handle);
+    }
 }
 
 /// The shared tokio runtime driving all async provider calls.
@@ -906,18 +913,6 @@ pub extern "C" fn aimux_stream_text(
                 let mut stream = sr.stream;
                 let mut first = true;
                 while let Some(item) = stream.next().await {
-                    if first {
-                        // Emit the synthetic meta part right after StreamStart
-                        // (RFC-0015 P0-1: zero binding changes — every binding
-                        // already tolerates the Raw variant).
-                        if let Some(m) = &meta
-                            && let Ok(cstr) =
-                                CString::new(serde_json::to_string(m).unwrap_or_default())
-                        {
-                            on_part(cstr.as_ptr());
-                        }
-                        first = false;
-                    }
                     match item {
                         Ok(part) => {
                             let json =
@@ -926,6 +921,18 @@ pub extern "C" fn aimux_stream_text(
                             // during `on_part`, freed when the block ends.
                             if let Ok(cstr) = CString::new(json) {
                                 on_part(cstr.as_ptr());
+                            }
+                            // Emit the synthetic meta part right AFTER the
+                            // first part (StreamStart) — the first part
+                            // contract must hold (RFC-0015 P0-1).
+                            if first {
+                                first = false;
+                                if let Some(m) = &meta
+                                    && let Ok(cstr) =
+                                        CString::new(serde_json::to_string(m).unwrap_or_default())
+                                {
+                                    on_part(cstr.as_ptr());
+                                }
                             }
                         }
                         Err(e) => {

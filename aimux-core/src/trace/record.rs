@@ -51,6 +51,16 @@ pub struct TraceRecord {
     pub trace_id: String,
     /// When the call was sent (epoch ms).
     pub sent_at_unix_ms: i64,
+    /// Monotonic clock ms (same domain as the store's TTL lookups; internal
+    /// bookkeeping, not part of the wire contract).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub monotonic_sent_ms: u64,
+    /// Client-side LCP token upper bound (block upper bound, byte-proxy
+    /// len/4). `None` when no history matched. Consumed by `TraceStats`
+    /// aggregation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lcp_token_upper: Option<u64>,
     /// Time to first streamed token (ms). Non-streaming: `None`.
     pub ttft_ms: Option<u64>,
     pub fingerprint: Fingerprint,

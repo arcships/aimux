@@ -311,11 +311,17 @@ type TraceRecord struct {
 	TraceID                string          `json:"trace_id"`
 	SentAtUnixMs           int64           `json:"sent_at_unix_ms"`
 	TTFTMs                 *uint64         `json:"ttft_ms,omitempty"`
-	Fingerprint            Fingerprint     `json:"fingerprint"`
-	Usage                  UsageSnapshot   `json:"usage"`
+	Fingerprint            Fingerprint       `json:"fingerprint"`
+	Usage                  UsageSnapshot     `json:"usage"`
 	ResponseCacheHeaders   map[string]string `json:"response_cache_headers,omitempty"`
-	Verdict                json.RawMessage `json:"verdict,omitempty"`
-	Error                  *string         `json:"error,omitempty"`
+	RequestCacheHints      *RequestCacheHints `json:"request_cache_hints,omitempty"`
+	Verdict                json.RawMessage   `json:"verdict,omitempty"`
+	Error                  *string           `json:"error,omitempty"`
+}
+
+// RequestCacheHints is the best-effort request-side cache hint snapshot.
+type RequestCacheHints struct {
+	RequestedWrite bool `json:"requested_write"`
 }
 
 // Fingerprint is the block-hash chain of a denoised request body (hex).

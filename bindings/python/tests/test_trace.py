@@ -17,7 +17,7 @@ class TestTraceProbe:
     def test_trace_records_calls_and_query_api(self):
         with MockServer(OPENAI_CHAT) as mock:
             raw = openai("test-key", "gpt-4o", mock.url)
-            traced = raw.trace(strict=True)
+            traced = raw.trace_audited(True)
 
             # > 4 KiB user message so block-aligned prefixes actually match.
             big = "x" * 5000

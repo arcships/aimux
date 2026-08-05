@@ -90,6 +90,30 @@ test('trace() records calls and query API returns typed results', async (t) => {
   t.is(traced.traceExportJsonl().trim(), '')
 })
 
+test('streaming emits StreamStart then the aimux_meta Raw part', async (t) => {
+  // The FFI stream must emit: part[0]=StreamStart, part[1]=Raw(aimux_meta)
+  // carrying request_body/response_headers (RFC-0015 P0-1).
+  const { server, url } = await startMockServer()
+  t.teardown(() => server.close())
+
+  const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
+  const gen = await model.streamText(JSON.stringify('hello'), undefined)
+  const parts: string[] = []
+  for await (const json of gen) {
+    parts.push(json)
+    if (parts.length >= 3) break
+  }
+
+  t.truthy(parts.length >= 2, `expected at least 2 parts, got ${parts.length}`)
+  t.truthy(parts[0].includes('StreamStart'), `part[0] must be StreamStart: ${parts[0]}`)
+  t.truthy(
+    parts[1].includes('aimux_meta'),
+    `part[1] must be the Raw aimux_meta part: ${parts[1]}`,
+  )
+  const meta = JSON.parse(parts[1]).Raw.raw_value.aimux_meta
+  t.truthy(meta.request_body, 'meta carries the request body')
+})
+
 test('non-traced model still generates normally', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())

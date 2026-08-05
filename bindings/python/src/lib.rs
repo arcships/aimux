@@ -43,19 +43,25 @@ struct Model {
 
 #[pymethods]
 impl Model {
-    /// Wrap this model in a cache-probe layer (RFC-0015). The returned
-    /// model records fingerprints/verdicts on every call and exposes
-    /// `trace_aggregate` / `trace_session_chain` / `trace_export_jsonl` /
-    /// `trace_clear`.
-    #[pyo3(signature = (strict=false))]
-    fn trace(&self, strict: bool) -> PyResult<Model> {
+    /// Wrap this model in a cache-probe layer (RFC-0015) WITHOUT an
+    /// auditor (records fingerprints only; verdicts stay None).
+    fn trace(&self) -> PyResult<Model> {
         let store = Arc::new(aimux_core::trace::RingTraceStore::new());
-        let layer = if strict {
-            aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
-                .with_rules_auditor(true)
-        } else {
-            aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
-        };
+        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone());
+        Ok(Model {
+            inner: Arc::new(layer),
+            trace_store: Some(store),
+        })
+    }
+
+    /// Wrap this model in a probe layer with the built-in rules auditor.
+    /// `strict=True` = strict mode (self-hosted single instance);
+    /// `strict=False` = shared mode (safe default).
+    #[pyo3(signature = (strict=false))]
+    fn trace_audited(&self, strict: bool) -> PyResult<Model> {
+        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
+        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
+            .with_rules_auditor(strict);
         Ok(Model {
             inner: Arc::new(layer),
             trace_store: Some(store),

@@ -23,6 +23,12 @@ trace_id: string,
  */
 sent_at_unix_ms: bigint, 
 /**
+ * Client-side LCP token upper bound (block upper bound, byte-proxy
+ * len/4). `None` when no history matched. Consumed by `TraceStats`
+ * aggregation.
+ */
+lcp_token_upper?: bigint | null, 
+/**
  * Time to first streamed token (ms). Non-streaming: `None`.
  */
 ttft_ms: bigint | null, fingerprint: Fingerprint, usage: UsageSnapshot, 

@@ -1,9 +1,12 @@
 //! Keyed hashing for cache-probe fingerprints (RFC-0015 §3).
 //!
 //! Zero-dependency keyed hashes (splitmix64-style folding). The 128-bit
-//! fingerprint is two different derived-key 64-bit hashes — collision odds
-//! ~2^-128. Non-cryptographic by design: fingerprints are *keys* in the
-//! client-side LCP audit (HMAC-style scope salt), never security tokens.
+//! fingerprint is two 64-bit hashes under two derived keys. Non-cryptographic
+//! by design: fingerprints are *keys* in the client-side LCP audit, never
+//! security tokens. The two derived-key outputs are correlated (one key is
+//! derived from the other), so the claimed strength is "128-bit width,
+//! collision-resistant against random inputs" — NOT a strict 2^-128
+//! guarantee and NOT an HMAC.
 
 #[inline(always)]
 pub fn mix(mut x: u64) -> u64 {

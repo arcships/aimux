@@ -119,6 +119,13 @@ impl TraceStore {
         }
         let slot = self.next % self.cap;
         self.next += 1;
+        // The slot may hold an older record (global ring wrap): drop its
+        // scope count so `records_in_scope` stays an accurate live count.
+        if let Some(old) = &self.ring[slot].record
+            && let Some(n) = self.scope_count.get_mut(&old.scope)
+        {
+            *n = n.saturating_sub(1);
+        }
         let generation = self.ring[slot].generation.wrapping_add(1);
         self.ring[slot] = RingSlot {
             generation,
@@ -223,8 +230,8 @@ impl TraceStore {
     }
 
     fn maybe_rebuild_index(&mut self) {
-        // Tombstone ratio > 25% → full index rebuild (amortized).
-        let live = self.index.len();
+        // Tombstone ratio > 25% of total refs → full index rebuild.
+        let live: usize = self.index.values().map(Vec::len).sum();
         if live > 0 && self.tombstone_hits * 4 > live as u64 {
             let mut new_index: HashMap<(u64, u64), Vec<BlockRef>> = HashMap::new();
             for (slot, s) in self.ring.iter().enumerate() {
@@ -477,7 +484,7 @@ impl RingTraceStore {
             scope: rec.scope_key,
             session: rec.session_id.clone(),
             len_bytes: rec.fingerprint.len_bytes,
-            t_send_ms: rec.sent_at_unix_ms.max(0) as u64,
+            t_send_ms: rec.monotonic_sent_ms,
             block_hashes: rec
                 .fingerprint
                 .block_hashes

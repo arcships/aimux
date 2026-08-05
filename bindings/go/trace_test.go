@@ -33,6 +33,7 @@ const traceRecordJSON = `{
     "output_total": 10,
     "output_text": 10
   },
+  "request_cache_hints": {"requested_write": true},
   "verdict": {
     "kind": "Trusted",
     "confidence": "High",
@@ -63,6 +64,9 @@ func TestTraceRecordParses(t *testing.T) {
 	}
 	if rec.Usage.CacheRead == nil || *rec.Usage.CacheRead != 1024 {
 		t.Errorf("cache_read mismatch: %v", rec.Usage.CacheRead)
+	}
+	if rec.RequestCacheHints == nil || !rec.RequestCacheHints.RequestedWrite {
+		t.Error("request_cache_hints mismatch")
 	}
 	if rec.Verdict == nil {
 		t.Fatal("verdict must be present")

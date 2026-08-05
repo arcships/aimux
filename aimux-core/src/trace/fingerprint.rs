@@ -77,25 +77,44 @@ impl BlockChainFingerprint {
     }
 }
 
-/// Recursively remove noise keys from a JSON value (in place on a clone).
+/// Remove noise keys from a JSON value (in place on a clone).
 ///
-/// Conservative: only well-known random-identity keys are stripped
-/// (request_id / requestId / timestamp / nonce at any nesting level). Other
-/// fields — including message content and options — are preserved so the
-/// audit baseline stays byte-faithful.
+/// Conservative by design (RFC-0015 §3): random request-identity fields are
+/// stripped so they cannot break prefix continuation across calls, while
+/// business fields — message content, tool arguments, options — are always
+/// preserved even when they share a name with a noise key.
+///
+/// - Top level: `request_id` / `requestId` / `timestamp` / `nonce` (wire
+///   transport metadata).
+/// - Nested levels: only `request_id` / `requestId` (universal request ids;
+///   `timestamp`/`nonce` may be legitimate business payload inside tool
+///   arguments, so they are kept there).
 pub fn denoise(value: &Value) -> Value {
+    denoise_at(value, 0)
+}
+
+fn denoise_at(value: &Value, depth: usize) -> Value {
     match value {
         Value::Object(map) => {
             let mut out = serde_json::Map::with_capacity(map.len());
             for (k, v) in map {
-                if NOISE_KEYS.contains(&k.as_str()) {
+                if depth == 0 {
+                    // Top level: wire transport metadata is stripped.
+                    if NOISE_KEYS.contains(&k.as_str()) {
+                        continue;
+                    }
+                } else if k == "request_id" || k == "requestId" {
+                    // Nested: only universal request ids; timestamp/nonce
+                    // may be legitimate business payload (tool arguments).
                     continue;
                 }
-                out.insert(k.clone(), denoise(v));
+                out.insert(k.clone(), denoise_at(v, depth + 1));
             }
             Value::Object(out)
         }
-        Value::Array(items) => Value::Array(items.iter().map(denoise).collect()),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|i| denoise_at(i, depth + 1)).collect())
+        }
         other => other.clone(),
     }
 }
@@ -156,24 +175,44 @@ mod tests {
     }
 
     #[test]
-    fn denoise_strips_noise_keys_recursively() {
+    fn denoise_strips_top_level_noise_and_nested_request_ids() {
         let v = serde_json::json!({
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "hi"}],
             "request_id": "rand-1",
             "timestamp": 123,
+            "nonce": "n1",
             "nested": {"nonce": "abc", "keep": 1},
             "array": [{"requestId": "x"}, {"keep": 2}],
         });
         let d = denoise(&v);
         assert!(d.get("request_id").is_none());
         assert!(d.get("timestamp").is_none());
-        assert!(d.get("nested").unwrap().get("nonce").is_none());
+        assert!(d.get("nonce").is_none());
         assert_eq!(d["nested"]["keep"], 1);
+        // Nested timestamp/nonce are BUSINESS payload — preserved.
+        assert_eq!(d["nested"]["nonce"], "abc");
+        // Nested universal request ids are still stripped.
         assert!(d["array"][0].get("requestId").is_none());
         assert_eq!(d["array"][1]["keep"], 2);
         assert_eq!(d["model"], "gpt-4o");
         assert_eq!(d["messages"][0]["content"], "hi");
+    }
+
+    #[test]
+    fn denoise_preserves_tool_arguments_with_timestamp_and_nonce() {
+        // Business fields that merely share noise-key names must survive —
+        // deleting them would change the token prefix the provider sees.
+        let v = serde_json::json!({
+            "messages": [{
+                "role": "user",
+                "content": "hi",
+                "tool_arguments": {"timestamp": 123456, "nonce": "sig-1", "data": "x"}
+            }]
+        });
+        let d = denoise(&v);
+        assert_eq!(d["messages"][0]["tool_arguments"]["timestamp"], 123456);
+        assert_eq!(d["messages"][0]["tool_arguments"]["nonce"], "sig-1");
     }
 
     #[test]
