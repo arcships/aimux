@@ -1,6 +1,6 @@
 # RFC-0017: 统一 provider 配置与 request override(DX 提升)
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (2026-08-02 — 阶段 1-4 全部完成,详见 [§3](#3-实现计划) 实施状态与 [§4](#4-向后兼容);全量测试 2769 绿)
 > **Date**: 2026-08-01
 > **Scope**: 统一 aimux 的 provider 配置层——把 Rust core 已有但 Node 未透出的能力(headers/org/project/retry)暴露出来,引入通用 `bodyOverrides`(JSON deep merge)替代闭包式 transform,并以**配置数据(而非代码枚举)**驱动 Qwen/Kimi/GLM 等厂商的思考开关翻译
 > **Related**: [RFC-0016](0016-align-with-aisdk.md) 对齐 Vercel AI SDK 能力缺口(本 RFC 补齐 M1/M5 + 思考开关翻译层),[RFC-0009](0009-request-resilience.md) retry(本 RFC 透出 maxRetries)

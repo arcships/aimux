@@ -1,6 +1,6 @@
 # RFC-0008: Multimodal API Binding Design
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (2026-08-01 — full multimodal surface across all bindings; see [bindings/node/src/multimodal.rs](../bindings/node/src/multimodal.rs))
 > **Date**: 2026-07-29
 > **Related**: [RFC-0001](0001-multilang-bindings.md) Multilingual Bindings
 

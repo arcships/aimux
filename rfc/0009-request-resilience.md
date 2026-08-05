@@ -1,6 +1,6 @@
 # RFC-0009: Request Optimization — Referencing catcher's Design
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (2026-07-30 — shared client + PoolConfig + jitter + timeouts landed in aimux-provider-utils, commit e91c8c29)
 > **Date**: 2026-07-29
 > **Scope**: `aimux-provider-utils` references three specific design points from catcher (connection-pool config, jitter backoff, fixed timeouts) and implements request-layer optimization using reqwest natively + the existing retry.rs, without introducing a catcher-http dependency
 > **Related**: [RFC-0002](0002-provider-improvements.md) provider adapter layer improvements, [RFC-0003](0003-test-cassette.md) test cassette plan

@@ -1,6 +1,6 @@
 # RFC-0012: Source code streamlining proposal
 
-> **Status**: DRAFT (pending review)
+> **Status**: SUPERSEDED (2026-08-02 — 目标由 RFC-0017 阶段4 达成:provider_registry.json 单一数据源 + 类型壳退役 + 统一 provider(name) 入口;宏生成路线明确未采用,见 RFC-0017 §7.9)
 > **Date**: 2026-07-31
 > **Scope**: `aimux-providers`, `aimux-ffi`, and the generation mechanism of `aimux-providers/src/lib.rs`
 > **Related**: [Rust architecture audit report](../docs/rust-architecture-audit-2026-07-31.md), [Provider adaptation layer improvements](0002-provider-improvements.md), [Provider development specification](0006-provider-development.md)
