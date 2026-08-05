@@ -381,7 +381,7 @@ below.
 ## Types
 
 Type declarations are ts-rs generated from the Rust core into
-`aimux-core/bindings/*.ts` (single source of truth — the wrapper re-exports
+`bindings/node/src/types/*.ts` (single source of truth — the wrapper re-exports
 them, not a local copy):
 
 ```typescript
@@ -394,7 +394,7 @@ import type {
 ```
 
 ```typescript
-// aimux-core/bindings/GenerateTextResult.ts (ts-rs generated)
+// bindings/node/src/types/GenerateTextResult.ts (ts-rs generated)
 export type GenerateTextResult = {
   text: string                 // generated text (all Text variants concatenated)
   tool_calls: Array<ToolCall>  // tool call list (extracted from content)
@@ -409,7 +409,7 @@ export type GenerateTextResult = {
 object — type narrowing via `part.TextDelta` etc. works out of the box):
 
 ```typescript
-// aimux-core/bindings/StreamPart.ts (variants, abridged)
+// bindings/node/src/types/StreamPart.ts (variants, abridged)
 export type StreamPart =
   | { StreamStart: ... } | { TextStart: ... } | { TextDelta: ... } | { TextEnd: ... }
   | { ToolInputStart: ... } | { ToolInputDelta: ... } | { ToolInputEnd: ... }
@@ -419,7 +419,7 @@ export type StreamPart =
   | { Error: ... } | { Raw: ... } | { File: ... }
 ```
 
-The full declarations live in `aimux-core/bindings/` — `GenerateTextOptions.ts`,
+The full declarations live in `bindings/node/src/types/` — `GenerateTextOptions.ts`,
 `ModelMessage.ts`, `Tool.ts`, `ToolChoice.ts`, `ContentPart.ts`,
 `GenerateContent.ts`, `GenerateResult.ts`, and the `types/` directory of the
 package (79 files).

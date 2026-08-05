@@ -6,8 +6,8 @@
 // Users would otherwise have to JSON.stringify every input and JSON.parse every
 // output, with no static types. This wrapper erases that JSON boundary: inputs
 // and outputs are typed objects, using the ts-rs generated types from
-// `./types.ts` (synced from `aimux-core/bindings` — single source of truth in
-// the Rust core, local copy packaged with the npm tarball).
+// `./types.ts` (ts-rs exports directly into `./types/` — single source of
+// truth in the Rust core, packaged with the npm tarball).
 //
 // The raw napi API (`index.js` / `index.d.ts`, auto-generated) is untouched.
 // This is purely an extra TypeScript layer on top.

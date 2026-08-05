@@ -1,5 +1,6 @@
 // Re-export all ts-rs generated types.
-// These are auto-generated from the Rust core types via ts-rs.
+// These are auto-generated from the Rust core types via ts-rs, exported
+// directly into ./types/ (see .cargo/config.toml TS_RS_EXPORT_DIR).
 // Run `cargo test -p aimux-core` to regenerate after Rust type changes.
 
 export type * from './types/AiMuxError'
