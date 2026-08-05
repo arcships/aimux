@@ -16,7 +16,9 @@
 package aimux
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // ── Mock provider server ──────────────────────────────────────────────────────
@@ -401,6 +404,58 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 	}
 	if !gotFinish {
 		t.Error("expected a Finish part")
+	}
+}
+
+func TestStreamTextContextCancelsInFlightRequest(t *testing.T) {
+	started := make(chan struct{})
+	requestDone := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(requestDone)
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(3 * time.Second):
+		}
+	}))
+	defer srv.Close()
+
+	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	defer m.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := m.StreamTextContext(ctx, `"wait"`, "")
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream request did not start")
+	}
+	cancel()
+
+	drained := make(chan struct{})
+	go func() {
+		for range stream.Parts() {
+		}
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight stream did not stop after cancellation")
+	}
+	if !errors.Is(stream.Err(), context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", stream.Err())
+	}
+	select {
+	case <-requestDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider request stayed open after cancellation")
 	}
 }
 

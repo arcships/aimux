@@ -44,12 +44,14 @@ static void trampoline_error(const char* err) {
     if (current_stream_id) goStreamError(current_stream_id, (char*)err);
 }
 
-// do_stream: set thread-local ID, call the blocking stream function, clear ID.
-// The callbacks fire synchronously during this call.
-static void do_stream(uint64_t handle, const char* prompt, const char* opts, int64_t id) {
+// do_stream: set the thread-local ID, call the blocking cancelable stream
+// function, then clear the ID. The callbacks fire during this call.
+static void do_stream(uint64_t handle, uint64_t abort_handle,
+                      const char* prompt, const char* opts, int64_t id) {
     current_stream_id = id;
-    aimux_stream_text(handle, prompt, opts,
-                      trampoline_part, trampoline_done, trampoline_error);
+    aimux_stream_text_with_abort(handle, abort_handle, prompt, opts,
+                                 trampoline_part, trampoline_done,
+                                 trampoline_error);
     current_stream_id = 0;
 }
 
@@ -109,6 +111,7 @@ char *aimux_search(uint64_t handle, const char *opts_json);
 import "C"
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -586,10 +589,14 @@ func extractError(result string) string {
 
 // streamEntry holds the channel and error for an active stream.
 type streamEntry struct {
-	parts chan string
-	mu    sync.Mutex
-	err   error
-	once  sync.Once
+	parts        chan string
+	mu           sync.Mutex
+	err          error
+	closeOnce    sync.Once
+	terminalOnce sync.Once
+	terminal     chan struct{}
+	cancelled    chan struct{}
+	abortHandle  uint64
 }
 
 // streamRegistry maps stream IDs to active stream entries. This avoids passing
@@ -601,11 +608,16 @@ var (
 	streamNextID int64
 )
 
-func registerStream() (*streamEntry, int64) {
+func registerStream(abortHandle uint64) (*streamEntry, int64) {
 	streamRegMu.Lock()
 	defer streamRegMu.Unlock()
 	streamNextID++
-	e := &streamEntry{parts: make(chan string, 256)}
+	e := &streamEntry{
+		parts:       make(chan string, 256),
+		terminal:    make(chan struct{}),
+		cancelled:   make(chan struct{}),
+		abortHandle: abortHandle,
+	}
 	streamReg[streamNextID] = e
 	return e, streamNextID
 }
@@ -626,19 +638,39 @@ func unregisterStream(id int64) {
 // against the engine firing both on_done and on_error for the same stream
 // (which would otherwise panic on double close).
 func (e *streamEntry) closeParts() {
-	e.once.Do(func() { close(e.parts) })
+	e.closeOnce.Do(func() { close(e.parts) })
+}
+
+// markTerminal records the first terminal result. A cancellation also wakes
+// callbacks that are waiting to send to a full parts channel.
+func (e *streamEntry) markTerminal(err error, cancelled bool) bool {
+	marked := false
+	e.terminalOnce.Do(func() {
+		marked = true
+		e.mu.Lock()
+		e.err = err
+		e.mu.Unlock()
+		if cancelled {
+			close(e.cancelled)
+		}
+		close(e.terminal)
+	})
+	return marked
+}
+
+func (e *streamEntry) cancel(err error) {
+	if err == nil {
+		err = context.Canceled
+	}
+	if e.markTerminal(err, true) && e.abortHandle != 0 {
+		C.aimux_abort_signal_abort(C.uint64_t(e.abortHandle))
+	}
 }
 
 // Stream is a handle to an in-progress or completed stream.
 // Consume parts via the Parts() channel; check Err() after the channel closes.
 //
-// The channel is buffered (256). If the caller stops consuming, the native
-// stream will block on the 257th part and the stream goroutine (plus the
-// underlying model call) will stall until the stream ends or times out —
-// always drain the channel. There is no context-cancel API (the C ABI
-// stream is synchronous and has no abort hook); the only interruption
-// mechanism is a per-call timeout via GenerateTextOptions.Timeout
-// (RFC-0016 H3).
+// The channel is buffered (256). Call Cancel when the caller stops consuming.
 type Stream struct {
 	parts <-chan string
 	entry *streamEntry
@@ -656,6 +688,11 @@ func (s *Stream) Err() error {
 	return s.entry.err
 }
 
+// Cancel stops this stream. It is safe to call more than once.
+func (s *Stream) Cancel() {
+	s.entry.cancel(context.Canceled)
+}
+
 // StreamText performs streaming text generation.
 //
 // It returns immediately with a *Stream. Consume parts via stream.Parts():
@@ -668,29 +705,45 @@ func (s *Stream) Err() error {
 //	    log.Fatal(err)
 //	}
 //
-// You MUST drain the Parts() channel. If you stop reading, the native
-// callback blocks once the 256-part buffer fills, stalling the stream
-// goroutine and the model until the stream ends or the per-call timeout
-// fires (GenerateTextOptions.Timeout, RFC-0016 H3). There is no
-// context-cancel API — the C ABI stream is synchronous and has no abort
-// hook.
+// Drain the Parts channel or call Cancel when you stop reading. Use
+// StreamTextContext to connect cancellation to a context.
 func (m *Model) StreamText(promptJson, optsJson string) *Stream {
-	entry, id := registerStream()
+	return m.StreamTextContext(context.Background(), promptJson, optsJson)
+}
+
+// StreamTextContext performs streaming text generation. Context cancellation
+// stops the native request and makes Err return the context error.
+func (m *Model) StreamTextContext(ctx context.Context, promptJson, optsJson string) *Stream {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	abortHandle := uint64(C.aimux_abort_signal_new())
+	entry, id := registerStream(abortHandle)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			entry.cancel(ctx.Err())
+		case <-entry.terminal:
+		}
+	}()
 
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		defer unregisterStream(id)
+		defer C.aimux_abort_signal_drop(C.uint64_t(abortHandle))
 		// Safety net: ensure the channel is always closed even if the
 		// native layer never fires on_done/on_error (defensive against
 		// future bugs or panic edges in the FFI layer).
-		defer entry.closeParts()
+		defer func() {
+			entry.markTerminal(nil, false)
+			entry.closeParts()
+		}()
 
 		handle, release, err := m.acquireHandle()
 		if err != nil {
-			entry.mu.Lock()
-			entry.err = err
-			entry.mu.Unlock()
+			entry.markTerminal(err, false)
 			return
 		}
 		defer release()
@@ -704,7 +757,13 @@ func (m *Model) StreamText(promptJson, optsJson string) *Stream {
 			defer C.free(unsafe.Pointer(cOpts))
 		}
 
-		C.do_stream(C.uint64_t(handle), cPrompt, cOpts, C.int64_t(id))
+		C.do_stream(
+			C.uint64_t(handle),
+			C.uint64_t(abortHandle),
+			cPrompt,
+			cOpts,
+			C.int64_t(id),
+		)
 	}()
 
 	return &Stream{parts: entry.parts, entry: entry}
@@ -721,7 +780,10 @@ func goStreamPart(id C.int64_t, json *C.char) {
 	if json == nil {
 		return
 	}
-	e.parts <- C.GoString(json)
+	select {
+	case e.parts <- C.GoString(json):
+	case <-e.cancelled:
+	}
 }
 
 //export goStreamDone
@@ -730,6 +792,7 @@ func goStreamDone(id C.int64_t) {
 	if e == nil {
 		return
 	}
+	e.markTerminal(nil, false)
 	e.closeParts()
 }
 
@@ -747,9 +810,7 @@ func goStreamError(id C.int64_t, err *C.char) {
 			msg = extracted
 		}
 	}
-	e.mu.Lock()
-	e.err = errors.New(msg)
-	e.mu.Unlock()
+	e.markTerminal(errors.New(msg), false)
 	e.closeParts()
 }
 

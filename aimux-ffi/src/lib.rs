@@ -40,6 +40,7 @@ use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::provider::Provider;
+use aimux_core::shared::AbortSignal;
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
 use aimux_providers::azure::{AzureConfig, AzureProvider};
@@ -60,7 +61,7 @@ use tokio::runtime::Runtime;
 // Global state: handle registry + tokio runtime
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A type-erased model handle. One registry holds all modalities.
+/// A type-erased FFI handle. One registry holds models and abort signals.
 #[derive(Clone)]
 enum ModelHandle {
     Language(Arc<dyn LanguageModel>),
@@ -72,6 +73,7 @@ enum ModelHandle {
     Video(Arc<dyn aimux_core::video_model::VideoModel>),
     Search(Arc<dyn aimux_core::search_model::SearchModel>),
     Files(Arc<dyn aimux_core::files_model::Files>),
+    Abort(AbortSignal),
 }
 
 type ModelRegistry = HashMap<u64, ModelHandle>;
@@ -121,12 +123,28 @@ fn get_handle(handle: u64) -> Option<ModelHandle> {
         .cloned()
 }
 
+fn get_abort_signal(handle: u64) -> Option<AbortSignal> {
+    match get_handle(handle)? {
+        ModelHandle::Abort(signal) => Some(signal),
+        _ => None,
+    }
+}
+
 /// Remove a handle from the registry (the model drops when the last ref goes).
 fn drop_handle(handle: u64) {
     registry()
         .lock()
         .expect("aimux-ffi: registry mutex poisoned")
         .remove(&handle);
+}
+
+fn drop_abort_signal(handle: u64) {
+    let mut registry = registry()
+        .lock()
+        .expect("aimux-ffi: registry mutex poisoned");
+    if matches!(registry.get(&handle), Some(ModelHandle::Abort(_))) {
+        registry.remove(&handle);
+    }
 }
 
 /// The shared tokio runtime driving all async provider calls.
@@ -855,6 +873,89 @@ pub extern "C" fn aimux_stream_text(
     on_done: extern "C" fn(),
     on_error: extern "C" fn(*const c_char),
 ) {
+    stream_text_with_signal(
+        handle,
+        prompt_json,
+        opts_json,
+        on_part,
+        on_done,
+        on_error,
+        None,
+    );
+}
+
+/// Create a per-call abort signal for a cancelable FFI operation.
+///
+/// The caller must release the returned handle with
+/// [`aimux_abort_signal_drop`].
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_abort_signal_new() -> u64 {
+    intern_handle(ModelHandle::Abort(AbortSignal::new()))
+}
+
+/// Request cancellation for an abort-signal handle.
+///
+/// Invalid handles and repeated calls are no-ops.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_abort_signal_abort(handle: u64) {
+    if let Some(signal) = get_abort_signal(handle) {
+        signal.abort();
+    }
+}
+
+/// Release an abort-signal handle.
+///
+/// This function does not remove model handles if the caller passes the wrong
+/// handle type. Active calls keep their cloned signal alive.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_abort_signal_drop(handle: u64) {
+    if handle != 0 {
+        drop_abort_signal(handle);
+    }
+}
+
+/// Stream text with a per-call abort signal.
+///
+/// This function blocks like [`aimux_stream_text`]. Another thread can call
+/// [`aimux_abort_signal_abort`] with `abort_handle` to stop this call.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_stream_text_with_abort(
+    handle: u64,
+    abort_handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    on_part: extern "C" fn(*const c_char),
+    on_done: extern "C" fn(),
+    on_error: extern "C" fn(*const c_char),
+) {
+    let abort_signal = match get_abort_signal(abort_handle) {
+        Some(signal) => signal,
+        None => {
+            fire_error(on_error, "invalid abort handle");
+            return;
+        }
+    };
+    stream_text_with_signal(
+        handle,
+        prompt_json,
+        opts_json,
+        on_part,
+        on_done,
+        on_error,
+        Some(abort_signal),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stream_text_with_signal(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    on_part: extern "C" fn(*const c_char),
+    on_done: extern "C" fn(),
+    on_error: extern "C" fn(*const c_char),
+    abort_signal: Option<AbortSignal>,
+) {
     let model = match get_model(handle) {
         Some(m) => m,
         None => {
@@ -877,7 +978,7 @@ pub extern "C" fn aimux_stream_text(
         }
     };
 
-    let opts = match cstr_to_string(opts_json) {
+    let mut opts = match cstr_to_string(opts_json) {
         Some(s) => match parse_opts(&s) {
             Ok(o) => o,
             Err(e) => {
@@ -887,13 +988,39 @@ pub extern "C" fn aimux_stream_text(
         },
         None => GenerateTextOptions::default(),
     };
+    opts.abort_signal = abort_signal.clone();
 
     runtime().block_on(async move {
-        let stream_result = stream_text(&*model, prompt, opts).await;
+        let stream_result = match abort_signal.as_ref() {
+            Some(signal) => {
+                tokio::select! {
+                    biased;
+                    _ = signal.cancelled() => Err(AiMuxError::Aborted),
+                    result = stream_text(&*model, prompt, opts) => result,
+                }
+            }
+            None => stream_text(&*model, prompt, opts).await,
+        };
         match stream_result {
             Ok(sr) => {
                 let mut stream = sr.stream;
-                while let Some(item) = stream.next().await {
+                loop {
+                    let next = match abort_signal.as_ref() {
+                        Some(signal) => {
+                            tokio::select! {
+                                biased;
+                                _ = signal.cancelled() => {
+                                    fire_error_struct(on_error, &AiMuxError::Aborted);
+                                    return;
+                                }
+                                item = stream.next() => item,
+                            }
+                        }
+                        None => stream.next().await,
+                    };
+                    let Some(item) = next else {
+                        break;
+                    };
                     match item {
                         Ok(part) => {
                             let json =
