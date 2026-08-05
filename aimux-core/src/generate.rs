@@ -1,4 +1,4 @@
-﻿//! User-facing API: `generate_text` and `stream_text`.
+//! User-facing API: `generate_text` and `stream_text`.
 //!
 //! These are the primary entry points for users. They:
 //! 1. Convert user prompt (`ModelPrompt`) to `LanguageModelPrompt` (provider-facing).
@@ -331,4 +331,96 @@ fn split_prompt(
         ModelPrompt::Text(text) => (vec![ModelMessage::user(text)], instructions),
         ModelPrompt::Messages(msgs) => (msgs, instructions),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OpenAI Chat Completions output (RFC-0026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+use crate::openai_output::{
+    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, to_chat_completion,
+    to_chat_completion_stream,
+};
+
+/// Generate text and return the result as an OpenAI Chat Completion.
+///
+/// This is the OpenAI-compatible equivalent of [`generate_text`]. Internally
+/// it calls `generate_text`, then converts the [`GenerateResult`] into a
+/// [`ChatCompletion`] via [`to_chat_completion`].
+///
+/// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
+/// always standard OpenAI Chat Completions JSON.
+///
+/// # Example
+///
+/// ```no_run
+/// use aimux_core::prelude::*;
+///
+/// # async fn example(model: &dyn LanguageModel) -> Result<(), AiMuxError> {
+/// let completion = generate_text_as_openai(
+///     model,
+///     "What is Rust?",
+///     GenerateTextOptions::default(),
+/// ).await?;
+///
+/// println!("{}", completion.choices[0].message.content.as_deref().unwrap());
+/// println!("{}", completion.usage.prompt_tokens);
+/// # Ok(())
+/// # }
+/// ```
+pub async fn generate_text_as_openai(
+    model: &dyn LanguageModel,
+    prompt: impl Into<ModelPrompt>,
+    options: GenerateTextOptions,
+) -> Result<ChatCompletion, AiMuxError> {
+    let result = generate_text(model, prompt, options).await?;
+    Ok(to_chat_completion(&result.raw, model.model_id()))
+}
+
+/// Stream text and return the result as a stream of OpenAI Chat Completion chunks.
+///
+/// This is the OpenAI-compatible equivalent of [`stream_text`]. Internally
+/// it calls `stream_text`, then converts the `StreamPart` stream into a
+/// [`ChatCompletionChunk`] stream via [`to_chat_completion_stream`].
+///
+/// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
+/// always standard OpenAI Chat Completions streaming chunks.
+///
+/// # Example
+///
+/// ```no_run
+/// use aimux_core::prelude::*;
+/// use futures::StreamExt;
+///
+/// # async fn example(model: &dyn LanguageModel) -> Result<(), AiMuxError> {
+/// let result = stream_text_as_openai(
+///     model,
+///     "Write a haiku about Rust.",
+///     GenerateTextOptions::default(),
+///     OpenAiStreamOptions::default(),
+/// ).await?;
+///
+/// let mut stream = result.stream;
+/// while let Some(chunk) = stream.next().await {
+///     let chunk = chunk?;
+///     if let Some(delta) = chunk.choices.first()
+///         && let Some(content) = &delta.delta.content {
+///         print!("{}", content);
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub async fn stream_text_as_openai(
+    model: &dyn LanguageModel,
+    prompt: impl Into<ModelPrompt>,
+    options: GenerateTextOptions,
+    stream_options: OpenAiStreamOptions,
+) -> Result<ChatCompletionStream, AiMuxError> {
+    let result = stream_text(model, prompt, options).await?;
+    Ok(to_chat_completion_stream(
+        result.stream,
+        model.model_id(),
+        stream_options,
+    ))
 }
