@@ -9,6 +9,25 @@ declare global {
   }
 }
 
+/**
+ * A bridge from a JS `AbortSignal` to the core's runtime cancellation.
+ *
+ * napi's own `AbortSignal` is not `Send` (it holds `Rc`), so it cannot be a
+ * parameter of an async napi method. This class is created synchronously
+ * (registering the abort callback on the JS thread) and then passed to
+ * `generateText` / `streamText` — it only holds an `Arc` and is `Send`.
+ *
+ * ```ts
+ * const bridge = signal ? new AbortBridge(signal) : undefined
+ * await model.generateText(prompt, options, bridge)
+ * ```
+ */
+export declare class AbortBridge {
+  constructor(signal: AbortSignal)
+  /** Returns `true` once the underlying JS signal has been aborted. */
+  aborted(): boolean
+}
+
 export declare class EmbeddingModel {
   /**
    * Generate embeddings. `values_json` is a JSON array of strings.
@@ -30,19 +49,10 @@ export declare class Files {
 export declare class ImageModel {
   /**
    * Generate images. `opts_json` is JSON-serialized ImageCallOptions.
-   * Returns JSON-serialized ImageResult (images as base64 in JSON).
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+   * the call. Returns JSON-serialized ImageResult (images as base64 in JSON).
    */
   generate(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
-}
-
-export declare class AbortBridge {
-  /**
-   * Bridge a JS `AbortSignal` to the core's runtime cancellation.
-   * Pass the result to `Model.generateText` / `Model.streamText`.
-   */
-  constructor(signal: AbortSignal)
-  /** Returns `true` once the underlying JS signal has been aborted. */
-  aborted(): boolean
 }
 
 export declare class Model {
@@ -51,7 +61,8 @@ export declare class Model {
    *
    * `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.
    * `options` — optional JSON-serialized `GenerateTextOptions`.
-   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels the call.
+   * `bridge` — optional `AbortBridge` (wrap a JS `AbortSignal` in one);
+   * aborting the signal cancels the call.
    * Returns a JSON-serialized `GenerateTextResult`.
    */
   generateText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
@@ -68,7 +79,8 @@ export declare class RerankingModel {
   /**
    * Rerank documents. `query` is the search query, `docs_json` is a JSON
    * array of documents, `opts_json` is optional JSON options.
-   * Returns JSON-serialized RerankingResult.
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+   * the call. Returns JSON-serialized RerankingResult.
    */
   rerank(query: string, docsJson: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
@@ -76,7 +88,8 @@ export declare class RerankingModel {
 export declare class SearchModel {
   /**
    * Search. `query` is the search query, `opts_json` is optional JSON options.
-   * Returns JSON-serialized SearchResult.
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+   * the call. Returns JSON-serialized SearchResult.
    */
   search(query: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
@@ -84,7 +97,8 @@ export declare class SearchModel {
 export declare class SpeechModel {
   /**
    * Generate speech audio. `opts_json` is JSON-serialized SpeechCallOptions.
-   * Returns JSON-serialized SpeechResult (audio as base64 in JSON).
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+   * the call. Returns JSON-serialized SpeechResult (audio as base64 in JSON).
    */
   generate(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
 }
@@ -110,7 +124,8 @@ export declare class TranscriptionModel {
   /**
    * Transcribe audio. `audio_base64` is base64-encoded audio data.
    * `media_type` is e.g. "audio/mp3". `opts_json` is optional JSON options.
-   * Returns JSON-serialized TranscriptionResult.
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+   * the call. Returns JSON-serialized TranscriptionResult.
    */
   generate(audioBase64: string, mediaType: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
@@ -118,7 +133,8 @@ export declare class TranscriptionModel {
 export declare class VideoModel {
   /**
    * Generate video. `opts_json` is JSON-serialized VideoCallOptions.
-   * Returns JSON-serialized VideoResult (typically contains a URL).
+   * `bridge` — optional `AbortBridge`; aborting the wrapped signal cancels
+   * the call. Returns JSON-serialized VideoResult (typically contains a URL).
    */
   generate(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
 }
@@ -126,26 +142,21 @@ export declare class VideoModel {
 /** Create an Anthropic model instance. */
 export declare function anthropic(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
-/** Create an Anthropic-on-AWS model instance (API key + region). */
+/** Create an Anthropic-on-AWS language model instance (API key + region). */
 export declare function anthropicAws(apiKey: string, region: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
-/** Create an Azure OpenAI model instance (API key + resource name). */
+/**
+ * Create an Azure OpenAI language model instance (API key + resource name).
+ *
+ * The deployment name is passed as `model_id`; `api_version` is optional.
+ */
 export declare function azure(apiKey: string, resourceName: string, deployment: string, apiVersion?: string | undefined | null, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
-/** Create a Bedrock model instance (AWS SigV4 credentials). */
+/** Create a Bedrock language model instance (AWS SigV4 credentials). */
 export declare function bedrock(accessKeyId: string, secretAccessKey: string, region: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
-/** Create a Cohere model instance. */
+/** Create a Cohere language model instance. */
 export declare function cohere(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
-
-/** Create a Mistral model instance. */
-export declare function mistral(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
-
-/** Create a Vertex AI model instance (GCP bearer token). */
-export declare function vertex(accessToken: string, project: string, location: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
-
-/** Create an xAI model instance. */
-export declare function xai(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
 /** Create a Cohere embedding model instance. */
 export declare function cohereEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
@@ -153,14 +164,17 @@ export declare function cohereEmbedding(apiKey: string, modelId: string, baseUrl
 /** Create a Cohere reranking model instance. */
 export declare function cohereReranking(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<RerankingModel>
 
-/** Create a DeepSeek model instance. */
+/** Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4). */
 export declare function deepseek(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
-/** Create a Google Gemini language model instance (native generateContent protocol — not registry-backed). */
+/**
+ * Create a Google Gemini language model instance.
+ *
+ * Google speaks the native `generateContent` protocol (not OpenAI-compatible),
+ * so it is **not** registry-backed — `provider("google", ...)` fails with
+ * `UnknownProvider`. This factory is the only entry point.
+ */
 export declare function google(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
-
-/** Create a language model from the built-in registry by provider name (RFC-0017 phase 4). */
-export declare function provider(name: string, apiKey?: string | undefined | null, modelId: string, config?: ProviderConfig | undefined | null): Promise<Model>
 
 /** Create a Google embedding model instance. */
 export declare function googleEmbedding(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<EmbeddingModel>
@@ -170,6 +184,33 @@ export declare function googleImage(apiKey: string, modelId: string, baseUrl?: s
 
 /** Create a Google video model instance. */
 export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<VideoModel>
+
+/**
+ * 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
+ * subscriber 时 no-op。级别：off|error|warn|info|debug|trace（空串回退
+ * warn）。`AIMUX_LOG` / `AIMUX_LOG_LEVEL` 环境变量优先级更高。
+ * 日志输出到 stderr。
+ */
+export declare function initLogging(level: string): void
+
+/**
+ * Enable/disable the global session inferer (RFC-0024, opt-in, off by
+ * default). Explicit `sessionId` values always win regardless of this.
+ */
+export declare function initSessionInfer(enabled: boolean): void
+
+/**
+ * Register the global session store (RFC-0024). Replaces any previous one.
+ * Until called, calls are not grouped and the session query functions return
+ * empty results.
+ */
+export declare function initSessionStore(): void
+
+/** Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`. */
+export declare function listSessions(): string
+
+/** Create a Mistral language model instance. */
+export declare function mistral(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
 /** Create an OpenAI model instance. */
 export declare function openai(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
@@ -188,6 +229,13 @@ export declare function openaiSpeech(apiKey: string, modelId: string, baseUrl?: 
 
 /** Create an OpenAI transcription model instance. */
 export declare function openaiTranscription(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<TranscriptionModel>
+
+/**
+ * Create a language model from the built-in registry by provider name
+ * (RFC-0017 phase 4). `api_key` may be empty/null to read the provider's env
+ * var from the registry entry.
+ */
+export declare function provider(name: string, apiKey: string | undefined | null, modelId: string, config?: ProviderConfig | undefined | null): Promise<Model>
 
 /**
  * Optional provider configuration accepted by factory functions.
@@ -219,5 +267,18 @@ export interface ProviderConfig {
   bodyOverrides?: string
 }
 
+/**
+ * Query: all calls of a session (RFC-0024), as a JSON-serialized
+ * `SessionCall[]` (ordered by step). Empty array if the session is unknown
+ * or no store is registered.
+ */
+export declare function sessionCalls(sessionId: string): string
+
 /** Create a Tavily search model instance. */
 export declare function tavilySearch(apiKey: string, baseUrl?: string | undefined | null): Promise<SearchModel>
+
+/** Create a Vertex AI language model instance (GCP bearer token). */
+export declare function vertex(accessToken: string, project: string, location: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/** Create an xAI language model instance. */
+export declare function xai(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>

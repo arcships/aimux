@@ -197,7 +197,9 @@ pub async fn generate_text(
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
     //     failures are still part of the session. No-op unless a
-    //     SessionStore is registered (init_session_store).
+    //     SessionStore is registered (init_session_store); the resolution
+    //     and store lookups are cheap (once-locked env check + two RwLock
+    //     reads) when no store / inferer is registered.
     if let (Some((session_id, source)), Some(store)) = (
         crate::session::resolve_session_id(
             call_options.session_id.as_deref(),
@@ -302,7 +304,9 @@ pub async fn stream_text(
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
     //     failures are still part of the session. No-op unless a
-    //     SessionStore is registered (init_session_store).
+    //     SessionStore is registered (init_session_store); the resolution
+    //     and store lookups are cheap (once-locked env check + two RwLock
+    //     reads) when no store / inferer is registered.
     if let (Some((session_id, source)), Some(store)) = (
         crate::session::resolve_session_id(
             call_options.session_id.as_deref(),

@@ -95,6 +95,8 @@ struct Inner {
 struct Entry {
     source: SessionSource,
     calls: VecDeque<SessionCall>,
+    /// Monotonic per-session step counter (independent of call retention).
+    next_step: u32,
 }
 
 impl SessionStore {
@@ -135,13 +137,18 @@ impl SessionStore {
                 Entry {
                     source,
                     calls: VecDeque::new(),
+                    next_step: 0,
                 },
             );
         }
         let entry = inner.sessions.get_mut(session_id).unwrap();
+        // `step` is monotonic per session and independent of call retention:
+        // evicting the oldest call must NOT reuse its step (RFC-0024 "0 起").
+        let step = entry.next_step;
+        entry.next_step += 1;
         let call = SessionCall {
             trace_id: new_call_id(),
-            step: entry.calls.len() as u32,
+            step,
             recorded_at: rfc3339_now(),
         };
         // Bounded calls per session: drop the oldest call.
@@ -155,7 +162,11 @@ impl SessionStore {
     /// All calls of a session, ordered by step. Empty if unknown.
     pub fn session_calls(&self, session_id: &str) -> Vec<SessionCall> {
         let mut inner = self.inner.lock().unwrap();
-        inner.touch(session_id);
+        // Touch only known sessions — touching unknown ids would let a
+        // query pollute the LRU and break the session capacity bound.
+        if inner.sessions.contains_key(session_id) {
+            inner.touch(session_id);
+        }
         inner
             .sessions
             .get(session_id)
@@ -322,14 +333,15 @@ pub fn session_inferer() -> Option<Arc<Mutex<SessionInferer>>> {
 }
 
 /// Lazily honor `AIMUX_SESSION_INFER=1` (checked once, like RFC-0014's env
-/// auto-init). No-op when the inferer is already registered or the env var is
-/// not set.
+/// auto-init). No-op when the inferer is already registered programmatically
+/// (explicit configuration wins) or the env var is not set.
 pub fn ensure_inferer_from_env() {
     if INFER_ENV_CHECKED.is_completed() {
         return;
     }
     INFER_ENV_CHECKED.call_once(|| {
-        if std::env::var("AIMUX_SESSION_INFER").as_deref() == Ok("1") {
+        if std::env::var("AIMUX_SESSION_INFER").as_deref() == Ok("1") && session_inferer().is_none()
+        {
             init_session_infer(true);
         }
     });
@@ -529,6 +541,45 @@ mod tests {
         assert_eq!(calls.len(), 2, "oldest call dropped");
         assert_eq!(calls[0].step, 1);
         assert_eq!(calls[1].step, 2);
+    }
+
+    #[test]
+    fn steps_are_monotonic_across_call_eviction() {
+        // Regression: step must be monotonic per session even when the oldest
+        // call is evicted — eviction must not reuse a step.
+        let store = SessionStore::with_capacity(8, 2);
+        for _ in 0..4 {
+            store.append("s1", SessionSource::Explicit);
+        }
+        let calls = store.session_calls("s1");
+        assert_eq!(calls.len(), 2, "only the two newest calls are retained");
+        assert_eq!(calls[0].step, 2);
+        assert_eq!(calls[1].step, 3);
+    }
+
+    #[test]
+    fn querying_unknown_sessions_does_not_break_session_capacity() {
+        // Regression: touching unknown ids must not pollute the LRU, which
+        // would let sessions exceed max_sessions (and let the LRU grow).
+        let store = SessionStore::with_capacity(2, 8);
+        store.append("a", SessionSource::Explicit);
+        store.append("b", SessionSource::Explicit);
+
+        // Repeatedly query unknown ids — before the fix these polluted the LRU.
+        for i in 0..16 {
+            assert!(store.session_calls(&format!("unknown-{i}")).is_empty());
+        }
+
+        for id in ["c", "d", "e", "f", "g"] {
+            store.append(id, SessionSource::Explicit);
+        }
+        assert!(
+            store.list_sessions().len() <= 2,
+            "session count must stay within max_sessions, got {}",
+            store.list_sessions().len()
+        );
+        assert_eq!(store.session_calls("a").len(), 0, "a was evicted");
+        assert_eq!(store.session_calls("g").len(), 1);
     }
 
     #[test]

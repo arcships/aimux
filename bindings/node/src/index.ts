@@ -12,7 +12,11 @@
 // The raw napi API (`index.js` / `index.d.ts`, auto-generated) is untouched.
 // This is purely an extra TypeScript layer on top.
 
-import { AbortBridge } from '../index.js'
+import {
+  AbortBridge,
+  sessionCalls as nativeSessionCalls,
+  listSessions as nativeListSessions,
+} from '../index.js'
 import type { Model } from '../index.js'
 
 // Canonical ts-rs generated types (local copy, packaged with the npm tarball).
@@ -45,6 +49,8 @@ import type {
 
 // Re-export the raw napi constructors/factories so consumers can do everything
 // from a single import: `import { openai, generateText } from 'aimux'`.
+// Rust fn names are snake_case; napi-rs exposes them camelCased (like
+// `init_logging` → `initLogging`).
 export {
   Model,
   StreamTextGenerator,
@@ -180,12 +186,12 @@ export async function* streamText(
  * above) must be called first to register the store / opt-in inferer.
  */
 export function getSessionCalls(sessionId: string): SessionCall[] {
-  return JSON.parse(sessionCalls(sessionId)) as SessionCall[]
+  return JSON.parse(nativeSessionCalls(sessionId)) as SessionCall[]
 }
 
 /**
  * All known sessions (RFC-0024).
  */
 export function getSessions(): SessionView[] {
-  return JSON.parse(listSessions()) as SessionView[]
+  return JSON.parse(nativeListSessions()) as SessionView[]
 }

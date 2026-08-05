@@ -44,7 +44,10 @@ function startMockServer(): Promise<{ server: Server; url: string }> {
   })
 }
 
-test('sessionId groups calls and query API returns typed results', async (t) => {
+// NOTE: both tests mutate the process-wide session store, so they must run
+// serially (ava's default is concurrent).
+
+test.serial('sessionId groups calls and query API returns typed results', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
@@ -54,8 +57,8 @@ test('sessionId groups calls and query API returns typed results', async (t) => 
   const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
 
   // Two calls in the same session.
-  await generateText(model, 'first', { sessionId: 'sess-1' })
-  await generateText(model, 'second', { sessionId: 'sess-1' })
+  await generateText(model, 'first', { session_id: 'sess-1' })
+  await generateText(model, 'second', { session_id: 'sess-1' })
 
   const calls: SessionCall[] = getSessionCalls('sess-1')
   t.is(calls.length, 2)
@@ -76,12 +79,12 @@ test('sessionId groups calls and query API returns typed results', async (t) => 
   t.deepEqual(getSessionCalls('nope'), [])
 
   // Separate explicit session.
-  await generateText(model, 'other', { sessionId: 'sess-2' })
+  await generateText(model, 'other', { session_id: 'sess-2' })
   t.is(getSessions().length, 2)
   t.is(getSessionCalls('sess-2').length, 1)
 })
 
-test('opt-in inferer groups prefix continuations into auto sessions', async (t) => {
+test.serial('opt-in inferer groups prefix continuations into auto sessions', async (t) => {
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 

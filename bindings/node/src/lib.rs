@@ -282,7 +282,7 @@ pub fn init_logging(level: String) {
 /// Until called, calls are not grouped and the session query functions return
 /// empty results.
 #[napi]
-pub fn initSessionStore() {
+pub fn init_session_store() {
     aimux_core::session::init_session_store(std::sync::Arc::new(
         aimux_core::session::SessionStore::new(),
     ));
@@ -291,7 +291,7 @@ pub fn initSessionStore() {
 /// Enable/disable the global session inferer (RFC-0024, opt-in, off by
 /// default). Explicit `sessionId` values always win regardless of this.
 #[napi]
-pub fn initSessionInfer(enabled: bool) {
+pub fn init_session_infer(enabled: bool) {
     aimux_core::session::init_session_infer(enabled);
 }
 
@@ -299,7 +299,7 @@ pub fn initSessionInfer(enabled: bool) {
 /// `SessionCall[]` (ordered by step). Empty array if the session is unknown
 /// or no store is registered.
 #[napi]
-pub fn sessionCalls(session_id: String) -> Result<String> {
+pub fn session_calls(session_id: String) -> Result<String> {
     let calls = aimux_core::session::session_calls(&session_id);
     serde_json::to_string(&calls)
         .map_err(|e| Error::from_reason(format!("[Json] serialize sessionCalls: {e}")))
@@ -307,7 +307,7 @@ pub fn sessionCalls(session_id: String) -> Result<String> {
 
 /// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
 #[napi]
-pub fn listSessions() -> Result<String> {
+pub fn list_sessions() -> Result<String> {
     let views = aimux_core::session::list_sessions();
     serde_json::to_string(&views)
         .map_err(|e| Error::from_reason(format!("[Json] serialize listSessions: {e}")))

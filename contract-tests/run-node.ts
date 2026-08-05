@@ -97,6 +97,15 @@ function testGenerateTextOptions() {
       const allNull = Object.values(parsed).every((v: any) => v === null)
       assert(allNull, f.name, 'all fields should be null for default')
     }
+
+    if (f.name === 'generate_text_options_with_session_id') {
+      // RFC-0024: explicit session_id crosses the wire (snake_case).
+      assert(
+        parsed.session_id === 'sess-1',
+        f.name,
+        `expected session_id "sess-1", got ${JSON.stringify(parsed.session_id)}`,
+      )
+    }
   }
 }
 

@@ -77,8 +77,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-android-arm64')
         const bindingPackageVersion = require('@arcships/aimux-android-arm64/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -93,8 +93,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-android-arm-eabi')
         const bindingPackageVersion = require('@arcships/aimux-android-arm-eabi/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -114,8 +114,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-win32-x64-gnu')
         const bindingPackageVersion = require('@arcships/aimux-win32-x64-gnu/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -130,8 +130,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-win32-x64-msvc')
         const bindingPackageVersion = require('@arcships/aimux-win32-x64-msvc/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -147,8 +147,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-win32-ia32-msvc')
         const bindingPackageVersion = require('@arcships/aimux-win32-ia32-msvc/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -163,8 +163,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-win32-arm64-msvc')
         const bindingPackageVersion = require('@arcships/aimux-win32-arm64-msvc/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -182,8 +182,8 @@ function requireNative() {
     try {
       const binding = require('@arcships/aimux-darwin-universal')
       const bindingPackageVersion = require('@arcships/aimux-darwin-universal/package.json').version
-      if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-        throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+      if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+        throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
       }
       return binding
     } catch (e) {
@@ -198,8 +198,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-darwin-x64')
         const bindingPackageVersion = require('@arcships/aimux-darwin-x64/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -214,8 +214,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-darwin-arm64')
         const bindingPackageVersion = require('@arcships/aimux-darwin-arm64/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -234,8 +234,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-freebsd-x64')
         const bindingPackageVersion = require('@arcships/aimux-freebsd-x64/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -250,8 +250,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-freebsd-arm64')
         const bindingPackageVersion = require('@arcships/aimux-freebsd-arm64/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -271,8 +271,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-x64-musl')
           const bindingPackageVersion = require('@arcships/aimux-linux-x64-musl/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -287,8 +287,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-x64-gnu')
           const bindingPackageVersion = require('@arcships/aimux-linux-x64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -305,8 +305,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-arm64-musl')
           const bindingPackageVersion = require('@arcships/aimux-linux-arm64-musl/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -321,8 +321,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-arm64-gnu')
           const bindingPackageVersion = require('@arcships/aimux-linux-arm64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -339,8 +339,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-arm-musleabihf')
           const bindingPackageVersion = require('@arcships/aimux-linux-arm-musleabihf/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -355,8 +355,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-arm-gnueabihf')
           const bindingPackageVersion = require('@arcships/aimux-linux-arm-gnueabihf/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -373,8 +373,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-loong64-musl')
           const bindingPackageVersion = require('@arcships/aimux-linux-loong64-musl/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -389,8 +389,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-loong64-gnu')
           const bindingPackageVersion = require('@arcships/aimux-linux-loong64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -407,8 +407,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-riscv64-musl')
           const bindingPackageVersion = require('@arcships/aimux-linux-riscv64-musl/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -423,8 +423,8 @@ function requireNative() {
         try {
           const binding = require('@arcships/aimux-linux-riscv64-gnu')
           const bindingPackageVersion = require('@arcships/aimux-linux-riscv64-gnu/package.json').version
-          if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-            throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+            throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
           return binding
         } catch (e) {
@@ -440,8 +440,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-linux-ppc64-gnu')
         const bindingPackageVersion = require('@arcships/aimux-linux-ppc64-gnu/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -456,8 +456,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-linux-s390x-gnu')
         const bindingPackageVersion = require('@arcships/aimux-linux-s390x-gnu/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -476,8 +476,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-openharmony-arm64')
         const bindingPackageVersion = require('@arcships/aimux-openharmony-arm64/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -492,8 +492,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-openharmony-x64')
         const bindingPackageVersion = require('@arcships/aimux-openharmony-x64/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -508,8 +508,8 @@ function requireNative() {
       try {
         const binding = require('@arcships/aimux-openharmony-arm')
         const bindingPackageVersion = require('@arcships/aimux-openharmony-arm/package.json').version
-        if (bindingPackageVersion !== '0.1.2' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          throw new Error(`Native binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+        if (bindingPackageVersion !== '0.2.1' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
+          throw new Error(`Native binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
         return binding
       } catch (e) {
@@ -648,8 +648,8 @@ if (!nativeBinding || forceWasi) {
       if (!candidateFailed) {
         if (process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           const bindingPackageVersion = require('@arcships/aimux-wasm32-wasi/package.json').version
-          if (bindingPackageVersion !== '0.1.2') {
-            throw new Error(`WASI binding package version mismatch, expected 0.1.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
+          if (bindingPackageVersion !== '0.2.1') {
+            throw new Error(`WASI binding package version mismatch, expected 0.2.1 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
         }
         wasiBinding = require('@arcships/aimux-wasm32-wasi')
@@ -700,6 +700,7 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.AbortBridge = nativeBinding.AbortBridge
 module.exports.EmbeddingModel = nativeBinding.EmbeddingModel
 module.exports.Files = nativeBinding.Files
 module.exports.ImageModel = nativeBinding.ImageModel
@@ -711,6 +712,10 @@ module.exports.StreamTextGenerator = nativeBinding.StreamTextGenerator
 module.exports.TranscriptionModel = nativeBinding.TranscriptionModel
 module.exports.VideoModel = nativeBinding.VideoModel
 module.exports.anthropic = nativeBinding.anthropic
+module.exports.anthropicAws = nativeBinding.anthropicAws
+module.exports.azure = nativeBinding.azure
+module.exports.bedrock = nativeBinding.bedrock
+module.exports.cohere = nativeBinding.cohere
 module.exports.cohereEmbedding = nativeBinding.cohereEmbedding
 module.exports.cohereReranking = nativeBinding.cohereReranking
 module.exports.deepseek = nativeBinding.deepseek
@@ -718,6 +723,11 @@ module.exports.google = nativeBinding.google
 module.exports.googleEmbedding = nativeBinding.googleEmbedding
 module.exports.googleImage = nativeBinding.googleImage
 module.exports.googleVideo = nativeBinding.googleVideo
+module.exports.initLogging = nativeBinding.initLogging
+module.exports.initSessionInfer = nativeBinding.initSessionInfer
+module.exports.initSessionStore = nativeBinding.initSessionStore
+module.exports.listSessions = nativeBinding.listSessions
+module.exports.mistral = nativeBinding.mistral
 module.exports.openai = nativeBinding.openai
 module.exports.openaiEmbedding = nativeBinding.openaiEmbedding
 module.exports.openaiFiles = nativeBinding.openaiFiles
@@ -725,4 +735,7 @@ module.exports.openaiImage = nativeBinding.openaiImage
 module.exports.openaiSpeech = nativeBinding.openaiSpeech
 module.exports.openaiTranscription = nativeBinding.openaiTranscription
 module.exports.provider = nativeBinding.provider
+module.exports.sessionCalls = nativeBinding.sessionCalls
 module.exports.tavilySearch = nativeBinding.tavilySearch
+module.exports.vertex = nativeBinding.vertex
+module.exports.xai = nativeBinding.xai
