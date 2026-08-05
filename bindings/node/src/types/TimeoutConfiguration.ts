@@ -13,12 +13,12 @@ export type TimeoutConfiguration = {
  * Overall timeout for the entire call (including retries and, for
  * streaming, the whole stream), in milliseconds.
  */
-total_ms: bigint | null, 
+total_ms: number | null, 
 /**
  * Timeout waiting for the first stream chunk (streaming only).
  */
-first_chunk_ms: bigint | null, 
+first_chunk_ms: number | null, 
 /**
  * Maximum idle time between consecutive stream chunks (streaming only).
  */
-chunk_ms: bigint | null, };
+chunk_ms: number | null, };

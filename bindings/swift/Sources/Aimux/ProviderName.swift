@@ -3,255 +3,255 @@
 
 /// Names of all built-in OpenAI-compatible providers.
 public enum ProviderName: String, CaseIterable, Sendable {
-    case Abacus
-    case AbliterationAi
-    case Ai21
-    case Ai302
-    case AiRouter
-    case Aiand
-    case Aibadgr
-    case Aigc2d
-    case Aihubmix
-    case Ails
-    case Aiml
-    case AkiIo
-    case Albert
-    case Alibaba
-    case AlibabaCodingPlan
-    case AlibabaCodingPlanCn
-    case AlibabaTokenPlan
-    case AlibabaTokenPlanCn
-    case Ambient
-    case Anyapi
-    case Anyscale
-    case Apertis
-    case Api2d
-    case Api2gpt
-    case Apiserpent
-    case Atlascloud
-    case AtomicChat
-    case Auriko
-    case AzureAi
-    case Baichuan
-    case Baidu
-    case BaiduV2
-    case Bailing
-    case Baseten
-    case Berget
-    case Bigmodel
-    case Blueclaw
-    case Bytedance
-    case Byteplus
-    case Bytez
-    case Canopywave
-    case Cerebras
-    case Chatgpt
-    case Cherryin
-    case Chutes
-    case Clarifai
-    case Claudinio
-    case ClinePass
-    case Closeai
-    case CloudferroSherlock
-    case Cloudflare
-    case CloudflareWorkersAi
-    case Codestral
-    case Cometapi
-    case Commandcode
-    case Compactifai
-    case Copilot
-    case Cortecs
-    case Coze
-    case Crof
-    case Crossmodel
-    case Crusoe
-    case Daoxe
-    case Darkbloom
-    case Databricks
-    case Datarobot
-    case Deepbricks
-    case Deepinfra
-    case Deepseek
-    case Digitalocean
-    case Dinference
-    case Doubao
-    case Doubleword
-    case Drun
-    case Ebcloud
-    case Embercloud
-    case Empiriolabs
-    case Evroc
-    case Fastcrw
-    case Fastgpt
-    case Fastrouter
-    case FeatherlessAi
-    case Firepass
-    case Fireworks
-    case Freemodel
-    case Friendliai
-    case Frogbot
-    case Galadriel
-    case Gdc
-    case Gigachat
-    case Github
-    case Gmi
-    case Gmicloud
-    case Gonka24
-    case GradientAi
-    case Groq
-    case Helicone
-    case Heroku
-    case Hetzner
-    case HostedVllm
-    case HpcAi
-    case Hyperbolic
-    case Iflowcn
-    case Inception
-    case Inceptron
-    case InferenceNet
-    case Inferencehub
-    case Inferx
-    case Infinity
-    case IoNet
-    case Jiekou
-    case Kenari
-    case Kilo
-    case Kimi
-    case KimiForCoding
-    case Kiro
-    case KlusterAi
-    case Krutrim
-    case KuaeCloudCodingPlan
-    case LambdaAi
-    case Lemonade
-    case LemonfoxAi
-    case Libertai
-    case Lilac
-    case Lingyiwanwu
-    case Llama
-    case Llamagate
-    case Llmgateway
-    case Llmtr
-    case Longcat
-    case Lucidquery
-    case Lynkr
-    case Matterai
-    case Meganova
-    case MergeGateway
-    case Meta
-    case MetaLlama
-    case Mimo
-    case Minimax
-    case MinimaxCn
-    case MinimaxCnCodingPlan
-    case MinimaxCodingPlan
-    case Mira
-    case Mixlayer
-    case Moark
-    case Modal
-    case ModelOracleAi
-    case Modelscope
-    case Moonshotai
-    case MoonshotaiCn
-    case Morph
-    case Nanogpt
-    case Ncompass
-    case Nearai
-    case Nebius
-    case Neon
-    case Neuralwatt
-    case Nextbit
-    case NlpCloud
-    case NousResearch
-    case Novita
-    case Nscale
-    case NvidiaNim
-    case Oci
-    case Ofox
-    case Ohmygpt
-    case OllamaCloud
-    case Openaimax
-    case Openaisb
-    case Opencode
-    case OpencodeGo
-    case OpencodeZen
-    case Orcarouter
-    case Ovhcloud
-    case Parasail
-    case Perfxcloud
-    case Perplexity
-    case PerplexityAgent
-    case Petals
-    case Pinstripes
-    case Pioneer
-    case Poe
-    case Poolside
-    case Portkey
-    case Ppinfra
-    case Predibase
-    case PrivatemodeAi
-    case Publicai
-    case QihangAi
-    case Qihoo360
-    case QiniuAi
-    case RegoloAi
-    case RekaAi
-    case Requesty
-    case Reve
-    case RoutingRun
-    case Sakana
-    case Sambanova
-    case Sarvam
-    case Scaleway
-    case ScxAi
-    case Siliconflow
-    case Snowflake
-    case SnowflakeCortex
-    case Stackit
-    case Stepfun
-    case StepfunAiStepPlan
-    case StepfunStepPlan
-    case Subconscious
-    case Submodel
-    case Synthetic
-    case Tencent
-    case TencentCodingPlan
-    case TencentTokenPlan
-    case TencentTokenPlanEnterpriseAuto
-    case TencentTokenPlanEnterprisePro
-    case TencentTokenPlanGeneralPersonal
-    case TencentTokenPlanHyPersonal
-    case TencentTokenhub
-    case Tensormesh
-    case TheGridAi
-    case Thinkingmachines
-    case Tinfoil
-    case Togetherai
-    case Tokenflux
-    case Tokenpony
-    case Trustedrouter
-    case Tundra
-    case UmansAi
-    case Unorouter
-    case Upstage
-    case V0
-    case Venice
-    case Vercel
-    case Vivgrid
-    case VolcEngine
-    case Vultr
-    case Wafer
-    case Wandb
-    case XiaomiTokenPlanAms
-    case XiaomiTokenPlanCn
-    case XiaomiTokenPlanSgp
-    case Xiaomimimo
-    case Xpersona
-    case Xunfei
-    case Zai
-    case ZaiCodingPlan
-    case Zeldoc
-    case Zenmux
-    case ZhipuV4
-    case ZhipuaiCodingPlan
+    case Abacus = "abacus"
+    case AbliterationAi = "abliteration_ai"
+    case Ai21 = "ai21"
+    case Ai302 = "ai302"
+    case AiRouter = "ai_router"
+    case Aiand = "aiand"
+    case Aibadgr = "aibadgr"
+    case Aigc2d = "aigc2d"
+    case Aihubmix = "aihubmix"
+    case Ails = "ails"
+    case Aiml = "aiml"
+    case AkiIo = "aki_io"
+    case Albert = "albert"
+    case Alibaba = "alibaba"
+    case AlibabaCodingPlan = "alibaba_coding_plan"
+    case AlibabaCodingPlanCn = "alibaba_coding_plan_cn"
+    case AlibabaTokenPlan = "alibaba_token_plan"
+    case AlibabaTokenPlanCn = "alibaba_token_plan_cn"
+    case Ambient = "ambient"
+    case Anyapi = "anyapi"
+    case Anyscale = "anyscale"
+    case Apertis = "apertis"
+    case Api2d = "api2d"
+    case Api2gpt = "api2gpt"
+    case Apiserpent = "apiserpent"
+    case Atlascloud = "atlascloud"
+    case AtomicChat = "atomic_chat"
+    case Auriko = "auriko"
+    case AzureAi = "azure_ai"
+    case Baichuan = "baichuan"
+    case Baidu = "baidu"
+    case BaiduV2 = "baidu_v2"
+    case Bailing = "bailing"
+    case Baseten = "baseten"
+    case Berget = "berget"
+    case Bigmodel = "bigmodel"
+    case Blueclaw = "blueclaw"
+    case Bytedance = "bytedance"
+    case Byteplus = "byteplus"
+    case Bytez = "bytez"
+    case Canopywave = "canopywave"
+    case Cerebras = "cerebras"
+    case Chatgpt = "chatgpt"
+    case Cherryin = "cherryin"
+    case Chutes = "chutes"
+    case Clarifai = "clarifai"
+    case Claudinio = "claudinio"
+    case ClinePass = "cline_pass"
+    case Closeai = "closeai"
+    case CloudferroSherlock = "cloudferro_sherlock"
+    case Cloudflare = "cloudflare"
+    case CloudflareWorkersAi = "cloudflare_workers_ai"
+    case Codestral = "codestral"
+    case Cometapi = "cometapi"
+    case Commandcode = "commandcode"
+    case Compactifai = "compactifai"
+    case Copilot = "copilot"
+    case Cortecs = "cortecs"
+    case Coze = "coze"
+    case Crof = "crof"
+    case Crossmodel = "crossmodel"
+    case Crusoe = "crusoe"
+    case Daoxe = "daoxe"
+    case Darkbloom = "darkbloom"
+    case Databricks = "databricks"
+    case Datarobot = "datarobot"
+    case Deepbricks = "deepbricks"
+    case Deepinfra = "deepinfra"
+    case Deepseek = "deepseek"
+    case Digitalocean = "digitalocean"
+    case Dinference = "dinference"
+    case Doubao = "doubao"
+    case Doubleword = "doubleword"
+    case Drun = "drun"
+    case Ebcloud = "ebcloud"
+    case Embercloud = "embercloud"
+    case Empiriolabs = "empiriolabs"
+    case Evroc = "evroc"
+    case Fastcrw = "fastcrw"
+    case Fastgpt = "fastgpt"
+    case Fastrouter = "fastrouter"
+    case FeatherlessAi = "featherless_ai"
+    case Firepass = "firepass"
+    case Fireworks = "fireworks"
+    case Freemodel = "freemodel"
+    case Friendliai = "friendliai"
+    case Frogbot = "frogbot"
+    case Galadriel = "galadriel"
+    case Gdc = "gdc"
+    case Gigachat = "gigachat"
+    case Github = "github"
+    case Gmi = "gmi"
+    case Gmicloud = "gmicloud"
+    case Gonka24 = "gonka24"
+    case GradientAi = "gradient_ai"
+    case Groq = "groq"
+    case Helicone = "helicone"
+    case Heroku = "heroku"
+    case Hetzner = "hetzner"
+    case HostedVllm = "hosted_vllm"
+    case HpcAi = "hpc_ai"
+    case Hyperbolic = "hyperbolic"
+    case Iflowcn = "iflowcn"
+    case Inception = "inception"
+    case Inceptron = "inceptron"
+    case InferenceNet = "inference_net"
+    case Inferencehub = "inferencehub"
+    case Inferx = "inferx"
+    case Infinity = "infinity"
+    case IoNet = "io_net"
+    case Jiekou = "jiekou"
+    case Kenari = "kenari"
+    case Kilo = "kilo"
+    case Kimi = "kimi"
+    case KimiForCoding = "kimi_for_coding"
+    case Kiro = "kiro"
+    case KlusterAi = "kluster_ai"
+    case Krutrim = "krutrim"
+    case KuaeCloudCodingPlan = "kuae_cloud_coding_plan"
+    case LambdaAi = "lambda_ai"
+    case Lemonade = "lemonade"
+    case LemonfoxAi = "lemonfox_ai"
+    case Libertai = "libertai"
+    case Lilac = "lilac"
+    case Lingyiwanwu = "lingyiwanwu"
+    case Llama = "llama"
+    case Llamagate = "llamagate"
+    case Llmgateway = "llmgateway"
+    case Llmtr = "llmtr"
+    case Longcat = "longcat"
+    case Lucidquery = "lucidquery"
+    case Lynkr = "lynkr"
+    case Matterai = "matterai"
+    case Meganova = "meganova"
+    case MergeGateway = "merge_gateway"
+    case Meta = "meta"
+    case MetaLlama = "meta_llama"
+    case Mimo = "mimo"
+    case Minimax = "minimax"
+    case MinimaxCn = "minimax_cn"
+    case MinimaxCnCodingPlan = "minimax_cn_coding_plan"
+    case MinimaxCodingPlan = "minimax_coding_plan"
+    case Mira = "mira"
+    case Mixlayer = "mixlayer"
+    case Moark = "moark"
+    case Modal = "modal"
+    case ModelOracleAi = "model_oracle_ai"
+    case Modelscope = "modelscope"
+    case Moonshotai = "moonshotai"
+    case MoonshotaiCn = "moonshotai_cn"
+    case Morph = "morph"
+    case Nanogpt = "nanogpt"
+    case Ncompass = "ncompass"
+    case Nearai = "nearai"
+    case Nebius = "nebius"
+    case Neon = "neon"
+    case Neuralwatt = "neuralwatt"
+    case Nextbit = "nextbit"
+    case NlpCloud = "nlp_cloud"
+    case NousResearch = "nous_research"
+    case Novita = "novita"
+    case Nscale = "nscale"
+    case NvidiaNim = "nvidia_nim"
+    case Oci = "oci"
+    case Ofox = "ofox"
+    case Ohmygpt = "ohmygpt"
+    case OllamaCloud = "ollama_cloud"
+    case Openaimax = "openaimax"
+    case Openaisb = "openaisb"
+    case Opencode = "opencode"
+    case OpencodeGo = "opencode_go"
+    case OpencodeZen = "opencode_zen"
+    case Orcarouter = "orcarouter"
+    case Ovhcloud = "ovhcloud"
+    case Parasail = "parasail"
+    case Perfxcloud = "perfxcloud"
+    case Perplexity = "perplexity"
+    case PerplexityAgent = "perplexity_agent"
+    case Petals = "petals"
+    case Pinstripes = "pinstripes"
+    case Pioneer = "pioneer"
+    case Poe = "poe"
+    case Poolside = "poolside"
+    case Portkey = "portkey"
+    case Ppinfra = "ppinfra"
+    case Predibase = "predibase"
+    case PrivatemodeAi = "privatemode_ai"
+    case Publicai = "publicai"
+    case QihangAi = "qihang_ai"
+    case Qihoo360 = "qihoo360"
+    case QiniuAi = "qiniu_ai"
+    case RegoloAi = "regolo_ai"
+    case RekaAi = "reka_ai"
+    case Requesty = "requesty"
+    case Reve = "reve"
+    case RoutingRun = "routing_run"
+    case Sakana = "sakana"
+    case Sambanova = "sambanova"
+    case Sarvam = "sarvam"
+    case Scaleway = "scaleway"
+    case ScxAi = "scx_ai"
+    case Siliconflow = "siliconflow"
+    case Snowflake = "snowflake"
+    case SnowflakeCortex = "snowflake_cortex"
+    case Stackit = "stackit"
+    case Stepfun = "stepfun"
+    case StepfunAiStepPlan = "stepfun_ai_step_plan"
+    case StepfunStepPlan = "stepfun_step_plan"
+    case Subconscious = "subconscious"
+    case Submodel = "submodel"
+    case Synthetic = "synthetic"
+    case Tencent = "tencent"
+    case TencentCodingPlan = "tencent_coding_plan"
+    case TencentTokenPlan = "tencent_token_plan"
+    case TencentTokenPlanEnterpriseAuto = "tencent_token_plan_enterprise_auto"
+    case TencentTokenPlanEnterprisePro = "tencent_token_plan_enterprise_pro"
+    case TencentTokenPlanGeneralPersonal = "tencent_token_plan_general_personal"
+    case TencentTokenPlanHyPersonal = "tencent_token_plan_hy_personal"
+    case TencentTokenhub = "tencent_tokenhub"
+    case Tensormesh = "tensormesh"
+    case TheGridAi = "the_grid_ai"
+    case Thinkingmachines = "thinkingmachines"
+    case Tinfoil = "tinfoil"
+    case Togetherai = "togetherai"
+    case Tokenflux = "tokenflux"
+    case Tokenpony = "tokenpony"
+    case Trustedrouter = "trustedrouter"
+    case Tundra = "tundra"
+    case UmansAi = "umans_ai"
+    case Unorouter = "unorouter"
+    case Upstage = "upstage"
+    case V0 = "v0"
+    case Venice = "venice"
+    case Vercel = "vercel"
+    case Vivgrid = "vivgrid"
+    case VolcEngine = "volc_engine"
+    case Vultr = "vultr"
+    case Wafer = "wafer"
+    case Wandb = "wandb"
+    case XiaomiTokenPlanAms = "xiaomi_token_plan_ams"
+    case XiaomiTokenPlanCn = "xiaomi_token_plan_cn"
+    case XiaomiTokenPlanSgp = "xiaomi_token_plan_sgp"
+    case Xiaomimimo = "xiaomimimo"
+    case Xpersona = "xpersona"
+    case Xunfei = "xunfei"
+    case Zai = "zai"
+    case ZaiCodingPlan = "zai_coding_plan"
+    case Zeldoc = "zeldoc"
+    case Zenmux = "zenmux"
+    case ZhipuV4 = "zhipu_v4"
+    case ZhipuaiCodingPlan = "zhipuai_coding_plan"
 }

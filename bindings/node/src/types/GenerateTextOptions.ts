@@ -12,7 +12,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * Unlike `CallOptions` (provider-facing), this does not include `prompt`
  * (passed separately) and defaults are more ergonomic.
  */
-export type GenerateTextOptions = { max_output_tokens: number | null, temperature: number | null, stop_sequences: Array<string> | null, top_p: number | null, top_k: number | null, presence_penalty: number | null, frequency_penalty: number | null, response_format: ResponseFormat | null, seed: bigint | null, tools: Array<Tool> | null, tool_choice: ToolChoice | null, headers: { [key in string]: string } | null, provider_options: { [key in string]: JsonValue } | null, 
+export type GenerateTextOptions = { max_output_tokens: number | null, temperature: number | null, stop_sequences: Array<string> | null, top_p: number | null, top_k: number | null, presence_penalty: number | null, frequency_penalty: number | null, response_format: ResponseFormat | null, seed: number | null, tools: Array<Tool> | null, tool_choice: ToolChoice | null, headers: { [key in string]: string } | null, provider_options: { [key in string]: JsonValue } | null, 
 /**
  * Top-level reasoning effort.
  */

@@ -9,6 +9,7 @@
 package aimux
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 )
@@ -66,10 +67,10 @@ func (m *Model) Generate(prompt any, opts *GenerateTextOptions) (*GenerateTextRe
 // TypedStream is a handle to an in-progress typed stream.
 // Consume parts via Parts(); each part is a parsed *StreamPart.
 type TypedStream struct {
-	raw    *Stream
-	parts  chan *StreamPart
-	err    error
-	done   chan struct{}
+	raw   *Stream
+	parts chan *StreamPart
+	err   error
+	done  chan struct{}
 }
 
 // Parts returns a channel of parsed *StreamPart values.
@@ -81,6 +82,9 @@ func (s *TypedStream) Err() error {
 	<-s.done
 	return s.err
 }
+
+// Cancel stops this stream. It is safe to call more than once.
+func (s *TypedStream) Cancel() { s.raw.Cancel() }
 
 // Stream is the typed streaming method. It accepts a plain string prompt or
 // a []ModelMessage conversation, plus optional typed options, and returns a
@@ -97,6 +101,15 @@ func (s *TypedStream) Err() error {
 //	    }
 //	}
 func (m *Model) Stream(prompt any, opts *GenerateTextOptions) (*TypedStream, error) {
+	return m.StreamContext(context.Background(), prompt, opts)
+}
+
+// StreamContext starts a typed stream that stops when ctx is cancelled.
+func (m *Model) StreamContext(
+	ctx context.Context,
+	prompt any,
+	opts *GenerateTextOptions,
+) (*TypedStream, error) {
 	promptJSON, err := marshalPrompt(prompt)
 	if err != nil {
 		return nil, err
@@ -106,7 +119,7 @@ func (m *Model) Stream(prompt any, opts *GenerateTextOptions) (*TypedStream, err
 		return nil, err
 	}
 
-	rawStream := m.StreamText(promptJSON, optsJSON)
+	rawStream := m.StreamTextContext(ctx, promptJSON, optsJSON)
 	ts := &TypedStream{
 		raw:   rawStream,
 		parts: make(chan *StreamPart, 256),
@@ -120,9 +133,15 @@ func (m *Model) Stream(prompt any, opts *GenerateTextOptions) (*TypedStream, err
 			sp, err := ParseStreamPart(raw)
 			if err != nil {
 				ts.err = err
+				rawStream.Cancel()
 				return
 			}
-			ts.parts <- sp
+			select {
+			case ts.parts <- sp:
+			case <-rawStream.entry.cancelled:
+				ts.err = rawStream.Err()
+				return
+			}
 		}
 		if err := rawStream.Err(); err != nil {
 			ts.err = err

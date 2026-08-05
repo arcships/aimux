@@ -1,5 +1,5 @@
 /**
- * aimux — typed data classes mirroring the ts-rs output in `aimux-core/bindings`
+ * aimux — typed data classes mirroring the ts-rs output in `bindings/node/src/types`
  * (the generated TypeScript types).
  *
  * Field names use camelCase in Kotlin and are mapped to the wire format's
@@ -554,6 +554,23 @@ data class ModelMessage(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Per-call timeout configuration.
+ *
+ * Mirrors `TimeoutConfiguration.ts`. All values are milliseconds; `null`
+ * disables the corresponding limit. A `total` timeout also covers retry
+ * backoff and the whole streamed response.
+ */
+@Serializable
+data class TimeoutConfiguration(
+    /** Overall timeout for the entire call (including retries and, for streaming, the whole stream), in milliseconds. */
+    @SerialName("total_ms") val totalMs: Long? = null,
+    /** Timeout waiting for the first stream chunk (streaming only). */
+    @SerialName("first_chunk_ms") val firstChunkMs: Long? = null,
+    /** Maximum idle time between consecutive stream chunks (streaming only). */
+    @SerialName("chunk_ms") val chunkMs: Long? = null,
+)
+
+/**
  * User-facing options for `generate_text` / `stream_text`.
  *
  * Mirrors `GenerateTextOptions.ts`. Every field is nullable with a `null`
@@ -584,6 +601,8 @@ data class GenerateTextOptions(
     @SerialName("max_retries") val maxRetries: Long? = null,
     /** Emit raw provider stream chunks as `StreamPart.Raw` (debugging; OpenAI-compatible family only). */
     @SerialName("include_raw_chunks") val includeRawChunks: Boolean? = null,
+    /** Per-call timeout configuration (overall / first chunk / inter-chunk idle, in ms). */
+    @SerialName("timeout") val timeout: TimeoutConfiguration? = null,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

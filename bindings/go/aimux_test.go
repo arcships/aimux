@@ -8,8 +8,11 @@
 package aimux
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOpenAI(t *testing.T) {
@@ -103,6 +106,36 @@ func TestStreamTextReturnsStream(t *testing.T) {
 	}
 	// Err() should be safe to call after drain.
 	_ = s.Err()
+}
+
+func TestStreamTextContextAlreadyCanceled(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stream := m.StreamTextContext(ctx, `"hello"`, "")
+
+	done := make(chan struct{})
+	go func() {
+		for range stream.Parts() {
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled stream did not stop")
+	}
+	if !errors.Is(stream.Err(), context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", stream.Err())
+	}
+
+	stream.Cancel()
+	stream.Cancel()
 }
 
 func TestProviderWithConfigFullOptions(t *testing.T) {

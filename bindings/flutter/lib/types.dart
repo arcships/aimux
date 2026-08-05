@@ -1,4 +1,4 @@
-// types.dart — typed models mirroring aimux-core/bindings/*.ts (ts-rs).
+// types.dart — typed models mirroring bindings/node/src/types/*.ts (ts-rs).
 //
 // Hand-written Dart classes with json_serializable. Field names are
 // camelCase; `@JsonKey(name: ...)` maps to the snake_case wire format
@@ -152,7 +152,7 @@ class ToolCall {
   final String toolCallId;
   @JsonKey(name: 'tool_name')
   final String toolName;
-  final Map<String, dynamic>? input;
+  final dynamic input;
   @JsonKey(name: 'provider_executed')
   final bool? providerExecuted;
   // `dynamic` is a Dart built-in identifier — field is named `isDynamic`
@@ -165,7 +165,7 @@ class ToolCall {
   ToolCall({
     required this.toolCallId,
     required this.toolName,
-    this.input,
+    required this.input,
     this.providerExecuted,
     this.isDynamic,
     this.thoughtSignature,
@@ -601,6 +601,33 @@ class GenerateTextResult {
   Map<String, dynamic> toJson() => _$GenerateTextResultToJson(this);
 }
 
+/// Per-call timeout configuration. Mirrors `TimeoutConfiguration.ts`.
+///
+/// All values are milliseconds; `null` disables the corresponding limit.
+@JsonSerializable()
+class TimeoutConfiguration {
+  @JsonKey(name: 'total_ms')
+  final int? totalMs;
+  @JsonKey(name: 'first_chunk_ms')
+  final int? firstChunkMs;
+  @JsonKey(name: 'chunk_ms')
+  final int? chunkMs;
+
+  TimeoutConfiguration({this.totalMs, this.firstChunkMs, this.chunkMs});
+
+  factory TimeoutConfiguration.fromJson(Map<String, dynamic> json) =>
+      TimeoutConfiguration(
+        totalMs: json['total_ms'] as int?,
+        firstChunkMs: json['first_chunk_ms'] as int?,
+        chunkMs: json['chunk_ms'] as int?,
+      );
+  Map<String, dynamic> toJson() => {
+        if (totalMs != null) 'total_ms': totalMs,
+        if (firstChunkMs != null) 'first_chunk_ms': firstChunkMs,
+        if (chunkMs != null) 'chunk_ms': chunkMs,
+      };
+}
+
 /// User-facing options for `generate_text` / `stream_text`. Mirrors
 /// `GenerateTextOptions.ts`.
 @JsonSerializable()
@@ -633,6 +660,7 @@ class GenerateTextOptions {
   final Map<String, dynamic>? bodyOverrides;
   @JsonKey(name: 'max_retries')
   final int? maxRetries;
+  final TimeoutConfiguration? timeout;
   @JsonKey(name: 'include_raw_chunks')
   final bool? includeRawChunks;
 
@@ -654,6 +682,7 @@ class GenerateTextOptions {
     this.instructions,
     this.bodyOverrides,
     this.maxRetries,
+    this.timeout,
     this.includeRawChunks,
   });
 
@@ -682,6 +711,9 @@ class GenerateTextOptions {
       instructions: json['instructions'] as String?,
       bodyOverrides: json['body_overrides'] as Map<String, dynamic>?,
       maxRetries: json['max_retries'] as int?,
+      timeout: json['timeout'] != null
+          ? TimeoutConfiguration.fromJson(json['timeout'] as Map<String, dynamic>)
+          : null,
       includeRawChunks: json['include_raw_chunks'] as bool?,
     );
   }
@@ -703,6 +735,7 @@ class GenerateTextOptions {
         if (instructions != null) 'instructions': instructions,
         if (bodyOverrides != null) 'body_overrides': bodyOverrides,
         if (maxRetries != null) 'max_retries': maxRetries,
+        if (timeout != null) 'timeout': timeout!.toJson(),
         if (includeRawChunks != null) 'include_raw_chunks': includeRawChunks,
       };
 }
