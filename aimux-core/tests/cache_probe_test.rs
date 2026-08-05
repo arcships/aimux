@@ -545,7 +545,8 @@ fn trace_layer_records_stream_part_error() {
             Ok(StreamResult {
                 stream: Box::pin(async_stream::stream! {
                     yield Ok(StreamPart::StreamStart { warnings: vec![] });
-                    yield Err(AiMuxError::Stream("mid-stream failure".into()));
+                    // Provider-reported mid-stream error (Ok(Error{..})).
+                    yield Ok(StreamPart::Error { error: AiMuxError::Stream("mid-stream failure".into()) });
                 }),
                 request_body: None,
                 response_headers: None,
@@ -569,7 +570,43 @@ fn trace_layer_records_stream_part_error() {
     assert!(json.contains("mid-stream failure"), "{json}");
 }
 
-/// Failures are still recorded (error field), without a verdict.
+/// Transport-level `Err` from the stream is also recorded.
+#[test]
+fn trace_layer_records_stream_transport_error() {
+    struct TransportErr;
+    #[async_trait::async_trait]
+    impl LanguageModel for TransportErr {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "mock-transport-err"
+        }
+        async fn do_generate(&self, _: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unreachable!()
+        }
+        async fn do_stream(&self, _: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            Ok(StreamResult {
+                stream: Box::pin(async_stream::stream! {
+                    yield Ok(StreamPart::StreamStart { warnings: vec![] });
+                    yield Err(AiMuxError::Stream("transport failure".into()));
+                }),
+                request_body: None,
+                response_headers: None,
+            })
+        }
+    }
+
+    let store = Arc::new(RingTraceStore::new());
+    let layer = Arc::new(TraceLayer::new(Arc::new(TransportErr), store.clone()));
+    let mut result = block_on(layer.do_stream(&model_opts(Some("sess-err")))).unwrap();
+    while let Some(_p) = block_on(async { futures::StreamExt::next(&mut result.stream).await }) {}
+
+    let recs = store.aggregate(&TraceFilter::default());
+    assert_eq!(recs[0].errors, 1, "transport error recorded");
+}
+
+/// Failures (Err from do_generate) are still recorded, without a verdict.
 #[test]
 fn trace_layer_records_failures() {
     struct Failing;
@@ -602,4 +639,44 @@ fn trace_layer_records_failures() {
         String::from_utf8(buf).unwrap()
     };
     assert!(json.contains("\"error\":\"boom\""), "{json}");
+}
+
+/// Aggregation: client_upper_bound_hit_rate sums per-record LCP token upper
+/// bounds only — records without LCP evidence contribute 0, never the full
+/// request length (RFC-0015 §5.2).
+#[test]
+fn aggregate_uses_lcp_upper_bound_not_full_length() {
+    use aimux_core::trace::TraceStats;
+
+    let store = Arc::new(RingTraceStore::new());
+
+    // Call 1: first request — no history → no LCP upper bound.
+    let inner1: Arc<dyn LanguageModel> =
+        Arc::new(MockModel::new(token_body(1024, 512, 0), 0, 1536));
+    let layer1 = Arc::new(TraceLayer::new(inner1, store.clone()).with_rules_auditor(true));
+    block_on(layer1.do_generate(&model_opts(Some("sess-1")))).unwrap();
+
+    // Call 2: same-session prefix continuation → block-1 LCP upper bound
+    // (4096 B → 1024 tokens).
+    let inner2: Arc<dyn LanguageModel> =
+        Arc::new(MockModel::new(token_body(1024, 1536, 0), 1024, 2560));
+    let layer2 = Arc::new(TraceLayer::new(inner2, store.clone()).with_rules_auditor(true));
+    block_on(layer2.do_generate(&model_opts(Some("sess-1")))).unwrap();
+
+    let stats: Vec<TraceStats> = store.aggregate(&TraceFilter::default());
+    assert_eq!(stats.len(), 1);
+    let s = &stats[0];
+    assert_eq!(s.requests, 2);
+    let rate = s.client_upper_bound_hit_rate.expect("rate present");
+    // LCP upper contributions: call1 = 0 (no match), call2 = 2×4096B/4 =
+    // 2048 tokens; total input = 1536+2560.
+    let expected = 2048.0 / (1536.0 + 2560.0);
+    assert!(
+        (rate - expected).abs() < 1e-9,
+        "client upper bound must be LCP-based: {rate} vs {expected}"
+    );
+    assert!(
+        rate < 0.9,
+        "full-length estimate would be ~1.0 — LCP evidence must cap it: {rate}"
+    );
 }

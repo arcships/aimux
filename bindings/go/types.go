@@ -310,6 +310,7 @@ type TraceRecord struct {
 	SessionID              *string         `json:"session_id,omitempty"`
 	TraceID                string          `json:"trace_id"`
 	SentAtUnixMs           int64           `json:"sent_at_unix_ms"`
+	LCPTokenUpper          *uint64         `json:"lcp_token_upper,omitempty"`
 	TTFTMs                 *uint64         `json:"ttft_ms,omitempty"`
 	Fingerprint            Fingerprint       `json:"fingerprint"`
 	Usage                  UsageSnapshot     `json:"usage"`

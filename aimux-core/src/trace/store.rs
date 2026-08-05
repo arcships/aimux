@@ -398,19 +398,18 @@ impl RingTraceStore {
             let total = g.input_tokens_total;
             if total > 0 {
                 g.reported_hit_rate = Some(g.claimed_cache_read_total as f64 / total as f64);
-                // Client upper bound: average of per-record ratios is not
-                // meaningful for totals; use ratio of estimated tokens.
+                // Client upper bound: per-record LCP token upper bound only —
+                // records without LCP evidence (first request / no match)
+                // contribute 0 (RFC-0015 §5.2; never the full request length).
                 let est: u64 = inner
                     .records
                     .iter()
                     .filter(|r| r.provider == key.0 && r.model == key.1 && matches_filter(r, f))
-                    .map(|r| {
-                        r.fingerprint
-                            .token_estimate
-                            .min(r.usage.input_total.unwrap_or(0))
-                    })
+                    .map(|r| r.lcp_token_upper.unwrap_or(0))
                     .sum();
-                g.client_upper_bound_hit_rate = Some(est as f64 / total as f64);
+                if est > 0 {
+                    g.client_upper_bound_hit_rate = Some(est as f64 / total as f64);
+                }
             }
             if let Some(mut ts) = ttfts.remove(key) {
                 ts.sort_unstable();

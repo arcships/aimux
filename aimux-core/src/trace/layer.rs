@@ -7,11 +7,19 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Process-unique trace id sequence (trace ids are `trace-{pid}-{mono}-{seq}`).
 static TRACE_SEQ: AtomicU64 = AtomicU64::new(0);
-use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+/// Process-wide monotonic clock origin — every `TraceLayer` shares it, so
+/// TTL comparisons stay in one clock domain even when multiple layers write
+/// to the same `RingTraceStore`.
+fn monotonic_origin() -> &'static Instant {
+    static ORIGIN: OnceLock<Instant> = OnceLock::new();
+    ORIGIN.get_or_init(Instant::now)
+}
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -67,7 +75,6 @@ pub struct TraceLayer {
     /// Scope salt (HMAC-style key for fingerprint scoping).
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
-    monotonic_origin: Instant,
 }
 
 /// Request identity computed before dispatch.
@@ -89,7 +96,6 @@ struct RecordCtx {
     strict: bool,
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
-    monotonic_origin: Instant,
     ctx: RequestCtx,
     request_body: Option<serde_json::Value>,
     response_headers: Option<HashMap<String, String>>,
@@ -107,7 +113,6 @@ impl TraceLayer {
             default_session: None,
             scope_salt: hash::mix(0x5eed_5eed ^ std::process::id() as u64),
             session_tracker: Arc::new(Mutex::new(HashMap::new())),
-            monotonic_origin: Instant::now(),
         }
     }
 
@@ -156,7 +161,7 @@ impl TraceLayer {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
-        let monotonic_ms = self.monotonic_origin.elapsed().as_millis() as u64;
+        let monotonic_ms = monotonic_origin().elapsed().as_millis() as u64;
         RecordCtx {
             provider: self.inner.provider().to_string(),
             model: self.inner.model_id().to_string(),
@@ -165,7 +170,6 @@ impl TraceLayer {
             strict: self.strict,
             scope_salt: self.scope_salt,
             session_tracker: self.session_tracker.clone(),
-            monotonic_origin: self.monotonic_origin,
             ctx: RequestCtx {
                 session_id,
                 scope_key,
@@ -224,26 +228,26 @@ impl RecordCtx {
         let Some(store) = self.ring_store() else {
             return (None, 0, 0, false);
         };
-        let now_mono = self.monotonic_origin.elapsed().as_millis() as u64;
+        let now_mono = monotonic_origin().elapsed().as_millis() as u64;
         let lcp: LcpResult = store.lookup(self.ctx.scope_key, chain, now_mono, ttl_ms);
         let same_session = lcp
             .matched
             .as_ref()
             .map(|m| m.session.as_deref() == self.ctx.session_id.as_deref())
             .unwrap_or(false);
+        let upper = if lcp.matched.is_some() {
+            // RFC F3: audit ceiling is the block UPPER bound (j+1)·B.
+            (lcp.matched_blocks as u64 + 1) * chain.block_size as u64
+        } else {
+            0
+        };
         let input = lcp.matched.map(|_| LcpInput {
             lcp_bytes: lcp.lcp_bytes,
-            // RFC F3: audit ceiling is the block UPPER bound (j+1)·B.
-            lcp_upper_bytes: (lcp.matched_blocks as u64 + 1) * chain.block_size as u64,
+            lcp_upper_bytes: upper,
             same_session,
             matched_exists: true,
         });
-        (
-            input,
-            lcp.lcp_bytes,
-            (lcp.matched_blocks as u64 + 1) * chain.block_size as u64,
-            lcp.candidate_expired,
-        )
+        (input, lcp.lcp_bytes, upper, lcp.candidate_expired)
     }
 
     /// Build and record the trace for a completed call.
