@@ -1,6 +1,7 @@
 package ai.arcships.aimux
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -28,7 +29,7 @@ class ContractTest {
         "../contract-tests/fixtures/wire-format.json",
     )
 
-    private fun loadFixtures(): Json {
+    private fun loadFixtures(): JsonArray {
         val file = fixtureCandidates.map(::File).firstOrNull { it.isFile }
             ?: throw IllegalStateException(
                 "cannot find wire-format.json; tried $fixtureCandidates from ${File(".").absolutePath}"
@@ -36,7 +37,7 @@ class ContractTest {
         return Json.parseToJsonElement(file.readText()).jsonArray
     }
 
-    private fun fixtureJson(fixtures: Json, name: String): String {
+    private fun fixtureJson(fixtures: JsonArray, name: String): String {
         for (f in fixtures) {
             if (name == f.jsonObject["name"]?.jsonPrimitive?.content) {
                 return f.jsonObject["json"]!!.jsonPrimitive.content
