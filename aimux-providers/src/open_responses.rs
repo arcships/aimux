@@ -1295,6 +1295,7 @@ fn extract_usage_from_value(usage: &Value) -> Usage {
             reasoning: reasoning_tokens,
             ..Default::default()
         },
-        raw: None,
+        // RFC-0015 P0-3: keep the raw provider usage payload.
+        raw: Some(usage.clone()),
     }
 }

@@ -176,29 +176,10 @@ pub(crate) async fn anthropic_generate_core(
             raw: None,
         });
 
-    let reasoning_tokens = data
-        .usage
-        .output_tokens_details
-        .as_ref()
-        .and_then(|d| d.thinking_tokens);
-    let output_total = data.usage.output_tokens;
-    let text_tokens = reasoning_tokens
-        .zip(output_total)
-        .map(|(r, t)| t.saturating_sub(r));
-
-    let usage = Usage {
-        input_tokens: TokenUsage {
-            total: data.usage.input_tokens,
-            ..Default::default()
-        },
-        output_tokens: TokenUsage {
-            total: output_total,
-            text: text_tokens,
-            reasoning: reasoning_tokens,
-            ..Default::default()
-        },
-        raw: None,
-    };
+    // RFC-0015 P0-2: fill cache fields + raw; total = input + cache_read +
+    // cache_creation (Anthropic's input_tokens excludes cache). Output side
+    // breakdown (text/reasoning) comes from output_tokens_details.
+    let usage = super::usage::usage_from_anthropic(&data.usage);
 
     Ok(GenerateResult {
         content,
@@ -279,13 +260,10 @@ pub(crate) async fn anthropic_stream_core(
                     match serde_json::from_str::<StreamEvent>(&sse_event.data) {
                         Ok(StreamEvent::MessageStart { message }) => {
                             if let Some(usage) = &message.usage {
-                                final_usage = Usage {
-                                    input_tokens: TokenUsage {
-                                        total: usage.input_tokens,
-                                        ..Default::default()
-                                    },
-                                    ..Default::default()
-                                };
+                                // RFC-0015 P0-2: full input side incl. cache
+                                // fields + raw (Anthropic reports cache only
+                                // in message_start).
+                                final_usage = super::usage::usage_from_anthropic(usage);
                             }
                             if !response_meta_emitted {
                                 yield Ok(StreamPart::ResponseMetadata {

@@ -29,6 +29,8 @@ use napi_derive::napi;
 #[napi]
 pub struct Model {
     inner: Arc<dyn LanguageModel>,
+    /// Probe store — `Some` only for traced models (RFC-0015).
+    trace_store: Option<Arc<aimux_core::trace::RingTraceStore>>,
 }
 
 /// A bridge from a JS `AbortSignal` to the core's runtime cancellation.
@@ -74,6 +76,91 @@ impl AbortBridge {
 
 #[napi]
 impl Model {
+    /// Wrap this model in a cache-probe layer (RFC-0015). The returned
+    /// model records fingerprints/verdicts on every call and exposes the
+    /// `traceAggregate` / `traceSessionChain` / `traceExportJsonl` /
+    /// `traceClear` queries.
+    #[napi]
+    pub fn trace(&self) -> Model {
+        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
+        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone());
+        Model {
+            inner: Arc::new(layer),
+            trace_store: Some(store),
+        }
+    }
+
+    /// Wrap this model in a cache-probe layer with the built-in rules
+    /// auditor (RFC-0015 §4). `strict` = strict mode (self-hosted single
+    /// instance); `false` = shared mode (safe default).
+    #[napi]
+    pub fn traceAudited(&self, strict: bool) -> Model {
+        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
+        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
+            .with_rules_auditor(strict);
+        Model {
+            inner: Arc::new(layer),
+            trace_store: Some(store),
+        }
+    }
+
+    /// Aggregated probe statistics (RFC-0015 §5.3), filtered by a JSON
+    /// `TraceFilter` (optional). Returns a JSON `TraceStats[]` string.
+    #[napi]
+    pub fn traceAggregate(&self, filter_json: Option<String>) -> Result<String> {
+        let Some(store) = &self.trace_store else {
+            return Err(Error::from_reason(
+                "[Trace] model is not traced; call trace() first",
+            ));
+        };
+        let filter = match filter_json {
+            Some(f) => serde_json::from_str(&f)
+                .map_err(|e| Error::from_reason(format!("[Trace] invalid filter: {e}")))?,
+            None => Default::default(),
+        };
+        serde_json::to_string(&store.aggregate(&filter))
+            .map_err(|e| Error::from_reason(format!("[Json] serialize: {e}")))
+    }
+
+    /// One session's chain view (RFC-0015 §5.3). Returns a JSON
+    /// `SessionChainView` string or an error when the session is unknown.
+    #[napi]
+    pub fn traceSessionChain(&self, session_id: String) -> Result<String> {
+        let Some(store) = &self.trace_store else {
+            return Err(Error::from_reason(
+                "[Trace] model is not traced; call trace() first",
+            ));
+        };
+        let view = store
+            .session_chain(&session_id)
+            .ok_or_else(|| Error::from_reason("[Trace] unknown session"))?;
+        serde_json::to_string(&view)
+            .map_err(|e| Error::from_reason(format!("[Json] serialize: {e}")))
+    }
+
+    /// Export all probe records as JSONL (one `TraceRecord` per line).
+    #[napi]
+    pub fn traceExportJsonl(&self) -> Result<String> {
+        let Some(store) = &self.trace_store else {
+            return Err(Error::from_reason(
+                "[Trace] model is not traced; call trace() first",
+            ));
+        };
+        let mut buf = Vec::new();
+        store
+            .export_jsonl(&mut buf)
+            .map_err(|e| Error::from_reason(format!("[Trace] export: {e}")))?;
+        String::from_utf8(buf).map_err(|e| Error::from_reason(format!("[Trace] utf8: {e}")))
+    }
+
+    /// Clear all probe records of this traced model.
+    #[napi]
+    pub fn traceClear(&self) {
+        if let Some(store) = &self.trace_store {
+            store.clear();
+        }
+    }
+
     /// Generate text (non-streaming).
     ///
     /// `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.
@@ -339,6 +426,7 @@ pub async fn openai(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -386,6 +474,7 @@ pub async fn anthropic(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -401,6 +490,7 @@ pub async fn deepseek(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -436,6 +526,7 @@ pub async fn google(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -467,6 +558,7 @@ pub async fn cohere(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -498,6 +590,7 @@ pub async fn mistral(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -529,6 +622,7 @@ pub async fn xai(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -563,6 +657,7 @@ pub async fn bedrock(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -597,6 +692,7 @@ pub async fn vertex(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -630,6 +726,7 @@ pub async fn anthropic_aws(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -674,6 +771,7 @@ pub async fn azure(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -695,6 +793,7 @@ pub async fn provider(
         .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 

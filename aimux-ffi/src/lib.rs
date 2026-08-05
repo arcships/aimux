@@ -40,6 +40,7 @@ use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::provider::Provider;
+use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer};
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
 use aimux_providers::azure::{AzureConfig, AzureProvider};
@@ -892,8 +893,31 @@ pub extern "C" fn aimux_stream_text(
         let stream_result = stream_text(&*model, prompt, opts).await;
         match stream_result {
             Ok(sr) => {
+                let meta = if sr.request_body.is_some() || sr.response_headers.is_some() {
+                    Some(serde_json::json!({
+                        "Raw": { "raw_value": { "aimux_meta": {
+                            "request_body": sr.request_body,
+                            "response_headers": sr.response_headers,
+                        } } }
+                    }))
+                } else {
+                    None
+                };
                 let mut stream = sr.stream;
+                let mut first = true;
                 while let Some(item) = stream.next().await {
+                    if first {
+                        // Emit the synthetic meta part right after StreamStart
+                        // (RFC-0015 P0-1: zero binding changes — every binding
+                        // already tolerates the Raw variant).
+                        if let Some(m) = &meta
+                            && let Ok(cstr) =
+                                CString::new(serde_json::to_string(m).unwrap_or_default())
+                        {
+                            on_part(cstr.as_ptr());
+                        }
+                        first = false;
+                    }
                     match item {
                         Ok(part) => {
                             let json =
@@ -1576,5 +1600,129 @@ pub extern "C" fn aimux_list_sessions() -> *mut c_char {
     match serde_json::to_string(&aimux_core::session::list_sessions()) {
         Ok(s) => into_cstring_raw(s),
         Err(e) => error_json_raw(format!("serialize: {e}")),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: cache probing (RFC-0015)
+// ─────────────────────────────────────────────────────────────────────────────
+
+static TRACE_STORES: OnceLock<Mutex<HashMap<u64, Arc<RingTraceStore>>>> = OnceLock::new();
+
+fn trace_stores() -> &'static Mutex<HashMap<u64, Arc<RingTraceStore>>> {
+    TRACE_STORES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_trace_store(handle: u64) -> Option<Arc<RingTraceStore>> {
+    trace_stores()
+        .lock()
+        .expect("aimux-ffi: trace registry mutex poisoned")
+        .get(&handle)
+        .cloned()
+}
+
+/// Wrap a model handle in a probe layer (RFC-0015). Returns a new handle that
+/// can be used with `aimux_generate_text` / `aimux_stream_text` (probed) and
+/// with the `aimux_trace_*` query functions. Returns `{"handle":<u64>}` or
+/// `{"error":...}` (null args / invalid handle); caller frees with
+/// `aimux_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_new(handle: u64) -> *mut c_char {
+    let Some(model) = get_model(handle) else {
+        return error_json_raw("invalid handle");
+    };
+    let store = Arc::new(RingTraceStore::new());
+    let layer = Arc::new(TraceLayer::new(model, store.clone()));
+    let new_handle = intern_model(layer);
+    trace_stores()
+        .lock()
+        .expect("aimux-ffi: trace registry mutex poisoned")
+        .insert(new_handle, store);
+    handle_json(new_handle)
+}
+
+/// Wrap a model handle in a probe layer WITH the built-in rules auditor
+/// (RFC-0015 §4). `strict` nonzero = strict mode (self-hosted single
+/// instance); zero = shared mode (safe default). Returns `{"handle":<u64>}`
+/// or `{"error":...}`; caller frees with `aimux_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_new_audited(handle: u64, strict: i32) -> *mut c_char {
+    let Some(model) = get_model(handle) else {
+        return error_json_raw("invalid handle");
+    };
+    let store = Arc::new(RingTraceStore::new());
+    let layer = Arc::new(TraceLayer::new(model, store.clone()).with_rules_auditor(strict != 0));
+    let new_handle = intern_model(layer);
+    trace_stores()
+        .lock()
+        .expect("aimux-ffi: trace registry mutex poisoned")
+        .insert(new_handle, store);
+    handle_json(new_handle)
+}
+
+/// Query: aggregated probe statistics, filtered by `filter_json` (a serialized
+/// `TraceFilter`, NULL = all). Returns JSON `TraceStats[]` or `{"error":...}`;
+/// caller frees with `aimux_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_aggregate(handle: u64, filter_json: *const c_char) -> *mut c_char {
+    let Some(store) = get_trace_store(handle) else {
+        return error_json_raw("invalid trace handle");
+    };
+    let filter = match parse_json_arg::<TraceFilter>(filter_json, "filter_json") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    match serde_json::to_string(&store.aggregate(&filter)) {
+        Ok(s) => into_cstring_raw(s),
+        Err(e) => error_json_raw(format!("serialize: {e}")),
+    }
+}
+
+/// Query: one session's chain view. Returns JSON `SessionChainView` or
+/// `{"error":...}` (unknown session); caller frees with `aimux_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_session_chain(handle: u64, session_id: *const c_char) -> *mut c_char {
+    let Some(store) = get_trace_store(handle) else {
+        return error_json_raw("invalid trace handle");
+    };
+    let Some(id) = cstr_to_string(session_id) else {
+        return error_json_raw("invalid session_id");
+    };
+    match store.session_chain(&id) {
+        Some(view) => match serde_json::to_string(&view) {
+            Ok(s) => into_cstring_raw(s),
+            Err(e) => error_json_raw(format!("serialize: {e}")),
+        },
+        None => error_json_raw("unknown session"),
+    }
+}
+
+/// Export all probe records as JSONL (one `TraceRecord` per line). Returns a
+/// JSON string (with embedded newlines) or `{"error":...}`; caller frees with
+/// `aimux_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_export_jsonl(handle: u64) -> *mut c_char {
+    let Some(store) = get_trace_store(handle) else {
+        return error_json_raw("invalid trace handle");
+    };
+    let mut buf = Vec::new();
+    match store.export_jsonl(&mut buf) {
+        Ok(()) => match String::from_utf8(buf) {
+            Ok(s) => into_cstring_raw(s),
+            Err(e) => error_json_raw(format!("utf8: {e}")),
+        },
+        Err(e) => error_json_raw(format!("export: {e}")),
+    }
+}
+
+/// Clear all probe records of a trace handle. Returns 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_clear(handle: u64) -> i32 {
+    match get_trace_store(handle) {
+        Some(store) => {
+            store.clear();
+            0
+        }
+        None => -1,
     }
 }

@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ── Non-streaming response ──
@@ -58,7 +58,7 @@ pub struct FunctionCallResponse {
     pub arguments: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct UsageResponse {
     #[serde(default)]
     pub prompt_tokens: Option<u32>,
@@ -78,7 +78,7 @@ pub struct UsageResponse {
     pub completion_tokens_details: Option<CompletionTokensDetails>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct PromptTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<u32>,
@@ -89,7 +89,7 @@ pub struct PromptTokensDetails {
     pub cache_write_tokens: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Serialize)]
 pub struct CompletionTokensDetails {
     #[serde(default)]
     pub reasoning_tokens: Option<u32>,

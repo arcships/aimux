@@ -137,6 +137,22 @@ aimux_drop_handle(handle);
 Pass `"session_id": "..."` inside `opts_json` of `aimux_generate_text` / `aimux_stream_text`
 to group a call into a session.
 
+### Cache Probing (RFC-0015, added 2026-08-05)
+
+| Function | Description |
+|------|------|
+| `aimux_trace_new(handle)` | Wrap a model handle in a probe layer — the returned handle works with `aimux_generate_text` / `aimux_stream_text` (fingerprints recorded) and the `aimux_trace_*` queries |
+| `aimux_trace_new_audited(handle, strict)` | Same, with the built-in rules auditor attached (strict 0/1) |
+| `aimux_trace_aggregate(handle, filter_json)` | Aggregated stats — JSON `TraceStats[]` (`filter_json` = serialized `TraceFilter`, NULL = all) |
+| `aimux_trace_session_chain(handle, session_id)` | One session's chain view — JSON `SessionChainView` |
+| `aimux_trace_export_jsonl(handle)` | All probe records as JSONL (one `TraceRecord` per line) |
+| `aimux_trace_clear(handle)` | Drop all probe records (returns 0) |
+
+Probing is opt-in and explicit: no global state, no plaintext bodies (only
+block-hash fingerprints are stored). Streaming calls additionally emit a
+synthetic `{"Raw":{"raw_value":{"aimux_meta":{...}}}}` part right after
+`StreamStart` carrying the request body / response headers.
+
 ## Examples
 
 ### Video Generation

@@ -171,7 +171,8 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
-        raw: None,
+        // RFC-0015 P0-3: keep the raw provider usage payload.
+        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
     }
 }
 

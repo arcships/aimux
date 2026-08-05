@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // ── Non-streaming response ──
 
@@ -28,7 +28,7 @@ pub struct XaiResponsesResponse {
 }
 
 /// Usage object for the Responses API (`xaiResponsesUsageSchema`).
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 pub struct XaiResponsesUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -46,13 +46,13 @@ pub struct XaiResponsesUsage {
     pub cost_in_usd_ticks: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 pub struct XaiResponsesInputTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 pub struct XaiResponsesOutputTokensDetails {
     #[serde(default)]
     pub reasoning_tokens: Option<u64>,

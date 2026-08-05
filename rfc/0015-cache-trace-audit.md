@@ -1,6 +1,6 @@
 # RFC-0015: 缓存命中探测(cache-hit probe)
 
-> **Status**: DRAFT (pending review)——2026-08-05 重写:收窄为"探测本身"(core infrastructure),探测业务划给 `tools/aimux-cli` client,告警由外部消费
+> **Status**: IMPLEMENTED (2026-08-05 — 探测本身进 core:TraceLayer + 判定引擎 + RingTraceStore + 查询 API + FFI/Node/Python/Go 透传;探测业务归 CLI(RFC-0025),告警外部消费)
 > **Date**: 2026-08-01(初稿)/ 2026-08-05(重写)
 > **Scope**: aimux 统一 LLM 访问层上的可选缓存命中探测能力——采集 request_body 指纹 + usage 快照,客户端对连续 agent 调用的原始请求体做前缀对比,判定各 provider 服务端上报的 cache 命中率是否掺水,暴露 verdict 数据与查询接口供消费。**探测本身进 core,探测业务(CLI)独立,告警外部消费。**
 > **Related**: [RFC-0014](0014-logging.md) 统一日志(挂载其 span 树)、[RFC-0023](0023-runtime-request-recording.md) 录制与回放(明文兄弟子系统,trace_id 关联)、[RFC-0024](0024-session-aggregation.md) 会话聚合(session_id 统一来源)、[RFC-0009](0009-request-resilience.md) retry/超时(重试语义影响判定规则)、研究存档 [cache-tracing](../docs/internal/cache-tracing/00-research-plan.md)

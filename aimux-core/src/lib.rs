@@ -37,6 +37,7 @@ pub mod shared;
 pub mod speech_model;
 pub mod stream_part;
 pub mod tool;
+pub mod trace;
 pub mod transcription_model;
 pub mod types;
 pub mod util;

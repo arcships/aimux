@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // ── Non-streaming response ──
 
@@ -62,7 +62,7 @@ pub struct XaiFunctionCallResponse {
 
 // ── Usage ──
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 pub struct XaiUsageResponse {
     #[serde(default)]
     pub prompt_tokens: Option<u32>,
@@ -76,7 +76,7 @@ pub struct XaiUsageResponse {
     pub completion_tokens_details: Option<XaiCompletionTokensDetails>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 pub struct XaiPromptTokensDetails {
     #[serde(default)]
     pub text_tokens: Option<u32>,
@@ -88,7 +88,7 @@ pub struct XaiPromptTokensDetails {
     pub cached_tokens: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default, Serialize)]
 pub struct XaiCompletionTokensDetails {
     #[serde(default)]
     pub reasoning_tokens: Option<u32>,

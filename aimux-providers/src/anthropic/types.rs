@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ── Non-streaming response ──
@@ -153,13 +153,13 @@ pub enum ContentBlock {
 
 /// `output_tokens_details` nested inside an Anthropic usage object, carrying
 /// the count of thinking/reasoning tokens.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct OutputTokenDetails {
     #[serde(default)]
     pub thinking_tokens: Option<u32>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AnthropicUsage {
     #[serde(default)]
     pub input_tokens: Option<u32>,

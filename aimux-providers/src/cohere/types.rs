@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ── Non-streaming response ──
@@ -61,7 +61,7 @@ pub struct UsageResponse {
     pub tokens: TokenPair,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TokenPair {
     pub input_tokens: u32,
     pub output_tokens: u32,

@@ -132,12 +132,18 @@ pub struct GenerateTextResult {
 pub struct StreamTextResult {
     /// The stream of `StreamPart` items.
     pub stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
+    /// The request body that was sent (for debugging / cache probing, RFC-0015).
+    pub request_body: Option<serde_json::Value>,
+    /// Response headers.
+    pub response_headers: Option<HashMap<String, String>>,
 }
 
 impl std::fmt::Debug for StreamTextResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StreamTextResult")
             .field("stream", &"<stream>")
+            .field("request_body", &self.request_body)
+            .field("response_headers", &self.response_headers)
             .finish()
     }
 }
@@ -327,9 +333,12 @@ pub async fn stream_text(
     );
     let result: StreamResult = model.do_stream(&call_options).instrument(span).await?;
 
-    // 4. Return stream to user.
+    // 4. Return stream to user (request_body/response_headers kept for
+    //    debugging / cache probing, RFC-0015).
     Ok(StreamTextResult {
         stream: result.stream,
+        request_body: result.request_body,
+        response_headers: result.response_headers,
     })
 }
 

@@ -57,6 +57,33 @@ export declare class ImageModel {
 
 export declare class Model {
   /**
+   * Wrap this model in a cache-probe layer (RFC-0015). The returned
+   * model records fingerprints/verdicts on every call and exposes the
+   * `traceAggregate` / `traceSessionChain` / `traceExportJsonl` /
+   * `traceClear` queries.
+   */
+  trace(): Model
+  /**
+   * Wrap this model in a cache-probe layer with the built-in rules
+   * auditor (RFC-0015 §4). `strict` = strict mode (self-hosted single
+   * instance); `false` = shared mode (safe default).
+   */
+  traceAudited(strict: boolean): Model
+  /**
+   * Aggregated probe statistics (RFC-0015 §5.3), filtered by a JSON
+   * `TraceFilter` (optional). Returns a JSON `TraceStats[]` string.
+   */
+  traceAggregate(filterJson?: string | undefined | null): string
+  /**
+   * One session's chain view (RFC-0015 §5.3). Returns a JSON
+   * `SessionChainView` string or an error when the session is unknown.
+   */
+  traceSessionChain(sessionId: string): string
+  /** Export all probe records as JSONL (one `TraceRecord` per line). */
+  traceExportJsonl(): string
+  /** Clear all probe records of this traced model. */
+  traceClear(): void
+  /**
    * Generate text (non-streaming).
    *
    * `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.

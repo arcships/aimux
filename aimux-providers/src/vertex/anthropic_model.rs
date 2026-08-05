@@ -226,17 +226,8 @@ impl LanguageModel for VertexAnthropicModel {
                 raw: None,
             });
 
-        let usage = Usage {
-            input_tokens: aimux_core::types::TokenUsage {
-                total: data.usage.input_tokens,
-                ..Default::default()
-            },
-            output_tokens: aimux_core::types::TokenUsage {
-                total: data.usage.output_tokens,
-                ..Default::default()
-            },
-            raw: None,
-        };
+        // RFC-0015 P0-2: fill cache fields + raw (same shape as Anthropic).
+        let usage = crate::anthropic::usage::usage_from_anthropic(&data.usage);
 
         Ok(GenerateResult {
             content,

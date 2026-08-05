@@ -275,3 +275,83 @@ type TextDeltaPayload struct {
 	ID    string `json:"id,omitempty"`
 	Delta string `json:"delta"`
 }
+
+// ── Cache probing (RFC-0015) wire types ─────────────────────────────────────
+
+// TraceFilter filters aggregate queries (RFC-0015 §5.3).
+type TraceFilter struct {
+	Provider    *string `json:"provider,omitempty"`
+	Model       *string `json:"model,omitempty"`
+	SessionID   *string `json:"session_id,omitempty"`
+	SinceUnixMs *int64  `json:"since_unix_ms,omitempty"`
+}
+
+// TraceStats is one (provider, model) aggregation group.
+type TraceStats struct {
+	Provider                  string            `json:"provider"`
+	Model                     string            `json:"model"`
+	Requests                  uint64            `json:"requests"`
+	InputTokensTotal          uint64            `json:"input_tokens_total"`
+	ClaimedCacheReadTotal     uint64            `json:"claimed_cache_read_total"`
+	ClaimedCacheWriteTotal    uint64            `json:"claimed_cache_write_total"`
+	ReportedHitRate           *float64          `json:"reported_hit_rate,omitempty"`
+	ClientUpperBoundHitRate   *float64          `json:"client_upper_bound_hit_rate,omitempty"`
+	VerdictCounts             map[string]uint64 `json:"verdict_counts"`
+	TTFTP50Ms                 *uint64           `json:"ttft_p50_ms,omitempty"`
+	TTFTP95Ms                 *uint64           `json:"ttft_p95_ms,omitempty"`
+	Errors                    uint64            `json:"errors"`
+}
+
+// TraceRecord is one probed call (fingerprints only — no plaintext bodies).
+type TraceRecord struct {
+	Provider               string          `json:"provider"`
+	Model                  string          `json:"model"`
+	RequestID              *string         `json:"request_id,omitempty"`
+	SessionID              *string         `json:"session_id,omitempty"`
+	TraceID                string          `json:"trace_id"`
+	SentAtUnixMs           int64           `json:"sent_at_unix_ms"`
+	TTFTMs                 *uint64         `json:"ttft_ms,omitempty"`
+	Fingerprint            Fingerprint     `json:"fingerprint"`
+	Usage                  UsageSnapshot   `json:"usage"`
+	ResponseCacheHeaders   map[string]string `json:"response_cache_headers,omitempty"`
+	Verdict                json.RawMessage `json:"verdict,omitempty"`
+	Error                  *string         `json:"error,omitempty"`
+}
+
+// Fingerprint is the block-hash chain of a denoised request body (hex).
+type Fingerprint struct {
+	BodyHash     string   `json:"body_hash"`
+	LenBytes     uint64   `json:"len_bytes"`
+	BlockSize    uint64   `json:"block_size"`
+	BlockHashes  []string `json:"block_hashes"`
+	TokenEstimate uint64  `json:"token_estimate"`
+}
+
+// UsageSnapshot is the 7-field flat usage snapshot + raw passthrough.
+type UsageSnapshot struct {
+	InputTotal     *uint64         `json:"input_total,omitempty"`
+	InputNoCache   *uint64         `json:"input_no_cache,omitempty"`
+	CacheRead      *uint64         `json:"cache_read,omitempty"`
+	CacheWrite     *uint64         `json:"cache_write,omitempty"`
+	OutputTotal    *uint64         `json:"output_total,omitempty"`
+	OutputText     *uint64         `json:"output_text,omitempty"`
+	OutputReasoning *uint64        `json:"output_reasoning,omitempty"`
+	Raw            json.RawMessage `json:"raw,omitempty"`
+}
+
+// SessionChainView is the per-session ordered chain view.
+type SessionChainView struct {
+	SessionID       string        `json:"session_id"`
+	RecordIDs       []string      `json:"record_ids"`
+	PrefixStability float64       `json:"prefix_stability"`
+	Breaks          []PrefixBreak `json:"breaks"`
+}
+
+// PrefixBreak marks a prefix break between consecutive session records.
+type PrefixBreak struct {
+	AtRecordID   string `json:"at_record_id"`
+	PrevRecordID string `json:"prev_record_id"`
+	LCPBytes     uint64 `json:"lcp_bytes"`
+	ExpectedBreak bool  `json:"expected_break"`
+	Kind         string `json:"kind"`
+}
