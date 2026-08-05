@@ -1,6 +1,6 @@
 # RFC-0006: Provider Development Specification
 
-> **Status**: DRAFT (pending review)  
+> **Status**: ACCEPTED (in force — required reading in CONTRIBUTING.md and applied by provider-research batches; 2026-07-28)  
 > **Date**: 2026-07-28  
 > **Scope**: Adding or redoing provider adapters in `aimux-providers`  
 > **Related**: [Provider Inventory and Extraction Results](../provider-inventory/README.md), [Provider Adapter Layer Improvements](0002-provider-improvements.md), [Cassette Test Plan](0003-test-cassette.md), [Protocol Conversion and Adapter Layer Design](0005-protocol-conversion.md)

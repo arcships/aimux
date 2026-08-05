@@ -1,6 +1,6 @@
 # RFC-0010: Request Performance Comparison — aimux vs Vercel AI SDK
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (2026-07-30 — bench suite in [bindings/node/bench/](../bindings/node/bench/) + [bindings/python/bench/](../bindings/python/bench/), results in [docs/PERF-RESULTS.md](../docs/PERF-RESULTS.md), commit 17ddffd0)
 > **Date**: 2026-07-30
 > **Scope**: Design a reproducible request-performance benchmark to compare, under a unified measurement baseline, the "unified access layer" overhead of aimux (Rust core + napi Node binding) versus the Vercel AI SDK (pure TS); cover three dimensions: **speed, structural overhead, and concurrency capacity**; produce landing steps and fairness constraints
 > **Related**: [RFC-0009](0009-request-resilience.md) request-layer optimization (a prerequisite for comparison), [RFC-0003](0003-test-cassette.md) cassette test plan (source of mock data), [RFC-0001](0001-multilang-bindings.md) multilang bindings
