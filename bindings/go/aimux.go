@@ -55,6 +55,17 @@ static void do_stream(uint64_t handle, uint64_t abort_handle,
     current_stream_id = 0;
 }
 
+// do_stream_openai: same as do_stream but emits OpenAI Chat Completion chunks
+// (RFC-0026). Reuses the same trampolines — they just forward JSON strings.
+static void do_stream_openai(uint64_t handle, uint64_t abort_handle,
+                             const char* prompt, const char* opts, int64_t id) {
+    current_stream_id = id;
+    aimux_stream_text_as_openai_with_abort(handle, abort_handle, prompt, opts,
+                                           trampoline_part, trampoline_done,
+                                           trampoline_error);
+    current_stream_id = 0;
+}
+
 // ── Multimodal constructors and operations (not in aimux-ffi.h yet, but
 //    exported as C symbols from libaimux_ffi.a) ────────────────────────────
 
@@ -570,6 +581,41 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 	return result, nil
 }
 
+// GenerateTextAsOpenAI performs non-streaming text generation and returns the
+// result as an OpenAI Chat Completion JSON string (RFC-0026).
+//
+// Same as GenerateText, but the returned JSON is a serialized ChatCompletion
+// (OpenAI "chat.completion" object) rather than a GenerateTextResult. Works
+// with any provider.
+func (m *Model) GenerateTextAsOpenAI(promptJson, optsJson string) (string, error) {
+	handle, release, err := m.acquireHandle()
+	if err != nil {
+		return "", err
+	}
+	defer release()
+
+	cPrompt := C.CString(promptJson)
+	defer C.free(unsafe.Pointer(cPrompt))
+
+	var cOpts *C.char
+	if optsJson != "" {
+		cOpts = C.CString(optsJson)
+		defer C.free(unsafe.Pointer(cOpts))
+	}
+
+	ptr := C.aimux_generate_text_as_openai(C.uint64_t(handle), cPrompt, cOpts)
+	if ptr == nil {
+		return "", errors.New("aimux: generate_text_as_openai returned null")
+	}
+	defer C.aimux_free_string(ptr)
+
+	result := C.GoString(ptr)
+	if msg := extractError(result); msg != "" {
+		return "", fmt.Errorf("aimux: %s", msg)
+	}
+	return result, nil
+}
+
 // extractError checks if the JSON result is an error envelope
 // ({"error":"..."}) and returns the error message, or "" if not an error.
 func extractError(result string) string {
@@ -762,6 +808,80 @@ func (m *Model) StreamTextContext(ctx context.Context, promptJson, optsJson stri
 		}
 
 		C.do_stream(
+			C.uint64_t(handle),
+			C.uint64_t(abortHandle),
+			cPrompt,
+			cOpts,
+			C.int64_t(id),
+		)
+	}()
+
+	return &Stream{parts: entry.parts, entry: entry}
+}
+
+// StreamTextAsOpenAI performs streaming text generation with OpenAI Chat
+// Completion output (RFC-0026).
+//
+// Same as StreamText, but each part in the Parts() channel is a serialized
+// ChatCompletionChunk (OpenAI "chat.completion.chunk" object). Works with any
+// provider.
+//
+// Opts may carry providerOptions.openai.stream_options with include_usage
+// (bool, default true) and include_reasoning (bool, default true).
+func (m *Model) StreamTextAsOpenAI(promptJson, optsJson string) *Stream {
+	return m.StreamTextAsOpenAIContext(context.Background(), promptJson, optsJson)
+}
+
+// StreamTextAsOpenAIContext performs streaming OpenAI-compatible generation.
+// Context cancellation stops the native request.
+func (m *Model) StreamTextAsOpenAIContext(ctx context.Context, promptJson, optsJson string) *Stream {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	abortHandle := uint64(C.aimux_abort_signal_new())
+	entry, id := registerStream(abortHandle)
+
+	if err := ctx.Err(); err != nil {
+		entry.cancel(err)
+	} else if done := ctx.Done(); done != nil {
+		go func() {
+			select {
+			case <-done:
+				entry.cancel(ctx.Err())
+			case <-entry.terminal:
+			}
+		}()
+	}
+
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		defer unregisterStream(id)
+		defer C.aimux_abort_signal_drop(C.uint64_t(abortHandle))
+		// Safety net: ensure the channel is always closed even if the
+		// native layer never fires on_done/on_error.
+		defer func() {
+			entry.markTerminal(nil, false)
+			entry.closeParts()
+		}()
+
+		handle, release, err := m.acquireHandle()
+		if err != nil {
+			entry.markTerminal(err, false)
+			return
+		}
+		defer release()
+
+		cPrompt := C.CString(promptJson)
+		defer C.free(unsafe.Pointer(cPrompt))
+
+		var cOpts *C.char
+		if optsJson != "" {
+			cOpts = C.CString(optsJson)
+			defer C.free(unsafe.Pointer(cOpts))
+		}
+
+		C.do_stream_openai(
 			C.uint64_t(handle),
 			C.uint64_t(abortHandle),
 			cPrompt,

@@ -1152,3 +1152,128 @@ object StreamPartSerializer : KSerializer<StreamPart> {
         json.encodeJsonElement(JsonObject(mapOf(tag to inner)))
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OpenAI Chat Completions output (RFC-0026).
+//
+// Mirrors `aimux-core::openai_output`. Field names are camelCase in Kotlin and
+// mapped to the wire's snake_case via [SerialName]. The `type` field is JSON
+// `"type"` (Rust `#[serde(rename = "type")]`) → `toolType`. Arbitrary-JSON
+// fields (`logprobs`, `annotations`) are [JsonElement].
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A complete Chat Completion response (non-streaming). Mirrors OpenAI `chat.completion`. */
+@Serializable
+data class ChatCompletion(
+    val id: String = "",
+    val `object`: String = "chat.completion",
+    val created: Long = 0,
+    val model: String = "",
+    val choices: List<ChatCompletionChoice> = emptyList(),
+    val usage: ChatCompletionUsage = ChatCompletionUsage(),
+    @SerialName("system_fingerprint") val systemFingerprint: String? = null,
+)
+
+@Serializable
+data class ChatCompletionChoice(
+    val index: Int = 0,
+    val message: ChatCompletionMessage = ChatCompletionMessage(),
+    @SerialName("finish_reason") val finishReason: String? = null,
+    val logprobs: JsonElement? = null,
+)
+
+@Serializable
+data class ChatCompletionMessage(
+    val role: String = "assistant",
+    val content: String? = null,
+    @SerialName("reasoning_content") val reasoningContent: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<ChatCompletionToolCall>? = null,
+    val annotations: List<JsonElement>? = null,
+)
+
+/**
+ * A tool call in a [ChatCompletionMessage].
+ *
+ * Wire: `{"id","type":"function","function":{"name","arguments"}}`. The `type`
+ * field is JSON `"type"` (Rust `#[serde(rename = "type")]`).
+ */
+@Serializable
+data class ChatCompletionToolCall(
+    val id: String = "",
+    @SerialName("type") val toolType: String = "function",
+    val function: ChatCompletionFunction = ChatCompletionFunction(),
+)
+
+@Serializable
+data class ChatCompletionFunction(
+    val name: String = "",
+    val arguments: String = "",
+)
+
+/** A single Chat Completion chunk (streaming). Mirrors OpenAI `chat.completion.chunk`. */
+@Serializable
+data class ChatCompletionChunk(
+    val id: String = "",
+    val `object`: String = "chat.completion.chunk",
+    val created: Long = 0,
+    val model: String = "",
+    val choices: List<ChatCompletionChunkChoice> = emptyList(),
+    val usage: ChatCompletionUsage? = null,
+)
+
+@Serializable
+data class ChatCompletionChunkChoice(
+    val index: Int = 0,
+    val delta: ChatCompletionDelta = ChatCompletionDelta(),
+    @SerialName("finish_reason") val finishReason: String? = null,
+    val logprobs: JsonElement? = null,
+)
+
+@Serializable
+data class ChatCompletionDelta(
+    val role: String? = null,
+    val content: String? = null,
+    @SerialName("reasoning_content") val reasoningContent: String? = null,
+    @SerialName("tool_calls") val toolCalls: List<ChatCompletionChunkToolCall>? = null,
+)
+
+/**
+ * A tool call delta in a [ChatCompletionChunk].
+ *
+ * Wire: `{"index","id"?,"type":"function"?,"function":{"name"?,"arguments"?}}`.
+ * The `type` field is JSON `"type"` (Rust `#[serde(rename = "type")]`).
+ */
+@Serializable
+data class ChatCompletionChunkToolCall(
+    val index: Int = 0,
+    val id: String? = null,
+    @SerialName("type") val toolType: String? = null,
+    val function: ChatCompletionChunkFunction = ChatCompletionChunkFunction(),
+)
+
+@Serializable
+data class ChatCompletionChunkFunction(
+    val name: String? = null,
+    val arguments: String? = null,
+)
+
+/** Token usage statistics (shared by streaming and non-streaming). */
+@Serializable
+data class ChatCompletionUsage(
+    @SerialName("prompt_tokens") val promptTokens: Int = 0,
+    @SerialName("completion_tokens") val completionTokens: Int = 0,
+    @SerialName("total_tokens") val totalTokens: Int = 0,
+    @SerialName("prompt_tokens_details") val promptTokensDetails: PromptTokensDetails? = null,
+    @SerialName("completion_tokens_details") val completionTokensDetails: CompletionTokensDetails? = null,
+)
+
+@Serializable
+data class PromptTokensDetails(
+    @SerialName("cached_tokens") val cachedTokens: Int = 0,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Int? = null,
+)
+
+@Serializable
+data class CompletionTokensDetails(
+    @SerialName("reasoning_tokens") val reasoningTokens: Int? = null,
+)

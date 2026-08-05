@@ -274,3 +274,131 @@ type TextDeltaPayload struct {
 	ID    string `json:"id,omitempty"`
 	Delta string `json:"delta"`
 }
+
+// ── OpenAI Chat Completions output (RFC-0026) ──────────────────────────────
+//
+// Mirrors aimux_core::openai_output. JSON tags match the serde wire format:
+// Rust `#[serde(skip_serializing_if = "Option::is_none")]` → Go `omitempty`;
+// Rust `#[serde(rename = "type")]` → Go `json:"type"`. Fields without
+// skip_serializing_if (e.g. finish_reason, content) omit `omitempty` so they
+// serialize as null when empty, matching the Rust output.
+
+// ChatCompletionFunction is the function payload of a tool call.
+type ChatCompletionFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// ChatCompletionToolCall is a tool call in an assistant message.
+type ChatCompletionToolCall struct {
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Function ChatCompletionFunction `json:"function"`
+}
+
+// ChatCompletionMessage is the assistant message in a ChatCompletion.
+type ChatCompletionMessage struct {
+	Role             string                   `json:"role"`
+	Content          *string                  `json:"content"`
+	ReasoningContent *string                  `json:"reasoning_content,omitempty"`
+	ToolCalls        []ChatCompletionToolCall `json:"tool_calls,omitempty"`
+	Annotations      []json.RawMessage        `json:"annotations,omitempty"`
+}
+
+// ChatCompletionChoice is a single choice in a ChatCompletion.
+type ChatCompletionChoice struct {
+	Index        int                   `json:"index"`
+	Message      ChatCompletionMessage `json:"message"`
+	FinishReason *string               `json:"finish_reason"`
+	Logprobs     json.RawMessage       `json:"logprobs,omitempty"`
+}
+
+// PromptTokensDetails is the prompt token breakdown.
+type PromptTokensDetails struct {
+	CachedTokens     uint32  `json:"cached_tokens"`
+	CacheWriteTokens *uint32 `json:"cache_write_tokens,omitempty"`
+}
+
+// CompletionTokensDetails is the completion token breakdown.
+type CompletionTokensDetails struct {
+	ReasoningTokens *uint32 `json:"reasoning_tokens,omitempty"`
+}
+
+// ChatCompletionUsage is token usage for a Chat Completion.
+type ChatCompletionUsage struct {
+	PromptTokens            int                      `json:"prompt_tokens"`
+	CompletionTokens        int                      `json:"completion_tokens"`
+	TotalTokens             int                      `json:"total_tokens"`
+	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+}
+
+// ChatCompletion is a complete OpenAI Chat Completion response (non-streaming).
+type ChatCompletion struct {
+	ID                string                 `json:"id"`
+	Object            string                 `json:"object"`
+	Created           uint64                 `json:"created"`
+	Model             string                 `json:"model"`
+	Choices           []ChatCompletionChoice `json:"choices"`
+	Usage             ChatCompletionUsage    `json:"usage"`
+	SystemFingerprint *string                `json:"system_fingerprint,omitempty"`
+}
+
+// ChatCompletionChunkFunction is the function payload of a chunk tool call.
+type ChatCompletionChunkFunction struct {
+	Name      *string `json:"name,omitempty"`
+	Arguments *string `json:"arguments,omitempty"`
+}
+
+// ChatCompletionChunkToolCall is a tool-call delta in a streaming chunk.
+type ChatCompletionChunkToolCall struct {
+	Index    int                         `json:"index"`
+	ID       *string                     `json:"id,omitempty"`
+	Type     *string                     `json:"type,omitempty"`
+	Function ChatCompletionChunkFunction `json:"function"`
+}
+
+// ChatCompletionDelta is the delta payload of a streaming chunk.
+type ChatCompletionDelta struct {
+	Role             *string                       `json:"role,omitempty"`
+	Content          *string                       `json:"content,omitempty"`
+	ReasoningContent *string                       `json:"reasoning_content,omitempty"`
+	ToolCalls        []ChatCompletionChunkToolCall `json:"tool_calls,omitempty"`
+}
+
+// ChatCompletionChunkChoice is a single choice in a streaming chunk.
+type ChatCompletionChunkChoice struct {
+	Index        int                 `json:"index"`
+	Delta        ChatCompletionDelta `json:"delta"`
+	FinishReason *string             `json:"finish_reason"`
+	Logprobs     json.RawMessage     `json:"logprobs,omitempty"`
+}
+
+// ChatCompletionChunk is a single OpenAI Chat Completion streaming chunk.
+type ChatCompletionChunk struct {
+	ID      string                      `json:"id"`
+	Object  string                      `json:"object"`
+	Created uint64                      `json:"created"`
+	Model   string                      `json:"model"`
+	Choices []ChatCompletionChunkChoice `json:"choices"`
+	Usage   *ChatCompletionUsage        `json:"usage,omitempty"`
+}
+
+// ParseChatCompletion parses the JSON string returned by Model.GenerateTextAsOpenAI
+// into a typed ChatCompletion.
+func ParseChatCompletion(jsonStr string) (*ChatCompletion, error) {
+	var r ChatCompletion
+	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
+		return nil, fmt.Errorf("aimux: failed to parse ChatCompletion: %w", err)
+	}
+	return &r, nil
+}
+
+// ParseChatCompletionChunk parses a ChatCompletionChunk JSON string.
+func ParseChatCompletionChunk(jsonStr string) (*ChatCompletionChunk, error) {
+	var r ChatCompletionChunk
+	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
+		return nil, fmt.Errorf("aimux: failed to parse ChatCompletionChunk: %w", err)
+	}
+	return &r, nil
+}

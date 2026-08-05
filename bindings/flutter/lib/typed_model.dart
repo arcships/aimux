@@ -71,6 +71,45 @@ class TypedModel {
     return _raw.streamText(prompt, options?.toJson()).map(StreamPart.fromJson);
   }
 
+  // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
+
+  /// Generate text (non-streaming) with OpenAI Chat Completions output.
+  ///
+  /// Returns a typed [ChatCompletion]. Throws if the provider returns an error.
+  ChatCompletion generateTextAsOpenAI(
+    String prompt, [
+    GenerateTextOptions? options,
+  ]) {
+    final result = _raw.generateTextAsOpenAI(prompt, options?.toJson());
+    return ChatCompletion.fromJson(result);
+  }
+
+  /// Generate text from a list of typed [ModelMessage]s with OpenAI Chat
+  /// Completions output.
+  ChatCompletion generateTextAsOpenAIMessages(
+    List<ModelMessage> messages, [
+    GenerateTextOptions? options,
+  ]) {
+    final prompt = messages.map((m) => m.toJson()).toList();
+    final result = _raw.generateTextAsOpenAI(prompt, options?.toJson());
+    return ChatCompletion.fromJson(result);
+  }
+
+  /// Stream text with OpenAI Chat Completions output, yielding typed
+  /// [ChatCompletionChunk]s (RFC-0026).
+  ///
+  /// [prompt] may be a `String` or a `List<Map<String, dynamic>>` of messages.
+  /// Stream options (`include_usage`, `include_reasoning`) are passed via
+  /// `options.providerOptions` → `openai.stream_options` on the wire.
+  Stream<ChatCompletionChunk> streamTextAsOpenAI(
+    Object prompt, [
+    GenerateTextOptions? options,
+  ]) {
+    return _raw
+        .streamTextAsOpenAI(prompt, options?.toJson())
+        .map(ChatCompletionChunk.fromJson);
+  }
+
   /// Release the native handle. Delegates to the wrapped [Model]; safe to
   /// call multiple times.
   void close() => _raw.close();

@@ -205,6 +205,174 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
         error?.let { throw AimuxException(it) }
     }
 
+    // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
+
+    /**
+     * Generate text (non-streaming) with OpenAI Chat Completions output.
+     *
+     * @param prompt  Plain text prompt (encoded as a JSON string on the wire).
+     * @param options Optional typed [GenerateTextOptions].
+     * @return Decoded [ChatCompletion].
+     */
+    fun generateTextAsOpenAI(prompt: String, options: GenerateTextOptions? = null): ChatCompletion {
+        val promptJson = AimuxJson.encodeToString(prompt)
+        val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        val resultJson = raw.generateTextAsOpenAI(promptJson, optsJson)
+        return decodeChatCompletion(resultJson)
+    }
+
+    /**
+     * Generate text from a multi-role message list with OpenAI Chat Completions
+     * output.
+     *
+     * @param messages Conversation as a list of [ModelMessage]s.
+     * @param options  Optional typed [GenerateTextOptions].
+     * @return Decoded [ChatCompletion].
+     */
+    fun generateTextAsOpenAI(
+        messages: List<ModelMessage>, options: GenerateTextOptions? = null
+    ): ChatCompletion {
+        val promptJson = AimuxJson.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(ModelMessage.serializer()),
+            messages,
+        )
+        val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        val resultJson = raw.generateTextAsOpenAI(promptJson, optsJson)
+        return decodeChatCompletion(resultJson)
+    }
+
+    private fun decodeChatCompletion(resultJson: String): ChatCompletion {
+        val firstChar = resultJson.trimStart().firstOrNull()
+        if (firstChar == '{') {
+            val obj = AimuxJson.parseToJsonElement(resultJson).jsonObject
+            obj["error"]?.jsonPrimitive?.contentOrNull?.let { msg ->
+                throw AimuxException(msg)
+            }
+        }
+        return AimuxJson.decodeFromString(ChatCompletion.serializer(), resultJson)
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output, yielding typed
+     * [ChatCompletionChunk]s. Blocks the calling thread until the stream
+     * completes.
+     *
+     * @param prompt   Plain text prompt.
+     * @param options  Optional typed [GenerateTextOptions].
+     * @param onPart   Called for each decoded [ChatCompletionChunk].
+     * @param onDone   Called when the stream completes normally.
+     * @param onError  Called (with a message) on a stream error.
+     */
+    fun streamTextAsOpenAI(
+        prompt: String,
+        options: GenerateTextOptions? = null,
+        onPart: (ChatCompletionChunk) -> Unit,
+        onDone: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        streamTextAsOpenAIChunks(
+            promptJson = AimuxJson.encodeToString(prompt),
+            options = options,
+            onPart = onPart,
+            onDone = onDone,
+            onError = onError,
+        )
+    }
+
+    /**
+     * Stream text from a multi-role message list with OpenAI Chat Completions
+     * output, yielding typed [ChatCompletionChunk]s.
+     */
+    fun streamTextAsOpenAI(
+        messages: List<ModelMessage>,
+        options: GenerateTextOptions? = null,
+        onPart: (ChatCompletionChunk) -> Unit,
+        onDone: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        streamTextAsOpenAIChunks(
+            promptJson = AimuxJson.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(ModelMessage.serializer()),
+                messages,
+            ),
+            options = options,
+            onPart = onPart,
+            onDone = onDone,
+            onError = onError,
+        )
+    }
+
+    private fun streamTextAsOpenAIChunks(
+        promptJson: String,
+        options: GenerateTextOptions?,
+        onPart: (ChatCompletionChunk) -> Unit,
+        onDone: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        raw.streamTextAsOpenAI(
+            promptJson = promptJson,
+            optsJson = optsJson,
+            onPart = { chunkJson ->
+                try {
+                    onPart(AimuxJson.decodeFromString(ChatCompletionChunk.serializer(), chunkJson))
+                } catch (error: Exception) {
+                    onError("failed to decode ChatCompletionChunk: ${error.message ?: error::class.simpleName}")
+                }
+            },
+            onDone = onDone,
+            onError = onError,
+        )
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output as a [Sequence] of typed
+     * [ChatCompletionChunk]s (RFC-0026).
+     */
+    fun streamTextAsOpenAISequence(
+        prompt: String,
+        options: GenerateTextOptions? = null,
+    ): Sequence<ChatCompletionChunk> = streamTextAsOpenAISequenceParts(
+        AimuxJson.encodeToString(prompt), options,
+    )
+
+    /**
+     * Stream text from a multi-role message list with OpenAI Chat Completions
+     * output as a [Sequence] of typed [ChatCompletionChunk]s.
+     */
+    fun streamTextAsOpenAISequence(
+        messages: List<ModelMessage>,
+        options: GenerateTextOptions? = null,
+    ): Sequence<ChatCompletionChunk> = streamTextAsOpenAISequenceParts(
+        AimuxJson.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(ModelMessage.serializer()),
+            messages,
+        ),
+        options,
+    )
+
+    private fun streamTextAsOpenAISequenceParts(
+        promptJson: String,
+        options: GenerateTextOptions?,
+    ): Sequence<ChatCompletionChunk> = sequence {
+        val parts = java.util.concurrent.LinkedBlockingQueue<ChatCompletionChunk?>()
+        var error: String? = null
+
+        streamTextAsOpenAIChunks(
+            promptJson = promptJson,
+            options = options,
+            onPart = { parts.put(it) },
+            onDone = { parts.put(null) },
+            onError = { error = it; parts.put(null) },
+        )
+
+        while (true) {
+            val part = parts.take() ?: break
+            yield(part)
+        }
+        error?.let { throw AimuxException(it) }
+    }
+
     // ── Companion: provider constructors that own the handle ─────────────
 
     companion object {

@@ -1209,6 +1209,247 @@ public enum StreamPart: Codable, Equatable {
     }
 }
 
+// MARK: - OpenAI Chat Completions output (RFC-0026)
+
+/// A complete Chat Completion response (non-streaming).
+///
+/// Mirrors the OpenAI `chat.completion` object (`aimux-core`:
+/// `ChatCompletion`). Produced by `generateTextAsOpenAI`.
+public struct ChatCompletion: Codable, Equatable {
+    public var id: String
+    public var object: String
+    public var created: UInt64
+    public var model: String
+    public var choices: [ChatCompletionChoice]
+    public var usage: ChatCompletionUsage
+    public var systemFingerprint: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, object, created, model, choices, usage
+        case systemFingerprint = "system_fingerprint"
+    }
+
+    public init(id: String, object: String, created: UInt64, model: String,
+                choices: [ChatCompletionChoice], usage: ChatCompletionUsage,
+                systemFingerprint: String? = nil) {
+        self.id = id; self.object = object; self.created = created
+        self.model = model; self.choices = choices; self.usage = usage
+        self.systemFingerprint = systemFingerprint
+    }
+}
+
+public struct ChatCompletionChoice: Codable, Equatable {
+    public var index: UInt32
+    public var message: ChatCompletionMessage
+    public var finishReason: String?
+    /// Raw `logprobs` payload (arbitrary JSON).
+    public var logprobs: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case index, message
+        case finishReason = "finish_reason"
+        case logprobs
+    }
+
+    public init(index: UInt32, message: ChatCompletionMessage,
+                finishReason: String? = nil, logprobs: JSONValue? = nil) {
+        self.index = index; self.message = message
+        self.finishReason = finishReason; self.logprobs = logprobs
+    }
+}
+
+public struct ChatCompletionMessage: Codable, Equatable {
+    public var role: String
+    public var content: String?
+    public var reasoningContent: String?
+    public var toolCalls: [ChatCompletionToolCall]?
+    /// Raw `annotations` payload (array of arbitrary JSON).
+    public var annotations: [JSONValue]?
+
+    enum CodingKeys: String, CodingKey {
+        case role, content
+        case reasoningContent = "reasoning_content"
+        case toolCalls = "tool_calls"
+        case annotations
+    }
+
+    public init(role: String, content: String? = nil, reasoningContent: String? = nil,
+                toolCalls: [ChatCompletionToolCall]? = nil, annotations: [JSONValue]? = nil) {
+        self.role = role; self.content = content; self.reasoningContent = reasoningContent
+        self.toolCalls = toolCalls; self.annotations = annotations
+    }
+}
+
+/// A tool call in a `ChatCompletionMessage`.
+///
+/// Wire: `{"id","type":"function","function":{"name","arguments"}}`.
+/// The `type` field is JSON `"type"` (Rust `#[serde(rename = "type")]`).
+public struct ChatCompletionToolCall: Codable, Equatable {
+    public var id: String
+    /// Wire key `"type"`.
+    public var toolType: String
+    public var function: ChatCompletionFunction
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case toolType = "type"
+        case function
+    }
+
+    public init(id: String, toolType: String, function: ChatCompletionFunction) {
+        self.id = id; self.toolType = toolType; self.function = function
+    }
+}
+
+public struct ChatCompletionFunction: Codable, Equatable {
+    public var name: String
+    public var arguments: String
+
+    public init(name: String, arguments: String) {
+        self.name = name; self.arguments = arguments
+    }
+}
+
+/// A single Chat Completion chunk (streaming).
+///
+/// Mirrors the OpenAI `chat.completion.chunk` object (`aimux-core`:
+/// `ChatCompletionChunk`). Emitted by `streamTextAsOpenAI`.
+public struct ChatCompletionChunk: Codable, Equatable {
+    public var id: String
+    public var object: String
+    public var created: UInt64
+    public var model: String
+    public var choices: [ChatCompletionChunkChoice]
+    public var usage: ChatCompletionUsage?
+
+    public init(id: String, object: String, created: UInt64, model: String,
+                choices: [ChatCompletionChunkChoice], usage: ChatCompletionUsage? = nil) {
+        self.id = id; self.object = object; self.created = created
+        self.model = model; self.choices = choices; self.usage = usage
+    }
+}
+
+public struct ChatCompletionChunkChoice: Codable, Equatable {
+    public var index: UInt32
+    public var delta: ChatCompletionDelta
+    public var finishReason: String?
+    public var logprobs: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case index, delta
+        case finishReason = "finish_reason"
+        case logprobs
+    }
+
+    public init(index: UInt32, delta: ChatCompletionDelta,
+                finishReason: String? = nil, logprobs: JSONValue? = nil) {
+        self.index = index; self.delta = delta
+        self.finishReason = finishReason; self.logprobs = logprobs
+    }
+}
+
+public struct ChatCompletionDelta: Codable, Equatable {
+    public var role: String?
+    public var content: String?
+    public var reasoningContent: String?
+    public var toolCalls: [ChatCompletionChunkToolCall]?
+
+    enum CodingKeys: String, CodingKey {
+        case role, content
+        case reasoningContent = "reasoning_content"
+        case toolCalls = "tool_calls"
+    }
+
+    public init(role: String? = nil, content: String? = nil,
+                reasoningContent: String? = nil, toolCalls: [ChatCompletionChunkToolCall]? = nil) {
+        self.role = role; self.content = content; self.reasoningContent = reasoningContent
+        self.toolCalls = toolCalls
+    }
+}
+
+/// A tool call delta in a `ChatCompletionChunk`.
+///
+/// Wire: `{"index","id"?,"type":"function"?,"function":{"name"?,"arguments"?}}`.
+/// The `type` field is JSON `"type"` (Rust `#[serde(rename = "type")]`).
+public struct ChatCompletionChunkToolCall: Codable, Equatable {
+    public var index: UInt32
+    public var id: String?
+    /// Wire key `"type"`.
+    public var toolType: String?
+    public var function: ChatCompletionChunkFunction
+
+    enum CodingKeys: String, CodingKey {
+        case index, id
+        case toolType = "type"
+        case function
+    }
+
+    public init(index: UInt32, id: String? = nil, toolType: String? = nil,
+                function: ChatCompletionChunkFunction) {
+        self.index = index; self.id = id; self.toolType = toolType; self.function = function
+    }
+}
+
+public struct ChatCompletionChunkFunction: Codable, Equatable {
+    public var name: String?
+    public var arguments: String?
+
+    public init(name: String? = nil, arguments: String? = nil) {
+        self.name = name; self.arguments = arguments
+    }
+}
+
+public struct ChatCompletionUsage: Codable, Equatable {
+    public var promptTokens: UInt32
+    public var completionTokens: UInt32
+    public var totalTokens: UInt32
+    public var promptTokensDetails: PromptTokensDetails?
+    public var completionTokensDetails: CompletionTokensDetails?
+
+    enum CodingKeys: String, CodingKey {
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalTokens = "total_tokens"
+        case promptTokensDetails = "prompt_tokens_details"
+        case completionTokensDetails = "completion_tokens_details"
+    }
+
+    public init(promptTokens: UInt32, completionTokens: UInt32, totalTokens: UInt32,
+                promptTokensDetails: PromptTokensDetails? = nil,
+                completionTokensDetails: CompletionTokensDetails? = nil) {
+        self.promptTokens = promptTokens; self.completionTokens = completionTokens
+        self.totalTokens = totalTokens
+        self.promptTokensDetails = promptTokensDetails
+        self.completionTokensDetails = completionTokensDetails
+    }
+}
+
+public struct PromptTokensDetails: Codable, Equatable {
+    public var cachedTokens: UInt32
+    public var cacheWriteTokens: UInt32?
+
+    enum CodingKeys: String, CodingKey {
+        case cachedTokens = "cached_tokens"
+        case cacheWriteTokens = "cache_write_tokens"
+    }
+
+    public init(cachedTokens: UInt32, cacheWriteTokens: UInt32? = nil) {
+        self.cachedTokens = cachedTokens; self.cacheWriteTokens = cacheWriteTokens
+    }
+}
+
+public struct CompletionTokensDetails: Codable, Equatable {
+    public var reasoningTokens: UInt32?
+
+    enum CodingKeys: String, CodingKey {
+        case reasoningTokens = "reasoning_tokens"
+    }
+
+    public init(reasoningTokens: UInt32? = nil) {
+        self.reasoningTokens = reasoningTokens
+    }
+}
+
 // MARK: - Typed wrapper methods (extra layer over the raw C-ABI API)
 
 public extension Model {
@@ -1289,6 +1530,93 @@ public extension Model {
     ) -> AsyncThrowingStream<StreamPart, Error> {
         AsyncThrowingStream { continuation in
             self.streamText(
+                prompt: prompt, options: options,
+                onPart: { continuation.yield($0) },
+                onDone: { continuation.finish() },
+                onError: { continuation.finish(throwing: AimuxError.streamError($0)) }
+            )
+        }
+    }
+
+    // MARK: OpenAI-compatible output (RFC-0026)
+
+    /// Generate text (non-streaming) with OpenAI Chat Completions output.
+    ///
+    /// - Parameters:
+    ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
+    ///     (`.messages`), serialized to the JSON shape the FFI expects.
+    ///   - options: Optional `GenerateTextOptions`.
+    /// - Returns: A decoded `ChatCompletion`.
+    func generateTextAsOpenAI(
+        prompt: ModelPrompt,
+        options: GenerateTextOptions? = nil
+    ) throws -> ChatCompletion {
+        let promptJson = try AimuxCodable.jsonString(for: prompt)
+        let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
+        let resultJson = try generateTextAsOpenAI(prompt: promptJson, options: optsJson)
+        guard let data = resultJson.data(using: .utf8) else {
+            throw AimuxError.serializationError("generate_text_as_openai returned non-UTF-8 result")
+        }
+        do {
+            return try JSONDecoder().decode(ChatCompletion.self, from: data)
+        } catch {
+            throw AimuxError.serializationError("failed to decode ChatCompletion: \(error)")
+        }
+    }
+
+    /// Stream text with OpenAI Chat Completions output, yielding typed
+    /// `ChatCompletionChunk`s.
+    ///
+    /// Each raw JSON-string chunk is decoded into a `ChatCompletionChunk`
+    /// before being passed to `onPart`. A chunk that fails to decode is
+    /// reported via `onError` (the stream otherwise continues until
+    /// done/error). Stream options (`include_usage`, `include_reasoning`) are
+    /// passed via `options.providerOptions.openai.stream_options`.
+    func streamTextAsOpenAI(
+        prompt: ModelPrompt,
+        options: GenerateTextOptions? = nil,
+        onPart: @escaping (ChatCompletionChunk) -> Void,
+        onDone: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) {
+        let promptJson: String
+        do {
+            promptJson = try AimuxCodable.jsonString(for: prompt)
+        } catch {
+            onError("invalid prompt: \(error)")
+            return
+        }
+        let optsJson: String?
+        do {
+            optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
+        } catch {
+            onError("invalid options: \(error)")
+            return
+        }
+        streamTextAsOpenAI(prompt: promptJson, options: optsJson,
+                           onPart: { json in
+                               guard let data = json.data(using: .utf8) else {
+                                   onError("stream chunk was non-UTF-8")
+                                   return
+                               }
+                               if let chunk = try? JSONDecoder().decode(ChatCompletionChunk.self, from: data) {
+                                   onPart(chunk)
+                               } else {
+                                   onError("failed to decode ChatCompletionChunk: \(json)")
+                               }
+                           },
+                           onDone: onDone,
+                           onError: onError)
+    }
+
+    /// Stream text with OpenAI Chat Completions output as an `AsyncSequence`
+    /// of typed `ChatCompletionChunk`s (RFC-0026).
+    func streamTextAsOpenAIAsync(
+        prompt: ModelPrompt,
+        options: GenerateTextOptions? = nil
+    ) -> AsyncThrowingStream<ChatCompletionChunk, Error> {
+        AsyncThrowingStream { continuation in
+            self.streamTextAsOpenAI(
                 prompt: prompt, options: options,
                 onPart: { continuation.yield($0) },
                 onDone: { continuation.finish() },
