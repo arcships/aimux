@@ -720,13 +720,17 @@ func (m *Model) StreamTextContext(ctx context.Context, promptJson, optsJson stri
 	abortHandle := uint64(C.aimux_abort_signal_new())
 	entry, id := registerStream(abortHandle)
 
-	go func() {
-		select {
-		case <-ctx.Done():
-			entry.cancel(ctx.Err())
-		case <-entry.terminal:
-		}
-	}()
+	if err := ctx.Err(); err != nil {
+		entry.cancel(err)
+	} else if done := ctx.Done(); done != nil {
+		go func() {
+			select {
+			case <-done:
+				entry.cancel(ctx.Err())
+			case <-entry.terminal:
+			}
+		}()
+	}
 
 	go func() {
 		runtime.LockOSThread()

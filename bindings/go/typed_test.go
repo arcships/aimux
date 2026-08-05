@@ -6,8 +6,11 @@
 package aimux
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 )
 
 func TestTypedGenerateString(t *testing.T) {
@@ -165,6 +168,82 @@ func TestTypedStreamMessages(t *testing.T) {
 	}
 	if err := stream.Err(); err != nil {
 		t.Fatalf("stream error: %v", err)
+	}
+}
+
+func TestTypedStreamContextAlreadyCanceled(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o")
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	stream, err := m.StreamContext(ctx, "cancel now", nil)
+	if err != nil {
+		t.Fatalf("StreamContext failed: %v", err)
+	}
+	defer stream.Cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		for range stream.Parts() {
+		}
+		done <- stream.Err()
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pre-canceled typed stream did not stop")
+	}
+
+	stream.Cancel()
+	stream.Cancel()
+}
+
+func TestTypedStreamCancelUnblocksFullPartsChannel(t *testing.T) {
+	srv, allSent, requestDone := newBackpressureSSEServer(1200)
+	defer srv.Close()
+	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	defer m.Close()
+
+	stream, err := m.Stream("fill the typed channel", nil)
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+	defer stream.Cancel()
+
+	select {
+	case <-allSent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider did not send the SSE burst")
+	}
+	waitForChannelFull(t, stream.parts)
+	select {
+	case <-stream.raw.entry.terminal:
+		t.Fatal("typed stream ended before cancellation")
+	default:
+	}
+
+	stream.Cancel()
+	stream.Cancel()
+	done := make(chan error, 1)
+	go func() { done <- stream.Err() }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("full typed parts channel stayed blocked after cancellation")
+	}
+	select {
+	case <-requestDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider request stayed open after typed cancellation")
 	}
 }
 

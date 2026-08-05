@@ -117,6 +117,44 @@ func (s *mockProviderServer) SetContentType(ct string) {
 	s.contentType = ct
 }
 
+// newBackpressureSSEServer sends enough parts to fill the Go channel. It then
+// keeps the HTTP request open until the client cancels it.
+func newBackpressureSSEServer(chunks int) (*httptest.Server, <-chan struct{}, <-chan struct{}) {
+	allSent := make(chan struct{})
+	requestDone := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(requestDone)
+		_, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		for i := 0; i < chunks; i++ {
+			chunk := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"content":"x"}}]}`
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		close(allSent)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	return server, allSent, requestDone
+}
+
+func waitForChannelFull[T any](t *testing.T, channel chan T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(channel) < cap(channel) {
+		if time.Now().After(deadline) {
+			t.Fatalf("channel did not fill: got %d of %d", len(channel), cap(channel))
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // ── Canned OpenAI responses ────────────────────────────────────────────────────
 
 // plainOpenAIResponse is a plain OpenAI text response (no tool calls).
@@ -456,6 +494,50 @@ func TestStreamTextContextCancelsInFlightRequest(t *testing.T) {
 	case <-requestDone:
 	case <-time.After(2 * time.Second):
 		t.Fatal("provider request stayed open after cancellation")
+	}
+}
+
+func TestStreamCancelUnblocksFullPartsChannel(t *testing.T) {
+	srv, allSent, requestDone := newBackpressureSSEServer(800)
+	defer srv.Close()
+
+	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	defer m.Close()
+	stream := m.StreamText(`"fill the channel"`, "")
+	defer stream.Cancel()
+
+	select {
+	case <-allSent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider did not send the SSE burst")
+	}
+	waitForChannelFull(t, stream.entry.parts)
+	select {
+	case <-stream.entry.terminal:
+		t.Fatal("stream ended before cancellation")
+	default:
+	}
+
+	stream.Cancel()
+	stream.Cancel()
+	drained := make(chan struct{})
+	go func() {
+		for range stream.Parts() {
+		}
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("full parts channel stayed blocked after cancellation")
+	}
+	if !errors.Is(stream.Err(), context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", stream.Err())
+	}
+	select {
+	case <-requestDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider request stayed open after backpressure cancellation")
 	}
 }
 

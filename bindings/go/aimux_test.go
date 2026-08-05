@@ -110,7 +110,9 @@ func TestStreamTextReturnsStream(t *testing.T) {
 
 func TestStreamTextContextAlreadyCanceled(t *testing.T) {
 	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
-	defer m.Close()
+	if err := m.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
