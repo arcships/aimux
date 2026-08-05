@@ -242,6 +242,13 @@ jobs:
           export CGO_LDFLAGS="-L${{ github.workspace }}/target/release"
           go vet ./...
           go test ./...
+      - name: Race test Go binding
+        if: runner.os == 'Linux'
+        working-directory: bindings/go
+        shell: bash
+        run: |
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/release"
+          go test -race ./...
 
   # ── Flutter binding: plugin structure + Dart tests (host FFI lib) ─────────
   flutter-binding:
