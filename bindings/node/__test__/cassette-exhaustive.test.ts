@@ -116,6 +116,9 @@ function extractPrompt(cass: Cassette): string {
 const cassettes = loadChatCassettes()
 
 test(`exhaustive: ${cassettes.length} chat/completions cassettes replayed`, async (t) => {
+  // 803 sequential replays: ~2.5s idle but >10s (ava's default timeout) on a
+  // loaded machine, so give the whole run explicit headroom.
+  t.timeout(120_000)
   t.true(cassettes.length > 700, `expected 700+ chat cassettes, got ${cassettes.length}`)
 
   let passed = 0

@@ -534,18 +534,16 @@ public struct EmbeddingUsage: Codable, Equatable {
 
 /// Provider response metadata for embeddings.
 public struct EmbeddingResponse: Codable, Equatable {
-    public var id: String?
-    public var modelId: String?
-    public var timestamp: String?
+    public var headers: [String: String]?
+    public var body: JSONValue?
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case modelId = "model_id"
-        case timestamp
+        case headers
+        case body
     }
 
-    public init(id: String? = nil, modelId: String? = nil, timestamp: String? = nil) {
-        self.id = id; self.modelId = modelId; self.timestamp = timestamp
+    public init(headers: [String: String]? = nil, body: JSONValue? = nil) {
+        self.headers = headers; self.body = body
     }
 }
 
@@ -604,20 +602,44 @@ public enum AudioData: Codable, Equatable {
     }
 }
 
+/// Response information for a speech call.
+public struct SpeechResponse: Codable, Equatable {
+    public var timestamp: String?
+    public var modelId: String?
+    public var headers: [String: String]?
+    public var body: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp
+        case modelId = "model_id"
+        case headers
+        case body
+    }
+
+    public init(timestamp: String? = nil, modelId: String? = nil,
+                headers: [String: String]? = nil, body: JSONValue? = nil) {
+        self.timestamp = timestamp; self.modelId = modelId
+        self.headers = headers; self.body = body
+    }
+}
+
 /// The result of a speech generation call.
 public struct SpeechResult: Codable, Equatable {
     public var audio: AudioData
+    public var response: SpeechResponse
     public var providerMetadata: JSONValue?
     public var warnings: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case audio
+        case audio, response
         case providerMetadata = "provider_metadata"
         case warnings
     }
 
-    public init(audio: AudioData, providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
-        self.audio = audio; self.providerMetadata = providerMetadata; self.warnings = warnings
+    public init(audio: AudioData, response: SpeechResponse,
+                providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
+        self.audio = audio; self.response = response
+        self.providerMetadata = providerMetadata; self.warnings = warnings
     }
 }
 
@@ -655,20 +677,40 @@ public enum ImageOutputs: Codable, Equatable {
     }
 }
 
+/// Response information for an image generation call.
+public struct ImageResponse: Codable, Equatable {
+    public var timestamp: String?
+    public var modelId: String?
+    public var headers: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp
+        case modelId = "model_id"
+        case headers
+    }
+
+    public init(timestamp: String? = nil, modelId: String? = nil, headers: [String: String]? = nil) {
+        self.timestamp = timestamp; self.modelId = modelId; self.headers = headers
+    }
+}
+
 /// The result of an image generation call.
 public struct ImageResult: Codable, Equatable {
     public var images: ImageOutputs
+    public var response: ImageResponse
     public var providerMetadata: JSONValue?
     public var warnings: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case images
+        case images, response
         case providerMetadata = "provider_metadata"
         case warnings
     }
 
-    public init(images: ImageOutputs, providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
-        self.images = images; self.providerMetadata = providerMetadata; self.warnings = warnings
+    public init(images: ImageOutputs, response: ImageResponse,
+                providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
+        self.images = images; self.response = response
+        self.providerMetadata = providerMetadata; self.warnings = warnings
     }
 }
 
@@ -677,11 +719,48 @@ public struct ImageResult: Codable, Equatable {
 /// A transcript segment with timing.
 public struct TranscriptionSegment: Codable, Equatable {
     public var text: String
-    public var start: Double?
-    public var end: Double?
+    /// Required `f64` in the core, not an `Option` — see `TranscriptionSegment.ts` —
+    /// so these stay non-optional and are always encoded; a provider that omits
+    /// them decodes to `0` rather than failing.
+    public var startSecond: Double
+    public var endSecond: Double
 
-    public init(text: String, start: Double? = nil, end: Double? = nil) {
-        self.text = text; self.start = start; self.end = end
+    enum CodingKeys: String, CodingKey {
+        case text
+        case startSecond = "start_second"
+        case endSecond = "end_second"
+    }
+
+    public init(text: String, startSecond: Double, endSecond: Double) {
+        self.text = text; self.startSecond = startSecond; self.endSecond = endSecond
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        self.startSecond = try c.decodeIfPresent(Double.self, forKey: .startSecond) ?? 0
+        self.endSecond = try c.decodeIfPresent(Double.self, forKey: .endSecond) ?? 0
+    }
+}
+
+/// Response information for a transcription call.
+public struct TranscriptionResponse: Codable, Equatable {
+    public var timestamp: String?
+    public var modelId: String?
+    public var headers: [String: String]?
+    public var body: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp
+        case modelId = "model_id"
+        case headers
+        case body
+    }
+
+    public init(timestamp: String? = nil, modelId: String? = nil,
+                headers: [String: String]? = nil, body: JSONValue? = nil) {
+        self.timestamp = timestamp; self.modelId = modelId
+        self.headers = headers; self.body = body
     }
 }
 
@@ -690,18 +769,21 @@ public struct TranscriptionResult: Codable, Equatable {
     public var text: String
     public var segments: [TranscriptionSegment]?
     public var language: String?
+    public var response: TranscriptionResponse
     public var providerMetadata: JSONValue?
     public var warnings: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case text, segments, language
+        case text, segments, language, response
         case providerMetadata = "provider_metadata"
         case warnings
     }
 
-    public init(text: String, segments: [TranscriptionSegment]? = nil, language: String? = nil,
+    public init(text: String, response: TranscriptionResponse,
+                segments: [TranscriptionSegment]? = nil, language: String? = nil,
                 providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
-        self.text = text; self.segments = segments; self.language = language
+        self.text = text; self.response = response
+        self.segments = segments; self.language = language
         self.providerMetadata = providerMetadata; self.warnings = warnings
     }
 }
@@ -790,20 +872,40 @@ public enum VideoData: Codable, Equatable {
     }
 }
 
+/// Response information for a video generation call.
+public struct VideoResponse: Codable, Equatable {
+    public var timestamp: String?
+    public var modelId: String?
+    public var headers: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp
+        case modelId = "model_id"
+        case headers
+    }
+
+    public init(timestamp: String? = nil, modelId: String? = nil, headers: [String: String]? = nil) {
+        self.timestamp = timestamp; self.modelId = modelId; self.headers = headers
+    }
+}
+
 /// The result of a video generation call.
 public struct VideoResult: Codable, Equatable {
     public var videos: [VideoData]
+    public var response: VideoResponse
     public var providerMetadata: JSONValue?
     public var warnings: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case videos
+        case videos, response
         case providerMetadata = "provider_metadata"
         case warnings
     }
 
-    public init(videos: [VideoData], providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
-        self.videos = videos; self.providerMetadata = providerMetadata; self.warnings = warnings
+    public init(videos: [VideoData], response: VideoResponse,
+                providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
+        self.videos = videos; self.response = response
+        self.providerMetadata = providerMetadata; self.warnings = warnings
     }
 }
 
@@ -824,20 +926,46 @@ public struct RerankingRank: Codable, Equatable {
     }
 }
 
+/// Optional response information for a reranking call.
+public struct RerankingResponse: Codable, Equatable {
+    public var id: String?
+    public var timestamp: String?
+    public var modelId: String?
+    public var headers: [String: String]?
+    public var body: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case timestamp
+        case modelId = "model_id"
+        case headers
+        case body
+    }
+
+    public init(id: String? = nil, timestamp: String? = nil, modelId: String? = nil,
+                headers: [String: String]? = nil, body: JSONValue? = nil) {
+        self.id = id; self.timestamp = timestamp; self.modelId = modelId
+        self.headers = headers; self.body = body
+    }
+}
+
 /// The result of a reranking call.
 public struct RerankingResult: Codable, Equatable {
     public var ranking: [RerankingRank]
+    public var response: RerankingResponse?
     public var providerMetadata: JSONValue?
     public var warnings: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case ranking
+        case ranking, response
         case providerMetadata = "provider_metadata"
         case warnings
     }
 
-    public init(ranking: [RerankingRank], providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
-        self.ranking = ranking; self.providerMetadata = providerMetadata; self.warnings = warnings
+    public init(ranking: [RerankingRank], response: RerankingResponse? = nil,
+                providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
+        self.ranking = ranking; self.response = response
+        self.providerMetadata = providerMetadata; self.warnings = warnings
     }
 }
 
@@ -848,9 +976,36 @@ public struct SearchResultItem: Codable, Equatable {
     public var title: String?
     public var url: String?
     public var content: String?
+    public var rawContent: String?
+    public var score: Double?
+    public var providerMetadata: [String: JSONValue]?
 
-    public init(title: String? = nil, url: String? = nil, content: String? = nil) {
+    enum CodingKeys: String, CodingKey {
+        case title, url, content
+        case rawContent = "raw_content"
+        case score
+        case providerMetadata = "provider_metadata"
+    }
+
+    public init(title: String? = nil, url: String? = nil, content: String? = nil,
+                rawContent: String? = nil, score: Double? = nil, providerMetadata: [String: JSONValue]? = nil) {
         self.title = title; self.url = url; self.content = content
+        self.rawContent = rawContent; self.score = score; self.providerMetadata = providerMetadata
+    }
+}
+
+/// Optional response information for a search call.
+public struct SearchResponse: Codable, Equatable {
+    public var headers: [String: String]?
+    public var body: JSONValue?
+
+    enum CodingKeys: String, CodingKey {
+        case headers
+        case body
+    }
+
+    public init(headers: [String: String]? = nil, body: JSONValue? = nil) {
+        self.headers = headers; self.body = body
     }
 }
 
@@ -858,18 +1013,19 @@ public struct SearchResultItem: Codable, Equatable {
 public struct SearchResult: Codable, Equatable {
     public var results: [SearchResultItem]
     public var answer: String?
+    public var response: SearchResponse?
     public var providerMetadata: JSONValue?
     public var warnings: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
-        case results, answer
+        case results, answer, response
         case providerMetadata = "provider_metadata"
         case warnings
     }
 
-    public init(results: [SearchResultItem], answer: String? = nil,
+    public init(results: [SearchResultItem], answer: String? = nil, response: SearchResponse? = nil,
                 providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
-        self.results = results; self.answer = answer
+        self.results = results; self.answer = answer; self.response = response
         self.providerMetadata = providerMetadata; self.warnings = warnings
     }
 }
@@ -879,17 +1035,23 @@ public struct SearchResult: Codable, Equatable {
 /// The result of a file upload.
 public struct UploadFileResult: Codable, Equatable {
     public var providerReference: [String: String]
+    public var mediaType: String?
+    public var filename: String?
     public var providerMetadata: JSONValue?
     public var warnings: [JSONValue]?
 
     enum CodingKeys: String, CodingKey {
         case providerReference = "provider_reference"
+        case mediaType = "media_type"
+        case filename
         case providerMetadata = "provider_metadata"
         case warnings
     }
 
-    public init(providerReference: [String: String], providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
+    public init(providerReference: [String: String], mediaType: String? = nil, filename: String? = nil,
+                providerMetadata: JSONValue? = nil, warnings: [JSONValue]? = nil) {
         self.providerReference = providerReference
+        self.mediaType = mediaType; self.filename = filename
         self.providerMetadata = providerMetadata; self.warnings = warnings
     }
 }

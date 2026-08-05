@@ -2,6 +2,7 @@
 import type { LanguageModelPromptMessage } from "./LanguageModelPromptMessage";
 import type { ReasoningEffort } from "./ReasoningEffort";
 import type { ResponseFormat } from "./ResponseFormat";
+import type { TimeoutConfiguration } from "./TimeoutConfiguration";
 import type { Tool } from "./Tool";
 import type { ToolChoice } from "./ToolChoice";
 import type { JsonValue } from "./serde_json/JsonValue";
@@ -53,7 +54,7 @@ response_format: ResponseFormat | null,
 /**
  * Seed for reproducibility.
  */
-seed: bigint | null, 
+seed: number | null, 
 /**
  * Tools available to the model (function tools and/or provider-defined tools).
  */
@@ -85,4 +86,9 @@ body_overrides: JsonValue | null,
  * Per-call retry count override. `None` uses the provider's configured
  * `RetryConfig.max_retries`. `Some(0)` disables retries.
  */
-max_retries: number | null, };
+max_retries: number | null, 
+/**
+ * Per-call timeout configuration (total / first-chunk / chunk idle).
+ * `None` = no timeouts (provider defaults still apply at the HTTP layer).
+ */
+timeout: TimeoutConfiguration | null, };

@@ -110,6 +110,7 @@ pub struct VideoCallOptions {
     pub fps: Option<u32>,
 
     /// Seed for deterministic generation. `None` uses a random seed.
+    #[ts(type = "number | null")]
     pub seed: Option<u64>,
 
     /// Input image for image-to-video generation (the starting frame).

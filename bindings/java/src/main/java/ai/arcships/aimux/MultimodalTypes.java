@@ -30,7 +30,7 @@ import java.util.Objects;
  * aimux — typed multimodal data structures mirroring the aimux-core wire format.
  *
  * <p>Port of the Kotlin binding's {@code MultimodalTypes.kt}. Same shapes as the
- * ts-rs generated {@code .ts} types in {@code aimux-core/bindings/}. Field
+ * ts-rs generated {@code .ts} types in {@code bindings/node/src/types/}. Field
  * names are camelCase in Java and map to the wire format's snake_case via
  * {@link JsonProperty}.
  *
@@ -81,6 +81,10 @@ public final class MultimodalTypes {
             module.addDeserializer(ImageOutputs.class, new ImageOutputsDeserializer());
             module.addSerializer(VideoData.class, new VideoDataSerializer());
             module.addDeserializer(VideoData.class, new VideoDataDeserializer());
+            module.addSerializer(VideoFileData.class, new VideoFileDataSerializer());
+            module.addDeserializer(VideoFileData.class, new VideoFileDataDeserializer());
+            module.addSerializer(VideoFile.class, new VideoFileSerializer());
+            module.addDeserializer(VideoFile.class, new VideoFileDeserializer());
             m.registerModule(module);
             return m;
         }
@@ -415,43 +419,45 @@ public final class MultimodalTypes {
 
     /** Request metadata for speech generation. */
     public static class SpeechRequest {
-        @JsonProperty("prompt") private String prompt;
+        // Core models this as `body: Option<serde_json::Value>` (speech_model.rs)
+        // — the raw request body, not a prompt string.
+        @JsonProperty("body") private JsonNode body;
 
         @JsonCreator
         SpeechRequest() {}
 
-        private SpeechRequest(String prompt) {
-            this.prompt = prompt;
+        private SpeechRequest(JsonNode body) {
+            this.body = body;
         }
 
-        public static SpeechRequest of(String prompt) {
-            return new SpeechRequest(prompt);
+        public static SpeechRequest of(JsonNode body) {
+            return new SpeechRequest(body);
         }
 
-        public String getPrompt() { return prompt; }
+        public JsonNode getBody() { return body; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
-            private String prompt;
+            private JsonNode body;
 
-            public Builder prompt(String v) { this.prompt = v; return this; }
+            public Builder body(JsonNode v) { this.body = v; return this; }
 
-            public SpeechRequest build() { return new SpeechRequest(prompt); }
+            public SpeechRequest build() { return new SpeechRequest(body); }
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof SpeechRequest)) return false;
-            return Objects.equals(prompt, ((SpeechRequest) o).prompt);
+            return Objects.equals(body, ((SpeechRequest) o).body);
         }
 
         @Override
-        public int hashCode() { return Objects.hash(prompt); }
+        public int hashCode() { return Objects.hash(body); }
 
         @Override
-        public String toString() { return "SpeechRequest(" + prompt + ")"; }
+        public String toString() { return "SpeechRequest(" + body + ")"; }
     }
 
     /** Provider response metadata for speech. */
@@ -811,43 +817,56 @@ public final class MultimodalTypes {
 
     /** Token usage for image generation (if reported). */
     public static class ImageUsage {
-        @JsonProperty("steps") private Long steps;
+        @JsonProperty("input_tokens") private Long inputTokens;
+        @JsonProperty("output_tokens") private Long outputTokens;
+        @JsonProperty("total_tokens") private Long totalTokens;
 
         @JsonCreator
         ImageUsage() {}
 
-        private ImageUsage(Long steps) {
-            this.steps = steps;
+        private ImageUsage(Long inputTokens, Long outputTokens, Long totalTokens) {
+            this.inputTokens = inputTokens;
+            this.outputTokens = outputTokens;
+            this.totalTokens = totalTokens;
         }
 
-        public static ImageUsage of(Long steps) {
-            return new ImageUsage(steps);
+        public static ImageUsage of(Long inputTokens, Long outputTokens, Long totalTokens) {
+            return new ImageUsage(inputTokens, outputTokens, totalTokens);
         }
 
-        public Long getSteps() { return steps; }
+        public Long getInputTokens() { return inputTokens; }
+        public Long getOutputTokens() { return outputTokens; }
+        public Long getTotalTokens() { return totalTokens; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
-            private Long steps;
+            private Long inputTokens;
+            private Long outputTokens;
+            private Long totalTokens;
 
-            public Builder steps(Long v) { this.steps = v; return this; }
+            public Builder inputTokens(Long v) { this.inputTokens = v; return this; }
+            public Builder outputTokens(Long v) { this.outputTokens = v; return this; }
+            public Builder totalTokens(Long v) { this.totalTokens = v; return this; }
 
-            public ImageUsage build() { return new ImageUsage(steps); }
+            public ImageUsage build() { return new ImageUsage(inputTokens, outputTokens, totalTokens); }
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof ImageUsage)) return false;
-            return Objects.equals(steps, ((ImageUsage) o).steps);
+            ImageUsage that = (ImageUsage) o;
+            return Objects.equals(inputTokens, that.inputTokens)
+                && Objects.equals(outputTokens, that.outputTokens)
+                && Objects.equals(totalTokens, that.totalTokens);
         }
 
         @Override
-        public int hashCode() { return Objects.hash(steps); }
+        public int hashCode() { return Objects.hash(inputTokens, outputTokens, totalTokens); }
 
         @Override
-        public String toString() { return "ImageUsage(" + steps + ")"; }
+        public String toString() { return "ImageUsage(" + inputTokens + ", " + outputTokens + ", " + totalTokens + ")"; }
     }
 
     /** Provider response metadata for images. */
@@ -1078,38 +1097,41 @@ public final class MultimodalTypes {
     /** A transcript segment with timing. */
     public static class TranscriptionSegment {
         @JsonProperty("text") private String text = "";
-        @JsonProperty("start") private Double start;
-        @JsonProperty("end") private Double end;
+        // Core declares these as required f64 (TranscriptionSegment.ts), so they
+        // are primitives: NON_NULL inclusion would drop boxed nulls and the core
+        // would reject the payload with `missing field start_second`.
+        @JsonProperty("start_second") private double startSecond;
+        @JsonProperty("end_second") private double endSecond;
 
         @JsonCreator
         TranscriptionSegment() {}
 
-        private TranscriptionSegment(String text, Double start, Double end) {
+        private TranscriptionSegment(String text, double startSecond, double endSecond) {
             this.text = text;
-            this.start = start;
-            this.end = end;
+            this.startSecond = startSecond;
+            this.endSecond = endSecond;
         }
 
-        public static TranscriptionSegment of(String text) {
-            return new TranscriptionSegment(text, null, null);
+        public static TranscriptionSegment of(String text, double startSecond, double endSecond) {
+            return new TranscriptionSegment(text, startSecond, endSecond);
         }
 
         public String getText() { return text; }
-        public Double getStart() { return start; }
-        public Double getEnd() { return end; }
+        public double getStartSecond() { return startSecond; }
+        public double getEndSecond() { return endSecond; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
             private String text = "";
-            private Double start;
-            private Double end;
+            private double startSecond;
+            private double endSecond;
 
             public Builder text(String v) { this.text = v; return this; }
-            public Builder start(Double v) { this.start = v; return this; }
-            public Builder end(Double v) { this.end = v; return this; }
+            public Builder startSecond(double v) { this.startSecond = v; return this; }
+            public Builder endSecond(double v) { this.endSecond = v; return this; }
 
-            public TranscriptionSegment build() { return new TranscriptionSegment(text, start, end); }
+            public TranscriptionSegment build() { return new TranscriptionSegment(text, startSecond, endSecond); }
         }
 
         @Override
@@ -1118,12 +1140,12 @@ public final class MultimodalTypes {
             if (!(o instanceof TranscriptionSegment)) return false;
             TranscriptionSegment that = (TranscriptionSegment) o;
             return Objects.equals(text, that.text)
-                && Objects.equals(start, that.start)
-                && Objects.equals(end, that.end);
+                && Double.compare(startSecond, that.startSecond) == 0
+                && Double.compare(endSecond, that.endSecond) == 0;
         }
 
         @Override
-        public int hashCode() { return Objects.hash(text, start, end); }
+        public int hashCode() { return Objects.hash(text, startSecond, endSecond); }
 
         @Override
         public String toString() { return "TranscriptionSegment(" + text + ")"; }
@@ -1131,50 +1153,45 @@ public final class MultimodalTypes {
 
     /** Request metadata for transcription. */
     public static class TranscriptionRequest {
-        @JsonProperty("audio") private JsonNode audio;
-        @JsonProperty("media_type") private String mediaType;
+        // Core models this as `body: Option<String>` (transcription_model.rs)
+        // — the raw request HTTP body, JSON stringified.
+        @JsonProperty("body") private String body;
 
         @JsonCreator
         TranscriptionRequest() {}
 
-        private TranscriptionRequest(JsonNode audio, String mediaType) {
-            this.audio = audio;
-            this.mediaType = mediaType;
+        private TranscriptionRequest(String body) {
+            this.body = body;
         }
 
-        public static TranscriptionRequest of(JsonNode audio, String mediaType) {
-            return new TranscriptionRequest(audio, mediaType);
+        public static TranscriptionRequest of(String body) {
+            return new TranscriptionRequest(body);
         }
 
-        public JsonNode getAudio() { return audio; }
-        public String getMediaType() { return mediaType; }
+        public String getBody() { return body; }
 
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
-            private JsonNode audio;
-            private String mediaType;
+            private String body;
 
-            public Builder audio(JsonNode v) { this.audio = v; return this; }
-            public Builder mediaType(String v) { this.mediaType = v; return this; }
+            public Builder body(String v) { this.body = v; return this; }
 
-            public TranscriptionRequest build() { return new TranscriptionRequest(audio, mediaType); }
+            public TranscriptionRequest build() { return new TranscriptionRequest(body); }
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof TranscriptionRequest)) return false;
-            TranscriptionRequest that = (TranscriptionRequest) o;
-            return Objects.equals(audio, that.audio)
-                && Objects.equals(mediaType, that.mediaType);
+            return Objects.equals(body, ((TranscriptionRequest) o).body);
         }
 
         @Override
-        public int hashCode() { return Objects.hash(audio, mediaType); }
+        public int hashCode() { return Objects.hash(body); }
 
         @Override
-        public String toString() { return "TranscriptionRequest(" + mediaType + ")"; }
+        public String toString() { return "TranscriptionRequest(" + body + ")"; }
     }
 
     /** Provider response metadata for transcription. */
@@ -2044,13 +2061,379 @@ public final class MultimodalTypes {
         public String toString() { return "VideoResult(" + videos + ")"; }
     }
 
+    /**
+     * File payload for a {@link VideoFile}: a base64 string or raw binary bytes.
+     *
+     * <p>Wire format (serde externally-tagged): {@code {"Base64": "..."}} |
+     * {@code {"Binary": [n,...]}}.
+     */
+    public abstract static class VideoFileData {
+        private VideoFileData() {}
+
+        /** Base64-encoded file data. */
+        public static class Base64 extends VideoFileData {
+            private String value = "";
+
+            @JsonCreator
+            Base64() {}
+
+            public Base64(String value) { this.value = value; }
+
+            public String getValue() { return value; }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof Base64)) return false;
+                return Objects.equals(value, ((Base64) o).value);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(value); }
+
+            @Override
+            public String toString() { return "VideoFileData.Base64(" + value + ")"; }
+        }
+
+        /** Raw binary file bytes (each element is a 0–255 byte value). */
+        public static class Binary extends VideoFileData {
+            private List<Integer> value = new ArrayList<>();
+
+            @JsonCreator
+            Binary() {}
+
+            public Binary(List<Integer> value) { this.value = value; }
+
+            public List<Integer> getValue() { return value; }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof Binary)) return false;
+                return Objects.equals(value, ((Binary) o).value);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(value); }
+
+            @Override
+            public String toString() { return "VideoFileData.Binary(" + value + ")"; }
+        }
+    }
+
+    /** Custom (de)serializer for {@link VideoFileData}: {@code {"Base64": "..."}} | {@code {"Binary": [n,...]}}. */
+    public static class VideoFileDataSerializer extends JsonSerializer<VideoFileData> {
+        @Override
+        public void serialize(VideoFileData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeStartObject();
+            if (value instanceof VideoFileData.Base64) {
+                gen.writeStringField("Base64", ((VideoFileData.Base64) value).getValue());
+            } else if (value instanceof VideoFileData.Binary) {
+                gen.writeArrayFieldStart("Binary");
+                for (Integer b : ((VideoFileData.Binary) value).getValue()) {
+                    gen.writeNumber(b);
+                }
+                gen.writeEndArray();
+            } else {
+                throw new IOException("Unknown VideoFileData: " + value);
+            }
+            gen.writeEndObject();
+        }
+    }
+
+    /** Custom (de)serializer for {@link VideoFileData}. */
+    public static class VideoFileDataDeserializer extends JsonDeserializer<VideoFileData> {
+        @Override
+        public VideoFileData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            JsonNode node = p.getCodec().readTree(p);
+            if (!node.isObject() || node.size() != 1) {
+                throw new IOException("VideoFileData must be a single-key externally-tagged object, got: " + node);
+            }
+            String tag = node.fieldNames().next();
+            JsonNode inner = node.get(tag);
+            switch (tag) {
+                case "Base64":
+                    return new VideoFileData.Base64(inner.asText());
+                case "Binary": {
+                    List<Integer> bytes = new ArrayList<>();
+                    if (inner.isArray()) {
+                        for (JsonNode item : inner) {
+                            bytes.add(item.asInt());
+                        }
+                    }
+                    return new VideoFileData.Binary(bytes);
+                }
+                default:
+                    throw new IOException("Unknown VideoFileData tag: '" + tag + "'");
+            }
+        }
+    }
+
+    /** The {@code File} variant payload of {@link VideoFile}. */
+    public static class VideoFileFileData {
+        @JsonProperty("media_type") private String mediaType = "";
+        @JsonProperty("data") private VideoFileData data = new VideoFileData.Base64("");
+
+        @JsonCreator
+        VideoFileFileData() {}
+
+        private VideoFileFileData(String mediaType, VideoFileData data) {
+            this.mediaType = mediaType;
+            this.data = data;
+        }
+
+        public static VideoFileFileData of(String mediaType, VideoFileData data) {
+            return new VideoFileFileData(mediaType, data);
+        }
+
+        public String getMediaType() { return mediaType; }
+        public VideoFileData getData() { return data; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String mediaType = "";
+            private VideoFileData data = new VideoFileData.Base64("");
+
+            public Builder mediaType(String v) { this.mediaType = v; return this; }
+            public Builder data(VideoFileData v) { this.data = v; return this; }
+
+            public VideoFileFileData build() { return new VideoFileFileData(mediaType, data); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof VideoFileFileData)) return false;
+            VideoFileFileData that = (VideoFileFileData) o;
+            return Objects.equals(mediaType, that.mediaType)
+                && Objects.equals(data, that.data);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(mediaType, data); }
+
+        @Override
+        public String toString() { return "VideoFileFileData(" + mediaType + ", " + data + ")"; }
+    }
+
+    /** The {@code Url} variant payload of {@link VideoFile}. */
+    public static class VideoFileUrlData {
+        @JsonProperty("url") private String url = "";
+        @JsonProperty("media_type") private String mediaType;
+
+        @JsonCreator
+        VideoFileUrlData() {}
+
+        private VideoFileUrlData(String url, String mediaType) {
+            this.url = url;
+            this.mediaType = mediaType;
+        }
+
+        public static VideoFileUrlData of(String url, String mediaType) {
+            return new VideoFileUrlData(url, mediaType);
+        }
+
+        public String getUrl() { return url; }
+        public String getMediaType() { return mediaType; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String url = "";
+            private String mediaType;
+
+            public Builder url(String v) { this.url = v; return this; }
+            public Builder mediaType(String v) { this.mediaType = v; return this; }
+
+            public VideoFileUrlData build() { return new VideoFileUrlData(url, mediaType); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof VideoFileUrlData)) return false;
+            VideoFileUrlData that = (VideoFileUrlData) o;
+            return Objects.equals(url, that.url)
+                && Objects.equals(mediaType, that.mediaType);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(url, mediaType); }
+
+        @Override
+        public String toString() { return "VideoFileUrlData(" + url + ", " + mediaType + ")"; }
+    }
+
+    /**
+     * A video or image file used for video editing or image-to-video generation.
+     *
+     * <p>Wire format (serde externally-tagged): {@code {"File": {...}}} |
+     * {@code {"Url": {...}}}.
+     */
+    public abstract static class VideoFile {
+        private VideoFile() {}
+
+        /** Inline file data (base64 or raw bytes). */
+        public static class File extends VideoFile {
+            private VideoFileFileData value = new VideoFileFileData();
+
+            @JsonCreator
+            File() {}
+
+            public File(VideoFileFileData value) { this.value = value; }
+
+            public VideoFileFileData getValue() { return value; }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof File)) return false;
+                return Objects.equals(value, ((File) o).value);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(value); }
+
+            @Override
+            public String toString() { return "VideoFile.File(" + value + ")"; }
+        }
+
+        /** A URL referencing the file. */
+        public static class Url extends VideoFile {
+            private VideoFileUrlData value = new VideoFileUrlData();
+
+            @JsonCreator
+            Url() {}
+
+            public Url(VideoFileUrlData value) { this.value = value; }
+
+            public VideoFileUrlData getValue() { return value; }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof Url)) return false;
+                return Objects.equals(value, ((Url) o).value);
+            }
+
+            @Override
+            public int hashCode() { return Objects.hash(value); }
+
+            @Override
+            public String toString() { return "VideoFile.Url(" + value + ")"; }
+        }
+    }
+
+    /** Custom (de)serializer for {@link VideoFile}: {@code {"File": {...}}} | {@code {"Url": {...}}}. */
+    public static class VideoFileSerializer extends JsonSerializer<VideoFile> {
+        @Override
+        public void serialize(VideoFile value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeStartObject();
+            if (value instanceof VideoFile.File) {
+                gen.writeFieldName("File");
+                gen.writeTree(AimuxJson.MAPPER.valueToTree(((VideoFile.File) value).getValue()));
+            } else if (value instanceof VideoFile.Url) {
+                gen.writeFieldName("Url");
+                gen.writeTree(AimuxJson.MAPPER.valueToTree(((VideoFile.Url) value).getValue()));
+            } else {
+                throw new IOException("Unknown VideoFile: " + value);
+            }
+            gen.writeEndObject();
+        }
+    }
+
+    /** Custom (de)serializer for {@link VideoFile}. */
+    public static class VideoFileDeserializer extends JsonDeserializer<VideoFile> {
+        @Override
+        public VideoFile deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            JsonNode node = p.getCodec().readTree(p);
+            if (!node.isObject() || node.size() != 1) {
+                throw new IOException("VideoFile must be a single-key externally-tagged object, got: " + node);
+            }
+            String tag = node.fieldNames().next();
+            JsonNode inner = node.get(tag);
+            if (!inner.isObject()) {
+                inner = JsonNodeFactory.instance.objectNode();
+            }
+            switch (tag) {
+                case "File":
+                    return new VideoFile.File(AimuxJson.MAPPER.treeToValue(inner, VideoFileFileData.class));
+                case "Url":
+                    return new VideoFile.Url(AimuxJson.MAPPER.treeToValue(inner, VideoFileUrlData.class));
+                default:
+                    throw new IOException("Unknown VideoFile tag: '" + tag + "'");
+            }
+        }
+    }
+
+    /** The role a frame image plays in video generation. */
+    public enum VideoFrameType {
+        @JsonProperty("FirstFrame") FIRST_FRAME,
+        @JsonProperty("LastFrame") LAST_FRAME,
+    }
+
+    /** A role-tagged image input for image-to-video and first-last-frame generation. */
+    public static class VideoFrameImage {
+        @JsonProperty("image") private VideoFile image = new VideoFile.File(new VideoFileFileData());
+        @JsonProperty("frame_type") private VideoFrameType frameType = VideoFrameType.FIRST_FRAME;
+
+        @JsonCreator
+        VideoFrameImage() {}
+
+        private VideoFrameImage(VideoFile image, VideoFrameType frameType) {
+            this.image = image;
+            this.frameType = frameType;
+        }
+
+        public static VideoFrameImage of(VideoFile image, VideoFrameType frameType) {
+            return new VideoFrameImage(image, frameType);
+        }
+
+        public VideoFile getImage() { return image; }
+        public VideoFrameType getFrameType() { return frameType; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private VideoFile image = new VideoFile.File(new VideoFileFileData());
+            private VideoFrameType frameType = VideoFrameType.FIRST_FRAME;
+
+            public Builder image(VideoFile v) { this.image = v; return this; }
+            public Builder frameType(VideoFrameType v) { this.frameType = v; return this; }
+
+            public VideoFrameImage build() { return new VideoFrameImage(image, frameType); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof VideoFrameImage)) return false;
+            VideoFrameImage that = (VideoFrameImage) o;
+            return Objects.equals(image, that.image)
+                && Objects.equals(frameType, that.frameType);
+        }
+
+        @Override
+        public int hashCode() { return Objects.hash(image, frameType); }
+
+        @Override
+        public String toString() { return "VideoFrameImage(" + image + ", " + frameType + ")"; }
+    }
+
     /** Options for video generation. */
     public static class VideoCallOptions {
         @JsonProperty("prompt") private String prompt;
         @JsonProperty("n") private Integer n;
         @JsonProperty("aspect_ratio") private String aspectRatio;
         @JsonProperty("resolution") private String resolution;
+        @JsonProperty("duration") private Long duration;
+        @JsonProperty("fps") private Double fps;
         @JsonProperty("seed") private Long seed;
+        @JsonProperty("image") private VideoFile image;
+        @JsonProperty("frame_images") private List<VideoFrameImage> frameImages;
+        @JsonProperty("input_references") private List<VideoFile> inputReferences;
+        @JsonProperty("generate_audio") private Boolean generateAudio;
         @JsonProperty("provider_options") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
 
@@ -2058,25 +2441,41 @@ public final class MultimodalTypes {
         VideoCallOptions() {}
 
         private VideoCallOptions(String prompt, Integer n, String aspectRatio, String resolution,
-                                 Long seed, JsonNode providerOptions, Map<String, String> headers) {
+                                 Long duration, Double fps, Long seed,
+                                 VideoFile image, List<VideoFrameImage> frameImages,
+                                 List<VideoFile> inputReferences, Boolean generateAudio,
+                                 JsonNode providerOptions, Map<String, String> headers) {
             this.prompt = prompt;
             this.n = n;
             this.aspectRatio = aspectRatio;
             this.resolution = resolution;
+            this.duration = duration;
+            this.fps = fps;
             this.seed = seed;
+            this.image = image;
+            this.frameImages = frameImages;
+            this.inputReferences = inputReferences;
+            this.generateAudio = generateAudio;
             this.providerOptions = providerOptions;
             this.headers = headers;
         }
 
         public static VideoCallOptions of(String prompt) {
-            return new VideoCallOptions(prompt, null, null, null, null, null, null);
+            return new VideoCallOptions(prompt, null, null, null, null, null, null,
+                                        null, null, null, null, null, null);
         }
 
         public String getPrompt() { return prompt; }
         public Integer getN() { return n; }
         public String getAspectRatio() { return aspectRatio; }
         public String getResolution() { return resolution; }
+        public Long getDuration() { return duration; }
+        public Double getFps() { return fps; }
         public Long getSeed() { return seed; }
+        public VideoFile getImage() { return image; }
+        public List<VideoFrameImage> getFrameImages() { return frameImages; }
+        public List<VideoFile> getInputReferences() { return inputReferences; }
+        public Boolean getGenerateAudio() { return generateAudio; }
         public JsonNode getProviderOptions() { return providerOptions; }
         public Map<String, String> getHeaders() { return headers; }
 
@@ -2087,7 +2486,13 @@ public final class MultimodalTypes {
             private Integer n;
             private String aspectRatio;
             private String resolution;
+            private Long duration;
+            private Double fps;
             private Long seed;
+            private VideoFile image;
+            private List<VideoFrameImage> frameImages;
+            private List<VideoFile> inputReferences;
+            private Boolean generateAudio;
             private JsonNode providerOptions;
             private Map<String, String> headers;
 
@@ -2095,12 +2500,20 @@ public final class MultimodalTypes {
             public Builder n(Integer v) { this.n = v; return this; }
             public Builder aspectRatio(String v) { this.aspectRatio = v; return this; }
             public Builder resolution(String v) { this.resolution = v; return this; }
+            public Builder duration(Long v) { this.duration = v; return this; }
+            public Builder fps(Double v) { this.fps = v; return this; }
             public Builder seed(Long v) { this.seed = v; return this; }
+            public Builder image(VideoFile v) { this.image = v; return this; }
+            public Builder frameImages(List<VideoFrameImage> v) { this.frameImages = v; return this; }
+            public Builder inputReferences(List<VideoFile> v) { this.inputReferences = v; return this; }
+            public Builder generateAudio(Boolean v) { this.generateAudio = v; return this; }
             public Builder providerOptions(JsonNode v) { this.providerOptions = v; return this; }
             public Builder headers(Map<String, String> v) { this.headers = v; return this; }
 
             public VideoCallOptions build() {
-                return new VideoCallOptions(prompt, n, aspectRatio, resolution, seed, providerOptions, headers);
+                return new VideoCallOptions(prompt, n, aspectRatio, resolution, duration, fps, seed,
+                                            image, frameImages, inputReferences, generateAudio,
+                                            providerOptions, headers);
             }
         }
 
@@ -2113,14 +2526,22 @@ public final class MultimodalTypes {
                 && Objects.equals(n, that.n)
                 && Objects.equals(aspectRatio, that.aspectRatio)
                 && Objects.equals(resolution, that.resolution)
+                && Objects.equals(duration, that.duration)
+                && Objects.equals(fps, that.fps)
                 && Objects.equals(seed, that.seed)
+                && Objects.equals(image, that.image)
+                && Objects.equals(frameImages, that.frameImages)
+                && Objects.equals(inputReferences, that.inputReferences)
+                && Objects.equals(generateAudio, that.generateAudio)
                 && Objects.equals(providerOptions, that.providerOptions)
                 && Objects.equals(headers, that.headers);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(prompt, n, aspectRatio, resolution, seed, providerOptions, headers);
+            return Objects.hash(prompt, n, aspectRatio, resolution, duration, fps, seed,
+                                image, frameImages, inputReferences, generateAudio,
+                                providerOptions, headers);
         }
 
         @Override

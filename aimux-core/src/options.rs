@@ -38,10 +38,16 @@ pub enum ResponseFormat {
 pub struct TimeoutConfiguration {
     /// Overall timeout for the entire call (including retries and, for
     /// streaming, the whole stream), in milliseconds.
+    // `number`, not the `bigint` ts-rs infers from u64: the JS bindings pass
+    // options through `JSON.stringify`, which throws on BigInt. Milliseconds
+    // cannot reach 2^53 (~285k years), so precision is never at stake.
+    #[ts(type = "number | null")]
     pub total_ms: Option<u64>,
     /// Timeout waiting for the first stream chunk (streaming only).
+    #[ts(type = "number | null")]
     pub first_chunk_ms: Option<u64>,
     /// Maximum idle time between consecutive stream chunks (streaming only).
+    #[ts(type = "number | null")]
     pub chunk_ms: Option<u64>,
 }
 
@@ -81,6 +87,7 @@ pub struct CallOptions {
     pub response_format: Option<ResponseFormat>,
 
     /// Seed for reproducibility.
+    #[ts(type = "number | null")]
     pub seed: Option<u64>,
 
     /// Tools available to the model (function tools and/or provider-defined tools).

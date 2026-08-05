@@ -54,9 +54,10 @@ Map<String, dynamic> _$FinishReasonToJson(FinishReason instance) =>
 ToolCall _$ToolCallFromJson(Map<String, dynamic> json) => ToolCall(
       toolCallId: json['tool_call_id'] as String,
       toolName: json['tool_name'] as String,
-      input: json['input'] as Map<String, dynamic>?,
+      input: json['input'],
       providerExecuted: json['provider_executed'] as bool?,
       isDynamic: json['dynamic'] as bool?,
+      thoughtSignature: json['thought_signature'] as String?,
     );
 
 Map<String, dynamic> _$ToolCallToJson(ToolCall instance) => <String, dynamic>{
@@ -65,6 +66,7 @@ Map<String, dynamic> _$ToolCallToJson(ToolCall instance) => <String, dynamic>{
       'input': instance.input,
       'provider_executed': instance.providerExecuted,
       'dynamic': instance.isDynamic,
+      'thought_signature': instance.thoughtSignature,
     };
 
 FunctionTool _$FunctionToolFromJson(Map<String, dynamic> json) => FunctionTool(
@@ -111,9 +113,10 @@ GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
       finishReason:
           FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
       usage: Usage.fromJson(json['usage'] as Map<String, dynamic>),
-      warnings: (json['warnings'] as List<dynamic>? ?? const [])
-          .map((e) => e as Map<String, dynamic>)
-          .toList(),
+      warnings: (json['warnings'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          const [],
       raw: GenerateResult.fromJson(json['raw'] as Map<String, dynamic>),
     );
 
@@ -127,16 +130,54 @@ Map<String, dynamic> _$GenerateTextResultToJson(GenerateTextResult instance) =>
       'raw': instance.raw,
     };
 
+TimeoutConfiguration _$TimeoutConfigurationFromJson(
+        Map<String, dynamic> json) =>
+    TimeoutConfiguration(
+      totalMs: (json['total_ms'] as num?)?.toInt(),
+      firstChunkMs: (json['first_chunk_ms'] as num?)?.toInt(),
+      chunkMs: (json['chunk_ms'] as num?)?.toInt(),
+    );
+
+Map<String, dynamic> _$TimeoutConfigurationToJson(
+        TimeoutConfiguration instance) =>
+    <String, dynamic>{
+      'total_ms': instance.totalMs,
+      'first_chunk_ms': instance.firstChunkMs,
+      'chunk_ms': instance.chunkMs,
+    };
+
 GenerateTextOptions _$GenerateTextOptionsFromJson(Map<String, dynamic> json) =>
     GenerateTextOptions(
       maxOutputTokens: (json['max_output_tokens'] as num?)?.toInt(),
       temperature: (json['temperature'] as num?)?.toDouble(),
+      stopSequences: (json['stop_sequences'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+      topP: (json['top_p'] as num?)?.toDouble(),
+      topK: (json['top_k'] as num?)?.toDouble(),
+      presencePenalty: (json['presence_penalty'] as num?)?.toDouble(),
+      frequencyPenalty: (json['frequency_penalty'] as num?)?.toDouble(),
+      responseFormat: json['response_format'] as Map<String, dynamic>?,
+      seed: (json['seed'] as num?)?.toInt(),
       tools: (json['tools'] as List<dynamic>?)
           ?.map((e) => Tool.fromJson(e as Map<String, dynamic>))
           .toList(),
       toolChoice: json['tool_choice'] == null
           ? null
           : ToolChoice.fromJson(json['tool_choice']),
+      headers: (json['headers'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, e as String),
+      ),
+      providerOptions: json['provider_options'] as Map<String, dynamic>?,
+      reasoning:
+          $enumDecodeNullable(_$ReasoningEffortEnumMap, json['reasoning']),
+      instructions: json['instructions'] as String?,
+      bodyOverrides: json['body_overrides'] as Map<String, dynamic>?,
+      maxRetries: (json['max_retries'] as num?)?.toInt(),
+      timeout: json['timeout'] == null
+          ? null
+          : TimeoutConfiguration.fromJson(
+              json['timeout'] as Map<String, dynamic>),
     );
 
 Map<String, dynamic> _$GenerateTextOptionsToJson(
@@ -144,9 +185,33 @@ Map<String, dynamic> _$GenerateTextOptionsToJson(
     <String, dynamic>{
       'max_output_tokens': instance.maxOutputTokens,
       'temperature': instance.temperature,
+      'stop_sequences': instance.stopSequences,
+      'top_p': instance.topP,
+      'top_k': instance.topK,
+      'presence_penalty': instance.presencePenalty,
+      'frequency_penalty': instance.frequencyPenalty,
+      'response_format': instance.responseFormat,
+      'seed': instance.seed,
       'tools': instance.tools,
       'tool_choice': instance.toolChoice,
+      'headers': instance.headers,
+      'provider_options': instance.providerOptions,
+      'reasoning': instance.reasoning,
+      'instructions': instance.instructions,
+      'body_overrides': instance.bodyOverrides,
+      'max_retries': instance.maxRetries,
+      'timeout': instance.timeout,
     };
+
+const _$ReasoningEffortEnumMap = {
+  ReasoningEffort.providerDefault: 'providerDefault',
+  ReasoningEffort.none: 'none',
+  ReasoningEffort.minimal: 'minimal',
+  ReasoningEffort.low: 'low',
+  ReasoningEffort.medium: 'medium',
+  ReasoningEffort.high: 'high',
+  ReasoningEffort.xhigh: 'xhigh',
+};
 
 ModelMessage _$ModelMessageFromJson(Map<String, dynamic> json) => ModelMessage(
       role: json['role'] as String,

@@ -45,6 +45,7 @@ pub struct GenerateTextOptions {
     pub presence_penalty: Option<f64>,
     pub frequency_penalty: Option<f64>,
     pub response_format: Option<ResponseFormat>,
+    #[ts(type = "number | null")]
     pub seed: Option<u64>,
     pub tools: Option<Vec<Tool>>,
     pub tool_choice: Option<ToolChoice>,

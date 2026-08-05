@@ -120,6 +120,14 @@ jobs:
         if: matrix.settings.test
         working-directory: bindings/node
         run: npm run build:typed
+      # index.js / index.d.ts are tracked (they ship to npm) but produced by the
+      # napi build above — fail if the committed copies have drifted from it.
+      # One leg suffices (both files are platform-independent); the Linux test
+      # leg avoids CRLF noise from Windows checkouts.
+      - name: Verify committed index.js / index.d.ts match napi output
+        if: matrix.settings.test && runner.os == 'Linux'
+        working-directory: bindings/node
+        run: git diff --exit-code -- index.js index.d.ts
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -363,6 +371,8 @@ jobs:
           node-version: 22
       - name: Run Rust contract tests
         run: cargo test --test contract_test -p aimux-core
+      - name: ts-rs export drift (checked-in types must match generator output)
+        run: python3 scripts/gen_ts_types.py --check
       - name: Build Node binding
         working-directory: bindings/node
         run: |
