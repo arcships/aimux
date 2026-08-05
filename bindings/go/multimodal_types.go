@@ -1,5 +1,5 @@
 // Typed multimodal data structures mirroring the aimux-core wire format
-// (same shapes as the ts-rs generated .ts types in aimux-core/bindings/).
+// (same shapes as the ts-rs generated .ts types in bindings/node/src/types/).
 //
 // Field names use JSON tags matching the wire format's snake_case. These types
 // are intentionally lenient on decode (unknown keys ignored, every field
@@ -23,9 +23,8 @@ type EmbeddingUsage struct {
 
 // EmbeddingResponse is provider response metadata for embeddings.
 type EmbeddingResponse struct {
-	ID        *string `json:"id,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
-	Timestamp *string `json:"timestamp,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    any               `json:"body,omitempty"`
 }
 
 // EmbeddingResult is the result of an embedding call.
@@ -55,14 +54,17 @@ type AudioData struct {
 
 // SpeechRequest is request metadata for speech generation.
 type SpeechRequest struct {
-	Prompt *string `json:"prompt,omitempty"`
+	// Core: `body: Option<serde_json::Value>` (speech_model.rs) — the raw
+	// request body that was sent, not a prompt string.
+	Body json.RawMessage `json:"body,omitempty"`
 }
 
 // SpeechResponse is provider response metadata for speech.
 type SpeechResponse struct {
-	ID        *string `json:"id,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
-	Timestamp *string `json:"timestamp,omitempty"`
+	Timestamp *string           `json:"timestamp,omitempty"`
+	ModelID   *string           `json:"model_id,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      any               `json:"body,omitempty"`
 }
 
 // SpeechResult is the result of a speech generation call.
@@ -96,14 +98,16 @@ type ImageOutputs struct {
 
 // ImageUsage is token usage for image generation (if reported).
 type ImageUsage struct {
-	Steps *uint32 `json:"steps,omitempty"`
+	InputTokens  *uint32 `json:"input_tokens,omitempty"`
+	OutputTokens *uint32 `json:"output_tokens,omitempty"`
+	TotalTokens  *uint32 `json:"total_tokens,omitempty"`
 }
 
 // ImageResponse is provider response metadata for images.
 type ImageResponse struct {
-	ID        *string `json:"id,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
-	Timestamp *string `json:"timestamp,omitempty"`
+	Timestamp *string           `json:"timestamp,omitempty"`
+	ModelID   *string           `json:"model_id,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
 }
 
 // ImageResult is the result of an image generation call.
@@ -132,22 +136,26 @@ type ImageCallOptions struct {
 
 // TranscriptionSegment is a transcript segment with timing.
 type TranscriptionSegment struct {
-	Text  string   `json:"text"`
-	Start *float64 `json:"start,omitempty"`
-	End   *float64 `json:"end,omitempty"`
+	// StartSecond/EndSecond are required f64 in the core (not Option), so they
+	// are values rather than pointers and must always be marshalled.
+	Text        string  `json:"text"`
+	StartSecond float64 `json:"start_second"`
+	EndSecond   float64 `json:"end_second"`
 }
 
 // TranscriptionRequest is request metadata for transcription.
 type TranscriptionRequest struct {
-	Audio     json.RawMessage `json:"audio,omitempty"`
-	MediaType *string         `json:"media_type,omitempty"`
+	// Core: `body: Option<String>` (transcription_model.rs) — the raw request
+	// HTTP body, JSON stringified.
+	Body *string `json:"body,omitempty"`
 }
 
 // TranscriptionResponse is provider response metadata for transcription.
 type TranscriptionResponse struct {
-	ID        *string `json:"id,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
-	Timestamp *string `json:"timestamp,omitempty"`
+	Timestamp *string           `json:"timestamp,omitempty"`
+	ModelID   *string           `json:"model_id,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      any               `json:"body,omitempty"`
 }
 
 // TranscriptionResult is the result of a transcription call.
@@ -180,9 +188,11 @@ type RerankingRank struct {
 
 // RerankingResponse is provider response metadata for reranking.
 type RerankingResponse struct {
-	ID        *string `json:"id,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
-	Timestamp *string `json:"timestamp,omitempty"`
+	ID        *string           `json:"id,omitempty"`
+	Timestamp *string           `json:"timestamp,omitempty"`
+	ModelID   *string           `json:"model_id,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      any               `json:"body,omitempty"`
 }
 
 // RerankingResult is the result of a reranking call.
@@ -232,9 +242,9 @@ type VideoBinaryData struct {
 
 // VideoResponse is provider response metadata for video.
 type VideoResponse struct {
-	ID        *string `json:"id,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
-	Timestamp *string `json:"timestamp,omitempty"`
+	Timestamp *string           `json:"timestamp,omitempty"`
+	ModelID   *string           `json:"model_id,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
 }
 
 // VideoResult is the result of a video generation call.
@@ -269,9 +279,8 @@ type SearchResultItem struct {
 
 // SearchResponse is provider response metadata for search.
 type SearchResponse struct {
-	ID        *string `json:"id,omitempty"`
-	ModelID   *string `json:"model_id,omitempty"`
-	Timestamp *string `json:"timestamp,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    any               `json:"body,omitempty"`
 }
 
 // SearchResult is the result of a search call.

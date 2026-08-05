@@ -35,7 +35,6 @@ bindings/node/bench/package-lock.json
 bindings/python/**/__pycache__/
 bindings/python/uv.lock
 bindings/kotlin/build/
-aimux-core/bindings/bindings/
 
 # Windows build artifacts (never commit)
 *.exe

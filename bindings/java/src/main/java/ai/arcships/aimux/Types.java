@@ -36,7 +36,7 @@ import java.util.function.Supplier;
 /**
  * aimux — typed data classes mirroring the Kotlin binding in
  * `bindings/kotlin` (which in turn mirrors the ts-rs output in
- * `aimux-core/bindings`).
+ * `bindings/node/src/types`).
  *
  * Field names are camelCase in Java and mapped to the wire format's snake_case
  * via {@link JsonProperty}. The raw JSON boundary is handled by
@@ -1597,6 +1597,63 @@ public final class Types {
     // ─────────────────────────────────────────────────────────────────────────────
 
     /**
+     * Per-call timeout configuration.
+     *
+     * Mirrors `TimeoutConfiguration.ts`. All values are milliseconds; `null`
+     * disables the corresponding limit. A `total` timeout also covers retry
+     * backoff and the whole streamed response.
+     */
+    public static class TimeoutConfiguration {
+        @JsonProperty("total_ms") private Long totalMs;
+        @JsonProperty("first_chunk_ms") private Long firstChunkMs;
+        @JsonProperty("chunk_ms") private Long chunkMs;
+
+        @JsonCreator
+        TimeoutConfiguration() {}
+
+        private TimeoutConfiguration(Long totalMs, Long firstChunkMs, Long chunkMs) {
+            this.totalMs = totalMs;
+            this.firstChunkMs = firstChunkMs;
+            this.chunkMs = chunkMs;
+        }
+
+        public Long getTotalMs() { return totalMs; }
+        public Long getFirstChunkMs() { return firstChunkMs; }
+        public Long getChunkMs() { return chunkMs; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private Long totalMs;
+            private Long firstChunkMs;
+            private Long chunkMs;
+
+            public Builder totalMs(Long v) { this.totalMs = v; return this; }
+            public Builder firstChunkMs(Long v) { this.firstChunkMs = v; return this; }
+            public Builder chunkMs(Long v) { this.chunkMs = v; return this; }
+
+            public TimeoutConfiguration build() {
+                return new TimeoutConfiguration(totalMs, firstChunkMs, chunkMs);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof TimeoutConfiguration)) return false;
+            TimeoutConfiguration that = (TimeoutConfiguration) o;
+            return Objects.equals(totalMs, that.totalMs)
+                && Objects.equals(firstChunkMs, that.firstChunkMs)
+                && Objects.equals(chunkMs, that.chunkMs);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(totalMs, firstChunkMs, chunkMs);
+        }
+    }
+
+    /**
      * User-facing options for `generate_text` / `stream_text`.
      *
      * Mirrors `GenerateTextOptions.ts`. Every field is nullable with a `null`
@@ -1621,6 +1678,7 @@ public final class Types {
         @JsonProperty("instructions") private String instructions;
         @JsonProperty("body_overrides") private JsonNode bodyOverrides;
         @JsonProperty("max_retries") private Long maxRetries;
+        @JsonProperty("timeout") private TimeoutConfiguration timeout;
 
         @JsonCreator
         GenerateTextOptions() {}
@@ -1630,7 +1688,7 @@ public final class Types {
                                     JsonNode responseFormat, Long seed, List<Tool> tools, ToolChoice toolChoice,
                                     Map<String, String> headers, Map<String, JsonNode> providerOptions,
                                     ReasoningEffort reasoning, String instructions,
-                                    JsonNode bodyOverrides, Long maxRetries) {
+                                    JsonNode bodyOverrides, Long maxRetries, TimeoutConfiguration timeout) {
             this.maxOutputTokens = maxOutputTokens;
             this.temperature = temperature;
             this.stopSequences = stopSequences;
@@ -1648,6 +1706,7 @@ public final class Types {
             this.instructions = instructions;
             this.bodyOverrides = bodyOverrides;
             this.maxRetries = maxRetries;
+            this.timeout = timeout;
         }
 
         public Long getMaxOutputTokens() { return maxOutputTokens; }
@@ -1667,6 +1726,7 @@ public final class Types {
         public String getInstructions() { return instructions; }
         public JsonNode getBodyOverrides() { return bodyOverrides; }
         public Long getMaxRetries() { return maxRetries; }
+        public TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -1688,6 +1748,7 @@ public final class Types {
             private String instructions;
             private JsonNode bodyOverrides;
             private Long maxRetries;
+            private TimeoutConfiguration timeout;
 
             public Builder maxOutputTokens(Long v) { this.maxOutputTokens = v; return this; }
             public Builder temperature(Double v) { this.temperature = v; return this; }
@@ -1706,11 +1767,12 @@ public final class Types {
             public Builder instructions(String v) { this.instructions = v; return this; }
             public Builder bodyOverrides(JsonNode v) { this.bodyOverrides = v; return this; }
             public Builder maxRetries(Long v) { this.maxRetries = v; return this; }
+            public Builder timeout(TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public GenerateTextOptions build() {
                 return new GenerateTextOptions(maxOutputTokens, temperature, stopSequences, topP, topK,
                     presencePenalty, frequencyPenalty, responseFormat, seed, tools, toolChoice, headers,
-                    providerOptions, reasoning, instructions, bodyOverrides, maxRetries);
+                    providerOptions, reasoning, instructions, bodyOverrides, maxRetries, timeout);
             }
         }
 
@@ -1735,14 +1797,15 @@ public final class Types {
                 && Objects.equals(reasoning, that.reasoning)
                 && Objects.equals(instructions, that.instructions)
                 && Objects.equals(bodyOverrides, that.bodyOverrides)
-                && Objects.equals(maxRetries, that.maxRetries);
+                && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(timeout, that.timeout);
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty,
                 frequencyPenalty, responseFormat, seed, tools, toolChoice, headers, providerOptions, reasoning,
-                instructions, bodyOverrides, maxRetries);
+                instructions, bodyOverrides, maxRetries, timeout);
         }
     }
 

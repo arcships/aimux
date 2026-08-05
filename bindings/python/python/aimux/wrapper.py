@@ -131,6 +131,7 @@ class ToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
+    thought_signature: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -334,6 +335,7 @@ class _ContentToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
+    thought_signature: Optional[str] = None
     provider_metadata: Optional[Any] = None
 
 
@@ -466,6 +468,7 @@ class _SPToolCall(BaseModel):
     input: Any
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
+    thought_signature: Optional[str] = None
     provider_metadata: Optional[Dict[str, Any]] = None
 
 
@@ -704,6 +707,7 @@ class _ToolCallContentPart(BaseModel):
     tool_call_id: str
     tool_name: str
     input: Any
+    thought_signature: Optional[str] = None
     provider_options: Optional[Any] = None
 
 
@@ -787,6 +791,17 @@ class ModelMessage(BaseModel):
 # Options + results
 # ─────────────────────────────────────────────────────────────────────────────
 
+class TimeoutConfiguration(BaseModel):
+    """Per-call timeout configuration (Rust ``TimeoutConfiguration``).
+
+    All values are milliseconds; ``None`` disables the corresponding limit.
+    """
+
+    total_ms: Optional[int] = None
+    first_chunk_ms: Optional[int] = None
+    chunk_ms: Optional[int] = None
+
+
 class GenerateTextOptions(BaseModel):
     """User-facing options for ``generate_text`` / ``stream_text``.
 
@@ -811,6 +826,7 @@ class GenerateTextOptions(BaseModel):
     instructions: Optional[str] = None
     body_overrides: Optional[Any] = None
     max_retries: Optional[int] = None
+    timeout: Optional[TimeoutConfiguration] = None
 
 
 class GenerateResult(BaseModel):
