@@ -39,7 +39,7 @@ fps: number | null,
 /**
  * Seed for deterministic generation. `None` uses a random seed.
  */
-seed: bigint | null, 
+seed: number | null, 
 /**
  * Input image for image-to-video generation (the starting frame).
  */

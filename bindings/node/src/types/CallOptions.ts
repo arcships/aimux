@@ -54,7 +54,7 @@ response_format: ResponseFormat | null,
 /**
  * Seed for reproducibility.
  */
-seed: bigint | null, 
+seed: number | null, 
 /**
  * Tools available to the model (function tools and/or provider-defined tools).
  */

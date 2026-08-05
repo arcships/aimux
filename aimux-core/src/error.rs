@@ -30,7 +30,10 @@ pub enum AiMuxError {
     InvalidPrompt(String),
 
     #[error("rate limited: retry after {retry_after_ms}ms")]
-    RateLimited { retry_after_ms: u64 },
+    RateLimited {
+        #[ts(type = "number")]
+        retry_after_ms: u64,
+    },
 
     #[error("authentication failed: {0}")]
     Auth(String),
