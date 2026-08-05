@@ -96,7 +96,7 @@ struct Entry {
     source: SessionSource,
     calls: VecDeque<SessionCall>,
     /// Monotonic per-session step counter (independent of call retention).
-    next_step: u32,
+    next_step: u64,
 }
 
 impl SessionStore {
@@ -144,7 +144,9 @@ impl SessionStore {
         let entry = inner.sessions.get_mut(session_id).unwrap();
         // `step` is monotonic per session and independent of call retention:
         // evicting the oldest call must NOT reuse its step (RFC-0024 "0 起").
-        let step = entry.next_step;
+        // Counter is u64; the wire field is u32, so saturate at u32::MAX
+        // (needs ~4.3B calls in one session to be reachable).
+        let step = u32::try_from(entry.next_step).unwrap_or(u32::MAX);
         entry.next_step += 1;
         let call = SessionCall {
             trace_id: new_call_id(),
