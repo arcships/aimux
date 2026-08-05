@@ -125,6 +125,18 @@ aimux_drop_handle(handle);
 | `aimux_drop_handle(handle)` | Free the model handle (0 is a no-op) |
 | `aimux_free_string(ptr)` | Free a returned string |
 
+### Session Grouping (RFC-0024, added 2026-08-05)
+
+| Function | Description |
+|------|------|
+| `aimux_session_store_init()` | Register the global session store (replaces any previous one); until called, calls are not grouped and queries return empty |
+| `aimux_session_infer_init(enabled)` | Enable/disable the opt-in session inferer (0/1); explicit `session_id` in options always wins |
+| `aimux_session_calls(session_id)` | Query a session's calls, ordered by step — JSON `SessionCall[]`, caller frees with `aimux_free_string` |
+| `aimux_list_sessions()` | Query all known sessions — JSON `SessionView[]`, caller frees with `aimux_free_string` |
+
+Pass `"session_id": "..."` inside `opts_json` of `aimux_generate_text` / `aimux_stream_text`
+to group a call into a session.
+
 ## Examples
 
 ### Video Generation

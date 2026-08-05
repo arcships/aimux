@@ -32,4 +32,11 @@ max_retries: number | null,
 /**
  * Per-call timeout configuration (total / first-chunk / chunk idle).
  */
-timeout: TimeoutConfiguration | null, };
+timeout: TimeoutConfiguration | null, 
+/**
+ * Session identifier, for grouping consecutive calls into a session
+ * (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
+ * headers. When `None` and the optional session inferer is enabled, one
+ * may be inferred from prompt-prefix continuation.
+ */
+session_id: string | null, };

@@ -431,11 +431,47 @@ fn init_logging(level: &str) {
     aimux_providers::init_logging(level);
 }
 
+/// Register the global session store (RFC-0024). Replaces any previous one.
+/// Until called, calls are not grouped and the query functions return empty
+/// results.
+#[pyfunction]
+fn init_session_store() {
+    aimux_core::session::init_session_store(std::sync::Arc::new(
+        aimux_core::session::SessionStore::new(),
+    ));
+}
+
+/// Enable/disable the global session inferer (RFC-0024, opt-in, off by
+/// default). Explicit `session_id` values always win regardless.
+#[pyfunction]
+fn init_session_infer(enabled: bool) {
+    aimux_core::session::init_session_infer(enabled);
+}
+
+/// Query: all calls of a session (RFC-0024), as a JSON-serialized
+/// `SessionCall[]` (ordered by step). Empty array if unknown / no store.
+#[pyfunction]
+fn session_calls(session_id: &str) -> String {
+    serde_json::to_string(&aimux_core::session::session_calls(session_id))
+        .unwrap_or_else(|e| format!("{{\"error\":\"serialize: {e}\"}}"))
+}
+
+/// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
+#[pyfunction]
+fn list_sessions() -> String {
+    serde_json::to_string(&aimux_core::session::list_sessions())
+        .unwrap_or_else(|e| format!("{{\"error\":\"serialize: {e}\"}}"))
+}
+
 #[pymodule]
 fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<StreamIterator>()?;
     m.add_function(wrap_pyfunction!(init_logging, m)?)?;
+    m.add_function(wrap_pyfunction!(init_session_store, m)?)?;
+    m.add_function(wrap_pyfunction!(init_session_infer, m)?)?;
+    m.add_function(wrap_pyfunction!(session_calls, m)?)?;
+    m.add_function(wrap_pyfunction!(list_sessions, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;

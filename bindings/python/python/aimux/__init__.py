@@ -22,6 +22,10 @@ from .aimux import (
     anthropic_aws,
     azure,
     provider as _native_provider,
+    init_session_store,
+    init_session_infer,
+    session_calls as _session_calls_json,
+    list_sessions as _list_sessions_json,
     EmbeddingModel,
     SpeechModel,
     ImageModel,
@@ -57,6 +61,10 @@ __all__ = [
     "anthropic_aws",
     "azure",
     "provider",
+    "init_session_store",
+    "init_session_infer",
+    "session_calls",
+    "list_sessions",
     "EmbeddingModel",
     "SpeechModel",
     "ImageModel",
@@ -79,6 +87,20 @@ __all__ = [
     "generate_text",
     "stream_text",
 ]
+
+
+def session_calls(session_id: str) -> List[Dict[str, Any]]:
+    """All calls of a session, ordered by step (RFC-0024).
+
+    Empty list if the session is unknown or no store is registered
+    (``init_session_store()`` must be called first).
+    """
+    return json.loads(_session_calls_json(session_id))
+
+
+def list_sessions() -> List[Dict[str, Any]]:
+    """All known sessions (RFC-0024)."""
+    return json.loads(_list_sessions_json())
 
 
 def provider(

@@ -60,6 +60,12 @@ pub struct GenerateTextOptions {
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
     pub timeout: Option<crate::options::TimeoutConfiguration>,
+    /// Session identifier, for grouping consecutive calls into a session
+    /// (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
+    /// headers. When `None` and the optional session inferer is enabled, one
+    /// may be inferred from prompt-prefix continuation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Abort signal for cancelling the call.
     ///
     /// Runtime handle — never crosses the JSON boundary. Rust callers set it
@@ -94,6 +100,7 @@ impl GenerateTextOptions {
             body_overrides: self.body_overrides,
             max_retries: self.max_retries,
             timeout: self.timeout,
+            session_id: self.session_id,
             abort_signal: self.abort_signal,
         }
     }
@@ -187,6 +194,20 @@ pub async fn generate_text(
     // 2. Build CallOptions.
     let call_options = options.into_call_options(lm_prompt);
 
+    // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
+    //     prompt-prefix inference as fallback. Recorded before the call so
+    //     failures are still part of the session. No-op unless a
+    //     SessionStore is registered (init_session_store).
+    if let (Some((session_id, source)), Some(store)) = (
+        crate::session::resolve_session_id(
+            call_options.session_id.as_deref(),
+            &call_options.prompt,
+        ),
+        crate::session::session_store(),
+    ) {
+        store.append(&session_id, source);
+    }
+
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
     //    The http layer's `http_request` span nests under this one.
     let started = Instant::now();
@@ -277,6 +298,20 @@ pub async fn stream_text(
 
     // 2. Build CallOptions.
     let call_options = options.into_call_options(lm_prompt);
+
+    // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
+    //     prompt-prefix inference as fallback. Recorded before the call so
+    //     failures are still part of the session. No-op unless a
+    //     SessionStore is registered (init_session_store).
+    if let (Some((session_id, source)), Some(store)) = (
+        crate::session::resolve_session_id(
+            call_options.session_id.as_deref(),
+            &call_options.prompt,
+        ),
+        crate::session::session_store(),
+    ) {
+        store.append(&session_id, source);
+    }
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
     let span = tracing::info_span!(

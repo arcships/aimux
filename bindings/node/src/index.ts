@@ -38,6 +38,9 @@ import type {
   AiMuxError,
   GenerateResult,
   FunctionTool,
+  SessionCall,
+  SessionSource,
+  SessionView,
 } from './types'
 
 // Re-export the raw napi constructors/factories so consumers can do everything
@@ -47,6 +50,10 @@ export {
   StreamTextGenerator,
   AbortBridge,
   initLogging,
+  initSessionStore,
+  initSessionInfer,
+  sessionCalls,
+  listSessions,
   openai,
   anthropic,
   deepseek,
@@ -83,6 +90,9 @@ export type {
   AiMuxError,
   GenerateResult,
   FunctionTool,
+  SessionCall,
+  SessionSource,
+  SessionView,
 }
 
 /**
@@ -160,4 +170,22 @@ export async function* streamText(
   for await (const json of gen) {
     yield JSON.parse(json) as StreamPart
   }
+}
+
+/**
+ * All calls of a session, ordered by step (RFC-0024). Empty if the session
+ * is unknown or no store is registered.
+ *
+ * `initSessionStore()` / `initSessionInfer(enabled)` (raw napi, re-exported
+ * above) must be called first to register the store / opt-in inferer.
+ */
+export function getSessionCalls(sessionId: string): SessionCall[] {
+  return JSON.parse(sessionCalls(sessionId)) as SessionCall[]
+}
+
+/**
+ * All known sessions (RFC-0024).
+ */
+export function getSessions(): SessionView[] {
+  return JSON.parse(listSessions()) as SessionView[]
 }

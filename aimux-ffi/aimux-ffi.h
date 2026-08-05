@@ -348,6 +348,26 @@ char *aimux_codex_refresh(const char *refresh_token, const char *client_id);
    Returns 0. */
 int aimux_init_logging(const char *level);
 
+/* Session grouping (RFC-0024) */
+
+/* Register the global session store (replaces any previous one). Until
+   called, calls are not grouped and the session query functions return
+   empty results. Returns 0. */
+int aimux_session_store_init(void);
+
+/* Enable/disable the global session inferer (opt-in, off by default).
+   enabled nonzero = on; explicit session_id always wins. Returns 0. */
+int aimux_session_infer_init(int enabled);
+
+/* Query: all calls of a session, ordered by step. Returns a JSON
+   SessionCall[] (empty if unknown / no store) or {"error":...}; caller frees
+   with aimux_free_string. */
+char *aimux_session_calls(const char *session_id);
+
+/* Query: all known sessions. Returns a JSON SessionView[] or
+   {"error":...}; caller frees with aimux_free_string. */
+char *aimux_list_sessions(void);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

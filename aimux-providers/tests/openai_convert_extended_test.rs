@@ -62,6 +62,7 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         max_retries: None,
         timeout: None,
         abort_signal: None,
+        session_id: None,
     }
 }
 fn po(map: Value) -> Option<std::collections::HashMap<String, Value>> {

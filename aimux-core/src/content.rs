@@ -7,7 +7,7 @@ use ts_rs::TS;
 /// A part of a multi-part message.
 ///
 /// Shared between `ModelMessage` (user-facing) and `LanguageModelPrompt` (provider-facing).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ContentPart {

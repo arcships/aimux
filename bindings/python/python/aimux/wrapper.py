@@ -811,6 +811,13 @@ class GenerateTextOptions(BaseModel):
     instructions: Optional[str] = None
     body_overrides: Optional[Any] = None
     max_retries: Optional[int] = None
+    session_id: Optional[str] = None
+    """Session identifier (RFC-0024): groups consecutive calls into a session.
+
+    Explicit values take precedence; when ``None`` and the optional session
+    inferer is enabled (``init_session_infer(True)`` or ``AIMUX_SESSION_INFER=1``),
+    one may be inferred from prompt-prefix continuation.
+    """
 
 
 class GenerateResult(BaseModel):

@@ -2,6 +2,7 @@
 import type { LanguageModelPromptMessage } from "./LanguageModelPromptMessage";
 import type { ReasoningEffort } from "./ReasoningEffort";
 import type { ResponseFormat } from "./ResponseFormat";
+import type { TimeoutConfiguration } from "./TimeoutConfiguration";
 import type { Tool } from "./Tool";
 import type { ToolChoice } from "./ToolChoice";
 import type { JsonValue } from "./serde_json/JsonValue";
@@ -85,4 +86,18 @@ body_overrides: JsonValue | null,
  * Per-call retry count override. `None` uses the provider's configured
  * `RetryConfig.max_retries`. `Some(0)` disables retries.
  */
-max_retries: number | null, };
+max_retries: number | null, 
+/**
+ * Per-call timeout configuration (total / first-chunk / chunk idle).
+ * `None` = no timeouts (provider defaults still apply at the HTTP layer).
+ */
+timeout: TimeoutConfiguration | null, 
+/**
+ * Session identifier, for grouping consecutive calls into a session
+ * (observability, see RFC-0024). Explicit values take precedence; when
+ * `None` and the optional session inferer is enabled, one may be inferred.
+ * Orthogonal to RFC-0019 session-affinity headers: this field is for
+ * local grouping, while session headers in `headers` are for upstream
+ * routing — both may share an id value but travel different paths.
+ */
+session_id: string | null, };

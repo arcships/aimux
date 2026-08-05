@@ -1,6 +1,6 @@
 # RFC-0024: 调用会话聚合(session_id 归组)
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (P1/P2/P5 — 2026-08-05;P3/P4 待依赖 RFC-0023/0015,见 [§10](#10-implementation-order))
 > **Date**: 2026-08-05
 > **Scope**: `aimux-core` 新增 `session_id` 字段(显式为主 + 隐式推断兜底),把连续调用聚合成会话组,为录制(RFC-0023)、缓存探测(RFC-0015)、回放提供链级视图。不做 fork 语义、不做 agent loop。
 > **Related**: [RFC-0023](0023-runtime-request-recording.md) 录制(Recording 加 session_id)、[RFC-0015](0015-cache-trace-audit.md) 缓存探测(链级聚合)、[RFC-0019](0019-session-affinity.md) 会话亲和(路由层 session,与本 RFC 可观测层 session 共享 id 概念但职责不同)、[RFC-0016](0016-align-with-aisdk.md) H4(不做 agent loop 边界)
@@ -256,10 +256,20 @@ pub fn list_sessions() -> Vec<SessionView>;
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |------|------|------|------|
-| **P1** | `CallOptions`/`GenerateTextOptions` 加 `session_id` 字段 + `SessionStore`(显式归组,无推断)+ 查询 API + 单测 | 无 | 待实施 |
-| **P2** | `SessionInferer`(隐式推断,opt-in)+ 单测(强前缀归并、歧义边界) | P1 | 待实施 |
-| **P3** | 录制(RFC-0023)集成:Recording 加 session_id + step + 按 session 查询/回放 | P1, RFC-0023 | 待实施 |
-| **P4** | 缓存探测(RFC-0015)集成:TraceRecord 加 session_id + session 级命中演变聚合 | P1, RFC-0015 | 待实施 |
-| **P5** | 绑定层透传 + 查询 API(Node/C ABI/Python)+ 文档 | P1 | 待实施 |
+| **P1** | `CallOptions`/`GenerateTextOptions` 加 `session_id` 字段 + `SessionStore`(显式归组,无推断)+ 查询 API + 单测 | 无 | ✅ 已实施(2026-08-05) |
+| **P2** | `SessionInferer`(隐式推断,opt-in)+ 单测(强前缀归并、歧义边界) | P1 | ✅ 已实施(2026-08-05) |
+| **P3** | 录制(RFC-0023)集成:Recording 加 session_id + step + 按 session 查询/回放 | P1, RFC-0023 | ⏳ 待 RFC-0023 实施 |
+| **P4** | 缓存探测(RFC-0015)集成:TraceRecord 加 session_id + session 级命中演变聚合(`session_cache_trajectory` 随此引入) | P1, RFC-0015 | ⏳ 待 RFC-0015 实施 |
+| **P5** | 绑定层透传 + 查询 API(Node/C ABI/Python)+ 文档 | P1 | ✅ 已实施(2026-08-05) |
 
 **建议先做 P1**(显式归组即可用:开发者传 session_id,aimux 归组报告)。P2 推断是增强。P3/P4 是与录制/探测的集成,各自独立。
+
+### 10.1 实施说明(2026-08-05)
+
+- **范围**:P1 + P2 + P5 已落地;P3/P4 的集成对象(RFC-0023 录制、RFC-0015 探测)尚未实施,`session_cache_trajectory` 依赖 RFC-0015 的 `Verdict` 类型,随 P4 引入,本里程碑不提供占位 API。
+- **模块**:`aimux-core/src/session.rs`(`SessionStore` LRU 256×64、`SessionInferer` 强前缀消息级延续、全局注册显式 opt-in、查询 API `session_calls`/`list_sessions`)。全局注册沿用 RFC-0023 `init_recording` 的 `OnceLock` 模式,未注册时零状态、零影响;`AIMUX_SESSION_INFER=1` 惰性开启推断(参照 RFC-0014 env 自动初始化)。
+- **热路径**:`generate_text`/`stream_text` 入口在调用前 resolve + append(失败调用也归组);未注册 store 时仅一次 RwLock 读。
+- **会话来源**:`SessionSource::{Explicit,Inferred}`;推断 id 带 `auto-` 前缀可审计区分。
+- **trace_id 说明**:`SessionCall.trace_id` 现为进程内生成的调用级唯一 id;RFC-0015/0023 的 `trace_id` 机制落地后,该字段承载其值。
+- **绑定层**:字段经 JSON 边界自动透传(Node/Python/FFI);新增查询入口 C ABI(`aimux_session_store_init`/`aimux_session_infer_init`/`aimux_session_calls`/`aimux_list_sessions`)、Node(napi + TS typed wrapper `getSessionCalls`/`getSessions`)、Python(pyfunction + `session_calls`/`list_sessions` 包装)。Go 契约测试覆盖 `session_id` wire 格式。
+- **下游影响**:无破坏性变更(字段 `Option` + `skip_serializing_if`);`LanguageModelPromptMessage`/`ContentPart` 增加 `PartialEq` derive(推断前缀比较所需,零语义变化)。

@@ -213,8 +213,9 @@ type GenerateTextOptions struct {
 	Reasoning         *ReasoningEffort  `json:"reasoning,omitempty"`
 	Instructions       *string           `json:"instructions,omitempty"`
 	BodyOverrides     json.RawMessage   `json:"body_overrides,omitempty"`
-	MaxRetries        *uint32           `json:"max_retries,omitempty"`
-	Timeout           *TimeoutConfiguration `json:"timeout,omitempty"`
+	MaxRetries        *uint32                `json:"max_retries,omitempty"`
+	Timeout           *TimeoutConfiguration  `json:"timeout,omitempty"`
+	SessionID         *string                `json:"session_id,omitempty"`
 }
 
 // Tool is a function tool definition (the "function" variant).

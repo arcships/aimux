@@ -1524,3 +1524,57 @@ pub extern "C" fn aimux_init_logging(level: *const c_char) -> i32 {
     }
     0
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: session grouping (RFC-0024)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Register the global session store (RFC-0024). Replaces any previous one.
+/// Until called, calls are not grouped and the session query functions return
+/// empty results. Returns 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_session_store_init() -> i32 {
+    aimux_core::session::init_session_store(std::sync::Arc::new(
+        aimux_core::session::SessionStore::new(),
+    ));
+    0
+}
+
+/// Enable/disable the global session inferer (RFC-0024, opt-in, off by
+/// default). Explicit `session_id` values always win regardless.
+/// `enabled` nonzero = on. Returns 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_session_infer_init(enabled: i32) -> i32 {
+    aimux_core::session::init_session_infer(enabled != 0);
+    0
+}
+
+/// Query: all calls of a session, ordered by step (RFC-0024).
+///
+/// Returns a JSON string — a serialized `SessionCall[]` (empty array if the
+/// session is unknown or no store is registered), or `{"error":"..."}` on
+/// failure — that the caller MUST free with [`aimux_free_string`]. Returns a
+/// null pointer only if allocation fails.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_session_calls(session_id: *const c_char) -> *mut c_char {
+    let Some(id) = cstr_to_string(session_id) else {
+        return error_json_raw("invalid session_id");
+    };
+    match serde_json::to_string(&aimux_core::session::session_calls(&id)) {
+        Ok(s) => into_cstring_raw(s),
+        Err(e) => error_json_raw(format!("serialize: {e}")),
+    }
+}
+
+/// Query: all known sessions (RFC-0024).
+///
+/// Returns a JSON string — a serialized `SessionView[]`, or `{"error":"..."}`
+/// on failure — that the caller MUST free with [`aimux_free_string`]. Returns
+/// a null pointer only if allocation fails.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_list_sessions() -> *mut c_char {
+    match serde_json::to_string(&aimux_core::session::list_sessions()) {
+        Ok(s) => into_cstring_raw(s),
+        Err(e) => error_json_raw(format!("serialize: {e}")),
+    }
+}
