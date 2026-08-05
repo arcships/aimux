@@ -112,7 +112,8 @@ fn main() -> anyhow::Result<()> {
             ProbeCommand::Session(a) => probe::session::run(&a),
             ProbeCommand::Provider(a) => {
                 let rt = tokio::runtime::Runtime::new()?;
-                rt.block_on(probe::provider::run(&a))
+                rt.block_on(probe::provider::run(&a))?;
+                Ok(())
             }
         },
     }

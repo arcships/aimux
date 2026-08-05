@@ -1,31 +1,15 @@
 //! `session` 子命令:读 TraceRecord jsonl → 指定 session 的链级诊断。
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-
 use aimux_core::trace::{RingTraceStore, TraceSink};
 
 use crate::report;
 use crate::{Format, SessionArgs};
 
 pub fn run(args: &SessionArgs) -> anyhow::Result<()> {
-    let file = File::open(&args.file)
-        .map_err(|e| anyhow::anyhow!("cannot open {}: {e}", args.file.display()))?;
-    let reader = BufReader::new(file);
-    let store = RingTraceStore::with_capacity(8192, 8192);
-    let mut skipped = 0usize;
-    for (idx, line) in reader.lines().enumerate() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        match serde_json::from_str(&line) {
-            Ok(rec) => store.record(rec),
-            Err(e) => {
-                skipped += 1;
-                eprintln!("warning: line {} is not a TraceRecord: {e}", idx + 1);
-            }
-        }
+    let (records, skipped) = crate::probe::offline::load_records(&args.file)?;
+    let store = RingTraceStore::with_capacity(records.len().max(1), records.len().max(1));
+    for rec in &records {
+        store.record(rec.clone());
     }
 
     let Some(chain) = store.session_chain(&args.session) else {
@@ -49,6 +33,7 @@ pub fn run(args: &SessionArgs) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::probe::offline::load_records;
+    use std::fs::File;
     use std::io::Write;
 
     fn sample_record(session: &str, body_len: u64, idx: u32) -> serde_json::Value {

@@ -145,7 +145,7 @@ mod tests {
 
         // session 过滤。
         let args2 = OfflineArgs {
-            file: path,
+            file: path.clone(),
             provider: None,
             session: Some("nope".into()),
             format: Format::Json,
@@ -154,6 +154,19 @@ mod tests {
         assert!(
             out2.contains("[]"),
             "no matches for unknown session: {out2}"
+        );
+
+        // provider 过滤:未知 provider → 空结果。
+        let args3 = OfflineArgs {
+            file: path,
+            provider: Some("deepseek".into()),
+            session: None,
+            format: Format::Json,
+        };
+        let out3 = run_captured(&args3);
+        assert!(
+            out3.contains("[]"),
+            "no matches for unknown provider: {out3}"
         );
 
         std::fs::remove_dir_all(&dir).ok();

@@ -144,7 +144,7 @@ fn verdict_summary(stats: &[aimux_core::trace::TraceStats]) -> (u64, u64) {
     (trusted, overclaim)
 }
 
-pub async fn run(args: &ProviderArgs) -> anyhow::Result<()> {
+pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value>> {
     if args.max_requests == 0 {
         anyhow::bail!("--max-requests must be >= 1");
     }
@@ -282,9 +282,10 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<()> {
                 "stats": stats,
             });
             println!("{}", serde_json::to_string_pretty(&report_json)?);
+            return Ok(Some(report_json));
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -353,8 +354,24 @@ mod tests {
             prompt: Some("short probe prompt".into()), // 覆盖默认模板,测 mock 即可
             format: Format::Json,
         };
-        let result = run(&args).await;
-        assert!(result.is_ok(), "{result:?}");
+        let report = run(&args).await.expect("probe run failed");
+        let report = report.expect("Json format must return a report");
+        let rounds = report["rounds"].as_array().expect("rounds array");
+        assert_eq!(rounds.len(), 3);
+        // 命中演变行为:首轮 0,后续前缀命中 512。
+        assert_eq!(
+            rounds[0]["cache_read_tokens"], 0,
+            "first request writes cache"
+        );
+        assert_eq!(
+            rounds[1]["cache_read_tokens"], 512,
+            "second request reads cache"
+        );
+        assert_eq!(
+            rounds[2]["cache_read_tokens"], 512,
+            "third request reads cache"
+        );
+        assert_eq!(report["stats"][0]["requests"], 3);
     }
 
     #[test]
