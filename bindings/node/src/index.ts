@@ -60,7 +60,11 @@ export {
   azure,
   provider,
 } from '../index.js'
-export type { ProviderName } from './types/ProviderName'
+// Both meanings: the `ProviderName` const object (runtime, for `ProviderName.groq`)
+// and the derived string-union type. A value export resolves at runtime, so the
+// specifier needs the real `.ts` extension for Node's type-stripping test runs;
+// tsc rewrites it to `.js` on emit (rewriteRelativeImportExtensions).
+export { ProviderName } from './types/ProviderName.ts'
 
 // Public type surface — typed objects, no `any`.
 export type {
