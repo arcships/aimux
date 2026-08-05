@@ -1,7 +1,7 @@
 /**
  * aimux — typed multimodal data structures mirroring the aimux-core wire format.
  *
- * Same shapes as the ts-rs generated `.ts` types in `aimux-core/bindings/` and
+ * Same shapes as the ts-rs generated `.ts` types in `bindings/node/src/types/` and
  * the Go structs in `bindings/go/multimodal_types.go`. Field names use camelCase
  * in Kotlin and map to the wire format's snake_case via [kotlinx.serialization.SerialName].
  *
@@ -60,9 +60,8 @@ data class EmbeddingUsage(
 /** Provider response metadata for embeddings. */
 @Serializable
 data class EmbeddingResponse(
-    val id: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
-    val timestamp: String? = null,
+    val headers: Map<String, String>? = null,
+    val body: JsonElement? = null,
 )
 
 /** Result of an embedding call. */
@@ -104,15 +103,16 @@ sealed interface AudioData {
 /** Request metadata for speech generation. */
 @Serializable
 data class SpeechRequest(
-    val prompt: String? = null,
+    val body: JsonElement? = null,
 )
 
 /** Provider response metadata for speech. */
 @Serializable
 data class SpeechResponse(
-    val id: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
     val timestamp: String? = null,
+    @SerialName("model_id") val modelId: String? = null,
+    val headers: Map<String, String>? = null,
+    val body: JsonElement? = null,
 )
 
 /** Result of a speech generation call. */
@@ -160,15 +160,17 @@ sealed interface ImageOutputs {
 /** Token usage for image generation (if reported). */
 @Serializable
 data class ImageUsage(
-    val steps: Long? = null,
+    @SerialName("input_tokens") val inputTokens: Long? = null,
+    @SerialName("output_tokens") val outputTokens: Long? = null,
+    @SerialName("total_tokens") val totalTokens: Long? = null,
 )
 
 /** Provider response metadata for images. */
 @Serializable
 data class ImageResponse(
-    val id: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
     val timestamp: String? = null,
+    @SerialName("model_id") val modelId: String? = null,
+    val headers: Map<String, String>? = null,
 )
 
 /** Result of an image generation call. */
@@ -202,24 +204,28 @@ data class ImageCallOptions(
 /** A transcript segment with timing. */
 @Serializable
 data class TranscriptionSegment(
+    // Required f64 in the core (no Option) — see TranscriptionSegment.ts — so
+    // non-nullable here; the defaults follow the file's lenient-decode contract.
+    // Decode-only in practice: segments arrive from the core, which always emits
+    // all three fields, and nothing here sends them back.
     val text: String = "",
-    val start: Double? = null,
-    val end: Double? = null,
+    @SerialName("start_second") val startSecond: Double = 0.0,
+    @SerialName("end_second") val endSecond: Double = 0.0,
 )
 
 /** Request metadata for transcription. */
 @Serializable
 data class TranscriptionRequest(
-    val audio: JsonElement? = null,
-    @SerialName("media_type") val mediaType: String? = null,
+    @SerialName("body") val body: String? = null,
 )
 
 /** Provider response metadata for transcription. */
 @Serializable
 data class TranscriptionResponse(
-    val id: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
     val timestamp: String? = null,
+    @SerialName("model_id") val modelId: String? = null,
+    val headers: Map<String, String>? = null,
+    val body: JsonElement? = null,
 )
 
 /** Result of a transcription call. */
@@ -259,8 +265,10 @@ data class RerankingRank(
 @Serializable
 data class RerankingResponse(
     val id: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
     val timestamp: String? = null,
+    @SerialName("model_id") val modelId: String? = null,
+    val headers: Map<String, String>? = null,
+    val body: JsonElement? = null,
 )
 
 /** Result of a reranking call. */
@@ -328,9 +336,9 @@ sealed interface VideoData {
 /** Provider response metadata for video. */
 @Serializable
 data class VideoResponse(
-    val id: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
     val timestamp: String? = null,
+    @SerialName("model_id") val modelId: String? = null,
+    val headers: Map<String, String>? = null,
 )
 
 /** Result of a video generation call. */
@@ -371,9 +379,8 @@ data class SearchResultItem(
 /** Provider response metadata for search. */
 @Serializable
 data class SearchResponse(
-    val id: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
-    val timestamp: String? = null,
+    val headers: Map<String, String>? = null,
+    val body: JsonElement? = null,
 )
 
 /** Result of a search call. */

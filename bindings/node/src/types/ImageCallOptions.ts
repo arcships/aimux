@@ -32,7 +32,7 @@ aspect_ratio: AspectRatio | null,
 /**
  * Seed for deterministic generation. `None` uses the provider's default.
  */
-seed: bigint | null, 
+seed: number | null, 
 /**
  * Images for image editing or variation generation.
  */

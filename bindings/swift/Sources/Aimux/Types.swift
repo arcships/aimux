@@ -4,7 +4,7 @@
 // boundary (`generateText(prompt:options:) -> String`, `streamText` yields
 // JSON-string `StreamPart`s). This file adds a thin, *typed* layer on top:
 // inputs and outputs are `Codable` Swift structs/enums mirroring
-// `aimux-core/bindings/*.ts` (the ts-rs types generated from the Rust serde
+// `bindings/node/src/types/*.ts` (the ts-rs types generated from the Rust serde
 // definitions). The raw API is left untouched; the typed methods live in a
 // `Model` extension and delegate to the raw ones.
 //
@@ -907,6 +907,29 @@ public struct GenerateTextResult: Codable, Equatable {
     }
 }
 
+// MARK: - TimeoutConfiguration
+
+/// Per-call timeout configuration.
+///
+/// Mirrors `TimeoutConfiguration.ts`. All values are milliseconds; `nil`
+/// disables the corresponding limit. A `total` timeout also covers retry
+/// backoff and the whole streamed response.
+public struct TimeoutConfiguration: Codable, Equatable {
+    public var totalMs: UInt64?
+    public var firstChunkMs: UInt64?
+    public var chunkMs: UInt64?
+
+    enum CodingKeys: String, CodingKey {
+        case totalMs = "total_ms"
+        case firstChunkMs = "first_chunk_ms"
+        case chunkMs = "chunk_ms"
+    }
+
+    public init(totalMs: UInt64? = nil, firstChunkMs: UInt64? = nil, chunkMs: UInt64? = nil) {
+        self.totalMs = totalMs; self.firstChunkMs = firstChunkMs; self.chunkMs = chunkMs
+    }
+}
+
 // MARK: - GenerateTextOptions
 
 /// User-facing options for `generate_text` / `stream_text`.
@@ -932,6 +955,7 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var instructions: String?
     public var bodyOverrides: JSONValue?
     public var maxRetries: UInt32?
+    public var timeout: TimeoutConfiguration?
 
     enum CodingKeys: String, CodingKey {
         case maxOutputTokens = "max_output_tokens"
@@ -949,6 +973,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         case reasoning, instructions
         case bodyOverrides = "body_overrides"
         case maxRetries = "max_retries"
+        case timeout
     }
 
     public init(maxOutputTokens: UInt32? = nil, temperature: Double? = nil,
@@ -958,14 +983,15 @@ public struct GenerateTextOptions: Codable, Equatable {
                 tools: [Tool]? = nil, toolChoice: ToolChoice? = nil,
                 headers: [String: String]? = nil, providerOptions: JSONValue? = nil,
                 reasoning: ReasoningEffort? = nil, instructions: String? = nil,
-                bodyOverrides: JSONValue? = nil, maxRetries: UInt32? = nil) {
+                bodyOverrides: JSONValue? = nil, maxRetries: UInt32? = nil,
+                timeout: TimeoutConfiguration? = nil) {
         self.maxOutputTokens = maxOutputTokens; self.temperature = temperature
         self.stopSequences = stopSequences; self.topP = topP; self.topK = topK
         self.presencePenalty = presencePenalty; self.frequencyPenalty = frequencyPenalty
         self.responseFormat = responseFormat; self.seed = seed; self.tools = tools
         self.toolChoice = toolChoice; self.headers = headers; self.providerOptions = providerOptions
         self.reasoning = reasoning; self.instructions = instructions
-        self.bodyOverrides = bodyOverrides; self.maxRetries = maxRetries
+        self.bodyOverrides = bodyOverrides; self.maxRetries = maxRetries; self.timeout = timeout
     }
 }
 

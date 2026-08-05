@@ -95,6 +95,7 @@ pub struct ImageCallOptions {
     pub aspect_ratio: Option<AspectRatio>,
 
     /// Seed for deterministic generation. `None` uses the provider's default.
+    #[ts(type = "number | null")]
     pub seed: Option<u64>,
 
     /// Images for image editing or variation generation.

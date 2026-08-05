@@ -16,12 +16,14 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::Value;
 
 use aimux_ffi::{
-    aimux_azure_new, aimux_drop_handle, aimux_free_string, aimux_generate_text, aimux_openai_new,
-    aimux_provider_new, aimux_stream_text,
+    aimux_abort_signal_abort, aimux_abort_signal_drop, aimux_abort_signal_new, aimux_azure_new,
+    aimux_drop_handle, aimux_free_string, aimux_generate_text, aimux_openai_new,
+    aimux_provider_new, aimux_stream_text, aimux_stream_text_with_abort,
 };
 
 fn c(s: &str) -> CString {
@@ -144,6 +146,53 @@ fn stream_text_invalid_prompt_json_carries_serde_detail() {
     );
 
     aimux_drop_handle(h);
+}
+
+static CANCEL_ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static CANCEL_DONE: AtomicUsize = AtomicUsize::new(0);
+
+extern "C" fn on_cancel_done() {
+    CANCEL_DONE.fetch_add(1, Ordering::Relaxed);
+}
+
+extern "C" fn on_cancel_error(json: *const c_char) {
+    // SAFETY: the FFI layer keeps the string alive for this callback.
+    let value = unsafe { CStr::from_ptr(json) }
+        .to_str()
+        .unwrap()
+        .to_string();
+    CANCEL_ERRORS.lock().unwrap().push(value);
+}
+
+#[test]
+fn stream_text_with_pre_aborted_signal_reports_aborted() {
+    let model = valid_handle();
+    let abort = aimux_abort_signal_new();
+    assert_ne!(abort, 0);
+    CANCEL_ERRORS.lock().unwrap().clear();
+    CANCEL_DONE.store(0, Ordering::Relaxed);
+
+    aimux_abort_signal_abort(abort);
+    aimux_stream_text_with_abort(
+        model,
+        abort,
+        c("\"hello\"").as_ptr(),
+        ptr::null(),
+        on_part,
+        on_cancel_done,
+        on_cancel_error,
+    );
+
+    let errors = CANCEL_ERRORS.lock().unwrap().clone();
+    assert_eq!(errors.len(), 1, "expected one cancellation error");
+    let env: Value = serde_json::from_str(&errors[0]).expect("error must be JSON");
+    assert_eq!(env["error_type"], "Aborted");
+    assert_eq!(CANCEL_DONE.load(Ordering::Relaxed), 0);
+
+    aimux_abort_signal_abort(abort);
+    aimux_abort_signal_drop(abort);
+    aimux_abort_signal_drop(abort);
+    aimux_drop_handle(model);
 }
 
 // ── Problem B: constructor failures in the returned envelope ────────────────

@@ -253,6 +253,50 @@ void aimux_stream_text(uint64_t handle,
                        void (*on_done)(void),
                        void (*on_error)(const char *err_json));
 
+/**
+ * Create a per-call abort signal.
+ *
+ * @return A non-zero abort handle. Release it with aimux_abort_signal_drop.
+ */
+uint64_t aimux_abort_signal_new(void);
+
+/**
+ * Request cancellation. Invalid handles and repeated calls are safe.
+ *
+ * @param abort_handle Handle from aimux_abort_signal_new.
+ */
+void aimux_abort_signal_abort(uint64_t abort_handle);
+
+/**
+ * Release an abort handle. Active calls keep their signal alive.
+ *
+ * @param abort_handle Handle from aimux_abort_signal_new. Zero is safe.
+ */
+void aimux_abort_signal_drop(uint64_t abort_handle);
+
+/**
+ * Streaming text generation with per-call cancellation.
+ *
+ * This function blocks until the stream ends. Another thread can call
+ * aimux_abort_signal_abort while this function runs. Cancellation calls
+ * on_error with an Aborted error and does not call on_done.
+ *
+ * @param handle       Model handle from aimux_*_new.
+ * @param abort_handle Handle from aimux_abort_signal_new.
+ * @param prompt_json  JSON prompt.
+ * @param opts_json    JSON options. NULL or empty uses defaults.
+ * @param on_part      Called for each StreamPart.
+ * @param on_done      Called once after normal completion.
+ * @param on_error     Called once after an error or cancellation.
+ */
+void aimux_stream_text_with_abort(uint64_t handle,
+                                  uint64_t abort_handle,
+                                  const char *prompt_json,
+                                  const char *opts_json,
+                                  void (*on_part)(const char *json),
+                                  void (*on_done)(void),
+                                  void (*on_error)(const char *err_json));
+
 /* ── Resource management ────────────────────────────────────────────────── */
 
 /**

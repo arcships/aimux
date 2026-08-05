@@ -133,8 +133,9 @@ class MultimodalTypesTest {
     @Test
     void transcriptionResultRoundTrip() throws Exception {
         // Same shape as Go ParseTranscriptionResult.
+        // Timing keys are `start_second`/`end_second` — see TranscriptionSegment.ts.
         String json = "{\"text\":\"Hello world\","
-            + "\"segments\":[{\"text\":\"Hello\",\"start\":0.0,\"end\":1.0}],"
+            + "\"segments\":[{\"text\":\"Hello\",\"start_second\":0.0,\"end_second\":1.0}],"
             + "\"language\":\"en\",\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
 
         MultimodalTypes.TranscriptionResult result =
@@ -144,26 +145,27 @@ class MultimodalTypesTest {
         assertThat(result.getText()).isEqualTo("Hello world");
         assertThat(result.getSegments()).hasSize(1);
         assertThat(result.getSegments().get(0).getText()).isEqualTo("Hello");
-        assertThat(result.getSegments().get(0).getStart()).isEqualTo(0.0);
-        assertThat(result.getSegments().get(0).getEnd()).isEqualTo(1.0);
+        assertThat(result.getSegments().get(0).getStartSecond()).isEqualTo(0.0);
+        assertThat(result.getSegments().get(0).getEndSecond()).isEqualTo(1.0);
         assertThat(result.getLanguage()).isEqualTo("en");
 
         String out = M.writeValueAsString(result);
         MultimodalTypes.TranscriptionResult rt =
             M.readValue(out, MultimodalTypes.TranscriptionResult.class);
 
-        // Full round-trip is lossless: NON_NULL keeps `start:0.0` (the field's
-        // declared default is null, not 0.0, so a set 0.0 is NOT omitted).
+        // Round-trip is lossless: the timings are primitive doubles (the core
+        // declares them required), so NON_NULL can never drop them.
         assertThat(rt).isEqualTo(result);
-        assertThat(rt.getSegments().get(0).getStart()).isEqualTo(0.0);
-        assertThat(rt.getSegments().get(0).getEnd()).isEqualTo(1.0);
+        assertThat(rt.getSegments().get(0).getStartSecond()).isEqualTo(0.0);
+        assertThat(rt.getSegments().get(0).getEndSecond()).isEqualTo(1.0);
         assertThat(rt.getText()).isEqualTo("Hello world");
         assertThat(rt.getLanguage()).isEqualTo("en");
 
-        // Wire form retains start:0.0 and the empty `warnings` list (NON_NULL
-        // suppresses only null, not zero values or empty collections).
+        // Wire form retains start_second:0.0 and the empty `warnings` list
+        // (NON_NULL suppresses only null, not zero values or empty collections).
         assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"text\":\"Hello world\",\"segments\":[{\"text\":\"Hello\",\"start\":0.0,\"end\":1.0}],"
+            "{\"text\":\"Hello world\",\"segments\":"
+                + "[{\"text\":\"Hello\",\"start_second\":0.0,\"end_second\":1.0}],"
                 + "\"language\":\"en\",\"warnings\":[],\"response\":{}}"));
     }
 
