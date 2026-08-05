@@ -214,6 +214,15 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
         }
     }
 
+    // 全部 round 失败(网络/provider 错误)→ 非零退出(脚本可用性):
+    // 没有收集到任何缓存证据,不应以成功状态结束。
+    if per_round.iter().all(|(_, r)| r.is_err()) {
+        anyhow::bail!(
+            "all {} probe request(s) failed — no cache evidence collected",
+            per_round.len()
+        );
+    }
+
     let stats = store.aggregate(&TraceFilter {
         provider: Some(args.provider.clone()),
         model: None,
@@ -250,7 +259,11 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
                     println!(
                         "\n  ✅ prefix caching works: round 1 wrote, later rounds read (max {later} tokens)"
                     );
-                } else if later == 0 && with_claim.len() >= 2 {
+                } else if later == 0 && first_claim > 0 {
+                    println!(
+                        "\n  ⚠ cache reads on the FIRST request (claimed={first_claim}) but none later — verify against the client LCP bound"
+                    );
+                } else if later == 0 {
                     println!(
                         "\n  ℹ no cache reads observed — the provider may not report cache, or the deployment routes requests across nodes (cluster)"
                     );
