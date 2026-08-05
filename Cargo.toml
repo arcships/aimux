@@ -6,6 +6,7 @@ members = [
     "aimux-providers",
     "aimux-stream",
     "scripts/fix_tool",
+    "tools/aimux-cli",
 ]
 resolver = "2"
 
@@ -46,6 +47,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 # Error handling
 thiserror = "2"
 anyhow = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
 
 # Streaming
 tokio-stream = "0.1"

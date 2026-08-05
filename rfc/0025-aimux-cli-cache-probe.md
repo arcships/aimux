@@ -1,6 +1,6 @@
 # RFC-0025: aimux-cli — 缓存探测 client
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (2026-08-05 — P1/P2/P3 落地:offline/session/provider 三子命令;P4 replay 待 RFC-0023,P5 online 待设计)
 > **Date**: 2026-08-05
 > **Scope**: 本 repo 内新增 `tools/aimux-cli` crate——基于 aimux 构建的独立可运行二进制(client),第一版只做缓存探测业务(审计/诊断/调试指定 provider 的缓存能力),回放/通用调试子命令后续按需加
 > **Related**: [RFC-0015](0015-cache-trace-audit.md) 缓存命中探测(本 CLI 消费其数据与查询接口)、[RFC-0023](0023-runtime-request-recording.md) 录制与回放(离线数据源)、[RFC-0024](0024-session-aggregation.md) 会话聚合(session 级诊断)
@@ -158,9 +158,9 @@ CLI **只消费** core 暴露的接口(RFC-0015 §5.3),不实现探测算法:
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |------|------|------|------|
-| **P1** | `offline` 子命令:读 TraceRecord jsonl → 审计统计 + 报告 | RFC-0015 P0(core TraceRecord serde + export_jsonl) | 待实施 |
-| **P2** | `session` 子命令:会话级诊断 + 报告 | RFC-0015 P1(session_chain),RFC-0024(session_id) | 待实施 |
-| **P3** | `provider` 子命令:直接调 provider 探测缓存能力 | RFC-0015 P1(TraceLayer + auditor 落地) | 待实施 |
+| **P1** | `offline` 子命令:读 TraceRecord jsonl → 审计统计 + 报告 | RFC-0015 P0(core TraceRecord serde + export_jsonl) | ✅ 已实施(2026-08-05) |
+| **P2** | `session` 子命令:会话级诊断 + 报告 | RFC-0015 P1(session_chain),RFC-0024(session_id) | ✅ 已实施(2026-08-05) |
+| **P3** | `provider` 子命令:直接调 provider 探测缓存能力 | RFC-0015 P1(TraceLayer + auditor 落地) | ✅ 已实施(2026-08-05) |
 | **P4**(后续) | `replay` 子命令(RFC-0023 消费)+ 通用调试 | RFC-0023 落地 | 不做(第一版) |
 | **P5**(待定) | `online` 形态(Unix socket / 共享内存 / 仅 jsonl) | 设计先行 | 待定 |
 
