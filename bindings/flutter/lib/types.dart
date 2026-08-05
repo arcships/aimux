@@ -633,6 +633,8 @@ class GenerateTextOptions {
   final Map<String, dynamic>? bodyOverrides;
   @JsonKey(name: 'max_retries')
   final int? maxRetries;
+  @JsonKey(name: 'include_raw_chunks')
+  final bool? includeRawChunks;
 
   GenerateTextOptions({
     this.maxOutputTokens,
@@ -652,6 +654,7 @@ class GenerateTextOptions {
     this.instructions,
     this.bodyOverrides,
     this.maxRetries,
+    this.includeRawChunks,
   });
 
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
@@ -679,6 +682,7 @@ class GenerateTextOptions {
       instructions: json['instructions'] as String?,
       bodyOverrides: json['body_overrides'] as Map<String, dynamic>?,
       maxRetries: json['max_retries'] as int?,
+      includeRawChunks: json['include_raw_chunks'] as bool?,
     );
   }
   Map<String, dynamic> toJson() => {
@@ -699,6 +703,7 @@ class GenerateTextOptions {
         if (instructions != null) 'instructions': instructions,
         if (bodyOverrides != null) 'body_overrides': bodyOverrides,
         if (maxRetries != null) 'max_retries': maxRetries,
+        if (includeRawChunks != null) 'include_raw_chunks': includeRawChunks,
       };
 }
 

@@ -67,6 +67,8 @@ pub struct GenerateTextOptions {
     #[serde(skip)]
     #[ts(skip)]
     pub abort_signal: Option<crate::shared::AbortSignal>,
+    /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
+    pub include_raw_chunks: Option<bool>,
 }
 
 impl GenerateTextOptions {
@@ -95,6 +97,7 @@ impl GenerateTextOptions {
             max_retries: self.max_retries,
             timeout: self.timeout,
             abort_signal: self.abort_signal,
+            include_raw_chunks: self.include_raw_chunks,
         }
     }
 }

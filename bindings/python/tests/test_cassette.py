@@ -63,6 +63,20 @@ class TestDeepSeekCassette:
             assert "error" not in result, f"unexpected error: {result.get('error')}"
             assert isinstance(result["text"], str)
 
+    def test_generate_usage_raw_carries_vendor_fields(self):
+        """RFC-0016 M10: DeepSeek's vendor-specific usage fields survive in
+        usage.raw (they are NOT part of the typed Usage model)."""
+        with CassetteServer("deepseek") as srv:
+            model = openai("test-key", "deepseek-chat", srv.url)
+            result = generate_text(model, "Hello")
+
+        raw = result.get("usage", {}).get("raw")
+        assert raw, "usage.raw should be populated (RFC-0016 M10)"
+        assert isinstance(raw.get("prompt_cache_hit_tokens"), int)
+        assert isinstance(raw.get("prompt_cache_miss_tokens"), int)
+        # Typed totals still work alongside the raw object.
+        assert result["usage"]["input_tokens"]["total"] is not None
+
 
 class TestGroqCassette:
 

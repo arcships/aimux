@@ -811,6 +811,7 @@ class GenerateTextOptions(BaseModel):
     instructions: Optional[str] = None
     body_overrides: Optional[Any] = None
     max_retries: Optional[int] = None
+    include_raw_chunks: Optional[bool] = None
 
 
 class GenerateResult(BaseModel):

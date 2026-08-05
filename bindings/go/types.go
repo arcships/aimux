@@ -215,6 +215,7 @@ type GenerateTextOptions struct {
 	BodyOverrides     json.RawMessage   `json:"body_overrides,omitempty"`
 	MaxRetries        *uint32           `json:"max_retries,omitempty"`
 	Timeout           *TimeoutConfiguration `json:"timeout,omitempty"`
+	IncludeRawChunks  *bool             `json:"include_raw_chunks,omitempty"`
 }
 
 // Tool is a function tool definition (the "function" variant).

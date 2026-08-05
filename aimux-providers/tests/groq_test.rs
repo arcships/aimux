@@ -1644,6 +1644,46 @@ mod do_stream {
         assert!(req_body.get("stream_options").is_none());
     }
 
+    /// RFC-0016 M9: warnings computed while building the request body reach
+    /// `StreamStart` (previously hard-coded empty). Groq does not support
+    /// `top_k` → Unsupported warning.
+    #[tokio::test]
+    async fn stream_start_carries_body_build_warnings() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"chatcmpl-1","model":"gemma2-9b-it","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            ),
+            &sse_event(
+                r#"{"id":"chatcmpl-1","model":"gemma2-9b-it","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            ),
+        ]);
+        mock_sse(&server, body).await;
+
+        let model = make_provider(&server);
+
+        let options = CallOptions {
+            top_k: Some(0.5),
+            ..default_options(test_prompt())
+        };
+        let result = model.do_stream(&options).await.unwrap();
+        let parts = collect_stream(result).await;
+
+        match &parts[0] {
+            StreamPart::StreamStart { warnings } => {
+                assert!(
+                    warnings.iter().any(|w| matches!(
+                        w,
+                        aimux_core::types::Warning::Unsupported { feature, .. }
+                            if feature == "topK"
+                    )),
+                    "expected topK Unsupported warning in StreamStart, got {warnings:?}"
+                );
+            }
+            other => panic!("expected StreamStart first, got {other:?}"),
+        }
+    }
+
     /// TS: "should stream tool call deltas when tool call arguments are passed
     /// in the first chunk"
     #[tokio::test]
@@ -1785,6 +1825,11 @@ mod do_stream {
         let usage = finish.expect("should have finish");
         assert_eq!(usage.input_tokens.total, Some(10));
         assert_eq!(usage.output_tokens.total, Some(5));
+        // RFC-0016 M10: the raw object from the x_groq.usage sub-path is
+        // preserved verbatim (vendor fields included).
+        let raw = usage.raw.as_ref().expect("usage.raw must be populated");
+        assert_eq!(raw["prompt_tokens"], json!(10));
+        assert_eq!(raw["total_tokens"], json!(15));
     }
 }
 

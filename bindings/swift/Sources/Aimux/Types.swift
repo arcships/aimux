@@ -932,6 +932,7 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var instructions: String?
     public var bodyOverrides: JSONValue?
     public var maxRetries: UInt32?
+    public var includeRawChunks: Bool?
 
     enum CodingKeys: String, CodingKey {
         case maxOutputTokens = "max_output_tokens"
@@ -949,6 +950,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         case reasoning, instructions
         case bodyOverrides = "body_overrides"
         case maxRetries = "max_retries"
+        case includeRawChunks = "include_raw_chunks"
     }
 
     public init(maxOutputTokens: UInt32? = nil, temperature: Double? = nil,
@@ -958,7 +960,8 @@ public struct GenerateTextOptions: Codable, Equatable {
                 tools: [Tool]? = nil, toolChoice: ToolChoice? = nil,
                 headers: [String: String]? = nil, providerOptions: JSONValue? = nil,
                 reasoning: ReasoningEffort? = nil, instructions: String? = nil,
-                bodyOverrides: JSONValue? = nil, maxRetries: UInt32? = nil) {
+                bodyOverrides: JSONValue? = nil, maxRetries: UInt32? = nil,
+                includeRawChunks: Bool? = nil) {
         self.maxOutputTokens = maxOutputTokens; self.temperature = temperature
         self.stopSequences = stopSequences; self.topP = topP; self.topK = topK
         self.presencePenalty = presencePenalty; self.frequencyPenalty = frequencyPenalty
@@ -966,6 +969,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         self.toolChoice = toolChoice; self.headers = headers; self.providerOptions = providerOptions
         self.reasoning = reasoning; self.instructions = instructions
         self.bodyOverrides = bodyOverrides; self.maxRetries = maxRetries
+        self.includeRawChunks = includeRawChunks
     }
 }
 

@@ -126,6 +126,50 @@ class TestStreamText:
         # Round-trips back to the external-tag dict form.
         assert sp.model_dump(exclude_none=True) == first_delta
 
+    # ── RFC-0016 M2: include_raw_chunks ─────────────────────────────────────
+
+    def test_include_raw_chunks_emits_raw_parts(self):
+        """include_raw_chunks=True surfaces one Raw part per JSON SSE event,
+        before the parsed parts ([DONE] excluded)."""
+        with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
+            model = openai("test-key", "gpt-4o", mock.url)
+            parts = list(
+                stream_text(model, "Say hello",
+                            GenerateTextOptions(include_raw_chunks=True))
+            )
+
+        raw_parts = [p for p in parts if "Raw" in p]
+        # OPENAI_STREAM has 3 JSON events (2 content chunks + 1 usage chunk);
+        # the [DONE] sentinel emits no Raw.
+        assert len(raw_parts) == 3
+        # Each Raw carries the parsed JSON payload of the SSE event.
+        assert (
+            raw_parts[0]["Raw"]["raw_value"]["choices"][0]["delta"]["content"]
+            == "Hello"
+        )
+        # Raw for the first event precedes its TextDelta.
+        first_raw_idx = parts.index(raw_parts[0])
+        first_text_idx = next(
+            i for i, p in enumerate(parts) if "TextDelta" in p
+        )
+        assert first_raw_idx < first_text_idx
+
+    def test_raw_chunks_off_by_default(self):
+        """Default options emit no Raw parts."""
+        with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
+            model = openai("test-key", "gpt-4o", mock.url)
+            parts = list(stream_text(model, "Say hello"))
+
+        assert all("Raw" not in p for p in parts)
+
+    def test_include_raw_chunks_option_roundtrip(self):
+        """Pure model-layer round-trip of the include_raw_chunks option."""
+        opts = GenerateTextOptions(include_raw_chunks=True)
+        dumped = opts.model_dump_json(exclude_none=True)
+        assert '"include_raw_chunks":true' in dumped
+        back = GenerateTextOptions.model_validate_json(dumped)
+        assert back.include_raw_chunks is True
+
 
 # ── options: tools / tool_choice reach the provider ──────────────────────────
 
