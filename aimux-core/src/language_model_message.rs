@@ -14,7 +14,7 @@ use ts_rs::TS;
 ///
 /// Unlike `ModelMessage` (which can have string content), this always has
 /// `content: Vec<ContentPart>` — strings are normalized to `ContentPart::Text`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct LanguageModelPromptMessage {
     pub role: Role,

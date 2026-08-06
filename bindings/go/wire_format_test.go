@@ -97,6 +97,11 @@ func TestWireFormatConsistency(t *testing.T) {
 				if err := json.Unmarshal([]byte(wireJSON), &opts); err != nil {
 					t.Fatalf("failed to unmarshal GenerateTextOptions: %v", err)
 				}
+				if tc.Name == "generate_text_options_with_session_id" {
+					if opts.SessionID == nil || *opts.SessionID != "sess-1" {
+						t.Errorf("expected session_id \"sess-1\", got %v", opts.SessionID)
+					}
+				}
 				// All fields should be zero/nil for the default case.
 				if opts.MaxOutputTokens != nil {
 					t.Error("expected nil MaxOutputTokens")

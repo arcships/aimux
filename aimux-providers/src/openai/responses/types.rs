@@ -14,7 +14,7 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // ── Usage ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ use serde::Deserialize;
 ///
 /// Mirrors the TS `OpenAIResponsesUsage`. Field names are snake_case to match
 /// the wire format.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResponsesUsage {
     #[serde(default)]
     pub input_tokens: u32,
@@ -37,7 +37,7 @@ pub struct ResponsesUsage {
     pub total_tokens: Option<u32>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResponsesInputTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<u32>,
@@ -45,7 +45,7 @@ pub struct ResponsesInputTokensDetails {
     pub cache_write_tokens: Option<u32>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResponsesOutputTokensDetails {
     #[serde(default)]
     pub reasoning_tokens: Option<u32>,

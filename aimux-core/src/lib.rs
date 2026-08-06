@@ -33,10 +33,12 @@ pub mod provider;
 pub mod reranking_model;
 pub mod result;
 pub mod search_model;
+pub mod session;
 pub mod shared;
 pub mod speech_model;
 pub mod stream_part;
 pub mod tool;
+pub mod trace;
 pub mod transcription_model;
 pub mod types;
 pub mod util;
@@ -67,6 +69,10 @@ pub mod prelude {
     pub use crate::result::{GenerateResult, StreamResult};
     pub use crate::search_model::{
         SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
+    };
+    pub use crate::session::{
+        SessionCall, SessionInferer, SessionSource, SessionStore, SessionView, init_session_infer,
+        init_session_store, list_sessions, session_calls,
     };
     pub use crate::shared::{
         AbortSignal, AspectRatio, FileBytes, FileData, SharedHeaders, SharedProviderMetadata,

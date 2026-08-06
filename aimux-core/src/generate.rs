@@ -61,6 +61,12 @@ pub struct GenerateTextOptions {
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
     pub timeout: Option<crate::options::TimeoutConfiguration>,
+    /// Session identifier, for grouping consecutive calls into a session
+    /// (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
+    /// headers. When `None` and the optional session inferer is enabled, one
+    /// may be inferred from prompt-prefix continuation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Abort signal for cancelling the call.
     ///
     /// Runtime handle — never crosses the JSON boundary. Rust callers set it
@@ -97,6 +103,7 @@ impl GenerateTextOptions {
             body_overrides: self.body_overrides,
             max_retries: self.max_retries,
             timeout: self.timeout,
+            session_id: self.session_id,
             abort_signal: self.abort_signal,
             include_raw_chunks: self.include_raw_chunks,
         }
@@ -129,12 +136,18 @@ pub struct GenerateTextResult {
 pub struct StreamTextResult {
     /// The stream of `StreamPart` items.
     pub stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
+    /// The request body that was sent (for debugging / cache probing, RFC-0015).
+    pub request_body: Option<serde_json::Value>,
+    /// Response headers.
+    pub response_headers: Option<HashMap<String, String>>,
 }
 
 impl std::fmt::Debug for StreamTextResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StreamTextResult")
             .field("stream", &"<stream>")
+            .field("request_body", &self.request_body)
+            .field("response_headers", &self.response_headers)
             .finish()
     }
 }
@@ -190,6 +203,22 @@ pub async fn generate_text(
 
     // 2. Build CallOptions.
     let call_options = options.into_call_options(lm_prompt);
+
+    // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
+    //     prompt-prefix inference as fallback. Recorded before the call so
+    //     failures are still part of the session. No-op unless a
+    //     SessionStore is registered (init_session_store); the resolution
+    //     and store lookups are cheap (once-locked env check + two RwLock
+    //     reads) when no store / inferer is registered.
+    if let (Some((session_id, source)), Some(store)) = (
+        crate::session::resolve_session_id(
+            call_options.session_id.as_deref(),
+            &call_options.prompt,
+        ),
+        crate::session::session_store(),
+    ) {
+        store.append(&session_id, source);
+    }
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
     //    The http layer's `http_request` span nests under this one.
@@ -282,6 +311,22 @@ pub async fn stream_text(
     // 2. Build CallOptions.
     let call_options = options.into_call_options(lm_prompt);
 
+    // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
+    //     prompt-prefix inference as fallback. Recorded before the call so
+    //     failures are still part of the session. No-op unless a
+    //     SessionStore is registered (init_session_store); the resolution
+    //     and store lookups are cheap (once-locked env check + two RwLock
+    //     reads) when no store / inferer is registered.
+    if let (Some((session_id, source)), Some(store)) = (
+        crate::session::resolve_session_id(
+            call_options.session_id.as_deref(),
+            &call_options.prompt,
+        ),
+        crate::session::session_store(),
+    ) {
+        store.append(&session_id, source);
+    }
+
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
     let span = tracing::info_span!(
         target: "aimux_core::generate",
@@ -292,9 +337,12 @@ pub async fn stream_text(
     );
     let result: StreamResult = model.do_stream(&call_options).instrument(span).await?;
 
-    // 4. Return stream to user.
+    // 4. Return stream to user (request_body/response_headers kept for
+    //    debugging / cache probing, RFC-0015).
     Ok(StreamTextResult {
         stream: result.stream,
+        request_body: result.request_body,
+        response_headers: result.response_headers,
     })
 }
 

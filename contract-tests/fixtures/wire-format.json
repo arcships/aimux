@@ -59,6 +59,12 @@
     "description": "Default GenerateTextOptions with all fields null"
   },
   {
+    "name": "generate_text_options_with_session_id",
+    "type": "GenerateTextOptions",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"session_id\":\"sess-1\"}",
+    "description": "GenerateTextOptions with explicit session_id (RFC-0024)"
+  },
+  {
     "name": "generate_text_options_include_raw_chunks_true",
     "type": "GenerateTextOptions",
     "rust_value": "",

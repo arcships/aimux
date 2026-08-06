@@ -1,6 +1,6 @@
 # RFC-0015: 缓存命中探测(cache-hit probe)
 
-> **Status**: DRAFT (pending review)——2026-08-05 重写:收窄为"探测本身"(core infrastructure),探测业务划给 `tools/aimux-cli` client,告警由外部消费
+> **Status**: IMPLEMENTED (2026-08-05 — 探测本身进 core:TraceLayer + 判定引擎 + RingTraceStore + 查询 API + FFI/Node/Python/Go 透传;探测业务归 CLI(RFC-0025),告警外部消费)
 > **Date**: 2026-08-01(初稿)/ 2026-08-05(重写)
 > **Scope**: aimux 统一 LLM 访问层上的可选缓存命中探测能力——采集 request_body 指纹 + usage 快照,客户端对连续 agent 调用的原始请求体做前缀对比,判定各 provider 服务端上报的 cache 命中率是否掺水,暴露 verdict 数据与查询接口供消费。**探测本身进 core,探测业务(CLI)独立,告警外部消费。**
 > **Related**: [RFC-0014](0014-logging.md) 统一日志(挂载其 span 树)、[RFC-0023](0023-runtime-request-recording.md) 录制与回放(明文兄弟子系统,trace_id 关联)、[RFC-0024](0024-session-aggregation.md) 会话聚合(session_id 统一来源)、[RFC-0009](0009-request-resilience.md) retry/超时(重试语义影响判定规则)、研究存档 [cache-tracing](../docs/internal/cache-tracing/00-research-plan.md)
@@ -20,6 +20,8 @@ LLM 提供商普遍提供 prompt 缓存折扣(OpenAI cached_tokens / Anthropic c
 | 报低/漏报 | Ollama 官方自认恒报 0;vLLM V1 `prompt_tokens_details` 恒 null(14+ 个月未修);Portkey 流式剥字段;OpenRouter 响应缓存 usage 归零 |
 
 **现状 aimux 无法支撑探测**:`request_body` 已在非流式/流式双路径生成([D6 调查](10-working-document.md#L60-L84)),但 `stream_text` 用户面丢弃它;Anthropic 生产路径只填 `total`;`Usage.raw` 是死字段。业界观测产品(Helicone/Langfuse/Braintrust)均为被动采集,**无人做缓存命中真伪校验**(D3 调查)。
+
+> **现状更新(2026-08-06)**:本 PR(RFC-0015/0024/0025)已落地 `TraceLayer`(探测本身进 core,从 `StreamResult` 字段内部记录 body/headers,不依赖流 part)。原 P0-1「stream 合成 `aimux_meta` part 跨绑定透传」因与 RFC-0016 M2 契约冲突已撤销(commit 89fd6dd):流式调用的 body/headers 不再经流暴露,非流式结果仍携带;若绑定消费者需要,后续走独立 metadata API(见 round-4 标注)。
 
 ### 1.2 三层结构(2026-08-05 对齐)
 
@@ -305,6 +307,7 @@ pub struct PrefixBreak {
 5. **FFI meta 体积**:200KB request_body 序列化翻倍,建议加 `meta_cap_bytes` 配置
 6. **依赖 RFC-0014**:span 树(generate → http_request)挂载探测数据、TTFT 观测点
 7. **依赖 RFC-0024**:`CallOptions.session_id` 字段落地后,探测的 session 归组改用该字段(替代 wrapper 实例注入)
+8. **集群/路由部署(2026-08-05)**:生产模型多为集群部署,节点本地 KV 缓存不共享,路由变化即缓存失效,报 0 命中是常态。R-2.2 低命中预警在 `route_affinity_known=false`(默认)时抑制为备注;DeepSeek 磁盘全局共享缓存跨节点一致(实测表现最好)。详见 [round-5 §3.5](docs/internal/cache-tracing/rounds/round-5-source-verification.md)
 
 ---
 

@@ -660,7 +660,8 @@ pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
             text: Some(output),
             ..Default::default()
         },
-        raw: None,
+        // RFC-0015 P0-3: keep the raw provider usage payload.
+        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
     }
 }
 

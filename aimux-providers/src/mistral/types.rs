@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ── Non-streaming response ──
@@ -50,7 +50,7 @@ pub struct FunctionCallResponse {
     pub arguments: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Serialize)]
 pub struct UsageResponse {
     #[serde(default)]
     pub prompt_tokens: Option<u32>,
@@ -67,7 +67,7 @@ pub struct UsageResponse {
     pub prompt_token_details: Option<PromptTokensDetails>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PromptTokensDetails {
     #[serde(default)]
     pub cached_tokens: Option<u32>,

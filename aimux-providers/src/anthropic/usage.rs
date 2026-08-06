@@ -7,6 +7,10 @@
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::types::{TokenUsage, Usage};
+
+use crate::anthropic::types::AnthropicUsage;
+
 /// A single iteration entry inside an `AnthropicUsage` object.
 #[derive(Debug, Deserialize)]
 pub struct AnthropicUsageIteration {
@@ -128,5 +132,36 @@ pub fn convert_anthropic_usage(usage: &Value, raw_usage: Option<&Value>) -> Anth
             reasoning,
         },
         raw,
+    }
+}
+
+/// Convert a typed `AnthropicUsage` (response/`message_start`) into the
+/// unified core `Usage`, filling cache fields and the raw payload.
+///
+/// Semantics (RFC-0015 P0-2): `input_tokens.total` = input + cache_read +
+/// cache_creation (Anthropic's own `input_tokens` excludes cache). This is a
+/// deliberate correction for consumers.
+pub fn usage_from_anthropic(usage: &AnthropicUsage) -> Usage {
+    match serde_json::to_value(usage) {
+        Ok(v) => {
+            let r = convert_anthropic_usage(&v, None);
+            Usage {
+                input_tokens: TokenUsage {
+                    total: Some(r.input_tokens.total as u32),
+                    no_cache: Some(r.input_tokens.no_cache as u32),
+                    cache_read: Some(r.input_tokens.cache_read as u32),
+                    cache_write: Some(r.input_tokens.cache_write as u32),
+                    ..Default::default()
+                },
+                output_tokens: TokenUsage {
+                    total: Some(r.output_tokens.total as u32),
+                    text: r.output_tokens.text.map(|t| t as u32),
+                    reasoning: r.output_tokens.reasoning.map(|t| t as u32),
+                    ..Default::default()
+                },
+                raw: Some(r.raw),
+            }
+        }
+        Err(_) => Usage::default(),
     }
 }

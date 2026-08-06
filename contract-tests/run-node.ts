@@ -108,6 +108,15 @@ function testGenerateTextOptions() {
       assert(Object.values(rest).every((v: any) => v === null), f.name,
         'all other fields should stay null')
     }
+
+    if (f.name === 'generate_text_options_with_session_id') {
+      // RFC-0024: explicit session_id crosses the wire (snake_case).
+      assert(
+        parsed.session_id === 'sess-1',
+        f.name,
+        `expected session_id "sess-1", got ${JSON.stringify(parsed.session_id)}`,
+      )
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-﻿//! Extended OpenAI model tests — covers previously-missing doGenerate and doStream cases.
+//! Extended OpenAI model tests — covers previously-missing doGenerate and doStream cases.
 //!
 //! Sources: `openai-chat-language-model.test.ts` doGenerate (51 missing) and
 //! doStream (14 missing) sections.
@@ -47,6 +47,7 @@ fn default_opts(p: LanguageModelPrompt) -> CallOptions {
         max_retries: None,
         timeout: None,
         abort_signal: None,
+        session_id: None,
         include_raw_chunks: None,
     }
 }

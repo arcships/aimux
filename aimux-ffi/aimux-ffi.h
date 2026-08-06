@@ -435,6 +435,53 @@ char *aimux_codex_refresh(const char *refresh_token, const char *client_id);
    Returns 0. */
 int aimux_init_logging(const char *level);
 
+/* Session grouping (RFC-0024) */
+
+/* Register the global session store (replaces any previous one). Until
+   called, calls are not grouped and the session query functions return
+   empty results. Returns 0. */
+int aimux_session_store_init(void);
+
+/* Enable/disable the global session inferer (opt-in, off by default).
+   enabled nonzero = on; explicit session_id always wins. Returns 0. */
+int aimux_session_infer_init(int enabled);
+
+/* Query: all calls of a session, ordered by step. Returns a JSON
+   SessionCall[] (empty if unknown / no store) or {"error":...}; caller frees
+   with aimux_free_string. */
+char *aimux_session_calls(const char *session_id);
+
+/* Query: all known sessions. Returns a JSON SessionView[] or
+   {"error":...}; caller frees with aimux_free_string. */
+char *aimux_list_sessions(void);
+
+/* Cache probing (RFC-0015) */
+
+/* Wrap a model handle in a probe layer. The returned handle works with
+   aimux_generate_text / aimux_stream_text (probed) and the aimux_trace_*
+   queries. Returns {"handle":<u64>} or {"error":...}; caller frees. */
+char *aimux_trace_new(uint64_t handle);
+
+/* Same, with the built-in rules auditor attached. strict nonzero = strict
+   mode; zero = shared (safe default). */
+char *aimux_trace_new_audited(uint64_t handle, int strict);
+
+/* Query: aggregated probe statistics, filtered by filter_json (serialized
+   TraceFilter; NULL = all). Returns JSON TraceStats[]; caller frees. */
+char *aimux_trace_aggregate(uint64_t handle, const char *filter_json);
+
+/* Query: one session's chain view. Returns JSON SessionChainView or
+   {"error":"unknown session"}; caller frees. */
+char *aimux_trace_session_chain(uint64_t handle, const char *session_id);
+
+/* Export all probe records as JSONL (one TraceRecord per line). Returns a
+   JSON string (with embedded newlines); caller frees. */
+char *aimux_trace_export_jsonl(uint64_t handle);
+
+/* Clear all probe records of a trace handle. Returns 0, or -1 on invalid
+   handle. */
+int aimux_trace_clear(uint64_t handle);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-func boolPtr(b bool) *bool { return &b }
+func boolPtr(b bool) *bool      { return &b }
 func f64Ptr(f float64) *float64 { return &f }
 
 // RFC-0016 M2: include_raw_chunks=true yields one Raw part per JSON SSE event,

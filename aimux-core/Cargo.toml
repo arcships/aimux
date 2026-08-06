@@ -14,10 +14,10 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
+async-stream = { workspace = true }
 tracing = { workspace = true }
 ts-rs = { workspace = true }
 tokio-util = "0.7"
-async-stream = { workspace = true }
 base64 = "0.22"
 
 [dev-dependencies]

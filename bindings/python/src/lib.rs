@@ -40,10 +40,91 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
 #[pyclass]
 struct Model {
     inner: Arc<dyn LanguageModel>,
+    /// Probe store — `Some` only for traced models (RFC-0015).
+    trace_store: Option<Arc<aimux_core::trace::RingTraceStore>>,
 }
 
 #[pymethods]
 impl Model {
+    /// Wrap this model in a cache-probe layer (RFC-0015) WITHOUT an
+    /// auditor (records fingerprints only; verdicts stay None).
+    fn trace(&self) -> PyResult<Model> {
+        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
+        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone());
+        Ok(Model {
+            inner: Arc::new(layer),
+            trace_store: Some(store),
+        })
+    }
+
+    /// Wrap this model in a probe layer with the built-in rules auditor.
+    /// `strict=True` = strict mode (self-hosted single instance);
+    /// `strict=False` = shared mode (safe default).
+    #[pyo3(signature = (strict=false))]
+    fn trace_audited(&self, strict: bool) -> PyResult<Model> {
+        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
+        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
+            .with_rules_auditor(strict);
+        Ok(Model {
+            inner: Arc::new(layer),
+            trace_store: Some(store),
+        })
+    }
+
+    /// Aggregated probe statistics (RFC-0015 §5.3), filtered by an optional
+    /// JSON `TraceFilter`. Returns a JSON `TraceStats[]` string.
+    #[pyo3(signature = (filter_json=None))]
+    fn trace_aggregate(&self, filter_json: Option<&str>) -> PyResult<String> {
+        let Some(store) = &self.trace_store else {
+            return Err(PyRuntimeError::new_err(
+                "[Trace] model is not traced; call trace() first",
+            ));
+        };
+        let filter = match filter_json {
+            Some(f) => serde_json::from_str(f).map_err(|e| {
+                PyRuntimeError::new_err(format!("[Trace] invalid filter: {e}"))
+            })?,
+            None => Default::default(),
+        };
+        serde_json::to_string(&store.aggregate(&filter))
+            .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize: {e}")))
+    }
+
+    /// One session's chain view. Returns a JSON `SessionChainView` string.
+    fn trace_session_chain(&self, session_id: &str) -> PyResult<String> {
+        let Some(store) = &self.trace_store else {
+            return Err(PyRuntimeError::new_err(
+                "[Trace] model is not traced; call trace() first",
+            ));
+        };
+        let view = store.session_chain(session_id).ok_or_else(|| {
+            PyRuntimeError::new_err("[Trace] unknown session")
+        })?;
+        serde_json::to_string(&view)
+            .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize: {e}")))
+    }
+
+    /// Export all probe records as JSONL (one `TraceRecord` per line).
+    fn trace_export_jsonl(&self) -> PyResult<String> {
+        let Some(store) = &self.trace_store else {
+            return Err(PyRuntimeError::new_err(
+                "[Trace] model is not traced; call trace() first",
+            ));
+        };
+        let mut buf = Vec::new();
+        store
+            .export_jsonl(&mut buf)
+            .map_err(|e| PyRuntimeError::new_err(format!("[Trace] export: {e}")))?;
+        String::from_utf8(buf).map_err(|e| PyRuntimeError::new_err(format!("[Trace] utf8: {e}")))
+    }
+
+    /// Clear all probe records of this traced model.
+    fn trace_clear(&self) {
+        if let Some(store) = &self.trace_store {
+            store.clear();
+        }
+    }
+
     /// Generate text (non-streaming).
     ///
     /// prompt_json: JSON string (bare prompt or {"prompt": ...})
@@ -248,6 +329,7 @@ fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -268,6 +350,7 @@ fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -283,6 +366,7 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -304,6 +388,7 @@ fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -324,6 +409,7 @@ fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -344,6 +430,7 @@ fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mo
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -364,6 +451,7 @@ fn xai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model>
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -390,6 +478,7 @@ fn bedrock(
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -416,6 +505,7 @@ fn vertex(
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -441,6 +531,7 @@ fn anthropic_aws(
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -478,6 +569,7 @@ fn azure(
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -510,6 +602,7 @@ fn provider(
         .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
     Ok(Model {
         inner: Arc::from(model),
+        trace_store: None,
     })
 }
 
@@ -527,11 +620,47 @@ fn init_logging(level: &str) {
     aimux_providers::init_logging(level);
 }
 
+/// Register the global session store (RFC-0024). Replaces any previous one.
+/// Until called, calls are not grouped and the query functions return empty
+/// results.
+#[pyfunction]
+fn init_session_store() {
+    aimux_core::session::init_session_store(std::sync::Arc::new(
+        aimux_core::session::SessionStore::new(),
+    ));
+}
+
+/// Enable/disable the global session inferer (RFC-0024, opt-in, off by
+/// default). Explicit `session_id` values always win regardless.
+#[pyfunction]
+fn init_session_infer(enabled: bool) {
+    aimux_core::session::init_session_infer(enabled);
+}
+
+/// Query: all calls of a session (RFC-0024), as a JSON-serialized
+/// `SessionCall[]` (ordered by step). Empty array if unknown / no store.
+#[pyfunction]
+fn session_calls(session_id: &str) -> String {
+    serde_json::to_string(&aimux_core::session::session_calls(session_id))
+        .unwrap_or_else(|e| format!("{{\"error\":\"serialize: {e}\"}}"))
+}
+
+/// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
+#[pyfunction]
+fn list_sessions() -> String {
+    serde_json::to_string(&aimux_core::session::list_sessions())
+        .unwrap_or_else(|e| format!("{{\"error\":\"serialize: {e}\"}}"))
+}
+
 #[pymodule]
 fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<StreamIterator>()?;
     m.add_function(wrap_pyfunction!(init_logging, m)?)?;
+    m.add_function(wrap_pyfunction!(init_session_store, m)?)?;
+    m.add_function(wrap_pyfunction!(init_session_infer, m)?)?;
+    m.add_function(wrap_pyfunction!(session_calls, m)?)?;
+    m.add_function(wrap_pyfunction!(list_sessions, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;

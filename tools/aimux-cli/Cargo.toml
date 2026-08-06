@@ -1,0 +1,25 @@
+[package]
+name = "aimux-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "aimux cache-probe CLI — 缓存探测业务 client(三层拆分②),基于 aimux 构建"
+keywords = ["llm", "ai", "cache", "cli"]
+categories = ["command-line-utilities"]
+documentation = "https://docs.rs/aimux-cli"
+
+[[bin]]
+name = "aimux"
+path = "src/main.rs"
+
+[dependencies]
+aimux-core = { workspace = true }
+aimux-providers = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }

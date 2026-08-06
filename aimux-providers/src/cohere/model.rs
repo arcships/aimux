@@ -83,7 +83,8 @@ fn convert_usage(tokens: &TokenPair) -> Usage {
             total: Some(tokens.output_tokens),
             ..Default::default()
         },
-        raw: None,
+        // RFC-0015 P0-3: keep the raw provider usage payload.
+        raw: Some(serde_json::to_value(tokens).unwrap_or(serde_json::Value::Null)),
     }
 }
 

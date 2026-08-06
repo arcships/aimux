@@ -57,6 +57,33 @@ export declare class ImageModel {
 
 export declare class Model {
   /**
+   * Wrap this model in a cache-probe layer (RFC-0015). The returned
+   * model records fingerprints/verdicts on every call and exposes the
+   * `traceAggregate` / `traceSessionChain` / `traceExportJsonl` /
+   * `traceClear` queries.
+   */
+  trace(): Model
+  /**
+   * Wrap this model in a cache-probe layer with the built-in rules
+   * auditor (RFC-0015 §4). `strict` = strict mode (self-hosted single
+   * instance); `false` = shared mode (safe default).
+   */
+  traceAudited(strict: boolean): Model
+  /**
+   * Aggregated probe statistics (RFC-0015 §5.3), filtered by a JSON
+   * `TraceFilter` (optional). Returns a JSON `TraceStats[]` string.
+   */
+  traceAggregate(filterJson?: string | undefined | null): string
+  /**
+   * One session's chain view (RFC-0015 §5.3). Returns a JSON
+   * `SessionChainView` string or an error when the session is unknown.
+   */
+  traceSessionChain(sessionId: string): string
+  /** Export all probe records as JSONL (one `TraceRecord` per line). */
+  traceExportJsonl(): string
+  /** Clear all probe records of this traced model. */
+  traceClear(): void
+  /**
    * Generate text (non-streaming).
    *
    * `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.
@@ -206,6 +233,22 @@ export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: s
  */
 export declare function initLogging(level: string): void
 
+/**
+ * Enable/disable the global session inferer (RFC-0024, opt-in, off by
+ * default). Explicit `sessionId` values always win regardless of this.
+ */
+export declare function initSessionInfer(enabled: boolean): void
+
+/**
+ * Register the global session store (RFC-0024). Replaces any previous one.
+ * Until called, calls are not grouped and the session query functions return
+ * empty results.
+ */
+export declare function initSessionStore(): void
+
+/** Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`. */
+export declare function listSessions(): string
+
 /** Create a Mistral language model instance. */
 export declare function mistral(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
@@ -263,6 +306,13 @@ export interface ProviderConfig {
    */
   bodyOverrides?: string
 }
+
+/**
+ * Query: all calls of a session (RFC-0024), as a JSON-serialized
+ * `SessionCall[]` (ordered by step). Empty array if the session is unknown
+ * or no store is registered.
+ */
+export declare function sessionCalls(sessionId: string): string
 
 /** Create a Tavily search model instance. */
 export declare function tavilySearch(apiKey: string, baseUrl?: string | undefined | null): Promise<SearchModel>

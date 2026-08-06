@@ -303,7 +303,7 @@ func TestGenerateTextResultRoundTrip(t *testing.T) {
 			OutputTokens: TokenUsage{Total: u32ptr(5)},
 		},
 		Raw: GenerateResult{
-			Content: []ContentPart{json.RawMessage(`{"Text":{"text":"hello"}}`)},
+			Content:      []ContentPart{json.RawMessage(`{"Text":{"text":"hello"}}`)},
 			FinishReason: FinishReason{Unified: FinishStop},
 		},
 		FinishReason: FinishReason{Unified: FinishStop},
@@ -329,7 +329,7 @@ func TestGenerateTextResultRoundTrip(t *testing.T) {
 
 func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
 	original := GenerateTextResult{
-		Text: "ok",
+		Text:     "ok",
 		Warnings: []json.RawMessage{json.RawMessage(`"some warning"`)},
 	}
 	b, _ := json.Marshal(original)

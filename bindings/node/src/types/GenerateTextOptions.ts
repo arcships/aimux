@@ -34,6 +34,13 @@ max_retries: number | null,
  */
 timeout: TimeoutConfiguration | null, 
 /**
+ * Session identifier, for grouping consecutive calls into a session
+ * (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
+ * headers. When `None` and the optional session inferer is enabled, one
+ * may be inferred from prompt-prefix continuation.
+ */
+session_id: string | null, 
+/**
  * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
  */
 include_raw_chunks: boolean | null, };

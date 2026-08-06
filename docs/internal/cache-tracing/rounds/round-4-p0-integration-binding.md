@@ -30,6 +30,8 @@ Ok(StreamTextResult { stream: result.stream,
 - 各绑定已有 Raw 变体(Python `_SPRaw`、TS `Raw`、Swift `case "Raw"`、Dart `StreamPartRaw`、Go 任意单 key 宽容、Java/Kotlin/C 纯透传)→ 零绑定改动
 - 体积注意:200KB request_body 序列化翻倍,FFI 侧无裁减选项,留 RFC 讨论(可加 `meta_cap_bytes`)
 
+> **⚠ 已被取代(2026-08-06,commit 89fd6dd)**:该合成 part 与 RFC-0016 M2 契约冲突(Raw part 必须一一对应 provider SSE 事件、默认不发射),已从 FFI/Node 流中移除。RFC-0015 探测不受影响——`TraceLayer` 从 `StreamResult.request_body/response_headers` 字段内部记录,不依赖流 part;body/headers 仍经非流式结果暴露,流式调用的跨绑定透传留待独立 metadata API(RFC-0023 草案)。
+
 ### P0-2 Anthropic 生产路径补 cache 字段(含两处 round-3 行号修正)
 
 - 非流式 [stream.rs:180-192](aimux-providers/src/anthropic/stream.rs#L180):cache 全丢,且 **total 口径错误**(Anthropic `input_tokens` 不含 cache,应 = input+cache_read+cache_creation)
