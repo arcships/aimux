@@ -550,3 +550,146 @@ fn model_type_image_edit_alias() {
         serde_json::from_str(r#""image-edit""#).unwrap();
     assert_eq!(m, aimux_core::model_catalogue::ModelType::ImageEdit);
 }
+
+// ── CatalogueSync wiremock tests (P0) ────────────────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn catalogue_sync_success_writes_cache() {
+    let dir = offline_catalogue();
+    std::fs::create_dir_all(&dir).unwrap();
+    let server = MockServer::start().await;
+    let anya2a_body = r#"{"updated_at":"12345","providers":{"deepseek":{"models":[{"id":"deepseek-chat","type":"chat","tool_call":true}]}}}"#;
+    Mock::given(method("GET"))
+        .and(path("/all.json"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_bytes(anya2a_body.as_bytes().to_vec()),
+        )
+        .mount(&server)
+        .await;
+
+    // Unset offline so sync() can hit the network (mock).
+    // SAFETY: serial test, no concurrent env access.
+    unsafe { std::env::set_var("AIMUX_CATALOGUE_OFFLINE", "0") };
+    let sync = CatalogueSync::new()
+        .with_cache_dir(dir.clone())
+        .with_source_url(format!("{}/all.json", server.uri()))
+        .with_version_url(format!("{}/version.json", server.uri()))
+        .with_ttl(std::time::Duration::ZERO); // force sync
+
+    let cat = sync.sync().await.unwrap();
+    assert_eq!(cat.updated_at, 12345);
+    assert!(cat.lookup("deepseek", "deepseek-chat").is_some());
+
+    // Cache file written to disk.
+    let cached = sync.load_cached().unwrap().unwrap();
+    assert!(cached.lookup("deepseek", "deepseek-chat").is_some());
+
+    // Restore offline for other tests.
+    unsafe { std::env::set_var("AIMUX_CATALOGUE_OFFLINE", "1") };
+    cleanup_catalogue(&dir);
+}
+
+#[tokio::test]
+#[serial]
+async fn catalogue_sync_http_error() {
+    let dir = offline_catalogue();
+    std::fs::create_dir_all(&dir).unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/all.json"))
+        .respond_with(ResponseTemplate::new(500).set_body_bytes(b"server error".to_vec()))
+        .mount(&server)
+        .await;
+
+    // Need online mode for sync() to attempt the network call.
+    unsafe { std::env::set_var("AIMUX_CATALOGUE_OFFLINE", "0") };
+    let sync = CatalogueSync::new()
+        .with_cache_dir(dir.clone())
+        .with_source_url(format!("{}/all.json", server.uri()))
+        .with_version_url(format!("{}/version.json", server.uri()));
+
+    let err = sync.sync().await.unwrap_err();
+    assert!(!err.to_string().is_empty());
+
+    // No cache file written.
+    assert!(!dir.join("catalogue.json").exists());
+    unsafe { std::env::set_var("AIMUX_CATALOGUE_OFFLINE", "1") };
+    cleanup_catalogue(&dir);
+}
+
+#[tokio::test]
+#[serial]
+async fn catalogue_load_stale_fallback_on_sync_failure() {
+    let dir = offline_catalogue();
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // Pre-seed a stale cache.
+    let anya2a = serde_json::json!({
+        "updated_at": "100",
+        "providers": {"deepseek": {"models": [{"id": "deepseek-chat", "type": "chat"}]}}
+    });
+    let cat = catalogue::parse_anya2a_all(&anya2a).unwrap();
+    let cache_json = serde_json::to_string(&cat).unwrap();
+    std::fs::write(dir.join("catalogue.json"), cache_json).unwrap();
+
+    // Need online mode so load() attempts sync (which will fail at the mock).
+    unsafe { std::env::set_var("AIMUX_CATALOGUE_OFFLINE", "0") };
+
+    // Point sync at a failing server.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/all.json"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let sync = CatalogueSync::new()
+        .with_cache_dir(dir.clone())
+        .with_source_url(format!("{}/all.json", server.uri()))
+        .with_version_url(format!("{}/version.json", server.uri()))
+        .with_ttl(std::time::Duration::ZERO); // force refetch attempt
+
+    // load() should try sync, fail, and fall back to stale cache.
+    let loaded = sync.load().await.unwrap();
+    assert!(loaded.is_some(), "should fall back to stale cache");
+    assert!(
+        loaded
+            .unwrap()
+            .lookup("deepseek", "deepseek-chat")
+            .is_some()
+    );
+
+    unsafe { std::env::set_var("AIMUX_CATALOGUE_OFFLINE", "1") };
+    cleanup_catalogue(&dir);
+}
+
+#[tokio::test]
+#[serial]
+async fn catalogue_load_fresh_cache_no_network() {
+    let dir = offline_catalogue();
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // Pre-seed a fresh cache.
+    let anya2a = serde_json::json!({
+        "updated_at": "200",
+        "providers": {"openai": {"models": [{"id": "gpt-4o", "type": "chat"}]}}
+    });
+    let cat = catalogue::parse_anya2a_all(&anya2a).unwrap();
+    let cache_json = serde_json::to_string(&cat).unwrap();
+    std::fs::write(dir.join("catalogue.json"), cache_json).unwrap();
+
+    // Use a long TTL so the cache is considered fresh — no network call.
+    let sync = CatalogueSync::new()
+        .with_cache_dir(dir.clone())
+        .with_source_url("http://this-should-not-be-hit.invalid/all.json")
+        .with_ttl(std::time::Duration::from_secs(99999));
+
+    let loaded = sync.load().await.unwrap();
+    assert!(loaded.is_some());
+    assert!(loaded.unwrap().lookup("openai", "gpt-4o").is_some());
+
+    cleanup_catalogue(&dir);
+}

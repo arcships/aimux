@@ -854,4 +854,65 @@ mod tests {
         assert_eq!(cat.provider_count(), 0);
         assert_eq!(cat.model_count(), 0);
     }
+
+    #[test]
+    fn budget_min_via_reasoning_options_fallback() {
+        // When extra_capabilities.reasoning.budget is absent but
+        // reasoning_options contains {type:"budget_tokens", min:N}, the
+        // budget_min should be extracted from the fallback path.
+        let raw = json!({
+            "updated_at": "0",
+            "providers": {
+                "test": {
+                    "models": [{
+                        "id": "m1",
+                        "type": "chat",
+                        "reasoning": { "supported": true },
+                        "reasoning_options": [
+                            { "type": "budget_tokens", "min": 2048 }
+                        ]
+                    }]
+                }
+            }
+        });
+        let cat = parse_anya2a_all(&raw).unwrap();
+        let spec = cat.lookup("test", "m1").unwrap();
+        let r = spec.reasoning.unwrap();
+        assert_eq!(r.budget_min, Some(2048));
+    }
+
+    #[test]
+    fn budget_min_from_extra_capabilities_takes_precedence() {
+        // When both extra_capabilities.reasoning.budget.min AND
+        // reasoning_options budget exist, the extra_capabilities path wins.
+        let raw = json!({
+            "updated_at": "0",
+            "providers": {
+                "test": {
+                    "models": [{
+                        "id": "m1",
+                        "type": "chat",
+                        "reasoning": { "supported": true },
+                        "reasoning_options": [
+                            { "type": "budget_tokens", "min": 999 }
+                        ],
+                        "extra_capabilities": {
+                            "reasoning": {
+                                "supported": true,
+                                "budget": { "min": 1024 }
+                            }
+                        }
+                    }]
+                }
+            }
+        });
+        let cat = parse_anya2a_all(&raw).unwrap();
+        let spec = cat.lookup("test", "m1").unwrap();
+        let r = spec.reasoning.unwrap();
+        assert_eq!(
+            r.budget_min,
+            Some(1024),
+            "extra_capabilities.budget.min should win"
+        );
+    }
 }
