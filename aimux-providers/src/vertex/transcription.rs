@@ -256,6 +256,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
                 body: HttpBody::Json(request_body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

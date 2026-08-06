@@ -203,6 +203,7 @@ impl EmbeddingModel for BedrockEmbeddingModel {
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

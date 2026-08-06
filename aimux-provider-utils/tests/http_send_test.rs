@@ -34,6 +34,7 @@ fn json_post(url: &str) -> HttpRequest {
         headers: vec![("Content-Type".to_string(), "application/json".to_string())],
         body: HttpBody::Json(serde_json::json!({"q": "hi"})),
         abort_signal: None,
+        call_id: None,
     }
 }
 

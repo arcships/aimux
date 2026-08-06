@@ -159,6 +159,7 @@ impl SpeechModel for HumeSpeechModel {
                 body: HttpBody::Json(Value::Object(body.clone())),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

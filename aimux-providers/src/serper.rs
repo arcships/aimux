@@ -166,6 +166,7 @@ impl SearchModel for SerperSearchModel {
                 body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

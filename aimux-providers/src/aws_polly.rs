@@ -272,6 +272,7 @@ impl SpeechModel for AwsPollySpeechModel {
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &AWS_ERROR_STRUCTURE,

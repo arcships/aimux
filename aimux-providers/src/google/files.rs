@@ -196,6 +196,7 @@ impl Files for GoogleFiles {
                 body: HttpBody::Json(init_body_value),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -228,6 +229,7 @@ impl Files for GoogleFiles {
                 body: HttpBody::Bytes(file_bytes, media_type.clone()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -274,6 +276,7 @@ impl Files for GoogleFiles {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
                 },
                 RetryConfig::default(),
                 &GOOGLE_ERROR_STRUCTURE,

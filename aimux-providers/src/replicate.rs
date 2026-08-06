@@ -266,6 +266,7 @@ impl ImageModel for ReplicateImageModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -297,6 +298,7 @@ impl ImageModel for ReplicateImageModel {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -419,6 +421,7 @@ impl VideoModel for ReplicateVideoModel {
                 body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -447,6 +450,7 @@ impl VideoModel for ReplicateVideoModel {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

@@ -257,6 +257,7 @@ impl CodexModel {
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
                 abort_signal: opts.abort_signal.clone(),
+                call_id: None,
             },
             self.config.openai.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
@@ -341,6 +342,7 @@ impl CodexModel {
                 headers: build_header_list(&headers),
                 body: HttpBody::Json(body.clone()),
                 abort_signal: opts.abort_signal.clone(),
+                call_id: options.call_id.clone(),
             },
             self.config.openai.retry_config,
             &DEFAULT_ERROR_STRUCTURE,
@@ -440,6 +442,7 @@ pub async fn codex_refresh_at(
             headers: vec![("content-type".to_string(), "application/json".to_string())],
             body: HttpBody::Json(body),
             abort_signal: None,
+            call_id: None,
         },
         RetryConfig {
             max_retries: 0,

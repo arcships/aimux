@@ -269,6 +269,7 @@ impl ImageModel for StabilityImageModel {
                 body: HttpBody::Bytes(body_bytes, content_type),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &STABILITY_ERROR_STRUCTURE,

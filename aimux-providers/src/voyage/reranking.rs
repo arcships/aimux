@@ -146,6 +146,7 @@ impl RerankingModel for VoyageRerankingModel {
                 body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

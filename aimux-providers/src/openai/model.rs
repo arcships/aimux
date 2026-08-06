@@ -281,6 +281,7 @@ pub async fn execute_generate(
             body: HttpBody::Json(body.clone()),
 
             abort_signal: options.abort_signal.clone(),
+            call_id: None,
         },
         *retry_config,
         &DEFAULT_ERROR_STRUCTURE,
@@ -438,6 +439,7 @@ pub async fn execute_stream(
             body: HttpBody::Json(body.clone()),
 
             abort_signal: options.abort_signal.clone(),
+            call_id: None,
         },
         *retry_config,
         &DEFAULT_ERROR_STRUCTURE,

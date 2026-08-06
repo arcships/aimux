@@ -222,6 +222,7 @@ impl TranscriptionModel for FalTranscriptionModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -248,6 +249,7 @@ impl TranscriptionModel for FalTranscriptionModel {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
@@ -501,6 +503,7 @@ impl ImageModel for FalImageModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -531,6 +534,7 @@ impl ImageModel for FalImageModel {
                         body: HttpBody::Empty,
 
                         abort_signal: options.abort_signal.clone(),
+                        call_id: None,
                     },
                     RetryConfig::default(),
                     &DEFAULT_ERROR_STRUCTURE,
@@ -729,6 +733,7 @@ impl VideoModel for FalVideoModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -753,6 +758,7 @@ impl VideoModel for FalVideoModel {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

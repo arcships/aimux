@@ -300,7 +300,7 @@ pub fn new_call_id() -> String {
 // ── 脱敏(contains 式;与 logging.rs 同规则)──────────────────────────────
 
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
-pub(crate) fn is_sensitive_key(name: &str) -> bool {
+pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n == "authorization"
         || n == "proxy-authorization"
@@ -478,6 +478,23 @@ impl Recorder for JsonlRecorder {
     }
 }
 
+/// 兜底建条目:事件先于 Input 到达(纯层 B/乱序)时,以空 input 占位。
+fn entry_or_init<'a>(
+    pending: &'a mut HashMap<String, Recording>,
+    call_id: &str,
+) -> &'a mut Recording {
+    pending.entry(call_id.to_string()).or_insert_with(|| {
+        Recording::new(
+            call_id,
+            InputRecord {
+                prompt: Vec::new(),
+                options: serde_json::Value::Null,
+            },
+            ProviderRecord::minimal("", ""),
+        )
+    })
+}
+
 /// writer 线程:按 call_id 合并分片;completion barrier 后写一行。
 fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
     let path = dir.join("recordings.jsonl");
@@ -510,9 +527,9 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                 }
             }
             RecordEvent::Exchange { call_id, exchange } => {
-                if let Some(rec) = pending.get_mut(&call_id) {
-                    rec.exchanges.push(exchange);
-                }
+                entry_or_init(&mut pending, &call_id)
+                    .exchanges
+                    .push(exchange);
                 try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::ExchangeUpdate {
@@ -529,15 +546,11 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                 try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::TransportClosed { call_id } => {
-                if let Some(rec) = pending.get_mut(&call_id) {
-                    rec.transport_closed = true;
-                }
+                entry_or_init(&mut pending, &call_id).transport_closed = true;
                 try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::Outcome { call_id, outcome } => {
-                if let Some(rec) = pending.get_mut(&call_id) {
-                    rec.outcome = outcome;
-                }
+                entry_or_init(&mut pending, &call_id).outcome = outcome;
                 try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::Flush { ack } => {

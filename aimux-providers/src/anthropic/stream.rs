@@ -79,6 +79,7 @@ fn build_anthropic_request(
         headers,
         body: http_body,
         abort_signal,
+        call_id: None,
     })
 }
 

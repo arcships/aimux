@@ -257,6 +257,7 @@ impl VideoModel for RunwaymlVideoModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &RUNWAYML_ERROR_STRUCTURE,
@@ -293,6 +294,7 @@ impl VideoModel for RunwaymlVideoModel {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
                 },
                 RetryConfig::default(),
                 &RUNWAYML_ERROR_STRUCTURE,

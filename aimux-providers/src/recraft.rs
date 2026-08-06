@@ -246,6 +246,7 @@ async fn extract_images(
                 body: HttpBody::Empty,
 
                 abort_signal: abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -297,6 +298,7 @@ impl ImageModel for RecraftImageModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

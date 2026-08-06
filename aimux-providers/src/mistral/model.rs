@@ -227,6 +227,7 @@ impl LanguageModel for MistralModel {
                 body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: options.call_id.clone(),
             },
             RetryConfig::default(),
             &MISTRAL_ERROR_STRUCTURE,
@@ -316,6 +317,7 @@ impl LanguageModel for MistralModel {
                 body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: options.call_id.clone(),
             },
             RetryConfig::default(),
             &MISTRAL_ERROR_STRUCTURE,

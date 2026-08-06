@@ -169,6 +169,7 @@ impl SpeechModel for ElevenLabsSpeechModel {
                 body: HttpBody::Json(Value::Object(body.clone())),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -629,6 +630,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
                 body: HttpBody::Bytes(body_bytes, content_type),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

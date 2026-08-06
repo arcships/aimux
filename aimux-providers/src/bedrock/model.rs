@@ -121,6 +121,7 @@ impl LanguageModel for BedrockModel {
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: options.call_id.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -189,6 +190,7 @@ impl LanguageModel for BedrockModel {
                 body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: options.call_id.clone(),
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
