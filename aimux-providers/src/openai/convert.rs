@@ -11,148 +11,16 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::OpenAICompatProfile;
+/// Public capability enum used by the conversion helpers (moved to
+/// `convert_common` in M10; re-exported for API compatibility).
+pub use super::convert_common::SystemMessageMode;
+use super::convert_common::{ModelCapabilities, get_model_capabilities};
 use std::collections::HashMap;
 
 // ── Model capabilities ──────────────────────────────────────────────────────
-
-/// Parsed GPT version info (mirrors TS `getGptVersion`).
-struct GptVersion {
-    major: u32,
-    minor: Option<u32>,
-    variant: Option<String>,
-}
-
-/// Extract GPT version from a model ID (e.g. `gpt-5.1-codex` → major=5, minor=1).
-fn get_gpt_version(model_id: &str) -> Option<GptVersion> {
-    // ^gpt-(\d+)(?:\.(\d+))?(?:-(.+))?$
-    let rest = model_id.strip_prefix("gpt-")?;
-    let (major_str, remainder) = rest
-        .find(|c: char| !c.is_ascii_digit())
-        .map(|i| (&rest[..i], &rest[i..]))
-        .unwrap_or((rest, ""));
-    if major_str.is_empty() {
-        return None;
-    }
-    let major: u32 = major_str.parse().ok()?;
-
-    // Check for minor version (.N)
-    let (minor, remainder) = if let Some(stripped) = remainder.strip_prefix('.') {
-        let (minor_str, after) = stripped
-            .find(|c: char| !c.is_ascii_digit())
-            .map(|i| (&stripped[..i], &stripped[i..]))
-            .unwrap_or((stripped, ""));
-        if minor_str.is_empty() {
-            return Some(GptVersion {
-                major,
-                minor: None,
-                variant: if remainder.is_empty() {
-                    None
-                } else {
-                    Some(remainder.trim_start_matches('-').to_string())
-                },
-            });
-        }
-        (minor_str.parse::<u32>().ok(), after)
-    } else {
-        (None, remainder)
-    };
-
-    let variant = if remainder.is_empty() {
-        None
-    } else {
-        Some(remainder.trim_start_matches('-').to_string())
-    };
-
-    Some(GptVersion {
-        major,
-        minor,
-        variant,
-    })
-}
-
-/// Extract o-series version (e.g. `o4-mini` → 4).
-fn get_o_series_version(model_id: &str) -> Option<u32> {
-    let rest = model_id.strip_prefix('o')?;
-    if rest.is_empty() || !rest.chars().next().unwrap().is_ascii_digit() {
-        return None;
-    }
-    let (digits, _) = rest
-        .find(|c: char| !c.is_ascii_digit())
-        .map(|i| (&rest[..i], &rest[i..]))
-        .unwrap_or((rest, ""));
-    digits.parse().ok()
-}
-
-/// Model capabilities relevant to request body construction.
-struct ModelCapabilities {
-    is_reasoning_model: bool,
-    system_message_mode: SystemMessageMode,
-    supports_flex_processing: bool,
-    supports_priority_processing: bool,
-    supports_non_reasoning_parameters: bool,
-}
-
-/// How system messages are mapped.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SystemMessageMode {
-    System,
-    Developer,
-    Remove,
-}
-
-fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
-    let o_version = get_o_series_version(model_id);
-    let gpt_version = get_gpt_version(model_id);
-    let is_gpt_chat_model = gpt_version.as_ref().is_some_and(|v| {
-        v.minor.is_none() && v.variant.as_deref().is_some_and(|s| s.starts_with("chat"))
-    });
-    let is_gpt_nano_model = gpt_version
-        .as_ref()
-        .is_some_and(|v| v.variant.as_deref().is_some_and(|s| s.starts_with("nano")));
-
-    let supports_flex_processing = o_version.is_some_and(|v| v >= 3)
-        || gpt_version
-            .as_ref()
-            .is_some_and(|v| v.major >= 5 && !is_gpt_chat_model);
-
-    let supports_priority_processing = model_id.starts_with("gpt-4")
-        || gpt_version
-            .as_ref()
-            .is_some_and(|v| v.major >= 5 && !is_gpt_nano_model && !is_gpt_chat_model)
-        || o_version.is_some_and(|v| v >= 3);
-
-    let is_reasoning_model = o_version.is_some()
-        || gpt_version
-            .as_ref()
-            .is_some_and(|v| v.major >= 5 && !is_gpt_chat_model);
-
-    let supports_non_reasoning_parameters = gpt_version
-        .as_ref()
-        .is_some_and(|v| v.major > 5 || (v.major == 5 && v.minor.unwrap_or(0) >= 1));
-
-    let system_message_mode = if is_reasoning_model {
-        SystemMessageMode::Developer
-    } else {
-        SystemMessageMode::System
-    };
-
-    ModelCapabilities {
-        is_reasoning_model,
-        system_message_mode,
-        supports_flex_processing,
-        supports_priority_processing,
-        supports_non_reasoning_parameters,
-    }
-}
-
-/// Check if a reasoning value is a custom (non-"provider-default") value.
-fn is_custom_reasoning(reasoning: &Option<ReasoningEffort>) -> bool {
-    match reasoning {
-        Some(ReasoningEffort::ProviderDefault) => false,
-        Some(_) => true,
-        None => false,
-    }
-}
+// `GptVersion` / `get_gpt_version` / `get_o_series_version` /
+// `ModelCapabilities` / `SystemMessageMode` / `get_model_capabilities` live in
+// `super::convert_common` and are shared with the Responses converter (M10).
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
 
@@ -993,8 +861,13 @@ fn openai_option(
         .cloned()
 }
 
-/// Convert `CallOptions` to an OpenAI request body (without warnings).
-pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -> Value {
+/// Convert `CallOptions` to an OpenAI request body (without warnings), or an
+/// [`AiMuxError`] describing what failed.
+pub fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<Value, AiMuxError> {
     build_request_body_with_warnings(
         model_id,
         options,
@@ -1002,62 +875,72 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
         "openai",
         &OpenAICompatProfile::full(),
     )
-    .body
+    .map(|r| r.body)
 }
 
 /// Convert `CallOptions` to an OpenAI request body, returning warnings.
 /// `provider` controls provider-specific behaviour (e.g. groq reads provider
 /// options from the `"groq"` key).
 /// `profile` declares provider capability differences (top_k, tools, etc.).
-pub fn build_request_body_with_warnings_fallible(
-    model_id: &str,
-    options: &CallOptions,
-    stream: bool,
+///
+/// Conversion errors propagate to the caller (fail-fast, issue H2): the old
+/// behaviour of silently returning `body: null` sent empty requests upstream
+/// and made conversion failures invisible.
+/// Look up a key from the provider-specific options (groq → "groq" then
+/// "openai"; otherwise "openai").
+fn provider_option(
+    provider_opts: &Option<HashMap<String, Value>>,
     provider: &str,
-    profile: &OpenAICompatProfile,
-) -> Result<RequestBodyResult, AiMuxError> {
-    let mut warnings: Vec<Warning> = Vec::new();
-    let caps = get_model_capabilities(model_id);
+    key: &str,
+) -> Option<Value> {
+    if provider == "groq"
+        && let Some(v) = provider_opts
+            .as_ref()
+            .and_then(|m| m.get("groq"))
+            .and_then(|o| o.get(key))
+            .cloned()
+    {
+        return Some(v);
+    }
+    openai_option(provider_opts, key)
+}
 
-    // Parse provider options — groq reads from the "groq" key (with "openai"
-    // fallback), other providers read from "openai".
-    let provider_opts = &options.provider_options;
-
-    // Helper: look up a key from the provider-specific options (groq → "groq"
-    // then "openai"; otherwise "openai").
-    let popt = |key: &str| -> Option<Value> {
-        if provider == "groq"
-            && let Some(v) = provider_opts
-                .as_ref()
-                .and_then(|m| m.get("groq"))
-                .and_then(|o| o.get(key))
-                .cloned()
-        {
-            return Some(v);
-        }
-        openai_option(provider_opts, key)
-    };
-
-    // Resolve reasoning effort — direct passthrough (v3: no built-in vendor
-    // normalization). Top-level `reasoning` maps verbatim to `reasoning_effort`
-    // (all levels sent as-is, including none/minimal/xhigh);
-    // `providerOptions.reasoningEffort` wins over top-level `reasoning`.
-    let resolved_reasoning_effort: Option<String> = popt("reasoningEffort")
+/// Resolve the effective reasoning effort — direct passthrough (v3: no built-in
+/// vendor normalization). `providerOptions.reasoningEffort` wins over top-level
+/// `reasoning`; custom top-level levels map verbatim to `reasoning_effort`.
+fn resolve_reasoning_effort(
+    provider_opts: &Option<HashMap<String, Value>>,
+    provider: &str,
+    reasoning: &Option<ReasoningEffort>,
+) -> Option<String> {
+    provider_option(provider_opts, provider, "reasoningEffort")
         .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()))
         .or_else(|| {
-            if is_custom_reasoning(&options.reasoning) {
-                options.reasoning.map(|r| r.to_string())
+            if reasoning.is_some_and(ReasoningEffort::is_custom) {
+                reasoning.map(|r| r.to_string())
             } else {
                 None
             }
-        });
+        })
+}
 
-    let is_reasoning_model = popt("forceReasoning")
+fn resolve_is_reasoning_model(
+    provider_opts: &Option<HashMap<String, Value>>,
+    provider: &str,
+    caps: &ModelCapabilities,
+) -> bool {
+    provider_option(provider_opts, provider, "forceReasoning")
         .map(|v| v.as_bool().unwrap_or(false))
-        .unwrap_or(caps.is_reasoning_model);
+        .unwrap_or(caps.is_reasoning_model)
+}
 
-    // Determine system message mode
-    let system_message_mode = popt("systemMessageMode")
+fn resolve_system_message_mode(
+    provider_opts: &Option<HashMap<String, Value>>,
+    provider: &str,
+    is_reasoning_model: bool,
+    caps: &ModelCapabilities,
+) -> SystemMessageMode {
+    provider_option(provider_opts, provider, "systemMessageMode")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .map(|s| match s.as_str() {
             "developer" => SystemMessageMode::Developer,
@@ -1068,13 +951,408 @@ pub fn build_request_body_with_warnings_fallible(
             SystemMessageMode::Developer
         } else {
             caps.system_message_mode
-        });
+        })
+}
 
-    // top_k: only send when the provider supports it. The actual body
-    // insertion happens after `body` is created below.
-    let top_k_value = options.top_k;
+/// Insert `max_tokens` / `max_completion_tokens`.
+///
+/// `max_tokens_key` 是内部数据（非用户概念），指定该厂商唯一认的 key：
+/// - Some("max_tokens")            → 只发 max_tokens（如 stepfun/siliconflow/perplexity 等）
+/// - Some("max_completion_tokens") → 只发 max_completion_tokens（groq/heroku 等）
+/// - None                          → 现状推断：推理模型发 mct，非推理发 max_tokens。
+fn apply_max_tokens(
+    body: &mut Value,
+    options: &CallOptions,
+    provider_opts: &Option<HashMap<String, Value>>,
+    provider: &str,
+    profile: &OpenAICompatProfile,
+    is_reasoning_model: bool,
+) {
+    let max_completion_tokens_opt = provider_option(provider_opts, provider, "maxCompletionTokens")
+        .and_then(|v| v.as_u64().map(|n| n as u32));
+
+    let use_mct_key = match profile.max_tokens_key {
+        Some("max_tokens") => false,
+        Some("max_completion_tokens") => true,
+        _ => is_reasoning_model,
+    };
+
+    if let Some(max_tokens) = options.max_output_tokens {
+        let key = if use_mct_key {
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
+        body[key] = json!(max_tokens);
+    }
+    // 显式 maxCompletionTokens 选项：只认 max_tokens 的厂商不发送 mct。
+    if let Some(mct) = max_completion_tokens_opt
+        && profile.max_tokens_key != Some("max_tokens")
+    {
+        body["max_completion_tokens"] = json!(mct);
+    }
+}
+
+/// Sampling parameters that survive the reasoning-model / search-preview
+/// capability filtering.
+#[derive(Default)]
+struct SamplingParams {
+    temperature: Option<f64>,
+    top_p: Option<f64>,
+    frequency_penalty: Option<f64>,
+    presence_penalty: Option<f64>,
+}
+
+/// Remove unsupported sampling settings for reasoning models and the search
+/// preview models, pushing a compatibility warning for each removal.
+fn strip_sampling_params(
+    options: &CallOptions,
+    model_id: &str,
+    caps: &ModelCapabilities,
+    is_reasoning_model: bool,
+    resolved_reasoning_effort: &Option<String>,
+    warnings: &mut Vec<Warning>,
+) -> SamplingParams {
+    let mut params = SamplingParams {
+        temperature: options.temperature,
+        top_p: options.top_p,
+        frequency_penalty: options.frequency_penalty,
+        presence_penalty: options.presence_penalty,
+    };
+
+    if is_reasoning_model {
+        let allow_non_reasoning = resolved_reasoning_effort.as_deref() == Some("none")
+            && caps.supports_non_reasoning_parameters;
+
+        if !allow_non_reasoning {
+            if params.temperature.is_some() {
+                params.temperature = None;
+                warnings.push(Warning::Unsupported {
+                    feature: "temperature".to_string(),
+                    details: Some("temperature is not supported for reasoning models".to_string()),
+                });
+            }
+            if params.top_p.is_some() {
+                params.top_p = None;
+                warnings.push(Warning::Unsupported {
+                    feature: "topP".to_string(),
+                    details: Some("topP is not supported for reasoning models".to_string()),
+                });
+            }
+        }
+
+        if params.frequency_penalty.is_some() {
+            params.frequency_penalty = None;
+            warnings.push(Warning::Unsupported {
+                feature: "frequencyPenalty".to_string(),
+                details: Some("frequencyPenalty is not supported for reasoning models".to_string()),
+            });
+        }
+        if params.presence_penalty.is_some() {
+            params.presence_penalty = None;
+            warnings.push(Warning::Unsupported {
+                feature: "presencePenalty".to_string(),
+                details: Some("presencePenalty is not supported for reasoning models".to_string()),
+            });
+        }
+    } else if (model_id.starts_with("gpt-4o-search-preview")
+        || model_id.starts_with("gpt-4o-mini-search-preview"))
+        && params.temperature.is_some()
+    {
+        params.temperature = None;
+        warnings.push(Warning::Unsupported {
+            feature: "temperature".to_string(),
+            details: Some(
+                "temperature is not supported for the search preview models and has been removed."
+                    .to_string(),
+            ),
+        });
+    }
+
+    params
+}
+
+/// Write the surviving sampling params (plus stop/seed) into the body.
+fn insert_sampling_params(body: &mut Value, params: &SamplingParams, options: &CallOptions) {
+    if let Some(temp) = params.temperature {
+        body["temperature"] = json!(temp);
+    }
+    if let Some(tp) = params.top_p {
+        body["top_p"] = json!(tp);
+    }
+    if let Some(fp) = params.frequency_penalty {
+        body["frequency_penalty"] = json!(fp);
+    }
+    if let Some(pp) = params.presence_penalty {
+        body["presence_penalty"] = json!(pp);
+    }
+    if let Some(ref stop) = options.stop_sequences {
+        body["stop"] = json!(stop);
+    }
+    if let Some(seed) = options.seed {
+        body["seed"] = json!(seed);
+    }
+}
+
+/// `response_format` → body, respecting the profile's capability flag and
+/// groq's structuredOutputs / strictJsonSchema semantics.
+fn apply_response_format(
+    body: &mut Value,
+    options: &CallOptions,
+    provider_opts: &Option<HashMap<String, Value>>,
+    provider: &str,
+    profile: &OpenAICompatProfile,
+    warnings: &mut Vec<Warning>,
+) {
+    if !profile.supports_response_format {
+        // Provider does not support response_format: drop it and warn when the
+        // caller requested a (non-default) format. `Text` is the no-op default
+        // and needs no warning.
+        if let Some(ref rf) = options.response_format
+            && !matches!(rf, ResponseFormat::Text)
+        {
+            warnings.push(Warning::Unsupported {
+                feature: "responseFormat".to_string(),
+                details: Some("response_format is not supported by this provider".to_string()),
+            });
+        }
+        return;
+    }
+    let Some(ref rf) = options.response_format else {
+        return;
+    };
+    match rf {
+        ResponseFormat::Text => {}
+        ResponseFormat::Json {
+            schema,
+            name,
+            description,
+        } => {
+            // Groq: structuredOutputs defaults to true, strictJsonSchema
+            // defaults to true. When structuredOutputs is false and a schema
+            // is provided, emit a warning and use json_object.
+            let (structured_outputs, strict_json_schema) = if provider == "groq" {
+                (
+                    provider_option(provider_opts, provider, "structuredOutputs")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                    provider_option(provider_opts, provider, "strictJsonSchema")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                )
+            } else {
+                (true, true)
+            };
+
+            if schema.is_some() && structured_outputs {
+                let mut schema_obj = json!({});
+                if let Some(s) = schema {
+                    schema_obj["schema"] = s.clone();
+                }
+                schema_obj["name"] = json!(name.clone().unwrap_or_else(|| "response".to_string()));
+                if let Some(d) = description {
+                    schema_obj["description"] = json!(d);
+                }
+                schema_obj["strict"] = json!(strict_json_schema);
+                body["response_format"] = json!({
+                    "type": "json_schema",
+                    "json_schema": schema_obj,
+                });
+            } else if schema.is_some() && !structured_outputs {
+                // Schema provided but structuredOutputs disabled → json_object + warning
+                body["response_format"] = json!({ "type": "json_object" });
+                warnings.push(Warning::Unsupported {
+                    feature: "responseFormat".to_string(),
+                    details: Some(
+                        "JSON response format schema is only supported with structuredOutputs"
+                            .to_string(),
+                    ),
+                });
+            } else {
+                body["response_format"] = json!({ "type": "json_object" });
+            }
+        }
+    }
+}
+
+/// Pass through the simple provider-specific options that map 1:1 to a body
+/// field (plus Groq's `reasoning_format`).
+fn apply_provider_option_passthrough(
+    body: &mut Value,
+    provider_opts: &Option<HashMap<String, Value>>,
+    provider: &str,
+) {
+    let mut set = |key: &str, body_key: &str| {
+        if let Some(val) = provider_option(provider_opts, provider, key) {
+            body[body_key] = val;
+        }
+    };
+    set("logitBias", "logit_bias");
+    set("user", "user");
+    set("parallelToolCalls", "parallel_tool_calls");
+    set("textVerbosity", "verbosity");
+    set("store", "store");
+    set("metadata", "metadata");
+    set("prediction", "prediction");
+    set("promptCacheKey", "prompt_cache_key");
+    set("promptCacheRetention", "prompt_cache_retention");
+    set("promptCacheOptions", "prompt_cache_options");
+    set("safetyIdentifier", "safety_identifier");
+    // M3 (RFC-0016): logprobs request support. Previously `logprobs` /
+    // `topLogprobs` were silently dropped by the provider_options whitelist —
+    // the only option that "quietly did nothing". Pass-through as-is (OpenAI
+    // expects `logprobs: bool` and `top_logprobs: int`).
+    set("logprobs", "logprobs");
+    set("topLogprobs", "top_logprobs");
+    // Groq: reasoning_format provider option
+    if provider == "groq"
+        && let Some(val) = provider_option(provider_opts, provider, "reasoningFormat")
+    {
+        body["reasoning_format"] = val;
+    }
+}
+
+/// `service_tier` with model-capability validation (Groq passes it through
+/// without validation).
+fn apply_service_tier(
+    body: &mut Value,
+    provider_opts: &Option<HashMap<String, Value>>,
+    provider: &str,
+    caps: &ModelCapabilities,
+    warnings: &mut Vec<Warning>,
+) {
+    if provider == "groq" {
+        if let Some(val) = provider_option(provider_opts, provider, "serviceTier") {
+            body["service_tier"] = val;
+        }
+        return;
+    }
+    let service_tier = provider_option(provider_opts, provider, "serviceTier")
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    if let Some(ref st) = service_tier {
+        match st.as_str() {
+            "flex" => {
+                if caps.supports_flex_processing {
+                    body["service_tier"] = json!(st);
+                } else {
+                    warnings.push(Warning::Unsupported {
+                        feature: "serviceTier".to_string(),
+                        details: Some(
+                            "flex processing is only available for o3, o4-mini, and gpt-5 models"
+                                .to_string(),
+                        ),
+                    });
+                }
+            }
+            "priority" => {
+                if caps.supports_priority_processing {
+                    body["service_tier"] = json!(st);
+                } else {
+                    warnings.push(Warning::Unsupported {
+                        feature: "serviceTier".to_string(),
+                        details: Some(
+                            "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported".to_string(),
+                        ),
+                    });
+                }
+            }
+            _ => {
+                body["service_tier"] = json!(st);
+            }
+        }
+    }
+}
+
+/// Function tools → `tools` / `tool_choice` (Groq also maps provider-defined
+/// tools such as browser_search). Drops both when the profile declares no tool
+/// support, warning when the caller supplied any.
+fn apply_tools(
+    body: &mut Value,
+    options: &CallOptions,
+    provider: &str,
+    profile: &OpenAICompatProfile,
+    model_id: &str,
+    warnings: &mut Vec<Warning>,
+) {
+    let function_tools: Option<Vec<FunctionTool>> = options.tools.as_ref().map(|tools| {
+        tools
+            .iter()
+            .filter_map(|t| match t {
+                Tool::Function(ft) => Some(ft.clone()),
+                Tool::Provider(_) => None,
+            })
+            .collect()
+    });
+
+    let supports_tools = profile.supports_tools;
+    if !supports_tools && options.tools.as_ref().is_some_and(|t| !t.is_empty()) {
+        warnings.push(Warning::Unsupported {
+            feature: "tools".to_string(),
+            details: Some("tools are not supported by this provider".to_string()),
+        });
+    }
+
+    let prepared = if !supports_tools {
+        PreparedTools {
+            tools: None,
+            tool_choice: None,
+            tool_warnings: Vec::new(),
+        }
+    } else if provider == "groq" {
+        prepare_tools_groq(
+            &function_tools,
+            options.tools.as_ref(),
+            Some(&options.tool_choice),
+            model_id,
+        )
+    } else {
+        prepare_tools(&function_tools, Some(&options.tool_choice))
+    };
+
+    if let Some(tools) = prepared.tools {
+        body["tools"] = json!(tools);
+        if let Some(tc) = prepared.tool_choice {
+            body["tool_choice"] = tc;
+        }
+    }
+
+    // Convert tool warnings to Warning type
+    for tw in prepared.tool_warnings {
+        warnings.push(Warning::Unsupported {
+            feature: tw.feature,
+            details: tw.details,
+        });
+    }
+}
+
+/// Convert `CallOptions` to an OpenAI request body, returning warnings.
+/// `provider` controls provider-specific behaviour (e.g. groq reads provider
+/// options from the `"groq"` key).
+/// `profile` declares provider capability differences (top_k, tools, etc.).
+///
+/// Conversion errors propagate to the caller (fail-fast, issue H2): the old
+/// behaviour of silently returning `body: null` sent empty requests upstream
+/// and made conversion failures invisible.
+pub fn build_request_body_with_warnings(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+    provider: &str,
+    profile: &OpenAICompatProfile,
+) -> Result<RequestBodyResult, AiMuxError> {
+    let mut warnings: Vec<Warning> = Vec::new();
+    let caps = get_model_capabilities(model_id);
+    let provider_opts = &options.provider_options;
+
+    let resolved_reasoning_effort =
+        resolve_reasoning_effort(provider_opts, provider, &options.reasoning);
+    let is_reasoning_model = resolve_is_reasoning_model(provider_opts, provider, &caps);
+    let system_message_mode =
+        resolve_system_message_mode(provider_opts, provider, is_reasoning_model, &caps);
+
+    // top_k: only send when the provider supports it.
     let top_k_supported = profile.supports_top_k;
-    if top_k_value.is_some() && !top_k_supported {
+    if options.top_k.is_some() && !top_k_supported {
         warnings.push(Warning::Unsupported {
             feature: "topK".to_string(),
             details: None,
@@ -1100,342 +1378,54 @@ pub fn build_request_body_with_warnings_fallible(
         }
     }
 
-    // top_k: only send when the provider supports it.
-    if let Some(tk) = top_k_value
-        && top_k_supported
-    {
+    if let Some(tk) = options.top_k.filter(|_| top_k_supported) {
         body["top_k"] = json!(tk);
     }
 
-    // Max tokens / max_completion_tokens。
-    //
-    // `max_tokens_key` 是内部数据（非用户概念），指定该厂商唯一认的 key：
-    // - Some("max_tokens")            → 只发 max_tokens（如 stepfun/siliconflow/perplexity 等）
-    // - Some("max_completion_tokens") → 只发 max_completion_tokens（groq/heroku 等）
-    // - None                          → 现状推断：推理模型发 mct，非推理发 max_tokens。
-    let max_completion_tokens_opt =
-        popt("maxCompletionTokens").and_then(|v| v.as_u64().map(|n| n as u32));
+    apply_max_tokens(
+        &mut body,
+        options,
+        provider_opts,
+        provider,
+        profile,
+        is_reasoning_model,
+    );
 
-    // 推理模型用 mct 还是 max_tokens：由 max_tokens_key 决定，None/未知值走现状推断。
-    let use_mct_key = match profile.max_tokens_key {
-        Some("max_tokens") => false,
-        Some("max_completion_tokens") => true,
-        _ => is_reasoning_model,
-    };
+    let sampling = strip_sampling_params(
+        options,
+        model_id,
+        &caps,
+        is_reasoning_model,
+        &resolved_reasoning_effort,
+        &mut warnings,
+    );
+    insert_sampling_params(&mut body, &sampling, options);
 
-    if let Some(max_tokens) = options.max_output_tokens {
-        let key = if use_mct_key {
-            "max_completion_tokens"
-        } else {
-            "max_tokens"
-        };
-        body[key] = json!(max_tokens);
-    }
-    // 显式 maxCompletionTokens 选项：只认 max_tokens 的厂商不发送 mct。
-    if let Some(mct) = max_completion_tokens_opt
-        && profile.max_tokens_key != Some("max_tokens")
-    {
-        body["max_completion_tokens"] = json!(mct);
-    }
+    apply_response_format(
+        &mut body,
+        options,
+        provider_opts,
+        provider,
+        profile,
+        &mut warnings,
+    );
+    apply_provider_option_passthrough(&mut body, provider_opts, provider);
 
-    // Temperature, top_p, frequency_penalty, presence_penalty
-    let mut temperature = options.temperature;
-    let mut top_p = options.top_p;
-    let mut frequency_penalty = options.frequency_penalty;
-    let mut presence_penalty = options.presence_penalty;
-
-    // Remove unsupported settings for reasoning models
-    if is_reasoning_model {
-        let allow_non_reasoning = resolved_reasoning_effort.as_deref() == Some("none")
-            && caps.supports_non_reasoning_parameters;
-
-        if !allow_non_reasoning {
-            if temperature.is_some() {
-                temperature = None;
-                warnings.push(Warning::Unsupported {
-                    feature: "temperature".to_string(),
-                    details: Some("temperature is not supported for reasoning models".to_string()),
-                });
-            }
-            if top_p.is_some() {
-                top_p = None;
-                warnings.push(Warning::Unsupported {
-                    feature: "topP".to_string(),
-                    details: Some("topP is not supported for reasoning models".to_string()),
-                });
-            }
-        }
-
-        if frequency_penalty.is_some() {
-            frequency_penalty = None;
-            warnings.push(Warning::Unsupported {
-                feature: "frequencyPenalty".to_string(),
-                details: Some("frequencyPenalty is not supported for reasoning models".to_string()),
-            });
-        }
-        if presence_penalty.is_some() {
-            presence_penalty = None;
-            warnings.push(Warning::Unsupported {
-                feature: "presencePenalty".to_string(),
-                details: Some("presencePenalty is not supported for reasoning models".to_string()),
-            });
-        }
-    } else if (model_id.starts_with("gpt-4o-search-preview")
-        || model_id.starts_with("gpt-4o-mini-search-preview"))
-        && temperature.is_some()
-    {
-        temperature = None;
-        warnings.push(Warning::Unsupported {
-            feature: "temperature".to_string(),
-            details: Some(
-                "temperature is not supported for the search preview models and has been removed."
-                    .to_string(),
-            ),
-        });
-    }
-
-    if let Some(temp) = temperature {
-        body["temperature"] = json!(temp);
-    }
-    if let Some(tp) = top_p {
-        body["top_p"] = json!(tp);
-    }
-    if let Some(fp) = frequency_penalty {
-        body["frequency_penalty"] = json!(fp);
-    }
-    if let Some(pp) = presence_penalty {
-        body["presence_penalty"] = json!(pp);
-    }
-    if let Some(ref stop) = options.stop_sequences {
-        body["stop"] = json!(stop);
-    }
-    if let Some(seed) = options.seed {
-        body["seed"] = json!(seed);
-    }
-
-    // Response format
-    if !profile.supports_response_format {
-        // Provider does not support response_format: drop it and warn when the
-        // caller requested a (non-default) format. `Text` is the no-op default
-        // and needs no warning.
-        if let Some(ref rf) = options.response_format
-            && !matches!(rf, ResponseFormat::Text)
-        {
-            warnings.push(Warning::Unsupported {
-                feature: "responseFormat".to_string(),
-                details: Some("response_format is not supported by this provider".to_string()),
-            });
-        }
-    } else if let Some(ref rf) = options.response_format {
-        match rf {
-            ResponseFormat::Text => {}
-            ResponseFormat::Json {
-                schema,
-                name,
-                description,
-            } => {
-                // Groq: structuredOutputs defaults to true, strictJsonSchema
-                // defaults to true. When structuredOutputs is false and a schema
-                // is provided, emit a warning and use json_object.
-                let (structured_outputs, strict_json_schema) = if provider == "groq" {
-                    (
-                        popt("structuredOutputs")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(true),
-                        popt("strictJsonSchema")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(true),
-                    )
-                } else {
-                    (true, true)
-                };
-
-                if schema.is_some() && structured_outputs {
-                    let mut schema_obj = json!({});
-                    if let Some(s) = schema {
-                        schema_obj["schema"] = s.clone();
-                    }
-                    schema_obj["name"] =
-                        json!(name.clone().unwrap_or_else(|| "response".to_string()));
-                    if let Some(d) = description {
-                        schema_obj["description"] = json!(d);
-                    }
-                    schema_obj["strict"] = json!(strict_json_schema);
-                    body["response_format"] = json!({
-                        "type": "json_schema",
-                        "json_schema": schema_obj,
-                    });
-                } else if schema.is_some() && !structured_outputs {
-                    // Schema provided but structuredOutputs disabled → json_object + warning
-                    body["response_format"] = json!({ "type": "json_object" });
-                    warnings.push(Warning::Unsupported {
-                        feature: "responseFormat".to_string(),
-                        details: Some(
-                            "JSON response format schema is only supported with structuredOutputs"
-                                .to_string(),
-                        ),
-                    });
-                } else {
-                    body["response_format"] = json!({ "type": "json_object" });
-                }
-            }
-        }
-    }
-
-    // Provider-specific options
-    if let Some(val) = popt("logitBias") {
-        body["logit_bias"] = val;
-    }
-    if let Some(val) = popt("user") {
-        body["user"] = val;
-    }
-    if let Some(val) = popt("parallelToolCalls") {
-        body["parallel_tool_calls"] = val;
-    }
-    if let Some(val) = popt("textVerbosity") {
-        body["verbosity"] = val;
-    }
-    if let Some(val) = popt("store") {
-        body["store"] = val;
-    }
-    if let Some(val) = popt("metadata") {
-        body["metadata"] = val;
-    }
-    if let Some(val) = popt("prediction") {
-        body["prediction"] = val;
-    }
-    if let Some(val) = popt("promptCacheKey") {
-        body["prompt_cache_key"] = val;
-    }
-    if let Some(val) = popt("promptCacheRetention") {
-        body["prompt_cache_retention"] = val;
-    }
-    if let Some(val) = popt("promptCacheOptions") {
-        body["prompt_cache_options"] = val;
-    }
-    if let Some(val) = popt("safetyIdentifier") {
-        body["safety_identifier"] = val;
-    }
-    // M3 (RFC-0016): logprobs request support. Previously `logprobs` /
-    // `topLogprobs` were silently dropped by the provider_options whitelist —
-    // the only option that "quietly did nothing". Pass-through as-is (OpenAI
-    // expects `logprobs: bool` and `top_logprobs: int`).
-    if let Some(val) = popt("logprobs") {
-        body["logprobs"] = val;
-    }
-    if let Some(val) = popt("topLogprobs") {
-        body["top_logprobs"] = val;
-    }
-
-    // Groq: reasoning_format provider option
-    if provider == "groq"
-        && let Some(val) = popt("reasoningFormat")
-    {
-        body["reasoning_format"] = val;
-    }
-
-    // Reasoning effort
+    // Reasoning effort (v3 passthrough; 注：旧的"reasoning 无映射提示"warning
+    // 块已删除——v3 直传语义下该分支不可达：custom 值此时必已进 resolved)。
     if let Some(ref effort) = resolved_reasoning_effort {
         body["reasoning_effort"] = json!(effort);
     }
-    // 注：旧的"reasoning 无映射提示"warning 块（is_custom_reasoning &&
-    // resolved_reasoning_effort.is_none()）已删除——v3 直传语义下该分支不可达：
-    // is_custom_reasoning=true 时 resolved 必为 Some（见上方 resolved 解析）。
 
-    // Service tier
-    if provider == "groq" {
-        // Groq passes service_tier through without model-capability validation.
-        if let Some(val) = popt("serviceTier") {
-            body["service_tier"] = val;
-        }
-    } else {
-        let service_tier = popt("serviceTier").and_then(|v| v.as_str().map(|s| s.to_string()));
-        if let Some(ref st) = service_tier {
-            match st.as_str() {
-                "flex" => {
-                    if caps.supports_flex_processing {
-                        body["service_tier"] = json!(st);
-                    } else {
-                        warnings.push(Warning::Unsupported {
-                            feature: "serviceTier".to_string(),
-                            details: Some(
-                                "flex processing is only available for o3, o4-mini, and gpt-5 models"
-                                    .to_string(),
-                            ),
-                        });
-                    }
-                }
-                "priority" => {
-                    if caps.supports_priority_processing {
-                        body["service_tier"] = json!(st);
-                    } else {
-                        warnings.push(Warning::Unsupported {
-                            feature: "serviceTier".to_string(),
-                            details: Some(
-                                "priority processing is only available for supported models (gpt-4, gpt-5, gpt-5-mini, o3, o4-mini) and requires Enterprise access. gpt-5-nano is not supported".to_string(),
-                            ),
-                        });
-                    }
-                }
-                _ => {
-                    body["service_tier"] = json!(st);
-                }
-            }
-        }
-    }
-
-    // Tools
-    let function_tools: Option<Vec<FunctionTool>> = options.tools.as_ref().map(|tools| {
-        tools
-            .iter()
-            .filter_map(|t| match t {
-                Tool::Function(ft) => Some(ft.clone()),
-                Tool::Provider(_) => None,
-            })
-            .collect()
-    });
-
-    // When the provider profile declares no tool support, drop tools/tool_choice
-    // entirely and warn if the caller supplied any.
-    let supports_tools = profile.supports_tools;
-    if !supports_tools && options.tools.as_ref().is_some_and(|t| !t.is_empty()) {
-        warnings.push(Warning::Unsupported {
-            feature: "tools".to_string(),
-            details: Some("tools are not supported by this provider".to_string()),
-        });
-    }
-
-    // Groq: handle provider-defined tools (browser_search) alongside function tools.
-    let prepared = if !supports_tools {
-        PreparedTools {
-            tools: None,
-            tool_choice: None,
-            tool_warnings: Vec::new(),
-        }
-    } else if provider == "groq" {
-        prepare_tools_groq(
-            &function_tools,
-            options.tools.as_ref(),
-            Some(&options.tool_choice),
-            model_id,
-        )
-    } else {
-        prepare_tools(&function_tools, Some(&options.tool_choice))
-    };
-    if let Some(tools) = prepared.tools {
-        body["tools"] = json!(tools);
-        if let Some(tc) = prepared.tool_choice {
-            body["tool_choice"] = tc;
-        }
-    }
-
-    // Convert tool warnings to Warning type
-    for tw in prepared.tool_warnings {
-        warnings.push(Warning::Unsupported {
-            feature: tw.feature,
-            details: tw.details,
-        });
-    }
+    apply_service_tier(&mut body, provider_opts, provider, &caps, &mut warnings);
+    apply_tools(
+        &mut body,
+        options,
+        provider,
+        profile,
+        model_id,
+        &mut warnings,
+    );
 
     // 厂商特化后处理已整体退役（RFC-0017 阶段 2）：不内置任何厂商映射，
     // thinking 注入 / effort 重映射等差异由用户 bodyOverrides 定义。
@@ -1450,12 +1440,6 @@ pub fn build_request_body_with_warnings_fallible(
 
     Ok(RequestBodyResult { body, warnings })
 }
-
-/// Recursively deep-merge `patch` into `target` (RFC-0017).
-///
-/// - Objects: merge key-by-key (recursive).
-/// - Scalars / arrays: `patch` overwrites `target`.
-/// - `null` in `patch`: deletes the key from `target` (explicit removal).
 pub fn deep_merge_json(target: &mut Value, patch: &Value) {
     match (target, patch) {
         (Value::Object(t), Value::Object(p)) => {
@@ -1472,21 +1456,6 @@ pub fn deep_merge_json(target: &mut Value, patch: &Value) {
         }
         (target, patch) => *target = patch.clone(),
     }
-}
-
-/// Convert `CallOptions` to an OpenAI request body, returning warnings.
-pub fn build_request_body_with_warnings(
-    model_id: &str,
-    options: &CallOptions,
-    stream: bool,
-    provider: &str,
-    profile: &OpenAICompatProfile,
-) -> RequestBodyResult {
-    build_request_body_with_warnings_fallible(model_id, options, stream, provider, profile)
-        .unwrap_or_else(|_| RequestBodyResult {
-            body: Value::Null,
-            warnings: Vec::new(),
-        })
 }
 
 /// Parse OpenAI finish reason string into `FinishReason`.

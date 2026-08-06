@@ -515,7 +515,7 @@ mod build_request_body_tests {
     #[test]
     fn passes_model_and_messages() {
         let options = default_options(test_prompt());
-        let body = build_request_body("gpt-3.5-turbo", &options, false);
+        let body = build_request_body("gpt-3.5-turbo", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -539,7 +539,7 @@ mod build_request_body_tests {
             provider_options: Some(provider_options),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &options, false);
+        let body = build_request_body("gpt-3.5-turbo", &options, false).unwrap();
         assert_eq!(body["logprobs"], json!(true));
         assert_eq!(body["top_logprobs"], json!(3));
     }
@@ -561,7 +561,7 @@ mod build_request_body_tests {
             },
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &options, false);
+        let body = build_request_body("gpt-3.5-turbo", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -589,7 +589,7 @@ mod build_request_body_tests {
             response_format: Some(ResponseFormat::Text),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -610,7 +610,7 @@ mod build_request_body_tests {
             }),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -634,7 +634,7 @@ mod build_request_body_tests {
             }),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -667,7 +667,7 @@ mod build_request_body_tests {
             }),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body["response_format"],
             json!({
@@ -693,7 +693,7 @@ mod build_request_body_tests {
             }),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -724,7 +724,7 @@ mod build_request_body_tests {
             }),
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -752,7 +752,7 @@ mod build_request_body_tests {
             tool_choice: ToolChoice::Required,
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body,
             json!({
@@ -790,7 +790,7 @@ mod build_request_body_tests {
             },
             ..default_options(test_prompt())
         };
-        let body = build_request_body("gpt-4o-2024-08-06", &options, false);
+        let body = build_request_body("gpt-4o-2024-08-06", &options, false).unwrap();
         assert_eq!(
             body,
             json!({

@@ -211,7 +211,7 @@ fn language_model_returns_unsupported_error() {
     match provider.language_model("tinyfish-search") {
         Err(AiMuxError::Unsupported(msg)) => {
             assert!(
-                msg.contains("tinyfish does not support language models"),
+                msg.contains("provider 'tinyfish' does not provide language models"),
                 "unexpected message: {msg}"
             );
         }

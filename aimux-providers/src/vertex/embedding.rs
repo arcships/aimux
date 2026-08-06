@@ -157,8 +157,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
 
             let response_headers = resp.headers;
 
-            let raw_value: Value =
-                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
             let embedding = raw_value
                 .get("embedding")
@@ -238,8 +237,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
 
         let response_headers = resp.headers;
 
-        let raw_value: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
         // Batch: response.predictions[].embeddings.values
         let (embeddings, total_tokens): (Vec<Vec<f32>>, u32) = raw_value

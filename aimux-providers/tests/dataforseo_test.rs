@@ -234,7 +234,7 @@ fn language_model_returns_unsupported_error() {
     match provider.language_model("dataforseo-search") {
         Err(AiMuxError::Unsupported(msg)) => {
             assert!(
-                msg.contains("dataforseo does not support language models"),
+                msg.contains("provider 'dataforseo' does not provide language models"),
                 "unexpected message: {msg}"
             );
         }

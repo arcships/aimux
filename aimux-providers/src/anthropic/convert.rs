@@ -1,4 +1,4 @@
-﻿//! Conversion between `LanguageModelPrompt` and Anthropic API format.
+//! Conversion between `LanguageModelPrompt` and Anthropic API format.
 //!
 //! This is the single (merged) Anthropic convert module. It provides the full
 //! `convertToAnthropicPrompt` implementation with betas, warnings, and
@@ -910,15 +910,6 @@ fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
     }
 }
 
-/// Returns `true` when the reasoning effort is a user-chosen level (i.e. not
-/// `ProviderDefault` and not absent), mirroring the TS `isCustomReasoning`.
-fn is_custom_reasoning(reasoning: Option<ReasoningEffort>) -> bool {
-    match reasoning {
-        Some(ReasoningEffort::ProviderDefault) | None => false,
-        Some(_) => true,
-    }
-}
-
 /// The Anthropic thinking config + optional effort resolved from a top-level
 /// reasoning level, mirroring the TS `resolveAnthropicReasoningConfig` return.
 struct ReasoningConfig {
@@ -1105,42 +1096,20 @@ pub fn build_request_body(
     stream: bool,
 ) -> Result<Value, AiMuxError> {
     Ok(build_request_body_with_warnings(model_id, options, stream)?.body)
-}
+} // ── Request-body construction (split into helpers, issue M11) ───────────────
 
-/// Build the Anthropic request body, returning warnings alongside the body.
-///
-/// Implements the thinking/reasoning pipeline from the TS
-/// `anthropic-language-model.ts` `getArgs`: model-capability detection,
-/// `rejectsSamplingParameters` stripping, top-level `reasoning` → thinking/
-/// effort mapping (provider options take precedence), and thinking-enabled
-/// default budget, sampling-parameter stripping, and `max_tokens` adjustment.
-pub fn build_request_body_with_warnings(
-    model_id: &str,
+/// Strip temperature / topK / topP when the model rejects sampling parameters
+/// (with a compatibility warning per stripped value).
+fn strip_anthropic_sampling_params(
     options: &CallOptions,
-    stream: bool,
-) -> Result<RequestBodyResult, AiMuxError> {
-    let mut warnings: Vec<Warning> = Vec::new();
-    let mut betas: BTreeSet<String> = BTreeSet::new();
-    let caps = get_model_capabilities(model_id);
-
-    // Unknown-model max output tokens warning (TS L305-314): when the model is
-    // not recognised and the caller did not set maxOutputTokens, emit a
-    // compatibility warning noting the default limit applied.
-    if !caps.is_known_model && options.max_output_tokens.is_none() {
-        warnings.push(Warning::Compatibility {
-            feature: "maxOutputTokens".to_string(),
-            details: Some(format!(
-                "The model \"{}\" is unknown. The max output tokens have been limited to {}. Set maxOutputTokens explicitly to override this limit.",
-                model_id, caps.max_output_tokens
-            )),
-        });
-    }
-
+    model_id: &str,
+    caps: &ModelCapabilities,
+    warnings: &mut Vec<Warning>,
+) -> (Option<f64>, Option<f64>, Option<f64>) {
     let mut temperature = options.temperature;
     let mut top_p = options.top_p;
     let mut top_k = options.top_k;
 
-    // rejectsSamplingParameters: strip temperature/topK/topP with warnings.
     if caps.rejects_sampling_parameters {
         if temperature.is_some() {
             warnings.push(Warning::Unsupported {
@@ -1174,41 +1143,56 @@ pub fn build_request_body_with_warnings(
         }
     }
 
-    // providerOptions.anthropic.thinking / .effort take precedence over the
-    // top-level `reasoning`. The top-level mapping only runs when `effort` is
-    // not already set by provider options (TS L426-445).
+    (temperature, top_p, top_k)
+}
+
+/// Resolve thinking config + optional effort from provider options and the
+/// top-level `reasoning` level.
+///
+/// `providerOptions.anthropic.thinking` / `.effort` take precedence over the
+/// top-level `reasoning`; the top-level mapping only runs when `effort` is not
+/// already set by provider options (TS L426-445). Also lowers xhigh/max to
+/// high when the model rejects disabling thinking above high effort
+/// (TS L451-464).
+fn resolve_anthropic_thinking(
+    model_id: &str,
+    options: &CallOptions,
+    caps: &ModelCapabilities,
+    warnings: &mut Vec<Warning>,
+) -> (Option<Value>, Option<String>) {
     let mut thinking_config: Option<Value> =
         anthropic_option(&options.provider_options, "thinking");
     let mut effort: Option<String> = anthropic_option(&options.provider_options, "effort")
         .and_then(|v| v.as_str().map(|s| s.to_string()));
 
-    if is_custom_reasoning(options.reasoning) && effort.is_none() {
-        let reasoning = options.reasoning.unwrap();
-        if let Some(rc) = resolve_anthropic_reasoning_config(
+    if let Some(reasoning) = options.reasoning
+        && reasoning.is_custom()
+        && effort.is_none()
+        && let Some(rc) = resolve_anthropic_reasoning_config(
             reasoning,
             caps.supports_adaptive_thinking,
             caps.supports_xhigh_effort,
             caps.max_output_tokens,
-            &mut warnings,
-        ) {
-            if thinking_config.is_none() {
-                thinking_config = Some(rc.thinking);
-            }
-            if let Some(eff) = rc.effort {
-                let is_disabled = thinking_config
-                    .as_ref()
-                    .and_then(|t| t.get("type"))
-                    .and_then(|t| t.as_str())
-                    == Some("disabled");
-                if !is_disabled {
-                    effort = Some(eff);
-                }
+            warnings,
+        )
+    {
+        if thinking_config.is_none() {
+            thinking_config = Some(rc.thinking);
+        }
+        if let Some(eff) = rc.effort {
+            let is_disabled = thinking_config
+                .as_ref()
+                .and_then(|t| t.get("type"))
+                .and_then(|t| t.as_str())
+                == Some("disabled");
+            if !is_disabled {
+                effort = Some(eff);
             }
         }
     }
 
-    // Newer models only allow disabling thinking at effort ≤ high; lower
-    // xhigh/max to high (TS L451-464).
+    // Newer models only allow disabling thinking at effort ≤ high; lower the
+    // effort to 'high' with a warning (TS L451-464).
     if caps.rejects_thinking_disabled_above_high_effort {
         let is_disabled = thinking_config
             .as_ref()
@@ -1228,6 +1212,16 @@ pub fn build_request_body_with_warnings(
         }
     }
 
+    (thinking_config, effort)
+}
+
+/// Derived fields from the resolved thinking config: the type string, whether
+/// thinking must be forwarded (enabled/adaptive/disabled — some models default
+/// thinking on, so omitting `disabled` would leave it enabled), the budget
+/// (enabled only), and the display value (adaptive only).
+fn derive_anthropic_thinking(
+    thinking_config: &Option<Value>,
+) -> (Option<String>, bool, Option<u32>, Option<Value>) {
     let thinking_type: Option<String> = thinking_config
         .as_ref()
         .and_then(|t| t.get("type"))
@@ -1236,11 +1230,9 @@ pub fn build_request_body_with_warnings(
 
     let is_thinking =
         thinking_type.as_deref() == Some("enabled") || thinking_type.as_deref() == Some("adaptive");
-    // `disabled` must still be forwarded to the API: some models default
-    // thinking on, so omitting it would leave thinking enabled.
     let send_thinking = is_thinking || thinking_type.as_deref() == Some("disabled");
 
-    let mut thinking_budget: Option<u32> = if thinking_type.as_deref() == Some("enabled") {
+    let thinking_budget: Option<u32> = if thinking_type.as_deref() == Some("enabled") {
         thinking_config
             .as_ref()
             .and_then(|t| t.get("budgetTokens"))
@@ -1258,79 +1250,101 @@ pub fn build_request_body_with_warnings(
         None
     };
 
-    let max_tokens = options.max_output_tokens.unwrap_or(caps.max_output_tokens);
+    (
+        thinking_type,
+        send_thinking,
+        thinking_budget,
+        thinking_display,
+    )
+}
 
-    let conversion = convert_prompt_to_anthropic_full_fallible(&options.prompt, false)?;
-    let system = conversion.system;
-    let messages = conversion.messages;
-    betas.extend(conversion.betas);
-    warnings.extend(conversion.warnings);
-
-    let mut body = json!({
-        "model": model_id,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "stream": stream,
-    });
-
-    if let Some(sys) = system {
-        body["system"] = json!(sys);
-    }
-
-    if send_thinking && let Some(ref tt) = thinking_type {
+/// Insert the `thinking` / `output_config` fields into the body.
+fn insert_anthropic_thinking(
+    body: &mut Value,
+    thinking_type: &Option<String>,
+    send_thinking: bool,
+    thinking_budget: &Option<u32>,
+    thinking_display: &Option<Value>,
+    effort: &Option<String>,
+) {
+    if send_thinking && let Some(tt) = thinking_type {
         let mut thinking_obj = json!({ "type": tt });
         if let Some(b) = thinking_budget {
             thinking_obj["budget_tokens"] = json!(b);
         }
         if let Some(d) = thinking_display {
-            thinking_obj["display"] = d;
+            thinking_obj["display"] = d.clone();
         }
         body["thinking"] = thinking_obj;
     }
 
-    if let Some(ref eff) = effort {
+    if let Some(eff) = effort {
         body["output_config"] = json!({ "effort": eff });
     }
+}
 
-    // thinking-enabled post-processing (TS L651-696).
-    if is_thinking {
-        if thinking_type.as_deref() == Some("enabled") && thinking_budget.is_none() {
-            warnings.push(Warning::Compatibility {
-                feature: "extended thinking".to_string(),
-                details: Some(
-                    "thinking budget is required when thinking is enabled. using default budget of 1024 tokens.".to_string(),
-                ),
-            });
-            thinking_budget = Some(1024);
-            body["thinking"]["budget_tokens"] = json!(1024);
-        }
-
-        if temperature.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "temperature".to_string(),
-                details: Some("temperature is not supported when thinking is enabled".to_string()),
-            });
-            temperature = None;
-        }
-        if top_k.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "topK".to_string(),
-                details: Some("topK is not supported when thinking is enabled".to_string()),
-            });
-            top_k = None;
-        }
-        if top_p.is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "topP".to_string(),
-                details: Some("topP is not supported when thinking is enabled".to_string()),
-            });
-            top_p = None;
-        }
-
-        let budget = thinking_budget.unwrap_or(0);
-        body["max_tokens"] = json!(max_tokens + budget);
+/// Thinking-enabled post-processing (TS L651-696): default budget warning,
+/// sampling-parameter stripping, and `max_tokens` adjustment. Returns the
+/// adjusted `max_tokens` (unchanged when thinking is not enabled).
+#[allow(clippy::too_many_arguments)]
+fn apply_anthropic_thinking_post_processing(
+    thinking_type: &Option<String>,
+    thinking_budget: &mut Option<u32>,
+    max_tokens: u32,
+    temperature: &mut Option<f64>,
+    top_k: &mut Option<f64>,
+    top_p: &mut Option<f64>,
+    warnings: &mut Vec<Warning>,
+) -> u32 {
+    let is_thinking =
+        thinking_type.as_deref() == Some("enabled") || thinking_type.as_deref() == Some("adaptive");
+    if !is_thinking {
+        return max_tokens;
     }
 
+    if thinking_type.as_deref() == Some("enabled") && thinking_budget.is_none() {
+        warnings.push(Warning::Compatibility {
+            feature: "extended thinking".to_string(),
+            details: Some(
+                "thinking budget is required when thinking is enabled. using default budget of 1024 tokens.".to_string(),
+            ),
+        });
+        *thinking_budget = Some(1024);
+    }
+
+    if temperature.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "temperature".to_string(),
+            details: Some("temperature is not supported when thinking is enabled".to_string()),
+        });
+        *temperature = None;
+    }
+    if top_k.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "topK".to_string(),
+            details: Some("topK is not supported when thinking is enabled".to_string()),
+        });
+        *top_k = None;
+    }
+    if top_p.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "topP".to_string(),
+            details: Some("topP is not supported when thinking is enabled".to_string()),
+        });
+        *top_p = None;
+    }
+
+    max_tokens + thinking_budget.unwrap_or(0)
+}
+
+/// Insert the surviving sampling params + stop sequences into the body.
+fn insert_anthropic_sampling(
+    body: &mut Value,
+    temperature: Option<f64>,
+    top_p: Option<f64>,
+    top_k: Option<f64>,
+    options: &CallOptions,
+) {
     if let Some(temp) = temperature {
         body["temperature"] = json!(temp);
     }
@@ -1343,10 +1357,19 @@ pub fn build_request_body_with_warnings(
     if let Some(ref stop) = options.stop_sequences {
         body["stop_sequences"] = json!(stop);
     }
+}
 
-    // Tools — delegate to `prepare_tools_with_provider` so that provider-defined
-    // tools (web search, code execution, ...) are mapped alongside function
-    // tools, and the required beta headers / tool warnings are surfaced.
+/// Map user tools to `tools` / `tool_choice`, delegating to
+/// `prepare_tools_with_provider` (provider-defined tools, required beta
+/// headers, and tool warnings).
+fn apply_anthropic_tools(
+    body: &mut Value,
+    options: &CallOptions,
+    stream: bool,
+    caps: &ModelCapabilities,
+    betas: &mut BTreeSet<String>,
+    warnings: &mut Vec<Warning>,
+) {
     let disable_parallel_tool_use =
         anthropic_option(&options.provider_options, "disableParallelToolUse")
             .and_then(|v| v.as_bool())
@@ -1400,140 +1423,238 @@ pub fn build_request_body_with_warnings(
     if let Some(tool_choice) = prepared.tool_choice {
         body["tool_choice"] = tool_choice;
     }
+}
 
-    // providerOptions.anthropic.mcpServers → request body `mcp_servers` +
-    // `mcp-client-2025-04-04` beta header.
-    if let Some(mcp) = anthropic_option(&options.provider_options, "mcpServers")
-        && let Some(arr) = mcp.as_array()
-        && !arr.is_empty()
-    {
-        let mapped: Vec<Value> = arr
-            .iter()
-            .map(|server| {
-                let mut o = Map::new();
-                if let Some(t) = server.get("type") {
-                    o.insert("type".to_string(), t.clone());
-                }
-                if let Some(n) = server.get("name") {
-                    o.insert("name".to_string(), n.clone());
-                }
-                if let Some(u) = server.get("url") {
-                    o.insert("url".to_string(), u.clone());
-                }
-                if let Some(at) = server.get("authorizationToken") {
-                    o.insert("authorization_token".to_string(), at.clone());
-                }
-                if let Some(tc) = server.get("toolConfiguration") {
-                    let mut tc_obj = Map::new();
-                    if let Some(at) = tc.get("allowedTools") {
-                        tc_obj.insert("allowed_tools".to_string(), at.clone());
-                    }
-                    if let Some(en) = tc.get("enabled") {
-                        tc_obj.insert("enabled".to_string(), en.clone());
-                    }
-                    o.insert("tool_configuration".to_string(), Value::Object(tc_obj));
-                }
-                Value::Object(o)
-            })
-            .collect();
-        body["mcp_servers"] = json!(mapped);
-        betas.insert("mcp-client-2025-04-04".to_string());
+/// `providerOptions.anthropic.mcpServers` → `mcp_servers` + the
+/// `mcp-client-2025-04-04` beta header.
+fn append_anthropic_mcp_servers(
+    body: &mut Value,
+    options: &CallOptions,
+    betas: &mut BTreeSet<String>,
+) {
+    let Some(mcp) = anthropic_option(&options.provider_options, "mcpServers") else {
+        return;
+    };
+    let Some(arr) = mcp.as_array() else {
+        return;
+    };
+    if arr.is_empty() {
+        return;
     }
 
-    // providerOptions.anthropic.container — programmatic tool calling
-    // (string id) or agent skills (object with id + skills).
-    if let Some(container) = anthropic_option(&options.provider_options, "container") {
-        let skills = container.get("skills").and_then(|s| s.as_array());
-        if let Some(skills_arr) = skills.filter(|a| !a.is_empty()) {
-            let mut container_obj = Map::new();
-            if let Some(id) = container.get("id")
-                && !id.is_null()
-            {
-                container_obj.insert("id".to_string(), id.clone());
+    let mapped: Vec<Value> = arr
+        .iter()
+        .map(|server| {
+            let mut o = Map::new();
+            if let Some(t) = server.get("type") {
+                o.insert("type".to_string(), t.clone());
             }
-            let mut skills_mapped: Vec<Value> = Vec::new();
-            for skill in skills_arr {
-                let stype = skill.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                let skill_id = if stype == "custom" {
-                    match skill
-                        .get("providerReference")
-                        .and_then(|r| r.get("anthropic"))
-                    {
-                        Some(id) => id.clone(),
-                        None => {
-                            return Err(AiMuxError::Unsupported(format!(
-                                "skill provider reference is missing the 'anthropic' key: {}",
-                                skill
-                            )));
-                        }
-                    }
-                } else {
-                    skill.get("skillId").cloned().unwrap_or(Value::Null)
-                };
-                let mut s = Map::new();
-                s.insert("type".to_string(), json!(stype));
-                s.insert("skill_id".to_string(), skill_id);
-                if let Some(v) = skill.get("version")
-                    && !v.is_null()
-                {
-                    s.insert("version".to_string(), v.clone());
+            if let Some(n) = server.get("name") {
+                o.insert("name".to_string(), n.clone());
+            }
+            if let Some(u) = server.get("url") {
+                o.insert("url".to_string(), u.clone());
+            }
+            if let Some(at) = server.get("authorizationToken") {
+                o.insert("authorization_token".to_string(), at.clone());
+            }
+            if let Some(tc) = server.get("toolConfiguration") {
+                let mut tc_obj = Map::new();
+                if let Some(at) = tc.get("allowedTools") {
+                    tc_obj.insert("allowed_tools".to_string(), at.clone());
                 }
-                skills_mapped.push(Value::Object(s));
+                if let Some(en) = tc.get("enabled") {
+                    tc_obj.insert("enabled".to_string(), en.clone());
+                }
+                o.insert("tool_configuration".to_string(), Value::Object(tc_obj));
             }
-            container_obj.insert("skills".to_string(), json!(skills_mapped));
-            body["container"] = json!(container_obj);
-            betas.insert("code-execution-2025-08-25".to_string());
-            betas.insert("skills-2025-10-02".to_string());
-            betas.insert("files-api-2025-04-14".to_string());
+            Value::Object(o)
+        })
+        .collect();
+    body["mcp_servers"] = json!(mapped);
+    betas.insert("mcp-client-2025-04-04".to_string());
+}
 
-            // Warn when skills are configured without a code execution tool.
-            let has_code_exec = options
-                .tools
-                .as_ref()
-                .map(|t| {
-                    t.iter().any(|tool| match tool {
-                        Tool::Provider(pt) => {
-                            pt.id == "anthropic.code_execution_20250825"
-                                || pt.id == "anthropic.code_execution_20260120"
-                        }
-                        _ => false,
-                    })
-                })
-                .unwrap_or(false);
-            if !has_code_exec {
-                warnings.push(Warning::Other {
-                    message: "code execution tool is required when using skills".to_string(),
-                });
-            }
-        } else if let Some(id) = container.get("id")
+/// `providerOptions.anthropic.container` — programmatic tool calling (string
+/// id) or agent skills (object with id + skills). Skills require the code
+/// execution beta headers; returns an error when a custom skill's provider
+/// reference lacks the `anthropic` key.
+fn append_anthropic_container(
+    body: &mut Value,
+    options: &CallOptions,
+    betas: &mut BTreeSet<String>,
+    warnings: &mut Vec<Warning>,
+) -> Result<(), AiMuxError> {
+    let Some(container) = anthropic_option(&options.provider_options, "container") else {
+        return Ok(());
+    };
+    let skills = container.get("skills").and_then(|s| s.as_array());
+    if let Some(skills_arr) = skills.filter(|a| !a.is_empty()) {
+        let mut container_obj = Map::new();
+        if let Some(id) = container.get("id")
             && !id.is_null()
         {
-            body["container"] = id.clone();
+            container_obj.insert("id".to_string(), id.clone());
         }
+        let mut skills_mapped: Vec<Value> = Vec::new();
+        for skill in skills_arr {
+            let stype = skill.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let skill_id = if stype == "custom" {
+                match skill
+                    .get("providerReference")
+                    .and_then(|r| r.get("anthropic"))
+                {
+                    Some(id) => id.clone(),
+                    None => {
+                        return Err(AiMuxError::Unsupported(format!(
+                            "skill provider reference is missing the 'anthropic' key: {}",
+                            skill
+                        )));
+                    }
+                }
+            } else {
+                skill.get("skillId").cloned().unwrap_or(Value::Null)
+            };
+            let mut s = Map::new();
+            s.insert("type".to_string(), json!(stype));
+            s.insert("skill_id".to_string(), skill_id);
+            if let Some(v) = skill.get("version")
+                && !v.is_null()
+            {
+                s.insert("version".to_string(), v.clone());
+            }
+            skills_mapped.push(Value::Object(s));
+        }
+        container_obj.insert("skills".to_string(), json!(skills_mapped));
+        body["container"] = json!(container_obj);
+        betas.insert("code-execution-2025-08-25".to_string());
+        betas.insert("skills-2025-10-02".to_string());
+        betas.insert("files-api-2025-04-14".to_string());
+
+        // Warn when skills are configured without a code execution tool.
+        let has_code_exec = options
+            .tools
+            .as_ref()
+            .map(|t| {
+                t.iter().any(|tool| match tool {
+                    Tool::Provider(pt) => {
+                        pt.id == "anthropic.code_execution_20250825"
+                            || pt.id == "anthropic.code_execution_20260120"
+                    }
+                    _ => false,
+                })
+            })
+            .unwrap_or(false);
+        if !has_code_exec {
+            warnings.push(Warning::Other {
+                message: "code execution tool is required when using skills".to_string(),
+            });
+        }
+    } else if let Some(id) = container.get("id")
+        && !id.is_null()
+    {
+        body["container"] = id.clone();
+    }
+    Ok(())
+}
+
+/// Build the Anthropic request body, returning warnings alongside the body.
+///
+/// Implements the thinking/reasoning pipeline from the TS
+/// `anthropic-language-model.ts` `getArgs`: model-capability detection,
+/// `rejectsSamplingParameters` stripping, top-level `reasoning` → thinking/
+/// effort mapping (provider options take precedence), and thinking-enabled
+/// default budget. The single oversized function was split into focused
+/// helpers (issue M11); behavior is unchanged.
+pub fn build_request_body_with_warnings(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<RequestBodyResult, AiMuxError> {
+    let mut warnings: Vec<Warning> = Vec::new();
+    let mut betas: BTreeSet<String> = BTreeSet::new();
+    let caps = get_model_capabilities(model_id);
+
+    // Unknown-model max output tokens warning (TS L305-314): for models we do
+    // not recognise, note the applied default limit when the caller did not
+    // set maxOutputTokens.
+    if !caps.is_known_model && options.max_output_tokens.is_none() {
+        warnings.push(Warning::Compatibility {
+            feature: "maxOutputTokens".to_string(),
+            details: Some(format!(
+                "The model \"{}\" is unknown. The max output tokens have been limited to {}. Set maxOutputTokens explicitly to override this limit.",
+                model_id, caps.max_output_tokens
+            )),
+        });
     }
 
-    // providerOptions.anthropic.contextManagement → request body
-    // `context_management` + `context-management-2025-06-27` beta (and
-    // `compact-2026-01-12` when a compact edit is present).
-    // TODO: implement build_context_management (context management API not yet implemented)
-    // if let Some(cm) = anthropic_option(&options.provider_options, "contextManagement") {
-    //     if let Some(mapped) = build_context_management(&cm, &mut warnings) {
-    //         let has_compact = cm
-    //             .get("edits")
-    //             .and_then(|e| e.as_array())
-    //             .map(|edits| {
-    //                 edits.iter().any(|e| {
-    //                     e.get("type").and_then(|t| t.as_str()) == Some("compact_20260112")
-    //                 })
-    //             })
-    //             .unwrap_or(false);
-    //         betas.insert("context-management-2025-06-27".to_string());
-    //         if has_compact {
-    //             betas.insert("compact-2026-01-12".to_string());
-    //         }
-    //         body["context_management"] = mapped;
-    //     }
-    // }
+    // rejectsSamplingParameters: strip temperature/topK/topP with warnings.
+    let (mut temperature, mut top_p, mut top_k) =
+        strip_anthropic_sampling_params(options, model_id, &caps, &mut warnings);
+
+    // providerOptions.anthropic.thinking / .effort + top-level `reasoning`.
+    let (thinking_config, thinking_effort) =
+        resolve_anthropic_thinking(model_id, options, &caps, &mut warnings);
+    let (thinking_type, send_thinking, mut thinking_budget, thinking_display) =
+        derive_anthropic_thinking(&thinking_config);
+
+    let max_tokens = options.max_output_tokens.unwrap_or(caps.max_output_tokens);
+
+    let conversion = convert_prompt_to_anthropic_full_fallible(&options.prompt, false)?;
+    let system = conversion.system;
+    let messages = conversion.messages;
+    betas.extend(conversion.betas);
+    warnings.extend(conversion.warnings);
+
+    let mut body = json!({
+        "model": model_id,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "stream": stream,
+    });
+
+    if let Some(sys) = system {
+        body["system"] = json!(sys);
+    }
+
+    insert_anthropic_thinking(
+        &mut body,
+        &thinking_type,
+        send_thinking,
+        &thinking_budget,
+        &thinking_display,
+        &thinking_effort,
+    );
+
+    // Thinking-enabled post-processing (TS L651-696): default budget,
+    // sampling-parameter stripping, `max_tokens` adjustment.
+    let adjusted_max_tokens = apply_anthropic_thinking_post_processing(
+        &thinking_type,
+        &mut thinking_budget,
+        max_tokens,
+        &mut temperature,
+        &mut top_k,
+        &mut top_p,
+        &mut warnings,
+    );
+    if adjusted_max_tokens != max_tokens {
+        body["max_tokens"] = json!(adjusted_max_tokens);
+    }
+
+    insert_anthropic_sampling(&mut body, temperature, top_p, top_k, options);
+
+    // Tools — provider-defined tools alongside function tools, plus the
+    // required beta headers / tool warnings.
+    apply_anthropic_tools(&mut body, options, stream, &caps, &mut betas, &mut warnings);
+
+    // providerOptions.anthropic.mcpServers → mcp_servers + beta header.
+    append_anthropic_mcp_servers(&mut body, options, &mut betas);
+
+    // providerOptions.anthropic.container — programmatic tool calling / skills.
+    append_anthropic_container(&mut body, options, &mut betas, &mut warnings)?;
+
+    // providerOptions.anthropic.contextManagement → context_management is not
+    // yet implemented (build_context_management pending).
 
     // Per-call request body overrides (RFC-0017): deep-merge user-supplied
     // JSON into the built body. `null` values delete the corresponding key.

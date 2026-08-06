@@ -1,4 +1,4 @@
-﻿//! Remaining Google provider tests — ported from the TS SDK test suite.
+//! Remaining Google provider tests — ported from the TS SDK test suite.
 //!
 //! Covers the pure-function and config tests that were not already exercised
 //! by `google_model_test.rs` / `google_provider_tools_test.rs`:
@@ -718,7 +718,9 @@ mod json_accumulator_tests {
     #[test]
     fn accumulate_simple_string_with_will_continue() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[s_continue("$.location", "Boston")]);
+        let r = acc
+            .process_partial_args(&[s_continue("$.location", "Boston")])
+            .unwrap();
         assert_eq!(r.current_json, json!({ "location": "Boston" }));
         assert_eq!(r.text_delta, "{\"location\":\"Boston");
     }
@@ -726,8 +728,11 @@ mod json_accumulator_tests {
     #[test]
     fn continue_string_across_chunks() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[s_continue("$.location", "Boston")]);
-        let r = acc.process_partial_args(&[s("$.location", ", MA")]);
+        acc.process_partial_args(&[s_continue("$.location", "Boston")])
+            .unwrap();
+        let r = acc
+            .process_partial_args(&[s("$.location", ", MA")])
+            .unwrap();
         assert_eq!(r.current_json, json!({ "location": "Boston, MA" }));
         assert_eq!(r.text_delta, ", MA");
     }
@@ -735,7 +740,9 @@ mod json_accumulator_tests {
     #[test]
     fn accumulate_complete_string() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[s("$.location", "Boston")]);
+        let r = acc
+            .process_partial_args(&[s("$.location", "Boston")])
+            .unwrap();
         assert_eq!(r.current_json, json!({ "location": "Boston" }));
         assert_eq!(r.text_delta, "{\"location\":\"Boston\"");
     }
@@ -743,7 +750,9 @@ mod json_accumulator_tests {
     #[test]
     fn accumulate_number() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[n("$.brightness", 50.0)]);
+        let r = acc
+            .process_partial_args(&[n("$.brightness", 50.0)])
+            .unwrap();
         assert_eq!(r.current_json, json!({ "brightness": 50 }));
         assert_eq!(r.text_delta, "{\"brightness\":50");
     }
@@ -751,7 +760,7 @@ mod json_accumulator_tests {
     #[test]
     fn accumulate_boolean() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[b("$.enabled", true)]);
+        let r = acc.process_partial_args(&[b("$.enabled", true)]).unwrap();
         assert_eq!(r.current_json, json!({ "enabled": true }));
         assert_eq!(r.text_delta, "{\"enabled\":true");
     }
@@ -759,7 +768,7 @@ mod json_accumulator_tests {
     #[test]
     fn accumulate_null() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[null_arg("$.nickname")]);
+        let r = acc.process_partial_args(&[null_arg("$.nickname")]).unwrap();
         assert_eq!(r.current_json, json!({ "nickname": null }));
         assert_eq!(r.text_delta, "{\"nickname\":null");
     }
@@ -767,10 +776,12 @@ mod json_accumulator_tests {
     #[test]
     fn accumulate_multiple_args_with_commas() {
         let mut acc = GoogleJsonAccumulator::new();
-        let first = acc.process_partial_args(&[n("$.brightness", 50.0)]);
+        let first = acc
+            .process_partial_args(&[n("$.brightness", 50.0)])
+            .unwrap();
         assert_eq!(first.text_delta, "{\"brightness\":50");
 
-        let second = acc.process_partial_args(&[b("$.enabled", true)]);
+        let second = acc.process_partial_args(&[b("$.enabled", true)]).unwrap();
         assert_eq!(
             second.current_json,
             json!({ "brightness": 50, "enabled": true })
@@ -781,11 +792,13 @@ mod json_accumulator_tests {
     #[test]
     fn accumulate_multiple_args_single_call() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[
-            n("$.brightness", 50.0),
-            b("$.enabled", false),
-            null_arg("$.nickname"),
-        ]);
+        let r = acc
+            .process_partial_args(&[
+                n("$.brightness", 50.0),
+                b("$.enabled", false),
+                null_arg("$.nickname"),
+            ])
+            .unwrap();
         assert_eq!(
             r.current_json,
             json!({ "brightness": 50, "enabled": false, "nickname": null })
@@ -799,8 +812,9 @@ mod json_accumulator_tests {
     #[test]
     fn escape_special_chars_in_continued_strings() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[s_continue("$.query", "Boston \"Lo")]);
-        let r = acc.process_partial_args(&[s("$.query", "gan\"")]);
+        acc.process_partial_args(&[s_continue("$.query", "Boston \"Lo")])
+            .unwrap();
+        let r = acc.process_partial_args(&[s("$.query", "gan\"")]).unwrap();
         assert_eq!(r.current_json, json!({ "query": "Boston \"Logan\"" }));
         // The continuation delta is the escaped inner content of `gan"`.
         assert_eq!(r.text_delta, "gan\\\"");
@@ -809,7 +823,7 @@ mod json_accumulator_tests {
     #[test]
     fn skip_args_with_empty_path() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[s("$.", "ignored")]);
+        let r = acc.process_partial_args(&[s("$.", "ignored")]).unwrap();
         assert_eq!(r.current_json, json!({}));
         assert_eq!(r.text_delta, "");
     }
@@ -817,10 +831,12 @@ mod json_accumulator_tests {
     #[test]
     fn skip_args_with_no_resolvable_value() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[PartialArg {
-            json_path: "$.something".to_string(),
-            ..Default::default()
-        }]);
+        let r = acc
+            .process_partial_args(&[PartialArg {
+                json_path: "$.something".to_string(),
+                ..Default::default()
+            }])
+            .unwrap();
         assert_eq!(r.current_json, json!({}));
         assert_eq!(r.text_delta, "");
     }
@@ -828,7 +844,7 @@ mod json_accumulator_tests {
     #[test]
     fn empty_partial_args_returns_empty_delta() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[]);
+        let r = acc.process_partial_args(&[]).unwrap();
         assert_eq!(r.current_json, json!({}));
         assert_eq!(r.text_delta, "");
     }
@@ -838,7 +854,9 @@ mod json_accumulator_tests {
     #[test]
     fn build_nested_object_from_dotted_path() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[s("$.recipe.name", "Lasagna")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.name", "Lasagna")])
+            .unwrap();
         assert_eq!(r.current_json, json!({ "recipe": { "name": "Lasagna" } }));
         assert_eq!(r.text_delta, "{\"recipe\":{\"name\":\"Lasagna\"");
     }
@@ -846,7 +864,9 @@ mod json_accumulator_tests {
     #[test]
     fn build_nested_object_with_array_from_indexed_path() {
         let mut acc = GoogleJsonAccumulator::new();
-        let amount = acc.process_partial_args(&[s("$.recipe.ingredients[0].amount", "16 oz")]);
+        let amount = acc
+            .process_partial_args(&[s("$.recipe.ingredients[0].amount", "16 oz")])
+            .unwrap();
         assert_eq!(
             amount.current_json,
             json!({ "recipe": { "ingredients": [{ "amount": "16 oz" }] } })
@@ -856,8 +876,9 @@ mod json_accumulator_tests {
             "{\"recipe\":{\"ingredients\":[{\"amount\":\"16 oz\""
         );
 
-        let name =
-            acc.process_partial_args(&[s("$.recipe.ingredients[0].name", "Lasagna noodles")]);
+        let name = acc
+            .process_partial_args(&[s("$.recipe.ingredients[0].name", "Lasagna noodles")])
+            .unwrap();
         assert_eq!(
             name.current_json,
             json!({ "recipe": { "ingredients": [{ "amount": "16 oz", "name": "Lasagna noodles" }] } })
@@ -870,17 +891,25 @@ mod json_accumulator_tests {
         let mut acc = GoogleJsonAccumulator::new();
         let mut deltas = Vec::new();
 
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[0].amount", "16 oz")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[0].amount", "16 oz")])
+            .unwrap();
         deltas.push(r.text_delta.clone());
 
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[0].name", "Noodles")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[0].name", "Noodles")])
+            .unwrap();
         deltas.push(r.text_delta.clone());
 
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[1].amount", "1 lb")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[1].amount", "1 lb")])
+            .unwrap();
         deltas.push(r.text_delta.clone());
         assert_eq!(r.text_delta, "},{\"amount\":\"1 lb\"");
 
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[1].name", "Beef")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[1].name", "Beef")])
+            .unwrap();
         deltas.push(r.text_delta.clone());
         assert_eq!(r.text_delta, ",\"name\":\"Beef\"");
 
@@ -904,10 +933,14 @@ mod json_accumulator_tests {
     #[test]
     fn string_continuation_on_nested_paths() {
         let mut acc = GoogleJsonAccumulator::new();
-        let start = acc.process_partial_args(&[s_continue("$.recipe.steps[0]", "Preheat oven")]);
+        let start = acc
+            .process_partial_args(&[s_continue("$.recipe.steps[0]", "Preheat oven")])
+            .unwrap();
         assert_eq!(start.text_delta, "{\"recipe\":{\"steps\":[\"Preheat oven");
 
-        let cont = acc.process_partial_args(&[s("$.recipe.steps[0]", " to 375°F.")]);
+        let cont = acc
+            .process_partial_args(&[s("$.recipe.steps[0]", " to 375°F.")])
+            .unwrap();
         assert_eq!(
             cont.current_json,
             json!({ "recipe": { "steps": ["Preheat oven to 375°F."] } })
@@ -918,10 +951,14 @@ mod json_accumulator_tests {
     #[test]
     fn mixed_nested_and_flat_paths() {
         let mut acc = GoogleJsonAccumulator::new();
-        let loc = acc.process_partial_args(&[s("$.location", "Boston")]);
+        let loc = acc
+            .process_partial_args(&[s("$.location", "Boston")])
+            .unwrap();
         assert_eq!(loc.text_delta, "{\"location\":\"Boston\"");
 
-        let details = acc.process_partial_args(&[s("$.details.zip", "02101")]);
+        let details = acc
+            .process_partial_args(&[s("$.details.zip", "02101")])
+            .unwrap();
         assert_eq!(
             details.current_json,
             json!({ "details": { "zip": "02101" }, "location": "Boston" })
@@ -939,10 +976,14 @@ mod json_accumulator_tests {
     #[test]
     fn array_elements_direct_string_values() {
         let mut acc = GoogleJsonAccumulator::new();
-        let first = acc.process_partial_args(&[s("$.steps[0]", "Step one")]);
+        let first = acc
+            .process_partial_args(&[s("$.steps[0]", "Step one")])
+            .unwrap();
         assert_eq!(first.text_delta, "{\"steps\":[\"Step one\"");
 
-        let second = acc.process_partial_args(&[s("$.steps[1]", "Step two")]);
+        let second = acc
+            .process_partial_args(&[s("$.steps[1]", "Step two")])
+            .unwrap();
         assert_eq!(
             second.current_json,
             json!({ "steps": ["Step one", "Step two"] })
@@ -953,7 +994,7 @@ mod json_accumulator_tests {
     #[test]
     fn deeply_nested_paths() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[s("$.a.b.c.d", "deep")]);
+        let r = acc.process_partial_args(&[s("$.a.b.c.d", "deep")]).unwrap();
         assert_eq!(
             r.current_json,
             json!({ "a": { "b": { "c": { "d": "deep" } } } })
@@ -970,7 +1011,8 @@ mod json_accumulator_tests {
     #[test]
     fn finalize_continued_string() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[s_continue("$.location", "Boston")]);
+        acc.process_partial_args(&[s_continue("$.location", "Boston")])
+            .unwrap();
         let f = acc.finalize();
         assert_eq!(f.closing_delta, "\"}");
         assert_eq!(f.final_json, "{\"location\":\"Boston\"}");
@@ -979,7 +1021,8 @@ mod json_accumulator_tests {
     #[test]
     fn finalize_complete_string() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[s("$.location", "Boston")]);
+        acc.process_partial_args(&[s("$.location", "Boston")])
+            .unwrap();
         let f = acc.finalize();
         assert_eq!(f.closing_delta, "}");
         assert_eq!(f.final_json, "{\"location\":\"Boston\"}");
@@ -988,7 +1031,8 @@ mod json_accumulator_tests {
     #[test]
     fn finalize_multiple_args() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[n("$.brightness", 50.0), b("$.enabled", true)]);
+        acc.process_partial_args(&[n("$.brightness", 50.0), b("$.enabled", true)])
+            .unwrap();
         let f = acc.finalize();
         assert_eq!(f.closing_delta, "}");
         assert_eq!(f.final_json, "{\"brightness\":50,\"enabled\":true}");
@@ -997,8 +1041,10 @@ mod json_accumulator_tests {
     #[test]
     fn finalize_continued_string_with_continuation() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[s_continue("$.location", "Boston")]);
-        acc.process_partial_args(&[s("$.location", ", MA")]);
+        acc.process_partial_args(&[s_continue("$.location", "Boston")])
+            .unwrap();
+        acc.process_partial_args(&[s("$.location", ", MA")])
+            .unwrap();
         let f = acc.finalize();
         assert_eq!(f.closing_delta, "\"}");
         assert_eq!(f.final_json, "{\"location\":\"Boston, MA\"}");
@@ -1015,8 +1061,10 @@ mod json_accumulator_tests {
     #[test]
     fn finalize_nested_structure() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[s("$.recipe.ingredients[0].name", "Noodles")]);
-        acc.process_partial_args(&[s("$.recipe.name", "Lasagna")]);
+        acc.process_partial_args(&[s("$.recipe.ingredients[0].name", "Noodles")])
+            .unwrap();
+        acc.process_partial_args(&[s("$.recipe.name", "Lasagna")])
+            .unwrap();
         let f = acc.finalize();
         let parsed: Value = serde_json::from_str(&f.final_json).unwrap();
         assert_eq!(
@@ -1033,9 +1081,12 @@ mod json_accumulator_tests {
     #[test]
     fn finalize_nested_arrays_with_string_continuation() {
         let mut acc = GoogleJsonAccumulator::new();
-        acc.process_partial_args(&[s_continue("$.recipe.steps[0]", "Preheat")]);
-        acc.process_partial_args(&[s("$.recipe.steps[0]", " oven.")]);
-        acc.process_partial_args(&[s("$.recipe.steps[1]", "Cook.")]);
+        acc.process_partial_args(&[s_continue("$.recipe.steps[0]", "Preheat")])
+            .unwrap();
+        acc.process_partial_args(&[s("$.recipe.steps[0]", " oven.")])
+            .unwrap();
+        acc.process_partial_args(&[s("$.recipe.steps[1]", "Cook.")])
+            .unwrap();
         let f = acc.finalize();
         let parsed: Value = serde_json::from_str(&f.final_json).unwrap();
         assert_eq!(
@@ -1053,13 +1104,15 @@ mod json_accumulator_tests {
         let mut acc = GoogleJsonAccumulator::new();
         let mut deltas = Vec::new();
 
-        let r = acc.process_partial_args(&[n("$.brightness", 50.0)]);
+        let r = acc
+            .process_partial_args(&[n("$.brightness", 50.0)])
+            .unwrap();
         deltas.push(r.text_delta);
 
-        let r = acc.process_partial_args(&[b("$.enabled", true)]);
+        let r = acc.process_partial_args(&[b("$.enabled", true)]).unwrap();
         deltas.push(r.text_delta);
 
-        let r = acc.process_partial_args(&[s("$.name", "test")]);
+        let r = acc.process_partial_args(&[s("$.name", "test")]).unwrap();
         deltas.push(r.text_delta);
 
         let f = acc.finalize();
@@ -1077,21 +1130,37 @@ mod json_accumulator_tests {
         let mut acc = GoogleJsonAccumulator::new();
         let mut deltas = Vec::new();
 
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[0].amount", "16 oz")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[0].amount", "16 oz")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[0].name", "Noodles")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[0].name", "Noodles")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[1].amount", "1 lb")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[1].amount", "1 lb")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s("$.recipe.ingredients[1].name", "Beef")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.ingredients[1].name", "Beef")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s("$.recipe.name", "Lasagna")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.name", "Lasagna")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s_continue("$.recipe.steps[0]", "Preheat")]);
+        let r = acc
+            .process_partial_args(&[s_continue("$.recipe.steps[0]", "Preheat")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s("$.recipe.steps[0]", " oven.")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.steps[0]", " oven.")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s("$.recipe.steps[1]", "Cook.")]);
+        let r = acc
+            .process_partial_args(&[s("$.recipe.steps[1]", "Cook.")])
+            .unwrap();
         deltas.push(r.text_delta);
 
         let f = acc.finalize();
@@ -1104,11 +1173,13 @@ mod json_accumulator_tests {
         let mut acc = GoogleJsonAccumulator::new();
         let mut deltas = Vec::new();
 
-        let r = acc.process_partial_args(&[s_continue("$.location", "Bos")]);
+        let r = acc
+            .process_partial_args(&[s_continue("$.location", "Bos")])
+            .unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[s("$.location", "ton")]);
+        let r = acc.process_partial_args(&[s("$.location", "ton")]).unwrap();
         deltas.push(r.text_delta);
-        let r = acc.process_partial_args(&[n("$.count", 42.0)]);
+        let r = acc.process_partial_args(&[n("$.count", 42.0)]).unwrap();
         deltas.push(r.text_delta);
 
         let f = acc.finalize();

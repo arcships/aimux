@@ -68,7 +68,8 @@ fn i4_deepseek_retired_no_thinking_injection() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
     assert_eq!(result.body["reasoning_effort"], json!("none"));
     assert!(
         result.body.get("thinking").is_none(),
@@ -86,7 +87,8 @@ fn i4_deepseek_no_thinking_when_reasoning_unset() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
     assert!(result.body.get("thinking").is_none());
     assert!(result.body.get("reasoning_effort").is_none());
 }
@@ -111,7 +113,8 @@ fn i5_body_overrides_injects_thinking_disabled() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
     assert_eq!(result.body["thinking"], json!({ "type": "disabled" }));
     assert_eq!(result.body["reasoning_effort"], json!("none"));
 }
@@ -131,7 +134,8 @@ fn i5_body_overrides_injects_thinking_enabled() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
     assert_eq!(result.body["thinking"], json!({ "type": "enabled" }));
 }
 
@@ -202,7 +206,8 @@ fn assert_vendor_key(
         false,
         provider,
         profile,
-    );
+    )
+    .unwrap();
     assert_eq!(
         result.body[expected_key],
         json!(100),
@@ -269,7 +274,8 @@ fn max_tokens_key_none_keeps_inference() {
         false,
         "openai",
         &profile,
-    );
+    )
+    .unwrap();
     assert_eq!(reasoning.body["max_completion_tokens"], json!(100));
     assert!(reasoning.body.get("max_tokens").is_none());
 
@@ -279,7 +285,8 @@ fn max_tokens_key_none_keeps_inference() {
         false,
         "openai",
         &profile,
-    );
+    )
+    .unwrap();
     assert_eq!(non_reasoning.body["max_tokens"], json!(100));
     assert!(non_reasoning.body.get("max_completion_tokens").is_none());
 }
@@ -306,7 +313,8 @@ fn no_reasoning_warning_on_direct_passthrough() {
             false,
             "deepseek",
             &OpenAICompatProfile::deepseek(),
-        );
+        )
+        .unwrap();
         assert!(
             !has_reasoning_warning(&result.warnings),
             "effort={} 直传不应产生 reasoning warning: {:?}",
@@ -331,7 +339,8 @@ fn reasoning_effort_passthrough_all_seven_levels() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
     assert!(
         default_body.body.get("reasoning_effort").is_none(),
         "provider-default 不应发 reasoning_effort"
@@ -351,7 +360,8 @@ fn reasoning_effort_passthrough_all_seven_levels() {
             false,
             "deepseek",
             &OpenAICompatProfile::deepseek(),
-        );
+        )
+        .unwrap();
         assert_eq!(
             result.body["reasoning_effort"],
             json!(expected),

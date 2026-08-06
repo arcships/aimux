@@ -14,12 +14,12 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::Value;
 
+use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_core::{LanguageModel, Provider};
 use aimux_provider_utils::response::ErrorStructure;
 use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key, send,
@@ -96,11 +96,6 @@ impl StabilityProvider {
 impl Provider for StabilityProvider {
     fn name(&self) -> &str {
         "stability"
-    }
-    fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(
-            "Stability is an image-only provider and does not support language models.".into(),
-        ))
     }
 }
 

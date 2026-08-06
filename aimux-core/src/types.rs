@@ -87,6 +87,17 @@ pub enum ReasoningEffort {
     Xhigh,
 }
 
+impl ReasoningEffort {
+    /// Whether this is an explicit (custom) effort level rather than the
+    /// "provider default" sentinel.
+    ///
+    /// Replaces the per-provider `is_custom_reasoning` helpers that were
+    /// copy-pasted across openai/anthropic/xai convert modules (issue M10).
+    pub fn is_custom(self) -> bool {
+        !matches!(self, ReasoningEffort::ProviderDefault)
+    }
+}
+
 impl std::fmt::Display for ReasoningEffort {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

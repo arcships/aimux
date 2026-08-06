@@ -263,7 +263,7 @@ fn language_model_returns_unsupported_error() {
     match provider.language_model("google-pse-search") {
         Err(AiMuxError::Unsupported(msg)) => {
             assert!(
-                msg.contains("google_pse does not support language models"),
+                msg.contains("provider 'google_pse' does not provide language models"),
                 "unexpected message: {msg}"
             );
         }

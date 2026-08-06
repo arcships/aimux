@@ -76,6 +76,7 @@ pub fn parse_provider_error(status: u16, body: &str, structure: &ErrorStructure)
         401 => AiMuxError::Auth(message),
         429 => AiMuxError::RateLimited {
             retry_after_ms: 1000,
+            message: format!("HTTP 429: {}", message),
         },
         404 => AiMuxError::ModelNotFound(message),
         _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),

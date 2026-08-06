@@ -20,8 +20,12 @@
 //! All async provider work runs on a shared multi-threaded tokio runtime. The
 //! C ABI functions are synchronous: they `block_on` the runtime until the
 //! operation completes. Callbacks execute on the same thread/call-stack that
-//! invoked the FFI function, so they must not re-enter the FFI layer (doing so
-//! would deadlock the runtime).
+//! invoked the FFI function, so they must **not** re-enter the FFI layer:
+//! a nested `block_on` on the same thread makes tokio **panic** ("Cannot start
+//! a runtime from within a runtime"), and a panic crossing the `extern "C"`
+//! boundary is **undefined behavior**. Re-entrant calls are detected at runtime
+//! by a thread-local guard and rejected with an error envelope instead of
+//! panicking (see [`ffi_block_on`]).
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 // `extern "C"` entry points dereference raw pointers (`*const c_char`) by
 // design: the C ABI contract requires callers to pass valid pointers (see
@@ -166,6 +170,47 @@ fn runtime() -> &'static Runtime {
     })
 }
 
+thread_local! {
+    /// Re-entrancy guard: set while an FFI entry point is `block_on`-ing the
+    /// shared runtime on the current thread.
+    ///
+    /// Stream callbacks (`on_part`/`on_done`/`on_error`) run synchronously on
+    /// the same thread/call-stack that entered the FFI function, so a callback
+    /// that calls back into the FFI layer would enter a second `block_on` on
+    /// this thread. tokio rejects nested `block_on` with a **panic**, and a
+    /// panic crossing the `extern "C"` boundary is UB. [`ffi_block_on`] checks
+    /// this guard and turns that re-entrant call into an error envelope
+    /// instead (issue M7).
+    static IN_FFI_BLOCK_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run a future on the shared runtime from an FFI entry point (issue M7).
+///
+/// Rejects re-entrant calls made from inside a stream callback, returning
+/// [`AiMuxError::Other`] instead of letting tokio's `block_on` panic across
+/// the `extern "C"` boundary. The guard is released when the future completes,
+/// including when it panics.
+fn ffi_block_on<F, T>(f: F) -> Result<T, AiMuxError>
+where
+    F: std::future::Future<Output = T>,
+{
+    IN_FFI_BLOCK_ON.with(|flag| {
+        if flag.replace(true) {
+            return Err(AiMuxError::Other(
+                "re-entrant FFI call from within a callback is not allowed".to_string(),
+            ));
+        }
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                IN_FFI_BLOCK_ON.with(|flag| flag.set(false));
+            }
+        }
+        let _reset = Reset;
+        Ok(runtime().block_on(f))
+    })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -213,10 +258,23 @@ fn parse_opts(json: &str) -> Result<GenerateTextOptions, serde_json::Error> {
 
 /// Build an owned C string (`*mut c_char`) from a `String`, transferring
 /// ownership to the caller (who must free it with [`aimux_free_string`]).
+///
+/// Never returns null (issue M1): interior NUL bytes — which would make
+/// `CString::new` fail — are replaced with U+FFFD so the C-side contract
+/// ("a non-null NUL-terminated buffer to free, or null") always holds. The
+/// replacement is logged so accidental NULs stay visible.
 fn into_cstring_raw(s: String) -> *mut c_char {
-    CString::new(s)
-        .map(|c| c.into_raw())
-        .unwrap_or(std::ptr::null_mut())
+    if s.contains('\0') {
+        eprintln!(
+            "aimux-ffi: warning: string contains {} NUL byte(s); replaced with U+FFFD before FFI return",
+            s.bytes().filter(|&b| b == 0).count()
+        );
+    }
+    let sanitized = s.replace('\0', "\u{FFFD}");
+    // No interior NUL remains: this cannot fail.
+    CString::new(sanitized)
+        .expect("aimux-ffi: impossible: NUL-free string rejected by CString::new")
+        .into_raw()
 }
 
 /// Build the error envelope every FFI error path returns:
@@ -309,7 +367,7 @@ where
     F: std::future::Future<Output = Result<T, AiMuxError>>,
     T: serde::Serialize,
 {
-    let result = runtime().block_on(f);
+    let result = ffi_block_on(f).and_then(|inner| inner);
     match result {
         Ok(r) => serde_json::to_string(&r)
             .map(into_cstring_raw)
@@ -1127,7 +1185,7 @@ fn stream_text_as_openai_with_signal(
 
     opts.abort_signal = abort_signal.clone();
 
-    runtime().block_on(async move {
+    let outcome = ffi_block_on(async move {
         let stream_result = match abort_signal.as_ref() {
             Some(signal) => {
                 tokio::select! {
@@ -1177,6 +1235,11 @@ fn stream_text_as_openai_with_signal(
             Err(e) => fire_error_struct(on_error, &e),
         }
     });
+    // A re-entrant call (FFI invoked from inside a callback) fails here with
+    // an error envelope instead of panicking across the C boundary (M7).
+    if let Err(err) = outcome {
+        fire_error_struct(on_error, &err);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1223,7 +1286,7 @@ fn stream_text_with_signal(
     };
     opts.abort_signal = abort_signal.clone();
 
-    runtime().block_on(async move {
+    let outcome = ffi_block_on(async move {
         let stream_result = match abort_signal.as_ref() {
             Some(signal) => {
                 tokio::select! {
@@ -1275,6 +1338,11 @@ fn stream_text_with_signal(
             Err(e) => fire_error_struct(on_error, &e),
         }
     });
+    // A re-entrant call (FFI invoked from inside a callback) fails here with
+    // an error envelope instead of panicking across the C boundary (M7).
+    if let Err(err) = outcome {
+        fire_error_struct(on_error, &err);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -181,6 +181,7 @@ async fn uses_rate_limit_header_delay_when_reasonable() {
         if n == 1 {
             Some(AiMuxError::RateLimited {
                 retry_after_ms: 3000,
+                message: String::new(),
             })
         } else {
             None
@@ -211,6 +212,7 @@ async fn uses_exponential_backoff_when_delay_too_long() {
         if n == 1 {
             Some(AiMuxError::RateLimited {
                 retry_after_ms: 70_000,
+                message: String::new(),
             })
         } else {
             None
@@ -271,6 +273,7 @@ async fn handles_anthropic_429_with_retry_after_ms() {
         if n == 1 {
             Some(AiMuxError::RateLimited {
                 retry_after_ms: 5000,
+                message: String::new(),
             })
         } else {
             None
@@ -302,9 +305,11 @@ async fn multiple_retries_with_exponential_progression() {
     let closure = failing_then_success(counter.clone(), |n| match n {
         1 => Some(AiMuxError::RateLimited {
             retry_after_ms: 5000,
+            message: String::new(),
         }),
         2 => Some(AiMuxError::RateLimited {
             retry_after_ms: 2000,
+            message: String::new(),
         }),
         _ => None,
     });
@@ -368,6 +373,7 @@ async fn retries_on_gateway_rate_limit_error() {
         if n == 1 {
             Some(AiMuxError::RateLimited {
                 retry_after_ms: 2000,
+                message: String::new(),
             })
         } else {
             None
@@ -421,6 +427,7 @@ async fn uses_retry_after_hint_from_wrapped_error() {
         if n == 1 {
             Some(AiMuxError::RateLimited {
                 retry_after_ms: 3000,
+                message: String::new(),
             })
         } else {
             None

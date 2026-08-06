@@ -69,14 +69,4 @@ impl Provider for VoyageProvider {
     fn name(&self) -> &str {
         "voyage"
     }
-
-    fn language_model(
-        &self,
-        _model_id: &str,
-    ) -> Result<Box<dyn aimux_core::language_model::LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(
-            "Voyage AI does not support language models. Use embedding_model() instead."
-                .to_string(),
-        ))
-    }
 }

@@ -747,9 +747,13 @@ async fn send_with_retry_raw(
                             .and_then(|v| v.to_str().ok()),
                         SystemTime::now(),
                     );
-                    let _ = read_error_body(resp, request).await?; // 消费 body
+                    // Keep the provider's rate-limit body (e.g. "quota
+                    // exceeded" vs "too many requests") so consumers can tell
+                    // the two apart (issue M6).
+                    let body = read_error_body(resp, request).await?;
                     last_error = AiMuxError::RateLimited {
                         retry_after_ms: hint.unwrap_or(1000).max(0) as u64,
+                        message: format!("HTTP {status_code}: {}", body),
                     };
                 } else if resp.status().is_server_error() {
                     // 5xx: 可重试。

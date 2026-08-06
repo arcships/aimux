@@ -29,10 +29,14 @@ pub enum AiMuxError {
     #[error("invalid prompt: {0}")]
     InvalidPrompt(String),
 
-    #[error("rate limited: retry after {retry_after_ms}ms")]
+    /// Rate-limited (HTTP 429). Carries both the retry hint and the provider's
+    /// response message (e.g. "quota exceeded" vs "too many requests") so
+    /// callers can tell the two apart.
+    #[error("rate limited: {message} (retry after {retry_after_ms}ms)")]
     RateLimited {
         #[ts(type = "number")]
         retry_after_ms: u64,
+        message: String,
     },
 
     #[error("authentication failed: {0}")]
@@ -81,7 +85,10 @@ impl AiMuxError {
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            AiMuxError::RateLimited { .. } | AiMuxError::Http(_) | AiMuxError::ApiCall(_)
+            AiMuxError::RateLimited { .. }
+                | AiMuxError::Http(_)
+                | AiMuxError::ApiCall(_)
+                | AiMuxError::Timeout(_)
         )
     }
 
@@ -95,7 +102,7 @@ impl AiMuxError {
     /// `retryWithExponentialBackoffRespectingRetryHeaders` in the TS SDK.
     pub fn retry_after_hint(&self) -> Option<i64> {
         match self {
-            AiMuxError::RateLimited { retry_after_ms } => Some(*retry_after_ms as i64),
+            AiMuxError::RateLimited { retry_after_ms, .. } => Some(*retry_after_ms as i64),
             _ => None,
         }
     }
@@ -128,22 +135,27 @@ impl AiMuxError {
 
     /// Returns the HTTP status code carried by this error, if any.
     ///
-    /// HTTP-layer errors created by `parse_provider_error` and
-    /// `send_with_retry_raw` embed the status code in the message as
-    /// `"HTTP {status}: ..."`. This method extracts it. Errors that don't
-    /// originate from an HTTP response return `None`.
+    /// Status codes are now derived structurally per variant where the variant
+    /// implies a single status (`Auth`/`TokenExpired` → 401,
+    /// `RateLimited` → 429, `ModelNotFound` → 404). Status-bearing variants
+    /// created by the HTTP layer (`Http`/`Provider`/`ApiCall`) embed the code
+    /// in the message as `"HTTP {status}: ..."` (that prefix is stamped by
+    /// `parse_provider_error` and `send_with_retry_raw`); this method extracts
+    /// it as a fallback. Errors that don't originate from an HTTP response
+    /// return `None`.
     pub fn status_code(&self) -> Option<u16> {
-        let message = match self {
-            AiMuxError::Provider(m)
-            | AiMuxError::Http(m)
-            | AiMuxError::Auth(m)
-            | AiMuxError::ApiCall(m)
-            | AiMuxError::ModelNotFound(m) => m,
-            _ => return None,
-        };
-        // Parse "HTTP 403: ..." → 403
-        let rest = message.strip_prefix("HTTP ")?;
-        let code_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-        code_str.parse().ok()
+        match self {
+            AiMuxError::Auth(_) | AiMuxError::TokenExpired(_) => Some(401),
+            AiMuxError::RateLimited { .. } => Some(429),
+            AiMuxError::ModelNotFound(_) => Some(404),
+            AiMuxError::Http(m) | AiMuxError::Provider(m) | AiMuxError::ApiCall(m) => {
+                // Parse "HTTP 403: ..." → 403 (only the HTTP layer stamps this
+                // prefix, so the match is unambiguous).
+                let rest = m.strip_prefix("HTTP ")?;
+                let code_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                code_str.parse().ok()
+            }
+            _ => None,
+        }
     }
 }
