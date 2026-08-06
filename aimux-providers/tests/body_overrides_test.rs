@@ -44,7 +44,7 @@ fn opts_with_overrides(prompt: LanguageModelPrompt, body_overrides: Value) -> Ca
 #[test]
 fn body_overrides_injects_new_field() {
     let opts = opts_with_overrides(user_prompt(), json!({ "enable_thinking": false }));
-    let body = build_request_body("gpt-4o", &opts, false);
+    let body = build_request_body("gpt-4o", &opts, false).unwrap();
     assert_eq!(body["enable_thinking"], json!(false));
     assert_eq!(body["model"], json!("gpt-4o"));
 }
@@ -53,7 +53,7 @@ fn body_overrides_injects_new_field() {
 #[test]
 fn body_overrides_injects_nested_object() {
     let opts = opts_with_overrides(user_prompt(), json!({ "thinking": { "type": "disabled" } }));
-    let body = build_request_body("gpt-4o", &opts, false);
+    let body = build_request_body("gpt-4o", &opts, false).unwrap();
     assert_eq!(body["thinking"], json!({ "type": "disabled" }));
 }
 
@@ -64,7 +64,7 @@ fn body_overrides_injects_nested_object() {
 fn body_overrides_overwrites_existing_field() {
     let mut opts = opts_with_overrides(user_prompt(), json!({ "temperature": 0.1 }));
     opts.temperature = Some(0.9); // set by standard option
-    let body = build_request_body("gpt-4o", &opts, false);
+    let body = build_request_body("gpt-4o", &opts, false).unwrap();
     // body_overrides wins over standard option
     assert_eq!(body["temperature"], json!(0.1));
 }
@@ -89,6 +89,7 @@ fn body_overrides_overwrites_vendor_override_field() {
         "deepseek",
         &aimux_providers::openai::OpenAICompatProfile::deepseek(),
     )
+    .unwrap()
     .body;
     assert_eq!(body["thinking"], json!({ "type": "enabled" }));
 }
@@ -105,7 +106,7 @@ fn body_overrides_deep_merges_nested_objects() {
         user_prompt(),
         json!({ "stream_options": { "include_usage": false } }),
     );
-    let body = build_request_body("gpt-4o", &opts, true);
+    let body = build_request_body("gpt-4o", &opts, true).unwrap();
     assert_eq!(body["stream_options"]["include_usage"], json!(false));
 }
 
@@ -119,7 +120,7 @@ fn body_overrides_null_deletes_key() {
         user_prompt(),
         json!({ "stream_options": null, "temperature": null }),
     );
-    let body = build_request_body("gpt-4o", &opts, true);
+    let body = build_request_body("gpt-4o", &opts, true).unwrap();
     assert!(
         body.get("stream_options").is_none(),
         "stream_options should be deleted by null"
@@ -137,7 +138,7 @@ fn body_overrides_null_deletes_nested_key() {
         user_prompt(),
         json!({ "stream_options": { "include_usage": null } }),
     );
-    let body = build_request_body("gpt-4o", &opts, true);
+    let body = build_request_body("gpt-4o", &opts, true).unwrap();
     // stream_options still exists but include_usage is gone
     assert!(body.get("stream_options").is_some());
     assert!(body["stream_options"].get("include_usage").is_none());
@@ -150,7 +151,7 @@ fn body_overrides_null_deletes_nested_key() {
 #[test]
 fn no_body_overrides_leaves_body_unchanged() {
     let opts = CallOptions::new(user_prompt());
-    let body = build_request_body("gpt-4o", &opts, false);
+    let body = build_request_body("gpt-4o", &opts, false).unwrap();
     assert_eq!(body["model"], json!("gpt-4o"));
     assert!(body.get("enable_thinking").is_none());
 }
@@ -190,7 +191,9 @@ fn max_tokens_key_max_tokens_reasoning_model() {
         max_tokens_key: Some("max_tokens"),
         ..aimux_providers::openai::OpenAICompatProfile::full()
     };
-    let body = build_request_body_with_warnings("o4-mini", &opts, false, "openai", &profile).body;
+    let body = build_request_body_with_warnings("o4-mini", &opts, false, "openai", &profile)
+        .unwrap()
+        .body;
     assert_eq!(body["max_tokens"], json!(100));
     assert!(
         body.get("max_completion_tokens").is_none(),
@@ -211,7 +214,9 @@ fn max_tokens_key_max_completion_tokens_non_reasoning() {
         max_tokens_key: Some("max_completion_tokens"),
         ..aimux_providers::openai::OpenAICompatProfile::full()
     };
-    let body = build_request_body_with_warnings("gpt-4o", &opts, false, "openai", &profile).body;
+    let body = build_request_body_with_warnings("gpt-4o", &opts, false, "openai", &profile)
+        .unwrap()
+        .body;
     assert_eq!(body["max_completion_tokens"], json!(100));
     assert!(
         body.get("max_tokens").is_none(),
@@ -238,7 +243,8 @@ fn groq_none_passthrough_no_warning() {
         false,
         "groq",
         &aimux_providers::openai::OpenAICompatProfile::groq(),
-    );
+    )
+    .unwrap();
     assert_eq!(result.body["reasoning_effort"], json!("none"));
     let reasoning_warning = result
         .warnings
@@ -265,7 +271,8 @@ fn no_warning_when_reasoning_translated() {
         false,
         "openai",
         &aimux_providers::openai::OpenAICompatProfile::full(),
-    );
+    )
+    .unwrap();
     assert_eq!(result.body["reasoning_effort"], json!("none"));
     let reasoning_warning = result
         .warnings

@@ -138,8 +138,7 @@ impl EmbeddingModel for GoogleEmbeddingModel {
 
             let response_headers = resp.headers;
 
-            let raw_value: Value =
-                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+            let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
             // Single embedding: response.embedding.values
             let embedding = raw_value
@@ -220,8 +219,7 @@ impl EmbeddingModel for GoogleEmbeddingModel {
 
         let response_headers = resp.headers;
 
-        let raw_value: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
         // Batch embeddings: response.embeddings[].values
         let embeddings: Vec<Vec<f32>> = raw_value

@@ -791,7 +791,8 @@ async fn should_convert_user_text_part_to_string_content() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         result.body["messages"],
@@ -821,7 +822,8 @@ async fn should_convert_image_file_parts_to_image_url() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     // Image file parts are converted to image_url (OpenAI-compatible behaviour).
     let messages_str = result.body["messages"].to_string();
@@ -860,7 +862,8 @@ async fn should_accept_top_level_only_mediatype_without_error() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     // Top-level media type "image" is resolved to image_url (OpenAI-compatible).
     let messages_str = result.body["messages"].to_string();
@@ -902,7 +905,8 @@ async fn should_stringify_arguments_to_tool_calls() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     let messages = result.body["messages"].as_array().expect("messages array");
     assert_eq!(messages.len(), 2);
@@ -963,7 +967,8 @@ async fn should_handle_text_output_type_in_tool_results() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     let messages = result.body["messages"].as_array().expect("messages array");
     assert_eq!(messages.len(), 2);
@@ -1021,7 +1026,8 @@ async fn should_pass_through_strict_mode_when_strict_is_true() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         result.body["tools"],
@@ -1059,7 +1065,8 @@ async fn should_pass_through_strict_mode_when_strict_is_false() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         result.body["tools"],
@@ -1097,7 +1104,8 @@ async fn should_not_include_strict_mode_when_strict_is_undefined() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     assert_eq!(
         result.body["tools"],
@@ -1158,7 +1166,8 @@ async fn should_pass_through_strict_mode_for_multiple_tools() {
         false,
         "deepseek",
         &OpenAICompatProfile::deepseek(),
-    );
+    )
+    .unwrap();
 
     let tools_arr = result.body["tools"].as_array().expect("tools array");
     assert_eq!(tools_arr.len(), 3);

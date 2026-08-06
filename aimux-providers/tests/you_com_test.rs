@@ -192,7 +192,7 @@ fn language_model_returns_unsupported_error() {
     match provider.language_model("youcom-search") {
         Err(AiMuxError::Unsupported(msg)) => {
             assert!(
-                msg.contains("you_com does not support language models"),
+                msg.contains("provider 'you_com' does not provide language models"),
                 "unexpected message: {msg}"
             );
         }

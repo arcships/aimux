@@ -17,7 +17,6 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
 use aimux_core::video_model::{
@@ -113,12 +112,6 @@ impl RunwaymlProvider {
 impl Provider for RunwaymlProvider {
     fn name(&self) -> &str {
         PROVIDER_NAME
-    }
-
-    fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(format!(
-            "{PROVIDER_NAME} is a video-only provider and does not support language models"
-        )))
     }
 }
 

@@ -64,14 +64,6 @@ pub fn supports_reasoning_effort(model_id: &str) -> bool {
     !is_model_without_reasoning_effort(model_id)
 }
 
-pub fn is_custom_reasoning(reasoning: &Option<ReasoningEffort>) -> bool {
-    match reasoning {
-        Some(ReasoningEffort::ProviderDefault) => false,
-        Some(_) => true,
-        None => false,
-    }
-}
-
 // ── Usage conversion ─────────────────────────────────────────────────────────
 
 pub fn convert_xai_usage(usage: &XaiUsageResponse) -> aimux_core::types::Usage {
@@ -485,7 +477,7 @@ pub fn build_request_body_with_warnings(
     let mut reasoning_effort: Option<String> = xai_option(xai_opts, "reasoningEffort")
         .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()));
 
-    if reasoning_effort.is_none() && is_custom_reasoning(&options.reasoning) {
+    if reasoning_effort.is_none() && options.reasoning.is_some_and(ReasoningEffort::is_custom) {
         let reasoning = options.reasoning.unwrap();
         if !supports_reasoning_effort(model_id) {
             warnings.push(Warning::Unsupported {

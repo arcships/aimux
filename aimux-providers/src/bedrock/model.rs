@@ -131,7 +131,7 @@ impl LanguageModel for BedrockModel {
         let response_headers = resp.headers;
 
         let data: BedrockConverseResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+            serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
         // Extract content from response.output.message.content
         let mut content = Vec::new();
