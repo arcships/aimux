@@ -62,7 +62,7 @@ await generateText(model, p, {
 | **SiliconFlow** | `thinking_budget`（思维链 token 上限，Qwen3 系强制截断；**无 0=关 语义**，关思考走 qwen 系 `enable_thinking`） | `bodyOverrides: { thinking_budget: 1024 }`（调低预算） | batch-05 |
 | **Perplexity** | `reasoning_effort` 四档 + `stream_mode`；推理 token **不可强制关闭** | `bodyOverrides: { stream_mode: 'concise' }` | batch-05 |
 | **Groq** | `reasoning_format`（如 raw）+ effort **直传**（无归一化） | `bodyOverrides: { reasoning_format: 'raw' }` | batch-03 |
-| **Heroku** | `extended_thinking:{enabled,budget_tokens,include_reasoning}`；未知参数需 `allow_ignored_params` | `bodyOverrides: { extended_thinking: { enabled: true, budget_tokens: 2000 } }` | batch-03 |
+| **Heroku** | `extended_thinking:{enabled,budget_tokens,include_reasoning}`；未知参数需 `allow_ignored_params` | `bodyOverrides: { extended_thinking: { enabled: true, budget_tokens: 2000 } }`；非标准参数一并 `bodyOverrides: { allow_ignored_params: true, ... }` | batch-03 |
 | **Hetzner** | `chat_template_kwargs:{enable_thinking:false}` | `bodyOverrides: { chat_template_kwargs: { enable_thinking: false } }` | 社区实测（batch-03） |
 | **Venice** | `venice_parameters:{disable_thinking:true}` | `bodyOverrides: { venice_parameters: { disable_thinking: true } }` | 封闭字段（batch-06） |
 | **腾讯 hy3**（TokenHub） | `thinking:{type:"enabled"}` + `reasoning_effort`（默认 low） | `bodyOverrides: { thinking: { type: 'enabled' }, reasoning_effort: 'low' }` | batch-06（C 级官方文档） |
@@ -81,6 +81,16 @@ await generateText(model, prompt, { max_output_tokens: 4096 })
 // OpenAI 推理模型 → {"max_completion_tokens":4096}
 // stepfun → {"max_tokens":4096}
 ```
+
+> ⚠️ **不要用 `provider_options.maxCompletionTokens` 显式指定**：对只认 `max_tokens`
+> 的厂商（stepfun / siliconflow / sarvam / reka_ai / publicai / perplexity），该
+> 选项会被**静默丢弃**（不报错、无 warning，backlog B10）。请改用顶层
+> `max_output_tokens`——它会被自动映射到正确字段名。
+>
+> 未内置 `max_tokens_key` 的厂商（含 **DeepSeek**）走默认推断：推理模型发
+> `max_completion_tokens`，非推理发 `max_tokens`。DeepSeek 对
+> `max_completion_tokens` 的接受性**尚未实测**（backlog B6）——当前行为
+> 由默认推断路径决定，实测结论落地前请勿依赖其行为。
 
 ## 5. bodyOverrides 用法速查
 
