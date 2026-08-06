@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::model_catalogue::ResolvedModel;
+
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
 use serde_json::Value;
@@ -264,7 +264,12 @@ impl Provider for OpenAIProvider {
     fn list_models(
         &self,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<ResolvedModel>, AiMuxError>> + Send + '_>,
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
     > {
         let config = self.config.clone();
         Box::pin(async move {
@@ -272,17 +277,7 @@ impl Provider for OpenAIProvider {
             let runtime =
                 model::execute_list_models(&config.base_url, &headers, &config.retry_config)
                     .await?;
-
-            // Attach community portraits (best-effort; never blocks on network
-            // failure — falls back to None specs).
-            let provider_name = &config.provider;
-            let resolved = crate::catalogue::resolve_with_catalogue(
-                &crate::catalogue::default_sync(),
-                provider_name,
-                runtime,
-            )
-            .await;
-            Ok(resolved)
+            Ok(runtime)
         })
     }
 }

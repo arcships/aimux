@@ -58,6 +58,9 @@ typedef _ProviderModelC = Pointer<Utf8> Function(
 typedef _ProviderModelDart = Pointer<Utf8> Function(
     int handle, Pointer<Utf8> modelId);
 
+typedef _GetModelSpecsC = Pointer<Utf8> Function(Pointer<Utf8>? sourceUrl);
+typedef _GetModelSpecsDart = Pointer<Utf8> Function(Pointer<Utf8>? sourceUrl);
+
 typedef _GenerateTextC = Pointer<Utf8> Function(
     Uint64 handle, Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson);
 typedef _GenerateTextDart = Pointer<Utf8> Function(
@@ -111,6 +114,7 @@ final class _AimuxFFI {
       Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>?) providerHandleNew;
   final Pointer<Utf8> Function(int) providerListModels;
   final Pointer<Utf8> Function(int, Pointer<Utf8>) providerModel;
+  final Pointer<Utf8> Function(Pointer<Utf8>?) getModelSpecs;
   final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) generateText;
   final void Function(
       int,
@@ -142,6 +146,7 @@ final class _AimuxFFI {
       this.providerHandleNew,
       this.providerListModels,
       this.providerModel,
+      this.getModelSpecs,
       this.generateText,
       this.streamText,
       this.generateTextAsOpenAI,
@@ -169,6 +174,8 @@ final class _AimuxFFI {
           'aimux_provider_list_models'),
       dylib.lookupFunction<_ProviderModelC, _ProviderModelDart>(
           'aimux_provider_model'),
+      dylib.lookupFunction<_GetModelSpecsC, _GetModelSpecsDart>(
+          'aimux_get_model_specs'),
       dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
           'aimux_generate_text'),
       dylib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text'),
@@ -843,6 +850,23 @@ ProviderHandle createProvider(
     }
   });
   return ProviderHandle._(_extractHandle(ffi, ptr), ffi);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Model specs (RFC-0027) — get_model_specs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+/// Catalogue string. Thin fetch — no caching.
+String getModelSpecs(String? sourceUrl) {
+  Pointer<Utf8>? urlPtr;
+  if (sourceUrl != null) {
+    urlPtr = sourceUrl.toNativeUtf8();
+  }
+  final ptr = _ffi.getModelSpecs(urlPtr);
+  if (urlPtr != null) calloc.free(urlPtr);
+  final result = _extractString(ptr, 'getModelSpecs');
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

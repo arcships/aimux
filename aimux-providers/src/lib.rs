@@ -18,7 +18,7 @@ macro_rules! delegate_list_models {
             ::std::boxed::Box<
                 dyn ::std::future::Future<
                         Output = ::std::result::Result<
-                            ::std::vec::Vec<aimux_core::model_catalogue::ResolvedModel>,
+                            ::std::vec::Vec<aimux_core::model_catalogue::RuntimeModel>,
                             aimux_core::AiMuxError,
                         >,
                     > + ::std::marker::Send
@@ -41,6 +41,7 @@ pub use provider::{
 };
 
 pub mod catalogue;
+pub use catalogue::{Catalogue, get_model_specs};
 
 pub mod anthropic;
 pub mod anthropic_aws;

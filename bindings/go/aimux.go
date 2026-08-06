@@ -87,6 +87,9 @@ char *aimux_provider_handle_new(const char *name, const char *api_key, const cha
 char *aimux_provider_list_models(uint64_t handle);
 char *aimux_provider_model(uint64_t handle, const char *model_id);
 
+// Model specs (RFC-0027): community catalogue fetch
+char *aimux_get_model_specs(const char *source_url);
+
 // Speech (TTS)
 char *aimux_openai_speech_new(const char *api_key, const char *model_id);
 char *aimux_openai_speech_new_with_base(const char *api_key, const char *model_id, const char *base_url);
@@ -573,7 +576,7 @@ func (p *ProviderHandle) Close() error {
 
 // ListModels lists models available on this provider (runtime discovery via
 // the provider's /models endpoint), enriched with community knowledge (anya2a)
-// when available. Returns a JSON array of ResolvedModel.
+// when available. Returns a JSON array of RuntimeModel.
 func (p *ProviderHandle) ListModels() (string, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -639,6 +642,29 @@ func CreateProvider(name, apiKey string, cfg *ProviderConfig) (*ProviderHandle, 
 	p.handle = h
 	runtime.SetFinalizer(p, func(p *ProviderHandle) { p.Close() })
 	return p, nil
+}
+
+// ── Model specs (RFC-0027) ──────────────────────────────────────────────────
+
+// GetModelSpecs fetches the community model catalogue (anya2a). Returns a JSON
+// string representing the Catalogue (provider → model_id → ModelSpec).
+// Thin fetch — no caching. sourceURL may be "" for the default endpoint.
+func GetModelSpecs(sourceURL string) (string, error) {
+	var cURL *C.char
+	if sourceURL != "" {
+		cURL = C.CString(sourceURL)
+		defer C.free(unsafe.Pointer(cURL))
+	}
+	ptr := C.aimux_get_model_specs(cURL)
+	if ptr == nil {
+		return "", errors.New("aimux: get_model_specs returned null")
+	}
+	defer C.aimux_free_string(ptr)
+	result := C.GoString(ptr)
+	if msg := extractError(result); msg != "" {
+		return "", fmt.Errorf("aimux: %s", msg)
+	}
+	return result, nil
 }
 
 // ── Non-streaming generation ────────────────────────────────────────────────

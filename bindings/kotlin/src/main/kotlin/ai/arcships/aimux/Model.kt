@@ -55,6 +55,7 @@ internal interface AimuxFFI : Library {
     fun aimux_provider_handle_new(name: String, apiKey: String?, configJson: String?): Pointer?
     fun aimux_provider_list_models(handle: Long): Pointer?
     fun aimux_provider_model(handle: Long, modelId: String): Pointer?
+    fun aimux_get_model_specs(sourceUrl: String?): Pointer?
 
     fun aimux_generate_text(handle: Long, promptJson: String, optsJson: String?): Pointer?
     fun aimux_stream_text(
@@ -421,6 +422,23 @@ class ProviderHandle internal constructor(handle: Long) : AutoCloseable {
             "Failed to create model '$modelId'")
         return Model(h)
     }
+}
+
+/**
+ * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+ * Catalogue string. Thin fetch — no caching.
+ *
+ * @param sourceUrl Optional URL override (null = default endpoint).
+ */
+fun getModelSpecs(sourceUrl: String? = null): String {
+    val ptr = FFI.lib.aimux_get_model_specs(sourceUrl)
+        ?: throw IllegalStateException("get_model_specs returned null")
+    val result = try { ptr.getString(0, "UTF-8") } finally { FFI.lib.aimux_free_string(ptr) }
+    val obj = runCatching { AimuxJson.parseToJsonElement(result).jsonObject }.getOrNull()
+    val err = obj?.get("error")
+    if (err is JsonPrimitive && err.isString) throw IllegalStateException(err.content)
+    return result
+}
 
     // ── Generation ─────────────────────────────────────────────────────────
 

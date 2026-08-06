@@ -64,6 +64,7 @@ __all__ = [
     "azure",
     "provider",
     "create_provider",
+    "get_model_specs",
     "ProviderHandle",
     "init_session_store",
     "init_session_infer",
@@ -150,6 +151,16 @@ def create_provider(
     """
     config_json = json.dumps(config) if config is not None else None
     return _native_create_provider(name, api_key, base_url, config_json)
+
+
+def get_model_specs(source_url: Optional[str] = None) -> Dict[str, Any]:
+    """Fetch the community model catalogue (anya2a). Returns a dict representing
+    the Catalogue (provider -> model_id -> ModelSpec). Thin fetch — no caching.
+
+    Args:
+        source_url: Optional URL override (default = anya2a endpoint).
+    """
+    return json.loads(_native_get_model_specs(source_url))
 
 
 def _prompt_to_json(prompt: Union[str, List[Dict[str, Any]]]) -> str:

@@ -620,7 +620,7 @@ struct ProviderHandle {
 #[pymethods]
 impl ProviderHandle {
     /// List models available on this provider (runtime discovery + anya2a spec).
-    /// Returns a JSON array of ResolvedModel.
+    /// Returns a JSON array of RuntimeModel.
     fn list_models(&self) -> PyResult<String> {
         let rt = runtime();
         let models = rt
@@ -740,6 +740,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(azure, m)?)?;
     m.add_function(wrap_pyfunction!(provider, m)?)?;
     m.add_function(wrap_pyfunction!(create_provider, m)?)?;
+    m.add_function(wrap_pyfunction!(get_model_specs, m)?)?;
     m.add_class::<ProviderHandle>()?;
 
     // Multimodal classes.

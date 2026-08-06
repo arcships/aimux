@@ -62,8 +62,7 @@ pub mod prelude {
     pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
     pub use crate::model_catalogue::{
         CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
-        ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility, ResolvedModel,
-        RuntimeModel,
+        ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility, RuntimeModel,
     };
     pub use crate::model_id::ModelId;
     pub use crate::openai_output::{

@@ -184,7 +184,7 @@ impl Provider for CodexProvider {
     ) -> std::pin::Pin<
         Box<
             dyn std::future::Future<
-                    Output = Result<Vec<aimux_core::model_catalogue::ResolvedModel>, AiMuxError>,
+                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
                 > + Send
                 + '_,
         >,
@@ -198,13 +198,7 @@ impl Provider for CodexProvider {
                 &config.retry_config,
             )
             .await?;
-            let resolved = crate::catalogue::resolve_with_catalogue(
-                &crate::catalogue::default_sync(),
-                &config.provider,
-                runtime,
-            )
-            .await;
-            Ok(resolved)
+            Ok(runtime)
         })
     }
 }

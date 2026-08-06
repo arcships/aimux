@@ -1003,6 +1003,36 @@ pub extern "C" fn aimux_provider_model(handle: u64, model_id: *const c_char) -> 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// C ABI: model specs (RFC-0027) — get_model_specs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+/// `Catalogue` (provider → model_id → ModelSpec), or `{"error":"..."}`.
+///
+/// `source_url` is an optional URL override (null = default anya2a endpoint).
+/// This is a **thin fetch** — no caching, no FS writes. The host decides how
+/// to cache/persist the result.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_get_model_specs(source_url: *const c_char) -> *mut c_char {
+    let url = cstr_to_string(source_url);
+    let rt = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => tokio::runtime::Runtime::new()
+            .expect("aimux-ffi: cannot create tokio runtime")
+            .handle()
+            .clone(),
+    };
+    match rt.block_on(aimux_providers::get_model_specs(url.as_deref())) {
+        Ok(cat) => {
+            let json = serde_json::to_string(&cat)
+                .unwrap_or_else(|e| format!(r#"{{"error":"serialize catalogue: {e}"}}"#));
+            into_cstring_raw(json)
+        }
+        Err(e) => error_json_from(&e),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // C ABI: non-streaming generation
 // ─────────────────────────────────────────────────────────────────────────────
 

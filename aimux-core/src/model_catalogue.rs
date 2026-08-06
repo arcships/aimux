@@ -1,12 +1,14 @@
 //! Model catalogue types (RFC-0027).
 //!
-//! Types describing models discovered at runtime (`RuntimeModel`) and the
-//! static capability portrait supplemented from community knowledge
-//! (`ModelSpec`). `list_models` merges them into `ResolvedModel`.
+//! Two independent data surfaces:
+//! - [`RuntimeModel`] — what a provider's `/models` endpoint returns (sparse:
+//!   id, owned_by, created). Produced by `Provider::list_models`.
+//! - [`ModelSpec`] — community knowledge portrait (context length, capabilities,
+//!   reasoning). Produced by `get_model_specs` (anya2a).
 //!
-//! All `ModelSpec` fields are **advisory** — they are surfaced to the caller so
-//! they can decide how to configure a request; aimux never auto-applies them in
-//! the request path. Missing fields are `None`/`false` (loose deserialization).
+//! These are **deliberately not merged** by aimux. The host fetches both and
+//! combines them as needed (see RFC-0027 docs). All `ModelSpec` fields are
+//! advisory — aimux never auto-applies them in the request path.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -250,52 +252,23 @@ pub struct ModelSpec {
 // Merged result
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A model discovered at runtime, optionally enriched with a static portrait.
-///
-/// `spec` is `Some` when community knowledge (anya2a) had an entry for this
-/// `(provider, model_id)`; otherwise `None` and the caller falls back to
-/// provider-level defaults (today's behaviour).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export)]
-pub struct ResolvedModel {
-    pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owned_by: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "number | null")]
-    pub created: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub spec: Option<ModelSpec>,
-}
-
-impl ResolvedModel {
-    /// Build a `ResolvedModel` from a runtime entry, attaching a portrait if one
-    /// is available.
-    pub fn from_runtime(runtime: RuntimeModel, spec: Option<ModelSpec>) -> Self {
-        Self {
-            id: runtime.id,
-            owned_by: runtime.owned_by,
-            created: runtime.created,
-            spec,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn resolved_model_with_and_without_spec() {
+    fn runtime_model_construction() {
         let r = RuntimeModel {
             id: "gpt-4o".into(),
             owned_by: Some("openai".into()),
             created: Some(1715367049),
         };
-        let without = ResolvedModel::from_runtime(r.clone(), None);
-        assert_eq!(without.id, "gpt-4o");
-        assert!(without.spec.is_none());
+        assert_eq!(r.id, "gpt-4o");
+        assert_eq!(r.owned_by.as_deref(), Some("openai"));
+    }
 
+    #[test]
+    fn model_spec_with_limits_and_caps() {
         let spec = ModelSpec {
             limits: ModelLimits {
                 context: Some(128000),
@@ -310,9 +283,8 @@ mod tests {
             source: CatalogueSource::Anya2a,
             ..Default::default()
         };
-        let with = ResolvedModel::from_runtime(r, Some(spec));
-        assert_eq!(with.spec.as_ref().unwrap().limits.context, Some(128000));
-        assert!(with.spec.as_ref().unwrap().capabilities.tool_call);
+        assert_eq!(spec.limits.context, Some(128000));
+        assert!(spec.capabilities.tool_call);
     }
 
     #[test]

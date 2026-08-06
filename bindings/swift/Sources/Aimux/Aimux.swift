@@ -511,6 +511,28 @@ public final class ProviderHandle: @unchecked Sendable {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Model specs (RFC-0027) — get_model_specs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+/// Catalogue string. Thin fetch — no caching.
+///
+/// - Parameter sourceUrl: Optional URL override (nil = default endpoint).
+public func getModelSpecs(sourceUrl: String? = nil) throws -> String {
+    guard let ptr = aimux_get_model_specs(sourceUrl) else {
+        throw AimuxError.serializationError("get_model_specs returned null")
+    }
+    let result = String(cString: ptr)
+    aimux_free_string(ptr)
+    if let data = result.data(using: .utf8),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let error = json["error"] as? String {
+        throw AimuxError.providerError(error)
+    }
+    return result
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Stream context (trampoline for C callbacks)
 // ─────────────────────────────────────────────────────────────────────────────
 

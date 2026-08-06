@@ -5,7 +5,7 @@ use std::pin::Pin;
 
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
-use crate::model_catalogue::ResolvedModel;
+use crate::model_catalogue::RuntimeModel;
 
 /// A provider factory.
 ///
@@ -29,21 +29,24 @@ pub trait Provider: Send + Sync {
 =======
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError>;
 
-    /// List the models this account can call on this provider (runtime
-    /// discovery via the provider's `/models` endpoint), optionally enriched
-    /// with a static capability portrait from community knowledge (anya2a).
+    /// List the models this account can call on this provider, via the
+    /// provider's `/models` endpoint (runtime discovery).
+    ///
+    /// Returns **only the provider's official data** (`RuntimeModel`: id,
+    /// owned_by, created) — no community catalogue enrichment. To supplement
+    /// with model specs (context length, capabilities, reasoning portrait),
+    /// call [`get_model_specs`](../../aimux_providers/fn.get_model_specs.html)
+    /// separately and merge in the host (RFC-0027).
     ///
     /// Default returns [`AiMuxError::Unsupported`] — providers that expose a
-    /// model-list endpoint override this. The returned [`ResolvedModel`] list is
-    /// **advisory**: callers read `spec` to decide how to configure requests;
-    /// aimux never auto-applies it in the request path (RFC-0027).
+    /// model-list endpoint override this.
     ///
     /// Implemented as a `Pin<Box<Future>>` (rather than `#[async_trait]`) so that
     /// the dozens of existing `Provider` impls need no changes — only providers
     /// that actually support `/models` override this.
     fn list_models(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<ResolvedModel>, AiMuxError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<RuntimeModel>, AiMuxError>> + Send + '_>> {
         let name = self.name().to_string();
         Box::pin(async move {
             Err(AiMuxError::Unsupported(format!(

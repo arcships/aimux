@@ -982,6 +982,18 @@ pub async fn create_provider(
     })
 }
 
+/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+/// `Catalogue` (provider → model_id → ModelSpec). Thin fetch — no caching.
+/// `source_url` may be null for the default endpoint.
+#[napi]
+pub async fn get_model_specs(source_url: Option<String>) -> Result<String> {
+    let cat = aimux_providers::get_model_specs(source_url.as_deref())
+        .await
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    serde_json::to_string(&cat)
+        .map_err(|e| Error::from_reason(format!("serialize catalogue: {e}")))
+}
+
 /// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
 fn provider_options_from_config(
     config: Option<Either<String, ProviderConfig>>,

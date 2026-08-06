@@ -82,6 +82,8 @@ public interface AimuxFFI extends Library {
 
     Pointer aimux_provider_model(long handle, String modelId);
 
+    Pointer aimux_get_model_specs(String sourceUrl);
+
     // ── Generation ──────────────────────────────────────────────────────────
 
     /** @return JSON result string (caller MUST free with {@link #aimux_free_string}). */

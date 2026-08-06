@@ -238,6 +238,13 @@ char *aimux_provider_list_models(uint64_t handle);
  */
 char *aimux_provider_model(uint64_t handle, const char *model_id);
 
+/**
+ * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+ * Catalogue (provider → model_id → ModelSpec), or `{"error":...}`.
+ * source_url may be NULL for the default endpoint. Thin fetch — no caching.
+ */
+char *aimux_get_model_specs(const char *source_url);
+
 /* ── Generation ─────────────────────────────────────────────────────────── */
 
 /**

@@ -15,6 +15,7 @@
 import {
   AbortBridge,
   createProvider as rawCreateProvider,
+  getModelSpecs as rawGetModelSpecs,
   sessionCalls as nativeSessionCalls,
   listSessions as nativeListSessions,
 } from '../index.js'
@@ -48,7 +49,7 @@ import type {
   SessionView,
   ChatCompletion,
   ChatCompletionChunk,
-  ResolvedModel,
+  
   ModelSpec,
   RuntimeModel,
 } from './types'
@@ -114,7 +115,7 @@ export type {
   SessionView,
   ChatCompletion,
   ChatCompletionChunk,
-  ResolvedModel,
+  
   ModelSpec,
   RuntimeModel,
 }
@@ -293,8 +294,8 @@ export class ProviderHandleTyped {
   constructor(private readonly raw: RawProviderHandle) {}
 
   /** List models available on this provider (runtime discovery + anya2a spec). */
-  async listModels(): Promise<ResolvedModel[]> {
-    return JSON.parse(await this.raw.listModels()) as ResolvedModel[]
+  async listModels(): Promise<RuntimeModel[]> {
+    return JSON.parse(await this.raw.listModels()) as RuntimeModel[]
   }
 
   /** Build a language model from a discovered model id. */
@@ -329,4 +330,27 @@ export async function createProvider(
 ): Promise<ProviderHandleTyped> {
   const raw = await rawCreateProvider(name, apiKey ?? null, config ?? null)
   return new ProviderHandleTyped(raw)
+}
+
+/**
+ * Fetch the community model catalogue (anya2a). Returns a `Catalogue` object
+ * with a `lookup(provider, modelId)` method. Thin fetch — no caching; the host
+ * decides how to persist/reuse the result.
+ *
+ * @param sourceUrl - Optional URL override (default = anya2a endpoint).
+ *
+ * @example
+ * ```ts
+ * import { createProvider, getModelSpecs, generateText } from 'aimux'
+ * const [p, catalogue] = await Promise.all([
+ *   createProvider('deepseek', apiKey),
+ *   getModelSpecs(),
+ * ])
+ * const models = await p.listModels()
+ * const model = await p.model(models[0].id)
+ * const spec = catalogue.specs?.['deepseek']?.[models[0].id] // community portrait
+ * ```
+ */
+export async function getModelSpecs(sourceUrl?: string): Promise<unknown> {
+  return JSON.parse(await rawGetModelSpecs(sourceUrl ?? null))
 }

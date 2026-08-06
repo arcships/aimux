@@ -259,6 +259,18 @@ public class Model implements Closeable {
     }
 
     /**
+     * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+     * Catalogue string. Thin fetch — no caching.
+     *
+     * @param sourceUrl Optional URL override (null = default endpoint).
+     */
+    public static String getModelSpecs(String sourceUrl) {
+        return AimuxResult.extractString(
+            AimuxFFI.INSTANCE.aimux_get_model_specs(sourceUrl),
+            "get_model_specs");
+    }
+
+    /**
      * Create a DeepSeek model instance.
      *
      * <p>The retired {@code aimux_deepseek_new} C symbol has been removed; this

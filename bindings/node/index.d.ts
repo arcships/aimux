@@ -240,6 +240,9 @@ export declare function cohereReranking(apiKey: string, modelId: string, baseUrl
  */
 export declare function createProvider(name: string, apiKey?: string | undefined | null, config?: ProviderConfig | undefined | null): Promise<ProviderHandle>
 
+/** Fetch the community model catalogue (anya2a). Returns a JSON-serialized Catalogue. Thin fetch — no caching. */
+export declare function getModelSpecs(sourceUrl?: string | undefined | null): Promise<string>
+
 /** Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4). */
 export declare function deepseek(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
 
