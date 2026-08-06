@@ -33,7 +33,7 @@
 | R4 | **P4 crate 边界**:自动重建放 core 会循环依赖 | 拆层:`replay_with_model`(core,provider 无关)+ 自动构造(providers/CLI) |
 | R5 | **流式终结竞态**:Outcome 即写删 pending,ExchangeUpdate 后到被丢 | writer 用 completion barrier,outcome/exchange 都到齐才写;ExchangeUpdate 带 attempt ID |
 | R6 | **输入侧凭据泄露**:CallOptions.headers/provider_options 序列化含 Authorization | 输入侧 + provider_options 统一脱敏(与 HTTP 侧同规则) |
-| R7 | **每次调用绑定 recorder 快照**:调用中途替换全局 recorder 会拆散 Recording | 层 A 入口取一次 Arc,随 trace_id 传到底层;全局替换只影响新调用 |
+| R7 | **每次调用绑定 recorder 快照**:调用中途替换全局 recorder 会拆散 Recording | 层 A 入口取一次 Arc,随 call_id 传到底层;全局替换只影响新调用 |
 | R8 | **mock 回放范围**:原生协议 wire 无法通用解析 | OpenAI 兼容 MVP,其他明确 Unsupported(用户拍板) |
 
 ## 已对齐结论(含评审修订)
@@ -73,7 +73,7 @@
 ### C1. RingRecorder = 同款样式各自实现(评审确认)
 
 - 同 RingTraceStore 模式(Mutex + VecDeque 有界 + with_capacity + export_jsonl)。
-- 内部需 `pending_by_trace_id + completed VecDeque`(分片合并后再入 ring);容量语义、单条上限、incomplete 导出规则进实施验收。
+- 内部需 `pending_by_call_id + completed VecDeque`(分片合并后再入 ring);容量语义、单条上限、incomplete 导出规则进实施验收。
 
 ### D2. P5 绑定层 = Node + C ABI 本期(评审确认)
 

@@ -75,7 +75,7 @@ aimux cache-probe <SUBCOMMAND>
 | **TraceRecord jsonl(离线)** | 探测哈希数据(指纹/usage/verdict) | core `RingTraceStore::export_jsonl` 或外部 `TraceSink` 落盘 | `offline`/`session` 审计诊断 |
 | **录制 jsonl(RFC-0023)** | 明文完整上下文(输入/配置/HTTP) | core `JsonlRecorder` | 深查可疑 verdict 时拉明文跑完整 LCP;缓存可复现性验证(多次请求回放 + 探测对比) |
 
-两者以 `trace_id` 关联(RFC-0015 §8 协同)。CLI 的 `provider` 子命令是**在线探测**(直接调 provider 发请求),不依赖数据源。
+两者以 `call_id` 关联(RFC-0015 §8 协同)。CLI 的 `provider` 子命令是**在线探测**(直接调 provider 发请求),不依赖数据源。
 
 ---
 

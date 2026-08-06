@@ -43,3 +43,6 @@ tokio = { workspace = true }
 wiremock = "0.6"
 futures = { workspace = true }
 serial_test = { workspace = true }
+
+[lints]
+workspace = true

@@ -61,11 +61,11 @@ use serde::{Serialize, Deserialize};
 use crate::options::CallOptions;
 use crate::language_model_message::LanguageModelPrompt;
 
-/// 一次完整调用的录制记录(三层 + trace_id 关联)。
+/// 一次完整调用的录制记录(三层 + call_id 关联)。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Recording {
     /// 全局唯一 ID,关联三层。
-    pub trace_id: String,
+    pub call_id: String,
     pub recorded_at: String,           // ISO 8601
 
     /// ① 输入侧:调用参数(prompt + options)。
@@ -155,9 +155,9 @@ pub enum OutcomeStatus {
 
 **completion barrier(评审 R5,2026-08-06)**:writer 不得"outcome 到达即写"。完整 `Recording` 满足:input ✅ + outcome ✅ + 全部 exchange 已终结(流式骨架 exchange 收到 `ExchangeUpdate` 或标记 transport 结束)。满足才写行;shutdown/超时兜底输出 incomplete 记录。`ExchangeUpdate` 带 `attempt` 标识定位目标 exchange,不隐式更新"最后一条"。
 
-### 3.2 录制点:两层,trace_id 关联
+### 3.2 录制点:两层,call_id 关联
 
-录制分两层,用同一 `trace_id` 关联成一条完整 `Recording`:
+录制分两层,用同一 `call_id` 关联成一条完整 `Recording`:
 
 **层 A:`generate_text`/`stream_text` 入口(录 ①+②+outcome)**
 
@@ -165,13 +165,13 @@ pub enum OutcomeStatus {
 // aimux-core/src/generate.rs 增量
 
 pub async fn generate_text(model: &dyn LanguageModel, prompt: impl Into<ModelPrompt>, options: GenerateTextOptions) -> Result<GenerateTextResult, AiMuxError> {
-    let trace_id = new_trace_id();
+    let call_id = new_call_id();
     let call_options = options.into_call_options(lm_prompt);
 
     // 录制 ①+②(若开):输入侧 + provider 元信息
     let recorder = recording::recorder();
     if let Some(rec) = &recorder {
-        rec.record_input(&trace_id, &call_options, model.provider(), model.model_id());
+        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
         // provider config(base_url/api_key_source/profile)从 model 提取——
         // 见 §3.3 config_snapshot 默认方法
     }
@@ -180,7 +180,7 @@ pub async fn generate_text(model: &dyn LanguageModel, prompt: impl Into<ModelPro
 
     // 录制 outcome
     if let Some(rec) = &recorder {
-        rec.record_outcome(&trace_id, &result);
+        rec.record_outcome(&call_id, &result);
     }
     // ...
 }
@@ -195,7 +195,7 @@ pub async fn generate_text(model: &dyn LanguageModel, prompt: impl Into<ModelPro
 // 每次 attempt 录一条 HttpExchange(attempt = 0..max_retries)。
 // 成功响应的 body 在 send/send_stream 读完后补录;错误体经 read_error_body
 // 捕获(4xx/5xx/网络错误各录一条含 error 字段的 exchange)。
-// trace_id 从 HttpRequest.trace_id 取(见 §3.4)。
+// call_id 从 HttpRequest.call_id 取(见 §3.4)。
 ```
 
 ### 3.3 ConfigSnapshot(提取配置侧)
@@ -218,16 +218,16 @@ fn config_snapshot(&self) -> ProviderRecord {
 - transparent decorator(如 `TraceLayer`)必须覆盖并**转发 inner 的快照**,否则录到的是装饰器自身的最小信息。
 - provider-changing decorator(Router/MoA)本期**只录逻辑模型快照**;effective provider 若在 `do_generate` 内才选定,由后续版本补录(避免录制时机与路由时机错位)。
 
-### 3.4 trace_id 传递
+### 3.4 call_id 传递
 
-层 A(generate 入口)生成 `trace_id`,层 B(http.rs)需要拿到它来关联 ③。传递方式:
+层 A(generate 入口)生成 `call_id`,层 B(http.rs)需要拿到它来关联 ③。传递方式:
 
-- **方案 A(推荐)**:`CallOptions` 加 `#[serde(skip)] trace_id: Option<String>` 字段——入口生成后塞进 call_options,http.rs 从 `HttpRequest`(经 provider 透传)读取。serde skip 保证不过 JSON 边界(与 `abort_signal` 同模式,[options.rs:119](../aimux-core/src/options.rs#L119))。
+- **方案 A(推荐)**:`CallOptions` 加 `#[serde(skip)] call_id: Option<String>` 字段——入口生成后塞进 call_options,http.rs 从 `HttpRequest`(经 provider 透传)读取。serde skip 保证不过 JSON 边界(与 `abort_signal` 同模式,[options.rs:119](../aimux-core/src/options.rs#L119))。
 - **方案 B**:thread-local / task-local(`tokio::task_local!`)——无需改 CallOptions,但隐式传递,调试性差。
 
-**选 A**:显式、可测、与现有 `abort_signal` 同模式。`HttpRequest` 已有 `abort_signal` 字段([http.rs:197](../aimux-provider-utils/src/http.rs#L197)),加 `trace_id` 同理。
+**选 A**:显式、可测、与现有 `abort_signal` 同模式。`HttpRequest` 已有 `abort_signal` 字段([http.rs:197](../aimux-provider-utils/src/http.rs#L197)),加 `call_id` 同理。
 
-**recorder 快照绑定**(评审 R7,2026-08-06):层 A 入口**读取一次** `Arc<dyn Recorder>` 并随 `trace_id` 传到底层(层 B 经 `HttpRequest` 透传的应携带 recorder 引用或由入口统一注入)。**禁止各录制点分别重新读全局 recorder**——调用中途替换全局 recorder 会拆散同一条 `Recording`;全局替换只影响后续新调用。
+**recorder 快照绑定**(评审 R7,2026-08-06):层 A 入口**读取一次** `Arc<dyn Recorder>` 并随 `call_id` 传到底层(层 B 经 `HttpRequest` 透传的应携带 recorder 引用或由入口统一注入)。**禁止各录制点分别重新读全局 recorder**——调用中途替换全局 recorder 会拆散同一条 `Recording`;全局替换只影响后续新调用。
 
 ### 3.5 Recorder trait 与实现
 
@@ -235,15 +235,15 @@ fn config_snapshot(&self) -> ProviderRecord {
 /// 录制器 trait。
 pub trait Recorder: Send + Sync {
     /// 录制输入侧 + 配置侧(层 A 入口调用)。
-    fn record_input(&self, trace_id: &str, options: &CallOptions, provider: &str, model_id: &str);
+    fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str);
     /// 录制配置侧完整快照。
-    fn record_provider(&self, trace_id: &str, snapshot: &ProviderRecord);
+    fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord);
     /// 录制单次 HTTP 交换(层 B http.rs 调用,per-attempt 一条)。
-    fn record_exchange(&self, trace_id: &str, exchange: &HttpExchange);
+    fn record_exchange(&self, call_id: &str, exchange: &HttpExchange);
     /// 流式响应结束时补全最后一条 exchange 的 response(层 B 流式路径)。
-    fn record_exchange_update(&self, trace_id: &str, attempt: u32, response: &ResponseRecord);
+    fn record_exchange_update(&self, call_id: &str, attempt: u32, response: &ResponseRecord);
     /// 录制最终结果(层 A 入口调用)。
-    fn record_outcome(&self, trace_id: &str, outcome: &OutcomeRecord);
+    fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord);
     /// 同步 flush:阻塞直到数据落盘(oneshot 回执),关闭前调用确保不丢。
     fn flush(&self);
 }
@@ -259,8 +259,8 @@ fn recorder() -> Option<Arc<dyn Recorder>> { RECORDER.read().unwrap().clone() }
 ```
 
 **默认实现**:
-- `JsonlRecorder`:每条完整 `Recording` 序列化为一行 jsonl 写磁盘。**专用 writer thread + std::sync::mpsc**(对齐决策 B2,2026-08-06——同步 `flush` 与异步 tokio task 不匹配,专用 thread 可 oneshot 确认落盘、不依赖 runtime、不受 runtime shutdown 影响)。分片按 `trace_id` 在 writer 内合并;**completion barrier**:outcome 与全部 exchange(含流式 update)都到齐才写完整行,不"outcome 即写"。
-- `RingRecorder`(P6,对齐决策 C1/D3):内存有界 ring buffer(默认 2048 条),**与 `RingTraceStore` 同款样式各自实现**(Mutex + VecDeque + with_capacity + export_jsonl),不共用类型;内部需 `pending_by_trace_id + completed VecDeque`,容量语义/单条上限/incomplete 导出规则在实施验收中明确。
+- `JsonlRecorder`:每条完整 `Recording` 序列化为一行 jsonl 写磁盘。**专用 writer thread + std::sync::mpsc**(对齐决策 B2,2026-08-06——同步 `flush` 与异步 tokio task 不匹配,专用 thread 可 oneshot 确认落盘、不依赖 runtime、不受 runtime shutdown 影响)。分片按 `call_id` 在 writer 内合并;**completion barrier**:outcome 与全部 exchange(含流式 update)都到齐才写完整行,不"outcome 即写"。
+- `RingRecorder`(P6,对齐决策 C1/D3):内存有界 ring buffer(默认 2048 条),**与 `RingTraceStore` 同款样式各自实现**(Mutex + VecDeque + with_capacity + export_jsonl),不共用类型;内部需 `pending_by_call_id + completed VecDeque`,容量语义/单条上限/incomplete 导出规则在实施验收中明确。
 
 **队列语义**(评审补充):channel 容量与满载策略须明确(bounded + drop-newest 并计数,或 unbounded + 上限告警);丢弃事件计数对外可查。
 
@@ -431,10 +431,10 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 | `aimux-core/src/recording.rs` | `Recording`/`InputRecord`/`ProviderRecord`/`HttpExchange`/`OutcomeRecord` + `Recorder` trait + `JsonlRecorder`/`RingRecorder` + `init_recording` + completion barrier | ~400 行 |
 | `aimux-core/src/replay.rs` | `MockReplayModel`(OpenAI 兼容 MVP)+ `ReplayMatcher` trait + `ExactMatcher`/`ScoreMatcher` + `replay_with_model`(provider 无关的请求回放) | ~400 行 |
 | `aimux-core/src/language_model.rs` | `config_snapshot()` 默认方法(B1) | ~5 行 |
-| `aimux-core/src/generate.rs` | `generate_text`/`stream_text` 录制接入(层 A)+ `trace_id` 生成 + 流式 outcome 包装(Finish/Error/drop 终结) | ~100 行 |
-| `aimux-core/src/options.rs` | `CallOptions` 加 `#[serde(skip)] trace_id: Option<String>` | ~5 行 |
-| `aimux-provider-utils/src/http.rs` | `send_with_retry_raw` per-attempt 录制(层 B)+ `send_stream` 骨架 + `ObservedByteStream` 累积 + `HttpRequest` 加 `trace_id` + contains 式脱敏 | ~150 行 |
-| `aimux-providers/src/**` | **116 处 `HttpRequest` 构造点补 `trace_id`(文本路径透传 `options.trace_id`,其余 `None`)** + 各 provider 覆盖 `config_snapshot` | ~200 行 |
+| `aimux-core/src/generate.rs` | `generate_text`/`stream_text` 录制接入(层 A)+ `call_id` 生成 + 流式 outcome 包装(Finish/Error/drop 终结) | ~100 行 |
+| `aimux-core/src/options.rs` | `CallOptions` 加 `#[serde(skip)] call_id: Option<String>` | ~5 行 |
+| `aimux-provider-utils/src/http.rs` | `send_with_retry_raw` per-attempt 录制(层 B)+ `send_stream` 骨架 + `ObservedByteStream` 累积 + `HttpRequest` 加 `call_id` + contains 式脱敏 | ~150 行 |
+| `aimux-providers/src/**` | **116 处 `HttpRequest` 构造点补 `call_id`(文本路径透传 `options.call_id`,其余 `None`)** + 各 provider 覆盖 `config_snapshot` | ~200 行 |
 | `aimux-providers`(replay 自动构造) | `rebuild_provider`(按 ProviderRecord 构造,OpenAI 兼容 + env/none key;explicit 补 key) | ~100 行 |
 | `aimux-ffi/src/lib.rs` | `aimux_init_recording` + `aimux_mock_replay_new` C ABI | ~40 行 |
 | `bindings/node/src/lib.rs` | `initRecording` + `mockReplay(recordings)` napi | ~40 行 |
@@ -452,7 +452,7 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 | **请求回放消耗真实 API 费用** | 中 | 文档警示;CLI 加 `--dry-run`(只打印不重发);库 API 由调用方显式调 |
 | **mock 回放匹配歧义**(多录制命中) | 中 | `ScoreMatcher` 平局取首个(确定性);`ExactMatcher` 无歧义;文档说明各 matcher 特性 |
 | **流式超大响应内存膨胀** | 中 | 单流累积上限 + 截断标记;`RingRecorder` 有界兜底 |
-| **trace_id 传递漏接**(层 B 拿不到) | 低 | 方案 A 显式塞 CallOptions(serde skip);provider 透传 HttpRequest;测试覆盖 |
+| **call_id 传递漏接**(层 B 拿不到) | 低 | 方案 A 显式塞 CallOptions(serde skip);provider 透传 HttpRequest;测试覆盖 |
 | **ConfigSnapshot 覆盖不全**(部分 provider 未实现) | 低 | 默认实现返回最小信息(降级录制,仍可用);按 provider 逐步补全 |
 | **与 RFC-0015 sink 抽象重复** | 中 | 共享 ring-store 模式;先实施方预留合并口子 |
 
@@ -460,7 +460,7 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 
 ## 10. Open Questions
 
-1. **录制文件组织**:单文件 jsonl(简单)vs 按 trace_id 分文件(便于回放加载单条)vs 按 provider/日期分目录?MVP 建议单文件 jsonl + 滚动;回放加载时全读进内存索引。
+1. **录制文件组织**:单文件 jsonl(简单)vs 按 call_id 分文件(便于回放加载单条)vs 按 provider/日期分目录?MVP 建议单文件 jsonl + 滚动;回放加载时全读进内存索引。
 2. **请求回放的形态**:库 API(`aimux::replay::replay_with_model`)+ CLI(`aimux-replay`)。MVP 两者都做——库 API 供程序化使用,CLI 供离线命令行(含 `--dry-run`)。CLI 可放独立 crate 或 `tools/`。
 3. **mock 回放的 `MockReplayModel` 是否支持"部分 mock"**(某些请求 mock,某些透传真实 API)?MVP 不做(全 mock);后续可加 `PassthroughOnMiss` 策略。
 4. **`ScoreMatcher` 的匹配键**:MVP 用 prompt 公共前缀消息数 + 文本 LCP(2026-08-06 定稿,见 §3.6.2),PrefixMatcher 作为 P5 可选增强。
@@ -473,7 +473,7 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |------|------|------|------|
-| **P1** | `recording.rs`:`Recorder` trait + `Recording` 数据模型(含 `OutcomeStatus` + completion barrier)+ `JsonlRecorder`(专用 writer thread + oneshot flush)+ `init_recording`(RwLock)+ 层 A 录制接入(generate.rs,流式 outcome 终结)+ `trace_id` 传递 + 全侧脱敏 + 单测 | 无 | 待实施 |
+| **P1** | `recording.rs`:`Recorder` trait + `Recording` 数据模型(含 `OutcomeStatus` + completion barrier)+ `JsonlRecorder`(专用 writer thread + oneshot flush)+ `init_recording`(RwLock)+ 层 A 录制接入(generate.rs,流式 outcome 终结)+ `call_id` 传递 + 全侧脱敏 + 单测 | 无 | 待实施 |
 | **P2** | 层 B 录制接入(http.rs:`send_with_retry_raw` per-attempt + `send_stream` 骨架 + `ObservedByteStream` 累积)+ `config_snapshot` 默认方法 + OpenAI 等主要 provider 覆盖 + 116 处 `HttpRequest` 透传 | P1 | 待实施 |
 | **P3** | `replay.rs`:`MockReplayModel`(OpenAI 兼容 MVP)+ `ScoreMatcher`/`ExactMatcher` + 单测(mock 响应回放) | P1 | 待实施 |
 | **P4** | `replay.rs`:`replay_with_model`(core,provider 无关)+ `aimux-providers` 的 `rebuild_provider`(自动构造)+ CLI(`--dry-run`) | P1(**不再依赖 RFC-0020**,2026-08-06 对齐修订,见 §3.6.1) | 待实施 |
