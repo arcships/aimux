@@ -105,6 +105,7 @@ impl GenerateTextOptions {
             timeout: self.timeout,
             session_id: self.session_id,
             abort_signal: self.abort_signal,
+            call_id: None,
             include_raw_chunks: self.include_raw_chunks,
         }
     }
@@ -202,7 +203,16 @@ pub async fn generate_text(
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
-    let call_options = options.into_call_options(lm_prompt);
+    let mut call_options = options.into_call_options(lm_prompt);
+
+    // 2a. RFC-0023: call_id + recorder 快照绑定(见 generate_text)。
+    let call_id = crate::recording::new_call_id();
+    call_options.call_id = Some(call_id.clone());
+    let recorder = crate::recording::recorder();
+    if let Some(rec) = &recorder {
+        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
+        rec.record_provider(&call_id, &model.config_snapshot());
+    }
 
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
@@ -230,7 +240,21 @@ pub async fn generate_text(
         model = %model.model_id(),
         modality = "text",
     );
-    let result = do_generate_with_logging(model, &call_options, span, started).await?;
+    let result = match do_generate_with_logging(model, &call_options, span, started).await {
+        Ok(r) => r,
+        Err(e) => {
+            if let Some(rec) = &recorder {
+                rec.record_outcome(&call_id, &crate::recording::OutcomeRecord::from_error(&e));
+            }
+            return Err(e);
+        }
+    };
+    if let Some(rec) = &recorder {
+        rec.record_outcome(
+            &call_id,
+            &crate::recording::OutcomeRecord::from_generate_result(&result),
+        );
+    }
 
     // 4. Extract text and tool calls from content.
     let mut text = String::new();
@@ -309,7 +333,16 @@ pub async fn stream_text(
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
-    let call_options = options.into_call_options(lm_prompt);
+    let mut call_options = options.into_call_options(lm_prompt);
+
+    // 2a. RFC-0023: call_id + recorder 快照绑定(见 generate_text)。
+    let call_id = crate::recording::new_call_id();
+    call_options.call_id = Some(call_id.clone());
+    let recorder = crate::recording::recorder();
+    if let Some(rec) = &recorder {
+        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
+        rec.record_provider(&call_id, &model.config_snapshot());
+    }
 
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
@@ -335,14 +368,29 @@ pub async fn stream_text(
         model = %model.model_id(),
         modality = "text",
     );
-    let result: StreamResult = model.do_stream(&call_options).instrument(span).await?;
+    let result: StreamResult = match model.do_stream(&call_options).instrument(span).await {
+        Ok(r) => r,
+        Err(e) => {
+            if let Some(rec) = &recorder {
+                rec.record_outcome(&call_id, &crate::recording::OutcomeRecord::from_error(&e));
+            }
+            return Err(e);
+        }
+    };
+    // 解构避免部分 move(result 各字段去向不同)。
+    let StreamResult {
+        stream,
+        request_body,
+        response_headers,
+    } = result;
+    let stream = crate::recording::RecordingOutcomeStream::new(stream, recorder, call_id);
 
-    // 4. Return stream to user (request_body/response_headers kept for
+    // 4. Return wrapped stream to user (request_body/response_headers kept for
     //    debugging / cache probing, RFC-0015).
     Ok(StreamTextResult {
-        stream: result.stream,
-        request_body: result.request_body,
-        response_headers: result.response_headers,
+        stream: Box::pin(stream),
+        request_body,
+        response_headers,
     })
 }
 
