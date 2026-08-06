@@ -1,4 +1,4 @@
-﻿//! Llamafile provider — a thin OpenAI-compatible wrapper for the local
+//! Llamafile provider — a thin OpenAI-compatible wrapper for the local
 //! [llamafile](https://github.com/Mozilla-Ocho/llamafile) inference server.
 //!
 //! llamafile exposes an OpenAI-compatible Chat Completions API at
@@ -86,4 +86,6 @@ impl Provider for LlamafileProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

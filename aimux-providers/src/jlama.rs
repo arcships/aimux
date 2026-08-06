@@ -1,4 +1,4 @@
-﻿//! Jlama provider — a thin OpenAI-compatible wrapper.
+//! Jlama provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <github.com/tjake/Jlama> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:8080/v1`. The `JLAMA_BASE_URL` environment
@@ -63,4 +63,6 @@ impl Provider for JlamaProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

@@ -1,4 +1,4 @@
-﻿//! Mistral.rs provider — a thin OpenAI-compatible wrapper for the local
+//! Mistral.rs provider — a thin OpenAI-compatible wrapper for the local
 //! [mistral.rs](https://github.com/EricLBuehler/mistral.rs) inference server.
 //!
 //! mistral.rs exposes an OpenAI-compatible Chat Completions API at
@@ -86,4 +86,6 @@ impl Provider for MistralrsProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

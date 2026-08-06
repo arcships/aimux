@@ -1,4 +1,4 @@
-﻿//! Docker Model Runner provider — a thin OpenAI-compatible wrapper.
+//! Docker Model Runner provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <docker.com> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://model-runner.docker.internal/engines/llama.cpp/v1`. The `DOCKER_MODEL_RUNNER_BASE_URL` environment
@@ -63,4 +63,6 @@ impl Provider for DockerModelRunnerProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

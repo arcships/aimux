@@ -1,4 +1,4 @@
-﻿//! Google Gemini provider.
+//! Google Gemini provider.
 //!
 //! Implements the `LanguageModel` trait against Google's Generative Language
 //! API (`generativelanguage.googleapis.com/v1beta`).
@@ -121,5 +121,84 @@ impl Provider for GoogleProvider {
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
+    }
+
+    /// List models via `GET {base_url}/models` (Gemini native), enriched with
+    /// the community catalogue portrait when available (RFC-0027).
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::ResolvedModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let config = self.config.clone();
+        Box::pin(async move {
+            let base = config.base_url.trim_end_matches('/');
+            let url = format!("{base}/models");
+            let mut headers = std::collections::HashMap::new();
+            headers.insert("x-goog-api-key".to_string(), config.api_key.clone());
+            let mut header_list: Vec<(String, String)> = headers.into_iter().collect();
+            header_list.push(("Content-Type".to_string(), "application/json".to_string()));
+
+            use aimux_provider_utils::{
+                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
+            };
+            let resp = send_timed(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url,
+                    headers: header_list,
+                    body: HttpBody::Empty,
+                    abort_signal: None,
+                },
+                aimux_provider_utils::RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+                None,
+            )
+            .await?;
+
+            // Gemini response: { models: [{ name: "models/gemini-...", displayName, ... }] }
+            #[derive(serde::Deserialize)]
+            struct Resp {
+                #[serde(default)]
+                models: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                name: String,
+                #[serde(default)]
+                display_name: Option<String>,
+            }
+            let parsed: Resp = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(format!("google list_models: parse: {e}")))?;
+            let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
+                .models
+                .into_iter()
+                .map(|e| {
+                    // Strip "models/" prefix → bare model id.
+                    let id = e
+                        .name
+                        .strip_prefix("models/")
+                        .unwrap_or(&e.name)
+                        .to_string();
+                    aimux_core::model_catalogue::RuntimeModel {
+                        id,
+                        owned_by: e.display_name,
+                        created: None,
+                    }
+                })
+                .collect();
+            let resolved = crate::catalogue::resolve_with_catalogue(
+                &crate::catalogue::default_sync(),
+                "google",
+                runtime,
+            )
+            .await;
+            Ok(resolved)
+        })
     }
 }

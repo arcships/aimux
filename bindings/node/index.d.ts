@@ -115,6 +115,31 @@ export declare class Model {
   streamTextAsOpenai(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AsyncGenerator<string>>
 }
 
+/**
+ * A provider handle — created by `createProvider`, supports `listModels()`
+ * (runtime discovery) and `model()` (build a model from a discovered id).
+ *
+ * ```ts
+ * const p = await createProvider('deepseek', apiKey)
+ * const models = await p.listModels()
+ * const model = await p.model(models[0].id)
+ * const result = await generateText(model, 'Hello')
+ * ```
+ */
+export declare class ProviderHandle {
+  /**
+   * List models available on this provider (runtime discovery via the
+   * provider's `/models` endpoint), enriched with community knowledge
+   * (anya2a) when available. Returns a JSON array of `ResolvedModel`.
+   */
+  listModels(): Promise<string>
+  /**
+   * Build a language model from a discovered model id. Returns a `Model`
+   * usable with `generateText` / `streamText`.
+   */
+  model(modelId: string): Promise<Model>
+}
+
 export declare class RerankingModel {
   /**
    * Rerank documents. `query` is the search query, `docs_json` is a JSON
@@ -203,6 +228,17 @@ export declare function cohereEmbedding(apiKey: string, modelId: string, baseUrl
 
 /** Create a Cohere reranking model instance. */
 export declare function cohereReranking(apiKey: string, modelId: string, baseUrl?: string | undefined | null): Promise<RerankingModel>
+
+/**
+ * Create a **provider handle** (RFC-0027) for a registry-backed provider.
+ *
+ * Unlike `provider()` (which binds to a single model_id), this returns a
+ * `ProviderHandle` that supports `listModels()` and `model()`.
+ *
+ * `api_key` may be empty/null to read the provider's env var from the
+ * registry entry.
+ */
+export declare function createProvider(name: string, apiKey?: string | undefined | null, config?: ProviderConfig | undefined | null): Promise<ProviderHandle>
 
 /** Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4). */
 export declare function deepseek(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>

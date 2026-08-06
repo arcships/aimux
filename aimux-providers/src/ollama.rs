@@ -1,4 +1,4 @@
-﻿//! Ollama provider — a thin OpenAI-compatible wrapper for the local
+//! Ollama provider — a thin OpenAI-compatible wrapper for the local
 //! [Ollama](https://ollama.com) inference server.
 //!
 //! Ollama exposes an OpenAI-compatible Chat Completions API at
@@ -89,4 +89,6 @@ impl Provider for OllamaProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

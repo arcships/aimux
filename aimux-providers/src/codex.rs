@@ -176,6 +176,37 @@ impl Provider for CodexProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    /// List models via `GET {base_url}/models` (OpenAI-compatible), enriched
+    /// with the community catalogue portrait when available (RFC-0027).
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::ResolvedModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let config = self.config.openai.clone();
+        Box::pin(async move {
+            let headers = crate::openai::model::build_auth_headers(&config);
+            let runtime = crate::openai::model::execute_list_models(
+                &config.base_url,
+                &headers,
+                &config.retry_config,
+            )
+            .await?;
+            let resolved = crate::catalogue::resolve_with_catalogue(
+                &crate::catalogue::default_sync(),
+                &config.provider,
+                runtime,
+            )
+            .await;
+            Ok(resolved)
+        })
+    }
 }
 
 /// A Codex language model over the Responses API.

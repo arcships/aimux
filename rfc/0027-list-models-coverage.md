@@ -7,13 +7,13 @@
 
 ## 覆盖总览
 
-| 层 | 数量 | P1 状态 | 说明 |
+| 层 | 数量 | 状态 | 说明 |
 |---|---|---|---|
 | registry OpenAI 兼容 | 251 | ✅ **已覆盖** | 共享 `OpenAIProvider::list_models`,`GET {base_url}/models` |
-| standalone OpenAI 兼容(本地/自托管) | 23 | ⬜ 待做 | 内部都用 `OpenAIProvider`,重写 `list_models` 委托即可 |
-| vertex_ai_* MaaS(OpenAI 协议) | 10 | ⬜ 待做 | OpenAI 协议,复用 `execute_list_models` |
-| native protocol LLM | 8 | ⬜ 待做 | 端点各异,逐家适配(openai 已在 registry 覆盖,不重复) |
-| **真 LLM 小计** | **292** | **251 / 292** | |
+| standalone OpenAI 兼容(本地/自托管) | 23 | ✅ **已覆盖** | `delegate_list_models!()` 委托 `OpenAIProvider` |
+| vertex_ai_* MaaS(OpenAI 协议) | 10 | ✅ **已覆盖** | `delegate_list_models!()` 委托 `OpenAIProvider` |
+| native protocol LLM | 8 | ✅ **已覆盖** | 逐家适配端点(openai 已在 registry 覆盖,不重复) |
+| **真 LLM 小计** | **292** | **292 / 292** | |
 | modality-only(不在范围) | 33 | N/A | 返回 trait 默认 `Unsupported` |
 
 ---
@@ -121,12 +121,27 @@ openai 已在 registry 覆盖(不重复)。剩余 8 家需逐家适配端点格�
 
 ## 实现优先级
 
-| 阶段 | 范围 | 新增覆盖 | 累计 | 难度 |
+| 阶段 | 范围 | 新增覆盖 | 累计 | 状态 |
 |---|---|---|---|---|
 | P1 ✅ | registry 251 家 | 251 | 251 | 完成 |
-| **P2.5** | T1(23 standalone)+ T2(10 MaaS) | 33 | 284 | 低(复用 execute_list_models) |
-| **P3** | T3a(4 家有 cassette) | 4 | 288 | 中(逐家适配端点) |
-| **P4** | T3b(4 家需查文档) | 4 | 292 | 中(端点格式待验证) |
+| P2.5 ✅ | T1(23 standalone)+ T2(10 MaaS) | 33 | 284 | 完成(`delegate_list_models!` 宏) |
+| P3 ✅ | T3a(anthropic/google/codex,3 家有 cassette) | 3 | 287 | 完成(逐家适配端点) |
+| P4 ✅ | T3b(azure/bedrock/cohere/mistral/xai/vertex/anthropic_aws,7 家) | 7 | 292 | 完成(SigV4/Bearer/部署列表) |
 | — | modality-only 33 家 | 0 | 292 | N/A(trait 默认) |
 
-**最终目标:292 / 325 = 89.8%**(剩余 33 家 modality-only 语义不适用)。
+**最终覆盖:292 / 325 = 89.8%**(剩余 33 家 modality-only 语义不适用)。
+
+### 实现细节
+
+- **T1+T2(33 家)**:`delegate_list_models!()` 宏批量委托 `self.0.list_models()`(HuggingFaceProvider 非 newtype,直接调 `execute_list_models`)
+- **T3a native**:
+  - anthropic: `GET {base_url}/v1/models`,`x-api-key`/`Bearer` 鉴权
+  - google: `GET {base_url}/models`,`x-goog-api-key` 鉴权,`name` 去 `models/` 前缀
+  - codex: 复用 `execute_list_models`(OpenAIConfig)
+- **T3b native**:
+  - xai/mistral: OpenAI-like `GET {base_url}/models`,Bearer 鉴权
+  - cohere: `GET {base_url}/models`,过滤 `endpoints` 含 `chat` 的模型
+  - vertex: Gemini `GET {base_url}/models`,Bearer/ApiKey 鉴权
+  - azure: `GET {prefix}/deployments?api-version=…`,api-key/Bearer 鉴权(列 deployment 非 model)
+  - bedrock: AWS `ListFoundationModels`(SigV4 签名),BearerToken 路径返回 Unsupported
+  - anthropic_aws: `GET {base_url}/models`(API key 模式),SigV4 模式返回 Unsupported

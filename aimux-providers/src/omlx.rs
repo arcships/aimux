@@ -1,4 +1,4 @@
-﻿//! OMLX / MLX LM provider — a thin OpenAI-compatible wrapper.
+//! OMLX / MLX LM provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <github.com/ml-explore/mlx-lm> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:8080/v1`. The `OMLX_BASE_URL` environment
@@ -63,4 +63,6 @@ impl Provider for OmlxProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

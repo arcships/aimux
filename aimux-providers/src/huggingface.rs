@@ -83,4 +83,35 @@ impl Provider for HuggingFaceProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::ResolvedModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        // HuggingFaceProvider holds an OpenAIConfig (not an OpenAIProvider
+        // directly), so delegate via execute_list_models + catalogue resolve.
+        let config = self.config.0.clone();
+        Box::pin(async move {
+            let headers = crate::openai::model::build_auth_headers(&config);
+            let runtime = crate::openai::model::execute_list_models(
+                &config.base_url,
+                &headers,
+                &config.retry_config,
+            )
+            .await?;
+            let resolved = crate::catalogue::resolve_with_catalogue(
+                &crate::catalogue::default_sync(),
+                &config.provider,
+                runtime,
+            )
+            .await;
+            Ok(resolved)
+        })
+    }
 }

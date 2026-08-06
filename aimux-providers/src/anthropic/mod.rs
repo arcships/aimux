@@ -1,4 +1,4 @@
-﻿//! Anthropic (Claude) provider.
+//! Anthropic (Claude) provider.
 
 pub mod cache_control;
 pub mod convert;
@@ -239,6 +239,89 @@ impl Provider for AnthropicProvider {
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
+    }
+
+    /// List models via `GET {base_url}/v1/models` (Anthropic native), enriched
+    /// with the community catalogue portrait when available (RFC-0027).
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::ResolvedModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let config = self.config.clone();
+        Box::pin(async move {
+            let base = config
+                .base_url
+                .trim_end_matches("/v1")
+                .trim_end_matches('/');
+            let url = format!("{base}/v1/models");
+            let mut headers = std::collections::HashMap::new();
+            headers.insert("anthropic-version".to_string(), config.api_version.clone());
+            if let Some(token) = &config.auth_token {
+                headers.insert("authorization".to_string(), format!("Bearer {token}"));
+            } else {
+                headers.insert("x-api-key".to_string(), config.api_key.clone());
+            }
+            if let Some(extra) = &config.headers {
+                for (k, v) in extra {
+                    headers.insert(k.clone(), v.clone());
+                }
+            }
+            let mut header_list: Vec<(String, String)> = headers.into_iter().collect();
+            header_list.push(("Content-Type".to_string(), "application/json".to_string()));
+
+            use aimux_provider_utils::{
+                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
+            };
+            let resp = send_timed(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url,
+                    headers: header_list,
+                    body: HttpBody::Empty,
+                    abort_signal: None,
+                },
+                config.retry_config,
+                &DEFAULT_ERROR_STRUCTURE,
+                None,
+            )
+            .await?;
+
+            #[derive(serde::Deserialize)]
+            struct Resp {
+                #[serde(default)]
+                data: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                id: String,
+                #[serde(default)]
+                display_name: Option<String>,
+            }
+            let parsed: Resp = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(format!("anthropic list_models: parse: {e}")))?;
+            let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
+                .data
+                .into_iter()
+                .map(|e| aimux_core::model_catalogue::RuntimeModel {
+                    id: e.id,
+                    owned_by: e.display_name,
+                    created: None,
+                })
+                .collect();
+            let resolved = crate::catalogue::resolve_with_catalogue(
+                &crate::catalogue::default_sync(),
+                "anthropic",
+                runtime,
+            )
+            .await;
+            Ok(resolved)
+        })
     }
 }
 
