@@ -72,6 +72,17 @@ class ContractTest {
         assertThat(reencoded).contains("\"include_raw_chunks\":true")
     }
 
+    /// RFC-0024: `session_id` decodes from the shared fixture and round-trips.
+    @Test
+    fun `session id wire format and round-trip`() {
+        val json = fixtureJson(loadFixtures(), "generate_text_options_with_session_id")
+        val opts = AimuxJson.decodeFromString<GenerateTextOptions>(json)
+        assertThat(opts.sessionId).isEqualTo("sess-1")
+
+        val reencoded = AimuxJson.encodeToString(GenerateTextOptions.serializer(), opts)
+        assertThat(reencoded).contains("\"session_id\":\"sess-1\"")
+    }
+
     /// RFC-0016 M10: `Usage.raw` with a vendor-specific field survives a
     /// Kotlin round-trip.
     @Test

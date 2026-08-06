@@ -1,6 +1,6 @@
 # RFC-0024: 调用会话聚合(session_id 归组)
 
-> **Status**: IMPLEMENTED (P1/P2/P5 — 2026-08-05;P3/P4 待依赖 RFC-0023/0015,见 [§10](#10-implementation-order))
+> **Status**: IMPLEMENTED (P1/P2/P5 — 2026-08-05;P3/P4 待依赖 RFC-0023/0015,见 [§10](#10-implementation-order);P5 含 6 语言 typed options + FFI/Node/Python 查询 API)
 > **Date**: 2026-08-05
 > **Scope**: `aimux-core` 新增 `session_id` 字段(显式为主 + 隐式推断兜底),把连续调用聚合成会话组,为录制(RFC-0023)、缓存探测(RFC-0015)、回放提供链级视图。不做 fork 语义、不做 agent loop。
 > **Related**: [RFC-0023](0023-runtime-request-recording.md) 录制(Recording 加 session_id)、[RFC-0015](0015-cache-trace-audit.md) 缓存探测(链级聚合)、[RFC-0019](0019-session-affinity.md) 会话亲和(路由层 session,与本 RFC 可观测层 session 共享 id 概念但职责不同)、[RFC-0016](0016-align-with-aisdk.md) H4(不做 agent loop 边界)

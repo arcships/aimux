@@ -55,7 +55,7 @@
   {
     "name": "generate_text_options_default",
     "type": "GenerateTextOptions",
-    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":null}",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":null,\"session_id\":null}",
     "description": "Default GenerateTextOptions with all fields null"
   },
   {
@@ -68,7 +68,7 @@
     "name": "generate_text_options_include_raw_chunks_true",
     "type": "GenerateTextOptions",
     "rust_value": "",
-    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":true}",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":true,\"session_id\":null}",
     "description": "GenerateTextOptions with include_raw_chunks=true (RFC-0016 M2 true-case)"
   },
   {
