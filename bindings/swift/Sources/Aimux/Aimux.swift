@@ -266,6 +266,39 @@ public final class Model: @unchecked Sendable {
         return result
     }
 
+    /// Generate text (non-streaming) with OpenAI Chat Completions output.
+    ///
+    /// Same as `generateText`, but returns a serialized ChatCompletion
+    /// (OpenAI "chat.completion" object). Works with any provider (RFC-0026).
+    ///
+    /// - Parameters:
+    ///   - prompt: A prompt string or messages array (serialized as JSON).
+    ///   - options: Optional GenerateTextOptions (serialized as JSON).
+    /// - Returns: The JSON-serialized ChatCompletion.
+    public func generateTextAsOpenAI(prompt: String, options: String? = nil) throws -> String {
+        let resultPtr = aimux_generate_text_as_openai(
+            handle,
+            prompt,
+            options
+        )
+
+        guard let ptr = resultPtr else {
+            throw AimuxError.serializationError("generate_text_as_openai returned null")
+        }
+
+        let result = String(cString: ptr)
+        aimux_free_string(ptr)
+
+        // Check for error in the result JSON
+        if let data = result.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let error = json["error"] as? String {
+            throw AimuxError.providerError(error)
+        }
+
+        return result
+    }
+
     /// Stream text from the model.
     ///
     /// - Parameters:
@@ -321,6 +354,59 @@ public final class Model: @unchecked Sendable {
         )
     }
 
+    /// Stream text from the model with OpenAI Chat Completions output.
+    ///
+    /// Same as `streamText`, but each `onPart` receives a serialized
+    /// ChatCompletionChunk (OpenAI "chat.completion.chunk" object). Works with
+    /// any provider (RFC-0026). Stream options (`include_usage`,
+    /// `include_reasoning`) are passed via `options` →
+    /// `providerOptions.openai.stream_options`.
+    ///
+    /// - Parameters:
+    ///   - prompt: A prompt string (serialized as JSON).
+    ///   - options: Optional GenerateTextOptions (serialized as JSON).
+    ///   - onPart: Called for each ChatCompletionChunk (JSON string).
+    ///   - onDone: Called when the stream completes normally.
+    ///   - onError: Called on a stream error.
+    public func streamTextAsOpenAI(
+        prompt: String,
+        options: String? = nil,
+        onPart: @escaping (String) -> Void,
+        onDone: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) {
+        let context = StreamContext(
+            onPart: onPart,
+            onDone: onDone,
+            onError: onError
+        )
+
+        let previousContext = StreamContext.current
+        StreamContext.current = context
+        defer { StreamContext.current = previousContext }
+
+        aimux_stream_text_as_openai(
+            handle,
+            prompt,
+            options,
+            { jsonPtr in
+                if let ptr = jsonPtr {
+                    let json = String(cString: ptr)
+                    StreamContext.current?.onPart(json)
+                }
+            },
+            {
+                StreamContext.current?.onDone()
+            },
+            { errPtr in
+                if let ptr = errPtr {
+                    let err = String(cString: ptr)
+                    StreamContext.current?.onError(err)
+                }
+            }
+        )
+    }
+
     /// Stream text as an AsyncSequence of StreamPart JSON strings.
     ///
     /// Usage:
@@ -332,6 +418,26 @@ public final class Model: @unchecked Sendable {
     public func streamTextAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             self.streamText(
+                prompt: prompt,
+                options: options,
+                onPart: { part in
+                    continuation.yield(part)
+                },
+                onDone: {
+                    continuation.finish()
+                },
+                onError: { err in
+                    continuation.finish(throwing: AimuxError.streamError(err))
+                }
+            )
+        }
+    }
+
+    /// Stream text with OpenAI Chat Completions output as an AsyncSequence of
+    /// ChatCompletionChunk JSON strings (RFC-0026).
+    public func streamTextAsOpenAIAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            self.streamTextAsOpenAI(
                 prompt: prompt,
                 options: options,
                 onPart: { part in

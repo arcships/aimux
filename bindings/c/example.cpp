@@ -90,6 +90,19 @@ public:
         return s;
     }
 
+    // Generate text as OpenAI Chat Completion (RFC-0026)
+    std::string generate_text_as_openai(const std::string &prompt_json,
+                                        const std::string &opts_json = "") {
+        const char *opts = opts_json.empty() ? nullptr : opts_json.c_str();
+        char *result = aimux_generate_text_as_openai(handle_, prompt_json.c_str(), opts);
+        if (!result) {
+            throw std::runtime_error("generate_text_as_openai returned null");
+        }
+        std::string s(result);
+        aimux_free_string(result);
+        return s;
+    }
+
     // Stream text with callbacks
     void stream_text(const std::string &prompt_json,
                      std::function<void(const std::string &)> on_part,
@@ -106,6 +119,35 @@ public:
         current_on_error = &on_error;
 
         aimux_stream_text(
+            handle_, prompt_json.c_str(), opts,
+            [](const char *json) {
+                if (current_on_part && *current_on_part) (*current_on_part)(json);
+            },
+            []() {
+                if (current_on_done && *current_on_done) (*current_on_done)();
+            },
+            [](const char *json) {
+                if (current_on_error && *current_on_error) (*current_on_error)(json);
+            });
+
+        current_on_part = nullptr;
+        current_on_done = nullptr;
+        current_on_error = nullptr;
+    }
+
+    // Stream text as OpenAI Chat Completion chunks (RFC-0026)
+    void stream_text_as_openai(const std::string &prompt_json,
+                               std::function<void(const std::string &)> on_part,
+                               std::function<void()> on_done = nullptr,
+                               std::function<void(const std::string &)> on_error = nullptr,
+                               const std::string &opts_json = "") {
+        const char *opts = opts_json.empty() ? nullptr : opts_json.c_str();
+
+        current_on_part = &on_part;
+        current_on_done = &on_done;
+        current_on_error = &on_error;
+
+        aimux_stream_text_as_openai(
             handle_, prompt_json.c_str(), opts,
             [](const char *json) {
                 if (current_on_part && *current_on_part) (*current_on_part)(json);
@@ -147,6 +189,17 @@ int main() {
                           [](const std::string &part) {
                               std::cout << "PART: " << part << "\n";
                           });
+
+        // OpenAI-compatible output (RFC-0026)
+        std::cout << "\n--- OpenAI Chat Completion ---\n";
+        auto oai_result = model.generate_text_as_openai("\"Hello, world!\"");
+        std::cout << "ChatCompletion: " << oai_result << "\n";
+
+        std::cout << "\n--- OpenAI Chat Completion Streaming ---\n";
+        model.stream_text_as_openai("\"Write a haiku about Rust.\"",
+                                    [](const std::string &chunk) {
+                                        std::cout << "CHUNK: " << chunk << "\n";
+                                    });
 
     } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << "\n";

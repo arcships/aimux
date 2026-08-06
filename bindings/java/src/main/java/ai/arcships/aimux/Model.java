@@ -404,4 +404,136 @@ public class Model implements Closeable {
     public Stream<String> streamTextStream(final String promptJson) {
         return streamTextStream(promptJson, null);
     }
+
+    // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
+
+    /**
+     * Generate text (non-streaming) with OpenAI Chat Completions output.
+     *
+     * @param promptJson JSON prompt string (bare value or {@code {"prompt": ...}}).
+     * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
+     * @return JSON-serialized ChatCompletion (or {@code {"error":"..."}} on failure).
+     */
+    public String generateTextAsOpenAI(String promptJson, String optsJson) {
+        com.sun.jna.Pointer ptr =
+            AimuxFFI.INSTANCE.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson);
+        if (ptr == null) {
+            throw new RuntimeException("generate_text_as_openai returned null");
+        }
+        try {
+            return ptr.getString(0, "UTF-8");
+        } finally {
+            AimuxFFI.INSTANCE.aimux_free_string(ptr);
+        }
+    }
+
+    /** Generate text with OpenAI output and default options. */
+    public String generateTextAsOpenAI(String promptJson) {
+        return generateTextAsOpenAI(promptJson, null);
+    }
+
+    /**
+     * Stream text from the model with OpenAI Chat Completions output. Blocks the
+     * calling thread until the stream completes. Each {@code onPart} receives a
+     * serialized ChatCompletionChunk (OpenAI "chat.completion.chunk" object).
+     *
+     * @param promptJson JSON prompt string.
+     * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
+     * @param onPart     Called for each ChatCompletionChunk (JSON string).
+     * @param onDone     Called once when the stream ends normally.
+     * @param onError    Called on a stream-level error (JSON error string).
+     */
+    public void streamTextAsOpenAI(String promptJson, String optsJson,
+                                   final Consumer<String> onPart,
+                                   final Runnable onDone,
+                                   final Consumer<String> onError) {
+        final com.sun.jna.Callback partCb = new com.sun.jna.Callback() {
+            @SuppressWarnings("unused")
+            public void callback(com.sun.jna.Pointer jsonPtr) {
+                if (jsonPtr != null) {
+                    onPart.accept(jsonPtr.getString(0, "UTF-8"));
+                }
+            }
+        };
+        final com.sun.jna.Callback doneCb = new com.sun.jna.Callback() {
+            @SuppressWarnings("unused")
+            public void callback() {
+                onDone.run();
+            }
+        };
+        final com.sun.jna.Callback errCb = new com.sun.jna.Callback() {
+            @SuppressWarnings("unused")
+            public void callback(com.sun.jna.Pointer errPtr) {
+                if (errPtr != null) {
+                    onError.accept(errPtr.getString(0, "UTF-8"));
+                }
+            }
+        };
+
+        AimuxFFI.INSTANCE.aimux_stream_text_as_openai(
+            requireHandle(), promptJson, optsJson, partCb, doneCb, errCb);
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output as a lazy {@link Stream}
+     * of ChatCompletionChunk JSON strings (RFC-0026).
+     *
+     * @param promptJson JSON prompt string.
+     * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
+     */
+    public Stream<String> streamTextAsOpenAIStream(final String promptJson, final String optsJson) {
+        final Object END = new Object();
+        return StreamSupport.stream(
+            new java.util.Spliterators.AbstractSpliterator<String>(
+                Long.MAX_VALUE, Spliterator.ORDERED) {
+                private final LinkedBlockingQueue<Object> parts = new LinkedBlockingQueue<>();
+                private final AtomicBoolean started = new AtomicBoolean(false);
+                private final AtomicReference<String> error = new AtomicReference<>();
+                private boolean exhausted;
+
+                @Override
+                public boolean tryAdvance(Consumer<? super String> action) {
+                    if (!started.getAndSet(true)) {
+                        try {
+                            streamTextAsOpenAI(promptJson, optsJson,
+                                parts::add,
+                                () -> parts.add(END),
+                                err -> {
+                                    error.set(err);
+                                    parts.add(END);
+                                });
+                        } catch (RuntimeException e) {
+                            parts.add(END);
+                            throw e;
+                        }
+                    }
+                    if (exhausted) {
+                        return false;
+                    }
+                    final Object part;
+                    try {
+                        part = parts.take();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("interrupted while streaming", e);
+                    }
+                    if (part == END) {
+                        exhausted = true;
+                        String err = error.get();
+                        if (err != null) {
+                            throw new RuntimeException(err);
+                        }
+                        return false;
+                    }
+                    action.accept((String) part);
+                    return true;
+                }
+            },
+            false);
+    }
+
+    /** Stream text with OpenAI output and default options. */
+    public Stream<String> streamTextAsOpenAIStream(final String promptJson) {
+        return streamTextAsOpenAIStream(promptJson, null);
+    }
 }

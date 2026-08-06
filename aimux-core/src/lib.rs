@@ -1,4 +1,4 @@
-﻿//! # aimux-core
+//! # aimux-core
 //!
 //! Core abstractions for the aimux toolkit.
 //!
@@ -27,6 +27,7 @@ pub mod language_model_message;
 pub mod math;
 pub mod message;
 pub mod model_id;
+pub mod openai_output;
 pub mod options;
 pub mod provider;
 pub mod reranking_model;
@@ -48,13 +49,18 @@ pub mod prelude {
     pub use crate::error::AiMuxError;
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
     pub use crate::generate::{
-        GenerateTextOptions, GenerateTextResult, StreamTextResult, generate_text, stream_text,
+        GenerateTextOptions, GenerateTextResult, StreamTextResult, generate_text,
+        generate_text_as_openai, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult};
     pub use crate::language_model::LanguageModel;
     pub use crate::language_model_message::LanguageModelPrompt;
     pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
     pub use crate::model_id::ModelId;
+    pub use crate::openai_output::{
+        ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,
+        encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
+    };
     pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
     pub use crate::provider::Provider;
     pub use crate::reranking_model::{RerankingCallOptions, RerankingModel, RerankingResult};

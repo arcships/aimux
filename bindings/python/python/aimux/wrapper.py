@@ -59,6 +59,22 @@ __all__ = [
     "generate_text",
     "stream_text",
     "parse_stream_part",
+    # OpenAI Chat Completions output (RFC-0026)
+    "ChatCompletion",
+    "ChatCompletionChoice",
+    "ChatCompletionMessage",
+    "ChatCompletionToolCall",
+    "ChatCompletionFunction",
+    "ChatCompletionUsage",
+    "ChatCompletionChunk",
+    "ChatCompletionChunkChoice",
+    "ChatCompletionDelta",
+    "ChatCompletionChunkToolCall",
+    "ChatCompletionChunkFunction",
+    "PromptTokensDetails",
+    "CompletionTokensDetails",
+    "generate_text_as_openai",
+    "stream_text_as_openai",
 ]
 
 
@@ -855,6 +871,130 @@ class GenerateTextResult(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# OpenAI Chat Completions output (RFC-0026)
+#
+# Mirrors ``aimux_core::openai_output``. Field names match the serde wire
+# format; ``skip_serializing_if = "Option::is_none"`` maps to ``Optional[...] =
+# None``. The Rust field ``tool_type`` serializes as ``"type"`` (via
+# ``#[serde(rename = "type")]``), so the pydantic field is named ``type``
+# directly (same convention as ``FunctionTool`` above).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ChatCompletionFunction(BaseModel):
+    """Function payload of a tool call (Rust ``ChatCompletionFunction``)."""
+
+    name: str
+    arguments: str
+
+
+class ChatCompletionToolCall(BaseModel):
+    """A tool call in an assistant message (Rust ``ChatCompletionToolCall``)."""
+
+    id: str
+    type: str
+    function: ChatCompletionFunction
+
+
+class ChatCompletionMessage(BaseModel):
+    """The assistant message in a ChatCompletion (Rust ``ChatCompletionMessage``)."""
+
+    role: str
+    content: Optional[str] = None
+    reasoning_content: Optional[str] = None
+    tool_calls: Optional[List[ChatCompletionToolCall]] = None
+    annotations: Optional[List[Any]] = None
+
+
+class ChatCompletionChoice(BaseModel):
+    """A single choice in a ChatCompletion (Rust ``ChatCompletionChoice``)."""
+
+    index: int
+    message: ChatCompletionMessage
+    finish_reason: Optional[str] = None
+    logprobs: Optional[Any] = None
+
+
+class PromptTokensDetails(BaseModel):
+    """Prompt token breakdown (Rust ``PromptTokensDetails``)."""
+
+    cached_tokens: int
+    cache_write_tokens: Optional[int] = None
+
+
+class CompletionTokensDetails(BaseModel):
+    """Completion token breakdown (Rust ``CompletionTokensDetails``)."""
+
+    reasoning_tokens: Optional[int] = None
+
+
+class ChatCompletionUsage(BaseModel):
+    """Token usage for a Chat Completion (Rust ``ChatCompletionUsage``)."""
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    prompt_tokens_details: Optional[PromptTokensDetails] = None
+    completion_tokens_details: Optional[CompletionTokensDetails] = None
+
+
+class ChatCompletion(BaseModel):
+    """A complete OpenAI Chat Completion response (Rust ``ChatCompletion``)."""
+
+    id: str
+    object: str
+    created: int
+    model: str
+    choices: List[ChatCompletionChoice]
+    usage: ChatCompletionUsage
+    system_fingerprint: Optional[str] = None
+
+
+class ChatCompletionChunkFunction(BaseModel):
+    """Function payload of a chunk tool call (Rust ``ChatCompletionChunkFunction``)."""
+
+    name: Optional[str] = None
+    arguments: Optional[str] = None
+
+
+class ChatCompletionChunkToolCall(BaseModel):
+    """A tool-call delta in a streaming chunk (Rust ``ChatCompletionChunkToolCall``)."""
+
+    index: int
+    id: Optional[str] = None
+    type: Optional[str] = None
+    function: ChatCompletionChunkFunction
+
+
+class ChatCompletionDelta(BaseModel):
+    """The delta payload of a streaming chunk (Rust ``ChatCompletionDelta``)."""
+
+    role: Optional[str] = None
+    content: Optional[str] = None
+    reasoning_content: Optional[str] = None
+    tool_calls: Optional[List[ChatCompletionChunkToolCall]] = None
+
+
+class ChatCompletionChunkChoice(BaseModel):
+    """A single choice in a streaming chunk (Rust ``ChatCompletionChunkChoice``)."""
+
+    index: int
+    delta: ChatCompletionDelta
+    finish_reason: Optional[str] = None
+    logprobs: Optional[Any] = None
+
+
+class ChatCompletionChunk(BaseModel):
+    """A single OpenAI Chat Completion streaming chunk (Rust ``ChatCompletionChunk``)."""
+
+    id: str
+    object: str
+    created: int
+    model: str
+    choices: List[ChatCompletionChunkChoice]
+    usage: Optional[ChatCompletionUsage] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -950,3 +1090,54 @@ def stream_text(
 def parse_stream_part(part: dict) -> StreamPart:
     """Validate a yielded stream-part dict into a typed :class:`StreamPart`."""
     return StreamPart.model_validate(part)
+
+
+def generate_text_as_openai(
+    model: Model,
+    prompt: Prompt,
+    options: Optional[GenerateTextOptions] = None,
+) -> ChatCompletion:
+    """Generate text and return the result as an OpenAI Chat Completion.
+
+    Identical to :func:`generate_text` except the result is a
+    :class:`ChatCompletion` (OpenAI ``chat.completion`` object) rather than a
+    :class:`GenerateTextResult`. Works with any provider.
+
+    Args:
+        model: A model instance from ``openai()``, ``anthropic()``, etc.
+        prompt: A string or a list of ``ModelMessage`` / message dicts.
+        options: Optional typed generation options.
+
+    Returns:
+        A :class:`ChatCompletion` with ``.id``, ``.choices``, ``.usage``, …
+    """
+    prompt_json = _prompt_to_json(prompt)
+    opts_json = _opts_to_json(options)
+    result_json = model.generate_text_as_openai(prompt_json, opts_json)
+    return ChatCompletion.model_validate_json(result_json)
+
+
+def stream_text_as_openai(
+    model: Model,
+    prompt: Prompt,
+    options: Optional[GenerateTextOptions] = None,
+) -> Iterator[ChatCompletionChunk]:
+    """Stream text as OpenAI Chat Completion chunks.
+
+    Identical to :func:`stream_text` except each yielded item is a typed
+    :class:`ChatCompletionChunk` (OpenAI ``chat.completion.chunk`` object).
+    Works with any provider.
+
+    Stream options (``include_usage``, ``include_reasoning``) are read from
+    ``options.provider_options.openai.stream_options`` (both default to ``True``).
+
+    Usage::
+
+        for chunk in stream_text_as_openai(model, "Write a haiku about Rust."):
+            if chunk.choices and chunk.choices[0].delta.content:
+                print(chunk.choices[0].delta.content, end="")
+    """
+    prompt_json = _prompt_to_json(prompt)
+    opts_json = _opts_to_json(options)
+    for chunk_json in model.stream_text_as_openai(prompt_json, opts_json):
+        yield ChatCompletionChunk.model_validate_json(chunk_json)

@@ -61,6 +61,17 @@ internal interface AimuxFFI : Library {
         onError: com.sun.jna.Callback?,
     )
 
+    // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
+    fun aimux_generate_text_as_openai(handle: Long, promptJson: String, optsJson: String?): Pointer?
+    fun aimux_stream_text_as_openai(
+        handle: Long,
+        promptJson: String,
+        optsJson: String?,
+        onPart: com.sun.jna.Callback?,
+        onDone: com.sun.jna.Callback?,
+        onError: com.sun.jna.Callback?,
+    )
+
     fun aimux_drop_handle(handle: Long)
     fun aimux_free_string(ptr: Pointer?)
 
@@ -424,6 +435,105 @@ class Model private constructor(handle: Long) : Closeable {
         var error: String? = null
 
         streamText(
+            promptJson = promptJson,
+            optsJson = optsJson,
+            onPart = { parts.put(it) },
+            onDone = { parts.put(null) }, // sentinel = end
+            onError = { error = it; parts.put(null) },
+        )
+
+        while (true) {
+            val part = parts.take() ?: break
+            yield(part)
+        }
+
+        error?.let { throw RuntimeException(it) }
+    }
+
+    // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
+
+    /**
+     * Generate text (non-streaming) with OpenAI Chat Completions output.
+     *
+     * Same as [generateText], but returns a serialized ChatCompletion (OpenAI
+     * "chat.completion" object). Works with any provider.
+     *
+     * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
+     * @param optsJson Optional JSON-serialized GenerateTextOptions.
+     * @return JSON-serialized ChatCompletion (or {"error":"..."} on failure).
+     */
+    fun generateTextAsOpenAI(promptJson: String, optsJson: String? = null): String {
+        val ptr = FFI.lib.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson)
+            ?: throw RuntimeException("generate_text_as_openai returned null")
+
+        try {
+            return ptr.getString(0, "UTF-8")
+        } finally {
+            FFI.lib.aimux_free_string(ptr)
+        }
+    }
+
+    /**
+     * Stream text from the model with OpenAI Chat Completions output.
+     *
+     * Blocks the calling thread until the stream completes. Each `onPart`
+     * receives a serialized ChatCompletionChunk (OpenAI "chat.completion.chunk"
+     * object). Works with any provider.
+     *
+     * @param promptJson JSON prompt string.
+     * @param optsJson Optional JSON-serialized GenerateTextOptions. May carry
+     *                 `providerOptions.openai.stream_options` with
+     *                 `include_usage` / `include_reasoning`.
+     * @param onPart Called for each ChatCompletionChunk (JSON string).
+     * @param onDone Called when the stream completes normally.
+     * @param onError Called on a stream error (JSON error string).
+     */
+    fun streamTextAsOpenAI(
+        promptJson: String,
+        optsJson: String? = null,
+        onPart: (String) -> Unit,
+        onDone: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        // JNA callbacks — must be held in variables to prevent GC.
+        val partCb = object : com.sun.jna.Callback {
+            @Suppress("unused")
+            fun callback(jsonPtr: Pointer?) {
+                if (jsonPtr != null) {
+                    onPart(jsonPtr.getString(0, "UTF-8"))
+                }
+            }
+        }
+        val doneCb = object : com.sun.jna.Callback {
+            @Suppress("unused")
+            fun callback() {
+                onDone()
+            }
+        }
+        val errCb = object : com.sun.jna.Callback {
+            @Suppress("unused")
+            fun callback(errPtr: Pointer?) {
+                if (errPtr != null) {
+                    onError(errPtr.getString(0, "UTF-8"))
+                }
+            }
+        }
+
+        FFI.lib.aimux_stream_text_as_openai(requireHandle(), promptJson, optsJson, partCb, doneCb, errCb)
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output as a [Sequence] of
+     * ChatCompletionChunk JSON strings (RFC-0026).
+     */
+    fun streamTextAsOpenAISequence(
+        promptJson: String,
+        optsJson: String? = null,
+    ): Sequence<String> = sequence {
+        val parts = java.util.concurrent.LinkedBlockingQueue<String?>()
+        var error: String? = null
+
+        streamTextAsOpenAI(
             promptJson = promptJson,
             optsJson = optsJson,
             onPart = { parts.put(it) },

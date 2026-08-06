@@ -83,6 +83,18 @@ public interface AimuxFFI extends Library {
     void aimux_stream_text(long handle, String promptJson, String optsJson,
                            Callback onPart, Callback onDone, Callback onError);
 
+    // ── OpenAI-compatible output (RFC-0026) ──────────────────────────────────
+
+    /** @return JSON ChatCompletion string (caller MUST free with {@link #aimux_free_string}). */
+    Pointer aimux_generate_text_as_openai(long handle, String promptJson, String optsJson);
+
+    /**
+     * Push streaming with OpenAI Chat Completions output; blocks until the stream
+     * ends. Each {@code onPart} receives a serialized ChatCompletionChunk.
+     */
+    void aimux_stream_text_as_openai(long handle, String promptJson, String optsJson,
+                                     Callback onPart, Callback onDone, Callback onError);
+
     // ── Resource management ─────────────────────────────────────────────────
 
     void aimux_drop_handle(long handle);
