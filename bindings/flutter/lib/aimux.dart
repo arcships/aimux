@@ -40,6 +40,24 @@ typedef _ProviderNewC = Pointer<Utf8> Function(Pointer<Utf8> name,
 typedef _ProviderNewDart = Pointer<Utf8> Function(Pointer<Utf8> name,
     Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
 
+// Provider handle constructor (aimux_provider_handle_new, RFC-0027). name is
+// required; apiKey (null → provider env var from the registry entry) and
+// configJson (null → defaults) are optional.
+typedef _ProviderHandleNewC = Pointer<Utf8> Function(
+    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson);
+typedef _ProviderHandleNewDart = Pointer<Utf8> Function(
+    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson);
+
+// Provider handle list_models (aimux_provider_list_models, RFC-0027).
+typedef _ProviderListModelsC = Pointer<Utf8> Function(Uint64 handle);
+typedef _ProviderListModelsDart = Pointer<Utf8> Function(int handle);
+
+// Provider handle model (aimux_provider_model, RFC-0027).
+typedef _ProviderModelC = Pointer<Utf8> Function(
+    Uint64 handle, Pointer<Utf8> modelId);
+typedef _ProviderModelDart = Pointer<Utf8> Function(
+    int handle, Pointer<Utf8> modelId);
+
 typedef _GenerateTextC = Pointer<Utf8> Function(
     Uint64 handle, Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson);
 typedef _GenerateTextDart = Pointer<Utf8> Function(
@@ -89,6 +107,10 @@ final class _AimuxFFI {
       anthropicNewWithBase;
   final Pointer<Utf8> Function(
       Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>, Pointer<Utf8>?) providerNew;
+  final Pointer<Utf8> Function(
+      Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>?) providerHandleNew;
+  final Pointer<Utf8> Function(int) providerListModels;
+  final Pointer<Utf8> Function(int, Pointer<Utf8>) providerModel;
   final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) generateText;
   final void Function(
       int,
@@ -117,6 +139,9 @@ final class _AimuxFFI {
       this.openaiNewWithBase,
       this.anthropicNewWithBase,
       this.providerNew,
+      this.providerHandleNew,
+      this.providerListModels,
+      this.providerModel,
       this.generateText,
       this.streamText,
       this.generateTextAsOpenAI,
@@ -138,6 +163,12 @@ final class _AimuxFFI {
           'aimux_anthropic_new_with_base'),
       dylib.lookupFunction<_ProviderNewC, _ProviderNewDart>(
           'aimux_provider_new'),
+      dylib.lookupFunction<_ProviderHandleNewC, _ProviderHandleNewDart>(
+          'aimux_provider_handle_new'),
+      dylib.lookupFunction<_ProviderListModelsC, _ProviderListModelsDart>(
+          'aimux_provider_list_models'),
+      dylib.lookupFunction<_ProviderModelC, _ProviderModelDart>(
+          'aimux_provider_model'),
       dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
           'aimux_generate_text'),
       dylib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text'),
@@ -650,6 +681,168 @@ class Model {
   void _checkOpen() {
     if (_closed) throw StateError('Model has been closed');
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProviderConfig (RFC-0027)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Per-provider construction options (RFC-0027), mirroring the Rust
+/// `ProviderOptions` wire format. Pass to [createProvider] to override
+/// individual fields of the registry entry.
+///
+/// All fields are optional; null fields are omitted from the serialized JSON
+/// so the provider's defaults apply.
+class ProviderConfig {
+  /// Override the registry base URL.
+  final String? baseUrl;
+
+  /// Extra headers merged into every request.
+  final Map<String, String>? headers;
+
+  /// OpenAI organization ID (`OpenAI-Organization` header).
+  final String? organization;
+
+  /// OpenAI project ID (`OpenAI-Project` header).
+  final String? project;
+
+  /// Retry count override; `0` disables retries.
+  final int? maxRetries;
+
+  /// Request-body overrides (deep-merged into every request). Any
+  /// JSON-serializable value (typically a `Map<String, dynamic>`).
+  final Object? bodyOverrides;
+
+  const ProviderConfig({
+    this.baseUrl,
+    this.headers,
+    this.organization,
+    this.project,
+    this.maxRetries,
+    this.bodyOverrides,
+  });
+
+  /// Serialize to the `ProviderOptions` JSON wire format (snake_case keys,
+  /// null fields omitted). Returns null when no field is set, so callers can
+  /// pass null to the FFI for defaults.
+  String? toJson() {
+    final map = <String, dynamic>{};
+    if (baseUrl != null) map['base_url'] = baseUrl;
+    if (headers != null) map['headers'] = headers;
+    if (organization != null) map['organization'] = organization;
+    if (project != null) map['project'] = project;
+    if (maxRetries != null) map['max_retries'] = maxRetries;
+    if (bodyOverrides != null) map['body_overrides'] = bodyOverrides;
+    if (map.isEmpty) return null;
+    return jsonEncode(map);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProviderHandle (RFC-0027)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A provider handle (RFC-0027) backed by a Rust `Arc<dyn Provider>`.
+///
+/// Created by [createProvider]. Unlike [Model.provider] (which binds to a
+/// single model id), a provider handle supports runtime model discovery via
+/// [listModels] and building a [Model] from a discovered id via [model].
+/// Call [close] to release the native handle.
+///
+/// ```dart
+/// final p = createProvider('deepseek', apiKey);
+/// try {
+///   final models = await p.listModels();
+///   final model = await p.model('deepseek-chat');
+///   try {
+///     print(model.generateText('Hello'));
+///   } finally {
+///     model.close();
+///   }
+/// } finally {
+///   p.close();
+/// }
+/// ```
+class ProviderHandle {
+  final int _handle;
+  final _AimuxFFI _ffi;
+  bool _closed = false;
+
+  ProviderHandle._(this._handle, this._ffi);
+
+  /// List models available on this provider (runtime discovery via the
+  /// provider's `/models` endpoint), enriched with community knowledge
+  /// (anya2a) when available.
+  ///
+  /// Returns a JSON array string of `ResolvedModel`
+  /// (`[{"id":"...","owned_by":"...","created":<u64>,"spec":{...}}, ...]`).
+  /// Blocks the calling isolate until the network call completes.
+  Future<String> listModels() async {
+    _checkOpen();
+    final ptr = _ffi.providerListModels(_handle);
+    if (ptr == nullptr) throw StateError('provider_list_models returned null');
+    final result = ptr.toDartString();
+    _ffi.freeString(ptr);
+    final decoded = jsonDecode(result);
+    if (decoded is Map<String, dynamic>) {
+      final error = decoded['error'];
+      if (error is String) throw StateError(error);
+      throw StateError('invalid provider_list_models response: $result');
+    }
+    // A JSON array of ResolvedModel on success.
+    return result;
+  }
+
+  /// Build a language [Model] from a discovered [modelId].
+  ///
+  /// The returned [Model] is backed by a fresh native handle (separate from
+  /// this provider handle) and is usable with `generateText` / `streamText`.
+  /// The caller owns the returned [Model] and must [Model.close] it.
+  Future<Model> model(String modelId) async {
+    _checkOpen();
+    final ptr = _withUtf8(modelId,
+        (idPtr) => _ffi.providerModel(_handle, idPtr));
+    return Model._(_extractHandle(_ffi, ptr), _ffi);
+  }
+
+  /// Release the native provider handle. Safe to call multiple times.
+  void close() {
+    if (!_closed) {
+      _ffi.dropHandle(_handle);
+      _closed = true;
+    }
+  }
+
+  void _checkOpen() {
+    if (_closed) throw StateError('ProviderHandle has been closed');
+  }
+}
+
+/// Create a **provider handle** (RFC-0027) for a registry-backed provider.
+///
+/// Unlike [Model.provider] (which binds to a single `modelId`), this returns a
+/// [ProviderHandle] supporting runtime model discovery
+/// ([ProviderHandle.listModels]) and building a [Model] from a discovered id
+/// ([ProviderHandle.model]).
+///
+/// [name] is a registry provider name (e.g. `"deepseek"`, `"groq"`). [apiKey]
+/// may be null to read the provider's env var from the registry entry.
+/// [config] overrides individual fields of the registry entry.
+ProviderHandle createProvider(
+    String name, String? apiKey, ProviderConfig? config) {
+  final ffi = _AimuxFFI();
+  final configJson = config?.toJson();
+  final ptr = _withUtf8(name, (namePtr) {
+    final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
+    final cfgPtr = configJson != null ? configJson.toNativeUtf8() : nullptr;
+    try {
+      return ffi.providerHandleNew(namePtr, keyPtr, cfgPtr);
+    } finally {
+      if (keyPtr != nullptr) calloc.free(keyPtr);
+      if (cfgPtr != nullptr) calloc.free(cfgPtr);
+    }
+  });
+  return ProviderHandle._(_extractHandle(ffi, ptr), ffi);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

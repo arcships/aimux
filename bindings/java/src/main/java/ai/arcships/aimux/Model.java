@@ -245,6 +245,20 @@ public class Model implements Closeable {
     }
 
     /**
+     * Create a **provider handle** (RFC-0027) for a registry-backed provider.
+     *
+     * <p>Unlike {@link #provider(String, String, String, String)} (which binds to
+     * a single modelId), this returns a {@link ProviderHandle} that supports
+     * {@link ProviderHandle#listModels()} and {@link ProviderHandle#model(String)}.
+     */
+    public static ProviderHandle createProvider(String name, String apiKey, String configJson) {
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_provider_handle_new(name, apiKey, configJson),
+            "Failed to create provider handle: " + name);
+        return new ProviderHandle(h);
+    }
+
+    /**
      * Create a DeepSeek model instance.
      *
      * <p>The retired {@code aimux_deepseek_new} C symbol has been removed; this
