@@ -112,6 +112,7 @@ class _TypedArgs {
   final ToolChoice? toolChoice;
   final int? maxOutputTokens;
   final double? temperature;
+  final bool? includeRawChunks;
   _TypedArgs({
     required this.baseUrl,
     required this.apiKey,
@@ -122,6 +123,7 @@ class _TypedArgs {
     this.toolChoice,
     this.maxOutputTokens,
     this.temperature,
+    this.includeRawChunks,
   });
 }
 
@@ -178,8 +180,12 @@ Future<List<StreamPart>> runTypedStreamText(_TypedArgs args) {
     final model = Model.openai(args.apiKey, args.modelId, baseUrl: args.baseUrl);
     final typed = TypedModel(model);
     try {
-      final options = args.tools != null
-          ? GenerateTextOptions(tools: args.tools, toolChoice: args.toolChoice)
+      final options = (args.tools != null || args.includeRawChunks != null)
+          ? GenerateTextOptions(
+              tools: args.tools,
+              toolChoice: args.toolChoice,
+              includeRawChunks: args.includeRawChunks,
+            )
           : null;
       // streamText blocks synchronously, then returns an already-closed
       // stream of buffered parts.
@@ -204,6 +210,38 @@ const String toolCallOpenAIResponse = r'''
 ''';
 
 /// SSE stream: a tool-call name → arguments delta → finish.
+String buildTextSse() {
+  // "Hello" -> " world" -> finish + usage; [DONE] sentinel (RFC-0016 M2).
+  final event1 = {
+    'id': '1',
+    'model': 'gpt-4o',
+    'choices': [
+      {'delta': {'role': 'assistant', 'content': 'Hello'}}
+    ],
+  };
+  final event2 = {
+    'id': '1',
+    'model': 'gpt-4o',
+    'choices': [
+      {'delta': {'content': ' world'}}
+    ],
+  };
+  final event3 = {
+    'id': '1',
+    'model': 'gpt-4o',
+    'choices': [
+      {'delta': {}, 'finish_reason': 'stop'}
+    ],
+    'usage': {'prompt_tokens': 3, 'completion_tokens': 2, 'total_tokens': 5},
+  };
+  final sb = StringBuffer()
+    ..write('data: ${jsonEncode(event1)}\n\n')
+    ..write('data: ${jsonEncode(event2)}\n\n')
+    ..write('data: ${jsonEncode(event3)}\n\n')
+    ..write('data: [DONE]\n\n');
+  return sb.toString();
+}
+
 String buildToolCallSse() {
   final event1 = {
     'id': '1',
@@ -449,5 +487,66 @@ void main() {
     expect(server.recorded, hasLength(1));
     final sentBody = server.recorded.first.body as Map<String, dynamic>;
     expect(sentBody['stream'], true);
+  });
+
+  test('streamText emits Raw parts when includeRawChunks enabled', () async {
+    // RFC-0016 M2: include_raw_chunks surfaces one Raw part per JSON SSE
+    // event (parsed payload), before the parsed parts; [DONE] excluded.
+    final server = await startMockServer([
+      {'sse': true, 'body': buildTextSse()},
+    ]);
+    addTearDown(server.close);
+
+    final parts = await runTypedStreamText(_TypedArgs(
+      baseUrl: server.baseUrl,
+      apiKey: apiKey,
+      modelId: modelId,
+      prompt: 'Say hello',
+      includeRawChunks: true,
+    ));
+
+    final raws = parts.whereType<StreamPartRaw>().toList();
+    // buildTextSse has 3 JSON events (2 content + 1 usage chunk).
+    expect(raws, hasLength(3));
+    final first = raws.first.rawValue as Map<String, dynamic>;
+    expect(
+      (first['choices'] as List).first['delta']['content'],
+      'Hello',
+    );
+
+    // Raw for the first event precedes its TextDelta.
+    final firstRawIdx = parts.indexOf(raws.first);
+    final firstTextIdx = parts.indexWhere((p) => p is StreamPartTextDelta);
+    expect(firstRawIdx, lessThan(firstTextIdx));
+
+    // Parsed text is unaffected.
+    final text = parts
+        .whereType<StreamPartTextDelta>()
+        .map((p) => p.delta)
+        .join();
+    expect(text, 'Hello world');
+  });
+
+  test('streamText parses non-empty StreamStart warnings', () async {
+    // RFC-0016 M9: StreamStart carries a warnings array; a non-empty array
+    // (e.g. from a provider that rejects top_k) must decode without breaking
+    // the stream. The openai full profile produces no warning, so the
+    // assertion is decode-ability + field presence (the warning itself is
+    // covered by groq_test.rs in Rust).
+    final server = await startMockServer([
+      {'sse': true, 'body': buildTextSse()},
+    ]);
+    addTearDown(server.close);
+
+    final parts = await runTypedStreamText(_TypedArgs(
+      baseUrl: server.baseUrl,
+      apiKey: apiKey,
+      modelId: modelId,
+      prompt: 'Say hello',
+    ));
+
+    final start = parts.whereType<StreamPartStreamStart>().first;
+    expect(start.type, 'StreamStart');
+    expect(start.warnings, isA<List<dynamic>>());
   });
 }
