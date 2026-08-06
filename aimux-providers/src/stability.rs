@@ -270,6 +270,7 @@ impl ImageModel for StabilityImageModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &STABILITY_ERROR_STRUCTURE,

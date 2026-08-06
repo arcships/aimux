@@ -161,6 +161,7 @@ impl LanguageModel for VertexAnthropicModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
+                recording_context: options.recording_context.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -261,6 +262,7 @@ impl LanguageModel for VertexAnthropicModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
+                recording_context: options.recording_context.clone(),
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

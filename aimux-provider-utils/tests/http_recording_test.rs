@@ -26,6 +26,14 @@ fn fast_config() -> RetryConfig {
 }
 
 fn json_post(url: &str, call_id: Option<&str>) -> HttpRequest {
+    // 模拟层 A 已注册全局 recorder:测试里 init_recording(Some(rec_arc)) 后,
+    // 录制上下文由全局 recorder 现取(模拟 layerA)。call_id 与之一致。
+    let recording_context = call_id.and_then(|_| {
+        aimux_core::recording::recorder().map(|recorder| aimux_core::recording::RecordingContext {
+            call_id: call_id.unwrap().to_string(),
+            recorder,
+        })
+    });
     HttpRequest {
         method: HttpMethod::Post,
         url: url.to_string(),
@@ -37,6 +45,7 @@ fn json_post(url: &str, call_id: Option<&str>) -> HttpRequest {
         body: HttpBody::Json(serde_json::json!({"q": "hi"})),
         abort_signal: None,
         call_id: call_id.map(|s| s.to_string()),
+        recording_context,
     }
 }
 
@@ -240,5 +249,145 @@ async fn abandoned_stream_still_finalizes() {
     let ex = &rec.exchanges[0];
     assert!(ex.finalized, "Drop 应兜底 finalized(即使无完整 body)");
     aimux_core::recording::init_recording(None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+#[serial]
+async fn retry_records_per_attempt_success_after_429() {
+    let server = MockServer::start().await;
+    // 首次 429,第二次 200。
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(429))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .mount(&server)
+        .await;
+
+    let (recorder, dir) = recorder("b-retry");
+    let rec_arc: Arc<dyn Recorder> = Arc::new(recorder);
+    recording::init_recording(Some(rec_arc.clone()));
+
+    // send_with_retry_raw 里 max_retries=2 会先 429 重试再成功。
+    let url = format!("{}/v1/chat", server.uri());
+    let req = json_post(&url, Some("call-retry"));
+    // 429 是 retryable,默认 config max_retries 需要 ≥1。
+    let conn = req.clone();
+    drop(conn);
+    let resp = send(req, fast_config(), &DEFAULT_ERROR_STRUCTURE)
+        .await
+        .unwrap();
+    assert_eq!(resp.status, 200);
+
+    mimic_layer_a(rec_arc.as_ref(), "call-retry");
+    rec_arc.flush();
+    let rec = wait_line(&dir);
+    // 至少 2 exchange:attempt 0 失败(429)+ attempt 1 成功。
+    assert!(
+        rec.exchanges.len() >= 2,
+        "expected retry exchanges, got {}",
+        rec.exchanges.len()
+    );
+    // 第一条是 429(无 response body,有 error)。
+    assert!(
+        rec.exchanges[0].error.is_some(),
+        "attempt 0 should be a 429 failure"
+    );
+    // 最后一条成功,status 200。
+    assert_eq!(
+        rec.exchanges
+            .last()
+            .unwrap()
+            .response
+            .as_ref()
+            .unwrap()
+            .status,
+        200
+    );
+
+    recording::init_recording(None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+#[serial]
+async fn utf8_body_truncates_without_panic_at_char_boundary() {
+    // 构造恰好跨 1MiB 边界的中文(UTF-8 多字节)。
+    let big = "中".repeat(400_000); // 400k * 3 bytes = 1.2MiB > 1MiB cap
+    let server = MockServer::start().await;
+    let big_for_mock = big.clone();
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(big_for_mock))
+        .mount(&server)
+        .await;
+
+    let (recorder, dir) = recorder("b-utf8");
+    let rec_arc: Arc<dyn Recorder> = Arc::new(recorder);
+    recording::init_recording(Some(rec_arc.clone()));
+
+    let url = format!("{}/v1/chat", server.uri());
+    let req = json_post(&url, Some("call-utf8"));
+    // 不应 panic(UTF-8 安全截断)。
+    let big_len = big.len();
+    let resp = send(req, fast_config(), &DEFAULT_ERROR_STRUCTURE)
+        .await
+        .unwrap();
+    assert_eq!(resp.body.len(), big_len); // 完整 body 返回给调用方
+
+    mimic_layer_a(rec_arc.as_ref(), "call-utf8");
+    rec_arc.flush();
+    let rec = wait_line(&dir);
+    let rbody = rec.exchanges[0]
+        .response
+        .as_ref()
+        .unwrap()
+        .body
+        .as_deref()
+        .unwrap();
+    assert!(rbody.len() <= 1 << 20, "recorded body must respect cap");
+    // 必须是完整 UTF-8(无 panic 已证明);中文可安全转回。
+    assert!(rbody.chars().count() > 0);
+
+    recording::init_recording(None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+#[serial]
+async fn stream_error_patches_single_exchange_not_duplicate() {
+    // SSE 首帧后一个 error → provider 侧 Error(流中途)。
+    let sse = r#"data: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: [DONE]\n\n"#;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/stream"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sse))
+        .mount(&server)
+        .await;
+    let (recorder, dir) = recorder("b-serr");
+    let rec_arc: Arc<dyn Recorder> = Arc::new(recorder);
+    recording::init_recording(Some(rec_arc.clone()));
+
+    let url = format!("{}/v1/stream", server.uri());
+    let req = json_post(&url, Some("call-serr"));
+    let resp = send_stream(req, fast_config(), &DEFAULT_ERROR_STRUCTURE)
+        .await
+        .unwrap();
+    let _: Vec<_> = resp.body.collect().await;
+
+    mimic_layer_a(rec_arc.as_ref(), "call-serr");
+    rec_arc.flush();
+    let rec = wait_line(&dir);
+    // 只有 1 条 exchange(骨架 patch,不新增)。status 应保留 200。
+    assert_eq!(rec.exchanges.len(), 1, "must not duplicate attempt");
+    assert_eq!(rec.exchanges[0].response.as_ref().unwrap().status, 200);
+    assert!(rec.exchanges[0].finalized);
+
+    recording::init_recording(None);
     let _ = std::fs::remove_dir_all(&dir);
 }

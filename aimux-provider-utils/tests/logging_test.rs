@@ -38,6 +38,7 @@ fn request(url: String) -> HttpRequest {
         })),
         abort_signal: None,
         call_id: None,
+        recording_context: None,
     }
 }
 

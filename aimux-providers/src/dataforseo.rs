@@ -269,6 +269,7 @@ impl SearchModel for DataforseoSearchModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DATAFORSEO_ERROR_STRUCTURE,

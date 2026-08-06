@@ -203,6 +203,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -250,6 +251,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -274,6 +276,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
                     abort_signal: options.abort_signal.clone(),
                     call_id: None,
+                    recording_context: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

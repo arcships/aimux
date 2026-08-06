@@ -191,6 +191,7 @@ impl SearchModel for TavilySearchModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &TAVILY_ERROR_STRUCTURE,

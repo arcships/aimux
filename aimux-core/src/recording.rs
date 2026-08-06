@@ -174,6 +174,9 @@ pub struct ResponseRecord {
     /// 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
     pub body: Option<String>,
     pub stream_chunks: Option<usize>,
+    /// 首字节延迟(流式)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttfb_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,8 +245,15 @@ pub trait Recorder: Send + Sync {
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord);
     /// 录制单次 HTTP 交换(层 B http.rs 调用,per-attempt 一条)。
     fn record_exchange(&self, call_id: &str, exchange: &HttpExchange);
-    /// 流式响应终结时补全该次 exchange 的 response body/stream_chunks。
-    fn record_exchange_update(&self, call_id: &str, attempt: u32, response: &ResponseRecord);
+    /// 流式响应终结时归档该次 exchange(补 body/status/ttfb + 可选 error)。
+    /// `error` 非空时合并到该 exchange 而非新增一条(保持 attempt 唯一)。
+    fn record_exchange_update(
+        &self,
+        call_id: &str,
+        attempt: u32,
+        response: &ResponseRecord,
+        error: Option<String>,
+    );
     /// 录制最终结果(层 A 入口调用)。
     fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord);
     /// 声明传输层封闭:该 call 不再会有 exchange(层 B;P1 层 A 收尾调用)。
@@ -257,6 +267,23 @@ pub trait Recorder: Send + Sync {
 // ── 全局门控(关闭时热路径 ≈1 读锁;支持替换/关闭/测试隔离)────────────
 
 static RECORDER: RwLock<Option<Arc<dyn Recorder>>> = RwLock::new(None);
+
+/// 一次调用的录制上下文(RFC R7 快照绑定):层 A 入口构造一次,
+/// 随 `CallOptions`/`HttpRequest` 传到底层,禁止各录制点重读全局 recorder。
+#[derive(Clone)]
+pub struct RecordingContext {
+    pub call_id: String,
+    pub recorder: Arc<dyn Recorder>,
+}
+
+impl std::fmt::Debug for RecordingContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecordingContext")
+            .field("call_id", &self.call_id)
+            .field("recorder", &"..")
+            .finish()
+    }
+}
 
 /// 注册/替换/关闭全局录制器。传 None 关闭。
 pub fn init_recording(recorder: Option<Arc<dyn Recorder>>) {
@@ -274,6 +301,15 @@ pub fn init_recording_from_env() -> bool {
     let dir = std::env::var("AIMUX_RECORD_DIR").unwrap_or_else(|_| "./recordings".to_string());
     init_recording(Some(Arc::new(JsonlRecorder::new(dir))));
     true
+}
+
+/// 从当前全局 recorder 生成一次调用的 context(关闭时 None)。
+/// 层 A 入口:先读一次,再用 `context && ctx.start()` 记录 ①+②。
+pub fn context(call_id: impl Into<String>) -> Option<RecordingContext> {
+    recorder().map(|recorder| RecordingContext {
+        call_id: call_id.into(),
+        recorder,
+    })
 }
 
 /// 热路径检查(关闭时 None,≈1 读锁 + 1 次 Arc clone)。
@@ -353,6 +389,7 @@ enum RecordEvent {
         call_id: String,
         attempt: u32,
         response: ResponseRecord,
+        error: Option<String>,
     },
     Outcome {
         call_id: String,
@@ -445,11 +482,18 @@ impl Recorder for JsonlRecorder {
         });
     }
 
-    fn record_exchange_update(&self, call_id: &str, attempt: u32, response: &ResponseRecord) {
+    fn record_exchange_update(
+        &self,
+        call_id: &str,
+        attempt: u32,
+        response: &ResponseRecord,
+        error: Option<String>,
+    ) {
         self.send_ev(RecordEvent::ExchangeUpdate {
             call_id: call_id.to_string(),
             attempt,
             response: response.clone(),
+            error,
         });
     }
 
@@ -536,11 +580,15 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                 call_id,
                 attempt,
                 response,
+                error,
             } => {
                 if let Some(rec) = pending.get_mut(&call_id)
                     && let Some(ex) = rec.exchanges.iter_mut().find(|ex| ex.attempt == attempt)
                 {
                     ex.response = Some(response);
+                    if let Some(err) = error {
+                        ex.error = Some(err);
+                    }
                     ex.finalized = true;
                 }
                 try_finalize(&mut w, &mut pending, &call_id);
@@ -883,7 +931,9 @@ mod tests {
                 headers: vec![],
                 body: Some("{\"ok\":true}".into()),
                 stream_chunks: Some(1),
+                ttfb_ms: None,
             },
+            None,
         );
         rec.record_outcome(
             "call-x2",

@@ -228,6 +228,7 @@ impl ImageModel for ProdiaImageModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -373,6 +374,7 @@ impl VideoModel for ProdiaVideoModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -402,6 +404,7 @@ impl VideoModel for ProdiaVideoModel {
 
                     abort_signal: options.abort_signal.clone(),
                     call_id: None,
+                    recording_context: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

@@ -35,6 +35,7 @@ fn json_post(url: &str) -> HttpRequest {
         body: HttpBody::Json(serde_json::json!({"q": "hi"})),
         abort_signal: None,
         call_id: None,
+        recording_context: None,
     }
 }
 

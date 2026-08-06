@@ -232,6 +232,7 @@ impl SearchModel for GooglePseSearchModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &GOOGLE_PSE_ERROR_STRUCTURE,

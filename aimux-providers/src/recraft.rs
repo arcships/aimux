@@ -247,6 +247,7 @@ async fn extract_images(
 
                 abort_signal: abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -299,6 +300,7 @@ impl ImageModel for RecraftImageModel {
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

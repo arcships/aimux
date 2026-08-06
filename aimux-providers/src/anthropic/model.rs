@@ -104,6 +104,7 @@ impl LanguageModel for AnthropicModel {
             BodyEncoding::Json,
             options.abort_signal.clone(),
             options.timeout.map(Into::into),
+            options.recording_context.clone(),
         )
         .await
     }
@@ -123,6 +124,7 @@ impl LanguageModel for AnthropicModel {
             BodyEncoding::Json,
             options.abort_signal.clone(),
             options.timeout.map(Into::into),
+            options.recording_context.clone(),
         )
         .await
     }
