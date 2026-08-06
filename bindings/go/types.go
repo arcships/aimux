@@ -127,25 +127,25 @@ type ResponseMetadata struct {
 // GenerateResult is the raw provider result.
 // Mirrors Kotlin GenerateResult (Types.kt:853-871).
 type GenerateResult struct {
-	Content         []ContentPart     `json:"content,omitempty"`
-	FinishReason    FinishReason      `json:"finish_reason,omitempty"`
-	Usage           Usage             `json:"usage,omitempty"`
-	Warnings        []json.RawMessage `json:"warnings,omitempty"`
-	ProviderMetadata json.RawMessage  `json:"provider_metadata,omitempty"`
-	Response        ResponseMetadata  `json:"response,omitempty"`
-	RequestBody     json.RawMessage   `json:"request_body,omitempty"`
-	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
+	Content          []ContentPart     `json:"content,omitempty"`
+	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
+	Usage            Usage             `json:"usage,omitempty"`
+	Warnings         []json.RawMessage `json:"warnings,omitempty"`
+	ProviderMetadata json.RawMessage   `json:"provider_metadata,omitempty"`
+	Response         ResponseMetadata  `json:"response,omitempty"`
+	RequestBody      json.RawMessage   `json:"request_body,omitempty"`
+	ResponseHeaders  map[string]string `json:"response_headers,omitempty"`
 }
 
 // GenerateTextResult is the typed result of a GenerateText call.
 // Mirrors Kotlin GenerateTextResult (Types.kt:878-886).
 type GenerateTextResult struct {
-	Text         string           `json:"text"`
-	ToolCalls    []ToolCall       `json:"tool_calls,omitempty"`
-	FinishReason FinishReason     `json:"finish_reason,omitempty"`
-	Usage        Usage            `json:"usage,omitempty"`
+	Text         string            `json:"text"`
+	ToolCalls    []ToolCall        `json:"tool_calls,omitempty"`
+	FinishReason FinishReason      `json:"finish_reason,omitempty"`
+	Usage        Usage             `json:"usage,omitempty"`
 	Warnings     []json.RawMessage `json:"warnings,omitempty"`
-	Raw          GenerateResult   `json:"raw"`
+	Raw          GenerateResult    `json:"raw"`
 }
 
 // ParseGenerateTextResult parses the JSON string returned by Model.GenerateText
@@ -197,38 +197,38 @@ type TimeoutConfiguration struct {
 
 // GenerateTextOptions mirrors the shared wire options.
 type GenerateTextOptions struct {
-	MaxOutputTokens  *uint32           `json:"max_output_tokens,omitempty"`
-	Temperature       *float64          `json:"temperature,omitempty"`
-	StopSequences     []string          `json:"stop_sequences,omitempty"`
-	TopP              *float64          `json:"top_p,omitempty"`
-	TopK              *float64          `json:"top_k,omitempty"`
-	PresencePenalty   *float64          `json:"presence_penalty,omitempty"`
-	FrequencyPenalty  *float64          `json:"frequency_penalty,omitempty"`
-	ResponseFormat    json.RawMessage   `json:"response_format,omitempty"`
-	Seed              *uint64           `json:"seed,omitempty"`
-	Tools             []Tool            `json:"tools,omitempty"`
-	ToolChoice        ToolChoice        `json:"tool_choice,omitempty"`
-	Headers           map[string]string `json:"headers,omitempty"`
-	ProviderOptions   json.RawMessage   `json:"provider_options,omitempty"`
-	Reasoning         *ReasoningEffort  `json:"reasoning,omitempty"`
-	Instructions       *string           `json:"instructions,omitempty"`
-	BodyOverrides     json.RawMessage   `json:"body_overrides,omitempty"`
-	MaxRetries        *uint32                `json:"max_retries,omitempty"`
-	Timeout           *TimeoutConfiguration  `json:"timeout,omitempty"`
-	IncludeRawChunks  *bool                  `json:"include_raw_chunks,omitempty"`
-	SessionID         *string                `json:"session_id,omitempty"`
+	MaxOutputTokens  *uint32               `json:"max_output_tokens,omitempty"`
+	Temperature      *float64              `json:"temperature,omitempty"`
+	StopSequences    []string              `json:"stop_sequences,omitempty"`
+	TopP             *float64              `json:"top_p,omitempty"`
+	TopK             *float64              `json:"top_k,omitempty"`
+	PresencePenalty  *float64              `json:"presence_penalty,omitempty"`
+	FrequencyPenalty *float64              `json:"frequency_penalty,omitempty"`
+	ResponseFormat   json.RawMessage       `json:"response_format,omitempty"`
+	Seed             *uint64               `json:"seed,omitempty"`
+	Tools            []Tool                `json:"tools,omitempty"`
+	ToolChoice       ToolChoice            `json:"tool_choice,omitempty"`
+	Headers          map[string]string     `json:"headers,omitempty"`
+	ProviderOptions  json.RawMessage       `json:"provider_options,omitempty"`
+	Reasoning        *ReasoningEffort      `json:"reasoning,omitempty"`
+	Instructions     *string               `json:"instructions,omitempty"`
+	BodyOverrides    json.RawMessage       `json:"body_overrides,omitempty"`
+	MaxRetries       *uint32               `json:"max_retries,omitempty"`
+	Timeout          *TimeoutConfiguration `json:"timeout,omitempty"`
+	IncludeRawChunks *bool                 `json:"include_raw_chunks,omitempty"`
+	SessionID        *string               `json:"session_id,omitempty"`
 }
 
 // Tool is a function tool definition (the "function" variant).
 // Mirrors Kotlin Tool.Function (Types.kt:209-230).
 type Tool struct {
-	Type            string                       `json:"type"` // always "function"
-	Name            string                       `json:"name"`
-	Description     *string                      `json:"description,omitempty"`
-	InputSchema     json.RawMessage              `json:"input_schema,omitempty"`
-	Strict          *bool                        `json:"strict,omitempty"`
-	ProviderOptions map[string]json.RawMessage   `json:"provider_options,omitempty"`
-	InputExamples   []json.RawMessage            `json:"input_examples,omitempty"`
+	Type            string                     `json:"type"` // always "function"
+	Name            string                     `json:"name"`
+	Description     *string                    `json:"description,omitempty"`
+	InputSchema     json.RawMessage            `json:"input_schema,omitempty"`
+	Strict          *bool                      `json:"strict,omitempty"`
+	ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
+	InputExamples   []json.RawMessage          `json:"input_examples,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.
@@ -278,7 +278,6 @@ type TextDeltaPayload struct {
 }
 
 // ── Cache probing (RFC-0015) wire types ─────────────────────────────────────
-// ── Cache probing (RFC-0015) wire types ─────────────────────────────────────
 
 // TraceFilter filters aggregate queries (RFC-0015 §5.3).
 type TraceFilter struct {
@@ -290,36 +289,36 @@ type TraceFilter struct {
 
 // TraceStats is one (provider, model) aggregation group.
 type TraceStats struct {
-	Provider                  string            `json:"provider"`
-	Model                     string            `json:"model"`
-	Requests                  uint64            `json:"requests"`
-	InputTokensTotal          uint64            `json:"input_tokens_total"`
-	ClaimedCacheReadTotal     uint64            `json:"claimed_cache_read_total"`
-	ClaimedCacheWriteTotal    uint64            `json:"claimed_cache_write_total"`
-	ReportedHitRate           *float64          `json:"reported_hit_rate,omitempty"`
-	ClientUpperBoundHitRate   *float64          `json:"client_upper_bound_hit_rate,omitempty"`
-	VerdictCounts             map[string]uint64 `json:"verdict_counts"`
-	TTFTP50Ms                 *uint64           `json:"ttft_p50_ms,omitempty"`
-	TTFTP95Ms                 *uint64           `json:"ttft_p95_ms,omitempty"`
-	Errors                    uint64            `json:"errors"`
+	Provider                string            `json:"provider"`
+	Model                   string            `json:"model"`
+	Requests                uint64            `json:"requests"`
+	InputTokensTotal        uint64            `json:"input_tokens_total"`
+	ClaimedCacheReadTotal   uint64            `json:"claimed_cache_read_total"`
+	ClaimedCacheWriteTotal  uint64            `json:"claimed_cache_write_total"`
+	ReportedHitRate         *float64          `json:"reported_hit_rate,omitempty"`
+	ClientUpperBoundHitRate *float64          `json:"client_upper_bound_hit_rate,omitempty"`
+	VerdictCounts           map[string]uint64 `json:"verdict_counts"`
+	TTFTP50Ms               *uint64           `json:"ttft_p50_ms,omitempty"`
+	TTFTP95Ms               *uint64           `json:"ttft_p95_ms,omitempty"`
+	Errors                  uint64            `json:"errors"`
 }
 
 // TraceRecord is one probed call (fingerprints only — no plaintext bodies).
 type TraceRecord struct {
-	Provider               string          `json:"provider"`
-	Model                  string          `json:"model"`
-	RequestID              *string         `json:"request_id,omitempty"`
-	SessionID              *string         `json:"session_id,omitempty"`
-	TraceID                string          `json:"trace_id"`
-	SentAtUnixMs           int64           `json:"sent_at_unix_ms"`
-	LCPTokenUpper          *uint64         `json:"lcp_token_upper,omitempty"`
-	TTFTMs                 *uint64         `json:"ttft_ms,omitempty"`
-	Fingerprint            Fingerprint       `json:"fingerprint"`
-	Usage                  UsageSnapshot     `json:"usage"`
-	ResponseCacheHeaders   map[string]string `json:"response_cache_headers,omitempty"`
-	RequestCacheHints      *RequestCacheHints `json:"request_cache_hints,omitempty"`
-	Verdict                json.RawMessage   `json:"verdict,omitempty"`
-	Error                  *string           `json:"error,omitempty"`
+	Provider             string             `json:"provider"`
+	Model                string             `json:"model"`
+	RequestID            *string            `json:"request_id,omitempty"`
+	SessionID            *string            `json:"session_id,omitempty"`
+	TraceID              string             `json:"trace_id"`
+	SentAtUnixMs         int64              `json:"sent_at_unix_ms"`
+	LCPTokenUpper        *uint64            `json:"lcp_token_upper,omitempty"`
+	TTFTMs               *uint64            `json:"ttft_ms,omitempty"`
+	Fingerprint          Fingerprint        `json:"fingerprint"`
+	Usage                UsageSnapshot      `json:"usage"`
+	ResponseCacheHeaders map[string]string  `json:"response_cache_headers,omitempty"`
+	RequestCacheHints    *RequestCacheHints `json:"request_cache_hints,omitempty"`
+	Verdict              json.RawMessage    `json:"verdict,omitempty"`
+	Error                *string            `json:"error,omitempty"`
 }
 
 // RequestCacheHints is the best-effort request-side cache hint snapshot.
@@ -329,23 +328,23 @@ type RequestCacheHints struct {
 
 // Fingerprint is the block-hash chain of a denoised request body (hex).
 type Fingerprint struct {
-	BodyHash     string   `json:"body_hash"`
-	LenBytes     uint64   `json:"len_bytes"`
-	BlockSize    uint64   `json:"block_size"`
-	BlockHashes  []string `json:"block_hashes"`
-	TokenEstimate uint64  `json:"token_estimate"`
+	BodyHash      string   `json:"body_hash"`
+	LenBytes      uint64   `json:"len_bytes"`
+	BlockSize     uint64   `json:"block_size"`
+	BlockHashes   []string `json:"block_hashes"`
+	TokenEstimate uint64   `json:"token_estimate"`
 }
 
 // UsageSnapshot is the 7-field flat usage snapshot + raw passthrough.
 type UsageSnapshot struct {
-	InputTotal     *uint64         `json:"input_total,omitempty"`
-	InputNoCache   *uint64         `json:"input_no_cache,omitempty"`
-	CacheRead      *uint64         `json:"cache_read,omitempty"`
-	CacheWrite     *uint64         `json:"cache_write,omitempty"`
-	OutputTotal    *uint64         `json:"output_total,omitempty"`
-	OutputText     *uint64         `json:"output_text,omitempty"`
-	OutputReasoning *uint64        `json:"output_reasoning,omitempty"`
-	Raw            json.RawMessage `json:"raw,omitempty"`
+	InputTotal      *uint64         `json:"input_total,omitempty"`
+	InputNoCache    *uint64         `json:"input_no_cache,omitempty"`
+	CacheRead       *uint64         `json:"cache_read,omitempty"`
+	CacheWrite      *uint64         `json:"cache_write,omitempty"`
+	OutputTotal     *uint64         `json:"output_total,omitempty"`
+	OutputText      *uint64         `json:"output_text,omitempty"`
+	OutputReasoning *uint64         `json:"output_reasoning,omitempty"`
+	Raw             json.RawMessage `json:"raw,omitempty"`
 }
 
 // SessionChainView is the per-session ordered chain view.
@@ -358,11 +357,11 @@ type SessionChainView struct {
 
 // PrefixBreak marks a prefix break between consecutive session records.
 type PrefixBreak struct {
-	AtRecordID   string `json:"at_record_id"`
-	PrevRecordID string `json:"prev_record_id"`
-	LCPBytes     uint64 `json:"lcp_bytes"`
-	ExpectedBreak bool  `json:"expected_break"`
-	Kind         string `json:"kind"`
+	AtRecordID    string `json:"at_record_id"`
+	PrevRecordID  string `json:"prev_record_id"`
+	LCPBytes      uint64 `json:"lcp_bytes"`
+	ExpectedBreak bool   `json:"expected_break"`
+	Kind          string `json:"kind"`
 }
 
 // ── OpenAI Chat Completions output (RFC-0026) ──────────────────────────────

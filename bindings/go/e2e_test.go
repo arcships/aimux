@@ -613,7 +613,7 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	conversation := []ModelMessage{
 		NewTextMessage(RoleUser, "What is the weather in Tokyo?"),
 		NewTextMessage(RoleAssistant, ""), // assistant's prior turn
-		toolResultMsg,                       // tool result fed back
+		toolResultMsg,                     // tool result fed back
 	}
 	prompt, _ := MarshalMessages(conversation)
 
@@ -633,9 +633,9 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	reqBody := srv.LastRequestBody()
 	var body struct {
 		Messages []struct {
-			Role         string          `json:"role"`
-			Content      json.RawMessage `json:"content"`
-			ToolCallID   string          `json:"tool_call_id,omitempty"`
+			Role       string          `json:"role"`
+			Content    json.RawMessage `json:"content"`
+			ToolCallID string          `json:"tool_call_id,omitempty"`
 		} `json:"messages"`
 	}
 	json.Unmarshal([]byte(reqBody), &body)

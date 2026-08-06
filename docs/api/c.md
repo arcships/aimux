@@ -152,7 +152,9 @@ Probing is opt-in and explicit: no global state, no plaintext bodies (only
 block-hash fingerprints are stored). Note: the request body / response
 headers are exposed on the non-streaming result; streaming paths follow the
 RFC-0016 M2 contract (`include_raw_chunks` controls Raw parts) — the earlier
-synthetic `aimux_meta` stream part was removed when M2 landed.
+synthetic `aimux_meta` stream part was removed when M2 landed, and
+`include_raw_chunks` only emits provider raw stream events (it does not
+expose the stream request body / response headers).
 
 ## Examples
 

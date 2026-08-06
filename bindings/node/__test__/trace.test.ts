@@ -94,7 +94,8 @@ test('default streams carry no Raw parts (RFC-0016 M2 contract)', async (t) => {
   // The RFC-0015 stream meta part was removed in favor of the M2 contract:
   // Raw parts appear only when include_raw_chunks is set. Probing itself is
   // unaffected (TraceLayer records internally; request bodies remain
-  // available on the non-streaming path and via RFC-0023 recording).
+  // available on the non-streaming path — RFC-0023 runtime recording is the
+  // planned (draft) mechanism for future streaming-side access).
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 

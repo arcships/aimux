@@ -21,6 +21,8 @@ LLM 提供商普遍提供 prompt 缓存折扣(OpenAI cached_tokens / Anthropic c
 
 **现状 aimux 无法支撑探测**:`request_body` 已在非流式/流式双路径生成([D6 调查](10-working-document.md#L60-L84)),但 `stream_text` 用户面丢弃它;Anthropic 生产路径只填 `total`;`Usage.raw` 是死字段。业界观测产品(Helicone/Langfuse/Braintrust)均为被动采集,**无人做缓存命中真伪校验**(D3 调查)。
 
+> **现状更新(2026-08-06)**:本 PR(RFC-0015/0024/0025)已落地 `TraceLayer`(探测本身进 core,从 `StreamResult` 字段内部记录 body/headers,不依赖流 part)。原 P0-1「stream 合成 `aimux_meta` part 跨绑定透传」因与 RFC-0016 M2 契约冲突已撤销(commit 89fd6dd):流式调用的 body/headers 不再经流暴露,非流式结果仍携带;若绑定消费者需要,后续走独立 metadata API(见 round-4 标注)。
+
 ### 1.2 三层结构(2026-08-05 对齐)
 
 缓存探测按"探测本身 / 探测业务 / 告警"三层拆分:
