@@ -33,8 +33,11 @@ pub enum AiMuxError {
     /// response message (e.g. "quota exceeded" vs "too many requests") so
     /// callers can tell the two apart.
     ///
-    /// `#[serde(default)]` on `message` keeps deserializing error values that
-    /// were (de)serialized before the field was added (issue M6).
+    /// `#[serde(default)]` keeps *deserializing* error values that were
+    /// (de)serialized before the field was added (issue M6). Serialization
+    /// always emits `message`, and the generated TS binding keeps it required —
+    /// that asymmetry is intentional: `serde(default)` is input leniency for
+    /// legacy payloads, while TS describes the current output contract.
     #[error("rate limited: {message} (retry after {retry_after_ms}ms)")]
     RateLimited {
         #[ts(type = "number")]

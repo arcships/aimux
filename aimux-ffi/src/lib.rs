@@ -266,12 +266,15 @@ fn parse_opts(json: &str) -> Result<GenerateTextOptions, serde_json::Error> {
 /// Never returns null (issue M1): interior NUL bytes — which would make
 /// `CString::new` fail — are replaced with U+FFFD so the C-side contract
 /// ("a non-null NUL-terminated buffer to free, or null") always holds. The
-/// replacement is logged so accidental NULs stay visible.
+/// replacement is reported through `tracing` (RFC-0014 logging, which C hosts
+/// route via `aimux_init_logging`) so accidental NULs stay visible without
+/// the library writing to the host's stderr directly.
 fn into_cstring_raw(s: String) -> *mut c_char {
     if s.contains('\0') {
-        eprintln!(
-            "aimux-ffi: warning: string contains {} NUL byte(s); replaced with U+FFFD before FFI return",
-            s.bytes().filter(|&b| b == 0).count()
+        tracing::warn!(
+            target: "aimux_ffi",
+            nul_bytes = s.bytes().filter(|&b| b == 0).count(),
+            "string contains NUL byte(s); replaced with U+FFFD before FFI return"
         );
     }
     let sanitized = s.replace('\0', "\u{FFFD}");
