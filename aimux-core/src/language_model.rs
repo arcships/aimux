@@ -39,4 +39,11 @@ pub trait LanguageModel: Send + Sync {
 
     /// Generate a streaming response.
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError>;
+
+    /// RFC-0023: 配置侧快照供录制。默认返回最小信息(provider/model_id);
+    /// 各 provider 覆盖以提供 base_url/profile/api_key 来源等完整配置。
+    /// 透明 decorator(TraceLayer 等)必须覆盖并转发 inner 快照。
+    fn config_snapshot(&self) -> crate::recording::ProviderRecord {
+        crate::recording::ProviderRecord::minimal(self.provider(), self.model_id())
+    }
 }

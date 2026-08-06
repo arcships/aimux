@@ -136,6 +136,11 @@ pub struct CallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
+    /// RFC-0023 recording correlation id (internal; never serialized).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub call_id: Option<String>,
+
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     /// When `Some(true)`, streaming providers yield one `Raw` part per JSON
     /// SSE event, carrying the **parsed JSON payload** of the event, emitted
@@ -177,6 +182,7 @@ impl CallOptions {
             timeout: None,
             session_id: None,
             abort_signal: None,
+            call_id: None,
             include_raw_chunks: None,
         }
     }

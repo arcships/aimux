@@ -74,6 +74,7 @@ fn options_with_tools(prompt: LanguageModelPrompt, tools: Vec<FunctionTool>) -> 
         abort_signal: None,
         session_id: None,
         include_raw_chunks: None,
+        call_id: None,
     }
 }
 

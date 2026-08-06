@@ -105,6 +105,7 @@ impl GenerateTextOptions {
             timeout: self.timeout,
             session_id: self.session_id,
             abort_signal: self.abort_signal,
+            call_id: None,
             include_raw_chunks: self.include_raw_chunks,
         }
     }
@@ -202,7 +203,20 @@ pub async fn generate_text(
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
-    let call_options = options.into_call_options(lm_prompt);
+    let mut call_options = options.into_call_options(lm_prompt);
+
+    // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
+    //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
+    //     前提;P2 移交层 B)。
+    let recorder = crate::recording::recorder();
+    let call_id = recorder.as_ref().map(|rec| {
+        let call_id = crate::recording::new_call_id();
+        call_options.call_id = Some(call_id.clone());
+        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
+        rec.record_provider(&call_id, &model.config_snapshot());
+        rec.record_transport_closed(&call_id);
+        call_id
+    });
 
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
@@ -217,7 +231,7 @@ pub async fn generate_text(
         ),
         crate::session::session_store(),
     ) {
-        store.append(&session_id, source);
+        store.append(&session_id, call_options.call_id.as_deref(), source);
     }
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
@@ -230,7 +244,21 @@ pub async fn generate_text(
         model = %model.model_id(),
         modality = "text",
     );
-    let result = do_generate_with_logging(model, &call_options, span, started).await?;
+    let result = match do_generate_with_logging(model, &call_options, span, started).await {
+        Ok(r) => r,
+        Err(e) => {
+            if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
+                rec.record_outcome(call_id, &crate::recording::OutcomeRecord::from_error(&e));
+            }
+            return Err(e);
+        }
+    };
+    if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
+        rec.record_outcome(
+            call_id,
+            &crate::recording::OutcomeRecord::from_generate_result(&result),
+        );
+    }
 
     // 4. Extract text and tool calls from content.
     let mut text = String::new();
@@ -309,7 +337,20 @@ pub async fn stream_text(
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
-    let call_options = options.into_call_options(lm_prompt);
+    let mut call_options = options.into_call_options(lm_prompt);
+
+    // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
+    //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
+    //     前提;P2 移交层 B)。
+    let recorder = crate::recording::recorder();
+    let call_id = recorder.as_ref().map(|rec| {
+        let call_id = crate::recording::new_call_id();
+        call_options.call_id = Some(call_id.clone());
+        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
+        rec.record_provider(&call_id, &model.config_snapshot());
+        rec.record_transport_closed(&call_id);
+        call_id
+    });
 
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
@@ -324,7 +365,7 @@ pub async fn stream_text(
         ),
         crate::session::session_store(),
     ) {
-        store.append(&session_id, source);
+        store.append(&session_id, call_options.call_id.as_deref(), source);
     }
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
@@ -335,14 +376,34 @@ pub async fn stream_text(
         model = %model.model_id(),
         modality = "text",
     );
-    let result: StreamResult = model.do_stream(&call_options).instrument(span).await?;
+    let result: StreamResult = match model.do_stream(&call_options).instrument(span).await {
+        Ok(r) => r,
+        Err(e) => {
+            if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
+                rec.record_outcome(call_id, &crate::recording::OutcomeRecord::from_error(&e));
+            }
+            return Err(e);
+        }
+    };
+    // 解构避免部分 move(result 各字段去向不同)。
+    let StreamResult {
+        stream,
+        request_body,
+        response_headers,
+    } = result;
+    // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
+    let stream = crate::recording::RecordingOutcomeStream::new(
+        stream,
+        recorder.clone(),
+        call_id.unwrap_or_default(),
+    );
 
-    // 4. Return stream to user (request_body/response_headers kept for
+    // 4. Return wrapped stream to user (request_body/response_headers kept for
     //    debugging / cache probing, RFC-0015).
     Ok(StreamTextResult {
-        stream: result.stream,
-        request_body: result.request_body,
-        response_headers: result.response_headers,
+        stream: Box::pin(stream),
+        request_body,
+        response_headers,
     })
 }
 
