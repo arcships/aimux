@@ -163,6 +163,10 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | L4 | env 自动读取 | 部分:`provider()`/`deepseek()` 走注册表,api_key 可空读 env([lib.rs:314](../bindings/node/src/lib.rs#L314));`openai()`/`anthropic()` 工厂仍强制传参 | 0.1.3 |
 | M9 | warnings 丢弃 | 部分:非流式已透传([model.rs:383](../aimux-providers/src/openai/model.rs#L383));流式仍 `StreamStart{warnings:vec![]}`([model.rs:450](../aimux-providers/src/openai/model.rs#L450)) | 0.1.3 |
 | L2 | tool-call.input 类型 | 维持 `Value`(设计选择,Node 侧消费更友好),不回归 V4 string 形态 | — |
+| M3 | logprobs 请求 | `provider_options.openai.logprobs`/`topLogprobs` 白名单透传至 `logprobs`/`top_logprobs`([convert.rs:1323](../aimux-providers/src/openai/convert.rs#L1323))——修复唯一"静默不生效"选项;响应侧解析原已存在 | 0.2.1+ |
+| M10 | usage.raw 填充 | `convert_usage` 保留原始 usage JSON 原样([model.rs:184](../aimux-providers/src/openai/model.rs#L184)):非流式从 response Value 取、流式从 chunk 取原始 `usage` 对象,未声明厂商字段(如 DeepSeek `prompt_cache_hit_tokens`)也不丢失 | 0.2.1+ |
+| M9 | warnings 丢弃 | 流式补齐:execute_stream 把 body 构建期 warnings 传入 `StreamStart`([model.rs:475](../aimux-providers/src/openai/model.rs#L475)),与已有非流式路径一致 | 0.2.1+ |
+| M2 | includeRawChunks | `CallOptions`/`GenerateTextOptions` 加 `include_raw_chunks: Option<bool>`([options.rs:129](../aimux-core/src/options.rs#L129));execute_stream 逐 JSON SSE 事件 emit `StreamPart::Raw`(解析后的 payload,[model.rs:524](../aimux-providers/src/openai/model.rs#L524));openai + azure + 全部 openai-compatible 生效;全 binding typed options 同步(Java/Kotlin/Python/Go/Flutter/Swift/Node);contract fixture 增加 `stream_part_raw` | 0.2.1+ |
 | H1 | abortSignal 取消 | `CallOptions`/`GenerateTextOptions` 加 `#[serde(skip)] abort_signal`([options.rs:96](../aimux-core/src/options.rs#L96)、[generate.rs:60](../aimux-core/src/generate.rs#L60));全部 16 个 `LanguageModel` 实现接线到 `HttpRequest.abort_signal`;Node 桥接:JS `AbortSignal` → `AbortBridge`(napi class 持 `Arc<AbortSignal>`,`on_abort` 注册,[lib.rs:40-72](../bindings/node/src/lib.rs#L40)),`generateText`/`streamText` 第三参接收。FFI/C-ABI 无法传运行时句柄,未做 `aimux_cancel`(见 §7.3 类别②)。**2026-08-02 升级**:`AbortSignal` 底层换 `tokio_util::CancellationToken`(事件驱动,覆盖 body 阶段,见 §7.6 R1-R4) | 0.1.6 |
 | H3 | timeout | core `TimeoutConfiguration { total_ms, first_chunk_ms, chunk_ms }`([options.rs:32](../aimux-core/src/options.rs#L32));`CallOptions.timeout`/`GenerateTextOptions.timeout`(JSON 可序列化,FFI/Python/Node 自动透传);http 层 `send_timed`/`send_stream_timed`([http.rs:289](../aimux-provider-utils/src/http.rs#L289)):total 覆盖整体(含 retry),流式 `TimeoutBodyStream` 滑动窗口执行 first-chunk/chunk-idle/total;超时 → `AiMuxError::Timeout`(不可重试)。16 个 LLM provider 全部接线。注:`tokio::time::Sleep` 被 drop 会注销 timer——timer 必须存于 stream 内而非 poll 局部变量 | 0.1.6 |
 
@@ -175,12 +179,12 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 
 **中优先级:**
 > 逐项用户影响、范围修正与实施排序见 [§7.8](#78-中优先级缺口复审2026-08-02双-review-后逐项核定)(2026-08-02 核定:M6 缩窄为 proxy、M7 实锤差距、M11/M12 澄清、M13 拆分)
-- **M2** includeRawChunks — `StreamPart::Raw` 已定义但全仓 0 处 emit;`CallOptions` 无字段
-- **M3** logprobs 请求 — 仅响应侧解析([model.rs:363](../aimux-providers/src/openai/model.rs#L363)),请求体不写 `logprobs`/`top_logprobs`
+- ~~**M2** includeRawChunks~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-05)
+- ~~**M3** logprobs 请求~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-05)
 - **M6** 自定义 fetch / proxy — 仍是进程级共享 reqwest client
 - **M7** 顶层结果聚合 — `GenerateTextResult` 仅 text/tool_calls([generate.rs:96](../aimux-core/src/generate.rs#L96));reasoning/files/sources 在 `raw.content`,无 `responseMessages`
 - **M8** 缺 variant — `tool-approval-request`/`custom`/`reasoning-file` 均无;`source` 无 document 子类型([stream_part.rs:156](../aimux-core/src/stream_part.rs#L156))
-- **M10** usage.raw — `convert_usage` 写死 `raw: None`([model.rs:172](../aimux-providers/src/openai/model.rs#L172));流式 raw usage 只进 provider_metadata([model.rs:762](../aimux-providers/src/openai/model.rs#L762))
+- ~~**M10** usage.raw~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-05)
 - **M11** streamText 聚合器 — Node 仍 yield 原始 StreamPart JSON([lib.rs:63](../bindings/node/src/lib.rs#L63));core 仅 `StreamTextResult::text()`
 - **M12** 结构化 output / generateObject — 无
 - **M13** 生命周期 callbacks — 无

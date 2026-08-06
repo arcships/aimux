@@ -146,6 +146,43 @@ class ContractTest {
             .isEqualTo("{\"StreamStart\":{\"warnings\":[]}}");
     }
 
+    /// RFC-0016 M2: the shared `stream_part_raw` fixture decodes to the Java
+    /// `Raw` variant and round-trips exactly.
+    @Test
+    void streamPartRawRoundTripAndType() throws Exception {
+        JsonNode fixtures = loadFixtures();
+        String json = fixtureJson(fixtures, "stream_part_raw");
+
+        Types.StreamPart part = Types.AimuxJson.MAPPER.readValue(json, Types.StreamPart.class);
+        assertThat(part).isInstanceOf(Types.StreamPart.Raw.class);
+        Types.StreamPart.Raw raw = (Types.StreamPart.Raw) part;
+        assertThat(raw.getRawValue()).isNotNull();
+        assertThat(raw.getRawValue().path("id").asText()).isEqualTo("c1");
+        assertThat(raw.getRawValue().path("choices").isArray()).isTrue();
+
+        // Exact round-trip (NON_NULL: raw_value is the only inner field).
+        assertThat(Types.AimuxJson.MAPPER.writeValueAsString(part)).isEqualTo(json);
+    }
+
+    /// RFC-0016 M10: `Usage.raw` with a vendor-specific field survives a
+    /// Java round-trip (NON_NULL omits a null raw, keeps a non-null one).
+    @Test
+    void usageRawPreservesVendorFieldsRoundTrip() throws Exception {
+        Types.Usage usage = Types.Usage.builder()
+            .inputTokens(Types.TokenUsage.builder().total(20L).build())
+            .outputTokens(Types.TokenUsage.builder().total(5L).build())
+            .raw(Types.AimuxJson.MAPPER.readTree(
+                "{\"prompt_cache_hit_tokens\":42,\"prompt_tokens\":20}"))
+            .build();
+
+        String json = Types.AimuxJson.MAPPER.writeValueAsString(usage);
+        assertThat(json).contains("\"raw\":{\"prompt_cache_hit_tokens\":42");
+        Types.Usage decoded = Types.AimuxJson.MAPPER.readValue(json, Types.Usage.class);
+        assertThat(decoded.getRaw()).isNotNull();
+        assertThat(decoded.getRaw().path("prompt_cache_hit_tokens").asInt()).isEqualTo(42);
+        assertThat(decoded.getRaw().path("prompt_tokens").asInt()).isEqualTo(20);
+    }
+
     @Test
     void streamPartFinishWireShapeAndJavaRoundTrip() throws Exception {
         JsonNode fixtures = loadFixtures();

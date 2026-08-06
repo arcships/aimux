@@ -32,4 +32,8 @@ max_retries: number | null,
 /**
  * Per-call timeout configuration (total / first-chunk / chunk idle).
  */
-timeout: TimeoutConfiguration | null, };
+timeout: TimeoutConfiguration | null, 
+/**
+ * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
+ */
+include_raw_chunks: boolean | null, };

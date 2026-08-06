@@ -27,7 +27,9 @@ use aimux_provider_utils::{
 use aimux_stream::SseStream;
 
 use super::OpenAIConfig;
-use super::convert::{build_request_body_with_warnings_fallible, parse_finish_reason};
+use super::convert::{
+    RequestBodyResult, build_request_body_with_warnings_fallible, parse_finish_reason,
+};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
 /// An OpenAI-compatible language model.
@@ -122,7 +124,12 @@ fn merge_body_overrides(options: &CallOptions, provider_overrides: &Option<Value
 /// - `input.noCache = prompt_tokens - cached_tokens - cache_write_tokens`
 /// - `input.cacheRead = cached_tokens`
 /// - `input.cacheWrite = cache_write_tokens`
-fn convert_usage(usage: &UsageResponse) -> Usage {
+///
+/// `usage_raw` is the provider's original `usage` JSON object, preserved
+/// verbatim in `Usage.raw` (M10, RFC-0016). Vendor-specific fields not part
+/// of `UsageResponse` (e.g. DeepSeek `prompt_cache_hit_tokens`) survive only
+/// through this raw value.
+fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
     let completion_tokens = usage.completion_tokens.unwrap_or(0);
 
@@ -171,7 +178,10 @@ fn convert_usage(usage: &UsageResponse) -> Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
-        raw: None,
+        // M10 (RFC-0016): keep the provider's original usage JSON verbatim —
+        // vendor-specific fields (e.g. Moonshot `cached_tokens`, DeepSeek
+        // `prompt_cache_hit_tokens`) are otherwise lost for audit/billing.
+        raw: usage_raw.cloned(),
     }
 }
 
@@ -280,8 +290,12 @@ pub async fn execute_generate(
 
     let response_headers = resp.headers;
 
-    let data: ChatCompletionResponse =
+    // Parse the raw body once: the `Value` keeps the provider's original
+    // fields (incl. vendor-specific usage fields) for `Usage.raw` (M10).
+    let response_value: Value =
         serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+    let data: ChatCompletionResponse = serde_json::from_value(response_value.clone())
+        .map_err(|e| AiMuxError::Json(e.to_string()))?;
 
     let choice = data
         .choices
@@ -360,7 +374,7 @@ pub async fn execute_generate(
             raw: None,
         });
 
-    let usage = convert_usage(&data.usage);
+    let usage = convert_usage(&data.usage, response_value.get("usage"));
 
     // Build provider metadata: logprobs + prediction tokens.
     let mut pm_openai = serde_json::json!({});
@@ -412,7 +426,9 @@ pub async fn execute_stream(
 ) -> Result<StreamResult, AiMuxError> {
     let request_result =
         build_request_body_with_warnings_fallible(model_id, options, true, provider, profile)?;
-    let body = request_result.body;
+    // M9 (RFC-0016): keep the warnings computed while building the body —
+    // they are emitted in `StreamStart` below instead of being dropped.
+    let RequestBodyResult { body, warnings } = request_result;
 
     let resp = send_stream_timed(
         HttpRequest {
@@ -450,9 +466,13 @@ pub async fn execute_stream(
     // None → read from the top-level `usage`.
     let stream_usage_key = profile.stream_usage_key;
 
+    // M2 (RFC-0016): capture whether raw chunks should be emitted — the
+    // borrowed `options` cannot be moved into the generator.
+    let emit_raw_chunks = options.include_raw_chunks == Some(true);
+
     let stream = async_stream::stream! {
         // First part: StreamStart.
-        yield Ok(StreamPart::StreamStart { warnings: vec![] });
+        yield Ok(StreamPart::StreamStart { warnings });
 
         let text_id = 0usize;
         let mut text_started = false;
@@ -498,6 +518,15 @@ pub async fn execute_stream(
                         }
                     };
 
+                    // M2 (RFC-0016): emit the raw provider chunk for debugging
+                    // before it is consumed below. JSON payloads only — the
+                    // "[DONE]" sentinel is skipped by the early break above.
+                    if emit_raw_chunks {
+                        yield Ok(StreamPart::Raw {
+                            raw_value: parsed.clone(),
+                        });
+                    }
+
                     // Check for mid-stream error.
                     if let Some(err_obj) = parsed.get("error") {
                         yield Ok(StreamPart::Error {
@@ -512,15 +541,15 @@ pub async fn execute_stream(
                     // from the provider-specific sub-object `key` (e.g. Groq's
                     // "x_groq"); None reads the top-level "usage". This is done
                     // from the raw JSON chunk before it is consumed below.
-                    let chunk_usage: Option<UsageResponse> = match stream_usage_key {
-                        Some(key) => parsed
-                            .get(key)
-                            .and_then(|v| v.get("usage"))
-                            .and_then(|u| serde_json::from_value(u.clone()).ok()),
-                        None => parsed
-                            .get("usage")
-                            .and_then(|u| serde_json::from_value(u.clone()).ok()),
+                    // `chunk_usage_raw` keeps the provider's original object for
+                    // `Usage.raw` (M10).
+                    let chunk_usage_raw: Option<Value> = match stream_usage_key {
+                        Some(key) => parsed.get(key).and_then(|v| v.get("usage")).cloned(),
+                        None => parsed.get("usage").cloned(),
                     };
+                    let chunk_usage: Option<UsageResponse> = chunk_usage_raw
+                        .as_ref()
+                        .and_then(|u| serde_json::from_value(u.clone()).ok());
 
                     // Parse as StreamChunk.
                     let chunk: StreamChunk = match serde_json::from_value(parsed) {
@@ -548,7 +577,7 @@ pub async fn execute_stream(
 
                     // Update usage based on profile.stream_usage_key.
                     if let Some(usage) = &chunk_usage {
-                        final_usage = convert_usage(usage);
+                        final_usage = convert_usage(usage, chunk_usage_raw.as_ref());
                         final_usage_raw = Some(usage.clone());
                     }
 

@@ -827,6 +827,7 @@ class GenerateTextOptions(BaseModel):
     body_overrides: Optional[Any] = None
     max_retries: Optional[int] = None
     timeout: Optional[TimeoutConfiguration] = None
+    include_raw_chunks: Optional[bool] = None
 
 
 class GenerateResult(BaseModel):

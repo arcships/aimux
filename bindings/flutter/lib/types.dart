@@ -661,6 +661,8 @@ class GenerateTextOptions {
   @JsonKey(name: 'max_retries')
   final int? maxRetries;
   final TimeoutConfiguration? timeout;
+  @JsonKey(name: 'include_raw_chunks')
+  final bool? includeRawChunks;
 
   GenerateTextOptions({
     this.maxOutputTokens,
@@ -681,6 +683,7 @@ class GenerateTextOptions {
     this.bodyOverrides,
     this.maxRetries,
     this.timeout,
+    this.includeRawChunks,
   });
 
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
@@ -711,6 +714,7 @@ class GenerateTextOptions {
       timeout: json['timeout'] != null
           ? TimeoutConfiguration.fromJson(json['timeout'] as Map<String, dynamic>)
           : null,
+      includeRawChunks: json['include_raw_chunks'] as bool?,
     );
   }
   Map<String, dynamic> toJson() => {
@@ -732,6 +736,7 @@ class GenerateTextOptions {
         if (bodyOverrides != null) 'body_overrides': bodyOverrides,
         if (maxRetries != null) 'max_retries': maxRetries,
         if (timeout != null) 'timeout': timeout!.toJson(),
+        if (includeRawChunks != null) 'include_raw_chunks': includeRawChunks,
       };
 }
 

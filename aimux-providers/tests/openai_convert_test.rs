@@ -525,6 +525,25 @@ mod build_request_body_tests {
         );
     }
 
+    /// RFC-0016 M3: `logprobs` / `topLogprobs` provider options reach the
+    /// request body — previously they were silently dropped by the
+    /// provider_options whitelist (the only "quietly no-op" option).
+    #[test]
+    fn passes_logprobs_and_top_logprobs() {
+        let mut provider_options = std::collections::HashMap::new();
+        provider_options.insert(
+            "openai".to_string(),
+            json!({ "logprobs": true, "topLogprobs": 3 }),
+        );
+        let options = CallOptions {
+            provider_options: Some(provider_options),
+            ..default_options(test_prompt())
+        };
+        let body = build_request_body("gpt-3.5-turbo", &options, false);
+        assert_eq!(body["logprobs"], json!(true));
+        assert_eq!(body["top_logprobs"], json!(3));
+    }
+
     /// TS: "should pass tools and toolChoice"
     #[test]
     fn passes_tools_and_tool_choice() {

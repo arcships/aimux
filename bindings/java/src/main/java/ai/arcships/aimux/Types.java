@@ -1678,6 +1678,7 @@ public final class Types {
         @JsonProperty("instructions") private String instructions;
         @JsonProperty("body_overrides") private JsonNode bodyOverrides;
         @JsonProperty("max_retries") private Long maxRetries;
+        @JsonProperty("include_raw_chunks") private Boolean includeRawChunks;
         @JsonProperty("timeout") private TimeoutConfiguration timeout;
 
         @JsonCreator
@@ -1688,7 +1689,8 @@ public final class Types {
                                     JsonNode responseFormat, Long seed, List<Tool> tools, ToolChoice toolChoice,
                                     Map<String, String> headers, Map<String, JsonNode> providerOptions,
                                     ReasoningEffort reasoning, String instructions,
-                                    JsonNode bodyOverrides, Long maxRetries, TimeoutConfiguration timeout) {
+                                    JsonNode bodyOverrides, Long maxRetries, Boolean includeRawChunks,
+                                    TimeoutConfiguration timeout) {
             this.maxOutputTokens = maxOutputTokens;
             this.temperature = temperature;
             this.stopSequences = stopSequences;
@@ -1706,6 +1708,7 @@ public final class Types {
             this.instructions = instructions;
             this.bodyOverrides = bodyOverrides;
             this.maxRetries = maxRetries;
+            this.includeRawChunks = includeRawChunks;
             this.timeout = timeout;
         }
 
@@ -1726,6 +1729,7 @@ public final class Types {
         public String getInstructions() { return instructions; }
         public JsonNode getBodyOverrides() { return bodyOverrides; }
         public Long getMaxRetries() { return maxRetries; }
+        public Boolean getIncludeRawChunks() { return includeRawChunks; }
         public TimeoutConfiguration getTimeout() { return timeout; }
 
         public static Builder builder() { return new Builder(); }
@@ -1748,6 +1752,7 @@ public final class Types {
             private String instructions;
             private JsonNode bodyOverrides;
             private Long maxRetries;
+            private Boolean includeRawChunks;
             private TimeoutConfiguration timeout;
 
             public Builder maxOutputTokens(Long v) { this.maxOutputTokens = v; return this; }
@@ -1767,12 +1772,14 @@ public final class Types {
             public Builder instructions(String v) { this.instructions = v; return this; }
             public Builder bodyOverrides(JsonNode v) { this.bodyOverrides = v; return this; }
             public Builder maxRetries(Long v) { this.maxRetries = v; return this; }
+            public Builder includeRawChunks(Boolean v) { this.includeRawChunks = v; return this; }
             public Builder timeout(TimeoutConfiguration v) { this.timeout = v; return this; }
 
             public GenerateTextOptions build() {
                 return new GenerateTextOptions(maxOutputTokens, temperature, stopSequences, topP, topK,
                     presencePenalty, frequencyPenalty, responseFormat, seed, tools, toolChoice, headers,
-                    providerOptions, reasoning, instructions, bodyOverrides, maxRetries, timeout);
+                    providerOptions, reasoning, instructions, bodyOverrides, maxRetries, includeRawChunks,
+                    timeout);
             }
         }
 
@@ -1798,6 +1805,7 @@ public final class Types {
                 && Objects.equals(instructions, that.instructions)
                 && Objects.equals(bodyOverrides, that.bodyOverrides)
                 && Objects.equals(maxRetries, that.maxRetries)
+                && Objects.equals(includeRawChunks, that.includeRawChunks)
                 && Objects.equals(timeout, that.timeout);
         }
 
@@ -1805,7 +1813,7 @@ public final class Types {
         public int hashCode() {
             return Objects.hash(maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty,
                 frequencyPenalty, responseFormat, seed, tools, toolChoice, headers, providerOptions, reasoning,
-                instructions, bodyOverrides, maxRetries, timeout);
+                instructions, bodyOverrides, maxRetries, includeRawChunks, timeout);
         }
     }
 

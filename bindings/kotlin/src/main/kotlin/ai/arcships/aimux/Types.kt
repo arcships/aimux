@@ -599,6 +599,8 @@ data class GenerateTextOptions(
     @SerialName("body_overrides") val bodyOverrides: JsonElement? = null,
     /** Per-call retry count (0 = disable retries). */
     @SerialName("max_retries") val maxRetries: Long? = null,
+    /** Emit raw provider stream chunks as `StreamPart.Raw` (debugging; OpenAI-compatible family only). */
+    @SerialName("include_raw_chunks") val includeRawChunks: Boolean? = null,
     /** Per-call timeout configuration (overall / first chunk / inter-chunk idle, in ms). */
     @SerialName("timeout") val timeout: TimeoutConfiguration? = null,
 )

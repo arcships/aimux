@@ -1316,6 +1316,16 @@ pub fn build_request_body_with_warnings_fallible(
     if let Some(val) = popt("safetyIdentifier") {
         body["safety_identifier"] = val;
     }
+    // M3 (RFC-0016): logprobs request support. Previously `logprobs` /
+    // `topLogprobs` were silently dropped by the provider_options whitelist —
+    // the only option that "quietly did nothing". Pass-through as-is (OpenAI
+    // expects `logprobs: bool` and `top_logprobs: int`).
+    if let Some(val) = popt("logprobs") {
+        body["logprobs"] = val;
+    }
+    if let Some(val) = popt("topLogprobs") {
+        body["top_logprobs"] = val;
+    }
 
     // Groq: reasoning_format provider option
     if provider == "groq"
