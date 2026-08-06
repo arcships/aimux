@@ -41,7 +41,7 @@ mod tests {
             "provider": "openai",
             "model": "gpt-4o",
             "session_id": session,
-            "trace_id": format!("t-{idx}"),
+            "call_id": format!("t-{idx}"),
             "sent_at_unix_ms": 1785900000000 + idx as i64 * 1000,
             "fingerprint": {
                 "body_hash": format!("{idx:032x}"),

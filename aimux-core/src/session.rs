@@ -47,9 +47,9 @@ pub enum SessionSource {
 #[ts(export)]
 pub struct SessionCall {
     /// Call-level unique id. This is the association key for the future
-    /// Recording / TraceRecord `trace_id` (RFC-0015/0023): once those land,
+    /// Recording / TraceRecord `call_id` (RFC-0015/0023): once those land,
     /// this field carries their value.
-    pub trace_id: String,
+    pub call_id: String,
     /// Step within the session (0-based).
     pub step: u32,
     /// When the call was recorded (RFC 3339 UTC, millisecond precision).
@@ -149,7 +149,7 @@ impl SessionStore {
         let step = u32::try_from(entry.next_step).unwrap_or(u32::MAX);
         entry.next_step += 1;
         let call = SessionCall {
-            trace_id: new_call_id(),
+            call_id: new_call_id(),
             step,
             recorded_at: rfc3339_now(),
         };
@@ -483,7 +483,7 @@ mod tests {
         assert_eq!(calls[1].step, 1);
         assert_eq!(calls[2].step, 2);
         // trace ids are unique
-        let mut ids: Vec<_> = calls.iter().map(|c| c.trace_id.as_str()).collect();
+        let mut ids: Vec<_> = calls.iter().map(|c| c.call_id.as_str()).collect();
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), 3);

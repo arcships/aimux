@@ -17,7 +17,7 @@ session_id: string | null,
  * Call-level unique id (association key for Recording / replay,
  * RFC-0023).
  */
-trace_id: string, 
+call_id: string, 
 /**
  * When the call was sent (epoch ms).
  */

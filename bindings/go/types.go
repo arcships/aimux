@@ -309,7 +309,7 @@ type TraceRecord struct {
 	Model                string             `json:"model"`
 	RequestID            *string            `json:"request_id,omitempty"`
 	SessionID            *string            `json:"session_id,omitempty"`
-	TraceID              string             `json:"trace_id"`
+	TraceID              string             `json:"call_id"`
 	SentAtUnixMs         int64              `json:"sent_at_unix_ms"`
 	LCPTokenUpper        *uint64            `json:"lcp_token_upper,omitempty"`
 	TTFTMs               *uint64            `json:"ttft_ms,omitempty"`
