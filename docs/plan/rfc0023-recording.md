@@ -36,10 +36,10 @@
 |---|---|---|---|
 | A1 | 前置依赖梳理 | RFC-0015 ✅(sink 对齐待 C1)/ RFC-0014 ✅ / RFC-0003 判定为参考不依赖 / RFC-0020 已解耦 / RFC-0021/22 不阻塞 | ✅ 已对齐 |
 | A2 | RFC 评审 | RFC-0023 仍 DRAFT,需评审定稿(或至少锁定实施草案) | ⏳ 待做 |
-| B1 | ConfigSnapshot 形式 | RFC 原文:独立可选 trait;回滚前实施:LanguageModel 默认方法。**取舍?** | ⏳ 待对齐 |
-| B2 | 落盘线程模型 | RFC:tokio 后台 task;回滚前实施:std::thread + mpsc(不引入 tokio 正式依赖)。**取舍?** | ⏳ 待对齐 |
-| B3 | 门控 API | RFC:OnceLock(init 一次);回滚前实施:RwLock(支持替换/关闭/测试隔离)。**取舍?** | ⏳ 待对齐 |
-| B4 | 流式 outcome | RFC:outcome 是最终摘要;回滚前实施:建流即记 success,finish/usage 留空。**是否等流结束补全?** | ⏳ 待对齐 |
+| B1 | ConfigSnapshot 形式 | ✅ **LanguageModel 默认方法**(2026-08-06):零破坏,provider 覆盖即得完整快照 | ✅ 已对齐 |
+| B2 | 落盘线程模型 | ✅ **tokio task**(2026-08-06,按 RFC 原文):aimux-core 加 tokio 正式依赖;`Handle::try_current()` 支持延迟启动(init 在 runtime 外时首次事件自动 spawn) | ✅ 已对齐 |
+| B3 | 门控 API | ✅ **RwLock**(2026-08-06):支持替换/关闭/测试隔离;热路径一次读锁 | ✅ 已对齐 |
+| B4 | 流式 outcome | ✅ **流结束时补全**(2026-08-06):包装 stream,Finish part 到达时补 finish_reason/usage | ✅ 已对齐 |
 | C1 | RFC-0015 sink 对齐 | RFC §6:共享 ring-store 模式,先实施方预留合并口子(RingTraceStore 已实施)。**RingRecorder 抽象怎么对齐?** | ⏳ 待对齐 |
 | D2 | P5 绑定层范围 | 哪些语言先做(Node/C ABI/Python/Go/…) + PrefixMatcher | ⏳ 待对齐 |
 | D3 | P6 RingRecorder | 可选,是否纳入本期 | ⏳ 待对齐 |
