@@ -113,3 +113,57 @@ await generateText(model, prompt, { bodyOverrides: { 'reasoning_effort': null } 
 - 调研数据：[model-config-research/_global_table.md](internal/model-config-research/_global_table.md)（P1 差距 + batch-01~06）
 - DeepSeek V4 官方：https://api-docs.deepseek.com/guides/thinking_mode/
 - ⚠️ 标注条目的来源为推断（batch 文件存疑节），使用前以官方文档复核
+
+## 7. Model List API 与模型配置补充（RFC-0027）
+
+aimux 支持 `Provider::list_models()` 运行时发现可用模型,并用 `models.anya2a.com` 社区聚合数据补充模型配置/能力。
+
+### 7.1 使用方式
+
+```ts
+// 1. 创建 provider 句柄
+const p = await createProvider('deepseek', apiKey)
+
+// 2. 列出可用模型(+ anya2a 补充的配置)
+const models = await p.listModels()
+// → [{ id: 'deepseek-v4', spec: { limits: { context: 1000000 }, reasoning: { effort: 'high' }, ... } }]
+
+// 3. 用户读 spec,按业务自己定 options
+const model = await p.model('deepseek-v4')
+await generateText(model, prompt, { max_output_tokens: 8000, bodyOverrides: { thinking: { type: 'enabled' } } })
+```
+
+### 7.2 config 是咨询性的
+
+`listModels` 返回的 `spec`(ModelSpec)是**纯咨询**信息——给用户读,用户按自己业务决定请求时填什么。aimux **不在请求路径自动套用** config(不自动填充默认值、不自动门控能力)。这保留用户自定义空间。
+
+### 7.3 两层数据源
+
+| 数据源 | 角色 | 特点 |
+|---|---|---|
+| provider `/models` | 可用性权威 | 账号级(这 key 能调什么),实时但稀疏(通常只有 id) |
+| anya2a 缓存 | 补充配置/能力 | 社区知识(context/reasoning/cost),离线缓存、丰富但可能滞后 |
+
+anya2a 只补 provider 列表里出现的 modelId,不作可用性依据。缺字段留空。
+
+### 7.4 覆盖范围
+
+292/325 家真 LLM provider 已覆盖(89.8%):251 registry + 23 standalone + 10 vertex MaaS + 8 native。33 家 modality-only(speech/image/embed/search)返回 `Unsupported`。
+
+### 7.5 缓存与离线
+
+- 默认缓存目录:`~/.cache/aimux/catalogue/`(或 `AIMUX_CATALOGUE_DIR`)
+- 默认 TTL:24h
+- 离线模式:`AIMUX_CATALOGUE_OFFLINE=1` 只读缓存不联网
+- catalogue 未命中 = 回退现状(spec 为 null,行为与今天一致)
+
+### 7.6 ModelSpec 字段 → 请求 options 对照
+
+| ModelSpec 字段 | 请求时怎么用(options) |
+|---|---|
+| `limits.context` / `limits.output` | 用户自行做上下文截断;`max_output_tokens` 设多少 |
+| `capabilities.tool_call` | 决定是否传 `tools` |
+| `capabilities.structured_output` | 决定是否用 `response_format: Json` |
+| `reasoning.effort_default` / `mode` | `bodyOverrides` 里填 `thinking:{enabled}` / `reasoning_effort` |
+| `cost` | 发送前预估成本(用户自行算) |
+| `modalities` | 决定能否传 image/audio 内容 |

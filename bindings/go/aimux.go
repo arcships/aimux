@@ -82,6 +82,11 @@ char *aimux_embed(uint64_t handle, const char *values_json, const char *opts_jso
 char *aimux_provider_new(const char *name, const char *api_key, const char *model_id, const char *config_json);
 char *aimux_provider_from_env(const char *name, const char *model_id);
 
+// Provider handles (RFC-0027): createProvider / listModels / model
+char *aimux_provider_handle_new(const char *name, const char *api_key, const char *config_json);
+char *aimux_provider_list_models(uint64_t handle);
+char *aimux_provider_model(uint64_t handle, const char *model_id);
+
 // Speech (TTS)
 char *aimux_openai_speech_new(const char *api_key, const char *model_id);
 char *aimux_openai_speech_new_with_base(const char *api_key, const char *model_id, const char *base_url);
@@ -538,6 +543,102 @@ func ProviderWithConfig(name, apiKey, modelID string, cfg *ProviderConfig) (*Mod
 
 	ptr := C.aimux_provider_new(cName, cKey, cModel, cConfig)
 	return wrapHandle(m, ptr)
+}
+
+// ── Provider handles (RFC-0027) ─────────────────────────────────────────────
+
+// ProviderHandle is a provider handle created by CreateProvider. It supports
+// ListModels (runtime discovery) and Model (build a model from a discovered id).
+type ProviderHandle struct {
+	mu     sync.RWMutex
+	handle uint64
+	closed bool
+}
+
+// Close releases the native handle. Safe to call multiple times.
+func (p *ProviderHandle) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil
+	}
+	p.closed = true
+	if p.handle != 0 {
+		C.aimux_drop_handle(C.uint64_t(p.handle))
+		p.handle = 0
+	}
+	runtime.SetFinalizer(p, nil)
+	return nil
+}
+
+// ListModels lists models available on this provider (runtime discovery via
+// the provider's /models endpoint), enriched with community knowledge (anya2a)
+// when available. Returns a JSON array of ResolvedModel.
+func (p *ProviderHandle) ListModels() (string, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.closed || p.handle == 0 {
+		return "", fmt.Errorf("aimux: provider handle is closed")
+	}
+	ptr := C.aimux_provider_list_models(C.uint64_t(p.handle))
+	if ptr == nil {
+		return "", errors.New("aimux: list_models returned null")
+	}
+	defer C.aimux_free_string(ptr)
+
+	result := C.GoString(ptr)
+	if msg := extractError(result); msg != "" {
+		return "", fmt.Errorf("aimux: %s", msg)
+	}
+	return result, nil
+}
+
+// Model builds a language model from a discovered model id.
+func (p *ProviderHandle) Model(modelID string) (*Model, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.closed || p.handle == 0 {
+		return nil, fmt.Errorf("aimux: provider handle is closed")
+	}
+	cModel := C.CString(modelID)
+	defer C.free(unsafe.Pointer(cModel))
+	ptr := C.aimux_provider_model(C.uint64_t(p.handle), cModel)
+	m := &Model{}
+	return wrapHandle(m, ptr)
+}
+
+// CreateProvider creates a provider handle for a registry-backed provider.
+// Unlike Provider (which binds to a single modelID), this returns a handle
+// that supports ListModels() and Model().
+func CreateProvider(name, apiKey string, cfg *ProviderConfig) (*ProviderHandle, error) {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+
+	var cKey *C.char
+	if apiKey != "" {
+		cKey = C.CString(apiKey)
+		defer C.free(unsafe.Pointer(cKey))
+	}
+
+	var cConfig *C.char
+	if cfg != nil {
+		buf, err := json.Marshal(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("aimux: marshal provider config: %w", err)
+		}
+		cConfig = C.CString(string(buf))
+		defer C.free(unsafe.Pointer(cConfig))
+	}
+
+	ptr := C.aimux_provider_handle_new(cName, cKey, cConfig)
+	p := &ProviderHandle{}
+	h, err := parseHandleJSON(ptr)
+	if err != nil {
+		return nil, err
+	}
+	p.handle = h
+	runtime.SetFinalizer(p, func(p *ProviderHandle) { p.Close() })
+	return p, nil
 }
 
 // ── Non-streaming generation ────────────────────────────────────────────────
