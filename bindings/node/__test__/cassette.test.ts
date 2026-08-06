@@ -72,6 +72,26 @@ test('cassette: DeepSeek generate', async (t) => {
   }
 })
 
+test('cassette: DeepSeek usage.raw carries vendor fields', async (t) => {
+  // RFC-0016 M10: DeepSeek's vendor-specific usage fields (not part of the
+  // typed Usage model) survive in usage.raw.
+  const srv = new CassetteServer('deepseek')
+  await srv.start()
+  t.true(srv.count > 0)
+
+  try {
+    const model = await openai('test-key', 'deepseek-chat', srv.url)
+    const resultJson = await model.generateText(JSON.stringify('Hello'))
+    const result = JSON.parse(resultJson)
+    const raw = result.usage?.raw
+    t.truthy(raw, 'usage.raw should be populated (RFC-0016 M10)')
+    t.is(typeof raw?.prompt_cache_hit_tokens, 'number')
+    t.is(typeof raw?.prompt_cache_miss_tokens, 'number')
+  } finally {
+    await srv.stop()
+  }
+})
+
 // ── Anthropic ───────────────────────────────────────────────────────────────
 
 test('cassette: Anthropic generate', async (t) => {

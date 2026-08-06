@@ -73,6 +73,7 @@ fn options_with_tools(prompt: LanguageModelPrompt, tools: Vec<FunctionTool>) -> 
         timeout: None,
         abort_signal: None,
         session_id: None,
+        include_raw_chunks: None,
     }
 }
 
@@ -331,6 +332,66 @@ mod do_generate {
         assert_eq!(result.usage.input_tokens.cache_read, Some(0));
         // TS: outputTokens.total = 5
         assert_eq!(result.usage.output_tokens.total, Some(5));
+
+        // RFC-0016 M10: provider raw usage is preserved (vendor fields like
+        // Moonshot `cached_tokens` would otherwise be lost).
+        let raw = result
+            .usage
+            .raw
+            .as_ref()
+            .expect("usage.raw must be populated");
+        assert_eq!(raw["prompt_tokens"], json!(20));
+        assert_eq!(raw["completion_tokens"], json!(5));
+        assert_eq!(raw["total_tokens"], json!(25));
+    }
+
+    /// RFC-0016 M10: vendor-specific usage fields NOT modeled by
+    /// `UsageResponse` survive verbatim in `usage.raw` — the actual point of
+    /// M10 (re-serializing the typed struct would drop them).
+    #[tokio::test]
+    async fn should_keep_vendor_specific_usage_fields_in_raw() {
+        let server = MockServer::start().await;
+        mock_json_response(
+            &server,
+            json!({
+                "id": "chatcmpl-raw1",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "deepseek-chat",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 5,
+                    "total_tokens": 25,
+                    "prompt_cache_hit_tokens": 10,
+                    "prompt_cache_miss_tokens": 10
+                }
+            }),
+        )
+        .await;
+
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = OpenAIProvider::new(config);
+        let model = provider.model("deepseek-chat");
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("do_generate should succeed");
+
+        let raw = result
+            .usage
+            .raw
+            .as_ref()
+            .expect("usage.raw must be populated");
+        assert_eq!(raw["prompt_cache_hit_tokens"], json!(10));
+        assert_eq!(raw["prompt_cache_miss_tokens"], json!(10));
+        // Typed fields still work alongside the raw object.
+        assert_eq!(result.usage.input_tokens.total, Some(20));
     }
 
     // ── should send additional response information ───────────────────────────
@@ -1510,6 +1571,202 @@ mod do_stream {
             }
             other => panic!("expected Finish, got {:?}", other),
         }
+
+        // RFC-0016 M10: streaming usage also carries the provider raw usage.
+        if let Some(StreamPart::Finish { usage, .. }) = finish {
+            let raw = usage.raw.as_ref().expect("usage.raw must be populated");
+            assert_eq!(raw["prompt_tokens"], json!(17));
+            assert_eq!(raw["completion_tokens"], json!(227));
+        }
+    }
+
+    // ── RFC-0016 M2: includeRawChunks ───────────────────────────────────────
+
+    /// RFC-0016 M2: `include_raw_chunks` emits one `StreamPart::Raw` per JSON
+    /// SSE event (before the parsed parts); default is off.
+    #[tokio::test]
+    async fn should_emit_raw_chunks_when_enabled() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            ),
+            &sse_event(
+                r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#,
+            ),
+        ]);
+        mock_sse_response(&server, &body).await;
+
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = OpenAIProvider::new(config);
+        let model = provider.model("gpt-3.5-turbo");
+
+        let options = CallOptions {
+            include_raw_chunks: Some(true),
+            ..default_options(test_prompt())
+        };
+        let result = model
+            .do_stream(&options)
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        let raw: Vec<&Value> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::Raw { raw_value } => Some(raw_value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(raw.len(), 2, "one Raw part per JSON SSE event");
+        assert_eq!(raw[0]["choices"][0]["delta"]["content"], json!("Hi"));
+        assert_eq!(raw[1]["usage"]["prompt_tokens"], json!(1));
+    }
+
+    /// RFC-0016 M2: default (`None`) emits no `StreamPart::Raw`.
+    #[tokio::test]
+    async fn raw_chunks_off_by_default() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            ),
+            &sse_event(
+                r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            ),
+        ]);
+        mock_sse_response(&server, &body).await;
+
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = OpenAIProvider::new(config);
+        let model = provider.model("gpt-3.5-turbo");
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        assert!(
+            parts.iter().all(|p| !matches!(p, StreamPart::Raw { .. })),
+            "no Raw parts expected by default"
+        );
+    }
+
+    /// RFC-0016 M2: an unparsable chunk emits only `Error` (no `Raw`), and
+    /// the stream breaks there.
+    #[tokio::test]
+    async fn raw_chunks_unparsable_chunk_emits_error_only() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            ),
+            // Unparsable chunk: no Raw for it, Error only, stream breaks.
+            "data: not-json\n\n",
+            // Never reached (stream broke at the unparsable chunk).
+            &sse_event(
+                r#"{"id":"c2","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"late"},"finish_reason":null}]}"#,
+            ),
+        ]);
+        mock_sse_response(&server, &body).await;
+
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = OpenAIProvider::new(config);
+        let model = provider.model("gpt-3.5-turbo");
+
+        let options = CallOptions {
+            include_raw_chunks: Some(true),
+            ..default_options(test_prompt())
+        };
+        let result = model
+            .do_stream(&options)
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        // Only the content chunk emitted Raw; the unparsable chunk did not,
+        // and the stream broke before the late chunk.
+        let raw: Vec<&Value> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::Raw { raw_value } => Some(raw_value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(raw.len(), 1, "no Raw for the unparsable chunk");
+        assert_eq!(raw[0]["choices"][0]["delta"]["content"], json!("Hi"));
+
+        // The unparsable chunk surfaces as Error.
+        let err_pos = parts
+            .iter()
+            .position(|p| matches!(p, StreamPart::Error { .. }))
+            .expect("unparsable chunk must surface as Error part");
+        assert!(
+            !matches!(&parts[err_pos - 1], StreamPart::Raw { .. }),
+            "no Raw may precede the Error of an unparsable chunk"
+        );
+    }
+
+    /// RFC-0016 M2: `[DONE]` sentinel emits no Raw; a mid-stream error chunk
+    /// emits Raw before Error (debugging order).
+    #[tokio::test]
+    async fn raw_chunks_done_skipped_and_error_preceded_by_raw() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
+            ),
+            // Error chunk: Raw must precede the Error part for this event.
+            &sse_event(
+                r#"{"error":{"message":"mid-stream failure","type":"server_error","code":"500"}}"#,
+            ),
+            // [DONE] sentinel is skipped by the early break.
+            "data: [DONE]\n\n",
+        ]);
+        mock_sse_response(&server, &body).await;
+
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = OpenAIProvider::new(config);
+        let model = provider.model("gpt-3.5-turbo");
+
+        let options = CallOptions {
+            include_raw_chunks: Some(true),
+            ..default_options(test_prompt())
+        };
+        let result = model
+            .do_stream(&options)
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        // Raw for the content chunk + the error chunk; [DONE] emits none.
+        let raw: Vec<&Value> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::Raw { raw_value } => Some(raw_value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            raw.len(),
+            2,
+            "expected Raw for the content chunk + error chunk"
+        );
+
+        // Raw for the error chunk precedes its Error part.
+        let err_pos = parts
+            .iter()
+            .position(|p| matches!(p, StreamPart::Error { .. }))
+            .expect("mid-stream error must surface as Error part");
+        assert!(
+            matches!(
+                &parts[err_pos - 1],
+                StreamPart::Raw { raw_value }
+                    if raw_value["error"]["message"] == "mid-stream failure"
+            ),
+            "Raw must immediately precede Error for the error chunk"
+        );
     }
 }
 

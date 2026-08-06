@@ -131,6 +131,27 @@ fn generate_text_options_default_wire_format() {
     }
 }
 
+/// RFC-0016 M2 true-case: `include_raw_chunks: Some(true)` round-trips on the
+/// wire (companion of the `generate_text_options_include_raw_chunks_true`
+/// fixture).
+#[test]
+fn generate_text_options_include_raw_chunks_true_wire_format() {
+    let opts = GenerateTextOptions {
+        include_raw_chunks: Some(true),
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&opts).unwrap();
+    let val: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        val.get("include_raw_chunks"),
+        Some(&Value::Bool(true)),
+        "include_raw_chunks must serialize as true, got {json}"
+    );
+    // Round-trip: deserialize back to the same option.
+    let back: GenerateTextOptions = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.include_raw_chunks, Some(true));
+}
+
 #[test]
 fn stream_part_text_delta_wire_format() {
     let part = StreamPart::TextDelta {
@@ -154,6 +175,20 @@ fn stream_part_stream_start_wire_format() {
     assert!(
         val.get("StreamStart").is_some(),
         "expected StreamStart variant, got {json}"
+    );
+}
+
+#[test]
+fn stream_part_raw_wire_format() {
+    let part = StreamPart::Raw {
+        raw_value: serde_json::json!({ "id": "c1", "choices": [] }),
+    };
+    let json = serde_json::to_string(&part).unwrap();
+    let val: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        val.get("Raw").and_then(|r| r.get("raw_value")),
+        Some(&serde_json::json!({ "id": "c1", "choices": [] })),
+        "expected Raw variant with raw_value, got {json}"
     );
 }
 

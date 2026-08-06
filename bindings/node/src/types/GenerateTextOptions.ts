@@ -39,4 +39,8 @@ timeout: TimeoutConfiguration | null,
  * headers. When `None` and the optional session inferer is enabled, one
  * may be inferred from prompt-prefix continuation.
  */
-session_id: string | null, };
+session_id: string | null, 
+/**
+ * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
+ */
+include_raw_chunks: boolean | null, };

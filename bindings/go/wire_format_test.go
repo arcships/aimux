@@ -83,6 +83,7 @@ func TestWireFormatConsistency(t *testing.T) {
 					"stream_part_text_delta":   "TextDelta",
 					"stream_part_finish":       "Finish",
 					"stream_part_stream_start": "StreamStart",
+					"stream_part_raw":          "Raw",
 				}
 				if expected, ok := expectedTags[tc.Name]; ok {
 					if sp.Tag != expected {
@@ -107,6 +108,12 @@ func TestWireFormatConsistency(t *testing.T) {
 				}
 				if opts.Temperature != nil {
 					t.Error("expected nil Temperature")
+				}
+				// RFC-0016 M2 true-case: include_raw_chunks round-trips.
+				if tc.Name == "generate_text_options_include_raw_chunks_true" {
+					if opts.IncludeRawChunks == nil || *opts.IncludeRawChunks != true {
+						t.Errorf("expected IncludeRawChunks=true, got %v", opts.IncludeRawChunks)
+					}
 				}
 
 			case "Role":

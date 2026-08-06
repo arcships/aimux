@@ -285,6 +285,59 @@ test('wrapper: streamText yields typed TextDelta parts', async (t) => {
   }
 })
 
+test('wrapper: streamText emits Raw parts when include_raw_chunks set', async (t) => {
+  // RFC-0016 M2: include_raw_chunks surfaces one Raw part per JSON SSE event
+  // (parsed payload, before the parsed parts; [DONE] excluded).
+  const { server, url } = await startMockServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.end(OPENAI_STREAM_BODY)
+  })
+
+  try {
+    const model = await openai('test-key', 'gpt-4o', url)
+    const parts: StreamPart[] = []
+    for await (const part of streamText(model, 'Say hello', {
+      include_raw_chunks: true,
+    })) {
+      parts.push(part)
+    }
+
+    const rawParts = parts.filter(
+      (p): p is Extract<StreamPart, { Raw: unknown }> => 'Raw' in p,
+    )
+    // OPENAI_STREAM_BODY has 3 JSON events (2 content + 1 usage chunk);
+    // the [DONE] sentinel emits no Raw.
+    t.is(rawParts.length, 3)
+    const firstRaw = rawParts[0].Raw as { raw_value: any }
+    t.is(firstRaw.raw_value.choices[0].delta.content, 'Hello')
+
+    // Raw for the first event precedes its TextDelta.
+    const firstRawIdx = parts.indexOf(rawParts[0])
+    const firstTextIdx = parts.findIndex((p) => 'TextDelta' in p)
+    t.true(firstRawIdx < firstTextIdx, 'Raw must precede the parsed parts')
+  } finally {
+    await closeServer(server)
+  }
+})
+
+test('wrapper: no Raw parts by default', async (t) => {
+  const { server, url } = await startMockServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.end(OPENAI_STREAM_BODY)
+  })
+
+  try {
+    const model = await openai('test-key', 'gpt-4o', url)
+    const parts: StreamPart[] = []
+    for await (const part of streamText(model, 'Say hello')) {
+      parts.push(part)
+    }
+    t.true(parts.every((p) => !('Raw' in p)), 'no Raw parts expected by default')
+  } finally {
+    await closeServer(server)
+  }
+})
+
 test('wrapper: streamText yields typed ToolCall parts', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' })

@@ -64,6 +64,9 @@ function testStreamPart() {
     } else if (f.name === 'stream_part_stream_start') {
       assert(key === 'StreamStart' && Array.isArray(parsed.StreamStart.warnings), f.name,
         `expected StreamStart with warnings array, got ${JSON.stringify(parsed)}`)
+    } else if (f.name === 'stream_part_raw') {
+      assert(key === 'Raw' && parsed.Raw.raw_value?.id === 'c1', f.name,
+        `expected Raw with raw_value, got ${JSON.stringify(parsed)}`)
     }
   }
 }
@@ -96,6 +99,14 @@ function testGenerateTextOptions() {
       // All fields should be null
       const allNull = Object.values(parsed).every((v: any) => v === null)
       assert(allNull, f.name, 'all fields should be null for default')
+    } else if (f.name === 'generate_text_options_include_raw_chunks_true') {
+      // RFC-0016 M2 true-case: only include_raw_chunks set
+      assert(parsed.include_raw_chunks === true, f.name,
+        `expected include_raw_chunks:true, got ${JSON.stringify(parsed)}`)
+      const rest = { ...parsed }
+      delete rest.include_raw_chunks
+      assert(Object.values(rest).every((v: any) => v === null), f.name,
+        'all other fields should stay null')
     }
 
     if (f.name === 'generate_text_options_with_session_id') {

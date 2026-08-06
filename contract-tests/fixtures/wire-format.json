@@ -46,9 +46,16 @@
     "description": "StreamStart with empty warnings"
   },
   {
+    "name": "stream_part_raw",
+    "type": "StreamPart",
+    "rust_value": "",
+    "json": "{\"Raw\":{\"raw_value\":{\"id\":\"c1\",\"choices\":[]}}}",
+    "description": "Raw stream part carrying the parsed JSON payload of a provider SSE event (RFC-0016 M2; emitted before parsed parts, excludes [DONE] sentinel)"
+  },
+  {
     "name": "generate_text_options_default",
     "type": "GenerateTextOptions",
-    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null}",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":null}",
     "description": "Default GenerateTextOptions with all fields null"
   },
   {
@@ -56,6 +63,13 @@
     "type": "GenerateTextOptions",
     "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"session_id\":\"sess-1\"}",
     "description": "GenerateTextOptions with explicit session_id (RFC-0024)"
+  },
+  {
+    "name": "generate_text_options_include_raw_chunks_true",
+    "type": "GenerateTextOptions",
+    "rust_value": "",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":true}",
+    "description": "GenerateTextOptions with include_raw_chunks=true (RFC-0016 M2 true-case)"
   },
   {
     "name": "timeout_configuration_values",

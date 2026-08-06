@@ -135,6 +135,16 @@ pub struct CallOptions {
     #[serde(skip)]
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
+
+    /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
+    /// When `Some(true)`, streaming providers yield one `Raw` part per JSON
+    /// SSE event, carrying the **parsed JSON payload** of the event, emitted
+    /// before the parsed parts. Excludes the `[DONE]` sentinel; unparsable
+    /// chunks emit only `Error`. `null`/`Some(false)` = off.
+    /// Currently honored by the OpenAI-compatible family (openai / azure /
+    /// openai-compatible registry providers); other provider families ignore
+    /// it for now (RFC-0016 M2).
+    pub include_raw_chunks: Option<bool>,
 }
 
 impl CallOptions {
@@ -167,6 +177,7 @@ impl CallOptions {
             timeout: None,
             session_id: None,
             abort_signal: None,
+            include_raw_chunks: None,
         }
     }
 }

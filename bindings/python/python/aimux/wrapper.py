@@ -834,6 +834,7 @@ class GenerateTextOptions(BaseModel):
     one may be inferred from prompt-prefix continuation.
     """
     timeout: Optional[TimeoutConfiguration] = None
+    include_raw_chunks: Optional[bool] = None
 
 
 class GenerateResult(BaseModel):
