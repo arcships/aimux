@@ -85,6 +85,13 @@
 - `send_with_retry_raw` per-attempt 录制的错误体捕获点(read_error_body)需实现时确认。
 - P5 Node/C ABI 的 model handle 所有权(C ABI 不直接表达借用型 Option<&dyn LanguageModel>)。
 
+## 实施进度
+
+| 阶段 | 状态 | 备注 |
+|---|---|---|
+| P1 录制核心 | 🔄 已实施(双模型评审后修复中) | completion barrier + transport_closed 信号、专用 writer thread + oneshot flush + Drop join、脱敏超集、call_id 三系统统一(TraceLayer/session 复用 options.call_id)、complete 标记、ISO 时间戳 |
+| 队列语义 | ⏳ 延期 | P1 用无界 channel;bounded/drop-newest + 丢弃计数留 P2(防无限积压由 P6 RingRecorder 兜底) |
+
 ## 参考
 
 - 回滚前的 P1-P3 实施代码:分支 `backup/rfc0023-p1-p3`(3 个提交,仅作方案参考,不直接复用)

@@ -122,7 +122,14 @@ impl SessionStore {
     ///
     /// Called from the `generate_text` / `stream_text` entry points (before
     /// the call is dispatched), so failures are still part of the session.
-    pub fn append(&self, session_id: &str, source: SessionSource) -> SessionCall {
+    /// `call_id`:调用方已有(RFC-0023 层 A 生成)则复用,保证 session/recording/
+    /// trace 三系统同 ID;None 时内部自生成。
+    pub fn append(
+        &self,
+        session_id: &str,
+        call_id: Option<&str>,
+        source: SessionSource,
+    ) -> SessionCall {
         let mut inner = self.inner.lock().unwrap();
         inner.touch(session_id);
         if !inner.sessions.contains_key(session_id) {
@@ -149,7 +156,7 @@ impl SessionStore {
         let step = u32::try_from(entry.next_step).unwrap_or(u32::MAX);
         entry.next_step += 1;
         let call = SessionCall {
-            call_id: new_call_id(),
+            call_id: call_id.map(str::to_string).unwrap_or_else(new_call_id),
             step,
             recorded_at: rfc3339_now(),
         };
@@ -473,9 +480,9 @@ mod tests {
     #[test]
     fn append_increments_step_and_keeps_order() {
         let store = SessionStore::new();
-        store.append("s1", SessionSource::Explicit);
-        store.append("s1", SessionSource::Explicit);
-        store.append("s1", SessionSource::Explicit);
+        store.append("s1", None, SessionSource::Explicit);
+        store.append("s1", None, SessionSource::Explicit);
+        store.append("s1", None, SessionSource::Explicit);
 
         let calls = store.session_calls("s1");
         assert_eq!(calls.len(), 3);
@@ -503,8 +510,8 @@ mod tests {
         assert!(store.session_calls("nope").is_empty());
         assert!(store.list_sessions().is_empty());
 
-        store.append("s1", SessionSource::Explicit);
-        store.append("s2", SessionSource::Inferred);
+        store.append("s1", None, SessionSource::Explicit);
+        store.append("s2", None, SessionSource::Inferred);
 
         let views = store.list_sessions();
         assert_eq!(views.len(), 2);
@@ -518,11 +525,11 @@ mod tests {
     #[test]
     fn lru_evicts_oldest_session_when_full() {
         let store = SessionStore::with_capacity(2, 8);
-        store.append("a", SessionSource::Explicit);
-        store.append("b", SessionSource::Explicit);
+        store.append("a", None, SessionSource::Explicit);
+        store.append("b", None, SessionSource::Explicit);
         // Touching "a" makes it the most recently used.
         store.session_calls("a");
-        store.append("c", SessionSource::Explicit);
+        store.append("c", None, SessionSource::Explicit);
 
         assert!(
             store.session_calls("b").is_empty(),
@@ -535,9 +542,9 @@ mod tests {
     #[test]
     fn calls_per_session_are_bounded() {
         let store = SessionStore::with_capacity(8, 2);
-        store.append("s1", SessionSource::Explicit);
-        store.append("s1", SessionSource::Explicit);
-        store.append("s1", SessionSource::Explicit);
+        store.append("s1", None, SessionSource::Explicit);
+        store.append("s1", None, SessionSource::Explicit);
+        store.append("s1", None, SessionSource::Explicit);
 
         let calls = store.session_calls("s1");
         assert_eq!(calls.len(), 2, "oldest call dropped");
@@ -551,7 +558,7 @@ mod tests {
         // call is evicted — eviction must not reuse a step.
         let store = SessionStore::with_capacity(8, 2);
         for _ in 0..4 {
-            store.append("s1", SessionSource::Explicit);
+            store.append("s1", None, SessionSource::Explicit);
         }
         let calls = store.session_calls("s1");
         assert_eq!(calls.len(), 2, "only the two newest calls are retained");
@@ -564,8 +571,8 @@ mod tests {
         // Regression: touching unknown ids must not pollute the LRU, which
         // would let sessions exceed max_sessions (and let the LRU grow).
         let store = SessionStore::with_capacity(2, 8);
-        store.append("a", SessionSource::Explicit);
-        store.append("b", SessionSource::Explicit);
+        store.append("a", None, SessionSource::Explicit);
+        store.append("b", None, SessionSource::Explicit);
 
         // Repeatedly query unknown ids — before the fix these polluted the LRU.
         for i in 0..16 {
@@ -573,7 +580,7 @@ mod tests {
         }
 
         for id in ["c", "d", "e", "f", "g"] {
-            store.append(id, SessionSource::Explicit);
+            store.append(id, None, SessionSource::Explicit);
         }
         assert!(
             store.list_sessions().len() <= 2,
@@ -587,7 +594,7 @@ mod tests {
     #[test]
     fn clear_drops_all_sessions() {
         let store = SessionStore::new();
-        store.append("s1", SessionSource::Explicit);
+        store.append("s1", None, SessionSource::Explicit);
         store.clear();
         assert!(store.list_sessions().is_empty());
     }

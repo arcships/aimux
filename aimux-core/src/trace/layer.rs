@@ -97,6 +97,8 @@ struct RecordCtx {
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
     ctx: RequestCtx,
+    /// RFC-0023 关联 ID:复用 `options.call_id`(缺失时由构造处生成)。
+    call_id: Option<String>,
     request_body: Option<serde_json::Value>,
     response_headers: Option<HashMap<String, String>>,
     ttft_ms: Arc<AtomicU64>,
@@ -170,6 +172,7 @@ impl TraceLayer {
             strict: self.strict,
             scope_salt: self.scope_salt,
             session_tracker: self.session_tracker.clone(),
+            call_id: options.call_id.clone(),
             ctx: RequestCtx {
                 session_id,
                 scope_key,
@@ -370,12 +373,14 @@ impl RecordCtx {
             model: self.model.clone(),
             request_id,
             session_id: self.ctx.session_id.clone(),
-            call_id: format!(
-                "trace-{}-{}-{}",
-                std::process::id(),
-                self.ctx.monotonic_ms,
-                TRACE_SEQ.fetch_add(1, Ordering::Relaxed)
-            ),
+            call_id: self.call_id.clone().unwrap_or_else(|| {
+                format!(
+                    "trace-{}-{}-{}",
+                    std::process::id(),
+                    self.ctx.monotonic_ms,
+                    TRACE_SEQ.fetch_add(1, Ordering::Relaxed)
+                )
+            }),
             sent_at_unix_ms: self.ctx.sent_at_unix_ms,
             monotonic_sent_ms: self.ctx.monotonic_ms,
             lcp_token_upper,

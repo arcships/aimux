@@ -51,9 +51,13 @@ pub struct Recording {
     /// 最终结果摘要(状态 + finish_reason + usage)。
     pub outcome: OutcomeRecord,
 
-    /// wire 是否完整(流式 body 未补全时为 false;由 writer 兜底标记)。
+    /// wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。
     #[serde(default)]
     pub complete: bool,
+    /// 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
+    /// P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
+    #[serde(default)]
+    pub transport_closed: bool,
 }
 
 impl Recording {
@@ -68,12 +72,17 @@ impl Recording {
             exchanges: Vec::new(),
             outcome: OutcomeRecord::default(),
             complete: false,
+            transport_closed: false,
         }
     }
 
-    /// completion barrier:outcome 已到(非 Pending)且全部 exchange 已终结。
+    /// completion barrier:outcome 非 Pending && 传输层已封闭 &&
+    /// 全部 exchange 已终结。缺封闭信号时(层 B 未发)不提前写出,
+    /// 防止 outcome 先到时误以为"无 exchange"而早写。
     fn ready(&self) -> bool {
-        self.outcome.status != OutcomeStatus::Pending && self.exchanges.iter().all(|e| e.finalized)
+        self.transport_closed
+            && self.outcome.status != OutcomeStatus::Pending
+            && self.exchanges.iter().all(|e| e.finalized)
     }
 }
 
@@ -237,7 +246,11 @@ pub trait Recorder: Send + Sync {
     fn record_exchange_update(&self, call_id: &str, attempt: u32, response: &ResponseRecord);
     /// 录制最终结果(层 A 入口调用)。
     fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord);
-    /// 同步 flush:阻塞直到全部已写行落盘(oneshot 回执),关闭前调用确保不丢。
+    /// 声明传输层封闭:该 call 不再会有 exchange(层 B;P1 层 A 收尾调用)。
+    fn record_transport_closed(&self, call_id: &str) {
+        let _ = call_id;
+    }
+    /// 同步 flush:阻塞到全部已写行落盘(oneshot 回执),关闭前调用确保不丢。
     fn flush(&self);
 }
 
@@ -345,6 +358,8 @@ enum RecordEvent {
         call_id: String,
         outcome: OutcomeRecord,
     },
+    /// 传输层封闭:该调用不再会有 exchange(层 B 发;P1 由层 A 收尾发)。
+    TransportClosed { call_id: String },
     /// 刷盘命令;完成后经 ack 回执(SyncSender,容量 0 即 rendezvous)。
     Flush { ack: SyncSender<()> },
 }
@@ -352,8 +367,9 @@ enum RecordEvent {
 /// 每条完整 `Recording` 一行 jsonl;分片按 call_id 在专用线程合并。
 /// 热路径仅 mpsc send(非阻塞),I/O 全部在专用线程。
 pub struct JsonlRecorder {
-    tx: Sender<RecordEvent>,
+    tx: Option<Sender<RecordEvent>>,
     dir: PathBuf,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl JsonlRecorder {
@@ -364,11 +380,22 @@ impl JsonlRecorder {
         let (tx, rx) = std::sync::mpsc::channel::<RecordEvent>();
         std::fs::create_dir_all(&dir).ok();
         let writer_dir = dir.clone();
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name("aimux-recording".into())
             .spawn(move || writer_loop(rx, writer_dir))
             .expect("failed to spawn recording writer thread");
-        Self { tx, dir }
+        Self {
+            tx: Some(tx),
+            dir,
+            thread: Some(handle),
+        }
+    }
+
+    /// 事件入队(线程退出后静默丢弃)。
+    fn send_ev(&self, ev: RecordEvent) {
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(ev);
+        }
     }
 
     /// 录制文件路径。
@@ -377,9 +404,22 @@ impl JsonlRecorder {
     }
 }
 
+impl Drop for JsonlRecorder {
+    fn drop(&mut self) {
+        // 先主动断开发送端:writer 消费完残留事件后由 Disconnected 触发
+        // 兜底写 incomplete 并退出;随后 join 保证落盘完成。
+        if let Some(tx) = self.tx.take() {
+            drop(tx);
+        }
+        if let Some(handle) = self.thread.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 impl Recorder for JsonlRecorder {
     fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str) {
-        let _ = self.tx.send(RecordEvent::Input {
+        self.send_ev(RecordEvent::Input {
             call_id: call_id.to_string(),
             input: InputRecord::from_call_options(options),
             provider: ProviderRecord::minimal(provider, model_id),
@@ -387,21 +427,26 @@ impl Recorder for JsonlRecorder {
     }
 
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord) {
-        let _ = self.tx.send(RecordEvent::Provider {
+        // 核心边界统一强制脱敏 provider_options/profile(B6 评审),
+        // 不依赖 provider 端自觉。
+        let mut snap = snapshot.clone();
+        snap.provider_options = snap.provider_options.take().map(redact_json);
+        snap.profile = snap.profile.take().map(redact_json);
+        self.send_ev(RecordEvent::Provider {
             call_id: call_id.to_string(),
-            provider: snapshot.clone(),
+            provider: snap,
         });
     }
 
     fn record_exchange(&self, call_id: &str, exchange: &HttpExchange) {
-        let _ = self.tx.send(RecordEvent::Exchange {
+        self.send_ev(RecordEvent::Exchange {
             call_id: call_id.to_string(),
             exchange: exchange.clone(),
         });
     }
 
     fn record_exchange_update(&self, call_id: &str, attempt: u32, response: &ResponseRecord) {
-        let _ = self.tx.send(RecordEvent::ExchangeUpdate {
+        self.send_ev(RecordEvent::ExchangeUpdate {
             call_id: call_id.to_string(),
             attempt,
             response: response.clone(),
@@ -409,18 +454,27 @@ impl Recorder for JsonlRecorder {
     }
 
     fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord) {
-        let _ = self.tx.send(RecordEvent::Outcome {
+        self.send_ev(RecordEvent::Outcome {
             call_id: call_id.to_string(),
             outcome: outcome.clone(),
         });
     }
 
+    fn record_transport_closed(&self, call_id: &str) {
+        self.send_ev(RecordEvent::TransportClosed {
+            call_id: call_id.to_string(),
+        });
+    }
+
     fn flush(&self) {
         let (ack_tx, ack_rx) = sync_channel::<()>(0);
-        if self.tx.send(RecordEvent::Flush { ack: ack_tx }).is_err() {
-            return; // writer 线程已退出。
+        // 写入 flush 事件;若 writer 已退出(通道断)则放弃等待。
+        if self.tx.is_none() {
+            return;
         }
-        let _ = ack_rx.recv_timeout(Duration::from_secs(5));
+        self.send_ev(RecordEvent::Flush { ack: ack_tx });
+        // 阻塞等 writer 回执(专用写线程,不占调用方热路径锁)。
+        let _ = ack_rx.recv_timeout(Duration::from_secs(30));
     }
 }
 
@@ -459,6 +513,7 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                 if let Some(rec) = pending.get_mut(&call_id) {
                     rec.exchanges.push(exchange);
                 }
+                try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::ExchangeUpdate {
                 call_id,
@@ -471,22 +526,25 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                     ex.response = Some(response);
                     ex.finalized = true;
                 }
+                try_finalize(&mut w, &mut pending, &call_id);
+            }
+            RecordEvent::TransportClosed { call_id } => {
+                if let Some(rec) = pending.get_mut(&call_id) {
+                    rec.transport_closed = true;
+                }
+                try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::Outcome { call_id, outcome } => {
                 if let Some(rec) = pending.get_mut(&call_id) {
                     rec.outcome = outcome;
-                    // completion barrier 满足则立即写出(引用与 move 分离)。
-                    if rec.ready()
-                        && let Some(rec) = pending.remove(&call_id)
-                    {
-                        write_line(&mut w, rec);
-                    }
                 }
+                try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::Flush { ack } => {
                 write_ready_all(&mut w, &mut pending);
                 let _ = w.flush();
-                let _ = ack.try_send(());
+                // 阻塞 send:rendezvous 语义,确保 ack 一定被调用方收到。
+                let _ = ack.send(());
             }
         }
     }
@@ -503,6 +561,18 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
     let _ = w.flush();
 }
 
+/// 若该 call 的所有分片到齐(barrier 满足)则写出,并标记 complete=true。
+fn try_finalize(w: &mut impl Write, pending: &mut HashMap<String, Recording>, call_id: &str) {
+    if pending.get(call_id).map(|r| r.ready()).unwrap_or(false)
+        && let Some(mut rec) = pending.remove(call_id)
+    {
+        if !rec.exchanges.is_empty() || rec.transport_closed {
+            rec.complete = true;
+        }
+        write_line(w, rec);
+    }
+}
+
 fn write_ready_all(w: &mut impl Write, pending: &mut HashMap<String, Recording>) {
     let ids: Vec<String> = pending
         .iter()
@@ -510,7 +580,8 @@ fn write_ready_all(w: &mut impl Write, pending: &mut HashMap<String, Recording>)
         .map(|(id, _)| id.clone())
         .collect();
     for id in ids {
-        if let Some(rec) = pending.remove(&id) {
+        if let Some(mut rec) = pending.remove(&id) {
+            rec.complete = true;
             write_line(w, rec);
         }
     }
@@ -570,6 +641,8 @@ impl<S> RecordingOutcomeStream<S> {
             self.recorded = true;
             if let Some(rec) = &self.recorder {
                 rec.record_outcome(&self.call_id, outcome);
+                // P1: 流终结即传输层封闭(barrier 前提;P2 改由层 B 发)。
+                rec.record_transport_closed(&self.call_id);
             }
         }
     }
@@ -749,6 +822,8 @@ mod tests {
                 usage: None,
             },
         );
+        // 层 B 缺失的 P1 语义:收尾声明传输封闭,barrier 才满足。
+        rec.record_transport_closed("call-flush-1");
         // flush 阻塞直到落盘:无需轮询。
         rec.flush();
         let content = std::fs::read_to_string(rec.path()).unwrap();
@@ -806,6 +881,7 @@ mod tests {
                 usage: None,
             },
         );
+        rec.record_transport_closed("call-x2");
         rec.flush();
 
         let content = std::fs::read_to_string(rec.path()).unwrap();
@@ -818,22 +894,60 @@ mod tests {
     }
 
     #[test]
+    fn barrier_waits_for_transport_closed_and_marks_complete() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-btc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+
+        rec.record_input("call-btc-1", &sample_options(), "openai", "gpt-4o");
+        rec.record_outcome(
+            "call-btc-1",
+            &OutcomeRecord {
+                status: OutcomeStatus::Success,
+                finish_reason: None,
+                error: None,
+                usage: None,
+            },
+        );
+        // outcome 已到但未封闭:flush 不应写出(无写行,文件为空)。
+        rec.flush();
+        let content = std::fs::read_to_string(rec.path()).unwrap();
+        assert!(
+            content.trim().is_empty(),
+            "must not write before transport closed"
+        );
+
+        // 封闭后写出,且 complete=true。
+        rec.record_transport_closed("call-btc-1");
+        rec.flush();
+        let content = std::fs::read_to_string(rec.path()).unwrap();
+        let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed.call_id, "call-btc-1");
+        assert!(
+            parsed.complete,
+            "fully-finalized recording must be complete"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn incomplete_outcome_flushes_on_shutdown() {
         let dir = std::env::temp_dir().join(format!("aimux-rec-test3-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         {
             let rec = JsonlRecorder::new(&dir);
             rec.record_input("call-orphan", &sample_options(), "openai", "gpt-4o");
-            // 无 outcome:drop recorder 后 writer 线程被 Disconnected 终止并兜底写出。
+            // 无 outcome:drop 触发断开 + join,writer 兜底写 incomplete(确定性)。
         }
-        // 等 writer 线程退出(短睡:无同步 API,drop 后 recv 通道断开即写)。
-        std::thread::sleep(Duration::from_millis(200));
-        let dir_ok = std::fs::read_to_string(dir.join("recordings.jsonl"));
-        if let Ok(content) = dir_ok {
-            let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
-            assert_eq!(parsed.outcome.status, OutcomeStatus::Incomplete);
-            assert!(!parsed.complete);
-        }
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl"))
+            .expect("disconnected fallback must write the incomplete line");
+        let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed.outcome.status, OutcomeStatus::Incomplete);
+        assert!(
+            !parsed.complete,
+            "fallback line must not be marked complete"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
