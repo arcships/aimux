@@ -678,20 +678,48 @@ impl Stream for TimeoutBodyStream {
 /// Body reads for 429/5xx/other failures are awaited before the next retry
 /// decision; without this, an abort during the read would be ignored until
 /// the next attempt.
+///
+/// The body is capped at [`MAX_ERROR_BODY_BYTES`] so a misbehaving provider
+/// cannot force unbounded memory growth or flood logs/FFI envelopes with a
+/// huge error payload (audit finding on issue M6).
+const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
+
 async fn read_error_body(
     resp: reqwest::Response,
     request: &HttpRequest,
 ) -> Result<String, AiMuxError> {
+    let read = async {
+        resp.bytes()
+            .await
+            .map(|bytes| {
+                let mut s = String::from_utf8_lossy(&bytes).into_owned();
+                if s.len() > MAX_ERROR_BODY_BYTES {
+                    // Truncate on a UTF-8 char boundary so the marker never
+                    // splits a multi-byte character.
+                    let mut cut = MAX_ERROR_BODY_BYTES;
+                    while !s.is_char_boundary(cut) {
+                        cut -= 1;
+                    }
+                    s.truncate(cut);
+                    s.push_str(&format!(
+                        "…(truncated, full error body {} bytes)",
+                        bytes.len()
+                    ));
+                }
+                s
+            })
+            .unwrap_or_default()
+    };
     match &request.abort_signal {
         Some(signal) => {
-            let text = resp.text();
+            let text = read;
             tokio::select! {
                 biased;
                 _ = signal.cancelled() => Err(AiMuxError::Aborted),
-                t = text => Ok(t.unwrap_or_default()),
+                t = text => Ok(t),
             }
         }
-        None => Ok(resp.text().await.unwrap_or_default()),
+        None => Ok(read.await),
     }
 }
 

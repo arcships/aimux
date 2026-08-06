@@ -1288,6 +1288,7 @@ fn insert_anthropic_thinking(
 /// adjusted `max_tokens` (unchanged when thinking is not enabled).
 #[allow(clippy::too_many_arguments)]
 fn apply_anthropic_thinking_post_processing(
+    body: &mut Value,
     thinking_type: &Option<String>,
     thinking_budget: &mut Option<u32>,
     max_tokens: u32,
@@ -1310,6 +1311,12 @@ fn apply_anthropic_thinking_post_processing(
             ),
         });
         *thinking_budget = Some(1024);
+        // Mirrors the original implementation: the default budget must also be
+        // written into the `thinking` body field, not just added to max_tokens
+        // (audit finding — default budget was dropped during the M11 split).
+        if let Some(thinking_obj) = body.get_mut("thinking") {
+            thinking_obj["budget_tokens"] = json!(1024);
+        }
     }
 
     if temperature.is_some() {
@@ -1629,6 +1636,7 @@ pub fn build_request_body_with_warnings(
     // Thinking-enabled post-processing (TS L651-696): default budget,
     // sampling-parameter stripping, `max_tokens` adjustment.
     let adjusted_max_tokens = apply_anthropic_thinking_post_processing(
+        &mut body,
         &thinking_type,
         &mut thinking_budget,
         max_tokens,
@@ -1680,5 +1688,46 @@ pub fn parse_stop_reason(s: &str) -> FinishReason {
     FinishReason {
         unified,
         raw: Some(s.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts_with_anthropic_thinking(thinking: serde_json::Value) -> CallOptions {
+        let mut provider = std::collections::HashMap::new();
+        provider.insert("anthropic".to_string(), thinking);
+        CallOptions {
+            provider_options: Some(provider),
+            ..CallOptions::new(LanguageModelPrompt::default())
+        }
+    }
+
+    /// Regression (audit finding on the M11 split): when `thinking.enabled` is
+    /// set without an explicit `budgetTokens`, the body must carry both the
+    /// default `budget_tokens: 1024` **and** the adjusted `max_tokens`
+    /// (base + 1024), exactly like the pre-split implementation.
+    #[test]
+    fn thinking_enabled_without_budget_writes_default_budget() {
+        let opts = opts_with_anthropic_thinking(json!({
+            "thinking": { "type": "enabled" }
+        }));
+        let req = build_request_body_with_warnings("claude-sonnet-4-5", &opts, false).unwrap();
+        assert_eq!(req.body["thinking"]["type"], json!("enabled"));
+        assert_eq!(req.body["thinking"]["budget_tokens"], json!(1024));
+        // claude-sonnet-4-5 caps: 64000 tokens, +1024 thinking budget.
+        assert_eq!(req.body["max_tokens"], json!(65024));
+    }
+
+    /// Explicit `budgetTokens` must be preserved (no default override).
+    #[test]
+    fn thinking_enabled_with_explicit_budget_keeps_it() {
+        let opts = opts_with_anthropic_thinking(json!({
+            "thinking": { "type": "enabled", "budgetTokens": 4096 }
+        }));
+        let req = build_request_body_with_warnings("claude-sonnet-4-5", &opts, false).unwrap();
+        assert_eq!(req.body["thinking"]["budget_tokens"], json!(4096));
+        assert_eq!(req.body["max_tokens"], json!(64000 + 4096));
     }
 }

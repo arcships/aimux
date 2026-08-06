@@ -22,10 +22,11 @@
 //! operation completes. Callbacks execute on the same thread/call-stack that
 //! invoked the FFI function, so they must **not** re-enter the FFI layer:
 //! a nested `block_on` on the same thread makes tokio **panic** ("Cannot start
-//! a runtime from within a runtime"), and a panic crossing the `extern "C"`
-//! boundary is **undefined behavior**. Re-entrant calls are detected at runtime
-//! by a thread-local guard and rejected with an error envelope instead of
-//! panicking (see [`ffi_block_on`]).
+//! a runtime from within a runtime"). An unwinding panic crossing the
+//! `extern "C"` boundary is undefined behavior; under this workspace's release
+//! profile (`panic = "abort"`) such a panic terminates the process instead.
+//! Either way the re-entrant call must be rejected before it reaches the
+//! runtime — [`ffi_block_on`] does that with a thread-local guard (issue M7).
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 // `extern "C"` entry points dereference raw pointers (`*const c_char`) by
 // design: the C ABI contract requires callers to pass valid pointers (see
@@ -177,9 +178,10 @@ thread_local! {
     /// Stream callbacks (`on_part`/`on_done`/`on_error`) run synchronously on
     /// the same thread/call-stack that entered the FFI function, so a callback
     /// that calls back into the FFI layer would enter a second `block_on` on
-    /// this thread. tokio rejects nested `block_on` with a **panic**, and a
-    /// panic crossing the `extern "C"` boundary is UB. [`ffi_block_on`] checks
-    /// this guard and turns that re-entrant call into an error envelope
+    /// this thread. tokio rejects nested `block_on` with a **panic** (which,
+    /// depending on the build profile, aborts the process or — if unwinding —
+    /// is UB once it crosses the `extern "C"` boundary). [`ffi_block_on`]
+    /// checks this guard and turns that re-entrant call into an error envelope
     /// instead (issue M7).
     static IN_FFI_BLOCK_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -187,9 +189,9 @@ thread_local! {
 /// Run a future on the shared runtime from an FFI entry point (issue M7).
 ///
 /// Rejects re-entrant calls made from inside a stream callback, returning
-/// [`AiMuxError::Other`] instead of letting tokio's `block_on` panic across
-/// the `extern "C"` boundary. The guard is released when the future completes,
-/// including when it panics.
+/// [`AiMuxError::Other`] instead of letting tokio's `block_on` panic (abort
+/// under `panic = "abort"`, UB if an unwind crosses the C boundary). The
+/// guard is released when the future completes, including when it panics.
 fn ffi_block_on<F, T>(f: F) -> Result<T, AiMuxError>
 where
     F: std::future::Future<Output = T>,

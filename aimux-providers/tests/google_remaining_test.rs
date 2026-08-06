@@ -841,6 +841,30 @@ mod json_accumulator_tests {
         assert_eq!(r.text_delta, "");
     }
 
+    /// Regression (audit finding on H3): a malformed empty path like `$.[]`
+    /// parses to zero segments; it must be skipped instead of panicking with a
+    /// slice underflow in `emit_navigation_to`.
+    #[test]
+    fn malformed_empty_path_is_skipped_not_panicked() {
+        let mut acc = GoogleJsonAccumulator::new();
+        let r = acc
+            .process_partial_args(&[
+                PartialArg {
+                    json_path: "$.[]".to_string(),
+                    string_value: Some("x".to_string()),
+                    ..Default::default()
+                },
+                PartialArg {
+                    json_path: "$.ok".to_string(),
+                    string_value: Some("y".to_string()),
+                    ..Default::default()
+                },
+            ])
+            .unwrap();
+        // The malformed arg is ignored; the well-formed one still lands.
+        assert_eq!(r.current_json, json!({ "ok": "y" }));
+    }
+
     #[test]
     fn empty_partial_args_returns_empty_delta() {
         let mut acc = GoogleJsonAccumulator::new();

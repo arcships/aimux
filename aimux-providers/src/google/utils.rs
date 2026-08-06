@@ -203,6 +203,13 @@ impl GoogleJsonAccumulator {
 
             let segments = parse_path(raw_path);
 
+            // Malformed/empty path (e.g. `$.[]`) parses to no segments; without
+            // this guard `emit_navigation_to` would slice `[..len-1]` on an
+            // empty slice and panic (audit finding H3 residual panic path).
+            if segments.is_empty() {
+                continue;
+            }
+
             let existing = get_nested_value(&self.accumulated, &segments);
 
             if let (Some(s), Some(existing_val)) = (&arg.string_value, existing) {

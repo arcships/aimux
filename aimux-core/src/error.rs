@@ -32,10 +32,14 @@ pub enum AiMuxError {
     /// Rate-limited (HTTP 429). Carries both the retry hint and the provider's
     /// response message (e.g. "quota exceeded" vs "too many requests") so
     /// callers can tell the two apart.
+    ///
+    /// `#[serde(default)]` on `message` keeps deserializing error values that
+    /// were (de)serialized before the field was added (issue M6).
     #[error("rate limited: {message} (retry after {retry_after_ms}ms)")]
     RateLimited {
         #[ts(type = "number")]
         retry_after_ms: u64,
+        #[serde(default)]
         message: String,
     },
 
@@ -157,5 +161,87 @@ impl AiMuxError {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_code_derives_fixed_codes() {
+        assert_eq!(AiMuxError::Auth("bad key".into()).status_code(), Some(401));
+        assert_eq!(
+            AiMuxError::TokenExpired("expired".into()).status_code(),
+            Some(401)
+        );
+        assert_eq!(
+            AiMuxError::RateLimited {
+                retry_after_ms: 5000,
+                message: String::new()
+            }
+            .status_code(),
+            Some(429)
+        );
+        assert_eq!(
+            AiMuxError::ModelNotFound("nope".into()).status_code(),
+            Some(404)
+        );
+    }
+
+    #[test]
+    fn status_code_parses_http_prefix_only_for_http_layer_variants() {
+        assert_eq!(
+            AiMuxError::Provider("HTTP 403: forbidden".into()).status_code(),
+            Some(403)
+        );
+        assert_eq!(
+            AiMuxError::ApiCall("HTTP 500: boom".into()).status_code(),
+            Some(500)
+        );
+        // Timeout messages must never parse as a status code, even when the
+        // text happens to start with "HTTP ".
+        assert_eq!(
+            AiMuxError::Timeout("HTTP 408: total timeout after 1000ms".into()).status_code(),
+            None
+        );
+        assert_eq!(AiMuxError::Json("HTTP 400".into()).status_code(), None);
+        assert_eq!(AiMuxError::Other("HTTP 400".into()).status_code(), None);
+    }
+
+    #[test]
+    fn timeout_is_retryable() {
+        assert!(AiMuxError::Timeout("total timeout".into()).is_retryable());
+        assert!(!AiMuxError::Json("parse".into()).is_retryable());
+        assert!(
+            AiMuxError::RateLimited {
+                retry_after_ms: 1,
+                message: String::new()
+            }
+            .is_retryable()
+        );
+    }
+
+    /// M6: deserializing an error JSON that was produced before the
+    /// `RateLimited.message` field existed must still succeed (serde default).
+    #[test]
+    fn rate_limited_serde_back_compat() {
+        let old = r#"{"RateLimited":{"retry_after_ms":5000}}"#;
+        let err: AiMuxError = serde_json::from_str(old).unwrap();
+        assert!(matches!(
+            err,
+            AiMuxError::RateLimited { retry_after_ms: 5000, message, .. } if message.is_empty()
+        ));
+        // Round-trip with the new shape keeps the message.
+        let err = AiMuxError::RateLimited {
+            retry_after_ms: 7,
+            message: "quota exceeded".into(),
+        };
+        let json = serde_json::to_string(&err).unwrap();
+        let back: AiMuxError = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            back,
+            AiMuxError::RateLimited { retry_after_ms: 7, message, .. } if message == "quota exceeded"
+        ));
     }
 }
