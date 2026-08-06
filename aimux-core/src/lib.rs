@@ -26,6 +26,7 @@ pub mod language_model;
 pub mod language_model_message;
 pub mod math;
 pub mod message;
+pub mod model_catalogue;
 pub mod model_id;
 pub mod openai_output;
 pub mod options;
@@ -59,6 +60,11 @@ pub mod prelude {
     pub use crate::language_model::LanguageModel;
     pub use crate::language_model_message::LanguageModelPrompt;
     pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+    pub use crate::model_catalogue::{
+        CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
+        ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility, ResolvedModel,
+        RuntimeModel,
+    };
     pub use crate::model_id::ModelId;
     pub use crate::openai_output::{
         ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,

@@ -59,6 +59,9 @@ async-stream = "0.3"
 # URL
 url = "2"
 
+# Cache directories (RFC-0027 catalogue cache)
+dirs = "5"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

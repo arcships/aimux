@@ -45,23 +45,7 @@ impl OpenAIModel {
     }
 
     fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(ref org) = self.config.org_id {
-            headers.insert("OpenAI-Organization".to_string(), org.clone());
-        }
-        if let Some(ref project) = self.config.project {
-            headers.insert("OpenAI-Project".to_string(), project.clone());
-        }
-        // Provider-level headers (from OpenAIConfig.with_headers).
-        if let Some(ref config_headers) = self.config.headers {
-            for (k, v) in config_headers {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
+        let mut headers = build_auth_headers(&self.config);
         // Per-call headers (from CallOptions.headers), overriding provider-level.
         if let Some(extra) = extra {
             for (k, v) in extra {
@@ -74,6 +58,30 @@ impl OpenAIModel {
     fn endpoint(&self) -> String {
         format!("{}/chat/completions", self.config.base_url)
     }
+}
+
+/// Build the auth + provider-level headers from a config (no per-call headers).
+///
+/// Shared by [`OpenAIModel::build_headers`] and the model-listing path
+/// ([`execute_list_models`]) so both use identical auth wiring.
+pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, String> {
+    let mut headers = HashMap::new();
+    headers.insert(
+        "Authorization".to_string(),
+        format!("Bearer {}", config.api_key),
+    );
+    if let Some(ref org) = config.org_id {
+        headers.insert("OpenAI-Organization".to_string(), org.clone());
+    }
+    if let Some(ref project) = config.project {
+        headers.insert("OpenAI-Project".to_string(), project.clone());
+    }
+    if let Some(ref config_headers) = config.headers {
+        for (k, v) in config_headers {
+            headers.insert(k.clone(), v.clone());
+        }
+    }
+    headers
 }
 
 /// Resolve the effective `RetryConfig`: if the caller passed a per-call
@@ -835,6 +843,65 @@ pub async fn execute_stream(
         request_body: Some(body),
         response_headers: Some(response_headers),
     })
+}
+
+// ── Model listing (RFC-0027) ─────────────────────────────────────────────────
+
+/// OpenAI-compatible `/models` response shape.
+#[derive(serde::Deserialize)]
+struct ModelsListResponse {
+    #[serde(default)]
+    data: Vec<ModelEntry>,
+}
+#[derive(serde::Deserialize)]
+struct ModelEntry {
+    id: String,
+    #[serde(default)]
+    owned_by: Option<String>,
+    #[serde(default)]
+    created: Option<u64>,
+}
+
+/// Execute a `GET {base_url}/models` request (OpenAI-compatible) and return the
+/// sparse runtime model list. Used by `OpenAIProvider::list_models`.
+///
+/// `headers` carries the auth headers (Bearer key etc.); `base_url` is the
+/// provider's API base (e.g. `https://api.openai.com/v1`).
+pub async fn execute_list_models(
+    base_url: &str,
+    headers: &HashMap<String, String>,
+    retry_config: &RetryConfig,
+) -> Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError> {
+    // Strip a trailing slash so we don't get `//models`.
+    let base = base_url.trim_end_matches('/');
+    let url = format!("{base}/models");
+
+    let resp = send_timed(
+        HttpRequest {
+            method: HttpMethod::Get,
+            url,
+            headers: build_header_list(headers),
+            body: HttpBody::Empty,
+            abort_signal: None,
+        },
+        *retry_config,
+        &DEFAULT_ERROR_STRUCTURE,
+        None,
+    )
+    .await?;
+
+    let parsed: ModelsListResponse = serde_json::from_slice(&resp.body)
+        .map_err(|e| AiMuxError::Json(format!("list_models: parse response: {e}")))?;
+
+    Ok(parsed
+        .data
+        .into_iter()
+        .map(|m| aimux_core::model_catalogue::RuntimeModel {
+            id: m.id,
+            owned_by: m.owned_by,
+            created: m.created,
+        })
+        .collect())
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
