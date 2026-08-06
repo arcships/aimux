@@ -64,9 +64,9 @@ test.serial('sessionId groups calls and query API returns typed results', async 
   t.is(calls.length, 2)
   t.is(calls[0].step, 0)
   t.is(calls[1].step, 1)
-  t.truthy(calls[0].trace_id)
+  t.truthy(calls[0].call_id)
   t.truthy(calls[0].recorded_at)
-  t.not(calls[0].trace_id, calls[1].trace_id)
+  t.not(calls[0].call_id, calls[1].call_id)
 
   // A call without a sessionId (inference off) is not grouped.
   await generateText(model, 'third')

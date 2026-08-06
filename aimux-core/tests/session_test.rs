@@ -102,7 +102,7 @@ fn generate_text_session_integration() {
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].step, 0);
     assert_eq!(calls[1].step, 1);
-    assert_ne!(calls[0].trace_id, calls[1].trace_id);
+    assert_ne!(calls[0].call_id, calls[1].call_id);
 
     let views = list_sessions();
     assert_eq!(views.len(), 1);

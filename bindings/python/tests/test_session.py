@@ -35,7 +35,7 @@ class TestSessionGrouping:
             calls = session_calls("sess-1")
             assert len(calls) == 2
             assert [c["step"] for c in calls] == [0, 1]
-            assert calls[0]["trace_id"] != calls[1]["trace_id"]
+            assert calls[0]["call_id"] != calls[1]["call_id"]
             assert calls[0]["recorded_at"].endswith("Z")
 
             # A call without session_id (inference off) is not grouped.

@@ -7,10 +7,10 @@
 export type SessionCall = { 
 /**
  * Call-level unique id. This is the association key for the future
- * Recording / TraceRecord `trace_id` (RFC-0015/0023): once those land,
+ * Recording / TraceRecord `call_id` (RFC-0015/0023): once those land,
  * this field carries their value.
  */
-trace_id: string, 
+call_id: string, 
 /**
  * Step within the session (0-based).
  */

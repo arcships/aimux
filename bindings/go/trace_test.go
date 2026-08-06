@@ -15,7 +15,7 @@ const traceRecordJSON = `{
   "model": "gpt-4o",
   "request_id": "req-1",
   "session_id": "sess-1",
-  "trace_id": "trace-1",
+  "call_id": "trace-1",
   "sent_at_unix_ms": 1785900000000,
   "ttft_ms": 42,
   "fingerprint": {

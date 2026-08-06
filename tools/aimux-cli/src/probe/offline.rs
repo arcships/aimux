@@ -89,7 +89,7 @@ mod tests {
                 "provider": "openai",
                 "model": "gpt-4o",
                 "session_id": "{session}",
-                "trace_id": "t-{session}-{claimed}",
+                "call_id": "t-{session}-{claimed}",
                 "sent_at_unix_ms": 1785900000000,
                 "monotonic_sent_ms": 0,
                 "fingerprint": {{

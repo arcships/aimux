@@ -370,7 +370,7 @@ impl RecordCtx {
             model: self.model.clone(),
             request_id,
             session_id: self.ctx.session_id.clone(),
-            trace_id: format!(
+            call_id: format!(
                 "trace-{}-{}-{}",
                 std::process::id(),
                 self.ctx.monotonic_ms,

@@ -326,7 +326,7 @@ pub struct RingTraceStore {
 struct Inner {
     store: TraceStore,
     records: VecDeque<Arc2<TraceRecord>>,
-    by_session: HashMap<String, Vec<String>>, // session_id → trace_ids (ordered)
+    by_session: HashMap<String, Vec<String>>, // session_id → call_ids (ordered)
 }
 
 // Arc2: std::sync::Arc (name avoids confusion with the variant).
@@ -429,7 +429,7 @@ impl RingTraceStore {
         }
         let records: Vec<&TraceRecord> = ids
             .iter()
-            .filter_map(|id| inner.records.iter().find(|r| &r.trace_id == id))
+            .filter_map(|id| inner.records.iter().find(|r| &r.call_id == id))
             .map(|r| &**r)
             .collect();
         let mut lcp_sum = 0u64;
@@ -444,8 +444,8 @@ impl RingTraceStore {
             lcp_sum += lcp;
             if shared < a.fingerprint.block_hashes.len() as u64 {
                 breaks.push(PrefixBreak {
-                    at_record_id: b.trace_id.clone(),
-                    prev_record_id: a.trace_id.clone(),
+                    at_record_id: b.call_id.clone(),
+                    prev_record_id: a.call_id.clone(),
                     lcp_bytes: lcp,
                     expected_break: false,
                     kind: BreakKind::Unknown,
@@ -497,7 +497,7 @@ impl RingTraceStore {
             && let Some(sid) = &evicted.session_id
             && let Some(ids) = inner.by_session.get_mut(sid)
         {
-            ids.retain(|id| id != &evicted.trace_id);
+            ids.retain(|id| id != &evicted.call_id);
             if ids.is_empty() {
                 inner.by_session.remove(sid);
             }
@@ -507,7 +507,7 @@ impl RingTraceStore {
                 .by_session
                 .entry(sid.clone())
                 .or_default()
-                .push(rec.trace_id.clone());
+                .push(rec.call_id.clone());
         }
         inner.records.push_back(Arc2::new(rec));
     }

@@ -48,7 +48,7 @@ pub struct TraceRecord {
     pub session_id: Option<String>,
     /// Call-level unique id (association key for Recording / replay,
     /// RFC-0023).
-    pub trace_id: String,
+    pub call_id: String,
     /// When the call was sent (epoch ms).
     pub sent_at_unix_ms: i64,
     /// Monotonic clock ms (same domain as the store's TTL lookups; internal
