@@ -310,6 +310,239 @@ public class TypedModel implements Closeable {
             false);
     }
 
+    // ── OpenAI-compatible output (RFC-0026) — generate ─────────────────────
+
+    /**
+     * Generate text (non-streaming) with OpenAI Chat Completions output.
+     *
+     * @param prompt Plain text prompt (encoded as a JSON string on the wire).
+     * @return Decoded {@link Types.ChatCompletion}.
+     */
+    public Types.ChatCompletion generateTextAsOpenAI(String prompt) {
+        return generateTextAsOpenAI(prompt, null);
+    }
+
+    /**
+     * Generate text (non-streaming) with OpenAI Chat Completions output.
+     *
+     * @param prompt  Plain text prompt.
+     * @param options Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Decoded {@link Types.ChatCompletion}.
+     */
+    public Types.ChatCompletion generateTextAsOpenAI(String prompt, Types.GenerateTextOptions options) {
+        return decodeChatCompletion(raw.generateTextAsOpenAI(encode(prompt), encodeOptions(options)));
+    }
+
+    /**
+     * Generate text from a multi-role message list with OpenAI Chat Completions output.
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @return Decoded {@link Types.ChatCompletion}.
+     */
+    public Types.ChatCompletion generateTextAsOpenAI(List<Types.ModelMessage> messages) {
+        return generateTextAsOpenAI(messages, null);
+    }
+
+    /**
+     * Generate text from a multi-role message list with OpenAI Chat Completions output.
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @param options  Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Decoded {@link Types.ChatCompletion}.
+     */
+    public Types.ChatCompletion generateTextAsOpenAI(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
+        return decodeChatCompletion(raw.generateTextAsOpenAI(encode(messages), encodeOptions(options)));
+    }
+
+    private Types.ChatCompletion decodeChatCompletion(String resultJson) {
+        String trimmed = trimStart(resultJson);
+        if (trimmed.startsWith("{")) {
+            try {
+                JsonNode node = Types.AimuxJson.MAPPER.readTree(trimmed);
+                if (node != null && node.isObject()) {
+                    JsonNode err = node.get("error");
+                    if (err != null && err.isTextual()) {
+                        throw new AimuxException(err.asText());
+                    }
+                }
+            } catch (IOException e) {
+                // Not parseable as JSON — fall through to the decode below.
+            }
+        }
+        try {
+            return Types.AimuxJson.MAPPER.readValue(resultJson, Types.ChatCompletion.class);
+        } catch (IOException e) {
+            throw new AimuxException("failed to decode ChatCompletion: " + e.getMessage(), e);
+        }
+    }
+
+    // ── OpenAI-compatible output (RFC-0026) — stream ───────────────────────
+
+    /**
+     * Stream text with OpenAI Chat Completions output, delivering typed chunks.
+     *
+     * @param prompt  Plain text prompt.
+     * @param onPart  Called for each decoded {@link Types.ChatCompletionChunk}.
+     * @param onDone  Called once when the stream completes normally.
+     * @param onError Called with a message on a stream or decode error.
+     */
+    public void streamTextAsOpenAI(String prompt, Consumer<Types.ChatCompletionChunk> onPart,
+                                   Runnable onDone, Consumer<String> onError) {
+        streamTextAsOpenAI(prompt, null, onPart, onDone, onError);
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output, delivering typed chunks.
+     *
+     * @param prompt  Plain text prompt.
+     * @param options Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @param onPart  Called for each decoded {@link Types.ChatCompletionChunk}.
+     * @param onDone  Called once when the stream completes normally.
+     * @param onError Called with a message on a stream or decode error.
+     */
+    public void streamTextAsOpenAI(String prompt, Types.GenerateTextOptions options,
+                                   Consumer<Types.ChatCompletionChunk> onPart,
+                                   Runnable onDone, Consumer<String> onError) {
+        streamTextAsOpenAIChunks(encode(prompt), encodeOptions(options), onPart, onDone, onError);
+    }
+
+    /**
+     * Stream text from a multi-role message list with OpenAI Chat Completions output.
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @param onPart   Called for each decoded {@link Types.ChatCompletionChunk}.
+     * @param onDone   Called once when the stream completes normally.
+     * @param onError  Called with a message on a stream or decode error.
+     */
+    public void streamTextAsOpenAI(List<Types.ModelMessage> messages, Consumer<Types.ChatCompletionChunk> onPart,
+                                   Runnable onDone, Consumer<String> onError) {
+        streamTextAsOpenAI(messages, null, onPart, onDone, onError);
+    }
+
+    /**
+     * Stream text from a multi-role message list with OpenAI Chat Completions output.
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @param options  Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @param onPart   Called for each decoded {@link Types.ChatCompletionChunk}.
+     * @param onDone   Called once when the stream completes normally.
+     * @param onError  Called with a message on a stream or decode error.
+     */
+    public void streamTextAsOpenAI(List<Types.ModelMessage> messages, Types.GenerateTextOptions options,
+                                   Consumer<Types.ChatCompletionChunk> onPart,
+                                   Runnable onDone, Consumer<String> onError) {
+        streamTextAsOpenAIChunks(encode(messages), encodeOptions(options), onPart, onDone, onError);
+    }
+
+    private void streamTextAsOpenAIChunks(String promptJson, String optsJson,
+                                          Consumer<Types.ChatCompletionChunk> onPart,
+                                          Runnable onDone, Consumer<String> onError) {
+        raw.streamTextAsOpenAI(
+            promptJson, optsJson,
+            chunkJson -> {
+                try {
+                    onPart.accept(decodeChunk(chunkJson));
+                } catch (RuntimeException e) {
+                    onError.accept("failed to decode ChatCompletionChunk: " + e.getMessage());
+                }
+            },
+            onDone,
+            onError);
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output as a lazy typed stream.
+     *
+     * @param prompt Plain text prompt.
+     * @return Lazy stream of decoded chunks.
+     */
+    public Stream<Types.ChatCompletionChunk> streamTextAsOpenAIStream(String prompt) {
+        return streamTextAsOpenAIStream(prompt, null);
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output as a lazy typed stream.
+     *
+     * @param prompt  Plain text prompt.
+     * @param options Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Lazy stream of decoded chunks.
+     */
+    public Stream<Types.ChatCompletionChunk> streamTextAsOpenAIStream(String prompt, Types.GenerateTextOptions options) {
+        return streamTextAsOpenAIChunksStream(encode(prompt), encodeOptions(options));
+    }
+
+    /**
+     * Stream text from a multi-role message list with OpenAI Chat Completions output.
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @return Lazy stream of decoded chunks.
+     */
+    public Stream<Types.ChatCompletionChunk> streamTextAsOpenAIStream(List<Types.ModelMessage> messages) {
+        return streamTextAsOpenAIStream(messages, null);
+    }
+
+    /**
+     * Stream text from a multi-role message list with OpenAI Chat Completions output.
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @param options  Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Lazy stream of decoded chunks.
+     */
+    public Stream<Types.ChatCompletionChunk> streamTextAsOpenAIStream(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
+        return streamTextAsOpenAIChunksStream(encode(messages), encodeOptions(options));
+    }
+
+    private Stream<Types.ChatCompletionChunk> streamTextAsOpenAIChunksStream(final String promptJson, final String optsJson) {
+        final Object END = new Object();
+        return StreamSupport.stream(
+            new java.util.Spliterators.AbstractSpliterator<Types.ChatCompletionChunk>(
+                Long.MAX_VALUE, Spliterator.ORDERED) {
+                private final LinkedBlockingQueue<Object> parts = new LinkedBlockingQueue<>();
+                private final AtomicBoolean started = new AtomicBoolean(false);
+                private final AtomicReference<String> error = new AtomicReference<>();
+                private boolean exhausted;
+
+                @Override
+                public boolean tryAdvance(Consumer<? super Types.ChatCompletionChunk> action) {
+                    if (!started.getAndSet(true)) {
+                        try {
+                            streamTextAsOpenAIChunks(promptJson, optsJson,
+                                parts::add,
+                                () -> parts.add(END),
+                                err -> {
+                                    error.set(err);
+                                    parts.add(END);
+                                });
+                        } catch (RuntimeException e) {
+                            parts.add(END);
+                            throw e;
+                        }
+                    }
+                    if (exhausted) {
+                        return false;
+                    }
+                    final Object part;
+                    try {
+                        part = parts.take();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("interrupted while streaming", e);
+                    }
+                    if (part == END) {
+                        exhausted = true;
+                        String err = error.get();
+                        if (err != null) {
+                            throw new AimuxException(err);
+                        }
+                        return false;
+                    }
+                    action.accept((Types.ChatCompletionChunk) part);
+                    return true;
+                }
+            },
+            false);
+    }
+
     // ── Companion factories ───────────────────────────────────────────────
 
     /** Wrap an existing {@link Model}; the caller retains ownership of the handle. */
@@ -364,6 +597,14 @@ public class TypedModel implements Closeable {
             return Types.AimuxJson.MAPPER.readValue(partJson, Types.StreamPart.class);
         } catch (IOException e) {
             throw new IllegalArgumentException("failed to decode StreamPart", e);
+        }
+    }
+
+    private static Types.ChatCompletionChunk decodeChunk(String chunkJson) {
+        try {
+            return Types.AimuxJson.MAPPER.readValue(chunkJson, Types.ChatCompletionChunk.class);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("failed to decode ChatCompletionChunk", e);
         }
     }
 }

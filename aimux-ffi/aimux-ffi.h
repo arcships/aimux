@@ -297,6 +297,49 @@ void aimux_stream_text_with_abort(uint64_t handle,
                                   void (*on_done)(void),
                                   void (*on_error)(const char *err_json));
 
+/* ── OpenAI-compatible output (RFC-0026) ───────────────────────────────── */
+
+/**
+ * Non-streaming text generation with OpenAI Chat Completions output.
+ *
+ * Same as aimux_generate_text, but returns a serialized ChatCompletion
+ * (OpenAI "chat.completion" object). Works with any provider.
+ *
+ * @return JSON ChatCompletion string (caller MUST free with aimux_free_string).
+ */
+char *aimux_generate_text_as_openai(uint64_t handle,
+                                    const char *prompt_json,
+                                    const char *opts_json);
+
+/**
+ * Streaming text generation with OpenAI Chat Completions output.
+ *
+ * Same as aimux_stream_text, but each on_part receives a serialized
+ * ChatCompletionChunk (OpenAI "chat.completion.chunk" object).
+ * Works with any provider.
+ *
+ * @param opts_json May carry providerOptions.openai.stream_options with
+ *                  include_usage (bool, default true) and
+ *                  include_reasoning (bool, default true).
+ */
+void aimux_stream_text_as_openai(uint64_t handle,
+                                 const char *prompt_json,
+                                 const char *opts_json,
+                                 void (*on_part)(const char *json),
+                                 void (*on_done)(void),
+                                 void (*on_error)(const char *err_json));
+
+/**
+ * Cancelable streaming OpenAI-compatible output (see aimux_stream_text_with_abort).
+ */
+void aimux_stream_text_as_openai_with_abort(uint64_t handle,
+                                            uint64_t abort_handle,
+                                            const char *prompt_json,
+                                            const char *opts_json,
+                                            void (*on_part)(const char *json),
+                                            void (*on_done)(void),
+                                            void (*on_error)(const char *err_json));
+
 /* ── Resource management ────────────────────────────────────────────────── */
 
 /**

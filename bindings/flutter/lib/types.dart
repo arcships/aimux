@@ -1724,3 +1724,272 @@ final class ContentPartUnknown extends ContentPart {
   @override
   Map<String, dynamic> toJson() => data;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OpenAI Chat Completions output (RFC-0026).
+//
+// Mirrors `aimux-core::openai_output`. Field names are camelCase; `@JsonKey`
+// maps to the wire's snake_case. The `type` field is JSON `"type"` (Rust
+// `#[serde(rename = "type")]`) → `toolType`. Arbitrary-JSON fields
+// (`logprobs`, `annotations`) are `dynamic` / `List<dynamic>?`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A complete Chat Completion response (non-streaming). Mirrors OpenAI
+/// `chat.completion`.
+@JsonSerializable()
+class ChatCompletion {
+  final String id;
+  final String object;
+  final int created;
+  final String model;
+  final List<ChatCompletionChoice> choices;
+  final ChatCompletionUsage usage;
+  @JsonKey(name: 'system_fingerprint')
+  final String? systemFingerprint;
+
+  ChatCompletion({
+    required this.id,
+    required this.object,
+    required this.created,
+    required this.model,
+    required this.choices,
+    required this.usage,
+    this.systemFingerprint,
+  });
+
+  factory ChatCompletion.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionToJson(this);
+}
+
+@JsonSerializable()
+class ChatCompletionChoice {
+  final int index;
+  final ChatCompletionMessage message;
+  @JsonKey(name: 'finish_reason')
+  final String? finishReason;
+  final dynamic logprobs;
+
+  ChatCompletionChoice({
+    required this.index,
+    required this.message,
+    this.finishReason,
+    this.logprobs,
+  });
+
+  factory ChatCompletionChoice.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionChoiceFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionChoiceToJson(this);
+}
+
+@JsonSerializable()
+class ChatCompletionMessage {
+  final String role;
+  final String? content;
+  @JsonKey(name: 'reasoning_content')
+  final String? reasoningContent;
+  @JsonKey(name: 'tool_calls')
+  final List<ChatCompletionToolCall>? toolCalls;
+  final List<dynamic>? annotations;
+
+  ChatCompletionMessage({
+    required this.role,
+    this.content,
+    this.reasoningContent,
+    this.toolCalls,
+    this.annotations,
+  });
+
+  factory ChatCompletionMessage.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionMessageFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionMessageToJson(this);
+}
+
+/// A tool call in a [ChatCompletionMessage].
+///
+/// Wire: `{"id","type":"function","function":{"name","arguments"}}`. The
+/// `type` field is JSON `"type"` (Rust `#[serde(rename = "type")]`).
+@JsonSerializable()
+class ChatCompletionToolCall {
+  final String id;
+  @JsonKey(name: 'type')
+  final String toolType;
+  final ChatCompletionFunction function;
+
+  ChatCompletionToolCall({
+    required this.id,
+    required this.toolType,
+    required this.function,
+  });
+
+  factory ChatCompletionToolCall.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionToolCallFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionToolCallToJson(this);
+}
+
+@JsonSerializable()
+class ChatCompletionFunction {
+  final String name;
+  final String arguments;
+
+  ChatCompletionFunction({required this.name, required this.arguments});
+
+  factory ChatCompletionFunction.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionFunctionFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionFunctionToJson(this);
+}
+
+/// Token usage statistics (shared by streaming and non-streaming).
+@JsonSerializable()
+class ChatCompletionUsage {
+  @JsonKey(name: 'prompt_tokens')
+  final int promptTokens;
+  @JsonKey(name: 'completion_tokens')
+  final int completionTokens;
+  @JsonKey(name: 'total_tokens')
+  final int totalTokens;
+  @JsonKey(name: 'prompt_tokens_details')
+  final PromptTokensDetails? promptTokensDetails;
+  @JsonKey(name: 'completion_tokens_details')
+  final CompletionTokensDetails? completionTokensDetails;
+
+  ChatCompletionUsage({
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.totalTokens,
+    this.promptTokensDetails,
+    this.completionTokensDetails,
+  });
+
+  factory ChatCompletionUsage.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionUsageFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionUsageToJson(this);
+}
+
+@JsonSerializable()
+class PromptTokensDetails {
+  @JsonKey(name: 'cached_tokens')
+  final int cachedTokens;
+  @JsonKey(name: 'cache_write_tokens')
+  final int? cacheWriteTokens;
+
+  PromptTokensDetails({required this.cachedTokens, this.cacheWriteTokens});
+
+  factory PromptTokensDetails.fromJson(Map<String, dynamic> json) =>
+      _$PromptTokensDetailsFromJson(json);
+  Map<String, dynamic> toJson() => _$PromptTokensDetailsToJson(this);
+}
+
+@JsonSerializable()
+class CompletionTokensDetails {
+  @JsonKey(name: 'reasoning_tokens')
+  final int? reasoningTokens;
+
+  CompletionTokensDetails({this.reasoningTokens});
+
+  factory CompletionTokensDetails.fromJson(Map<String, dynamic> json) =>
+      _$CompletionTokensDetailsFromJson(json);
+  Map<String, dynamic> toJson() => _$CompletionTokensDetailsToJson(this);
+}
+
+/// A single Chat Completion chunk (streaming). Mirrors OpenAI
+/// `chat.completion.chunk`.
+@JsonSerializable()
+class ChatCompletionChunk {
+  final String id;
+  final String object;
+  final int created;
+  final String model;
+  final List<ChatCompletionChunkChoice> choices;
+  final ChatCompletionUsage? usage;
+
+  ChatCompletionChunk({
+    required this.id,
+    required this.object,
+    required this.created,
+    required this.model,
+    required this.choices,
+    this.usage,
+  });
+
+  factory ChatCompletionChunk.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionChunkFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionChunkToJson(this);
+}
+
+@JsonSerializable()
+class ChatCompletionChunkChoice {
+  final int index;
+  final ChatCompletionDelta delta;
+  @JsonKey(name: 'finish_reason')
+  final String? finishReason;
+  final dynamic logprobs;
+
+  ChatCompletionChunkChoice({
+    required this.index,
+    required this.delta,
+    this.finishReason,
+    this.logprobs,
+  });
+
+  factory ChatCompletionChunkChoice.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionChunkChoiceFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionChunkChoiceToJson(this);
+}
+
+@JsonSerializable()
+class ChatCompletionDelta {
+  final String? role;
+  final String? content;
+  @JsonKey(name: 'reasoning_content')
+  final String? reasoningContent;
+  @JsonKey(name: 'tool_calls')
+  final List<ChatCompletionChunkToolCall>? toolCalls;
+
+  ChatCompletionDelta({
+    this.role,
+    this.content,
+    this.reasoningContent,
+    this.toolCalls,
+  });
+
+  factory ChatCompletionDelta.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionDeltaFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionDeltaToJson(this);
+}
+
+/// A tool call delta in a [ChatCompletionChunk].
+///
+/// Wire: `{"index","id"?,"type":"function"?,"function":{"name"?,"arguments"?}}`.
+/// The `type` field is JSON `"type"` (Rust `#[serde(rename = "type")]`).
+@JsonSerializable()
+class ChatCompletionChunkToolCall {
+  final int index;
+  final String? id;
+  @JsonKey(name: 'type')
+  final String? toolType;
+  final ChatCompletionChunkFunction function;
+
+  ChatCompletionChunkToolCall({
+    required this.index,
+    this.id,
+    this.toolType,
+    required this.function,
+  });
+
+  factory ChatCompletionChunkToolCall.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionChunkToolCallFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionChunkToolCallToJson(this);
+}
+
+@JsonSerializable()
+class ChatCompletionChunkFunction {
+  final String? name;
+  final String? arguments;
+
+  ChatCompletionChunkFunction({this.name, this.arguments});
+
+  factory ChatCompletionChunkFunction.fromJson(Map<String, dynamic> json) =>
+      _$ChatCompletionChunkFunctionFromJson(json);
+  Map<String, dynamic> toJson() => _$ChatCompletionChunkFunctionToJson(this);
+}

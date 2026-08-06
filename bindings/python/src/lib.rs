@@ -12,9 +12,12 @@ pub use multimodal::*;
 
 use std::sync::Arc;
 
-use aimux_core::generate::{generate_text, stream_text, GenerateTextOptions};
+use aimux_core::generate::{
+    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
+use aimux_core::openai_output::OpenAiStreamOptions;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
@@ -164,6 +167,99 @@ impl Model {
                         match item {
                             Ok(part) => {
                                 let json = serde_json::to_string(&part)
+                                    .unwrap_or_else(|_| "{}".to_string());
+                                if tx.send(Ok(json)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                }
+            }
+        });
+
+        Ok(StreamIterator { rx })
+    }
+
+    /// Generate text as an OpenAI Chat Completion (non-streaming, RFC-0026).
+    ///
+    /// prompt_json: JSON string (bare prompt or {"prompt": ...})
+    /// opts_json: optional JSON-serialized GenerateTextOptions
+    /// Returns JSON-serialized ChatCompletion (OpenAI `chat.completion` object).
+    #[pyo3(signature = (prompt_json, opts_json=None))]
+    fn generate_text_as_openai(
+        &self,
+        prompt_json: &str,
+        opts_json: Option<&str>,
+    ) -> PyResult<String> {
+        let prompt = parse_prompt(prompt_json)?;
+        let opts = parse_opts(opts_json)?;
+
+        let rt = runtime();
+        let result = rt.block_on(async move {
+            generate_text_as_openai(&*self.inner, prompt, opts).await
+        });
+
+        match result {
+            Ok(r) => serde_json::to_string(&r)
+                .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize result: {e}"))),
+            Err(e) => Err(PyRuntimeError::new_err(format!("[{}] {e}", e.error_type()))),
+        }
+    }
+
+    /// Stream text as OpenAI Chat Completion chunks (RFC-0026).
+    ///
+    /// Returns a StreamIterator that yields ChatCompletionChunk JSON strings.
+    /// Stream options (`include_usage`, `include_reasoning`) are read from
+    /// `opts.provider_options.openai.stream_options` (both default to `true`).
+    #[pyo3(signature = (prompt_json, opts_json=None))]
+    fn stream_text_as_openai(
+        &self,
+        prompt_json: &str,
+        opts_json: Option<&str>,
+    ) -> PyResult<StreamIterator> {
+        let prompt = parse_prompt(prompt_json)?;
+        let opts = parse_opts(opts_json)?;
+        let model = self.inner.clone();
+
+        // Extract OpenAI stream options from opts.provider_options.openai.stream_options
+        // (same logic as aimux-ffi's stream_text_as_openai_with_signal).
+        let stream_options = opts
+            .provider_options
+            .as_ref()
+            .and_then(|po| po.get("openai"))
+            .and_then(|o| o.get("stream_options"))
+            .cloned()
+            .map(|v| OpenAiStreamOptions {
+                include_usage: v
+                    .get("include_usage")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(true),
+                include_reasoning: v
+                    .get("include_reasoning")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(true),
+            })
+            .unwrap_or_default();
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, String>>(64);
+
+        rt_spawn(async move {
+            match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
+                Ok(stream_result) => {
+                    use futures::StreamExt;
+                    let mut stream = stream_result.stream;
+                    while let Some(item) = stream.next().await {
+                        match item {
+                            Ok(chunk) => {
+                                let json = serde_json::to_string(&chunk)
                                     .unwrap_or_else(|_| "{}".to_string());
                                 if tx.send(Ok(json)).await.is_err() {
                                     break;

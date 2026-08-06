@@ -72,6 +72,19 @@ int main(void) {
     aimux_stream_text(handle, "\"Write a haiku about Rust.\"", NULL,
                       on_part, on_done, on_error);
 
+    // 3.1 Generate text as OpenAI Chat Completion (RFC-0026)
+    printf("\n--- OpenAI-compatible output ---\n");
+    char *oai_result = aimux_generate_text_as_openai(handle, prompt, NULL);
+    if (oai_result) {
+        printf("ChatCompletion: %s\n", oai_result);
+        aimux_free_string(oai_result);
+    }
+
+    // 3.2 Stream text as OpenAI Chat Completion chunks
+    printf("\n--- OpenAI-compatible streaming ---\n");
+    aimux_stream_text_as_openai(handle, "\"Write a haiku about Rust.\"", NULL,
+                                on_part, on_done, on_error);
+
     // 3.5 Registry provider (RFC-0017 phase 4): construct DeepSeek via the
     // provider registry. NULL api_key reads DEEPSEEK_API_KEY from the env.
     uint64_t ds_handle = extract_handle(aimux_provider_new("deepseek", NULL, "deepseek-chat", NULL));

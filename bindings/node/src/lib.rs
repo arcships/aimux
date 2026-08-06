@@ -16,9 +16,13 @@ pub use multimodal::*;
 use std::future::Future;
 use std::sync::Arc;
 
-use aimux_core::generate::{generate_text, stream_text, GenerateTextOptions};
+use aimux_core::generate::{
+    generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+    GenerateTextOptions,
+};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
+use aimux_core::openai_output::OpenAiStreamOptions;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -238,6 +242,115 @@ impl Model {
                             }
                             Err(e) => {
                                 let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                }
+            }
+        });
+
+        Ok(StreamTextGenerator {
+            rx: std::sync::Arc::new(tokio::sync::Mutex::new(Some(rx))),
+        })
+    }
+
+    /// Generate text and return an OpenAI Chat Completion (non-streaming).
+    ///
+    /// Returns a JSON-serialized `ChatCompletion`. Works with any provider.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub async fn generate_text_as_openai(
+        &self,
+        prompt: String,
+        options: Option<String>,
+        bridge: Option<&AbortBridge>,
+    ) -> Result<String> {
+        let parsed_prompt = parse_prompt(&prompt)?;
+        let mut opts = parse_opts(options.as_deref())?;
+        opts.abort_signal = bridge.map(|b| b.core_signal());
+
+        let result = generate_text_as_openai(&*self.inner, parsed_prompt, opts)
+            .await
+            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+
+        serde_json::to_string(&result)
+            .map_err(|e| Error::from_reason(format!("[Json] serialize result: {e}")))
+    }
+
+    /// Stream text as OpenAI Chat Completion chunks.
+    ///
+    /// Returns an `AsyncGenerator<string>` yielding `ChatCompletionChunk` JSON
+    /// strings. Works with any provider.
+    #[napi(ts_return_type = "Promise<AsyncGenerator<string>>")]
+    pub async fn stream_text_as_openai(
+        &self,
+        prompt: String,
+        options: Option<String>,
+        bridge: Option<&AbortBridge>,
+    ) -> Result<StreamTextGenerator> {
+        let model = self.inner.clone();
+        let abort_signal = bridge.map(|b| b.core_signal());
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(64);
+
+        napi::tokio::spawn(async move {
+            let prompt = match parse_prompt(&prompt) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = tx
+                        .send(Err(format!("[InvalidPrompt] invalid prompt: {e}")))
+                        .await;
+                    return;
+                }
+            };
+            let mut opts = match parse_opts(options.as_deref()) {
+                Ok(o) => o,
+                Err(e) => {
+                    let _ = tx.send(Err(format!("invalid options: {e}"))).await;
+                    return;
+                }
+            };
+
+            // Extract OpenAI stream options from providerOptions.openai.stream_options.
+            let stream_options = opts
+                .provider_options
+                .as_ref()
+                .and_then(|po| po.get("openai"))
+                .and_then(|o| o.get("stream_options"))
+                .cloned()
+                .map(|v| OpenAiStreamOptions {
+                    include_usage: v
+                        .get("include_usage")
+                        .and_then(|b| b.as_bool())
+                        .unwrap_or(true),
+                    include_reasoning: v
+                        .get("include_reasoning")
+                        .and_then(|b| b.as_bool())
+                        .unwrap_or(true),
+                })
+                .unwrap_or_default();
+
+            opts.abort_signal = abort_signal;
+
+            match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
+                Ok(stream_result) => {
+                    use futures::StreamExt;
+                    let mut stream = stream_result.stream;
+                    while let Some(item) = stream.next().await {
+                        match item {
+                            Ok(chunk) => {
+                                let json = serde_json::to_string(&chunk)
+                                    .unwrap_or_else(|_| "{}".to_string());
+                                if tx.send(Ok(json)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                let _ =
+                                    tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
                                 break;
                             }
                         }

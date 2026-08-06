@@ -100,6 +100,19 @@ export declare class Model {
    * Use `for await (const part of model.streamText(...))` to consume.
    */
   streamText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AsyncGenerator<string>>
+  /**
+   * Generate text and return an OpenAI Chat Completion (non-streaming).
+   *
+   * Returns a JSON-serialized `ChatCompletion`. Works with any provider.
+   */
+  generateTextAsOpenai(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
+  /**
+   * Stream text as OpenAI Chat Completion chunks.
+   *
+   * Returns an `AsyncGenerator<string>` yielding `ChatCompletionChunk` JSON
+   * strings. Works with any provider.
+   */
+  streamTextAsOpenai(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AsyncGenerator<string>>
 }
 
 export declare class RerankingModel {

@@ -36,9 +36,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::de::DeserializeOwned;
 
 use aimux_core::AiMuxError;
-use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
+use aimux_core::generate::{
+    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
+use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::provider::Provider;
 use aimux_core::shared::AbortSignal;
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer};
@@ -952,6 +955,228 @@ pub extern "C" fn aimux_stream_text_with_abort(
         on_error,
         Some(abort_signal),
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: OpenAI-compatible output (RFC-0026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Non-streaming text generation with OpenAI Chat Completions output.
+///
+/// Identical to [`aimux_generate_text`] except the returned JSON string is a
+/// serialized `ChatCompletion` (OpenAI `chat.completion` object) rather than a
+/// `GenerateTextResult`. Works with any provider — the result is always
+/// standard OpenAI format.
+///
+/// Returns a JSON string — the serialized `ChatCompletion`, or
+/// `{"error":"..."}` on failure — that the caller MUST free with
+/// [`aimux_free_string`].
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_generate_text_as_openai(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+) -> *mut c_char {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => return error_json_raw("invalid handle"),
+    };
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => return error_json_raw(format!("invalid prompt_json: {e}")),
+        },
+        None => return error_json_raw("invalid prompt_json"),
+    };
+    let opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => return error_json_raw(format!("invalid opts_json: {e}")),
+        },
+        None => GenerateTextOptions::default(),
+    };
+    run_and_serialize("generate_text_as_openai", async move {
+        generate_text_as_openai(&*model, prompt, opts).await
+    })
+}
+
+/// Streaming text generation with OpenAI Chat Completions output.
+///
+/// Identical to [`aimux_stream_text`] except each `on_part` callback receives a
+/// serialized `ChatCompletionChunk` (OpenAI `chat.completion.chunk` object)
+/// rather than a `StreamPart`. Works with any provider.
+///
+/// `opts_json` may carry an extra `openai_stream_options` object with
+/// `include_usage` (bool, default true) and `include_reasoning` (bool, default
+/// true) fields to control the chunk output.
+///
+/// `StreamPart::Error` is mapped to a content delta + finish chunk; stream-level
+/// errors are delivered via `on_error` as usual.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_stream_text_as_openai(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    on_part: extern "C" fn(*const c_char),
+    on_done: extern "C" fn(),
+    on_error: extern "C" fn(*const c_char),
+) {
+    stream_text_as_openai_with_signal(
+        handle,
+        prompt_json,
+        opts_json,
+        on_part,
+        on_done,
+        on_error,
+        None,
+    );
+}
+
+/// Cancelable streaming OpenAI-compatible output (see
+/// [`aimux_stream_text_with_abort`]).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_stream_text_as_openai_with_abort(
+    handle: u64,
+    abort_handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    on_part: extern "C" fn(*const c_char),
+    on_done: extern "C" fn(),
+    on_error: extern "C" fn(*const c_char),
+) {
+    let abort_signal = match get_abort_signal(abort_handle) {
+        Some(signal) => signal,
+        None => {
+            fire_error(on_error, "invalid abort handle");
+            return;
+        }
+    };
+    stream_text_as_openai_with_signal(
+        handle,
+        prompt_json,
+        opts_json,
+        on_part,
+        on_done,
+        on_error,
+        Some(abort_signal),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stream_text_as_openai_with_signal(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    on_part: extern "C" fn(*const c_char),
+    on_done: extern "C" fn(),
+    on_error: extern "C" fn(*const c_char),
+    abort_signal: Option<AbortSignal>,
+) {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => {
+            fire_error(on_error, "invalid handle");
+            return;
+        }
+    };
+
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => {
+                fire_error(on_error, format!("invalid prompt_json: {e}"));
+                return;
+            }
+        },
+        None => {
+            fire_error(on_error, "invalid prompt_json");
+            return;
+        }
+    };
+
+    let mut opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => {
+                fire_error(on_error, format!("invalid opts_json: {e}"));
+                return;
+            }
+        },
+        None => GenerateTextOptions::default(),
+    };
+
+    // Extract OpenAI stream options from the opts JSON, then remove them so
+    // they don't confuse the provider (which doesn't know this field).
+    let stream_options = opts
+        .provider_options
+        .as_ref()
+        .and_then(|po| po.get("openai"))
+        .and_then(|o| o.get("stream_options"))
+        .cloned()
+        .map(|v| OpenAiStreamOptions {
+            include_usage: v
+                .get("include_usage")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(true),
+            include_reasoning: v
+                .get("include_reasoning")
+                .and_then(|b| b.as_bool())
+                .unwrap_or(true),
+        })
+        .unwrap_or_default();
+
+    opts.abort_signal = abort_signal.clone();
+
+    runtime().block_on(async move {
+        let stream_result = match abort_signal.as_ref() {
+            Some(signal) => {
+                tokio::select! {
+                    biased;
+                    _ = signal.cancelled() => Err(AiMuxError::Aborted),
+                    result = stream_text_as_openai(&*model, prompt, opts, stream_options) => result,
+                }
+            }
+            None => stream_text_as_openai(&*model, prompt, opts, stream_options).await,
+        };
+        match stream_result {
+            Ok(sr) => {
+                let mut stream = sr.stream;
+                loop {
+                    let next = match abort_signal.as_ref() {
+                        Some(signal) => {
+                            tokio::select! {
+                                biased;
+                                _ = signal.cancelled() => {
+                                    fire_error_struct(on_error, &AiMuxError::Aborted);
+                                    return;
+                                }
+                                item = stream.next() => item,
+                            }
+                        }
+                        None => stream.next().await,
+                    };
+                    let Some(item) = next else {
+                        break;
+                    };
+                    match item {
+                        Ok(chunk) => {
+                            let json =
+                                serde_json::to_string(&chunk).unwrap_or_else(|_| "{}".to_string());
+                            if let Ok(cstr) = CString::new(json) {
+                                on_part(cstr.as_ptr());
+                            }
+                        }
+                        Err(e) => {
+                            fire_error_struct(on_error, &e);
+                            return;
+                        }
+                    }
+                }
+                on_done();
+            }
+            Err(e) => fire_error_struct(on_error, &e),
+        }
+    });
 }
 
 #[allow(clippy::too_many_arguments)]

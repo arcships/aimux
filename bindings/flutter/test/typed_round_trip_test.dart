@@ -498,4 +498,17 @@ void main() {
       expect(u.data, {'foo': 'bar', 'n': 7});
     });
   });
+
+  test('GenerateTextOptions includeRawChunks round-trips', () {
+    // RFC-0016 M2 true-case through the Dart typed options.
+    final original = GenerateTextOptions(includeRawChunks: true);
+    final json = original.toJson();
+    expect(json['include_raw_chunks'], isTrue);
+    final back = GenerateTextOptions.fromJson(json);
+    expect(back.includeRawChunks, isTrue);
+
+    // Default omits the field (toJson only emits non-null).
+    final defaults = GenerateTextOptions().toJson();
+    expect(defaults.containsKey('include_raw_chunks'), isFalse);
+  });
 }

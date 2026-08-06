@@ -86,6 +86,8 @@ __all__ = [
     "tavily_search",
     "generate_text",
     "stream_text",
+    "generate_text_as_openai",
+    "stream_text_as_openai",
 ]
 
 
@@ -176,3 +178,55 @@ def stream_text(
     iterator = model.stream_text(prompt_json, opts_json)
     for part_json in iterator:
         yield json.loads(part_json)
+
+
+def generate_text_as_openai(
+    model: Model,
+    prompt: Union[str, List[Dict[str, Any]]],
+    options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Generate text (non-streaming) and return an OpenAI Chat Completion dict.
+
+    Same as generate_text, but the result is an OpenAI ``chat.completion``
+    object (id, object, choices, usage, …). Works with any provider.
+
+    Args:
+        model: A model instance from openai(), anthropic(), etc.
+        prompt: A string or a list of message dicts.
+        options: Optional generation options.
+
+    Returns:
+        Dict with OpenAI Chat Completion keys: id, object, created, model,
+        choices, usage, system_fingerprint.
+    """
+    prompt_json = _prompt_to_json(prompt)
+    opts_json = _opts_to_json(options)
+    result_json = model.generate_text_as_openai(prompt_json, opts_json)
+    return json.loads(result_json)
+
+
+def stream_text_as_openai(
+    model: Model,
+    prompt: Union[str, List[Dict[str, Any]]],
+    options: Optional[Dict[str, Any]] = None,
+):
+    """Stream text as OpenAI Chat Completion chunk dicts.
+
+    Same as stream_text, but each yielded item is an OpenAI
+    ``chat.completion.chunk`` object. Works with any provider.
+
+    Stream options (include_usage, include_reasoning) are read from
+    options["provider_options"]["openai"]["stream_options"] (both default True).
+
+    Usage:
+        for chunk in stream_text_as_openai(model, "Write a haiku."):
+            if chunk.get("choices"):
+                delta = chunk["choices"][0].get("delta", {})
+                if "content" in delta:
+                    print(delta["content"], end="")
+    """
+    prompt_json = _prompt_to_json(prompt)
+    opts_json = _opts_to_json(options)
+    iterator = model.stream_text_as_openai(prompt_json, opts_json)
+    for chunk_json in iterator:
+        yield json.loads(chunk_json)

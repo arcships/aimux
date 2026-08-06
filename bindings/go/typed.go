@@ -150,3 +150,117 @@ func (m *Model) StreamContext(
 
 	return ts, nil
 }
+
+// ── OpenAI Chat Completions output (RFC-0026) ──────────────────────────────
+
+// GenerateAsOpenAI is the typed OpenAI Chat Completion generation method. It
+// accepts a plain string prompt or a []ModelMessage conversation, plus optional
+// typed options, and returns a typed *ChatCompletion.
+//
+// This is the OpenAI-output equivalent of Generate.
+//
+//	result, err := model.GenerateAsOpenAI("What is Rust?", nil)
+//	fmt.Println(result.Choices[0].Message.Content)
+func (m *Model) GenerateAsOpenAI(prompt any, opts *GenerateTextOptions) (*ChatCompletion, error) {
+	promptJSON, err := marshalPrompt(prompt)
+	if err != nil {
+		return nil, err
+	}
+	optsJSON, err := MarshalOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	resultJSON, err := m.GenerateTextAsOpenAI(promptJSON, optsJSON)
+	if err != nil {
+		return nil, err
+	}
+	return ParseChatCompletion(resultJSON)
+}
+
+// OpenAIStream is a handle to an in-progress typed OpenAI stream.
+// Consume parts via Parts(); each part is a parsed *ChatCompletionChunk.
+type OpenAIStream struct {
+	raw   *Stream
+	parts chan *ChatCompletionChunk
+	err   error
+	done  chan struct{}
+}
+
+// Parts returns a channel of parsed *ChatCompletionChunk values.
+// The channel is closed when the stream ends.
+func (s *OpenAIStream) Parts() <-chan *ChatCompletionChunk { return s.parts }
+
+// Err returns any error that occurred during streaming.
+func (s *OpenAIStream) Err() error {
+	<-s.done
+	return s.err
+}
+
+// Cancel stops this stream. It is safe to call more than once.
+func (s *OpenAIStream) Cancel() { s.raw.Cancel() }
+
+// StreamAsOpenAI is the typed OpenAI streaming method. It accepts a plain
+// string prompt or a []ModelMessage conversation, plus optional typed options,
+// and returns an *OpenAIStream that yields parsed *ChatCompletionChunk values.
+//
+// This is the OpenAI-output equivalent of Stream.
+//
+//	stream, err := model.StreamAsOpenAI("Write a haiku", nil)
+//	for chunk := range stream.Parts() {
+//	    if len(chunk.Choices) > 0 {
+//	        if c := chunk.Choices[0].Delta.Content; c != nil {
+//	            fmt.Print(*c)
+//	        }
+//	    }
+//	}
+func (m *Model) StreamAsOpenAI(prompt any, opts *GenerateTextOptions) (*OpenAIStream, error) {
+	return m.StreamAsOpenAIContext(context.Background(), prompt, opts)
+}
+
+// StreamAsOpenAIContext starts a typed OpenAI stream that stops when ctx is
+// cancelled.
+func (m *Model) StreamAsOpenAIContext(
+	ctx context.Context,
+	prompt any,
+	opts *GenerateTextOptions,
+) (*OpenAIStream, error) {
+	promptJSON, err := marshalPrompt(prompt)
+	if err != nil {
+		return nil, err
+	}
+	optsJSON, err := MarshalOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	rawStream := m.StreamTextAsOpenAIContext(ctx, promptJSON, optsJSON)
+	ts := &OpenAIStream{
+		raw:   rawStream,
+		parts: make(chan *ChatCompletionChunk, 256),
+		done:  make(chan struct{}),
+	}
+
+	go func() {
+		defer close(ts.done)
+		defer close(ts.parts)
+		for raw := range rawStream.Parts() {
+			chunk, err := ParseChatCompletionChunk(raw)
+			if err != nil {
+				ts.err = err
+				rawStream.Cancel()
+				return
+			}
+			select {
+			case ts.parts <- chunk:
+			case <-rawStream.entry.cancelled:
+				ts.err = rawStream.Err()
+				return
+			}
+		}
+		if err := rawStream.Err(); err != nil {
+			ts.err = err
+		}
+	}()
+
+	return ts, nil
+}

@@ -97,6 +97,15 @@ final class _AimuxFFI {
       Pointer<NativeFunction<_OnPartC>>,
       Pointer<NativeFunction<_OnDoneC>>,
       Pointer<NativeFunction<_OnErrorC>>) streamText;
+  final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?)
+      generateTextAsOpenAI;
+  final void Function(
+      int,
+      Pointer<Utf8>,
+      Pointer<Utf8>?,
+      Pointer<NativeFunction<_OnPartC>>,
+      Pointer<NativeFunction<_OnDoneC>>,
+      Pointer<NativeFunction<_OnErrorC>>) streamTextAsOpenAI;
   final void Function(int) dropHandle;
   final void Function(Pointer<Utf8>) freeString;
   final void Function(Pointer<Utf8>) initLogging;
@@ -110,6 +119,8 @@ final class _AimuxFFI {
       this.providerNew,
       this.generateText,
       this.streamText,
+      this.generateTextAsOpenAI,
+      this.streamTextAsOpenAI,
       this.dropHandle,
       this.freeString,
       this.initLogging);
@@ -130,6 +141,10 @@ final class _AimuxFFI {
       dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
           'aimux_generate_text'),
       dylib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text'),
+      dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
+          'aimux_generate_text_as_openai'),
+      dylib.lookupFunction<_StreamTextC, _StreamTextDart>(
+          'aimux_stream_text_as_openai'),
       dylib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle'),
       dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
       dylib.lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging'),
@@ -540,6 +555,80 @@ class Model {
         _currentError = null;
 
         _ffi.streamText(_handle, promptPtr, optsPtr, partCb, doneCb, errCb);
+
+        _currentController = null;
+      } finally {
+        if (optsPtr != nullptr) calloc.free(optsPtr);
+      }
+    });
+
+    return controller.stream;
+  }
+
+  /// Generate text (non-streaming) with OpenAI Chat Completions output
+  /// (RFC-0026).
+  ///
+  /// Same as [generateText], but returns a parsed ChatCompletion map (OpenAI
+  /// `chat.completion` object). Works with any provider.
+  Map<String, dynamic> generateTextAsOpenAI(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) {
+    _checkOpen();
+    final promptJson = _promptToJson(prompt);
+    final optsJson = options != null ? jsonEncode(options) : null;
+
+    final resultStr = _withUtf8(promptJson, (promptPtr) {
+      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+      try {
+        final resultPtr =
+            _ffi.generateTextAsOpenAI(_handle, promptPtr, optsPtr);
+        if (resultPtr == nullptr)
+          throw StateError('generate_text_as_openai returned null');
+        final result = resultPtr.toDartString();
+        _ffi.freeString(resultPtr);
+        return result;
+      } finally {
+        if (optsPtr != nullptr) calloc.free(optsPtr);
+      }
+    });
+
+    final result = jsonDecode(resultStr) as Map<String, dynamic>;
+    if (result.containsKey('error')) {
+      throw StateError(result['error'] as String);
+    }
+    return result;
+  }
+
+  /// Stream text from the model with OpenAI Chat Completions output
+  /// (RFC-0026).
+  ///
+  /// Returns a Stream of ChatCompletionChunk maps (OpenAI
+  /// `chat.completion.chunk` objects). Blocks the current isolate until the
+  /// stream completes. Stream options (`include_usage`, `include_reasoning`)
+  /// are passed via `options['provider_options']['openai']['stream_options']`.
+  Stream<Map<String, dynamic>> streamTextAsOpenAI(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) {
+    _checkOpen();
+    final promptJson = _promptToJson(prompt);
+    final optsJson = options != null ? jsonEncode(options) : null;
+
+    final controller = StreamController<Map<String, dynamic>>();
+
+    _withUtf8(promptJson, (promptPtr) {
+      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+      try {
+        final partCb = Pointer.fromFunction<_OnPartC>(_onPart);
+        final doneCb = Pointer.fromFunction<_OnDoneC>(_onDone);
+        final errCb = Pointer.fromFunction<_OnErrorC>(_onError);
+
+        _currentController = controller;
+        _currentError = null;
+
+        _ffi.streamTextAsOpenAI(
+            _handle, promptPtr, optsPtr, partCb, doneCb, errCb);
 
         _currentController = null;
       } finally {

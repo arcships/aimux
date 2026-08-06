@@ -3639,4 +3639,706 @@ public final class Types {
     private static ObjectNode emptyObject() {
         return JsonNodeFactory.instance.objectNode();
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // OpenAI Chat Completions output (RFC-0026).
+    //
+    // Mirrors `aimux-core::openai_output`. Field names are camelCase in Java and
+    // mapped to the wire's snake_case via @JsonProperty. The `type` field is JSON
+    // `"type"` (Rust `#[serde(rename = "type")]`) → `toolType`. Arbitrary-JSON
+    // fields (`logprobs`, `annotations`) are JsonNode.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /** A complete Chat Completion response (non-streaming). Mirrors OpenAI `chat.completion`. */
+    public static class ChatCompletion {
+        @JsonProperty("id") private String id = "";
+        @JsonProperty("object") private String object = "chat.completion";
+        @JsonProperty("created") private long created;
+        @JsonProperty("model") private String model = "";
+        @JsonProperty("choices") private List<ChatCompletionChoice> choices = new ArrayList<>();
+        @JsonProperty("usage") private ChatCompletionUsage usage = new ChatCompletionUsage();
+        @JsonProperty("system_fingerprint") private String systemFingerprint;
+
+        @JsonCreator
+        ChatCompletion() {}
+
+        private ChatCompletion(String id, String object, long created, String model,
+                               List<ChatCompletionChoice> choices, ChatCompletionUsage usage,
+                               String systemFingerprint) {
+            this.id = id; this.object = object; this.created = created; this.model = model;
+            this.choices = choices; this.usage = usage; this.systemFingerprint = systemFingerprint;
+        }
+
+        public String getId() { return id; }
+        public String getObject() { return object; }
+        public long getCreated() { return created; }
+        public String getModel() { return model; }
+        public List<ChatCompletionChoice> getChoices() { return choices; }
+        public ChatCompletionUsage getUsage() { return usage; }
+        public String getSystemFingerprint() { return systemFingerprint; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String id = "";
+            private String object = "chat.completion";
+            private long created;
+            private String model = "";
+            private List<ChatCompletionChoice> choices = new ArrayList<>();
+            private ChatCompletionUsage usage = new ChatCompletionUsage();
+            private String systemFingerprint;
+
+            public Builder id(String v) { this.id = v; return this; }
+            public Builder object(String v) { this.object = v; return this; }
+            public Builder created(long v) { this.created = v; return this; }
+            public Builder model(String v) { this.model = v; return this; }
+            public Builder choices(List<ChatCompletionChoice> v) { this.choices = v; return this; }
+            public Builder usage(ChatCompletionUsage v) { this.usage = v; return this; }
+            public Builder systemFingerprint(String v) { this.systemFingerprint = v; return this; }
+
+            public ChatCompletion build() {
+                return new ChatCompletion(id, object, created, model, choices, usage, systemFingerprint);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletion)) return false;
+            ChatCompletion that = (ChatCompletion) o;
+            return created == that.created
+                && Objects.equals(id, that.id)
+                && Objects.equals(object, that.object)
+                && Objects.equals(model, that.model)
+                && Objects.equals(choices, that.choices)
+                && Objects.equals(usage, that.usage)
+                && Objects.equals(systemFingerprint, that.systemFingerprint);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, object, created, model, choices, usage, systemFingerprint);
+        }
+    }
+
+    public static class ChatCompletionChoice {
+        @JsonProperty("index") private int index;
+        @JsonProperty("message") private ChatCompletionMessage message = new ChatCompletionMessage();
+        @JsonProperty("finish_reason") private String finishReason;
+        @JsonProperty("logprobs") private JsonNode logprobs;
+
+        @JsonCreator
+        ChatCompletionChoice() {}
+
+        private ChatCompletionChoice(int index, ChatCompletionMessage message, String finishReason, JsonNode logprobs) {
+            this.index = index; this.message = message; this.finishReason = finishReason; this.logprobs = logprobs;
+        }
+
+        public int getIndex() { return index; }
+        public ChatCompletionMessage getMessage() { return message; }
+        public String getFinishReason() { return finishReason; }
+        public JsonNode getLogprobs() { return logprobs; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private int index;
+            private ChatCompletionMessage message = new ChatCompletionMessage();
+            private String finishReason;
+            private JsonNode logprobs;
+
+            public Builder index(int v) { this.index = v; return this; }
+            public Builder message(ChatCompletionMessage v) { this.message = v; return this; }
+            public Builder finishReason(String v) { this.finishReason = v; return this; }
+            public Builder logprobs(JsonNode v) { this.logprobs = v; return this; }
+
+            public ChatCompletionChoice build() {
+                return new ChatCompletionChoice(index, message, finishReason, logprobs);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionChoice)) return false;
+            ChatCompletionChoice that = (ChatCompletionChoice) o;
+            return index == that.index
+                && Objects.equals(message, that.message)
+                && Objects.equals(finishReason, that.finishReason)
+                && Objects.equals(logprobs, that.logprobs);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(index, message, finishReason, logprobs);
+        }
+    }
+
+    public static class ChatCompletionMessage {
+        @JsonProperty("role") private String role = "assistant";
+        @JsonProperty("content") private String content;
+        @JsonProperty("reasoning_content") private String reasoningContent;
+        @JsonProperty("tool_calls") private List<ChatCompletionToolCall> toolCalls;
+        @JsonProperty("annotations") private List<JsonNode> annotations;
+
+        @JsonCreator
+        ChatCompletionMessage() {}
+
+        private ChatCompletionMessage(String role, String content, String reasoningContent,
+                                      List<ChatCompletionToolCall> toolCalls, List<JsonNode> annotations) {
+            this.role = role; this.content = content; this.reasoningContent = reasoningContent;
+            this.toolCalls = toolCalls; this.annotations = annotations;
+        }
+
+        public String getRole() { return role; }
+        public String getContent() { return content; }
+        public String getReasoningContent() { return reasoningContent; }
+        public List<ChatCompletionToolCall> getToolCalls() { return toolCalls; }
+        public List<JsonNode> getAnnotations() { return annotations; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String role = "assistant";
+            private String content;
+            private String reasoningContent;
+            private List<ChatCompletionToolCall> toolCalls;
+            private List<JsonNode> annotations;
+
+            public Builder role(String v) { this.role = v; return this; }
+            public Builder content(String v) { this.content = v; return this; }
+            public Builder reasoningContent(String v) { this.reasoningContent = v; return this; }
+            public Builder toolCalls(List<ChatCompletionToolCall> v) { this.toolCalls = v; return this; }
+            public Builder annotations(List<JsonNode> v) { this.annotations = v; return this; }
+
+            public ChatCompletionMessage build() {
+                return new ChatCompletionMessage(role, content, reasoningContent, toolCalls, annotations);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionMessage)) return false;
+            ChatCompletionMessage that = (ChatCompletionMessage) o;
+            return Objects.equals(role, that.role)
+                && Objects.equals(content, that.content)
+                && Objects.equals(reasoningContent, that.reasoningContent)
+                && Objects.equals(toolCalls, that.toolCalls)
+                && Objects.equals(annotations, that.annotations);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(role, content, reasoningContent, toolCalls, annotations);
+        }
+    }
+
+    /**
+     * A tool call in a {@link ChatCompletionMessage}.
+     *
+     * <p>Wire: {@code {"id","type":"function","function":{"name","arguments"}}}. The
+     * {@code type} field is JSON {@code "type"} (Rust {@code #[serde(rename = "type")]}).
+     */
+    public static class ChatCompletionToolCall {
+        @JsonProperty("id") private String id = "";
+        @JsonProperty("type") private String toolType = "function";
+        @JsonProperty("function") private ChatCompletionFunction function = new ChatCompletionFunction();
+
+        @JsonCreator
+        ChatCompletionToolCall() {}
+
+        private ChatCompletionToolCall(String id, String toolType, ChatCompletionFunction function) {
+            this.id = id; this.toolType = toolType; this.function = function;
+        }
+
+        public String getId() { return id; }
+        public String getToolType() { return toolType; }
+        public ChatCompletionFunction getFunction() { return function; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String id = "";
+            private String toolType = "function";
+            private ChatCompletionFunction function = new ChatCompletionFunction();
+
+            public Builder id(String v) { this.id = v; return this; }
+            public Builder toolType(String v) { this.toolType = v; return this; }
+            public Builder function(ChatCompletionFunction v) { this.function = v; return this; }
+
+            public ChatCompletionToolCall build() { return new ChatCompletionToolCall(id, toolType, function); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionToolCall)) return false;
+            ChatCompletionToolCall that = (ChatCompletionToolCall) o;
+            return Objects.equals(id, that.id)
+                && Objects.equals(toolType, that.toolType)
+                && Objects.equals(function, that.function);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, toolType, function);
+        }
+    }
+
+    public static class ChatCompletionFunction {
+        @JsonProperty("name") private String name = "";
+        @JsonProperty("arguments") private String arguments = "";
+
+        @JsonCreator
+        ChatCompletionFunction() {}
+
+        private ChatCompletionFunction(String name, String arguments) {
+            this.name = name; this.arguments = arguments;
+        }
+
+        public String getName() { return name; }
+        public String getArguments() { return arguments; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String name = "";
+            private String arguments = "";
+
+            public Builder name(String v) { this.name = v; return this; }
+            public Builder arguments(String v) { this.arguments = v; return this; }
+
+            public ChatCompletionFunction build() { return new ChatCompletionFunction(name, arguments); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionFunction)) return false;
+            ChatCompletionFunction that = (ChatCompletionFunction) o;
+            return Objects.equals(name, that.name) && Objects.equals(arguments, that.arguments);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(name, arguments);
+        }
+    }
+
+    /** A single Chat Completion chunk (streaming). Mirrors OpenAI `chat.completion.chunk`. */
+    public static class ChatCompletionChunk {
+        @JsonProperty("id") private String id = "";
+        @JsonProperty("object") private String object = "chat.completion.chunk";
+        @JsonProperty("created") private long created;
+        @JsonProperty("model") private String model = "";
+        @JsonProperty("choices") private List<ChatCompletionChunkChoice> choices = new ArrayList<>();
+        @JsonProperty("usage") private ChatCompletionUsage usage;
+
+        @JsonCreator
+        ChatCompletionChunk() {}
+
+        private ChatCompletionChunk(String id, String object, long created, String model,
+                                    List<ChatCompletionChunkChoice> choices, ChatCompletionUsage usage) {
+            this.id = id; this.object = object; this.created = created; this.model = model;
+            this.choices = choices; this.usage = usage;
+        }
+
+        public String getId() { return id; }
+        public String getObject() { return object; }
+        public long getCreated() { return created; }
+        public String getModel() { return model; }
+        public List<ChatCompletionChunkChoice> getChoices() { return choices; }
+        public ChatCompletionUsage getUsage() { return usage; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String id = "";
+            private String object = "chat.completion.chunk";
+            private long created;
+            private String model = "";
+            private List<ChatCompletionChunkChoice> choices = new ArrayList<>();
+            private ChatCompletionUsage usage;
+
+            public Builder id(String v) { this.id = v; return this; }
+            public Builder object(String v) { this.object = v; return this; }
+            public Builder created(long v) { this.created = v; return this; }
+            public Builder model(String v) { this.model = v; return this; }
+            public Builder choices(List<ChatCompletionChunkChoice> v) { this.choices = v; return this; }
+            public Builder usage(ChatCompletionUsage v) { this.usage = v; return this; }
+
+            public ChatCompletionChunk build() {
+                return new ChatCompletionChunk(id, object, created, model, choices, usage);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionChunk)) return false;
+            ChatCompletionChunk that = (ChatCompletionChunk) o;
+            return created == that.created
+                && Objects.equals(id, that.id)
+                && Objects.equals(object, that.object)
+                && Objects.equals(model, that.model)
+                && Objects.equals(choices, that.choices)
+                && Objects.equals(usage, that.usage);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, object, created, model, choices, usage);
+        }
+    }
+
+    public static class ChatCompletionChunkChoice {
+        @JsonProperty("index") private int index;
+        @JsonProperty("delta") private ChatCompletionDelta delta = new ChatCompletionDelta();
+        @JsonProperty("finish_reason") private String finishReason;
+        @JsonProperty("logprobs") private JsonNode logprobs;
+
+        @JsonCreator
+        ChatCompletionChunkChoice() {}
+
+        private ChatCompletionChunkChoice(int index, ChatCompletionDelta delta, String finishReason, JsonNode logprobs) {
+            this.index = index; this.delta = delta; this.finishReason = finishReason; this.logprobs = logprobs;
+        }
+
+        public int getIndex() { return index; }
+        public ChatCompletionDelta getDelta() { return delta; }
+        public String getFinishReason() { return finishReason; }
+        public JsonNode getLogprobs() { return logprobs; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private int index;
+            private ChatCompletionDelta delta = new ChatCompletionDelta();
+            private String finishReason;
+            private JsonNode logprobs;
+
+            public Builder index(int v) { this.index = v; return this; }
+            public Builder delta(ChatCompletionDelta v) { this.delta = v; return this; }
+            public Builder finishReason(String v) { this.finishReason = v; return this; }
+            public Builder logprobs(JsonNode v) { this.logprobs = v; return this; }
+
+            public ChatCompletionChunkChoice build() {
+                return new ChatCompletionChunkChoice(index, delta, finishReason, logprobs);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionChunkChoice)) return false;
+            ChatCompletionChunkChoice that = (ChatCompletionChunkChoice) o;
+            return index == that.index
+                && Objects.equals(delta, that.delta)
+                && Objects.equals(finishReason, that.finishReason)
+                && Objects.equals(logprobs, that.logprobs);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(index, delta, finishReason, logprobs);
+        }
+    }
+
+    public static class ChatCompletionDelta {
+        @JsonProperty("role") private String role;
+        @JsonProperty("content") private String content;
+        @JsonProperty("reasoning_content") private String reasoningContent;
+        @JsonProperty("tool_calls") private List<ChatCompletionChunkToolCall> toolCalls;
+
+        @JsonCreator
+        ChatCompletionDelta() {}
+
+        private ChatCompletionDelta(String role, String content, String reasoningContent,
+                                    List<ChatCompletionChunkToolCall> toolCalls) {
+            this.role = role; this.content = content; this.reasoningContent = reasoningContent;
+            this.toolCalls = toolCalls;
+        }
+
+        public String getRole() { return role; }
+        public String getContent() { return content; }
+        public String getReasoningContent() { return reasoningContent; }
+        public List<ChatCompletionChunkToolCall> getToolCalls() { return toolCalls; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String role;
+            private String content;
+            private String reasoningContent;
+            private List<ChatCompletionChunkToolCall> toolCalls;
+
+            public Builder role(String v) { this.role = v; return this; }
+            public Builder content(String v) { this.content = v; return this; }
+            public Builder reasoningContent(String v) { this.reasoningContent = v; return this; }
+            public Builder toolCalls(List<ChatCompletionChunkToolCall> v) { this.toolCalls = v; return this; }
+
+            public ChatCompletionDelta build() {
+                return new ChatCompletionDelta(role, content, reasoningContent, toolCalls);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionDelta)) return false;
+            ChatCompletionDelta that = (ChatCompletionDelta) o;
+            return Objects.equals(role, that.role)
+                && Objects.equals(content, that.content)
+                && Objects.equals(reasoningContent, that.reasoningContent)
+                && Objects.equals(toolCalls, that.toolCalls);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(role, content, reasoningContent, toolCalls);
+        }
+    }
+
+    /**
+     * A tool call delta in a {@link ChatCompletionChunk}.
+     *
+     * <p>Wire: {@code {"index","id"?,"type":"function"?,"function":{"name"?,"arguments"?}}}.
+     * The {@code type} field is JSON {@code "type"} (Rust {@code #[serde(rename = "type")]}).
+     */
+    public static class ChatCompletionChunkToolCall {
+        @JsonProperty("index") private int index;
+        @JsonProperty("id") private String id;
+        @JsonProperty("type") private String toolType;
+        @JsonProperty("function") private ChatCompletionChunkFunction function = new ChatCompletionChunkFunction();
+
+        @JsonCreator
+        ChatCompletionChunkToolCall() {}
+
+        private ChatCompletionChunkToolCall(int index, String id, String toolType,
+                                            ChatCompletionChunkFunction function) {
+            this.index = index; this.id = id; this.toolType = toolType; this.function = function;
+        }
+
+        public int getIndex() { return index; }
+        public String getId() { return id; }
+        public String getToolType() { return toolType; }
+        public ChatCompletionChunkFunction getFunction() { return function; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private int index;
+            private String id;
+            private String toolType;
+            private ChatCompletionChunkFunction function = new ChatCompletionChunkFunction();
+
+            public Builder index(int v) { this.index = v; return this; }
+            public Builder id(String v) { this.id = v; return this; }
+            public Builder toolType(String v) { this.toolType = v; return this; }
+            public Builder function(ChatCompletionChunkFunction v) { this.function = v; return this; }
+
+            public ChatCompletionChunkToolCall build() {
+                return new ChatCompletionChunkToolCall(index, id, toolType, function);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionChunkToolCall)) return false;
+            ChatCompletionChunkToolCall that = (ChatCompletionChunkToolCall) o;
+            return index == that.index
+                && Objects.equals(id, that.id)
+                && Objects.equals(toolType, that.toolType)
+                && Objects.equals(function, that.function);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(index, id, toolType, function);
+        }
+    }
+
+    public static class ChatCompletionChunkFunction {
+        @JsonProperty("name") private String name;
+        @JsonProperty("arguments") private String arguments;
+
+        @JsonCreator
+        ChatCompletionChunkFunction() {}
+
+        private ChatCompletionChunkFunction(String name, String arguments) {
+            this.name = name; this.arguments = arguments;
+        }
+
+        public String getName() { return name; }
+        public String getArguments() { return arguments; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String name;
+            private String arguments;
+
+            public Builder name(String v) { this.name = v; return this; }
+            public Builder arguments(String v) { this.arguments = v; return this; }
+
+            public ChatCompletionChunkFunction build() { return new ChatCompletionChunkFunction(name, arguments); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionChunkFunction)) return false;
+            ChatCompletionChunkFunction that = (ChatCompletionChunkFunction) o;
+            return Objects.equals(name, that.name) && Objects.equals(arguments, that.arguments);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(name, arguments);
+        }
+    }
+
+    /** Token usage statistics (shared by streaming and non-streaming). */
+    public static class ChatCompletionUsage {
+        @JsonProperty("prompt_tokens") private int promptTokens;
+        @JsonProperty("completion_tokens") private int completionTokens;
+        @JsonProperty("total_tokens") private int totalTokens;
+        @JsonProperty("prompt_tokens_details") private PromptTokensDetails promptTokensDetails;
+        @JsonProperty("completion_tokens_details") private CompletionTokensDetails completionTokensDetails;
+
+        @JsonCreator
+        ChatCompletionUsage() {}
+
+        private ChatCompletionUsage(int promptTokens, int completionTokens, int totalTokens,
+                                    PromptTokensDetails promptTokensDetails,
+                                    CompletionTokensDetails completionTokensDetails) {
+            this.promptTokens = promptTokens; this.completionTokens = completionTokens;
+            this.totalTokens = totalTokens; this.promptTokensDetails = promptTokensDetails;
+            this.completionTokensDetails = completionTokensDetails;
+        }
+
+        public int getPromptTokens() { return promptTokens; }
+        public int getCompletionTokens() { return completionTokens; }
+        public int getTotalTokens() { return totalTokens; }
+        public PromptTokensDetails getPromptTokensDetails() { return promptTokensDetails; }
+        public CompletionTokensDetails getCompletionTokensDetails() { return completionTokensDetails; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private int promptTokens;
+            private int completionTokens;
+            private int totalTokens;
+            private PromptTokensDetails promptTokensDetails;
+            private CompletionTokensDetails completionTokensDetails;
+
+            public Builder promptTokens(int v) { this.promptTokens = v; return this; }
+            public Builder completionTokens(int v) { this.completionTokens = v; return this; }
+            public Builder totalTokens(int v) { this.totalTokens = v; return this; }
+            public Builder promptTokensDetails(PromptTokensDetails v) { this.promptTokensDetails = v; return this; }
+            public Builder completionTokensDetails(CompletionTokensDetails v) { this.completionTokensDetails = v; return this; }
+
+            public ChatCompletionUsage build() {
+                return new ChatCompletionUsage(promptTokens, completionTokens, totalTokens,
+                    promptTokensDetails, completionTokensDetails);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ChatCompletionUsage)) return false;
+            ChatCompletionUsage that = (ChatCompletionUsage) o;
+            return promptTokens == that.promptTokens
+                && completionTokens == that.completionTokens
+                && totalTokens == that.totalTokens
+                && Objects.equals(promptTokensDetails, that.promptTokensDetails)
+                && Objects.equals(completionTokensDetails, that.completionTokensDetails);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(promptTokens, completionTokens, totalTokens,
+                promptTokensDetails, completionTokensDetails);
+        }
+    }
+
+    public static class PromptTokensDetails {
+        @JsonProperty("cached_tokens") private int cachedTokens;
+        @JsonProperty("cache_write_tokens") private Integer cacheWriteTokens;
+
+        @JsonCreator
+        PromptTokensDetails() {}
+
+        private PromptTokensDetails(int cachedTokens, Integer cacheWriteTokens) {
+            this.cachedTokens = cachedTokens; this.cacheWriteTokens = cacheWriteTokens;
+        }
+
+        public int getCachedTokens() { return cachedTokens; }
+        public Integer getCacheWriteTokens() { return cacheWriteTokens; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private int cachedTokens;
+            private Integer cacheWriteTokens;
+
+            public Builder cachedTokens(int v) { this.cachedTokens = v; return this; }
+            public Builder cacheWriteTokens(Integer v) { this.cacheWriteTokens = v; return this; }
+
+            public PromptTokensDetails build() { return new PromptTokensDetails(cachedTokens, cacheWriteTokens); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof PromptTokensDetails)) return false;
+            PromptTokensDetails that = (PromptTokensDetails) o;
+            return cachedTokens == that.cachedTokens
+                && Objects.equals(cacheWriteTokens, that.cacheWriteTokens);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(cachedTokens, cacheWriteTokens);
+        }
+    }
+
+    public static class CompletionTokensDetails {
+        @JsonProperty("reasoning_tokens") private Integer reasoningTokens;
+
+        @JsonCreator
+        CompletionTokensDetails() {}
+
+        private CompletionTokensDetails(Integer reasoningTokens) {
+            this.reasoningTokens = reasoningTokens;
+        }
+
+        public Integer getReasoningTokens() { return reasoningTokens; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private Integer reasoningTokens;
+
+            public Builder reasoningTokens(Integer v) { this.reasoningTokens = v; return this; }
+
+            public CompletionTokensDetails build() { return new CompletionTokensDetails(reasoningTokens); }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof CompletionTokensDetails)) return false;
+            CompletionTokensDetails that = (CompletionTokensDetails) o;
+            return Objects.equals(reasoningTokens, that.reasoningTokens);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(reasoningTokens);
+        }
+    }
 }

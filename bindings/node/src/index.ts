@@ -45,6 +45,8 @@ import type {
   SessionCall,
   SessionSource,
   SessionView,
+  ChatCompletion,
+  ChatCompletionChunk,
 } from './types'
 
 // Re-export the raw napi constructors/factories so consumers can do everything
@@ -103,6 +105,8 @@ export type {
   SessionCall,
   SessionSource,
   SessionView,
+  ChatCompletion,
+  ChatCompletionChunk,
 }
 
 /**
@@ -198,4 +202,61 @@ export function getSessionCalls(sessionId: string): SessionCall[] {
  */
 export function getSessions(): SessionView[] {
   return JSON.parse(nativeListSessions()) as SessionView[]
+}
+
+/**
+ * Generate text and return an OpenAI Chat Completion (non-streaming).
+ *
+ * Works with **any** provider — the result is always a standard OpenAI
+ * `ChatCompletion` object.
+ *
+ * @example
+ * ```ts
+ * import { openai, generateTextAsOpenai } from 'aimux'
+ * const model = await openai(apiKey, 'gpt-4o')
+ * const completion = await generateTextAsOpenai(model, 'What is Rust?')
+ * console.log(completion.choices[0].message.content)
+ * ```
+ */
+export async function generateTextAsOpenai(
+  model: RawModel,
+  prompt: string | ModelMessage[],
+  options?: GenerateTextOptions,
+  signal?: AbortSignal,
+): Promise<ChatCompletion> {
+  const optsJson = options ? JSON.stringify(options) : undefined
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const resultJson = await model.generateTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
+  return JSON.parse(resultJson) as ChatCompletion
+}
+
+/**
+ * Stream text as OpenAI Chat Completion chunks.
+ *
+ * Works with **any** provider — yields standard OpenAI `ChatCompletionChunk`
+ * objects. Pass `streamOptions` via `providerOptions.openai.stream_options`:
+ * `{ include_usage: true, include_reasoning: true }` (both default true).
+ *
+ * @example
+ * ```ts
+ * import { openai, streamTextAsOpenai } from 'aimux'
+ * const model = await openai(apiKey, 'gpt-4o')
+ * for await (const chunk of streamTextAsOpenai(model, 'Write a haiku.')) {
+ *   const delta = chunk.choices[0]?.delta?.content
+ *   if (delta) process.stdout.write(delta)
+ * }
+ * ```
+ */
+export async function* streamTextAsOpenai(
+  model: RawModel,
+  prompt: string | ModelMessage[],
+  options?: GenerateTextOptions,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatCompletionChunk> {
+  const optsJson = options ? JSON.stringify(options) : undefined
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const gen = await model.streamTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
+  for await (const json of gen) {
+    yield JSON.parse(json) as ChatCompletionChunk
+  }
 }

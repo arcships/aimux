@@ -13,6 +13,7 @@ package aimux
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -267,6 +268,25 @@ func TestGenerateTextOptionsDefaultOmitsFields(t *testing.T) {
 	b, _ := json.Marshal(original)
 	if string(b) != `{}` {
 		t.Errorf("expected empty object, got %s", b)
+	}
+}
+
+// RFC-0016 M2: include_raw_chunks round-trips through the typed options.
+func TestGenerateTextOptionsIncludeRawChunksRoundTrip(t *testing.T) {
+	original := GenerateTextOptions{IncludeRawChunks: boolPtr(true)}
+	b, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"include_raw_chunks":true`) {
+		t.Errorf("expected include_raw_chunks:true in %s", b)
+	}
+	var back GenerateTextOptions
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if back.IncludeRawChunks == nil || *back.IncludeRawChunks != true {
+		t.Errorf("round-trip lost include_raw_chunks: %#v", back.IncludeRawChunks)
 	}
 }
 
