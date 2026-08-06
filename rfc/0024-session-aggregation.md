@@ -118,7 +118,7 @@ impl SessionInferer {
 
 /// 一个会话的聚合视图(按 session_id 归组的调用序列)。
 /// 不存调用内容本身——内容在 Recording(0023)/TraceRecord(0015)。
-/// 本结构只是索引:session_id → [trace_id 列表]。
+/// 本结构只是索引:session_id → [call_id 列表]。
 pub struct SessionView {
     pub session_id: String,
     pub source: SessionSource,           // Explicit / Inferred
@@ -126,7 +126,7 @@ pub struct SessionView {
 }
 
 pub struct SessionCall {
-    pub trace_id: String,                // 关联 Recording / TraceRecord
+    pub call_id: String,                // 关联 Recording / TraceRecord
     pub step: u32,                       // 第几步(0 起)
     pub recorded_at: String,
 }
@@ -164,7 +164,7 @@ pub async fn generate_text(model: &dyn LanguageModel, prompt: impl Into<ModelPro
 
     // 录制/缓存探测/会话索引都拿到 session_id
     if let Some(sid) = &session_id {
-        SESSION_STORE.append(sid, &trace_id);  // 归组
+        SESSION_STORE.append(sid, &call_id);  // 归组
     }
     // ... generate_text 主体 ...
 }
@@ -209,7 +209,7 @@ pub fn list_sessions() -> Vec<SessionView>;
 1. **不做 fork 语义**。fork 是业务侧场景(上层框架决定怎么分叉),aimux 只按 session_id 归组。同 session_id 归一组,不同 session_id 各自归组,fork 与否 aimux 不建模。
 2. **不做 agent loop**(H4)。session 归组是可观测基础设施,不是 loop 执行。
 3. **不做 session 头自动注入**(RFC-0019 的活)。本 RFC 的 session_id 是本地归组用,不自动映射成厂商头喂上游。映射属 0019 的 opt-in,由集成方决定。
-4. **不做链结构 / 状态机**。只做 `session_id → [trace_id]` 的扁平归组,不建树、不做父子链。
+4. **不做链结构 / 状态机**。只做 `session_id → [call_id]` 的扁平归组,不建树、不做父子链。
 5. **不持久化 session 索引**。进程内 LRU,重启丢索引(但 Recording/TraceRecord 的 session_id 字段保留,可重建)。
 6. **不默认开启隐式推断**。显式为主;推断需 opt-in,因有歧义风险。
 

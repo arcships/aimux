@@ -61,11 +61,11 @@ use serde::{Serialize, Deserialize};
 use crate::options::CallOptions;
 use crate::language_model_message::LanguageModelPrompt;
 
-/// 一次完整调用的录制记录(三层 + trace_id 关联)。
+/// 一次完整调用的录制记录(三层 + call_id 关联)。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Recording {
     /// 全局唯一 ID,关联三层。
-    pub trace_id: String,
+    pub call_id: String,
     pub recorded_at: String,           // ISO 8601
 
     /// ① 输入侧:调用参数(prompt + options)。
@@ -143,9 +143,9 @@ pub struct OutcomeRecord {
 }
 ```
 
-### 3.2 录制点:两层,trace_id 关联
+### 3.2 录制点:两层,call_id 关联
 
-录制分两层,用同一 `trace_id` 关联成一条完整 `Recording`:
+录制分两层,用同一 `call_id` 关联成一条完整 `Recording`:
 
 **层 A:`generate_text`/`stream_text` 入口(录 ①+②+outcome)**
 
@@ -153,13 +153,13 @@ pub struct OutcomeRecord {
 // aimux-core/src/generate.rs 增量
 
 pub async fn generate_text(model: &dyn LanguageModel, prompt: impl Into<ModelPrompt>, options: GenerateTextOptions) -> Result<GenerateTextResult, AiMuxError> {
-    let trace_id = new_trace_id();
+    let call_id = new_call_id();
     let call_options = options.into_call_options(lm_prompt);
 
     // 录制 ①+②(若开):输入侧 + provider 元信息
     let recorder = recording::recorder();
     if let Some(rec) = &recorder {
-        rec.record_input(&trace_id, &call_options, model.provider(), model.model_id());
+        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
         // provider config(base_url/api_key_source/profile)从 model 提取——
         // 见 §3.3 ConfigSnapshot trait
     }
@@ -168,7 +168,7 @@ pub async fn generate_text(model: &dyn LanguageModel, prompt: impl Into<ModelPro
 
     // 录制 outcome
     if let Some(rec) = &recorder {
-        rec.record_outcome(&trace_id, &result);
+        rec.record_outcome(&call_id, &result);
     }
     // ...
 }
@@ -180,7 +180,7 @@ pub async fn generate_text(model: &dyn LanguageModel, prompt: impl Into<ModelPro
 // aimux-provider-utils/src/http.rs 增量
 
 // send() / send_stream() 内,每次 attempt 录一条 HttpExchange
-// trace_id 从哪里来?——见 §3.4(通过 call_options 的扩展字段或 thread-local 传递)
+// call_id 从哪里来?——见 §3.4(通过 call_options 的扩展字段或 thread-local 传递)
 ```
 
 ### 3.3 ConfigSnapshot trait(提取配置侧)
@@ -202,14 +202,14 @@ pub trait ConfigSnapshot {
 
 **为什么是可选 trait 而非改 LanguageModel**:不破坏现有 trait 契约;录制是 opt-in 功能,provider 按需实现。
 
-### 3.4 trace_id 传递
+### 3.4 call_id 传递
 
-层 A(generate 入口)生成 `trace_id`,层 B(http.rs)需要拿到它来关联 ③。传递方式:
+层 A(generate 入口)生成 `call_id`,层 B(http.rs)需要拿到它来关联 ③。传递方式:
 
-- **方案 A(推荐)**:`CallOptions` 加 `#[serde(skip)] trace_id: Option<String>` 字段——入口生成后塞进 call_options,http.rs 从 `HttpRequest`(经 provider 透传)读取。serde skip 保证不过 JSON 边界(与 `abort_signal` 同模式,[options.rs:119](../aimux-core/src/options.rs#L119))。
+- **方案 A(推荐)**:`CallOptions` 加 `#[serde(skip)] call_id: Option<String>` 字段——入口生成后塞进 call_options,http.rs 从 `HttpRequest`(经 provider 透传)读取。serde skip 保证不过 JSON 边界(与 `abort_signal` 同模式,[options.rs:119](../aimux-core/src/options.rs#L119))。
 - **方案 B**:thread-local / task-local(`tokio::task_local!`)——无需改 CallOptions,但隐式传递,调试性差。
 
-**选 A**:显式、可测、与现有 `abort_signal` 同模式。`HttpRequest` 已有 `abort_signal` 字段([http.rs:197](../aimux-provider-utils/src/http.rs#L197)),加 `trace_id` 同理。
+**选 A**:显式、可测、与现有 `abort_signal` 同模式。`HttpRequest` 已有 `abort_signal` 字段([http.rs:197](../aimux-provider-utils/src/http.rs#L197)),加 `call_id` 同理。
 
 ### 3.5 Recorder trait 与实现
 
@@ -217,13 +217,13 @@ pub trait ConfigSnapshot {
 /// 录制器 trait。
 pub trait Recorder: Send + Sync {
     /// 录制输入侧 + 配置侧(层 A 入口调用)。
-    fn record_input(&self, trace_id: &str, options: &CallOptions, provider: &str, model_id: &str);
+    fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str);
     /// 录制配置侧完整快照(若 provider 实现 ConfigSnapshot)。
-    fn record_provider(&self, trace_id: &str, snapshot: &ProviderRecord);
+    fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord);
     /// 录制单次 HTTP 交换(层 B http.rs 调用)。
-    fn record_exchange(&self, trace_id: &str, exchange: &HttpExchange);
+    fn record_exchange(&self, call_id: &str, exchange: &HttpExchange);
     /// 录制最终结果(层 A 入口调用)。
-    fn record_outcome(&self, trace_id: &str, outcome: &OutcomeRecord);
+    fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord);
     /// flush(关闭前调用,确保落盘)。
     fn flush(&self);
 }
@@ -241,7 +241,7 @@ fn recorder() -> Option<&'static Arc<dyn Recorder>> {
 ```
 
 **默认实现**:
-- `JsonlRecorder`:每条 `Recording` 序列化为一行 jsonl 写磁盘(层 A/B 的分片通过 `trace_id` 在 flush 时合并,或实时写分片文件)。
+- `JsonlRecorder`:每条 `Recording` 序列化为一行 jsonl 写磁盘(层 A/B 的分片通过 `call_id` 在 flush 时合并,或实时写分片文件)。
 - `RingRecorder`:内存有界 ring buffer(默认 2048 条 ≈ 6-7MB),对标 RFC-0015。
 
 **异步落盘**:录制数据通过 mpsc channel 发到后台 tokio task,**热路径永不阻塞 I/O**。
@@ -393,9 +393,9 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 |------|------|--------|
 | `aimux-core/src/recording.rs` | `Recording`/`InputRecord`/`ProviderRecord`/`HttpExchange`/`OutcomeRecord` + `Recorder` trait + `ConfigSnapshot` trait + `JsonlRecorder`/`RingRecorder` + `init_recording` | ~350 行 |
 | `aimux-core/src/replay.rs` | `replay_request`(请求回放)+ `MockReplayModel` + `ReplayMatcher` trait + `ExactMatcher`/`ScoreMatcher`/`PrefixMatcher` | ~400 行 |
-| `aimux-core/src/generate.rs` | `generate_text`/`stream_text` 录制接入(层 A)+ `trace_id` 生成 | ~60 行 |
-| `aimux-core/src/options.rs` | `CallOptions` 加 `#[serde(skip)] trace_id: Option<String>` | ~5 行 |
-| `aimux-provider-utils/src/http.rs` | `send()`/`send_stream()`/`ObservedByteStream` 录制接入(层 B)+ `HttpRequest` 加 `trace_id` | ~100 行 |
+| `aimux-core/src/generate.rs` | `generate_text`/`stream_text` 录制接入(层 A)+ `call_id` 生成 | ~60 行 |
+| `aimux-core/src/options.rs` | `CallOptions` 加 `#[serde(skip)] call_id: Option<String>` | ~5 行 |
+| `aimux-provider-utils/src/http.rs` | `send()`/`send_stream()`/`ObservedByteStream` 录制接入(层 B)+ `HttpRequest` 加 `call_id` | ~100 行 |
 | `aimux-providers/src/openai/model.rs` 等 | 各 provider 实现 `ConfigSnapshot` | 每个 ~15 行,主要 provider ~10 个 |
 | `aimux-ffi/src/lib.rs` | `aimux_init_recording` + `aimux_mock_replay_new` C ABI | ~40 行 |
 | `bindings/node/src/lib.rs` | `initRecording` + `mockReplay(recordings)` napi | ~40 行 |
@@ -413,7 +413,7 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 | **请求回放消耗真实 API 费用** | 中 | 文档警示;CLI 加 `--dry-run`(只打印不重发);库 API 由调用方显式调 |
 | **mock 回放匹配歧义**(多录制命中) | 中 | `ScoreMatcher` 平局取首个(确定性);`ExactMatcher` 无歧义;文档说明各 matcher 特性 |
 | **流式超大响应内存膨胀** | 中 | 单流累积上限 + 截断标记;`RingRecorder` 有界兜底 |
-| **trace_id 传递漏接**(层 B 拿不到) | 低 | 方案 A 显式塞 CallOptions(serde skip);provider 透传 HttpRequest;测试覆盖 |
+| **call_id 传递漏接**(层 B 拿不到) | 低 | 方案 A 显式塞 CallOptions(serde skip);provider 透传 HttpRequest;测试覆盖 |
 | **ConfigSnapshot 覆盖不全**(部分 provider 未实现) | 低 | 默认实现返回最小信息(降级录制,仍可用);按 provider 逐步补全 |
 | **与 RFC-0015 sink 抽象重复** | 中 | 共享 ring-store 模式;先实施方预留合并口子 |
 
@@ -421,7 +421,7 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 
 ## 10. Open Questions
 
-1. **录制文件组织**:单文件 jsonl(简单)vs 按 trace_id 分文件(便于回放加载单条)vs 按 provider/日期分目录?MVP 建议单文件 jsonl + 滚动;回放加载时全读进内存索引。
+1. **录制文件组织**:单文件 jsonl(简单)vs 按 call_id 分文件(便于回放加载单条)vs 按 provider/日期分目录?MVP 建议单文件 jsonl + 滚动;回放加载时全读进内存索引。
 2. **请求回放的形态**:库 API(`aimux::replay::replay_request`)还是独立 CLI(`aimux-replay`)?建议两者都做——库 API 供程序化使用,CLI 供离线命令行。CLI 可放独立 crate 或 `scripts/`。
 3. **mock 回放的 `MockReplayModel` 是否支持"部分 mock"**(某些请求 mock,某些透传真实 API)?MVP 不做(全 mock);后续可加 `PassthroughOnMiss` 策略。
 4. **`ScoreMatcher` 的匹配键**:复用 RFC-0003 的 `(method, path, model, stream)` 标量打分——但运行时录制有完整 `InputRecord`(含 prompt),是否用 prompt 前缀提升命中率?建议 MVP 用 score(复用现有),PrefixMatcher 作为可选增强。
@@ -434,7 +434,7 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |------|------|------|------|
-| **P1** | `recording.rs`:`Recorder` trait + `Recording` 数据模型 + `JsonlRecorder` + `init_recording` + 层 A 录制接入(generate.rs)+ `trace_id` 传递 + 单测 | 无 | 待实施 |
+| **P1** | `recording.rs`:`Recorder` trait + `Recording` 数据模型 + `JsonlRecorder` + `init_recording` + 层 A 录制接入(generate.rs)+ `call_id` 传递 + 单测 | 无 | 待实施 |
 | **P2** | 层 B 录制接入(http.rs:`send`/`send_stream`/`ObservedByteStream`)+ `ConfigSnapshot` trait + OpenAI/Anthropic/Google 等主要 provider 实现 + 性能基准 | P1 | 待实施 |
 | **P3** | `replay.rs`:`MockReplayModel` + `ScoreMatcher`/`ExactMatcher` + 单测(mock 响应回放) | P1 | 待实施 |
 | **P4** | `replay.rs`:`replay_request` + `rebuild_provider`/`rebuild_options`(请求回放)+ CLI 工具 | P1, RFC-0020(外部配置,重建 provider) | 待实施 |

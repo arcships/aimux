@@ -3,7 +3,7 @@
 > **Status**: IMPLEMENTED (2026-08-05 — 探测本身进 core:TraceLayer + 判定引擎 + RingTraceStore + 查询 API + FFI/Node/Python/Go 透传;探测业务归 CLI(RFC-0025),告警外部消费)
 > **Date**: 2026-08-01(初稿)/ 2026-08-05(重写)
 > **Scope**: aimux 统一 LLM 访问层上的可选缓存命中探测能力——采集 request_body 指纹 + usage 快照,客户端对连续 agent 调用的原始请求体做前缀对比,判定各 provider 服务端上报的 cache 命中率是否掺水,暴露 verdict 数据与查询接口供消费。**探测本身进 core,探测业务(CLI)独立,告警外部消费。**
-> **Related**: [RFC-0014](0014-logging.md) 统一日志(挂载其 span 树)、[RFC-0023](0023-runtime-request-recording.md) 录制与回放(明文兄弟子系统,trace_id 关联)、[RFC-0024](0024-session-aggregation.md) 会话聚合(session_id 统一来源)、[RFC-0009](0009-request-resilience.md) retry/超时(重试语义影响判定规则)、研究存档 [cache-tracing](../docs/internal/cache-tracing/00-research-plan.md)
+> **Related**: [RFC-0014](0014-logging.md) 统一日志(挂载其 span 树)、[RFC-0023](0023-runtime-request-recording.md) 录制与回放(明文兄弟子系统,call_id 关联)、[RFC-0024](0024-session-aggregation.md) 会话聚合(session_id 统一来源)、[RFC-0009](0009-request-resilience.md) retry/超时(重试语义影响判定规则)、研究存档 [cache-tracing](../docs/internal/cache-tracing/00-research-plan.md)
 
 ---
 
@@ -239,7 +239,7 @@ pub struct PrefixBreak {
 }
 ```
 
-**JSONL 导出格式**:`export_jsonl` 每行一个 `TraceRecord`(serde JSON)。供 ② CLI 离线分析(读文件跑审计/诊断),与 [RFC-0023](0023-runtime-request-recording.md) 的录制 jsonl 并存(不同文件,内容不同:探测=哈希,录制=明文,trace_id 可互查)。
+**JSONL 导出格式**:`export_jsonl` 每行一个 `TraceRecord`(serde JSON)。供 ② CLI 离线分析(读文件跑审计/诊断),与 [RFC-0023](0023-runtime-request-recording.md) 的录制 jsonl 并存(不同文件,内容不同:探测=哈希,录制=明文,call_id 可互查)。
 
 ---
 
@@ -273,7 +273,7 @@ pub struct PrefixBreak {
 
 | 协同点 | 机制 | 归属 |
 |---|---|---|
-| **离线明文深查** | 探测在线只存哈希(常开安全);深查可疑 verdict 时用 trace_id 拉 [RFC-0023](0023-runtime-request-recording.md) 的明文录制跑完整 LCP 定位"哪段前缀掺水" | 探测暴露 trace_id,RFC-0023 存明文,trace_id 互查 |
+| **离线明文深查** | 探测在线只存哈希(常开安全);深查可疑 verdict 时用 call_id 拉 [RFC-0023](0023-runtime-request-recording.md) 的明文录制跑完整 LCP 定位"哪段前缀掺水" | 探测暴露 call_id,RFC-0023 存明文,call_id 互查 |
 | **缓存可复现性验证** | 对同一录制多次[请求回放](0023-runtime-request-recording.md)(重发真实 API),跑探测算法看 verdict 是否稳定(验证 provider 缓存稳定性/抖动) | ② CLI 组合两者 |
 | **共享 ring-store 模式** | 探测的 `RingTraceStore` 与录制的 `RingRecorder` 共用 FIFO 环形 + TTL 过期 + export 模式,类型不同(`TraceRecord` vs `Recording`);先实施方定义抽象,后实施方复用 | core 内协调 |
 | **共享 LCP/前缀算法** | 探测的块哈希链 LCP 与回放的 `PrefixMatcher`(RFC-0023)共用"前缀最长公共匹配"算法模块 | core 内协调 |
