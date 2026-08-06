@@ -178,13 +178,13 @@ export async function* streamText(
  *
  * @example
  * ```ts
- * import { openai, generateTextAsOpenAI } from 'aimux'
+ * import { openai, generateTextAsOpenai } from 'aimux'
  * const model = await openai(apiKey, 'gpt-4o')
- * const completion = await generateTextAsOpenAI(model, 'What is Rust?')
+ * const completion = await generateTextAsOpenai(model, 'What is Rust?')
  * console.log(completion.choices[0].message.content)
  * ```
  */
-export async function generateTextAsOpenAI(
+export async function generateTextAsOpenai(
   model: RawModel,
   prompt: string | ModelMessage[],
   options?: GenerateTextOptions,
@@ -192,7 +192,7 @@ export async function generateTextAsOpenAI(
 ): Promise<ChatCompletion> {
   const optsJson = options ? JSON.stringify(options) : undefined
   const bridge = signal ? new AbortBridge(signal) : undefined
-  const resultJson = await model.generateTextAsOpenAI(JSON.stringify(prompt), optsJson, bridge)
+  const resultJson = await model.generateTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
   return JSON.parse(resultJson) as ChatCompletion
 }
 
@@ -205,15 +205,15 @@ export async function generateTextAsOpenAI(
  *
  * @example
  * ```ts
- * import { openai, streamTextAsOpenAI } from 'aimux'
+ * import { openai, streamTextAsOpenai } from 'aimux'
  * const model = await openai(apiKey, 'gpt-4o')
- * for await (const chunk of streamTextAsOpenAI(model, 'Write a haiku.')) {
+ * for await (const chunk of streamTextAsOpenai(model, 'Write a haiku.')) {
  *   const delta = chunk.choices[0]?.delta?.content
  *   if (delta) process.stdout.write(delta)
  * }
  * ```
  */
-export async function* streamTextAsOpenAI(
+export async function* streamTextAsOpenai(
   model: RawModel,
   prompt: string | ModelMessage[],
   options?: GenerateTextOptions,
@@ -221,7 +221,7 @@ export async function* streamTextAsOpenAI(
 ): AsyncGenerator<ChatCompletionChunk> {
   const optsJson = options ? JSON.stringify(options) : undefined
   const bridge = signal ? new AbortBridge(signal) : undefined
-  const gen = await model.streamTextAsOpenAI(JSON.stringify(prompt), optsJson, bridge)
+  const gen = await model.streamTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
   for await (const json of gen) {
     yield JSON.parse(json) as ChatCompletionChunk
   }
