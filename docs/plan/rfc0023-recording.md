@@ -40,9 +40,9 @@
 | B2 | 落盘线程模型 | ✅ **tokio task**(2026-08-06,按 RFC 原文):aimux-core 加 tokio 正式依赖;`Handle::try_current()` 支持延迟启动(init 在 runtime 外时首次事件自动 spawn) | ✅ 已对齐 |
 | B3 | 门控 API | ✅ **RwLock**(2026-08-06):支持替换/关闭/测试隔离;热路径一次读锁 | ✅ 已对齐 |
 | B4 | 流式 outcome | ✅ **流结束时补全**(2026-08-06):包装 stream,Finish part 到达时补 finish_reason/usage | ✅ 已对齐 |
-| C1 | RFC-0015 sink 对齐 | RFC §6:共享 ring-store 模式,先实施方预留合并口子(RingTraceStore 已实施)。**RingRecorder 抽象怎么对齐?** | ⏳ 待对齐 |
-| D2 | P5 绑定层范围 | 哪些语言先做(Node/C ABI/Python/Go/…) + PrefixMatcher | ⏳ 待对齐 |
-| D3 | P6 RingRecorder | 可选,是否纳入本期 | ⏳ 待对齐 |
+| C1 | RFC-0015 sink 对齐 | ✅ **同款样式各自实现**(2026-08-06):RingRecorder 与 RingTraceStore 同模式(Mutex + VecDeque 有界 + with_capacity + export_jsonl),类型不统一,不改已合入的 RFC-0015 代码 | ✅ 已对齐 |
+| D2 | P5 绑定层范围 | ✅ **Node + C ABI**(2026-08-06):init_recording + mockReplay + replayRequest;其余语言后续薄透传 | ✅ 已对齐 |
+| D3 | P6 RingRecorder | ✅ **纳入本期**(2026-08-06) | ✅ 已对齐 |
 
 ## 参考
 
