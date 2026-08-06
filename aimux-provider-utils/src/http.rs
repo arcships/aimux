@@ -700,16 +700,17 @@ async fn read_error_body(
                 // The connection died mid-read: surface what we have.
                 Err(_) => break,
             };
-            total += chunk.len();
+            total = total.saturating_add(chunk.len());
             if collected.len() < MAX_ERROR_BODY_BYTES {
                 let take = (MAX_ERROR_BODY_BYTES - collected.len()).min(chunk.len());
                 collected.extend_from_slice(&chunk[..take]);
             }
         }
         let mut s = String::from_utf8_lossy(&collected).into_owned();
-        // Lossy decoding can expand invalid bytes (each became U+FFFD, 3
-        // bytes), so gate the cap on the *decoded* length, not just `total`.
-        if s.len() > MAX_ERROR_BODY_BYTES {
+        // Truncate when either the raw body exceeded the budget (marker must
+        // warn that content was dropped) or lossy decoding expanded the string
+        // (invalid bytes become 3-byte U+FFFD) beyond the budget.
+        if total > MAX_ERROR_BODY_BYTES || s.len() > MAX_ERROR_BODY_BYTES {
             // Truncate on a UTF-8 char boundary so the marker never splits a
             // multi-byte character. `0` is always a char boundary, so the
             // loop terminates.

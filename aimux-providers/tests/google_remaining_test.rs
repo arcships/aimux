@@ -881,6 +881,34 @@ mod json_accumulator_tests {
         assert!(matches!(err, AiMuxError::Json(_)));
     }
 
+    /// Regression (audit round 3, A1): an oversized **intermediate** index
+    /// (not the last segment) must also be rejected — previously only the
+    /// leaf segment was checked, so `$.a[1000000000].b` could still force
+    /// ~1 GiB of array allocation before failing.
+    #[test]
+    fn intermediate_oversized_index_is_rejected_atomically() {
+        let mut acc = GoogleJsonAccumulator::new();
+        let err = acc
+            .process_partial_args(&[PartialArg {
+                json_path: "$.a[1000000].b".to_string(),
+                string_value: Some("x".to_string()),
+                ..Default::default()
+            }])
+            .unwrap_err();
+        assert!(matches!(err, AiMuxError::Json(_)));
+
+        // Error atomicity: the rejected arg must not leave partially-built
+        // containers (`a: []`) behind — a subsequent valid write lands cleanly.
+        let r = acc
+            .process_partial_args(&[PartialArg {
+                json_path: "$.ok".to_string(),
+                string_value: Some("y".to_string()),
+                ..Default::default()
+            }])
+            .unwrap();
+        assert_eq!(r.current_json, json!({ "ok": "y" }));
+    }
+
     /// Regression (audit round 2): an overly deep path must be rejected.
     #[test]
     fn overdeep_path_is_rejected() {

@@ -460,6 +460,20 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
             "partial args path exceeds maximum depth of {MAX_PARTIAL_ARG_DEPTH}"
         )));
     }
+    // Pre-validate every index before mutating any state:
+    // - an oversized *intermediate* index would let the array spreading loop
+    //   allocate unboundedly (audit round 3, A1);
+    // - a late failure would leave partially-built containers behind,
+    //   breaking error atomicity.
+    for segment in segments {
+        if let Segment::Index(index) = segment
+            && *index > MAX_PARTIAL_ARG_INDEX
+        {
+            return Err(AiMuxError::Json(format!(
+                "partial args array index {index} exceeds maximum of {MAX_PARTIAL_ARG_INDEX}"
+            )));
+        }
+    }
     let mut current = obj;
     for i in 0..segments.len() - 1 {
         let seg = &segments[i];
@@ -532,11 +546,6 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
                 .insert(k.clone(), value);
         }
         Segment::Index(i) => {
-            if *i > MAX_PARTIAL_ARG_INDEX {
-                return Err(AiMuxError::Json(format!(
-                    "partial args array index {i} exceeds maximum of {MAX_PARTIAL_ARG_INDEX}"
-                )));
-            }
             let arr = current.as_array_mut().ok_or_else(|| parent_must_be(last))?;
             while arr.len() <= *i {
                 arr.push(Value::Null);
