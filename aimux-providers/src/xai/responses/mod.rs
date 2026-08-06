@@ -104,6 +104,8 @@ impl LanguageModel for XaiResponsesModel {
                 body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: options.call_id.clone(),
+                recording_context: options.recording_context.clone(),
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -374,6 +376,8 @@ impl LanguageModel for XaiResponsesModel {
                 body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: options.call_id.clone(),
+                recording_context: options.recording_context.clone(),
             },
             self.config.retry_config(),
             &DEFAULT_ERROR_STRUCTURE,

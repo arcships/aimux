@@ -177,6 +177,8 @@ impl SpeechModel for CartesiaSpeechModel {
                 body: HttpBody::Json(Value::Object(body.clone())),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -751,6 +753,8 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
                 body: HttpBody::Bytes(body_bytes, content_type),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,

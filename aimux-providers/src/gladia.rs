@@ -206,6 +206,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                 body: HttpBody::Bytes(body_bytes, content_type),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -242,6 +244,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -268,6 +272,8 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
+                    recording_context: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

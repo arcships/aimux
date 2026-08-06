@@ -201,6 +201,12 @@ pub struct HttpRequest {
     pub body: HttpBody,
     /// Optional signal used to cancel the request while it is connecting.
     pub abort_signal: Option<AbortSignal>,
+    /// RFC-0023 recording correlation id (copied from `CallOptions.call_id` by
+    /// text-generation providers; `None` for other modalities).
+    pub call_id: Option<String>,
+    /// RFC-0023 recording context (R7 快照绑定)。层 A 入口构造,
+    /// text-generation provider 从 `CallOptions.recording_context` 复制。
+    pub recording_context: Option<aimux_core::recording::RecordingContext>,
 }
 
 /// HTTP 响应（非流式，纯数据）。
@@ -243,7 +249,9 @@ pub async fn send(
 ) -> Result<HttpResponse, AiMuxError> {
     auto_init_from_env();
     let client = shared_client();
-    let resp = send_with_retry_raw(client, &request, retry_config, error_structure).await?;
+    let started = Instant::now();
+    let (resp, attempt) =
+        send_with_retry_raw(client, &request, retry_config, error_structure).await?;
 
     let status = resp.status().as_u16();
     let headers = collect_headers(resp.headers());
@@ -253,14 +261,28 @@ pub async fn send(
             let bytes = resp.bytes();
             tokio::select! {
                 biased;
-                _ = signal.cancelled() => return Err(AiMuxError::Aborted),
-                b = bytes => b.map_err(|e| AiMuxError::Http(e.to_string()))?,
+                _ = signal.cancelled() => {
+                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, "aborted after 2xx");
+                    record_transport_closed(&request);
+                    return Err(AiMuxError::Aborted);
+                }
+                b = bytes => b.map_err(|e| {
+                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, &e.to_string());
+                    record_transport_closed(&request);
+                    AiMuxError::Http(e.to_string())
+                })?,
             }
         }
-        None => resp
-            .bytes()
-            .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))?,
+        None => resp.bytes().await.map_err(|e| {
+            record_failed_exchange(
+                &request,
+                attempt,
+                started.elapsed().as_millis() as u64,
+                &e.to_string(),
+            );
+            record_transport_closed(&request);
+            AiMuxError::Http(e.to_string())
+        })?,
     };
 
     if body_logging_enabled() {
@@ -270,6 +292,50 @@ pub async fn send(
             "response_body"
         );
     }
+
+    // RFC-0023: 成功 attempt 的 exchange(body 补全;attempt 来自重试循环)。
+    // 门控提前:录制上下文不存在时零成本(S5 性能——不构造 exchange)。
+    if request.recording_context.is_none() {
+        return Ok(HttpResponse {
+            status,
+            headers,
+            body,
+        });
+    }
+    record_exchange(
+        &request,
+        aimux_core::recording::HttpExchange {
+            attempt,
+            request: to_http_record(&request),
+            response: Some(aimux_core::recording::ResponseRecord {
+                status,
+                headers: headers
+                    .iter()
+                    .map(|(k, v)| {
+                        if aimux_core::recording::is_sensitive_key(k) {
+                            (k.clone(), "[REDACTED]".to_string())
+                        } else {
+                            (k.clone(), v.clone())
+                        }
+                    })
+                    .collect(),
+                body: {
+                    let s = String::from_utf8_lossy(&body);
+                    Some(truncate_utf8(&s, RECORD_BODY_CAP).to_string())
+                },
+                stream_chunks: None,
+                ttfb_ms: None,
+            }),
+            timing: aimux_core::recording::TimingRecord {
+                latency_ms: started.elapsed().as_millis() as u64,
+                ttfb_ms: None,
+            },
+            error: None,
+            finalized: true,
+        },
+    );
+    // 非流式:exchange 即终点 → 传输封闭(与层 A 幂等)。
+    record_transport_closed(&request);
 
     Ok(HttpResponse {
         status,
@@ -289,7 +355,9 @@ pub async fn send_stream(
 ) -> Result<HttpStreamResponse, AiMuxError> {
     auto_init_from_env();
     let client = shared_streaming_client();
-    let resp = send_with_retry_raw(client, &request, retry_config, error_structure).await?;
+    let started = Instant::now();
+    let (resp, attempt) =
+        send_with_retry_raw(client, &request, retry_config, error_structure).await?;
 
     let status = resp.status().as_u16();
     let headers = collect_headers(resp.headers());
@@ -298,15 +366,63 @@ pub async fn send_stream(
         status = status,
         "stream_connected"
     );
+
+    // 流式录制上下文:仅调用点带 call_id 且录制开启时启用。
+    let stream_rec = if request.recording_context.is_some() {
+        let resp_headers: Vec<(String, String)> = headers
+            .iter()
+            .map(|(k, v)| {
+                if aimux_core::recording::is_sensitive_key(k) {
+                    (k.clone(), "[REDACTED]".to_string())
+                } else {
+                    (k.clone(), v.clone())
+                }
+            })
+            .collect();
+        // 骨架 exchange(attempt 源自重试循环;finalized=false 等流终结补全)。
+        record_exchange(
+            &request,
+            aimux_core::recording::HttpExchange {
+                attempt,
+                request: to_http_record(&request),
+                response: Some(aimux_core::recording::ResponseRecord {
+                    status,
+                    headers: resp_headers.clone(),
+                    body: None,
+                    stream_chunks: None,
+                    ttfb_ms: None,
+                }),
+                timing: aimux_core::recording::TimingRecord {
+                    latency_ms: started.elapsed().as_millis() as u64,
+                    ttfb_ms: None,
+                },
+                error: None,
+                finalized: false,
+            },
+        );
+        Some(StreamRec {
+            request: request.clone(),
+            attempt,
+            status,
+            headers: resp_headers,
+            ttfb_ms: None,
+            body: String::new(),
+            chunks: 0usize,
+        })
+    } else {
+        None
+    };
+
     let body = ObservedByteStream {
         inner: resp
             .bytes_stream()
             .map(|item| item.map_err(|e| AiMuxError::Http(e.to_string())))
             .boxed(),
         started: false,
-        start: Instant::now(),
+        start: started,
         chunks: 0u64,
         done: false,
+        record: stream_rec,
     }
     .boxed();
 
@@ -317,6 +433,38 @@ pub async fn send_stream(
     })
 }
 
+/// 流式录制上下文(骨架 exchange 的补全数据)。
+struct StreamRec {
+    request: HttpRequest,
+    attempt: u32,
+    status: u16,
+    headers: Vec<(String, String)>,
+    ttfb_ms: Option<u64>,
+    body: String,
+    chunks: usize,
+}
+
+impl StreamRec {
+    /// 终结时补全 response(transport 结束时对 attempt 定位更新)。
+    fn finalize(&mut self, error: Option<String>) {
+        let body = if self.body.is_empty() {
+            None
+        } else {
+            Some(std::mem::take(&mut self.body))
+        };
+        let response = aimux_core::recording::ResponseRecord {
+            status: self.status,
+            headers: self.headers.clone(),
+            body,
+            stream_chunks: Some(self.chunks),
+            ttfb_ms: self.ttfb_ms,
+        };
+        // 一次 patch:补 body/status/ttfb + 可选 error,保持 attempt 唯一(S1)。
+        update_exchange_response(&self.request, self.attempt, response, error);
+        record_transport_closed(&self.request);
+    }
+}
+
 /// 流式响应体观测包装：发出「首字节」与「流结束」两个 debug 事件
 /// （RFC-0014 §4.2 stream 行）。零成本——事件只在开启时格式化。
 struct ObservedByteStream {
@@ -325,6 +473,8 @@ struct ObservedByteStream {
     start: Instant,
     chunks: u64,
     done: bool,
+    /// RFC-0023:存在时累积原始 SSE 文本并终结补全。
+    record: Option<StreamRec>,
 }
 
 impl Stream for ObservedByteStream {
@@ -337,18 +487,27 @@ impl Stream for ObservedByteStream {
         }
         let result = this.inner.as_mut().poll_next(cx);
         match &result {
-            Poll::Ready(Some(Ok(_))) => {
+            Poll::Ready(Some(Ok(bytes))) => {
                 if !this.started {
                     this.started = true;
+                    let ttfb = this.start.elapsed().as_millis() as u64;
                     tracing::debug!(
                         target: "aimux_provider_utils::http",
-                        ttfb_ms = this.start.elapsed().as_millis() as u64,
+                        ttfb_ms = ttfb,
                         "stream_first_byte"
                     );
+                    if let Some(rec) = &mut this.record {
+                        rec.ttfb_ms = Some(ttfb);
+                    }
                 }
                 this.chunks += 1;
+                if let Some(rec) = &mut this.record {
+                    let s = String::from_utf8_lossy(bytes);
+                    push_utf8_capped(&mut rec.body, &s, RECORD_BODY_CAP);
+                    rec.chunks = this.chunks as usize;
+                }
             }
-            Poll::Ready(Some(Err(_))) | Poll::Ready(None) => {
+            Poll::Ready(Some(Err(e))) => {
                 this.done = true;
                 tracing::debug!(
                     target: "aimux_provider_utils::http",
@@ -356,10 +515,37 @@ impl Stream for ObservedByteStream {
                     duration_ms = this.start.elapsed().as_millis() as u64,
                     "stream_end"
                 );
+                if let Some(rec) = &mut this.record {
+                    rec.finalize(Some(e.to_string()));
+                }
+            }
+            Poll::Ready(None) => {
+                this.done = true;
+                tracing::debug!(
+                    target: "aimux_provider_utils::http",
+                    chunks = this.chunks,
+                    duration_ms = this.start.elapsed().as_millis() as u64,
+                    "stream_end"
+                );
+                if let Some(rec) = &mut this.record {
+                    rec.finalize(None);
+                }
             }
             Poll::Pending => {}
         }
         result
+    }
+}
+
+impl Drop for ObservedByteStream {
+    fn drop(&mut self) {
+        // 消费方提前放弃流:仍补全已累积的 body,避免骨架悬空。
+        if self.record.is_some()
+            && !self.done
+            && let Some(rec) = &mut self.record
+        {
+            rec.finalize(Some("abandoned".to_string()));
+        }
     }
 }
 
@@ -736,6 +922,118 @@ async fn read_error_body(
     }
 }
 
+// ── RFC-0023 层 B 录制支持(经 http 咽喉点;per-attempt + 流式累积)──────
+
+/// 录制 body 上限(超出截断,防内存膨胀)。
+const RECORD_BODY_CAP: usize = 1 << 20; // 1 MiB
+
+/// UTF-8 安全截断:最多保留前 `cap` 字节(不切在多字节字符中间)。
+fn truncate_utf8(s: &str, cap: usize) -> &str {
+    if s.len() <= cap {
+        return s;
+    }
+    let mut end = cap;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+/// 流式累积:把 `chunk` 追加到 `buf`(受 cap 限制,安全截断)。
+fn push_utf8_capped(buf: &mut String, chunk: &str, cap: usize) {
+    if buf.len() >= cap {
+        return;
+    }
+    let take = cap - buf.len();
+    let chunk = if chunk.len() > take {
+        let mut end = take;
+        while end > 0 && !chunk.is_char_boundary(end) {
+            end -= 1;
+        }
+        &chunk[..end]
+    } else {
+        chunk
+    };
+    buf.push_str(chunk);
+}
+
+/// 把请求转成录制侧的 HttpRecord(敏感头 contains 式脱敏;body 截断)。
+fn to_http_record(request: &HttpRequest) -> aimux_core::recording::HttpRecord {
+    use aimux_core::recording::is_sensitive_key;
+    let headers = request
+        .headers
+        .iter()
+        .map(|(k, v)| {
+            if is_sensitive_key(k) {
+                (k.clone(), "[REDACTED]".to_string())
+            } else {
+                (k.clone(), v.clone())
+            }
+        })
+        .collect();
+    let body = match &request.body {
+        HttpBody::Json(v) => serde_json::to_string(v).unwrap_or_default(),
+        HttpBody::Bytes(b, _) => String::from_utf8_lossy(b).into_owned(),
+        HttpBody::Empty => String::new(),
+    };
+    let body = if body.is_empty() {
+        None
+    } else {
+        Some(truncate_utf8(&body, RECORD_BODY_CAP).to_string())
+    };
+    aimux_core::recording::HttpRecord {
+        method: request.method.as_str().to_string(),
+        url: request.url.clone(),
+        headers,
+        body,
+    }
+}
+
+/// 录制单条 exchange(层 B 入队;call_id 缺失或录制关闭时零开销)。
+fn record_exchange(request: &HttpRequest, exchange: aimux_core::recording::HttpExchange) {
+    if let Some(ctx) = &request.recording_context {
+        ctx.recorder.record_exchange(&ctx.call_id, &exchange);
+    }
+}
+
+/// 补全流式 response(同 attempt 定位,令 finalized=true)。
+fn update_exchange_response(
+    request: &HttpRequest,
+    attempt: u32,
+    response: aimux_core::recording::ResponseRecord,
+    error: Option<String>,
+) {
+    if let Some(ctx) = &request.recording_context {
+        ctx.recorder
+            .record_exchange_update(&ctx.call_id, attempt, &response, error);
+    }
+}
+
+/// 声明传输层封闭(层 B;P2 语义:不再有 exchange)。
+fn record_transport_closed(request: &HttpRequest) {
+    if let Some(ctx) = &request.recording_context {
+        ctx.recorder.record_transport_closed(&ctx.call_id);
+    }
+}
+
+/// 录制失败 attempt 的 exchange(终态,error 携带原因)。
+fn record_failed_exchange(request: &HttpRequest, attempt: u32, latency_ms: u64, error: &str) {
+    record_exchange(
+        request,
+        aimux_core::recording::HttpExchange {
+            attempt,
+            request: to_http_record(request),
+            response: None,
+            timing: aimux_core::recording::TimingRecord {
+                latency_ms,
+                ttfb_ms: None,
+            },
+            error: Some(error.to_string()),
+            finalized: true,
+        },
+    );
+}
+
 /// retry 核心：反复 `.send()` 直到拿到 2xx 响应或耗尽重试。
 ///
 /// 这是 http 层内部函数——`reqwest::Response` 不外泄。每次重试从 `&request`
@@ -745,7 +1043,7 @@ async fn send_with_retry_raw(
     request: &HttpRequest,
     retry_config: RetryConfig,
     error_structure: &ErrorStructure,
-) -> Result<reqwest::Response, AiMuxError> {
+) -> Result<(reqwest::Response, u32), AiMuxError> {
     let span = tracing::debug_span!(
         target: "aimux_provider_utils::http",
         "http_request",
@@ -775,7 +1073,7 @@ async fn send_with_retry_raw(
                     "response"
                 );
                 if resp.status().is_success() {
-                    return Ok(resp);
+                    return Ok((resp, attempt));
                 }
                 // 429: 读 retry-after headers（在消费 body 之前）。
                 if status_code == 429 {
@@ -792,6 +1090,12 @@ async fn send_with_retry_raw(
                     // exceeded" vs "too many requests") so consumers can tell
                     // the two apart (issue M6).
                     let body = read_error_body(resp, request).await?;
+                    record_failed_exchange(
+                        request,
+                        attempt,
+                        latency_ms,
+                        &format!("HTTP {status_code}: {body}"),
+                    );
                     last_error = AiMuxError::RateLimited {
                         retry_after_ms: hint.unwrap_or(1000).max(0) as u64,
                         message: format!("HTTP {status_code}: {}", body),
@@ -799,14 +1103,23 @@ async fn send_with_retry_raw(
                 } else if resp.status().is_server_error() {
                     // 5xx: 可重试。
                     let body = read_error_body(resp, request).await?;
+                    record_failed_exchange(
+                        request,
+                        attempt,
+                        latency_ms,
+                        &format!("HTTP {status_code}: {body}"),
+                    );
                     last_error = AiMuxError::ApiCall(format!("HTTP {}: {}", status_code, body));
                 } else {
                     // 非 4xx 非 5xx：不可重试，立即返回。
                     let body = read_error_body(resp, request).await?;
-                    return Err(parse_provider_error(status_code, &body, error_structure));
+                    let err = parse_provider_error(status_code, &body, error_structure);
+                    record_failed_exchange(request, attempt, latency_ms, &err.to_string());
+                    return Err(err);
                 }
             }
             Err(e) => {
+                record_failed_exchange(request, attempt, latency_ms, &e.to_string());
                 last_error = e;
             }
         }
@@ -1051,6 +1364,8 @@ mod tests {
             body: HttpBody::Json(serde_json::json!({"q": "hi"})),
 
             abort_signal: None,
+            call_id: None,
+            recording_context: None,
         };
         let _clone = req.clone();
         assert_eq!(req.method, HttpMethod::Post);
@@ -1069,6 +1384,8 @@ mod tests {
             body: HttpBody::Empty,
 
             abort_signal: None,
+            call_id: None,
+            recording_context: None,
         };
         let err = build_request_builder(&client, &req).unwrap_err();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "got {err:?}");
@@ -1089,6 +1406,8 @@ mod tests {
             body: HttpBody::Empty,
 
             abort_signal: None,
+            call_id: None,
+            recording_context: None,
         };
         let err = build_request_builder(&client, &req).unwrap_err();
         assert!(matches!(err, AiMuxError::InvalidArgument(_)), "got {err:?}");
@@ -1108,6 +1427,8 @@ mod tests {
             body: HttpBody::Json(serde_json::json!({"q": "hi"})),
 
             abort_signal: None,
+            call_id: None,
+            recording_context: None,
         };
         assert!(build_request_builder(&client, &req).is_ok());
     }

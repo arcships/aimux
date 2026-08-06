@@ -149,6 +149,8 @@ impl EmbeddingModel for VertexEmbeddingModel {
                     body: HttpBody::Json(Value::Object(body)),
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
+                    recording_context: None,
                 },
                 RetryConfig::default(),
                 &GOOGLE_ERROR_STRUCTURE,
@@ -229,6 +231,8 @@ impl EmbeddingModel for VertexEmbeddingModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

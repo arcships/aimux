@@ -204,6 +204,8 @@ impl VertexImageModel {
                 body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,
@@ -348,6 +350,8 @@ impl VertexImageModel {
                 body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &GOOGLE_ERROR_STRUCTURE,

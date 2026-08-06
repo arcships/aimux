@@ -344,6 +344,8 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                 body: HttpBody::Bytes(body_bytes, content_type),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             self.config.retry_config,
             &DEFAULT_ERROR_STRUCTURE,

@@ -159,6 +159,8 @@ impl ImageModel for OpenAIImageModel {
                     body: HttpBody::Bytes(form_body, content_type),
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
+                    recording_context: None,
                 },
                 self.config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
@@ -181,6 +183,8 @@ impl ImageModel for OpenAIImageModel {
                     body: HttpBody::Json(Value::Object(body.clone())),
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
+                    recording_context: None,
                 },
                 self.config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,

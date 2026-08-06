@@ -202,6 +202,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                 body: HttpBody::Bytes(audio_bytes, "application/octet-stream".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -248,6 +250,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                 body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
             },
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
@@ -271,6 +275,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
+                    call_id: None,
+                    recording_context: None,
                 },
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

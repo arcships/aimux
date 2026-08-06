@@ -62,6 +62,7 @@ fn build_anthropic_request(
     build_headers: &impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
+    recording_context: Option<aimux_core::recording::RecordingContext>,
 ) -> Result<HttpRequest, AiMuxError> {
     // Serialize once; the Bytes path sends these exact bytes and the closure
     // signs over them, guaranteeing signature/body agreement.
@@ -79,6 +80,8 @@ fn build_anthropic_request(
         headers,
         body: http_body,
         abort_signal,
+        call_id: recording_context.as_ref().map(|c| c.call_id.clone()),
+        recording_context,
     })
 }
 
@@ -157,9 +160,16 @@ pub(crate) async fn anthropic_generate_core(
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
+    recording_context: Option<aimux_core::recording::RecordingContext>,
 ) -> Result<GenerateResult, AiMuxError> {
-    let request =
-        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let request = build_anthropic_request(
+        endpoint,
+        &body,
+        &build_headers,
+        body_encoding,
+        abort_signal,
+        recording_context,
+    )?;
     let resp = send_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let data: AnthropicResponse =
@@ -236,9 +246,16 @@ pub(crate) async fn anthropic_stream_core(
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
+    recording_context: Option<aimux_core::recording::RecordingContext>,
 ) -> Result<StreamResult, AiMuxError> {
-    let request =
-        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
+    let request = build_anthropic_request(
+        endpoint,
+        &body,
+        &build_headers,
+        body_encoding,
+        abort_signal,
+        recording_context,
+    )?;
     let resp = send_stream_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
     let response_headers = resp.headers;

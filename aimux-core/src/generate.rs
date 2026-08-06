@@ -106,6 +106,7 @@ impl GenerateTextOptions {
             session_id: self.session_id,
             abort_signal: self.abort_signal,
             call_id: None,
+            recording_context: None,
             include_raw_chunks: self.include_raw_chunks,
         }
     }
@@ -208,15 +209,30 @@ pub async fn generate_text(
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
     //     前提;P2 移交层 B)。
-    let recorder = crate::recording::recorder();
-    let call_id = recorder.as_ref().map(|rec| {
+    let context = crate::recording::recorder().map(|recorder| {
         let call_id = crate::recording::new_call_id();
         call_options.call_id = Some(call_id.clone());
-        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
-        rec.record_provider(&call_id, &model.config_snapshot());
-        rec.record_transport_closed(&call_id);
-        call_id
+        let ctx = crate::recording::RecordingContext {
+            call_id: call_id.clone(),
+            recorder,
+        };
+        call_options.recording_context = Some(ctx.clone());
+        ctx.recorder.record_input(
+            &ctx.call_id,
+            &call_options,
+            model.provider(),
+            model.model_id(),
+        );
+        ctx.recorder
+            .record_provider(&ctx.call_id, &model.config_snapshot());
+        // 层 A 早发 closed(defense-in-depth):无 HTTP 的调用(mock/local)也
+        // 能完成 barrier;真实 HTTP 的骨架 finalized=false 仍会挡写,由层 B
+        // 结束再发 closed 完成。双发幂等。
+        ctx.recorder.record_transport_closed(&ctx.call_id);
+        ctx
     });
+    let call_id = context.as_ref().map(|c| c.call_id.clone());
+    let recorder = context.as_ref().map(|c| c.recorder.clone());
 
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
@@ -342,15 +358,30 @@ pub async fn stream_text(
     // 2a. RFC-0023: 关闭时零成本(M2 评审)——仅在录制开启时生成 call_id
     //     并绑定 recorder 快照;传输封闭由层 A 收尾声明(P1 无层 B,barrier
     //     前提;P2 移交层 B)。
-    let recorder = crate::recording::recorder();
-    let call_id = recorder.as_ref().map(|rec| {
+    let context = crate::recording::recorder().map(|recorder| {
         let call_id = crate::recording::new_call_id();
         call_options.call_id = Some(call_id.clone());
-        rec.record_input(&call_id, &call_options, model.provider(), model.model_id());
-        rec.record_provider(&call_id, &model.config_snapshot());
-        rec.record_transport_closed(&call_id);
-        call_id
+        let ctx = crate::recording::RecordingContext {
+            call_id: call_id.clone(),
+            recorder,
+        };
+        call_options.recording_context = Some(ctx.clone());
+        ctx.recorder.record_input(
+            &ctx.call_id,
+            &call_options,
+            model.provider(),
+            model.model_id(),
+        );
+        ctx.recorder
+            .record_provider(&ctx.call_id, &model.config_snapshot());
+        // 层 A 早发 closed(defense-in-depth):无 HTTP 的调用(mock/local)也
+        // 能完成 barrier;真实 HTTP 的骨架 finalized=false 仍会挡写,由层 B
+        // 结束再发 closed 完成。双发幂等。
+        ctx.recorder.record_transport_closed(&ctx.call_id);
+        ctx
     });
+    let call_id = context.as_ref().map(|c| c.call_id.clone());
+    let recorder = context.as_ref().map(|c| c.recorder.clone());
 
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so

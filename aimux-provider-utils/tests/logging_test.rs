@@ -37,6 +37,8 @@ fn request(url: String) -> HttpRequest {
             "api_key": "sk-must-not-leak",
         })),
         abort_signal: None,
+        call_id: None,
+        recording_context: None,
     }
 }
 
