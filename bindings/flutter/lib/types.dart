@@ -663,6 +663,8 @@ class GenerateTextOptions {
   final TimeoutConfiguration? timeout;
   @JsonKey(name: 'include_raw_chunks')
   final bool? includeRawChunks;
+  @JsonKey(name: 'session_id')
+  final String? sessionId;
 
   GenerateTextOptions({
     this.maxOutputTokens,
@@ -684,6 +686,7 @@ class GenerateTextOptions {
     this.maxRetries,
     this.timeout,
     this.includeRawChunks,
+    this.sessionId,
   });
 
   factory GenerateTextOptions.fromJson(Map<String, dynamic> json) {
@@ -715,6 +718,7 @@ class GenerateTextOptions {
           ? TimeoutConfiguration.fromJson(json['timeout'] as Map<String, dynamic>)
           : null,
       includeRawChunks: json['include_raw_chunks'] as bool?,
+      sessionId: json['session_id'] as String?,
     );
   }
   Map<String, dynamic> toJson() => {
@@ -737,6 +741,7 @@ class GenerateTextOptions {
         if (maxRetries != null) 'max_retries': maxRetries,
         if (timeout != null) 'timeout': timeout!.toJson(),
         if (includeRawChunks != null) 'include_raw_chunks': includeRawChunks,
+        if (sessionId != null) 'session_id': sessionId,
       };
 }
 
