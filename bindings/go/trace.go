@@ -51,9 +51,10 @@ func (m *Model) traceWrap(audited bool, strict C.int) (*Model, error) {
 	if ptr == nil {
 		return nil, errors.New("aimux: trace_new returned null")
 	}
-	defer C.aimux_free_string(ptr)
+	// parseHandleJSON frees the C string (defer inside it) — do NOT free
+	// here too (double free).
 
-	handle, err := parseHandleJSON(ptr)
+	handle, err = parseHandleJSON(ptr)
 	if err != nil {
 		return nil, err
 	}
