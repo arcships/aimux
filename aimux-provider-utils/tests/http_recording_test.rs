@@ -276,9 +276,6 @@ async fn retry_records_per_attempt_success_after_429() {
     // send_with_retry_raw 里 max_retries=2 会先 429 重试再成功。
     let url = format!("{}/v1/chat", server.uri());
     let req = json_post(&url, Some("call-retry"));
-    // 429 是 retryable,默认 config max_retries 需要 ≥1。
-    let conn = req.clone();
-    drop(conn);
     let resp = send(req, fast_config(), &DEFAULT_ERROR_STRUCTURE)
         .await
         .unwrap();

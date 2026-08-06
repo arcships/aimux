@@ -957,6 +957,89 @@ mod tests {
     }
 
     #[test]
+    fn error_patches_existing_exchange_not_duplicate() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-errpatch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        rec.record_input("call-errp", &sample_options(), "openai", "gpt-4o");
+        rec.record_exchange(
+            "call-errp",
+            &HttpExchange {
+                attempt: 3,
+                request: HttpRecord {
+                    method: "post".into(),
+                    url: "u".into(),
+                    headers: vec![],
+                    body: Some("{}".into()),
+                },
+                response: Some(ResponseRecord {
+                    status: 200,
+                    headers: vec![],
+                    body: None,
+                    stream_chunks: None,
+                    ttfb_ms: None,
+                }),
+                timing: TimingRecord {
+                    latency_ms: 1,
+                    ttfb_ms: None,
+                },
+                error: None,
+                finalized: false,
+            },
+        );
+        // 流中途 error → patch 到同一条(骨架),带 body 补全 + error(S1)。
+        rec.record_exchange_update(
+            "call-errp",
+            3,
+            &ResponseRecord {
+                status: 200,
+                headers: vec![],
+                body: Some(r#"{"partial":true}"#.into()),
+                stream_chunks: Some(1),
+                ttfb_ms: Some(12),
+            },
+            Some("mid-stream error".to_string()),
+        );
+        rec.record_transport_closed("call-errp");
+        rec.record_outcome(
+            "call-errp",
+            &OutcomeRecord {
+                status: OutcomeStatus::Error,
+                finish_reason: None,
+                error: Some("mid-stream".into()),
+                usage: None,
+            },
+        );
+        rec.flush();
+        let content = std::fs::read_to_string(rec.path()).unwrap();
+        let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
+        // 只有 1 条 exchange(骨架 patch,不重复)。
+        assert_eq!(
+            parsed.exchanges.len(),
+            1,
+            "error must patch same attempt, not duplicate"
+        );
+        assert_eq!(parsed.exchanges[0].attempt, 3);
+        let ex = &parsed.exchanges[0];
+        assert!(ex.finalized);
+        assert_eq!(ex.error.as_deref(), Some("mid-stream error"));
+        // body 补全 + ttfb 保留。
+        assert!(
+            ex.response
+                .as_ref()
+                .unwrap()
+                .body
+                .as_deref()
+                .unwrap()
+                .contains("partial")
+        );
+        assert_eq!(ex.response.as_ref().unwrap().ttfb_ms, Some(12));
+        // error 已 patch 进骨架 + finalized + closed → wire 完整 → complete。
+        assert!(parsed.complete, "finalized exchange + closed -> complete");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn barrier_waits_for_transport_closed_and_marks_complete() {
         let dir = std::env::temp_dir().join(format!("aimux-rec-btc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

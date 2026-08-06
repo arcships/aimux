@@ -90,7 +90,7 @@
 | 阶段 | 状态 | 备注 |
 |---|---|---|
 | P1 录制核心 | ✅ 已合并(PR #85) | completion barrier + transport_closed、专用 writer thread + oneshot flush + Drop join、脱敏超集、call_id 统一、complete 标记、ISO 时间戳 |
-| **P2 层 B HTTP 录制** | 🔄 已实施(双模型评审修复中) | per-attempt exchange、流式骨架 + patch 补全(Drop 幂等)、R7 recorder 快照(RecordingContext 透传)、UTF-8 安全截断、OpenAI/Anthropic/Azure/Codex call_id 透传、429→200 per-attempt 测试 |
+| **P2 层 B HTTP 录制** | ✅ 已实施(双模型二次评审通过) | per-attempt exchange、流式骨架 + patch 补全(Drop 幂等)、R7 recorder 快照(RecordingContext 透传)、UTF-8 安全截断、OpenAI/Anthropic/Azure/Codex call_id 透传、429→200 per-attempt 测试 |
 | 队列语义 | ⏳ 延期 | P1 无界 channel;bounded/drop-newest + 丢弃计数留 P5/P6(RingRecorder 兜底) |
 
 ## 参考
