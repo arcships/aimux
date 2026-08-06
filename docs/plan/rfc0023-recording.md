@@ -2,47 +2,88 @@
 
 > 本文件是 #48(RFC-0023)的**对齐追踪入口**:先对齐方案,再实施。
 > 关联:issue [#48](https://github.com/arcships/aimux/issues/48)、[RFC-0023](../../rfc/0023-runtime-request-recording.md)(DRAFT)
-> 状态:2026-08-06 开始对齐(P1-P3 曾实施后回滚,代码在 `backup/rfc0023-p1-p3` 分支,仅作参考)
+> 状态:2026-08-06 对齐完成 + 双模型评审完成,待修订 RFC 定稿后实施
+> (P1-P3 曾实施后回滚,代码在 `backup/rfc0023-p1-p3` 分支,仅作参考)
 
-## 对齐流程
+## 流程状态
 
 ```
-1. 对齐前置依赖与范围    ← 进行中
-2. 评审 RFC-0023 DRAFT    ← 待做
-3. 逐项确认设计决策       ← 待做
-4. 对齐 RFC-0015 sink     ← 待做
-5. 锁定实施草案 → 再实施
+1. 对齐前置依赖与范围   ✅ 完成
+2. 评审 RFC-0023 DRAFT  ✅ 完成(gpt-5.6-sol + glm-5.2,结论:需修订后定稿)
+3. 逐项确认设计决策      ✅ 完成(B1-B4/C1/D1/D2/D3)
+4. 对齐 RFC-0015 sink   ✅ 完成
+5. 按评审修订 RFC       ← 当前步骤
+6. 锁定实施草案 → 再实施
 ```
 
-## 已对齐结论
+## 双模型评审结论(2026-08-06)
 
-### D1. P4 请求回放与 RFC-0020 解耦(2026-08-06)
+| 评审 | 结论 | 阻塞项 |
+|---|---|---|
+| gpt-5.6-sol(嘉衡) | 需修订后定稿 | 12 项(见下) |
+| glm-5.2(牧云) | 需修订 | 4 项(B-1~B-4) |
 
-**问题**:RFC 原标注 P4 依赖 RFC-0020(外部 provider 配置),经对齐确认该依赖不成立:
+**阻塞项(两份评审合并去重)**:
 
-- RFC-0020 只覆盖 **OpenAI 兼容协议**(其 Non-Goal #1:原生协议 provider 是代码实现,无法用配置数据描述)——即使落地也重建不了 anthropic/google/bedrock 等。
-- 原依赖的实质是"按数据构造 provider 的统一入口",而非"外部配置覆盖层"——两个正交机制。
+| # | 问题 | 修订决策 |
+|---|---|---|
+| R1 | RFC 正文与 B1/B3/D3 矛盾(§3.3 独立 trait、§3.5 OnceLock、§11 P6 可选) | 修订 RFC 对齐已定决策 |
+| R2 | **敏感头脱敏不完整**:精确匹配漏 `x-goog-api-key`(Google/Vertex 明文落盘) | 脱敏改 contains 式(复用 logging.rs `is_sensitive_key`) |
+| R3 | **per-attempt 录制落点**:重试在 `send_with_retry_raw` 内,`send` 只录 1 条 | 录制移入 `send_with_retry_raw` 循环,每次 attempt 一条 |
+| R4 | **P4 crate 边界**:自动重建放 core 会循环依赖 | 拆层:`replay_with_model`(core,provider 无关)+ 自动构造(providers/CLI) |
+| R5 | **流式终结竞态**:Outcome 即写删 pending,ExchangeUpdate 后到被丢 | writer 用 completion barrier,outcome/exchange 都到齐才写;ExchangeUpdate 带 attempt ID |
+| R6 | **输入侧凭据泄露**:CallOptions.headers/provider_options 序列化含 Authorization | 输入侧 + provider_options 统一脱敏(与 HTTP 侧同规则) |
+| R7 | **每次调用绑定 recorder 快照**:调用中途替换全局 recorder 会拆散 Recording | 层 A 入口取一次 Arc,随 trace_id 传到底层;全局替换只影响新调用 |
+| R8 | **mock 回放范围**:原生协议 wire 无法通用解析 | OpenAI 兼容 MVP,其他明确 Unsupported(用户拍板) |
 
-**对齐设计**:`replay_request(recording, model: Option<&dyn LanguageModel>, api_key: Option<&str>, overrides)`
+## 已对齐结论(含评审修订)
 
-- 自动重建优先:openai 兼容族 + `env:VAR`/`none` 来源可重建;
-  `explicit` 来源调用方补 `api_key`。
-- 手动兜底:原生协议或无构造入口 → 调用方传 `model` 实例(回放框架本身 provider 无关)。
-- 已同步修订 RFC-0023 §3.6.1 与 §11 P4 行。
+### D1. P4 请求回放与 RFC-0020 解耦 + 拆层(2026-08-06 修订)
 
-## 待对齐项
+- RFC-0020 只覆盖 OpenAI 兼容协议(其 Non-Goal #1),即使落地也重建不了原生协议 provider——原依赖标注不成立。
+- **拆层**(评审 R4 + 用户拍板):
+  - `aimux-core::replay::replay_with_model(recording, model, overrides)` — provider 无关,只恢复输入并重发。
+  - 自动构造(按 ProviderRecord 重建 provider)放 `aimux-providers`/CLI,后续按 D1 能力边界实现。
+- 能力边界:`env:VAR`/`none` 可自动重建;`explicit` 补 key;原生协议传实例。
 
-| # | 项 | 内容 | 状态 |
-|---|---|---|---|
-| A1 | 前置依赖梳理 | RFC-0015 ✅(sink 对齐待 C1)/ RFC-0014 ✅ / RFC-0003 判定为参考不依赖 / RFC-0020 已解耦 / RFC-0021/22 不阻塞 | ✅ 已对齐 |
-| A2 | RFC 评审 | RFC-0023 仍 DRAFT,需评审定稿(或至少锁定实施草案) | ⏳ 待做 |
-| B1 | ConfigSnapshot 形式 | ✅ **LanguageModel 默认方法**(2026-08-06):零破坏,provider 覆盖即得完整快照 | ✅ 已对齐 |
-| B2 | 落盘线程模型 | ✅ **tokio task**(2026-08-06,按 RFC 原文):aimux-core 加 tokio 正式依赖;`Handle::try_current()` 支持延迟启动(init 在 runtime 外时首次事件自动 spawn) | ✅ 已对齐 |
-| B3 | 门控 API | ✅ **RwLock**(2026-08-06):支持替换/关闭/测试隔离;热路径一次读锁 | ✅ 已对齐 |
-| B4 | 流式 outcome | ✅ **流结束时补全**(2026-08-06):包装 stream,Finish part 到达时补 finish_reason/usage | ✅ 已对齐 |
-| C1 | RFC-0015 sink 对齐 | ✅ **同款样式各自实现**(2026-08-06):RingRecorder 与 RingTraceStore 同模式(Mutex + VecDeque 有界 + with_capacity + export_jsonl),类型不统一,不改已合入的 RFC-0015 代码 | ✅ 已对齐 |
-| D2 | P5 绑定层范围 | ✅ **Node + C ABI**(2026-08-06):init_recording + mockReplay + replayRequest;其余语言后续薄透传 | ✅ 已对齐 |
-| D3 | P6 RingRecorder | ✅ **纳入本期**(2026-08-06) | ✅ 已对齐 |
+### B1. ConfigSnapshot = LanguageModel 默认方法(评审确认)
+
+- `LanguageModel::config_snapshot()` 默认方法返回 `ProviderRecord::minimal`;provider 覆盖即完整。
+- 装饰器规则(评审补充):transparent decorator(TraceLayer 等)必须转发 inner 快照。
+
+### B2. 落盘线程 = 专用 writer thread(评审推翻 tokio task,用户拍板)
+
+- **同步 `Recorder::flush` 与异步 writer 不匹配**(fire-and-forget 不保证落盘、无 runtime 生命周期问题)。
+- 回到 std::thread + std::sync::mpsc(回滚前做法,已验证);flush 用 oneshot 回执确认落盘。
+- aimux-core 已有 tokio dev-dep,无需为录制加正式依赖。
+
+### B3. 门控 = RwLock + Option 签名(评审确认)
+
+- `RwLock<Option<Arc<dyn Recorder>>>`,`init_recording(Option<Arc>)` 可替换/关闭。
+- **每次调用绑定 recorder 快照**(R7):层 A 入口取一次 Arc,整次调用用同一实例。
+- 热路径性能表述务实化(删除"~1ns"绝对数值)。
+- 测试仍需 `#[serial]`(全局单例),`serial_test` 已是仓库 dev-dep。
+
+### B4. 流式 outcome = 流结束时补全 + 终结状态(评审修订)
+
+- 包装 stream:Finish → success+finish/usage;StreamPart::Error/item Err → failure;
+  无 Finish EOF → incomplete;提前 drop → cancelled/incomplete(用 Drop guard)。
+- OutcomeRecord 增加状态枚举(complete/truncated),不用裸 success: bool。
+
+### C1. RingRecorder = 同款样式各自实现(评审确认)
+
+- 同 RingTraceStore 模式(Mutex + VecDeque 有界 + with_capacity + export_jsonl)。
+- 内部需 `pending_by_trace_id + completed VecDeque`(分片合并后再入 ring);容量语义、单条上限、incomplete 导出规则进实施验收。
+
+### D2. P5 绑定层 = Node + C ABI 本期(评审确认)
+
+### D3. P6 RingRecorder = 纳入本期(评审确认)
+
+## 修订后仍需实施验证的不确定项
+
+- `ConfigSnapshot` api_key_source 的跨 provider 可分类性(回滚前仅 OpenAI 1 家实现)——S-1 建议 config 加来源追踪字段,或 D1 在分类不确定时回退手动兜底。
+- `send_with_retry_raw` per-attempt 录制的错误体捕获点(read_error_body)需实现时确认。
+- P5 Node/C ABI 的 model handle 所有权(C ABI 不直接表达借用型 Option<&dyn LanguageModel>)。
 
 ## 参考
 
