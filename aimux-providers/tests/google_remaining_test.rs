@@ -18,6 +18,7 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -863,6 +864,36 @@ mod json_accumulator_tests {
             .unwrap();
         // The malformed arg is ignored; the well-formed one still lands.
         assert_eq!(r.current_json, json!({ "ok": "y" }));
+    }
+
+    /// Regression (audit round 2): an oversized array index must produce an
+    /// error instead of expanding an array with ~1e6+ Null entries (OOM).
+    #[test]
+    fn oversized_array_index_is_rejected() {
+        let mut acc = GoogleJsonAccumulator::new();
+        let err = acc
+            .process_partial_args(&[PartialArg {
+                json_path: "$.a[1000000]".to_string(),
+                string_value: Some("x".to_string()),
+                ..Default::default()
+            }])
+            .unwrap_err();
+        assert!(matches!(err, AiMuxError::Json(_)));
+    }
+
+    /// Regression (audit round 2): an overly deep path must be rejected.
+    #[test]
+    fn overdeep_path_is_rejected() {
+        let mut acc = GoogleJsonAccumulator::new();
+        let deep = format!("${}", ".a".repeat(100));
+        let err = acc
+            .process_partial_args(&[PartialArg {
+                json_path: deep,
+                string_value: Some("x".to_string()),
+                ..Default::default()
+            }])
+            .unwrap_err();
+        assert!(matches!(err, AiMuxError::Json(_)));
     }
 
     #[test]

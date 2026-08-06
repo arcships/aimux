@@ -433,16 +433,32 @@ fn get_nested_value(obj: &Value, segments: &[Segment]) -> Option<Value> {
     Some(current.clone())
 }
 
+/// Maximum array index accepted from a partialArgs path. `partialArgs` is
+/// provider-controlled; without a cap, a path like `$.a[1000000000]` makes
+/// the array-spreading loop allocate ~1 GiB of `Value::Null`, exhausting
+/// memory (audit finding, round 2).
+const MAX_PARTIAL_ARG_INDEX: usize = 100_000;
+
+/// Maximum path depth accepted from a partialArgs path (guards against
+/// pathologically deep nesting).
+const MAX_PARTIAL_ARG_DEPTH: usize = 64;
+
 /// Set a value at a nested path, creating intermediate objects or arrays.
 ///
 /// Returns [`AiMuxError::Json`] instead of panicking when the incoming path
 /// conflicts with the already-accumulated type (e.g. `$.a` was set to a
-/// string and a later `partialArgs` chunk targets `$.a[0].b`). The partial
-/// stream is provider-controlled (untrusted), so a conflict must surface as an
-/// error, not a process crash.
+/// string and a later `partialArgs` chunk targets `$.a[0].b`), or when the
+/// path exceeds the resource caps ([`MAX_PARTIAL_ARG_INDEX`],
+/// [`MAX_PARTIAL_ARG_DEPTH`]). The partial stream is provider-controlled
+/// (untrusted), so a conflict must surface as an error, not a process crash.
 fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Result<(), AiMuxError> {
     if segments.is_empty() {
         return Ok(());
+    }
+    if segments.len() > MAX_PARTIAL_ARG_DEPTH {
+        return Err(AiMuxError::Json(format!(
+            "partial args path exceeds maximum depth of {MAX_PARTIAL_ARG_DEPTH}"
+        )));
     }
     let mut current = obj;
     for i in 0..segments.len() - 1 {
@@ -516,6 +532,11 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
                 .insert(k.clone(), value);
         }
         Segment::Index(i) => {
+            if *i > MAX_PARTIAL_ARG_INDEX {
+                return Err(AiMuxError::Json(format!(
+                    "partial args array index {i} exceeds maximum of {MAX_PARTIAL_ARG_INDEX}"
+                )));
+            }
             let arr = current.as_array_mut().ok_or_else(|| parent_must_be(last))?;
             while arr.len() <= *i {
                 arr.push(Value::Null);

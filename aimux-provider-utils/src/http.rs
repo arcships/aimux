@@ -679,9 +679,11 @@ impl Stream for TimeoutBodyStream {
 /// decision; without this, an abort during the read would be ignored until
 /// the next attempt.
 ///
-/// The body is capped at [`MAX_ERROR_BODY_BYTES`] so a misbehaving provider
-/// cannot force unbounded memory growth or flood logs/FFI envelopes with a
-/// huge error payload (audit finding on issue M6).
+/// The body is **streamed** (chunk-by-chunk) and only the first
+/// [`MAX_ERROR_BODY_BYTES`] are retained — the total byte count is still
+/// counted for the truncation marker — so a misbehaving provider cannot force
+/// unbounded memory growth or flood logs/FFI envelopes with a huge error
+/// payload (audit finding, rounds 1–2).
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 
 async fn read_error_body(
@@ -689,26 +691,34 @@ async fn read_error_body(
     request: &HttpRequest,
 ) -> Result<String, AiMuxError> {
     let read = async {
-        resp.bytes()
-            .await
-            .map(|bytes| {
-                let mut s = String::from_utf8_lossy(&bytes).into_owned();
-                if s.len() > MAX_ERROR_BODY_BYTES {
-                    // Truncate on a UTF-8 char boundary so the marker never
-                    // splits a multi-byte character.
-                    let mut cut = MAX_ERROR_BODY_BYTES;
-                    while !s.is_char_boundary(cut) {
-                        cut -= 1;
-                    }
-                    s.truncate(cut);
-                    s.push_str(&format!(
-                        "…(truncated, full error body {} bytes)",
-                        bytes.len()
-                    ));
-                }
-                s
-            })
-            .unwrap_or_default()
+        let mut stream = resp.bytes_stream();
+        let mut collected: Vec<u8> = Vec::new();
+        let mut total: usize = 0;
+        while let Some(chunk) = stream.next().await {
+            let chunk = match chunk {
+                Ok(c) => c,
+                // The connection died mid-read: surface what we have.
+                Err(_) => break,
+            };
+            total += chunk.len();
+            if collected.len() < MAX_ERROR_BODY_BYTES {
+                let take = (MAX_ERROR_BODY_BYTES - collected.len()).min(chunk.len());
+                collected.extend_from_slice(&chunk[..take]);
+            }
+        }
+        let mut s = String::from_utf8_lossy(&collected).into_owned();
+        if total > MAX_ERROR_BODY_BYTES {
+            // Truncate on a UTF-8 char boundary so the marker never splits a
+            // multi-byte character. `0` is always a char boundary, so the
+            // loop terminates.
+            let mut cut = s.len().min(MAX_ERROR_BODY_BYTES);
+            while !s.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            s.truncate(cut);
+            s.push_str(&format!("…(truncated, full error body {total} bytes)"));
+        }
+        s
     };
     match &request.abort_signal {
         Some(signal) => {
