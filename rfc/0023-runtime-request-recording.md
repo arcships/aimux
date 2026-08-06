@@ -257,24 +257,37 @@ fn recorder() -> Option<&'static Arc<dyn Recorder>> {
 
 /// 从录制重建并重发调用(真实 API)。
 /// 返回新响应(可能与录制不同),用于回归对比/A/B。
+///
+/// provider 重建策略(2026-08-06 对齐修订):
+/// - 自动优先:按 `ProviderRecord` 数据尝试重建——`api_key_source` 为
+///   `env:VAR`(读 env)/`none`(本地模型)时可直接重建;
+///   `explicit` 时调用方须补传 `api_key`。
+/// - 手动兜底:自动重建不可用(原生协议 provider 无按数据构造入口等)时,
+///   调用方传入自己的 `model` 实例——回放框架本身 provider 无关。
+/// - **不依赖 RFC-0020**。原草案标注依赖 RFC-0020 有误:RFC-0020 只覆盖
+///   OpenAI 兼容协议(其 Non-Goal #1),无法重建原生协议 provider;且本回放
+///   需要的是"按数据构造"能力,与"外部配置覆盖层"是两个正交机制。
 pub async fn replay_request(
     recording: &Recording,
-    // 可选:覆盖部分参数(改 prompt / 换 model / 调 temperature)
+    model: Option<&dyn LanguageModel>,  // 手动兜底:自动重建失败时用户传入实例
+    api_key: Option<&str>,              // explicit 来源时用户补 key
     overrides: Option<&ReplayOverrides>,
 ) -> Result<GenerateTextResult, AiMuxError> {
-    let model = rebuild_provider(&recording.provider, overrides)?;
-    let prompt = rebuild_prompt(&recording.input.prompt, overrides);
-    let options = rebuild_options(&recording.input.options, overrides)?;
-    generate_text(&*model, prompt, options).await
-}
-
-/// 用录制的配置侧重建 provider。
-fn rebuild_provider(p: &ProviderRecord, overrides: Option<&ReplayOverrides>) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-    // 1. provider(name, api_key=None, model_id, options)——复用 registry / 外部配置(RFC-0020)
-    // 2. api_key 从 p.api_key_source 重新解析("env:VAR" → 读 env)
-    // 3. base_url/profile/provider_options 覆盖
+    // 1. 尝试按 ProviderRecord 自动重建(openai 兼容族 + env/none key)
+    // 2. 失败 → 要求 model 或 api_key;仍无 → 清晰错误
+    // 3. prompt/options 从录制输入重建 + overrides
+    // 4. generate_text 重发
 }
 ```
+
+**自动重建的能力边界**:
+
+| api_key_source | 自动重建 | 说明 |
+|---|---|---|
+| `env:VAR` | ✅ | 读 env 重解析 |
+| `none`(本地模型) | ✅ | 无需 key |
+| `explicit` | ⚠️ 需补 key | 录制不存明文(隐私强制),调用方传 `api_key` 参数 |
+| 原生协议(anthropic/google/bedrock…) | ⚠️ 需传实例 | 统一构造入口只覆盖 openai 兼容族;其余回退 `model` 参数 |
 
 **用途**:
 - 离线重跑线上流量(debug 难以重现的问题)
@@ -437,7 +450,7 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 | **P1** | `recording.rs`:`Recorder` trait + `Recording` 数据模型 + `JsonlRecorder` + `init_recording` + 层 A 录制接入(generate.rs)+ `trace_id` 传递 + 单测 | 无 | 待实施 |
 | **P2** | 层 B 录制接入(http.rs:`send`/`send_stream`/`ObservedByteStream`)+ `ConfigSnapshot` trait + OpenAI/Anthropic/Google 等主要 provider 实现 + 性能基准 | P1 | 待实施 |
 | **P3** | `replay.rs`:`MockReplayModel` + `ScoreMatcher`/`ExactMatcher` + 单测(mock 响应回放) | P1 | 待实施 |
-| **P4** | `replay.rs`:`replay_request` + `rebuild_provider`/`rebuild_options`(请求回放)+ CLI 工具 | P1, RFC-0020(外部配置,重建 provider) | 待实施 |
+| **P4** | `replay.rs`:`replay_request`(自动重建优先 + `model`/`api_key` 手动兜底)+ `rebuild_prompt`/`rebuild_options`(请求回放)+ CLI 工具 | P1(**不再依赖 RFC-0020**,2026-08-06 对齐修订,见 §3.6.1) | 待实施 |
 | **P5** | 绑定层透传(Node/C ABI/Python/…)+ `PrefixMatcher` + 脱敏验证 + 文档 | P1-P3 | 待实施 |
 | **P6**(可选) | `RingRecorder` + 与 RFC-0015 sink 抽象对齐 | P1, RFC-0015 | 待实施 |
 
