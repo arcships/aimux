@@ -707,7 +707,9 @@ async fn read_error_body(
             }
         }
         let mut s = String::from_utf8_lossy(&collected).into_owned();
-        if total > MAX_ERROR_BODY_BYTES {
+        // Lossy decoding can expand invalid bytes (each became U+FFFD, 3
+        // bytes), so gate the cap on the *decoded* length, not just `total`.
+        if s.len() > MAX_ERROR_BODY_BYTES {
             // Truncate on a UTF-8 char boundary so the marker never splits a
             // multi-byte character. `0` is always a char boundary, so the
             // loop terminates.
