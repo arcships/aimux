@@ -149,9 +149,10 @@ to group a call into a session.
 | `aimux_trace_clear(handle)` | Drop all probe records (returns 0) |
 
 Probing is opt-in and explicit: no global state, no plaintext bodies (only
-block-hash fingerprints are stored). Streaming calls additionally emit a
-synthetic `{"Raw":{"raw_value":{"aimux_meta":{...}}}}` part right after
-`StreamStart` carrying the request body / response headers.
+block-hash fingerprints are stored). Note: the request body / response
+headers are exposed on the non-streaming result; streaming paths follow the
+RFC-0016 M2 contract (`include_raw_chunks` controls Raw parts) — the earlier
+synthetic `aimux_meta` stream part was removed when M2 landed.
 
 ## Examples
 

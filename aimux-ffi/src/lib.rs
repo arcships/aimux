@@ -1011,18 +1011,7 @@ fn stream_text_with_signal(
         };
         match stream_result {
             Ok(sr) => {
-                let meta = if sr.request_body.is_some() || sr.response_headers.is_some() {
-                    Some(serde_json::json!({
-                        "Raw": { "raw_value": { "aimux_meta": {
-                            "request_body": sr.request_body,
-                            "response_headers": sr.response_headers,
-                        } } }
-                    }))
-                } else {
-                    None
-                };
                 let mut stream = sr.stream;
-                let mut first = true;
                 loop {
                     let next = match abort_signal.as_ref() {
                         Some(signal) => {
@@ -1048,18 +1037,6 @@ fn stream_text_with_signal(
                             // during `on_part`, freed when the block ends.
                             if let Ok(cstr) = CString::new(json) {
                                 on_part(cstr.as_ptr());
-                            }
-                            // Emit the synthetic meta part right AFTER the
-                            // first part (StreamStart) — the first part
-                            // contract must hold (RFC-0015 P0-1).
-                            if first {
-                                first = false;
-                                if let Some(m) = &meta
-                                    && let Ok(cstr) =
-                                        CString::new(serde_json::to_string(m).unwrap_or_default())
-                                {
-                                    on_part(cstr.as_ptr());
-                                }
                             }
                         }
                         Err(e) => {

@@ -90,9 +90,11 @@ test('trace() records calls and query API returns typed results', async (t) => {
   t.is(traced.traceExportJsonl().trim(), '')
 })
 
-test('streaming emits StreamStart then the aimux_meta Raw part', async (t) => {
-  // The FFI stream must emit: part[0]=StreamStart, part[1]=Raw(aimux_meta)
-  // carrying request_body/response_headers (RFC-0015 P0-1).
+test('default streams carry no Raw parts (RFC-0016 M2 contract)', async (t) => {
+  // The RFC-0015 stream meta part was removed in favor of the M2 contract:
+  // Raw parts appear only when include_raw_chunks is set. Probing itself is
+  // unaffected (TraceLayer records internally; request bodies remain
+  // available on the non-streaming path and via RFC-0023 recording).
   const { server, url } = await startMockServer()
   t.teardown(() => server.close())
 
@@ -101,17 +103,14 @@ test('streaming emits StreamStart then the aimux_meta Raw part', async (t) => {
   const parts: string[] = []
   for await (const json of gen) {
     parts.push(json)
-    if (parts.length >= 3) break
   }
 
-  t.truthy(parts.length >= 2, `expected at least 2 parts, got ${parts.length}`)
+  t.truthy(parts.length >= 1)
   t.truthy(parts[0].includes('StreamStart'), `part[0] must be StreamStart: ${parts[0]}`)
-  t.truthy(
-    parts[1].includes('aimux_meta'),
-    `part[1] must be the Raw aimux_meta part: ${parts[1]}`,
+  t.true(
+    parts.every((p) => !p.includes('"Raw"')),
+    'no Raw parts by default',
   )
-  const meta = JSON.parse(parts[1]).Raw.raw_value.aimux_meta
-  t.truthy(meta.request_body, 'meta carries the request body')
 })
 
 test('non-traced model still generates normally', async (t) => {

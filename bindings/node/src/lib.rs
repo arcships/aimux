@@ -226,23 +226,7 @@ impl Model {
             match stream_text(&*model, prompt, opts).await {
                 Ok(stream_result) => {
                     use futures::StreamExt;
-                    // RFC-0015 P0-1: emit a synthetic Raw(aimux_meta) part
-                    // right after StreamStart carrying request_body /
-                    // response_headers (same contract as the FFI stream).
-                    let meta = if stream_result.request_body.is_some()
-                        || stream_result.response_headers.is_some()
-                    {
-                        Some(serde_json::json!({
-                            "Raw": { "raw_value": { "aimux_meta": {
-                                "request_body": stream_result.request_body,
-                                "response_headers": stream_result.response_headers,
-                            } } }
-                        }))
-                    } else {
-                        None
-                    };
                     let mut stream = stream_result.stream;
-                    let mut first = true;
                     while let Some(item) = stream.next().await {
                         match item {
                             Ok(part) => {
@@ -250,16 +234,6 @@ impl Model {
                                     .unwrap_or_else(|_| "{}".to_string());
                                 if tx.send(Ok(json)).await.is_err() {
                                     break; // receiver dropped (JS stopped iterating)
-                                }
-                                if first {
-                                    first = false;
-                                    if let Some(m) = &meta {
-                                        let mjson = serde_json::to_string(m)
-                                            .unwrap_or_else(|_| "{}".to_string());
-                                        if tx.send(Ok(mjson)).await.is_err() {
-                                            break;
-                                        }
-                                    }
                                 }
                             }
                             Err(e) => {
