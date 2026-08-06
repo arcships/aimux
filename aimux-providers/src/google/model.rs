@@ -134,7 +134,7 @@ impl LanguageModel for GoogleModel {
         let response_headers = resp.headers;
 
         let data: GenerateContentResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+            serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
         let candidate = data
             .candidates
@@ -686,6 +686,7 @@ fn parse_google_error_body(body: &str) -> AiMuxError {
             401 => AiMuxError::Auth(msg),
             429 => AiMuxError::RateLimited {
                 retry_after_ms: 1000,
+                message: msg,
             },
             404 => AiMuxError::ModelNotFound(msg),
             _ => AiMuxError::Provider(format!("HTTP {}: {}", code, msg)),

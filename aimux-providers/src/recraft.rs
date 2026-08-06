@@ -18,7 +18,6 @@ use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
-use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, api_call_to_provider_error};
@@ -86,12 +85,6 @@ impl RecraftProvider {
 impl Provider for RecraftProvider {
     fn name(&self) -> &str {
         PROVIDER_NAME
-    }
-
-    fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(
-            "Recraft is an image-only provider; language models are not supported.".to_string(),
-        ))
     }
 }
 

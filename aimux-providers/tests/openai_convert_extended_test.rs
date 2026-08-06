@@ -401,7 +401,7 @@ mod request_body_extended {
             ),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false);
+        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
         assert_eq!(body["logit_bias"], json!({ "50256": -100 }));
         assert_eq!(body["parallel_tool_calls"], json!(false));
         assert_eq!(body["user"], json!("test-user-id"));
@@ -414,7 +414,7 @@ mod request_body_extended {
             reasoning: Some(ReasoningEffort::ProviderDefault),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("o4-mini", &opts, false);
+        let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(
             body,
             json!({ "model": "o4-mini", "messages": [{ "role": "user", "content": "Hello" }] })
@@ -428,7 +428,7 @@ mod request_body_extended {
             reasoning: Some(ReasoningEffort::Medium),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("o4-mini", &opts, false);
+        let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(body["reasoning_effort"], json!("medium"));
     }
 
@@ -440,7 +440,7 @@ mod request_body_extended {
             provider_options: po(json!({ "reasoningEffort": "high" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("o4-mini", &opts, false);
+        let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(body["reasoning_effort"], json!("high"));
     }
 
@@ -451,7 +451,7 @@ mod request_body_extended {
             provider_options: po(json!({ "reasoningEffort": "low" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("o4-mini", &opts, false);
+        let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(body["reasoning_effort"], json!("low"));
     }
 
@@ -462,7 +462,7 @@ mod request_body_extended {
             provider_options: po(json!({ "reasoningEffort": "xhigh" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-5.1-codex-max", &opts, false);
+        let body = build_request_body("gpt-5.1-codex-max", &opts, false).unwrap();
         assert_eq!(body["reasoning_effort"], json!("xhigh"));
     }
 
@@ -473,7 +473,7 @@ mod request_body_extended {
             provider_options: po(json!({ "reasoningEffort": "max" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-5.6", &opts, false);
+        let body = build_request_body("gpt-5.6", &opts, false).unwrap();
         assert_eq!(body["reasoning_effort"], json!("max"));
     }
 
@@ -484,7 +484,7 @@ mod request_body_extended {
             provider_options: po(json!({ "textVerbosity": "low" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-4o", &opts, false);
+        let body = build_request_body("gpt-4o", &opts, false).unwrap();
         assert_eq!(body["verbosity"], json!("low"));
     }
 
@@ -504,7 +504,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
         assert!(result.body.get("top_p").is_none() || result.body["top_p"].is_null());
         assert!(
@@ -525,7 +526,7 @@ mod request_body_extended {
             max_output_tokens: Some(1000),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("o4-mini", &opts, false);
+        let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(body["max_completion_tokens"], json!(1000));
         assert!(body.get("max_tokens").is_none());
     }
@@ -544,7 +545,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert_eq!(result.body["temperature"], json!(0.5));
         assert_eq!(result.body["reasoning_effort"], json!("none"));
         assert!(result.warnings.is_empty());
@@ -564,7 +566,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
         assert_eq!(result.warnings.len(), 1);
     }
@@ -584,7 +587,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
         assert!(result.body.get("top_p").is_none() || result.body["top_p"].is_null());
         assert_eq!(result.warnings.len(), 2);
@@ -606,7 +610,7 @@ mod request_body_extended {
             provider_options: po(json!({ "forceReasoning": true })),
             ..default_opts(vec![])
         };
-        let body = build_request_body("stealth-reasoning-model", &opts, false);
+        let body = build_request_body("stealth-reasoning-model", &opts, false).unwrap();
         assert_eq!(body["messages"][0]["role"], json!("developer"));
         assert_eq!(body["messages"][1]["content"], json!("Hello"));
     }
@@ -626,7 +630,7 @@ mod request_body_extended {
             prompt: p,
             ..default_opts(vec![])
         };
-        let body = build_request_body("o1", &opts, false);
+        let body = build_request_body("o1", &opts, false).unwrap();
         assert_eq!(body["messages"][0]["role"], json!("developer"));
     }
 
@@ -646,7 +650,7 @@ mod request_body_extended {
             provider_options: po(json!({ "systemMessageMode": "developer" })),
             ..default_opts(vec![])
         };
-        let body = build_request_body("gpt-4o", &opts, false);
+        let body = build_request_body("gpt-4o", &opts, false).unwrap();
         assert_eq!(body["messages"][0]["role"], json!("developer"));
     }
 
@@ -665,7 +669,7 @@ mod request_body_extended {
             prompt: p,
             ..default_opts(vec![])
         };
-        let body = build_request_body("gpt-4o", &opts, false);
+        let body = build_request_body("gpt-4o", &opts, false).unwrap();
         assert_eq!(body["messages"][0]["role"], json!("system"));
     }
 
@@ -676,7 +680,7 @@ mod request_body_extended {
             provider_options: po(json!({ "maxCompletionTokens": 255 })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("o4-mini", &opts, false);
+        let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(body["max_completion_tokens"], json!(255));
     }
 
@@ -689,7 +693,7 @@ mod request_body_extended {
             ),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false);
+        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
         assert_eq!(
             body["prediction"],
             json!({ "type": "content", "content": "Hello, World!" })
@@ -703,7 +707,7 @@ mod request_body_extended {
             provider_options: po(json!({ "store": true })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false);
+        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
         assert_eq!(body["store"], json!(true));
     }
 
@@ -714,7 +718,7 @@ mod request_body_extended {
             provider_options: po(json!({ "metadata": { "custom": "value" } })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false);
+        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
         assert_eq!(body["metadata"], json!({ "custom": "value" }));
     }
 
@@ -725,7 +729,7 @@ mod request_body_extended {
             provider_options: po(json!({ "promptCacheKey": "test-cache-key-123" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false);
+        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
         assert_eq!(body["prompt_cache_key"], json!("test-cache-key-123"));
     }
 
@@ -736,7 +740,7 @@ mod request_body_extended {
             provider_options: po(json!({ "promptCacheRetention": "24h" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false);
+        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
         assert_eq!(body["prompt_cache_retention"], json!("24h"));
     }
 
@@ -749,7 +753,7 @@ mod request_body_extended {
             ),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-5.6", &opts, false);
+        let body = build_request_body("gpt-5.6", &opts, false).unwrap();
         assert_eq!(
             body["prompt_cache_options"],
             json!({ "mode": "explicit", "ttl": "30m" })
@@ -763,7 +767,7 @@ mod request_body_extended {
             provider_options: po(json!({ "safetyIdentifier": "test-safety-identifier-123" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-3.5-turbo", &opts, false);
+        let body = build_request_body("gpt-3.5-turbo", &opts, false).unwrap();
         assert_eq!(
             body["safety_identifier"],
             json!("test-safety-identifier-123")
@@ -783,7 +787,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
         assert_eq!(result.warnings.len(), 1);
         assert!(
@@ -804,7 +809,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
         assert_eq!(result.warnings.len(), 1);
     }
@@ -822,7 +828,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("temperature").is_none() || result.body["temperature"].is_null());
         assert_eq!(result.warnings.len(), 1);
     }
@@ -834,7 +841,7 @@ mod request_body_extended {
             provider_options: po(json!({ "serviceTier": "flex" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("o4-mini", &opts, false);
+        let body = build_request_body("o4-mini", &opts, false).unwrap();
         assert_eq!(body["service_tier"], json!("flex"));
     }
 
@@ -851,7 +858,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("service_tier").is_none() || result.body["service_tier"].is_null());
         assert_eq!(result.warnings.len(), 1);
         assert!(
@@ -872,7 +880,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert_eq!(result.body["service_tier"], json!("flex"));
         assert!(result.warnings.is_empty());
     }
@@ -884,7 +893,7 @@ mod request_body_extended {
             provider_options: po(json!({ "serviceTier": "priority" })),
             ..default_opts(test_prompt())
         };
-        let body = build_request_body("gpt-4o-mini", &opts, false);
+        let body = build_request_body("gpt-4o-mini", &opts, false).unwrap();
         assert_eq!(body["service_tier"], json!("priority"));
     }
 
@@ -901,7 +910,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert!(result.body.get("service_tier").is_none() || result.body["service_tier"].is_null());
         assert_eq!(result.warnings.len(), 1);
     }
@@ -919,7 +929,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert_eq!(result.body["service_tier"], json!("priority"));
         assert!(result.warnings.is_empty());
     }
@@ -937,7 +948,8 @@ mod request_body_extended {
             false,
             "openai",
             &OpenAICompatProfile::full(),
-        );
+        )
+        .unwrap();
         assert_eq!(result.body["service_tier"], json!("priority"));
         assert!(result.warnings.is_empty());
     }

@@ -14,7 +14,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
@@ -97,12 +96,6 @@ impl JinaAiProvider {
 impl Provider for JinaAiProvider {
     fn name(&self) -> &str {
         "jina_ai"
-    }
-
-    fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(
-            "jina_ai does not support language models. Use reranking_model() instead.".to_string(),
-        ))
     }
 }
 

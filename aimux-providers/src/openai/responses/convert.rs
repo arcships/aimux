@@ -1,4 +1,4 @@
-﻿//! Conversion between `LanguageModelPrompt` and the OpenAI Responses API
+//! Conversion between `LanguageModelPrompt` and the OpenAI Responses API
 //! `input` format, plus request-body construction, tool preparation, usage
 //! conversion, and finish-reason mapping.
 //!
@@ -24,152 +24,18 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usag
 use super::types::ResponsesUsage;
 
 // -- Model capabilities ------------------------------------------------------
+// `GptVersion` / `get_gpt_version` / `get_o_series_version` /
+// `ModelCapabilities` / `SystemMessageMode` / `get_model_capabilities` live in
+// `crate::openai::convert_common` and are shared with the Chat Completions
+// converter (issue M10).
+use crate::openai::convert_common::{ModelCapabilities, SystemMessageMode, get_model_capabilities};
 
-/// Parsed GPT version info (mirrors TS `getGptVersion`).
-struct GptVersion {
-    major: u32,
-    minor: Option<u32>,
-    variant: Option<String>,
-}
-
-/// Extract GPT version from a model ID (e.g. `gpt-5.1-codex` -> major=5, minor=1).
-fn get_gpt_version(model_id: &str) -> Option<GptVersion> {
-    let rest = model_id.strip_prefix("gpt-")?;
-    let (major_str, remainder) = rest
-        .find(|c: char| !c.is_ascii_digit())
-        .map(|i| (&rest[..i], &rest[i..]))
-        .unwrap_or((rest, ""));
-    if major_str.is_empty() {
-        return None;
-    }
-    let major: u32 = major_str.parse().ok()?;
-
-    let (minor, remainder) = if let Some(stripped) = remainder.strip_prefix('.') {
-        let (minor_str, after) = stripped
-            .find(|c: char| !c.is_ascii_digit())
-            .map(|i| (&stripped[..i], &stripped[i..]))
-            .unwrap_or((stripped, ""));
-        if minor_str.is_empty() {
-            return Some(GptVersion {
-                major,
-                minor: None,
-                variant: if remainder.is_empty() {
-                    None
-                } else {
-                    Some(remainder.trim_start_matches('-').to_string())
-                },
-            });
-        }
-        (
-            minor_str.parse::<u32>().ok(),
-            if after.is_empty() {
-                None
-            } else {
-                Some(after.trim_start_matches('-').to_string())
-            },
-        )
-    } else {
-        (
-            None,
-            if remainder.is_empty() {
-                None
-            } else {
-                Some(remainder.trim_start_matches('-').to_string())
-            },
-        )
-    };
-
-    Some(GptVersion {
-        major,
-        minor,
-        variant: remainder,
-    })
-}
-
-/// Extract o-series version (e.g. `o3-mini` -> 3). Mirrors TS `getOSeriesVersion`.
-fn get_o_series_version(model_id: &str) -> Option<u32> {
-    let rest = model_id.strip_prefix('o')?;
-    let (digits, _) = rest
-        .find(|c: char| !c.is_ascii_digit())
-        .map(|i| (&rest[..i], &rest[i..]))
-        .unwrap_or((rest, ""));
-    if digits.is_empty() {
-        return None;
-    }
-    digits.parse::<u32>().ok()
-}
-
-/// Model capabilities relevant to Responses request body construction.
-///
-/// Mirrors TS `getOpenAILanguageModelCapabilities`.
-struct ResponsesModelCapabilities {
-    is_reasoning_model: bool,
-    system_message_mode: ResponsesSystemMessageMode,
-    supports_flex_processing: bool,
-    supports_priority_processing: bool,
-    supports_non_reasoning_parameters: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ResponsesSystemMessageMode {
-    System,
-    Developer,
-    Remove,
-}
-
-fn get_model_capabilities(model_id: &str) -> ResponsesModelCapabilities {
-    let o_version = get_o_series_version(model_id);
-    let gpt_version = get_gpt_version(model_id);
-    let is_gpt_chat_model = gpt_version.as_ref().is_some_and(|v| {
-        v.minor.is_none() && v.variant.as_deref().is_some_and(|s| s.starts_with("chat"))
-    });
-    let is_gpt_nano_model = gpt_version
-        .as_ref()
-        .is_some_and(|v| v.variant.as_deref().is_some_and(|s| s.starts_with("nano")));
-
-    let supports_flex_processing = o_version.is_some_and(|v| v >= 3)
-        || gpt_version
-            .as_ref()
-            .is_some_and(|v| v.major >= 5 && !is_gpt_chat_model);
-
-    let supports_priority_processing = model_id.starts_with("gpt-4")
-        || gpt_version
-            .as_ref()
-            .is_some_and(|v| v.major >= 5 && !is_gpt_nano_model && !is_gpt_chat_model)
-        || o_version.is_some_and(|v| v >= 3);
-
-    let is_reasoning_model = o_version.is_some()
-        || gpt_version
-            .as_ref()
-            .is_some_and(|v| v.major >= 5 && !is_gpt_chat_model);
-
-    let supports_non_reasoning_parameters = gpt_version
-        .as_ref()
-        .is_some_and(|v| v.major > 5 || (v.major == 5 && v.minor.unwrap_or(0) >= 1));
-
-    let system_message_mode = if is_reasoning_model {
-        ResponsesSystemMessageMode::Developer
-    } else {
-        ResponsesSystemMessageMode::System
-    };
-
-    ResponsesModelCapabilities {
-        is_reasoning_model,
-        system_message_mode,
-        supports_flex_processing,
-        supports_priority_processing,
-        supports_non_reasoning_parameters,
-    }
-}
-
-/// Check if a reasoning value is a custom (non-"provider-default") value.
-fn is_custom_reasoning(reasoning: &Option<ReasoningEffort>) -> bool {
-    match reasoning {
-        Some(ReasoningEffort::ProviderDefault) => false,
-        Some(_) => true,
-        None => false,
-    }
-}
+/// Compatibility alias: the Responses-specific enum name was merged into the
+/// shared [`SystemMessageMode`] during M10. Keeping the alias lets existing
+/// import paths (`openai::responses::convert::ResponsesSystemMessageMode`)
+/// keep compiling while the module signature uses the shared type.
+#[doc(hidden)]
+pub use crate::openai::convert_common::SystemMessageMode as ResponsesSystemMessageMode;
 
 // -- Provider options helper -------------------------------------------------
 
@@ -206,7 +72,7 @@ pub struct ResponsesInputResult {
 /// response chain).
 pub fn convert_to_responses_input(
     prompt: &LanguageModelPrompt,
-    system_message_mode: ResponsesSystemMessageMode,
+    system_message_mode: SystemMessageMode,
     store: bool,
     has_previous_response_id: bool,
 ) -> ResponsesInputResult {
@@ -216,19 +82,19 @@ pub fn convert_to_responses_input(
     for msg in prompt {
         match msg.role {
             Role::System => match system_message_mode {
-                ResponsesSystemMessageMode::System => {
+                SystemMessageMode::System => {
                     input.push(json!({
                         "role": "system",
                         "content": join_text_parts(&msg.content),
                     }));
                 }
-                ResponsesSystemMessageMode::Developer => {
+                SystemMessageMode::Developer => {
                     input.push(json!({
                         "role": "developer",
                         "content": join_text_parts(&msg.content),
                     }));
                 }
-                ResponsesSystemMessageMode::Remove => {
+                SystemMessageMode::Remove => {
                     warnings.push(Warning::Other {
                         message: "system messages are removed for this model".to_string(),
                     });
@@ -608,20 +474,8 @@ pub struct ResponsesRequestBodyResult {
     pub body: Value,
     pub warnings: Vec<Warning>,
 }
-
-/// Build the Responses API request body from `CallOptions`.
-///
-/// Mirrors TS `getArgs`. `stream` adds `"stream": true` to the body.
-pub fn build_responses_request_body(
-    model_id: &str,
-    options: &CallOptions,
-    stream: bool,
-) -> ResponsesRequestBodyResult {
-    let mut warnings: Vec<Warning> = Vec::new();
-    let caps = get_model_capabilities(model_id);
-    let provider_opts = &options.provider_options;
-
-    // -- Warnings for unsupported call options --
+/// Compatibility warnings for call options the Responses API does not carry.
+fn push_unsupported_call_option_warnings(options: &CallOptions, warnings: &mut Vec<Warning>) {
     if options.top_k.is_some() {
         warnings.push(Warning::Unsupported {
             feature: "topK".to_string(),
@@ -652,8 +506,16 @@ pub fn build_responses_request_body(
             details: None,
         });
     }
+}
 
-    // -- Reasoning resolution --
+/// Resolve the Responses reasoning config: `reasoningEffort` (provider option
+/// wins over top-level `reasoning`), `reasoningSummary` (defaults to "detailed"
+/// when an effort other than "none" applies), and whether the model reasons.
+fn resolve_responses_reasoning(
+    provider_opts: &Option<HashMap<String, Value>>,
+    options: &CallOptions,
+    caps: &ModelCapabilities,
+) -> (Option<String>, Option<String>, bool) {
     let resolved_reasoning_effort: Option<String> = openai_option(provider_opts, "reasoningEffort")
         .map(|v| {
             v.as_str()
@@ -661,7 +523,7 @@ pub fn build_responses_request_body(
                 .unwrap_or_else(|| v.to_string())
         })
         .or_else(|| {
-            if is_custom_reasoning(&options.reasoning) {
+            if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
                 options.reasoning.map(|r| r.to_string())
             } else {
                 None
@@ -690,7 +552,18 @@ pub fn build_responses_request_body(
         .map(|v| v.as_bool().unwrap_or(false))
         .unwrap_or(caps.is_reasoning_model);
 
-    // -- conversation + previousResponseId conflict --
+    (
+        resolved_reasoning_effort,
+        resolved_reasoning_summary,
+        is_reasoning_model,
+    )
+}
+
+/// Warn when `conversation` and `previousResponseId` are both set.
+fn warn_conversation_conflict(
+    provider_opts: &Option<HashMap<String, Value>>,
+    warnings: &mut Vec<Warning>,
+) {
     let has_conversation = openai_option(provider_opts, "conversation").is_some();
     let has_previous_response_id = openai_option(provider_opts, "previousResponseId").is_some();
     if has_conversation && has_previous_response_id {
@@ -701,49 +574,37 @@ pub fn build_responses_request_body(
             ),
         });
     }
+}
 
-    // -- System message mode --
-    let system_message_mode = openai_option(provider_opts, "systemMessageMode")
+fn resolve_responses_system_message_mode(
+    provider_opts: &Option<HashMap<String, Value>>,
+    is_reasoning_model: bool,
+    caps: &ModelCapabilities,
+) -> SystemMessageMode {
+    openai_option(provider_opts, "systemMessageMode")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .map(|s| match s.as_str() {
-            "developer" => ResponsesSystemMessageMode::Developer,
-            "remove" => ResponsesSystemMessageMode::Remove,
-            _ => ResponsesSystemMessageMode::System,
+            "developer" => SystemMessageMode::Developer,
+            "remove" => SystemMessageMode::Remove,
+            _ => SystemMessageMode::System,
         })
         .unwrap_or(if is_reasoning_model {
-            ResponsesSystemMessageMode::Developer
+            SystemMessageMode::Developer
         } else {
             caps.system_message_mode
-        });
+        })
+}
 
-    // -- Input conversion --
-    let store_bool = openai_option(provider_opts, "store")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-    let input_result = convert_to_responses_input(
-        &options.prompt,
-        system_message_mode,
-        store_bool,
-        has_previous_response_id,
-    );
-    warnings.extend(input_result.warnings);
-
-    // -- Base body --
-    let mut body = json!({
-        "model": model_id,
-        "input": input_result.input,
-    });
-
-    if stream {
-        body["stream"] = json!(true);
-    }
-
-    // max_output_tokens
-    if let Some(max_tokens) = options.max_output_tokens {
-        body["max_output_tokens"] = json!(max_tokens);
-    }
-
-    // temperature / top_p (subject to reasoning-model restrictions)
+/// temperature / top_p, subject to reasoning-model restrictions.
+fn apply_responses_sampling(
+    body: &mut Value,
+    options: &CallOptions,
+    provider_opts: &Option<HashMap<String, Value>>,
+    caps: &ModelCapabilities,
+    is_reasoning_model: bool,
+    resolved_reasoning_effort: &Option<String>,
+    warnings: &mut Vec<Warning>,
+) {
     let mut temperature = options.temperature;
     let mut top_p = options.top_p;
 
@@ -767,37 +628,18 @@ pub fn build_responses_request_body(
             }
         }
     } else {
-        if openai_option(provider_opts, "reasoningEffort").is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "reasoningEffort".to_string(),
-                details: Some(
-                    "reasoningEffort is not supported for non-reasoning models".to_string(),
-                ),
-            });
-        }
-        if openai_option(provider_opts, "reasoningSummary").is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "reasoningSummary".to_string(),
-                details: Some(
-                    "reasoningSummary is not supported for non-reasoning models".to_string(),
-                ),
-            });
-        }
-        if openai_option(provider_opts, "reasoningMode").is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "reasoningMode".to_string(),
-                details: Some(
-                    "reasoningMode is not supported for non-reasoning models".to_string(),
-                ),
-            });
-        }
-        if openai_option(provider_opts, "reasoningContext").is_some() {
-            warnings.push(Warning::Unsupported {
-                feature: "reasoningContext".to_string(),
-                details: Some(
-                    "reasoningContext is not supported for non-reasoning models".to_string(),
-                ),
-            });
+        for key in [
+            "reasoningEffort",
+            "reasoningSummary",
+            "reasoningMode",
+            "reasoningContext",
+        ] {
+            if openai_option(provider_opts, key).is_some() {
+                warnings.push(Warning::Unsupported {
+                    feature: key.to_string(),
+                    details: Some(format!("{key} is not supported for non-reasoning models")),
+                });
+            }
         }
     }
 
@@ -807,8 +649,14 @@ pub fn build_responses_request_body(
     if let Some(p) = top_p {
         body["top_p"] = json!(p);
     }
+}
 
-    // -- Response format (text.format) --
+/// `text.format` (json_schema / json_object) plus `verbosity`.
+fn apply_responses_text_format(
+    body: &mut Value,
+    options: &CallOptions,
+    provider_opts: &Option<HashMap<String, Value>>,
+) {
     if let Some(ref rf) = options.response_format {
         match rf {
             ResponseFormat::Text => {}
@@ -840,7 +688,6 @@ pub fn build_responses_request_body(
         }
     }
 
-    // textVerbosity
     if let Some(verbosity) = openai_option(provider_opts, "textVerbosity") {
         let text = body.get_mut("text").and_then(|t| t.as_object_mut());
         match text {
@@ -852,8 +699,14 @@ pub fn build_responses_request_body(
             }
         }
     }
+}
 
-    // -- include (computed) --
+/// The computed `include` list (store=false on reasoning models adds
+/// `reasoning.encrypted_content`).
+fn resolve_responses_include(
+    provider_opts: &Option<HashMap<String, Value>>,
+    is_reasoning_model: bool,
+) -> Option<Vec<Value>> {
     let mut include: Option<Vec<Value>> =
         openai_option(provider_opts, "include").and_then(|v| v.as_array().cloned());
 
@@ -875,54 +728,41 @@ pub fn build_responses_request_body(
         add_include("reasoning.encrypted_content", &mut include);
     }
 
-    if let Some(inc) = include {
-        body["include"] = json!(inc);
-    }
+    include
+}
 
-    // -- store (only sent when explicitly set) --
-    if let Some(s) = openai_option(provider_opts, "store").and_then(|v| v.as_bool()) {
-        body["store"] = json!(s);
-    }
+/// Pass-through of the remaining Responses provider options (only sent when
+/// set).
+fn apply_responses_provider_options(
+    body: &mut Value,
+    provider_opts: &Option<HashMap<String, Value>>,
+) {
+    let mut set = |key: &str, body_key: &str| {
+        if let Some(v) = openai_option(provider_opts, key) {
+            body[body_key] = v;
+        }
+    };
+    set("conversation", "conversation");
+    set("maxToolCalls", "max_tool_calls");
+    set("metadata", "metadata");
+    set("parallelToolCalls", "parallel_tool_calls");
+    set("previousResponseId", "previous_response_id");
+    set("user", "user");
+    set("instructions", "instructions");
+    set("promptCacheKey", "prompt_cache_key");
+    set("promptCacheOptions", "prompt_cache_options");
+    set("promptCacheRetention", "prompt_cache_retention");
+    set("safetyIdentifier", "safety_identifier");
+    set("truncation", "truncation");
+}
 
-    // -- Other provider options (only sent when set) --
-    if let Some(v) = openai_option(provider_opts, "conversation") {
-        body["conversation"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "maxToolCalls") {
-        body["max_tool_calls"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "metadata") {
-        body["metadata"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "parallelToolCalls") {
-        body["parallel_tool_calls"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "previousResponseId") {
-        body["previous_response_id"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "user") {
-        body["user"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "instructions") {
-        body["instructions"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "promptCacheKey") {
-        body["prompt_cache_key"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "promptCacheOptions") {
-        body["prompt_cache_options"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "promptCacheRetention") {
-        body["prompt_cache_retention"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "safetyIdentifier") {
-        body["safety_identifier"] = v;
-    }
-    if let Some(v) = openai_option(provider_opts, "truncation") {
-        body["truncation"] = v;
-    }
-
-    // -- service_tier (with capability validation) --
+/// `service_tier` with model-capability validation.
+fn apply_responses_service_tier(
+    body: &mut Value,
+    provider_opts: &Option<HashMap<String, Value>>,
+    caps: &ModelCapabilities,
+    warnings: &mut Vec<Warning>,
+) {
     if let Some(st) =
         openai_option(provider_opts, "serviceTier").and_then(|v| v.as_str().map(|s| s.to_string()))
     {
@@ -947,33 +787,137 @@ pub fn build_responses_request_body(
             }
         }
     }
+}
+
+/// `reasoning` block for reasoning models.
+fn apply_responses_reasoning_block(
+    body: &mut Value,
+    provider_opts: &Option<HashMap<String, Value>>,
+    is_reasoning_model: bool,
+    resolved_reasoning_effort: &Option<String>,
+    resolved_reasoning_summary: &Option<String>,
+) {
+    if !is_reasoning_model {
+        return;
+    }
+    let effort = resolved_reasoning_effort.as_ref();
+    let summary = resolved_reasoning_summary.as_ref();
+    let mode = openai_option(provider_opts, "reasoningMode")
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    let context = openai_option(provider_opts, "reasoningContext")
+        .and_then(|v| v.as_str().map(|s| s.to_string()));
+
+    if effort.is_some() || summary.is_some() || mode.is_some() || context.is_some() {
+        let mut reasoning = json!({});
+        if let Some(e) = effort {
+            reasoning["effort"] = json!(e);
+        }
+        if let Some(s) = summary {
+            reasoning["summary"] = json!(s);
+        }
+        if let Some(m) = mode {
+            reasoning["mode"] = json!(m);
+        }
+        if let Some(c) = context {
+            reasoning["context"] = json!(c);
+        }
+        body["reasoning"] = reasoning;
+    }
+}
+
+/// Build the OpenAI Responses API request body (without warnings).
+///
+/// Splits the original ~380-line function into focused helpers (issue M11);
+/// behavior is unchanged.
+pub fn build_responses_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> ResponsesRequestBodyResult {
+    let mut warnings: Vec<Warning> = Vec::new();
+    let caps = get_model_capabilities(model_id);
+    let provider_opts = &options.provider_options;
+
+    // -- Warnings for unsupported call options --
+    push_unsupported_call_option_warnings(options, &mut warnings);
+
+    // -- Reasoning resolution --
+    let (resolved_reasoning_effort, resolved_reasoning_summary, is_reasoning_model) =
+        resolve_responses_reasoning(provider_opts, options, &caps);
+
+    // -- conversation + previousResponseId conflict --
+    warn_conversation_conflict(provider_opts, &mut warnings);
+
+    // -- System message mode --
+    let system_message_mode =
+        resolve_responses_system_message_mode(provider_opts, is_reasoning_model, &caps);
+
+    // -- Input conversion --
+    let store_bool = openai_option(provider_opts, "store")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let has_previous_response_id = openai_option(provider_opts, "previousResponseId").is_some();
+    let input_result = convert_to_responses_input(
+        &options.prompt,
+        system_message_mode,
+        store_bool,
+        has_previous_response_id,
+    );
+    warnings.extend(input_result.warnings);
+
+    // -- Base body --
+    let mut body = json!({
+        "model": model_id,
+        "input": input_result.input,
+    });
+
+    if stream {
+        body["stream"] = json!(true);
+    }
+
+    if let Some(max_tokens) = options.max_output_tokens {
+        body["max_output_tokens"] = json!(max_tokens);
+    }
+
+    // temperature / top_p (subject to reasoning-model restrictions)
+    apply_responses_sampling(
+        &mut body,
+        options,
+        provider_opts,
+        &caps,
+        is_reasoning_model,
+        &resolved_reasoning_effort,
+        &mut warnings,
+    );
+
+    // -- Response format (text.format) + verbosity --
+    apply_responses_text_format(&mut body, options, provider_opts);
+
+    // -- include (computed) --
+    let include = resolve_responses_include(provider_opts, is_reasoning_model);
+    if let Some(inc) = include {
+        body["include"] = json!(inc);
+    }
+
+    // -- store (only sent when explicitly set) --
+    if let Some(s) = openai_option(provider_opts, "store").and_then(|v| v.as_bool()) {
+        body["store"] = json!(s);
+    }
+
+    // -- Other provider options (only sent when set) --
+    apply_responses_provider_options(&mut body, provider_opts);
+
+    // -- service_tier (with capability validation) --
+    apply_responses_service_tier(&mut body, provider_opts, &caps, &mut warnings);
 
     // -- reasoning block (reasoning models only) --
-    if is_reasoning_model {
-        let effort = resolved_reasoning_effort.as_ref();
-        let summary = resolved_reasoning_summary.as_ref();
-        let mode = openai_option(provider_opts, "reasoningMode")
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
-        let context = openai_option(provider_opts, "reasoningContext")
-            .and_then(|v| v.as_str().map(|s| s.to_string()));
-
-        if effort.is_some() || summary.is_some() || mode.is_some() || context.is_some() {
-            let mut reasoning = json!({});
-            if let Some(e) = effort {
-                reasoning["effort"] = json!(e);
-            }
-            if let Some(s) = summary {
-                reasoning["summary"] = json!(s);
-            }
-            if let Some(m) = mode {
-                reasoning["mode"] = json!(m);
-            }
-            if let Some(c) = context {
-                reasoning["context"] = json!(c);
-            }
-            body["reasoning"] = reasoning;
-        }
-    }
+    apply_responses_reasoning_block(
+        &mut body,
+        provider_opts,
+        is_reasoning_model,
+        &resolved_reasoning_effort,
+        &resolved_reasoning_summary,
+    );
 
     // -- Tools --
     let prepared = prepare_responses_tools(&options.tools, Some(&options.tool_choice));

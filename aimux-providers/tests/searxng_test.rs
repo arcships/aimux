@@ -188,7 +188,7 @@ fn language_model_returns_unsupported_error() {
     match provider.language_model("searxng-search") {
         Err(AiMuxError::Unsupported(msg)) => {
             assert!(
-                msg.contains("searxng does not support language models"),
+                msg.contains("provider 'searxng' does not provide language models"),
                 "unexpected message: {msg}"
             );
         }

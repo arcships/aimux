@@ -368,7 +368,7 @@ pub async fn send_stream(
     );
 
     // 流式录制上下文:仅调用点带 call_id 且录制开启时启用。
-    let stream_rec = if request.call_id.is_some() && aimux_core::recording::recorder().is_some() {
+    let stream_rec = if request.recording_context.is_some() {
         let resp_headers: Vec<(String, String)> = headers
             .iter()
             .map(|(k, v)| {
@@ -864,20 +864,61 @@ impl Stream for TimeoutBodyStream {
 /// Body reads for 429/5xx/other failures are awaited before the next retry
 /// decision; without this, an abort during the read would be ignored until
 /// the next attempt.
+///
+/// The body is **streamed** (chunk-by-chunk) and only the first
+/// [`MAX_ERROR_BODY_BYTES`] are retained — the total byte count is still
+/// counted for the truncation marker — so a misbehaving provider cannot force
+/// unbounded memory growth or flood logs/FFI envelopes with a huge error
+/// payload (audit finding, rounds 1–2).
+const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
+
 async fn read_error_body(
     resp: reqwest::Response,
     request: &HttpRequest,
 ) -> Result<String, AiMuxError> {
+    let read = async {
+        let mut stream = resp.bytes_stream();
+        let mut collected: Vec<u8> = Vec::new();
+        let mut total: usize = 0;
+        while let Some(chunk) = stream.next().await {
+            let chunk = match chunk {
+                Ok(c) => c,
+                // The connection died mid-read: surface what we have.
+                Err(_) => break,
+            };
+            total = total.saturating_add(chunk.len());
+            if collected.len() < MAX_ERROR_BODY_BYTES {
+                let take = (MAX_ERROR_BODY_BYTES - collected.len()).min(chunk.len());
+                collected.extend_from_slice(&chunk[..take]);
+            }
+        }
+        let mut s = String::from_utf8_lossy(&collected).into_owned();
+        // Truncate when either the raw body exceeded the budget (marker must
+        // warn that content was dropped) or lossy decoding expanded the string
+        // (invalid bytes become 3-byte U+FFFD) beyond the budget.
+        if total > MAX_ERROR_BODY_BYTES || s.len() > MAX_ERROR_BODY_BYTES {
+            // Truncate on a UTF-8 char boundary so the marker never splits a
+            // multi-byte character. `0` is always a char boundary, so the
+            // loop terminates.
+            let mut cut = s.len().min(MAX_ERROR_BODY_BYTES);
+            while !s.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            s.truncate(cut);
+            s.push_str(&format!("…(truncated, full error body {total} bytes)"));
+        }
+        s
+    };
     match &request.abort_signal {
         Some(signal) => {
-            let text = resp.text();
+            let text = read;
             tokio::select! {
                 biased;
                 _ = signal.cancelled() => Err(AiMuxError::Aborted),
-                t = text => Ok(t.unwrap_or_default()),
+                t = text => Ok(t),
             }
         }
-        None => Ok(resp.text().await.unwrap_or_default()),
+        None => Ok(read.await),
     }
 }
 
@@ -1045,15 +1086,19 @@ async fn send_with_retry_raw(
                             .and_then(|v| v.to_str().ok()),
                         SystemTime::now(),
                     );
-                    let _ = read_error_body(resp, request).await?; // 消费 body
+                    // Keep the provider's rate-limit body (e.g. "quota
+                    // exceeded" vs "too many requests") so consumers can tell
+                    // the two apart (issue M6).
+                    let body = read_error_body(resp, request).await?;
                     record_failed_exchange(
                         request,
                         attempt,
                         latency_ms,
-                        &format!("rate limited (retry-after {:?})", hint),
+                        &format!("HTTP {status_code}: {body}"),
                     );
                     last_error = AiMuxError::RateLimited {
                         retry_after_ms: hint.unwrap_or(1000).max(0) as u64,
+                        message: format!("HTTP {status_code}: {}", body),
                     };
                 } else if resp.status().is_server_error() {
                     // 5xx: 可重试。

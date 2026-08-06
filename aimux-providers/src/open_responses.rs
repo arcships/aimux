@@ -866,19 +866,20 @@ fn build_request_body(
     };
 
     // Resolve reasoning effort from top-level reasoning option.
-    let resolved_reasoning_effort: Option<String> = if is_custom_reasoning(&options.reasoning) {
-        match options.reasoning.unwrap() {
-            ReasoningEffort::None => Some("none".to_string()),
-            ReasoningEffort::Minimal => Some("low".to_string()),
-            ReasoningEffort::Low => Some("low".to_string()),
-            ReasoningEffort::Medium => Some("medium".to_string()),
-            ReasoningEffort::High => Some("high".to_string()),
-            ReasoningEffort::Xhigh => Some("xhigh".to_string()),
-            ReasoningEffort::ProviderDefault => None,
-        }
-    } else {
-        None
-    };
+    let resolved_reasoning_effort: Option<String> =
+        if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
+            match options.reasoning.unwrap() {
+                ReasoningEffort::None => Some("none".to_string()),
+                ReasoningEffort::Minimal => Some("low".to_string()),
+                ReasoningEffort::Low => Some("low".to_string()),
+                ReasoningEffort::Medium => Some("medium".to_string()),
+                ReasoningEffort::High => Some("high".to_string()),
+                ReasoningEffort::Xhigh => Some("xhigh".to_string()),
+                ReasoningEffort::ProviderDefault => None,
+            }
+        } else {
+            None
+        };
 
     // Resolve reasoning summary from provider options.
     let reasoning_summary: Option<String> = options
@@ -940,15 +941,6 @@ fn build_request_body(
     }
 
     (Value::Object(body), warnings)
-}
-
-/// Check whether the reasoning option is a custom (non-default) value.
-fn is_custom_reasoning(reasoning: &Option<ReasoningEffort>) -> bool {
-    match reasoning {
-        None => false,
-        Some(ReasoningEffort::ProviderDefault) => false,
-        Some(_) => true,
-    }
 }
 
 // == Prompt conversion ==

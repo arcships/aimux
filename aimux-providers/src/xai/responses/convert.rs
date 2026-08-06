@@ -1,4 +1,4 @@
-﻿//! Conversion functions for the xAI Responses API.
+//! Conversion functions for the xAI Responses API.
 //!
 //! Mirrors the TS sources:
 //! - `convert-to-xai-responses-input.ts`
@@ -18,8 +18,8 @@ use serde_json::{Value, json};
 
 use super::types::XaiResponsesUsage;
 use crate::xai::convert::{
-    is_custom_reasoning, remove_additional_properties_false, resolve_full_media_type,
-    resolve_provider_reference, supports_reasoning_effort,
+    remove_additional_properties_false, resolve_full_media_type, resolve_provider_reference,
+    supports_reasoning_effort,
 };
 
 // ── Finish reason ────────────────────────────────────────────────────────────
@@ -588,7 +588,7 @@ pub fn build_responses_request_body(
     let mut reasoning_effort: Option<String> = xai_option(xai_opts, "reasoningEffort")
         .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()));
 
-    if reasoning_effort.is_none() && is_custom_reasoning(&options.reasoning) {
+    if reasoning_effort.is_none() && options.reasoning.is_some_and(ReasoningEffort::is_custom) {
         let reasoning = options.reasoning.unwrap();
         if !supports_reasoning_effort(model_id) {
             warnings.push(Warning::Unsupported {

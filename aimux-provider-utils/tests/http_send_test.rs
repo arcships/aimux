@@ -534,3 +534,43 @@ async fn abort_wins_over_total_timeout() {
         .expect("task must not panic");
     assert!(matches!(result, Err(AiMuxError::Aborted)), "got {result:?}");
 }
+
+/// Regression (audit round 3, B1): a large *valid-UTF-8* error body must be
+/// truncated with a marker — a silent truncation would make callers believe
+/// the response body was complete.
+#[tokio::test]
+async fn truncates_large_error_body_with_marker() {
+    let server = MockServer::start().await;
+    let big_body = "x".repeat(100 * 1024);
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(429).set_body_string(big_body))
+        .up_to_n_times(3)
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let no_retry = RetryConfig {
+        max_retries: 0,
+        ..RetryConfig::default()
+    };
+    let err = send(json_post(&url), no_retry, &DEFAULT_ERROR_STRUCTURE)
+        .await
+        .unwrap_err();
+
+    match err {
+        AiMuxError::RateLimited { message, .. } => {
+            assert!(
+                message.contains("(truncated"),
+                "large error body must be marked as truncated, got len={}",
+                message.len()
+            );
+            assert!(
+                message.len() < 70 * 1024,
+                "truncated message must stay bounded, got {} bytes",
+                message.len()
+            );
+        }
+        other => panic!("expected RateLimited, got {other:?}"),
+    }
+}

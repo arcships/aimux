@@ -214,8 +214,7 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         // Capture response headers (needed for token count extraction).
         let response_headers = resp.headers;
 
-        let raw_value: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
         // Extract embeddings based on response format.
         let embeddings: Vec<Vec<f32>> = if raw_value.get("embedding").is_some() {

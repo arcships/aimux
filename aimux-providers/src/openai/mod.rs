@@ -4,6 +4,7 @@
 //! Together.ai, Groq, Fireworks, DeepSeek, etc.).
 
 pub mod convert;
+mod convert_common;
 pub mod embedding;
 pub mod files;
 pub mod image;

@@ -171,7 +171,7 @@ impl LanguageModel for VertexAnthropicModel {
         .map_err(api_call_to_provider_error)?;
 
         let data: AnthropicResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Http(e.to_string()))?;
+            serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
         let mut content = Vec::new();
         for block in &data.content {

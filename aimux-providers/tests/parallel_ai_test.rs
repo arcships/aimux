@@ -206,7 +206,7 @@ fn language_model_returns_unsupported_error() {
     match provider.language_model("parallel-search") {
         Err(AiMuxError::Unsupported(msg)) => {
             assert!(
-                msg.contains("parallel_ai does not support language models"),
+                msg.contains("provider 'parallel_ai' does not provide language models"),
                 "unexpected message: {msg}"
             );
         }

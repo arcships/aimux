@@ -27,9 +27,7 @@ use aimux_provider_utils::{
 use aimux_stream::SseStream;
 
 use super::OpenAIConfig;
-use super::convert::{
-    RequestBodyResult, build_request_body_with_warnings_fallible, parse_finish_reason,
-};
+use super::convert::{RequestBodyResult, build_request_body_with_warnings, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
 
 /// An OpenAI-compatible language model.
@@ -270,7 +268,7 @@ pub async fn execute_generate(
     retry_config: &RetryConfig,
 ) -> Result<GenerateResult, AiMuxError> {
     let request_result =
-        build_request_body_with_warnings_fallible(model_id, options, false, provider, profile)?;
+        build_request_body_with_warnings(model_id, options, false, provider, profile)?;
     let body = request_result.body;
 
     let resp = send_timed(
@@ -427,7 +425,7 @@ pub async fn execute_stream(
     retry_config: &RetryConfig,
 ) -> Result<StreamResult, AiMuxError> {
     let request_result =
-        build_request_body_with_warnings_fallible(model_id, options, true, provider, profile)?;
+        build_request_body_with_warnings(model_id, options, true, provider, profile)?;
     // M9 (RFC-0016): keep the warnings computed while building the body —
     // they are emitted in `StreamStart` below instead of being dropped.
     let RequestBodyResult { body, warnings } = request_result;
@@ -857,9 +855,10 @@ fn stream_error_to_ai_error(err_obj: &Value) -> AiMuxError {
     let status = code as u16;
 
     match status {
-        401 => AiMuxError::Auth(message),
+        401 => AiMuxError::Auth(message.clone()),
         429 => AiMuxError::RateLimited {
             retry_after_ms: 1000,
+            message,
         },
         404 => AiMuxError::ModelNotFound(message),
         _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),

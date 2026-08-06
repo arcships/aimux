@@ -3,6 +3,7 @@
 //! Mirrors `get-model-path.ts`, `google-supported-file-url.ts`, and
 //! `google-json-accumulator.ts` from the TS SDK.
 
+use aimux_core::error::AiMuxError;
 use serde_json::{Map, Value};
 
 /// Resolve a model id into the URL path segment used by the Gemini API.
@@ -183,7 +184,15 @@ impl GoogleJsonAccumulator {
 
     /// Process a batch of partial args, returning the structured object and
     /// the JSON text delta for this call.
-    pub fn process_partial_args(&mut self, args: &[PartialArg]) -> ProcessResult {
+    ///
+    /// Returns [`AiMuxError::Json`] when a partial-arg path conflicts with the
+    /// already-accumulated structure (e.g. `$.a` was a string, then `$.a[0]`
+    /// arrives). `partialArgs` is provider-controlled input, so such conflicts
+    /// must not panic.
+    pub fn process_partial_args(
+        &mut self,
+        args: &[PartialArg],
+    ) -> Result<ProcessResult, AiMuxError> {
         let mut delta = String::new();
 
         for arg in args {
@@ -194,17 +203,23 @@ impl GoogleJsonAccumulator {
 
             let segments = parse_path(raw_path);
 
-            let existing = get_nested_value(&self.accumulated, &segments);
-            let is_string_continuation = arg.string_value.is_some() && existing.is_some();
+            // Malformed/empty path (e.g. `$.[]`) parses to no segments; without
+            // this guard `emit_navigation_to` would slice `[..len-1]` on an
+            // empty slice and panic (audit finding H3 residual panic path).
+            if segments.is_empty() {
+                continue;
+            }
 
-            if is_string_continuation {
-                let s = arg.string_value.as_ref().unwrap();
+            let existing = get_nested_value(&self.accumulated, &segments);
+
+            if let (Some(s), Some(existing_val)) = (&arg.string_value, existing) {
+                // String continuation chunk.
                 let escaped = escape_json_string_inner(s);
-                let new_val = match existing {
-                    Some(Value::String(prev)) => Value::String(format!("{}{}", prev, s)),
+                let new_val = match existing_val {
+                    Value::String(prev) => Value::String(format!("{}{}", prev, s)),
                     _ => Value::String(s.clone()),
                 };
-                set_nested_value(&mut self.accumulated, &segments, new_val);
+                set_nested_value(&mut self.accumulated, &segments, new_val)?;
                 delta.push_str(&escaped);
                 continue;
             }
@@ -213,16 +228,16 @@ impl GoogleJsonAccumulator {
                 continue;
             };
 
-            set_nested_value(&mut self.accumulated, &segments, value);
+            set_nested_value(&mut self.accumulated, &segments, value)?;
             delta.push_str(&self.emit_navigation_to(&segments, arg, &value_json));
         }
 
         self.json_text.push_str(&delta);
 
-        ProcessResult {
+        Ok(ProcessResult {
             current_json: self.accumulated.clone(),
             text_delta: delta,
-        }
+        })
     }
 
     /// Finalize the accumulator, producing the complete JSON string and the
@@ -418,10 +433,46 @@ fn get_nested_value(obj: &Value, segments: &[Segment]) -> Option<Value> {
     Some(current.clone())
 }
 
+/// Maximum array index accepted from a partialArgs path. `partialArgs` is
+/// provider-controlled; without a cap, a path like `$.a[1000000000]` makes
+/// the array-spreading loop allocate ~1 GiB of `Value::Null`, exhausting
+/// memory (audit finding, round 2).
+const MAX_PARTIAL_ARG_INDEX: usize = 100_000;
+
+/// Maximum path depth accepted from a partialArgs path (guards against
+/// pathologically deep nesting).
+const MAX_PARTIAL_ARG_DEPTH: usize = 64;
+
 /// Set a value at a nested path, creating intermediate objects or arrays.
-fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) {
+///
+/// Returns [`AiMuxError::Json`] instead of panicking when the incoming path
+/// conflicts with the already-accumulated type (e.g. `$.a` was set to a
+/// string and a later `partialArgs` chunk targets `$.a[0].b`), or when the
+/// path exceeds the resource caps ([`MAX_PARTIAL_ARG_INDEX`],
+/// [`MAX_PARTIAL_ARG_DEPTH`]). The partial stream is provider-controlled
+/// (untrusted), so a conflict must surface as an error, not a process crash.
+fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Result<(), AiMuxError> {
     if segments.is_empty() {
-        return;
+        return Ok(());
+    }
+    if segments.len() > MAX_PARTIAL_ARG_DEPTH {
+        return Err(AiMuxError::Json(format!(
+            "partial args path exceeds maximum depth of {MAX_PARTIAL_ARG_DEPTH}"
+        )));
+    }
+    // Pre-validate every index before mutating any state:
+    // - an oversized *intermediate* index would let the array spreading loop
+    //   allocate unboundedly (audit round 3, A1);
+    // - a late failure would leave partially-built containers behind,
+    //   breaking error atomicity.
+    for segment in segments {
+        if let Segment::Index(index) = segment
+            && *index > MAX_PARTIAL_ARG_INDEX
+        {
+            return Err(AiMuxError::Json(format!(
+                "partial args array index {index} exceeds maximum of {MAX_PARTIAL_ARG_INDEX}"
+            )));
+        }
     }
     let mut current = obj;
     for i in 0..segments.len() - 1 {
@@ -442,18 +493,16 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) {
         if !exists {
             match seg {
                 Segment::Key(k) => {
+                    let parent = current.as_object_mut().ok_or_else(|| parent_must_be(seg))?;
                     let new_val = if next_is_index {
                         Value::Array(Vec::new())
                     } else {
                         Value::Object(Map::new())
                     };
-                    current
-                        .as_object_mut()
-                        .expect("parent must be object")
-                        .insert(k.clone(), new_val);
+                    parent.insert(k.clone(), new_val);
                 }
                 Segment::Index(i) => {
-                    let arr = current.as_array_mut().expect("parent must be array");
+                    let arr = current.as_array_mut().ok_or_else(|| parent_must_be(seg))?;
                     while arr.len() <= *i {
                         arr.push(Value::Null);
                     }
@@ -472,13 +521,18 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) {
         current = match seg {
             Segment::Key(k) => current
                 .as_object_mut()
-                .expect("parent must be object")
+                .ok_or_else(|| parent_must_be(seg))?
                 .get_mut(k)
-                .expect("key must exist after insertion"),
-            Segment::Index(i) => {
-                let arr = current.as_array_mut().expect("parent must be array");
-                &mut arr[*i]
-            }
+                .ok_or_else(|| {
+                    AiMuxError::Json(format!("partial args path conflict at {:?}", seg))
+                })?,
+            Segment::Index(i) => current
+                .as_array_mut()
+                .ok_or_else(|| parent_must_be(seg))?
+                .get_mut(*i)
+                .ok_or_else(|| {
+                    AiMuxError::Json(format!("partial args path conflict at {:?}", seg))
+                })?,
             Segment::Root => current,
         };
     }
@@ -488,11 +542,11 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) {
         Segment::Key(k) => {
             current
                 .as_object_mut()
-                .expect("final parent must be object")
+                .ok_or_else(|| parent_must_be(last))?
                 .insert(k.clone(), value);
         }
         Segment::Index(i) => {
-            let arr = current.as_array_mut().expect("final parent must be array");
+            let arr = current.as_array_mut().ok_or_else(|| parent_must_be(last))?;
             while arr.len() <= *i {
                 arr.push(Value::Null);
             }
@@ -502,6 +556,16 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) {
             *current = value;
         }
     }
+    Ok(())
+}
+
+/// Build the path-type-conflict error for a segment whose actual JSON type
+/// does not match the path's expectation (e.g. an index into a string).
+fn parent_must_be(seg: &Segment) -> AiMuxError {
+    AiMuxError::Json(format!(
+        "partial args path type conflict at {:?}: accumulated value does not match the path",
+        seg
+    ))
 }
 
 #[cfg(test)]
@@ -511,11 +575,13 @@ mod tests {
     #[test]
     fn smoke() {
         let mut acc = GoogleJsonAccumulator::new();
-        let r = acc.process_partial_args(&[PartialArg {
-            json_path: "$.location".to_string(),
-            string_value: Some("Boston".to_string()),
-            ..Default::default()
-        }]);
+        let r = acc
+            .process_partial_args(&[PartialArg {
+                json_path: "$.location".to_string(),
+                string_value: Some("Boston".to_string()),
+                ..Default::default()
+            }])
+            .unwrap();
         assert_eq!(r.text_delta, "{\"location\":\"Boston\"");
         assert_eq!(r.current_json["location"], "Boston");
     }

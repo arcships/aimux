@@ -29,10 +29,21 @@ pub enum AiMuxError {
     #[error("invalid prompt: {0}")]
     InvalidPrompt(String),
 
-    #[error("rate limited: retry after {retry_after_ms}ms")]
+    /// Rate-limited (HTTP 429). Carries both the retry hint and the provider's
+    /// response message (e.g. "quota exceeded" vs "too many requests") so
+    /// callers can tell the two apart.
+    ///
+    /// `#[serde(default)]` keeps *deserializing* error values that were
+    /// (de)serialized before the field was added (issue M6). Serialization
+    /// always emits `message`, and the generated TS binding keeps it required —
+    /// that asymmetry is intentional: `serde(default)` is input leniency for
+    /// legacy payloads, while TS describes the current output contract.
+    #[error("rate limited: {message} (retry after {retry_after_ms}ms)")]
     RateLimited {
         #[ts(type = "number")]
         retry_after_ms: u64,
+        #[serde(default)]
+        message: String,
     },
 
     #[error("authentication failed: {0}")]
@@ -81,7 +92,10 @@ impl AiMuxError {
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            AiMuxError::RateLimited { .. } | AiMuxError::Http(_) | AiMuxError::ApiCall(_)
+            AiMuxError::RateLimited { .. }
+                | AiMuxError::Http(_)
+                | AiMuxError::ApiCall(_)
+                | AiMuxError::Timeout(_)
         )
     }
 
@@ -95,7 +109,7 @@ impl AiMuxError {
     /// `retryWithExponentialBackoffRespectingRetryHeaders` in the TS SDK.
     pub fn retry_after_hint(&self) -> Option<i64> {
         match self {
-            AiMuxError::RateLimited { retry_after_ms } => Some(*retry_after_ms as i64),
+            AiMuxError::RateLimited { retry_after_ms, .. } => Some(*retry_after_ms as i64),
             _ => None,
         }
     }
@@ -128,22 +142,109 @@ impl AiMuxError {
 
     /// Returns the HTTP status code carried by this error, if any.
     ///
-    /// HTTP-layer errors created by `parse_provider_error` and
-    /// `send_with_retry_raw` embed the status code in the message as
-    /// `"HTTP {status}: ..."`. This method extracts it. Errors that don't
-    /// originate from an HTTP response return `None`.
+    /// Status codes are now derived structurally per variant where the variant
+    /// implies a single status (`Auth`/`TokenExpired` → 401,
+    /// `RateLimited` → 429, `ModelNotFound` → 404). Status-bearing variants
+    /// created by the HTTP layer (`Http`/`Provider`/`ApiCall`) embed the code
+    /// in the message as `"HTTP {status}: ..."` (that prefix is stamped by
+    /// `parse_provider_error` and `send_with_retry_raw`); this method extracts
+    /// it as a fallback. Errors that don't originate from an HTTP response
+    /// return `None`.
     pub fn status_code(&self) -> Option<u16> {
-        let message = match self {
-            AiMuxError::Provider(m)
-            | AiMuxError::Http(m)
-            | AiMuxError::Auth(m)
-            | AiMuxError::ApiCall(m)
-            | AiMuxError::ModelNotFound(m) => m,
-            _ => return None,
+        match self {
+            AiMuxError::Auth(_) | AiMuxError::TokenExpired(_) => Some(401),
+            AiMuxError::RateLimited { .. } => Some(429),
+            AiMuxError::ModelNotFound(_) => Some(404),
+            AiMuxError::Http(m) | AiMuxError::Provider(m) | AiMuxError::ApiCall(m) => {
+                // Parse "HTTP 403: ..." → 403 (only the HTTP layer stamps this
+                // prefix, so the match is unambiguous).
+                let rest = m.strip_prefix("HTTP ")?;
+                let code_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                code_str.parse().ok()
+            }
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_code_derives_fixed_codes() {
+        assert_eq!(AiMuxError::Auth("bad key".into()).status_code(), Some(401));
+        assert_eq!(
+            AiMuxError::TokenExpired("expired".into()).status_code(),
+            Some(401)
+        );
+        assert_eq!(
+            AiMuxError::RateLimited {
+                retry_after_ms: 5000,
+                message: String::new()
+            }
+            .status_code(),
+            Some(429)
+        );
+        assert_eq!(
+            AiMuxError::ModelNotFound("nope".into()).status_code(),
+            Some(404)
+        );
+    }
+
+    #[test]
+    fn status_code_parses_http_prefix_only_for_http_layer_variants() {
+        assert_eq!(
+            AiMuxError::Provider("HTTP 403: forbidden".into()).status_code(),
+            Some(403)
+        );
+        assert_eq!(
+            AiMuxError::ApiCall("HTTP 500: boom".into()).status_code(),
+            Some(500)
+        );
+        // Timeout messages must never parse as a status code, even when the
+        // text happens to start with "HTTP ".
+        assert_eq!(
+            AiMuxError::Timeout("HTTP 408: total timeout after 1000ms".into()).status_code(),
+            None
+        );
+        assert_eq!(AiMuxError::Json("HTTP 400".into()).status_code(), None);
+        assert_eq!(AiMuxError::Other("HTTP 400".into()).status_code(), None);
+    }
+
+    #[test]
+    fn timeout_is_retryable() {
+        assert!(AiMuxError::Timeout("total timeout".into()).is_retryable());
+        assert!(!AiMuxError::Json("parse".into()).is_retryable());
+        assert!(
+            AiMuxError::RateLimited {
+                retry_after_ms: 1,
+                message: String::new()
+            }
+            .is_retryable()
+        );
+    }
+
+    /// M6: deserializing an error JSON that was produced before the
+    /// `RateLimited.message` field existed must still succeed (serde default).
+    #[test]
+    fn rate_limited_serde_back_compat() {
+        let old = r#"{"RateLimited":{"retry_after_ms":5000}}"#;
+        let err: AiMuxError = serde_json::from_str(old).unwrap();
+        assert!(matches!(
+            err,
+            AiMuxError::RateLimited { retry_after_ms: 5000, message, .. } if message.is_empty()
+        ));
+        // Round-trip with the new shape keeps the message.
+        let err = AiMuxError::RateLimited {
+            retry_after_ms: 7,
+            message: "quota exceeded".into(),
         };
-        // Parse "HTTP 403: ..." → 403
-        let rest = message.strip_prefix("HTTP ")?;
-        let code_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-        code_str.parse().ok()
+        let json = serde_json::to_string(&err).unwrap();
+        let back: AiMuxError = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            back,
+            AiMuxError::RateLimited { retry_after_ms: 7, message, .. } if message == "quota exceeded"
+        ));
     }
 }

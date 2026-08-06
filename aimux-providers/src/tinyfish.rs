@@ -14,7 +14,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
@@ -101,12 +100,6 @@ impl TinyfishProvider {
 impl Provider for TinyfishProvider {
     fn name(&self) -> &str {
         PROVIDER_NAME
-    }
-
-    fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(
-            "tinyfish does not support language models. Use search_model() instead.".to_string(),
-        ))
     }
 }
 

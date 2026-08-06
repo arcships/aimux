@@ -21,7 +21,6 @@ use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
@@ -199,13 +198,6 @@ impl AwsPollyProvider {
 impl Provider for AwsPollyProvider {
     fn name(&self) -> &str {
         PROVIDER_NAME
-    }
-
-    fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(
-            "Amazon Polly is a speech-only provider; language models are not supported."
-                .to_string(),
-        ))
     }
 }
 
@@ -490,6 +482,7 @@ fn parse_polly_error(status: u16, body: &str) -> AiMuxError {
         401 | 403 => AiMuxError::Auth(message),
         429 => AiMuxError::RateLimited {
             retry_after_ms: 1000,
+            message,
         },
         404 => AiMuxError::ModelNotFound(message),
         _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),
