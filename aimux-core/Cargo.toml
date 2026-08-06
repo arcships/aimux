@@ -22,3 +22,6 @@ base64 = "0.22"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

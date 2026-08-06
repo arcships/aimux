@@ -88,3 +88,8 @@ serial_test = "3"
 
 # TypeScript type generation (auto-generate .d.ts from Rust types)
 ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
+
+# Workspace lint baseline. Member crates opt in with `[lints] workspace = true`;
+# CI additionally promotes all warnings to errors.
+[workspace.lints.clippy]
+all = "warn"
