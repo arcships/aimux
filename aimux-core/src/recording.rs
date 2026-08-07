@@ -16,12 +16,12 @@
 use crate::language_model_message::LanguageModelPrompt;
 use crate::options::CallOptions;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender, sync_channel};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
@@ -666,6 +666,201 @@ fn iso8601_now() -> String {
         .replace("Duration", "t")
 }
 
+// ── RingRecorder(P6:内存有界 ring;同 RingTraceStore 样式各自实现)────────
+
+/// 默认 ring 容量(与 RFC-0023 §3.5 对齐:2048 条)。
+pub const DEFAULT_RING_CAPACITY: usize = 2048;
+
+/// 内存有界录制器:分片按 `call_id` 合并,completion barrier 满足后入 ring,
+/// FIFO 淘汰最旧(默认 2048 条),丢弃计数对外可查。**不落盘**。
+///
+/// 与 [`crate::trace::RingTraceStore`] 同款样式(Mutex + VecDeque +
+/// with_capacity + export_jsonl),不共用类型。适用进程内近端调试 / 测试,
+/// 无需文件 I/O;落盘用 [`JsonlRecorder`]。
+pub struct RingRecorder {
+    inner: Mutex<RingInner>,
+}
+
+struct RingInner {
+    cap: usize,
+    /// 未完成分片(barrier 未满足),按 call_id 合并。
+    pending: HashMap<String, Recording>,
+    /// 已完成录制(ready 后迁入),FIFO ring。
+    completed: VecDeque<Recording>,
+    /// ring 超容淘汰计数(队列语义:bounded + drop-newest 可查)。
+    dropped: u64,
+}
+
+impl RingRecorder {
+    /// 默认容量(2048 条)。
+    pub fn new() -> Self {
+        Self::with_capacity(DEFAULT_RING_CAPACITY)
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        assert!(cap > 0, "RingRecorder capacity must be > 0");
+        Self {
+            inner: Mutex::new(RingInner {
+                cap,
+                pending: HashMap::new(),
+                completed: VecDeque::with_capacity(cap),
+                dropped: 0,
+            }),
+        }
+    }
+
+    /// 已完成录制条数。
+    pub fn len(&self) -> usize {
+        self.inner.lock().unwrap().completed.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// 尚未完成(仍等待分片)的 call 数。
+    pub fn pending_count(&self) -> usize {
+        self.inner.lock().unwrap().pending.len()
+    }
+
+    /// FIFO 淘汰丢弃计数(bounded + drop-newest 对外可查)。
+    pub fn dropped_count(&self) -> u64 {
+        self.inner.lock().unwrap().dropped
+    }
+
+    pub fn clear(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.pending.clear();
+        inner.completed.clear();
+        inner.dropped = 0;
+    }
+
+    /// 导出全部已完成录制(每行一个 `Recording`)。pending 未完成条目不导出。
+    pub fn export_jsonl(&self, w: &mut impl Write) -> std::io::Result<()> {
+        let inner = self.inner.lock().unwrap();
+        for rec in &inner.completed {
+            let line = serde_json::to_string(rec).map_err(std::io::Error::other)?;
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    }
+
+    /// 合并一个已 ready 的分片(单次持锁,barrier 满足则入 ring)。
+    fn finalize_locked(&self, inner: &mut RingInner, call_id: &str) {
+        if inner
+            .pending
+            .get(call_id)
+            .map(|r| r.ready())
+            .unwrap_or(false)
+            && let Some(mut rec) = inner.pending.remove(call_id)
+        {
+            if !rec.exchanges.is_empty() || rec.transport_closed {
+                rec.complete = true;
+            }
+            self.push(inner, rec);
+        }
+    }
+
+    /// FIFO ring 追加;超容淘汰最旧并计数。
+    fn push(&self, inner: &mut RingInner, rec: Recording) {
+        if inner.completed.len() >= inner.cap {
+            inner.completed.pop_front();
+            inner.dropped += 1;
+        }
+        inner.completed.push_back(rec);
+    }
+}
+
+impl Default for RingRecorder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Recorder for RingRecorder {
+    fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        let rec = inner.pending.entry(call_id.to_string()).or_insert_with(|| {
+            Recording::new(
+                call_id,
+                InputRecord::from_call_options(options),
+                ProviderRecord::minimal(provider, model_id),
+            )
+        });
+        rec.input = InputRecord::from_call_options(options);
+        rec.provider = ProviderRecord::minimal(provider, model_id);
+    }
+
+    fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord) {
+        // 与 JsonlRecorder 一致的边界强制脱敏,不依赖 provider 端自觉。
+        let mut snap = snapshot.clone();
+        snap.provider_options = snap.provider_options.take().map(redact_json);
+        snap.profile = snap.profile.take().map(redact_json);
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(rec) = inner.pending.get_mut(call_id) {
+            rec.provider = snap;
+        }
+    }
+
+    fn record_exchange(&self, call_id: &str, exchange: &HttpExchange) {
+        let mut inner = self.inner.lock().unwrap();
+        entry_or_init(&mut inner.pending, call_id)
+            .exchanges
+            .push(exchange.clone());
+        self.finalize_locked(&mut inner, call_id);
+    }
+
+    fn record_exchange_update(
+        &self,
+        call_id: &str,
+        attempt: u32,
+        response: &ResponseRecord,
+        error: Option<String>,
+    ) {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(rec) = inner.pending.get_mut(call_id)
+            && let Some(ex) = rec.exchanges.iter_mut().find(|ex| ex.attempt == attempt)
+        {
+            ex.response = Some(response.clone());
+            if let Some(err) = error {
+                ex.error = Some(err);
+            }
+            ex.finalized = true;
+        }
+        self.finalize_locked(&mut inner, call_id);
+    }
+
+    fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord) {
+        let mut inner = self.inner.lock().unwrap();
+        entry_or_init(&mut inner.pending, call_id).outcome = outcome.clone();
+        self.finalize_locked(&mut inner, call_id);
+    }
+
+    fn record_transport_closed(&self, call_id: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        entry_or_init(&mut inner.pending, call_id).transport_closed = true;
+        self.finalize_locked(&mut inner, call_id);
+    }
+
+    /// 内存模式:把 barrier 已满足的 pending 全部收进 completed(对应
+    /// JsonlRecorder 的 write_ready_all),无落盘等待。
+    fn flush(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        let ids: Vec<String> = inner
+            .pending
+            .iter()
+            .filter(|(_, r)| r.ready())
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            if let Some(mut rec) = inner.pending.remove(&id) {
+                rec.complete = true;
+                self.push(&mut inner, rec);
+            }
+        }
+    }
+}
+
 // ── 流式 outcome 观测(B4:流结束时终结,含 drop/EOF 兜底)────────────────
 
 /// 流式观测包装器:终结时记录 `OutcomeRecord`。
@@ -1095,5 +1290,131 @@ mod tests {
             "fallback line must not be marked complete"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── RingRecorder(P6)───────────────────────────────────────────────────
+
+    fn sample_exchange() -> HttpExchange {
+        HttpExchange {
+            attempt: 0,
+            request: HttpRecord {
+                method: "post".into(),
+                url: "https://api.openai.com/v1/chat/completions".into(),
+                headers: vec![],
+                body: Some("{}".into()),
+            },
+            response: Some(ResponseRecord {
+                status: 200,
+                headers: vec![],
+                body: Some("{\"ok\":true}".into()),
+                stream_chunks: None,
+                ttfb_ms: None,
+            }),
+            timing: TimingRecord {
+                latency_ms: 1,
+                ttfb_ms: None,
+            },
+            error: None,
+            finalized: true,
+        }
+    }
+
+    fn success_outcome() -> OutcomeRecord {
+        OutcomeRecord {
+            status: OutcomeStatus::Success,
+            finish_reason: Some("stop".into()),
+            error: None,
+            usage: None,
+        }
+    }
+
+    /// 驱动一条完整调用:input + exchange + outcome + transport_closed。
+    fn drive_full_call(rec: &RingRecorder, call_id: &str) {
+        rec.record_input(call_id, &sample_options(), "openai", "gpt-4o");
+        rec.record_exchange(call_id, &sample_exchange());
+        rec.record_outcome(call_id, &success_outcome());
+        rec.record_transport_closed(call_id);
+    }
+
+    #[test]
+    fn ring_merges_shards_and_finalizes_on_barrier() {
+        let ring = RingRecorder::new();
+        drive_full_call(&ring, "call-a");
+        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.pending_count(), 0);
+
+        let mut buf = Vec::new();
+        ring.export_jsonl(&mut buf).unwrap();
+        let parsed: Recording =
+            serde_json::from_str(std::str::from_utf8(&buf).unwrap().trim()).unwrap();
+        assert_eq!(parsed.call_id, "call-a");
+        assert_eq!(parsed.exchanges.len(), 1);
+        assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
+        assert!(parsed.complete);
+    }
+
+    #[test]
+    fn ring_keeps_incomplete_in_pending_until_closed() {
+        let ring = RingRecorder::new();
+        ring.record_input("call-x", &sample_options(), "openai", "gpt-4o");
+        ring.record_outcome("call-x", &success_outcome());
+        // outcome 已到但 transport 未封闭:仍 pending,不进 completed。
+        ring.flush();
+        assert_eq!(ring.len(), 0);
+        assert_eq!(ring.pending_count(), 1);
+
+        ring.record_transport_closed("call-x");
+        ring.flush();
+        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.pending_count(), 0);
+    }
+
+    #[test]
+    fn ring_evicts_oldest_and_counts_drops() {
+        let ring = RingRecorder::with_capacity(2);
+        drive_full_call(&ring, "call-1");
+        drive_full_call(&ring, "call-2");
+        drive_full_call(&ring, "call-3");
+        assert_eq!(ring.len(), 2, "ring is bounded");
+        assert_eq!(ring.dropped_count(), 1, "oldest evicted and counted");
+
+        // 淘汰的是最旧的 call-1。
+        let mut buf = Vec::new();
+        ring.export_jsonl(&mut buf).unwrap();
+        let lines: Vec<&str> = std::str::from_utf8(&buf)
+            .unwrap()
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("call-2"));
+        assert!(lines[1].contains("call-3"));
+    }
+
+    #[test]
+    fn ring_flush_finalizes_ready_pending() {
+        let ring = RingRecorder::new();
+        ring.record_input("call-f", &sample_options(), "openai", "gpt-4o");
+        ring.record_outcome("call-f", &success_outcome());
+        ring.record_transport_closed("call-f");
+        // 不主动 flush 前,exchange 无但 barrier 已满足(无 exchange 也算 ready)——
+        // record_outcome/closed 路径已 finalize;此处验证 flush 幂等(不重复入 ring)。
+        ring.flush();
+        ring.flush();
+        assert_eq!(ring.len(), 1);
+    }
+
+    #[test]
+    fn ring_clear_resets_everything() {
+        let ring = RingRecorder::with_capacity(2);
+        drive_full_call(&ring, "call-1");
+        ring.record_input("call-p", &sample_options(), "openai", "gpt-4o"); // pending
+        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.pending_count(), 1);
+
+        ring.clear();
+        assert_eq!(ring.len(), 0);
+        assert_eq!(ring.pending_count(), 0);
+        assert_eq!(ring.dropped_count(), 0);
     }
 }
