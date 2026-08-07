@@ -603,6 +603,8 @@ data class GenerateTextOptions(
     @SerialName("include_raw_chunks") val includeRawChunks: Boolean? = null,
     /** Per-call timeout configuration (overall / first chunk / inter-chunk idle, in ms). */
     @SerialName("timeout") val timeout: TimeoutConfiguration? = null,
+    /** Session identifier (RFC-0024): groups consecutive calls into a session. */
+    @SerialName("session_id") val sessionId: String? = null,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

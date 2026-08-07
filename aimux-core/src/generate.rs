@@ -247,7 +247,12 @@ pub async fn generate_text(
         ),
         crate::session::session_store(),
     ) {
-        store.append(&session_id, call_options.call_id.as_deref(), source);
+        let call = store.append(&session_id, call_options.call_id.as_deref(), source);
+        // RFC-0024 P3: 录制带上会话归组信息(仅录制开启时有效;
+        // recorder/call_id 同时存在才可能被写入)。
+        if let (Some(recorder), Some(call_id)) = (&recorder, &call_id) {
+            recorder.record_session(call_id, &session_id, call.step);
+        }
     }
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
@@ -396,7 +401,12 @@ pub async fn stream_text(
         ),
         crate::session::session_store(),
     ) {
-        store.append(&session_id, call_options.call_id.as_deref(), source);
+        let call = store.append(&session_id, call_options.call_id.as_deref(), source);
+        // RFC-0024 P3: 录制带上会话归组信息(仅录制开启时有效;
+        // recorder/call_id 同时存在才可能被写入)。
+        if let (Some(recorder), Some(call_id)) = (&recorder, &call_id) {
+            recorder.record_session(call_id, &session_id, call.step);
+        }
     }
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).

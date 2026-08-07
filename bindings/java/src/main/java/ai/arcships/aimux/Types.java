@@ -1680,6 +1680,7 @@ public final class Types {
         @JsonProperty("max_retries") private Long maxRetries;
         @JsonProperty("include_raw_chunks") private Boolean includeRawChunks;
         @JsonProperty("timeout") private TimeoutConfiguration timeout;
+        @JsonProperty("session_id") private String sessionId;
 
         @JsonCreator
         GenerateTextOptions() {}
@@ -1690,7 +1691,7 @@ public final class Types {
                                     Map<String, String> headers, Map<String, JsonNode> providerOptions,
                                     ReasoningEffort reasoning, String instructions,
                                     JsonNode bodyOverrides, Long maxRetries, Boolean includeRawChunks,
-                                    TimeoutConfiguration timeout) {
+                                    TimeoutConfiguration timeout, String sessionId) {
             this.maxOutputTokens = maxOutputTokens;
             this.temperature = temperature;
             this.stopSequences = stopSequences;
@@ -1710,6 +1711,7 @@ public final class Types {
             this.maxRetries = maxRetries;
             this.includeRawChunks = includeRawChunks;
             this.timeout = timeout;
+            this.sessionId = sessionId;
         }
 
         public Long getMaxOutputTokens() { return maxOutputTokens; }
@@ -1731,6 +1733,7 @@ public final class Types {
         public Long getMaxRetries() { return maxRetries; }
         public Boolean getIncludeRawChunks() { return includeRawChunks; }
         public TimeoutConfiguration getTimeout() { return timeout; }
+        public String getSessionId() { return sessionId; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -1754,6 +1757,7 @@ public final class Types {
             private Long maxRetries;
             private Boolean includeRawChunks;
             private TimeoutConfiguration timeout;
+            private String sessionId;
 
             public Builder maxOutputTokens(Long v) { this.maxOutputTokens = v; return this; }
             public Builder temperature(Double v) { this.temperature = v; return this; }
@@ -1774,12 +1778,13 @@ public final class Types {
             public Builder maxRetries(Long v) { this.maxRetries = v; return this; }
             public Builder includeRawChunks(Boolean v) { this.includeRawChunks = v; return this; }
             public Builder timeout(TimeoutConfiguration v) { this.timeout = v; return this; }
+            public Builder sessionId(String v) { this.sessionId = v; return this; }
 
             public GenerateTextOptions build() {
                 return new GenerateTextOptions(maxOutputTokens, temperature, stopSequences, topP, topK,
                     presencePenalty, frequencyPenalty, responseFormat, seed, tools, toolChoice, headers,
                     providerOptions, reasoning, instructions, bodyOverrides, maxRetries, includeRawChunks,
-                    timeout);
+                    timeout, sessionId);
             }
         }
 
@@ -1806,14 +1811,15 @@ public final class Types {
                 && Objects.equals(bodyOverrides, that.bodyOverrides)
                 && Objects.equals(maxRetries, that.maxRetries)
                 && Objects.equals(includeRawChunks, that.includeRawChunks)
-                && Objects.equals(timeout, that.timeout);
+                && Objects.equals(timeout, that.timeout)
+                && Objects.equals(sessionId, that.sessionId);
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty,
                 frequencyPenalty, responseFormat, seed, tools, toolChoice, headers, providerOptions, reasoning,
-                instructions, bodyOverrides, maxRetries, includeRawChunks, timeout);
+                instructions, bodyOverrides, maxRetries, includeRawChunks, timeout, sessionId);
         }
     }
 

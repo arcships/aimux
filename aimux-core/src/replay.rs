@@ -695,6 +695,8 @@ mod tests {
             },
             complete: true,
             transport_closed: true,
+            session_id: None,
+            step: None,
         }
     }
 

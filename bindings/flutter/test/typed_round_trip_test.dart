@@ -511,4 +511,16 @@ void main() {
     final defaults = GenerateTextOptions().toJson();
     expect(defaults.containsKey('include_raw_chunks'), isFalse);
   });
+
+  test('GenerateTextOptions sessionId round-trips', () {
+    // RFC-0024: explicit session_id crosses the wire as snake_case.
+    final original = GenerateTextOptions(sessionId: 'sess-1');
+    final json = original.toJson();
+    expect(json['session_id'], 'sess-1');
+    final back = GenerateTextOptions.fromJson(json);
+    expect(back.sessionId, 'sess-1');
+
+    final defaults = GenerateTextOptions().toJson();
+    expect(defaults.containsKey('session_id'), isFalse);
+  });
 }

@@ -2260,6 +2260,26 @@ pub extern "C" fn aimux_trace_session_chain(handle: u64, session_id: *const c_ch
     }
 }
 
+/// Query: one session's per-step cache-hit trajectory (RFC-0024 §4.3).
+/// Returns a JSON array of `SessionStepStat` (empty for unknown sessions) or
+/// `{"error":...}`; caller frees with `aimux_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_session_trajectory(
+    handle: u64,
+    session_id: *const c_char,
+) -> *mut c_char {
+    let Some(store) = get_trace_store(handle) else {
+        return error_json_raw("invalid trace handle");
+    };
+    let Some(id) = cstr_to_string(session_id) else {
+        return error_json_raw("invalid session_id");
+    };
+    match serde_json::to_string(&store.session_cache_trajectory(&id)) {
+        Ok(s) => into_cstring_raw(s),
+        Err(e) => error_json_raw(format!("serialize: {e}")),
+    }
+}
+
 /// Export all probe records as JSONL (one `TraceRecord` per line). Returns a
 /// JSON string (with embedded newlines) or `{"error":...}`; caller frees with
 /// `aimux_free_string`.

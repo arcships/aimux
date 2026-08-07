@@ -58,6 +58,15 @@ pub struct Recording {
     /// P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
     #[serde(default)]
     pub transport_closed: bool,
+
+    /// 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
+    /// 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
+    /// 或之后均可(writer 端按 call_id 合并)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<u32>,
 }
 
 impl Recording {
@@ -73,6 +82,8 @@ impl Recording {
             outcome: OutcomeRecord::default(),
             complete: false,
             transport_closed: false,
+            session_id: None,
+            step: None,
         }
     }
 
@@ -241,6 +252,11 @@ impl OutcomeRecord {
 pub trait Recorder: Send + Sync {
     /// 录制输入侧 + 配置侧最小信息(层 A 入口调用)。
     fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str);
+    /// 录制会话归组信息(RFC-0024 P3):session_id + 会话内步号。
+    ///
+    /// 默认空实现(不参与录制的 Recorder 无需关心);开启录制且调用被归组
+    /// 时,`generate_text`/`stream_text` 入口调用它。
+    fn record_session(&self, _call_id: &str, _session_id: &str, _step: u32) {}
     /// 录制配置侧完整快照。
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord);
     /// 录制单次 HTTP 交换(层 B http.rs 调用,per-attempt 一条)。
@@ -377,6 +393,12 @@ enum RecordEvent {
         input: InputRecord,
         provider: ProviderRecord,
     },
+    /// 会话归组信息(RFC-0024 P3):所在会话 + 会话内步号。
+    Session {
+        call_id: String,
+        session_id: String,
+        step: u32,
+    },
     Provider {
         call_id: String,
         provider: ProviderRecord,
@@ -460,6 +482,14 @@ impl Recorder for JsonlRecorder {
             call_id: call_id.to_string(),
             input: InputRecord::from_call_options(options),
             provider: ProviderRecord::minimal(provider, model_id),
+        });
+    }
+
+    fn record_session(&self, call_id: &str, session_id: &str, step: u32) {
+        self.send_ev(RecordEvent::Session {
+            call_id: call_id.to_string(),
+            session_id: session_id.to_string(),
+            step,
         });
     }
 
@@ -564,6 +594,16 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                     .or_insert_with(|| Recording::new(&call_id, input.clone(), provider.clone()));
                 rec.input = input;
                 rec.provider = provider;
+            }
+            RecordEvent::Session {
+                call_id,
+                session_id,
+                step,
+            } => {
+                let rec = entry_or_init(&mut pending, &call_id);
+                rec.session_id = Some(session_id);
+                rec.step = Some(step);
+                try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::Provider { call_id, provider } => {
                 if let Some(rec) = pending.get_mut(&call_id) {
@@ -1089,6 +1129,64 @@ mod tests {
         assert!(parsed.exchanges.is_empty()); // 无 exchange 也算 ready(非流式仅层 A)
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── RFC-0024 P3: session 归组信息进 Recording ─────────────────────────
+
+    #[test]
+    fn record_session_writes_session_fields_to_jsonl() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-sess-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+
+        rec.record_input("call-sess-1", &sample_options(), "openai", "gpt-4o");
+        // session 事件可在 Input 之后到达(writer 按 call_id 合并)。
+        rec.record_session("call-sess-1", "sess-abc", 3);
+        rec.record_outcome(
+            "call-sess-1",
+            &OutcomeRecord {
+                status: OutcomeStatus::Success,
+                finish_reason: Some("stop".into()),
+                error: None,
+                usage: None,
+            },
+        );
+        rec.record_transport_closed("call-sess-1");
+        rec.flush();
+
+        let content = std::fs::read_to_string(rec.path()).unwrap();
+        let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(parsed.session_id.as_deref(), Some("sess-abc"));
+        assert_eq!(parsed.step, Some(3));
+        // 序列化时 null 省略:只有归组的调用才带这两个字段。
+        assert!(content.contains("\"session_id\":\"sess-abc\""));
+        assert!(content.contains("\"step\":3"));
+    }
+
+    #[test]
+    fn ungrouped_recording_omits_session_fields_and_old_jsonl_parses() {
+        // 未归组:session 字段为 None 且序列化时省略(skip_serializing_if)。
+        let rec = Recording::new(
+            "call-1",
+            InputRecord::from_call_options(&sample_options()),
+            ProviderRecord::minimal("openai", "gpt-4o"),
+        );
+        let json = serde_json::to_string(&rec).unwrap();
+        assert!(!json.contains("session_id"), "ungrouped must omit: {json}");
+        assert!(!json.contains("\"step\""), "ungrouped must omit: {json}");
+
+        // 旧 jsonl(无 session 字段)仍能反序列化(serde default)。
+        let old_json = serde_json::to_string(&{
+            let mut r = serde_json::to_value(&rec).unwrap();
+            r.as_object_mut()
+                .unwrap()
+                .insert("transport_closed".into(), serde_json::json!(true));
+            r
+        })
+        .unwrap();
+        let back: Recording = serde_json::from_str(&old_json).unwrap();
+        assert_eq!(back.session_id, None);
+        assert_eq!(back.step, None);
     }
 
     #[test]

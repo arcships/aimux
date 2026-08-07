@@ -888,6 +888,10 @@ ProviderHandle createProvider(
 // Model specs (RFC-0027) — get_model_specs
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Module-level FFI handle for the top-level `getModelSpecs` (created once;
+/// mirrors the instance handle each `Model` holds).
+final _AimuxFFI _modelSpecsFfi = _AimuxFFI();
+
 /// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
 /// Catalogue string. Thin fetch — no caching.
 String getModelSpecs(String? sourceUrl) {
@@ -895,9 +899,13 @@ String getModelSpecs(String? sourceUrl) {
   if (sourceUrl != null) {
     urlPtr = sourceUrl.toNativeUtf8();
   }
-  final ptr = _ffi.getModelSpecs(urlPtr);
+  final ptr = _modelSpecsFfi.getModelSpecs(urlPtr);
   if (urlPtr != null) calloc.free(urlPtr);
-  final result = _extractString(ptr, 'getModelSpecs');
+  if (ptr == nullptr) {
+    throw StateError('get_model_specs returned null');
+  }
+  final result = ptr.toDartString();
+  _modelSpecsFfi.freeString(ptr);
   return result;
 }
 

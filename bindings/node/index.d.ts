@@ -79,6 +79,12 @@ export declare class Model {
    * `SessionChainView` string or an error when the session is unknown.
    */
   traceSessionChain(sessionId: string): string
+  /**
+   * One session's per-step cache-hit trajectory (RFC-0024 §4.3). Returns
+   * a JSON array of `SessionStepStat` (empty when the session is unknown
+   * or the model is not traced).
+   */
+  traceSessionTrajectory(sessionId: string): string
   /** Export all probe records as JSONL (one `TraceRecord` per line). */
   traceExportJsonl(): string
   /** Clear all probe records of this traced model. */
@@ -242,11 +248,15 @@ export declare function cohereReranking(apiKey: string, modelId: string, baseUrl
  */
 export declare function createProvider(name: string, apiKey?: string | undefined | null, config?: ProviderConfig | undefined | null): Promise<ProviderHandle>
 
-/** Fetch the community model catalogue (anya2a). Returns a JSON-serialized Catalogue. Thin fetch — no caching. */
-export declare function getModelSpecs(sourceUrl?: string | undefined | null): Promise<string>
-
 /** Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4). */
 export declare function deepseek(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/**
+ * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+ * `Catalogue` (provider → model_id → ModelSpec). Thin fetch — no caching.
+ * `source_url` may be null for the default endpoint.
+ */
+export declare function getModelSpecs(sourceUrl?: string | undefined | null): Promise<string>
 
 /**
  * Create a Google Gemini language model instance.
@@ -275,6 +285,18 @@ export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: s
 export declare function initLogging(level: string): void
 
 /**
+ * 启动录制(RFC-0023 P1/P2):把完整 `Recording` 写 JSONL 到 `{dir}/recordings.jsonl`
+ * (目录自动创建)。录制 **opt-in**;再次调用(不同 dir)替换 recorder。
+ */
+export declare function initRecording(dir: string): void
+
+/**
+ * 启动内存有界录制(RFC-0023 P6):`RingRecorder`,容量 `cap`,FIFO 淘汰,
+ * 丢弃计数可查。`cap == 0` 时 no-op(不启动)。
+ */
+export declare function initRecordingRing(cap: number): void
+
+/**
  * Enable/disable the global session inferer (RFC-0024, opt-in, off by
  * default). Explicit `sessionId` values always win regardless of this.
  */
@@ -292,6 +314,12 @@ export declare function listSessions(): string
 
 /** Create a Mistral language model instance. */
 export declare function mistral(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/**
+ * 从录制 JSONL 创建 mock 回放模型(RFC-0023 P3):按输入匹配录制响应,
+ * **不发真实 API**。返回的 `Model` 可用于 `generateText` / `streamText`。
+ */
+export declare function mockReplay(recordingsJsonl: string): Model
 
 /** Create an OpenAI model instance. */
 export declare function openai(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
@@ -347,6 +375,12 @@ export interface ProviderConfig {
    */
   bodyOverrides?: string
 }
+
+/** 刷盘全局 recorder(阻塞至 JSONL 落盘;ring 模式为 no-op)。 */
+export declare function recordingFlush(): void
+
+/** 停止录制:全局 recorder = None(新调用不再录制)。 */
+export declare function recordingStop(): void
 
 /**
  * Query: all calls of a session (RFC-0024), as a JSON-serialized
