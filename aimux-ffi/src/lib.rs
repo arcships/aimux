@@ -943,7 +943,9 @@ pub extern "C" fn aimux_provider_handle_new(
 /// List models on a provider handle (RFC-0027 runtime discovery).
 ///
 /// `handle` is from `aimux_provider_handle_new`. Returns a JSON array of
-/// `ResolvedModel` (id + optional spec), or `{"error":"..."}` on failure.
+/// sparse `RuntimeModel` (id / owned_by / created) — **no community
+/// enrichment**. To supplement with model specs, call `aimux_get_model_specs`
+/// separately and merge in the host. Returns `{"error":"..."}` on failure.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_list_models(handle: u64) -> *mut c_char {
     let Some(p) = get_provider(handle) else {

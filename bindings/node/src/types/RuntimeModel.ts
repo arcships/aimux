@@ -5,8 +5,8 @@
  * account-level truth of "what this key can call").
  *
  * Carries only what the provider returns — typically just `id`. Configuration
- * comes from [`ModelSpec`] (community knowledge), merged into
- * [`ResolvedModel`].
+ * comes from [`ModelSpec`] (community knowledge); the host merges the two as
+ * needed (RFC-0027). aimux itself does not combine them.
  */
 export type RuntimeModel = { 
 /**
