@@ -217,6 +217,34 @@ char *aimux_provider_new(const char *name, const char *api_key,
  */
 char *aimux_provider_from_env(const char *name, const char *model_id);
 
+/**
+ * Provider handles (RFC-0027): create a provider handle for a registry-backed
+ * provider. Unlike aimux_provider_new (which binds to a single model_id),
+ * this returns a provider handle supporting aimux_provider_list_models and
+ * aimux_provider_model. Returns `{"handle":<u64>}` or `{"error":...}`.
+ */
+char *aimux_provider_handle_new(const char *name, const char *api_key,
+                                const char *config_json);
+
+/**
+ * List models on a provider handle (runtime discovery + anya2a enrichment).
+ * Returns a JSON array of ResolvedModel, or `{"error":...}`.
+ */
+char *aimux_provider_list_models(uint64_t handle);
+
+/**
+ * Build a language model from a provider handle + model_id.
+ * Returns `{"handle":<u64>}` or `{"error":...}`.
+ */
+char *aimux_provider_model(uint64_t handle, const char *model_id);
+
+/**
+ * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+ * Catalogue (provider → model_id → ModelSpec), or `{"error":...}`.
+ * source_url may be NULL for the default endpoint. Thin fetch — no caching.
+ */
+char *aimux_get_model_specs(const char *source_url);
+
 /* ── Generation ─────────────────────────────────────────────────────────── */
 
 /**

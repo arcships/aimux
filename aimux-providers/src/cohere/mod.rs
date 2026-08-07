@@ -83,4 +83,77 @@ impl Provider for CohereProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    /// List models via `GET {base_url}/models` (Cohere v2, RFC-0027).
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let config = self.config.clone();
+        Box::pin(async move {
+            let base = config.base_url.trim_end_matches('/');
+            let url = format!("{base}/models");
+            let headers = vec![
+                (
+                    "Authorization".to_string(),
+                    format!("Bearer {}", config.api_key),
+                ),
+                ("Content-Type".to_string(), "application/json".to_string()),
+            ];
+            use aimux_provider_utils::{
+                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
+            };
+            let resp = send_timed(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url,
+                    headers,
+                    body: HttpBody::Empty,
+                    abort_signal: None,
+                    call_id: None,
+                    recording_context: None,
+                },
+                aimux_provider_utils::RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+                None,
+            )
+            .await?;
+            // Cohere v2: { models: [{ name, endpoints, ... }] }
+            #[derive(serde::Deserialize)]
+            struct Resp {
+                #[serde(default)]
+                models: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                name: String,
+                #[serde(default)]
+                endpoints: Option<Vec<String>>,
+            }
+            let parsed: Resp = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(format!("cohere list_models: parse: {e}")))?;
+            let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
+                .models
+                .into_iter()
+                // Only include chat-capable models (endpoints contain "chat").
+                .filter(|e| {
+                    e.endpoints
+                        .as_ref()
+                        .is_none_or(|eps| eps.iter().any(|e| e == "chat"))
+                })
+                .map(|e| aimux_core::model_catalogue::RuntimeModel {
+                    id: e.name,
+                    owned_by: Some("cohere".to_string()),
+                    created: None,
+                })
+                .collect();
+            Ok(runtime)
+        })
+    }
 }

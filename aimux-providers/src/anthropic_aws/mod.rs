@@ -1,4 +1,4 @@
-﻿//! Anthropic-AWS (Claude Platform on AWS) provider.
+//! Anthropic-AWS (Claude Platform on AWS) provider.
 //!
 //! Implements the `LanguageModel` trait against the Claude Platform on AWS API
 //! (`aws-external-anthropic.{region}.api.aws/v1/messages`). This is the
@@ -175,5 +175,83 @@ impl Provider for AnthropicAwsProvider {
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
+    }
+
+    /// List models via `GET {base_url}/models` (Anthropic-compatible, RFC-0027).
+    /// API-key auth uses a simple header; SigV4 auth is not supported for
+    /// listing (returns `Unsupported`).
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let config = self.config.clone();
+        Box::pin(async move {
+            let base = config.base_url.trim_end_matches('/');
+            let url = format!("{base}/models");
+            let mut headers = vec![
+                ("anthropic-version".to_string(), config.api_version.clone()),
+                ("Content-Type".to_string(), "application/json".to_string()),
+            ];
+            match &config.auth {
+                AnthropicAwsAuth::ApiKey(key) => {
+                    headers.push(("x-api-key".to_string(), key.clone()));
+                }
+                AnthropicAwsAuth::SigV4(_) => {
+                    return Err(AiMuxError::Unsupported(
+                        "list_models via SigV4 not supported for Anthropic-AWS; use API key auth"
+                            .into(),
+                    ));
+                }
+            }
+
+            use aimux_provider_utils::{
+                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
+            };
+            let resp = send_timed(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url,
+                    headers,
+                    body: HttpBody::Empty,
+                    abort_signal: None,
+                    call_id: None,
+                    recording_context: None,
+                },
+                aimux_provider_utils::RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+                None,
+            )
+            .await?;
+
+            #[derive(serde::Deserialize)]
+            struct Resp {
+                #[serde(default)]
+                data: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                id: String,
+                #[serde(default)]
+                display_name: Option<String>,
+            }
+            let parsed: Resp = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(format!("anthropic-aws list_models: parse: {e}")))?;
+            let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
+                .data
+                .into_iter()
+                .map(|e| aimux_core::model_catalogue::RuntimeModel {
+                    id: e.id,
+                    owned_by: e.display_name,
+                    created: None,
+                })
+                .collect();
+            Ok(runtime)
+        })
     }
 }

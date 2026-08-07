@@ -122,6 +122,23 @@ pub fn provider(
     model_id: &str,
     options: Option<ProviderOptions>,
 ) -> Result<Box<dyn LanguageModel>, AiMuxError> {
+    let p = provider_handle(name, api_key, options)?;
+    p.language_model(model_id)
+}
+
+/// Build a **provider handle** for a built-in provider by name (RFC-0027).
+///
+/// Unlike [`provider`] (which binds to a single `model_id` and returns a
+/// `LanguageModel`), this returns the [`Provider`] itself, so callers can call
+/// [`Provider::list_models`] for runtime discovery, then
+/// [`Provider::language_model`] on a chosen id.
+///
+/// Same key/options semantics as [`provider`].
+pub fn provider_handle(
+    name: impl AsRef<str>,
+    api_key: Option<String>,
+    options: Option<ProviderOptions>,
+) -> Result<Box<dyn Provider>, AiMuxError> {
     let name = name.as_ref();
     let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {
         AiMuxError::UnknownProvider(format!(
@@ -135,6 +152,16 @@ pub fn provider(
         None => aimux_provider_utils::load_api_key(None, &entry.env_var, &entry.display)?,
     };
 
+    let config = build_provider_config(entry, key, options);
+    Ok(Box::new(OpenAIProvider::new(config)))
+}
+
+/// Resolve the registry entry + options into a fully-wired `OpenAIConfig`.
+fn build_provider_config(
+    entry: &RegistryEntry,
+    key: String,
+    options: Option<ProviderOptions>,
+) -> OpenAIConfig {
     let mut config = OpenAIConfig::new(key)
         .with_base_url(entry.base_url.clone())
         .with_provider(entry.name.clone())
@@ -163,8 +190,7 @@ pub fn provider(
             config = config.with_body_overrides(overrides);
         }
     }
-
-    OpenAIProvider::new(config).language_model(model_id)
+    config
 }
 
 /// Translate a registry profile into the runtime profile.

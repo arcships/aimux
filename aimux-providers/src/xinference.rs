@@ -1,4 +1,4 @@
-﻿//! Xinference provider — a thin OpenAI-compatible wrapper.
+//! Xinference provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <inference.ai> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:9997/v1`. The `XINFERENCE_BASE_URL` environment
@@ -63,4 +63,6 @@ impl Provider for XinferenceProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

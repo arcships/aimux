@@ -234,6 +234,17 @@ public final class Model: @unchecked Sendable {
         return Model(handle: handle)
     }
 
+    // ── Provider handles (RFC-0027) ──────────────────────────────────────────
+
+    /// Create a **provider handle** for a registry-backed provider (RFC-0027).
+    ///
+    /// Unlike `provider()` (which binds to a single modelId), this returns a
+    /// `ProviderHandle` that supports `listModels()` and `model()`.
+    public static func createProvider(name: String, apiKey: String? = nil, configJson: String? = nil) throws -> ProviderHandle {
+        let handle = try extractHandle(aimux_provider_handle_new(name, apiKey, configJson))
+        return ProviderHandle(handle: handle)
+    }
+
     // ── Generation ─────────────────────────────────────────────────────────
 
     /// Generate text (non-streaming).
@@ -452,6 +463,73 @@ public final class Model: @unchecked Sendable {
             )
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ProviderHandle (RFC-0027) — provider handle for listModels / model
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A provider handle — created by `Model.createProvider`, supports `listModels()`
+/// (runtime discovery) and `model()` (build a model from a discovered id).
+public final class ProviderHandle: @unchecked Sendable {
+
+    private var handle: UInt64
+
+    fileprivate init(handle: UInt64) {
+        self.handle = handle
+    }
+
+    deinit {
+        if handle != 0 {
+            aimux_drop_handle(handle)
+        }
+    }
+
+    /// List models available on this provider (runtime discovery + anya2a spec).
+    /// Returns a JSON array of ResolvedModel.
+    public func listModels() throws -> String {
+        guard handle != 0 else { throw AimuxError.invalidHandle }
+        guard let ptr = aimux_provider_list_models(handle) else {
+            throw AimuxError.serializationError("list_models returned null")
+        }
+        let result = String(cString: ptr)
+        aimux_free_string(ptr)
+        if let data = result.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let error = json["error"] as? String {
+            throw AimuxError.providerError(error)
+        }
+        return result
+    }
+
+    /// Build a language model from a discovered model id.
+    public func model(_ modelId: String) throws -> Model {
+        guard handle != 0 else { throw AimuxError.invalidHandle }
+        let h = try Model.extractHandle(aimux_provider_model(handle, modelId))
+        return Model(handle: h)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Model specs (RFC-0027) — get_model_specs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+/// Catalogue string. Thin fetch — no caching.
+///
+/// - Parameter sourceUrl: Optional URL override (nil = default endpoint).
+public func getModelSpecs(sourceUrl: String? = nil) throws -> String {
+    guard let ptr = aimux_get_model_specs(sourceUrl) else {
+        throw AimuxError.serializationError("get_model_specs returned null")
+    }
+    let result = String(cString: ptr)
+    aimux_free_string(ptr)
+    if let data = result.data(using: .utf8),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let error = json["error"] as? String {
+        throw AimuxError.providerError(error)
+    }
+    return result
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-﻿//! MLX (Apple Silicon) provider — a thin OpenAI-compatible wrapper.
+//! MLX (Apple Silicon) provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <github.com/ml-explore/mlx> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:8080/v1`. The `MLX_BASE_URL` environment
@@ -63,4 +63,6 @@ impl Provider for MlxProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

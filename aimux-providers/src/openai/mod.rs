@@ -1,4 +1,4 @@
-﻿//! OpenAI-compatible provider.
+//! OpenAI-compatible provider.
 //!
 //! Works with any OpenAI-compatible API endpoint (OpenAI, Azure OpenAI,
 //! Together.ai, Groq, Fireworks, DeepSeek, etc.).
@@ -25,6 +25,7 @@ use std::collections::HashMap;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
+
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
 use serde_json::Value;
@@ -251,5 +252,32 @@ impl Provider for OpenAIProvider {
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
+    }
+
+    /// List models via `GET {base_url}/models` (OpenAI-compatible), enriched
+    /// with the community catalogue portrait when available (RFC-0027).
+    ///
+    /// The provider name used for catalogue lookup is `config.provider` (the
+    /// registry entry name, e.g. `"deepseek"`), not the hardcoded `"openai"`
+    /// returned by [`name`](Provider::name) — that lets the same shared impl
+    /// attach the right portrait per registry-backed provider.
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let config = self.config.clone();
+        Box::pin(async move {
+            let headers = model::build_auth_headers(&config);
+            let runtime =
+                model::execute_list_models(&config.base_url, &headers, &config.retry_config)
+                    .await?;
+            Ok(runtime)
+        })
     }
 }

@@ -4,13 +4,44 @@
 //!
 //! Each provider implements the `LanguageModel` trait from `aimux-core`.
 
+/// Delegate `Provider::list_models` to the inner `OpenAIProvider` (field `.0`).
+///
+/// Used by newtype providers that wrap `OpenAIProvider` (e.g. `OllamaProvider`,
+/// `VllmProvider`, `VertexAiOpenaiModelsProvider`, …). Inserts the full trait
+/// method signature so the wrapping provider needs no extra imports.
+#[macro_export]
+macro_rules! delegate_list_models {
+    () => {
+        fn list_models(
+            &self,
+        ) -> ::std::pin::Pin<
+            ::std::boxed::Box<
+                dyn ::std::future::Future<
+                        Output = ::std::result::Result<
+                            ::std::vec::Vec<aimux_core::model_catalogue::RuntimeModel>,
+                            aimux_core::AiMuxError,
+                        >,
+                    > + ::std::marker::Send
+                    + '_,
+            >,
+        > {
+            self.0.list_models()
+        }
+    };
+}
+
 // Registry-backed provider construction (RFC-0017 phase 4): all built-in
 // OpenAI-compatible providers are looked up by name from `provider_registry.json`.
 // The 250 per-provider `XxxConfig`/`XxxProvider` shell types were retired in
 // phase 4 — use [`provider`] / [`provider_from_env`] instead.
 pub mod provider;
 pub mod provider_name;
-pub use provider::{ProviderOptions, provider, provider_from_env, provider_registry_entry};
+pub use provider::{
+    ProviderOptions, provider, provider_from_env, provider_handle, provider_registry_entry,
+};
+
+pub mod catalogue;
+pub use catalogue::{Catalogue, get_model_specs};
 
 pub mod anthropic;
 pub mod anthropic_aws;

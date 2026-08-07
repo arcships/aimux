@@ -22,6 +22,8 @@ from .aimux import (
     anthropic_aws,
     azure,
     provider as _native_provider,
+    create_provider as _native_create_provider,
+    ProviderHandle,
     init_session_store,
     init_session_infer,
     session_calls as _session_calls_json,
@@ -61,6 +63,9 @@ __all__ = [
     "anthropic_aws",
     "azure",
     "provider",
+    "create_provider",
+    "get_model_specs",
+    "ProviderHandle",
     "init_session_store",
     "init_session_infer",
     "session_calls",
@@ -124,6 +129,38 @@ def provider(
     """
     config_json = json.dumps(config) if config is not None else None
     return _native_provider(name, api_key, model_id, base_url, config_json)
+
+
+def create_provider(
+    name: str,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> ProviderHandle:
+    """Create a provider handle for model discovery (RFC-0027).
+
+    Unlike ``provider()`` (which binds to a single model_id), this returns a
+    ``ProviderHandle`` that supports ``list_models()`` and ``model()``.
+
+    Args:
+        name: Registry provider name (e.g. "deepseek", "groq").
+        api_key: API key; None reads the provider's env var.
+        base_url: Base-URL override (wins over config["base_url"]).
+        config: Full ProviderOptions dict — base_url / headers / organization /
+            project / max_retries / body_overrides.
+    """
+    config_json = json.dumps(config) if config is not None else None
+    return _native_create_provider(name, api_key, base_url, config_json)
+
+
+def get_model_specs(source_url: Optional[str] = None) -> Dict[str, Any]:
+    """Fetch the community model catalogue (anya2a). Returns a dict representing
+    the Catalogue (provider -> model_id -> ModelSpec). Thin fetch — no caching.
+
+    Args:
+        source_url: Optional URL override (default = anya2a endpoint).
+    """
+    return json.loads(_native_get_model_specs(source_url))
 
 
 def _prompt_to_json(prompt: Union[str, List[Dict[str, Any]]]) -> str:
