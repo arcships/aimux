@@ -31,6 +31,7 @@ pub mod openai_output;
 pub mod options;
 pub mod provider;
 pub mod recording;
+pub mod replay;
 pub mod reranking_model;
 pub mod result;
 pub mod search_model;

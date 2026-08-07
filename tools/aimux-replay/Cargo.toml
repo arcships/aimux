@@ -1,0 +1,24 @@
+[package]
+name = "aimux-replay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "RFC-0023 请求回放 CLI — 读录制 jsonl,自动重建 provider 并重发真实 API(离线重跑/回归对比/CI 集成)"
+keywords = ["llm", "ai", "replay", "cli", "recording"]
+categories = ["command-line-utilities"]
+documentation = "https://docs.rs/aimux-replay"
+
+[[bin]]
+name = "aimux-replay"
+path = "src/main.rs"
+
+[dependencies]
+aimux-core = { workspace = true }
+aimux-providers = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true
