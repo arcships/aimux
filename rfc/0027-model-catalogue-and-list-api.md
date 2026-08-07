@@ -1,9 +1,9 @@
 # RFC-0027: Model List API 与模型配置补充
 
-> 状态:草案
+> 状态:已实现(P1 落地;host 侧合并)
 > 日期:2026-08-06
 > Issues:#79(model list API)、#80(anya2a 配置补充)
-> 范围:为 aimux 引入 `Provider::list_models()`,运行时从 provider `/models` 发现可用模型,并用 `models.anya2a.com` 社区聚合数据补充每个模型的配置/能力。请求路径不变。
+> 范围:为 aimux 引入 `Provider::list_models()`,运行时从 provider `/models` 发现可用模型;并用 `models.anya2a.com` 社区聚合数据补充每个模型的配置/能力。请求路径不变。**aimux 是库、不持有状态**:两个原语(`list_models` + `get_model_specs`)由 host 各自调用并按需合并。
 > 依赖:RFC-0017(provider config & bodyOverrides)、RFC-0020(external provider config)、RFC-0003(cassette)
 > 关联:RFC-0016(providerOptions 白名单)、`docs/internal/model-config-research/`(250 厂商调研)
 
@@ -30,7 +30,8 @@ provider `/models` 多数只返回 `{id, owned_by, created}`,**不写** context 
 | 目标 | 非目标 |
 |---|---|
 | `Provider::list_models()`:从 provider `/models` 拿可用模型列表 | 不做账号配额/计费查询 |
-| 用 anya2a 补充列表中模型的配置/能力,合并返回 | 不在请求路径自动套用 config(用户自定义空间) |
+| `get_model_specs()`:拉取 anya2a 社区画像(纯 fetch + parse) | 不在库里做缓存/TTL/FS 写入(状态由 host 管理) |
+| **host 侧合并**:用户把两原语按需 merge(config 补 provider 没写清的字段) | aimux 库内不做合并,不自动套用 config(用户自定义空间) |
 | provider 句柄化:`createProvider().listModels()` / `.model()` | 不自建模型评测/基准库 |
 | 请求路径不变:options 里本来就有 max_tokens/bodyOverrides 等 | 不做自动路由/成本优化(RFC-0021/0022) |
 
@@ -44,50 +45,50 @@ provider `/models` 多数只返回 `{id, owned_by, created}`,**不写** context 
 
 ```
 createProvider(name, key)        → Provider 句柄        (新增)
-provider.listModels()            → ResolvedModel[]      (新增;可用性 + 补充 config)
-provider.model(modelId)          → Model                 (现有 language_model 提到句柄上)
+provider.listModels()            → RuntimeModel[]       (新增;仅 provider /models 稀疏产出)
+getModelSpecs()                  → Catalogue           (新增;anya2a 社区画像)
+provider.model(modelId)          → Model                (现有 language_model 提到句柄上)
 generateText(model, prompt, options) → 不变              (options 里带 config)
 ```
+
+**host 负责 merge**:把 `listModels()` 返回的 `RuntimeModel[]` 与 `getModelSpecs()` 返回的 `Catalogue` 按 `(provider, modelId)` 合并,形成用户可读的完整画像。aimux 库内不做这步——库只给原语,不持有状态。
 
 现有 one-shot `provider(name, key, modelId)` 保留为 `createProvider(name,key).model(id)` 的便捷封装,不破坏老用户。
 
 ### 2.2 数据源与输出
 
 ```
-provider /models API ──→ 可用性权威(这 key 能调什么),config 通常不全
-anya2a 缓存           ──→ 社区知识(补 provider 没写清的字段)
+provider /models API ──→ 可用性权威(这 key 能调什么),config 通常不全   [RuntimeModel]
+anya2a catalogue      ──→ 社区知识(补 provider 没写清的字段)           [Catalogue]
                               │
-                merge by modelId
+                host 按 (provider, modelId) merge
                               ▼
-                ResolvedModel[] = [{id, config?}]
-                              │
-                  provider 没写的字段 = anya2a 补
-                  anya2a 也没的 = 留空
-                  provider 没列出的模型 = 不进列表(anya2a 不作可用性依据)
+                (id, spec?)[]   — provider 没写的字段 = anya2a 补
+                                  anya2a 也没的 = 留空
+                                  provider 没列出的模型 = 不进列表(anya2a 不作可用性依据)
 ```
 
 两个数据源完全独立:
 - **provider `/models`** = 账号级真相(可用性),实时但稀疏
-- **anya2a** = 全局知识(配置/能力),离线缓存、丰富但可能滞后;只补列表里出现的 modelId
+- **anya2a** = 全局知识(配置/能力),丰富但可能滞后;只补列表里出现的 modelId
 
 ### 2.3 业务流程
 
-**流程 1 — sync(拿可用模型 + 补充配置):**
+**流程 1 — 取可用模型 + 补充配置(host 侧合并):**
 
 ```
 const p = createProvider("deepseek", key)
-const list = await p.listModels()
-  → provider /models: [{id:"deepseek-chat"}, {id:"deepseek-v4"}]          (只有 id)
-  → anya2a 补:     deepseek-chat→{context:128000,tools:true}
-                    deepseek-v4 →{reasoning:{effort:"high"},context:1M}
-  → 合并返回: [{id:"deepseek-chat", config:{context:128000,tools:true}},
-               {id:"deepseek-v4",   config:{reasoning:{effort:"high"},context:1000000}}]
+const list = await p.listModels()                    // → RuntimeModel[](仅 id/owned_by/created)
+const cat = await getModelSpecs()                    // → Catalogue(anya2a 画像)
+const merged = mergeByModelId(list, cat)             // host 合并
+  → merged: [{id:"deepseek-chat", config:{context:128000,tools:true}},
+              {id:"deepseek-v4",   config:{reasoning:{effort:"high"},context:1000000}}]
 ```
 
 **流程 2 — use(用户读 config,自己定 options,发请求):**
 
 ```
-用户从 list 读到 deepseek-v4 的 config(reasoning effort=high, context=1M)
+用户从 merged 读到 deepseek-v4 的 config(reasoning effort=high, context=1M)
   → 按业务决定 options
 const model = await p.model("deepseek-v4")
 await generateText(model, prompt, {max_output_tokens:8000, bodyOverrides:{thinking:{enabled:true}}})
@@ -145,7 +146,7 @@ config 只给用户读;aimux 不在请求里自动套用。
 
 ### 3.4 provider 命名不一致(关键)
 
-aimux registry 用 snake_case(`siliconflow`/`fireworks`),anya2a 用 kebab-case(`siliconflow`/`fireworks-ai`)。实测 251 vs 186,**精确名重合仅 99**。需 `catalogue_alias.json` 映射 + 兜底规则(`-`→`_`、去后缀 `-cn`/`-coding-plan`/`-token-plan`)。映射失败不报错,该模型 config 留空。
+aimux registry 用 snake_case(`siliconflow`/`fireworks`),anya2a 用 kebab-case(`siliconflow`/`fireworks-ai`)。实测 251 vs 186,**精确名重合仅 99**。实现用 `catalogue.rs` 内联别名表(`PROVIDER_ALIASES`)+ 兜底规则(`-`→`_`)覆盖。映射失败不报错,该模型 config 留空。
 
 ---
 
@@ -159,10 +160,10 @@ pub trait Provider: Send + Sync {
     fn name(&self) -> &str;
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError>;
 
-    /// 运行时发现:该账号可用模型 + anya2a 补充配置。
+    /// 运行时发现:该账号可用模型(仅 provider /models 稀疏数据,无 anya2a 富化)。
     /// 默认返回 Unsupported,由支持的 provider 覆盖。
     fn list_models(&self)
-        -> Pin<Box<dyn Future<Output = Result<Vec<ResolvedModel>, AiMuxError>> + Send + '_>>;
+        -> Pin<Box<dyn Future<Output = Result<Vec<RuntimeModel>, AiMuxError>> + Send + '_>>;
 }
 
 // aimux-core/src/model_catalogue.rs (新模块)
@@ -174,31 +175,28 @@ pub struct RuntimeModel {              // provider /models 的稀疏产出
 
 pub struct ModelSpec {                 // anya2a 补充的配置/能力(纯数据)
     pub display_name: Option<String>,
-    pub r#type: ModelType,             // Chat | Embedding | Rerank | ImageGen | Video | Audio
+    pub r#type: ModelType,             // Chat | Embedding | Rerank | ImageGen | ...
     pub limits: ModelLimits,           // { context, output, input? }
     pub modalities: ModelModalities,   // { input:[…], output:[…] }
     pub capabilities: ModelCapabilities, // { tool_call, structured_output, temperature, attachment }
     pub reasoning: Option<ReasoningSpec>,
     pub cost: Option<ModelCost>,
     pub source: CatalogueSource,       // Anya2a | ModelsDev | Manual
-}
-
-pub struct ResolvedModel {             // list_models 返回的合并产物
-    pub id: String,
-    pub owned_by: Option<String>,
-    pub created: Option<u64>,
-    pub spec: Option<ModelSpec>,       // anya2a 命中则 Some,否则 None
+    pub provider: Option<String>,      // 归一化后的 aimux provider 名
+    pub raw: Option<serde_json::Value>,// 原始条目(宽松解析兜底)
 }
 ```
 
 `ModelSpec` 纯数据、宽松反序列化(`#[serde(default)]`),未知字段入 `raw`。`ReasoningSpec` 对齐 anya2a `extra_capabilities.reasoning`。
+
+**库里没有 `ResolvedModel`,不做合并。** `list_models` 返回稀疏 `RuntimeModel`,`get_model_specs` 返回 `Catalogue`;两者由 host 各自调用、按 `(provider, modelId)` 合并(见 `aimux-core/src/model_catalogue.rs` 顶部注释 "deliberately not merged by aimux")。
 
 ### 4.2 aimux-providers
 
 **list_models 实现**(OpenAI 兼容,覆盖 251 家):
 - `GET {base_url}/models`,Bearer 鉴权,解析 `{data:[{id,object,created,owned_by}]}`
 - 复用现有 `http::send` 与 shared client(RFC-0009)
-- 拿到 `Vec<RuntimeModel>` 后,查 anya2a 缓存按 `(provider, modelId)` 补 `ModelSpec`
+- 返回稀疏 `Vec<RuntimeModel>`,**不查 anya2a、不合并**(合并是 host 的事)
 - 已有 7 家 cassette 直接转真测试
 
 **native provider** 各自映射(后续阶段):
@@ -206,20 +204,23 @@ pub struct ResolvedModel {             // list_models 返回的合并产物
 - google/vertex `GET /v1beta/models` → `{models:[{name,supportedGenerationMethods,…}]}`
 - ollama `GET /api/tags` → `{models:[{name,…}]}`(非 OpenAI 格式,单独适配)
 
-### 4.3 anya2a 同步与缓存
+### 4.3 anya2a:薄函数 `get_model_specs`
 
 ```rust
-pub struct CatalogueSync {
-    cache_dir: PathBuf,        // {cache_root}/aimux/catalogue/
-    source: CatalogueSource,   // Anya2a(默认) | ModelsDev | Custom(url)
-    ttl: Duration,             // 默认 24h;0=每次都拉
+// aimux-providers/src/catalogue.rs
+pub const DEFAULT_ANYA2A_URL: &str = ".../ThinkInAIXYZ/PublicProviderConf/.../dist/all.json";
+
+/// 纯 fetch + parse:拉 anya2a all.json → Catalogue。无缓存、无 FS 写入、无 TTL。
+/// 状态(缓存/持久化)由 host 决定怎么管。
+pub async fn get_model_specs(source_url: Option<&str>) -> Result<Catalogue, AiMuxError>;
+
+pub struct Catalogue {
+    pub updated_at: u64,
+    pub specs: HashMap<String, HashMap<String, ModelSpec>>,  // provider → model_id → spec
 }
-// 版本优先:先拉 dc_sync_version.json(28B),比本地新才拉 all.json 或变化的 per-provider 文件
-// 离线降级:无网用本地缓存;首次可 ship bundled 快照(同 provider_registry.json 思路)
-// 来源可配:AIMUX_CATALOGUE_URL 支持自建镜像/内网
 ```
 
-**关键:catalogue 是 list_models 内部依赖,不是独立用户入口。** 用户只调 `listModels()`,anya2a 同步在内部按 TTL 自动发生(或由 CLI `aimux-cli catalogue sync` 预拉)。
+**关键:catalogue 是独立原语,不是 `list_models` 内部依赖。** `get_model_specs` 只负责 fetch + parse;是否缓存、TTL 多少、离线怎么降级,都是 host 的策略,库不持有状态。源码 URL 可用参数覆盖(自建镜像/内网)。
 
 ### 4.4 provider 句柄化(binding 层)
 
@@ -228,10 +229,11 @@ binding 现状是 free function(`provider(name,key,modelId) → Model`,无 Provi
 ```ts
 // Node typed wrapper
 export class ProviderHandle {
-  listModels(): Promise<ResolvedModel[]>
+  listModels(): Promise<RuntimeModel[]>
   model(modelId: string): Promise<Model>
 }
 export function createProvider(name: string, apiKey?: string, config?: ProviderConfig): ProviderHandle
+export function getModelSpecs(sourceUrl?: string): Promise<Catalogue>   // 独立原语
 
 // 便捷封装(保留兼容)
 export function provider(name, apiKey, modelId, config?): Promise<Model>  // = createProvider().model()
@@ -271,11 +273,11 @@ sync 返回的 `ModelSpec` 字段,对应请求时用户可在 options 里配的�
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| **P1** | `RuntimeModel`/`ModelSpec`/`ResolvedModel` 结构;`Provider::list_models` trait 方法(默认 Unsupported);OpenAI 兼容实现(251 家);7 家 cassette 转真测试;anya2a `CatalogueSync` + 缓存 + 命名映射;list_models 内部合并画像 | 草案 |
-| **P2** | binding provider 句柄化(`createProvider` + `listModels` + `model`);FFI 句柄导出;8 binding 落地;`provider()` 便捷封装保留 | 草案 |
-| **P3** | native provider `list_models`(anthropic/google/vertex/ollama/openrouter);CLI `aimux-cli catalogue sync` 预拉;manual 更新(config 字段表 + 三档机制) | 草案 |
+| **P1** | `RuntimeModel`/`ModelSpec` 结构(无 `ResolvedModel`);`Provider::list_models` trait 方法(默认 Unsupported,返回稀疏 `RuntimeModel`);OpenAI 兼容实现(251 家);7 家 cassette 转真测试;anya2a 薄函数 `get_model_specs`(纯 fetch+parse)+ 命名映射 | ✅ 已落地 |
+| **P2** | binding provider 句柄化(`createProvider` + `listModels` + `model`)+ 独立 `getModelSpecs` 原语;FFI 句柄导出 + `aimux_get_model_specs`;host 侧合并示例 | ✅ 已落地 |
+| **P3** | native provider `list_models`(anthropic/google/vertex/ollama/openrouter);host 侧缓存/TTL/离线降级策略(库不持有状态);manual 更新(config 字段表 + 三档机制) | 待做 |
 
-P1 是核心(Rust 层 list_models + anya2a 合并);P2 是 binding 暴露;P3 是覆盖面与文档。
+P1 是核心(Rust 层 list_models + anya2a 原语);P2 是 binding 暴露;P3 是 native 覆盖面与 host 侧状态管理。**合并始终在 host,不在库里。**
 
 ---
 

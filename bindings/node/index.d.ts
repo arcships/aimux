@@ -135,8 +135,10 @@ export declare class Model {
 export declare class ProviderHandle {
   /**
    * List models available on this provider (runtime discovery via the
-   * provider's `/models` endpoint), enriched with community knowledge
-   * (anya2a) when available. Returns a JSON array of `ResolvedModel`.
+   * provider's `/models` endpoint). Returns a JSON array of sparse
+   * `RuntimeModel` (id / owned_by / created) — **no community enrichment**.
+   * To supplement with model specs (context length, capabilities, reasoning),
+   * call `getModelSpecs` separately and merge in the host (RFC-0027).
    */
   listModels(): Promise<string>
   /**
