@@ -79,6 +79,12 @@ export declare class Model {
    * `SessionChainView` string or an error when the session is unknown.
    */
   traceSessionChain(sessionId: string): string
+  /**
+   * One session's per-step cache-hit trajectory (RFC-0024 §4.3). Returns
+   * a JSON array of `SessionStepStat` (empty when the session is unknown
+   * or the model is not traced).
+   */
+  traceSessionTrajectory(sessionId: string): string
   /** Export all probe records as JSONL (one `TraceRecord` per line). */
   traceExportJsonl(): string
   /** Clear all probe records of this traced model. */
@@ -240,11 +246,15 @@ export declare function cohereReranking(apiKey: string, modelId: string, baseUrl
  */
 export declare function createProvider(name: string, apiKey?: string | undefined | null, config?: ProviderConfig | undefined | null): Promise<ProviderHandle>
 
-/** Fetch the community model catalogue (anya2a). Returns a JSON-serialized Catalogue. Thin fetch — no caching. */
-export declare function getModelSpecs(sourceUrl?: string | undefined | null): Promise<string>
-
 /** Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4). */
 export declare function deepseek(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<Model>
+
+/**
+ * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+ * `Catalogue` (provider → model_id → ModelSpec). Thin fetch — no caching.
+ * `source_url` may be null for the default endpoint.
+ */
+export declare function getModelSpecs(sourceUrl?: string | undefined | null): Promise<string>
 
 /**
  * Create a Google Gemini language model instance.

@@ -291,7 +291,11 @@ export async function* streamTextAsOpenai(
  * ```
  */
 export class ProviderHandleTyped {
-  constructor(private readonly raw: RawProviderHandle) {}
+  private readonly raw: RawProviderHandle
+
+  constructor(raw: RawProviderHandle) {
+    this.raw = raw
+  }
 
   /** List models available on this provider (runtime discovery + anya2a spec). */
   async listModels(): Promise<RuntimeModel[]> {

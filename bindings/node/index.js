@@ -721,6 +721,7 @@ module.exports.cohereEmbedding = nativeBinding.cohereEmbedding
 module.exports.cohereReranking = nativeBinding.cohereReranking
 module.exports.createProvider = nativeBinding.createProvider
 module.exports.deepseek = nativeBinding.deepseek
+module.exports.getModelSpecs = nativeBinding.getModelSpecs
 module.exports.google = nativeBinding.google
 module.exports.googleEmbedding = nativeBinding.googleEmbedding
 module.exports.googleImage = nativeBinding.googleImage
