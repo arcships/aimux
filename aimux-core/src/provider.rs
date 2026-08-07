@@ -15,7 +15,6 @@ pub trait Provider: Send + Sync {
     fn name(&self) -> &str;
 
     /// Create a model instance by its name string (e.g. `"gpt-4o"`).
-<<<<<<< HEAD
     ///
     /// Non-language-model providers (image/video/speech/search/… — e.g. Tavily,
     /// Stability, Recraft) do not implement this and get the default
@@ -26,8 +25,7 @@ pub trait Provider: Send + Sync {
             "provider '{}' does not provide language models",
             self.name()
         )))
-=======
-    fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError>;
+    }
 
     /// List the models this account can call on this provider, via the
     /// provider's `/models` endpoint (runtime discovery).
@@ -35,8 +33,7 @@ pub trait Provider: Send + Sync {
     /// Returns **only the provider's official data** (`RuntimeModel`: id,
     /// owned_by, created) — no community catalogue enrichment. To supplement
     /// with model specs (context length, capabilities, reasoning portrait),
-    /// call [`get_model_specs`](../../aimux_providers/fn.get_model_specs.html)
-    /// separately and merge in the host (RFC-0027).
+    /// call `get_model_specs` separately and merge in the host (RFC-0027).
     ///
     /// Default returns [`AiMuxError::Unsupported`] — providers that expose a
     /// model-list endpoint override this.
@@ -53,6 +50,5 @@ pub trait Provider: Send + Sync {
                 "list_models not implemented for provider '{name}'"
             )))
         })
->>>>>>> 63f0188 (feat(rfc0027): P1 — Provider::list_models + anya2a catalogue)
     }
 }

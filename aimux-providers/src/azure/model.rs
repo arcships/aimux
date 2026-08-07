@@ -289,6 +289,8 @@ impl Provider for AzureProvider {
                     headers,
                     body: HttpBody::Empty,
                     abort_signal: None,
+                    call_id: None,
+                    recording_context: None,
                 },
                 aimux_provider_utils::RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,

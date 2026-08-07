@@ -285,6 +285,8 @@ impl Provider for AnthropicProvider {
                     headers: header_list,
                     body: HttpBody::Empty,
                     abort_signal: None,
+                    call_id: None,
+                    recording_context: None,
                 },
                 config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,

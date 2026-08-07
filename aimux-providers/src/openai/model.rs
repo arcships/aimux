@@ -883,6 +883,8 @@ pub async fn execute_list_models(
             headers: build_header_list(headers),
             body: HttpBody::Empty,
             abort_signal: None,
+            call_id: None,
+            recording_context: None,
         },
         *retry_config,
         &DEFAULT_ERROR_STRUCTURE,
