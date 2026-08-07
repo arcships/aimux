@@ -16,7 +16,7 @@ use ts_rs::TS;
 use super::fingerprint::Chain;
 use super::hash;
 use super::record::TraceRecord;
-use super::verdict::VerdictKind;
+use super::verdict::{Verdict, VerdictKind};
 
 /// Default global ring capacity (≈6-7 MB with default 4 KiB blocks).
 pub const DEFAULT_RING_CAPACITY: usize = 2048;
@@ -297,6 +297,26 @@ pub struct SessionChainView {
     pub breaks: Vec<PrefixBreak>,
 }
 
+/// One step of a session's cache-hit trajectory (RFC-0024 §4.3).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SessionStepStat {
+    /// Step within the session (0-based, session order).
+    pub step: u32,
+    /// The call's id (association key into Recording / replay, RFC-0023).
+    pub call_id: String,
+    /// Reported hit rate for this step (`cache_read / input_total`); `None`
+    /// when the call carried no input/cache-read usage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hit_rate: Option<f64>,
+    /// Audit verdict (present only when an auditor is attached).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<Verdict>,
+    /// Error string for failed calls (failures are part of the session).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// A prefix break between two consecutive records of a session.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -465,6 +485,31 @@ impl RingTraceStore {
         })
     }
 
+    /// Per-step cache-hit trajectory of a session (RFC-0024 §4.3
+    /// `session_cache_trajectory`): one [`SessionStepStat`] per call, in
+    /// session order, with the reported hit rate and audit verdict (when an
+    /// auditor is attached). Empty for unknown sessions.
+    pub fn session_cache_trajectory(&self, session_id: &str) -> Vec<SessionStepStat> {
+        let inner = self.inner.lock().unwrap();
+        let ids = match inner.by_session.get(session_id) {
+            Some(ids) => ids,
+            None => return Vec::new(),
+        };
+        ids.iter()
+            .enumerate()
+            .filter_map(|(step, id)| {
+                let rec = inner.records.iter().find(|r| &r.call_id == id)?;
+                Some(SessionStepStat {
+                    step: step as u32,
+                    call_id: rec.call_id.clone(),
+                    hit_rate: rec.reported_hit_rate(),
+                    verdict: rec.verdict.clone(),
+                    error: rec.error.clone(),
+                })
+            })
+            .collect()
+    }
+
     /// Export all records as JSONL (one `TraceRecord` per line).
     pub fn export_jsonl(&self, w: &mut impl Write) -> std::io::Result<()> {
         let inner = self.inner.lock().unwrap();
@@ -605,7 +650,8 @@ fn chain_lcp(a: &TraceRecord, b: &TraceRecord) -> (u64, u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::trace::fingerprint::BlockChainFingerprint;
+    use crate::trace::fingerprint::{BlockChainFingerprint, Fingerprint};
+    use crate::trace::record::{TraceRecord, UsageSnapshot};
 
     fn chain_for(data: &[u8], salt: u64) -> Chain {
         BlockChainFingerprint::new(512, salt).compute(data)
@@ -672,5 +718,71 @@ mod tests {
         assert_eq!(ra.matched_blocks, 0, "a evicted");
         let rc = st.lookup(1, &c, 3, u64::MAX);
         assert!(rc.matched.is_some(), "c live");
+    }
+
+    // ── RFC-0024 P4: session_cache_trajectory ──────────────────────────────
+
+    fn trajectory_record(
+        call_id: &str,
+        session_id: &str,
+        input_total: u64,
+        cache_read: u64,
+        error: Option<String>,
+    ) -> TraceRecord {
+        TraceRecord {
+            provider: "openai".into(),
+            model: "gpt-4o".into(),
+            request_id: None,
+            session_id: Some(session_id.into()),
+            call_id: call_id.into(),
+            sent_at_unix_ms: 1,
+            monotonic_sent_ms: 0,
+            lcp_token_upper: None,
+            ttft_ms: None,
+            fingerprint: Fingerprint {
+                body_hash: "0".repeat(32),
+                len_bytes: 0,
+                block_size: 0,
+                block_hashes: vec![],
+                token_estimate: 0,
+            },
+            usage: UsageSnapshot {
+                input_total: Some(input_total),
+                cache_read: Some(cache_read),
+                ..Default::default()
+            },
+            response_cache_headers: None,
+            request_cache_hints: None,
+            verdict: None,
+            error,
+            scope_key: 0,
+        }
+    }
+
+    #[test]
+    fn session_trajectory_returns_per_step_hit_rates_in_order() {
+        let store = RingTraceStore::with_capacity(16, 256);
+        // 命中率:0.8 → 0 → 0.5(同一 session);另一 session 不受影响。
+        store.record(trajectory_record("c1", "s1", 10, 8, None));
+        store.record(trajectory_record("c2", "s1", 5, 0, None));
+        store.record(trajectory_record("c3", "s1", 4, 2, Some("boom".into())));
+        store.record(trajectory_record("c-x", "s2", 9, 9, None));
+
+        let traj = store.session_cache_trajectory("s1");
+        assert_eq!(traj.len(), 3);
+        assert_eq!(traj[0].step, 0);
+        assert_eq!(traj[0].call_id, "c1");
+        assert_eq!(traj[0].hit_rate, Some(0.8));
+        assert_eq!(traj[0].error, None);
+        assert_eq!(traj[1].step, 1);
+        assert_eq!(traj[1].hit_rate, Some(0.0));
+        assert_eq!(traj[2].step, 2);
+        assert_eq!(traj[2].hit_rate, Some(0.5));
+        assert_eq!(traj[2].error.as_deref(), Some("boom"));
+
+        // 未知 session 与其它 session 互不干扰。
+        assert!(store.session_cache_trajectory("nope").is_empty());
+        assert_eq!(store.session_cache_trajectory("s2").len(), 1);
+        assert_eq!(store.session_cache_trajectory("s2")[0].call_id, "c-x");
     }
 }

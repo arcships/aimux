@@ -957,6 +957,7 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var maxRetries: UInt32?
     public var timeout: TimeoutConfiguration?
     public var includeRawChunks: Bool?
+    public var sessionId: String?
 
     enum CodingKeys: String, CodingKey {
         case maxOutputTokens = "max_output_tokens"
@@ -976,6 +977,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         case maxRetries = "max_retries"
         case timeout
         case includeRawChunks = "include_raw_chunks"
+        case sessionId = "session_id"
     }
 
     public init(maxOutputTokens: UInt32? = nil, temperature: Double? = nil,
@@ -987,7 +989,8 @@ public struct GenerateTextOptions: Codable, Equatable {
                 reasoning: ReasoningEffort? = nil, instructions: String? = nil,
                 bodyOverrides: JSONValue? = nil, maxRetries: UInt32? = nil,
                 timeout: TimeoutConfiguration? = nil,
-                includeRawChunks: Bool? = nil) {
+                includeRawChunks: Bool? = nil,
+                sessionId: String? = nil) {
         self.maxOutputTokens = maxOutputTokens; self.temperature = temperature
         self.stopSequences = stopSequences; self.topP = topP; self.topK = topK
         self.presencePenalty = presencePenalty; self.frequencyPenalty = frequencyPenalty
@@ -996,6 +999,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         self.reasoning = reasoning; self.instructions = instructions
         self.bodyOverrides = bodyOverrides; self.maxRetries = maxRetries; self.timeout = timeout
         self.includeRawChunks = includeRawChunks
+        self.sessionId = sessionId
     }
 }
 

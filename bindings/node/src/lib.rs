@@ -142,6 +142,21 @@ impl Model {
             .map_err(|e| Error::from_reason(format!("[Json] serialize: {e}")))
     }
 
+    /// One session's per-step cache-hit trajectory (RFC-0024 §4.3). Returns
+    /// a JSON array of `SessionStepStat` (empty when the session is unknown
+    /// or the model is not traced).
+    #[napi]
+    pub fn trace_session_trajectory(&self, session_id: String) -> Result<String> {
+        let Some(store) = &self.trace_store else {
+            return Err(Error::from_reason(
+                "[Trace] model is not traced; call trace() first",
+            ));
+        };
+        let stats = store.session_cache_trajectory(&session_id);
+        serde_json::to_string(&stats)
+            .map_err(|e| Error::from_reason(format!("[Json] serialize: {e}")))
+    }
+
     /// Export all probe records as JSONL (one `TraceRecord` per line).
     #[napi]
     pub fn trace_export_jsonl(&self) -> Result<String> {
@@ -1020,6 +1035,9 @@ impl ProviderHandle {
             .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
         Ok(Model {
             inner: Arc::from(m),
+            // A model built from a provider handle starts untraced; enable
+            // probing via `Model::trace()` (same as Python binding).
+            trace_store: None,
         })
     }
 }

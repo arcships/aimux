@@ -152,6 +152,26 @@ fn generate_text_options_include_raw_chunks_true_wire_format() {
     assert_eq!(back.include_raw_chunks, Some(true));
 }
 
+/// RFC-0024: an explicit `session_id` crosses the wire as snake_case and
+/// round-trips (companion of the `generate_text_options_with_session_id`
+/// fixture).
+#[test]
+fn generate_text_options_session_id_wire_format() {
+    let opts = GenerateTextOptions {
+        session_id: Some("sess-1".into()),
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&opts).unwrap();
+    let val: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        val.get("session_id"),
+        Some(&Value::String("sess-1".into())),
+        "session_id must serialize as snake_case string, got {json}"
+    );
+    let back: GenerateTextOptions = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.session_id.as_deref(), Some("sess-1"));
+}
+
 #[test]
 fn stream_part_text_delta_wire_format() {
     let part = StreamPart::TextDelta {

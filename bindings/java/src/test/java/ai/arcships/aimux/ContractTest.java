@@ -183,6 +183,27 @@ class ContractTest {
         assertThat(decoded.getRaw().path("prompt_tokens").asInt()).isEqualTo(20);
     }
 
+    /// RFC-0024: `session_id` crosses the wire as snake_case and round-trips.
+    @Test
+    void generateTextOptionsSessionIdWireAndRoundTrip() throws Exception {
+        // Wire shape: the shared fixture.
+        JsonNode fixtures = loadFixtures();
+        String json = fixtureJson(fixtures, "generate_text_options_with_session_id");
+        Types.GenerateTextOptions opts =
+            Types.AimuxJson.MAPPER.readValue(json, Types.GenerateTextOptions.class);
+        assertThat(opts.getSessionId()).isEqualTo("sess-1");
+
+        // Java-native round-trip with the Builder.
+        Types.GenerateTextOptions nativeOpts = Types.GenerateTextOptions.builder()
+            .sessionId("sess-1")
+            .build();
+        String nativeJson = Types.AimuxJson.MAPPER.writeValueAsString(nativeOpts);
+        assertThat(nativeJson).contains("\"session_id\":\"sess-1\"");
+        Types.GenerateTextOptions decoded =
+            Types.AimuxJson.MAPPER.readValue(nativeJson, Types.GenerateTextOptions.class);
+        assertThat(decoded.getSessionId()).isEqualTo("sess-1");
+    }
+
     @Test
     void streamPartFinishWireShapeAndJavaRoundTrip() throws Exception {
         JsonNode fixtures = loadFixtures();
