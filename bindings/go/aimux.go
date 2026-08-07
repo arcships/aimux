@@ -306,6 +306,49 @@ func InitLogging(level string) {
 	C.aimux_init_logging(cLevel)
 }
 
+// InitRecording starts RFC-0023 recording: complete Recording JSONL is written
+// to {dir}/recordings.jsonl (dir auto-created). Recording is opt-in; calling
+// again replaces the recorder.
+func InitRecording(dir string) {
+	cDir := C.CString(dir)
+	defer C.free(unsafe.Pointer(cDir))
+	C.aimux_init_recording(cDir)
+}
+
+// InitRecordingRing starts in-memory bounded recording (RFC-0023 P6): FIFO
+// ring with the given capacity. cap == 0 falls back to the default (2048).
+func InitRecordingRing(cap uint64) {
+	if cap == 0 {
+		cap = 2048
+	}
+	C.aimux_init_recording_ring(C.uint64_t(cap))
+}
+
+// RecordingStop stops recording: the global recorder becomes None.
+func RecordingStop() {
+	C.aimux_recording_stop()
+}
+
+// RecordingFlush flushes the global recorder (blocks until JSONL is on disk;
+// no-op for the ring recorder).
+func RecordingFlush() {
+	C.aimux_recording_flush()
+}
+
+// MockReplay creates a mock replay model from recorded JSONL (RFC-0023 P3):
+// it returns recorded responses by input match — no real API is sent. The
+// returned model works with GenerateText / StreamText.
+func MockReplay(recordingsJsonl string) (*Model, error) {
+	cJsonl := C.CString(recordingsJsonl)
+	defer C.free(unsafe.Pointer(cJsonl))
+	ptr := C.aimux_mock_replay_new(cJsonl)
+	handle, err := parseHandleJSON(ptr)
+	if err != nil {
+		return nil, err
+	}
+	return &Model{handle: handle}, nil
+}
+
 // Anthropic creates an Anthropic model instance, panicking on failure.
 func Anthropic(apiKey, modelID string) *Model {
 	return mustNew(NewAnthropic(apiKey, modelID))

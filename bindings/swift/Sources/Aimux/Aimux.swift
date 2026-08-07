@@ -234,6 +234,57 @@ public final class Model: @unchecked Sendable {
         return Model(handle: handle)
     }
 
+    // ── Recording + mock replay (RFC-0023) ─────────────────────────────────
+
+    /// Start recording: complete `Recording` entries are written as JSONL to
+    /// `{dir}/recordings.jsonl` (the directory is auto-created).
+    ///
+    /// Recording is opt-in; calling again (with a different dir) replaces the
+    /// active recorder. Like `initLogging`, this controls a global recorder and
+    /// is not tied to a specific model instance.
+    ///
+    /// - Parameter dir: Directory that will hold `recordings.jsonl`.
+    public static func initRecording(dir: String) {
+        aimux_init_recording(dir)
+    }
+
+    /// Start in-memory bounded recording (ring recorder with FIFO eviction).
+    ///
+    /// Keeps only the most recent `cap` recordings in memory, evicting the
+    /// oldest first. Use this when recordings don't need to be persisted to
+    /// disk.
+    ///
+    /// - Parameter cap: Ring capacity. Defaults to the recommended `2048`;
+    ///   passing `0` is rejected by the C ABI (returns -1).
+    public static func initRecordingRing(cap: UInt64 = 2048) {
+        aimux_init_recording_ring(cap)
+    }
+
+    /// Stop recording: the global recorder becomes `None`.
+    public static func recordingStop() {
+        aimux_recording_stop()
+    }
+
+    /// Flush the global recorder, blocking until the JSONL is on disk.
+    ///
+    /// No-op for the in-memory ring recorder.
+    public static func recordingFlush() {
+        aimux_recording_flush()
+    }
+
+    /// Create a mock replay model from recorded JSONL (one `Recording` per
+    /// line).
+    ///
+    /// The returned model answers `generateText` / `streamText` from the
+    /// recorded data without sending any real provider request.
+    ///
+    /// - Parameter recordingsJsonl: The recorded JSONL content.
+    /// - Returns: A `Model` backed by the mock replay handle.
+    public static func mockReplay(recordingsJsonl: String) throws -> Model {
+        let handle = try extractHandle(aimux_mock_replay_new(recordingsJsonl))
+        return Model(handle: handle)
+    }
+
     // ── Generation ─────────────────────────────────────────────────────────
 
     /// Generate text (non-streaming).

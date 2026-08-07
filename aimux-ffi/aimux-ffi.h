@@ -482,6 +482,30 @@ char *aimux_trace_export_jsonl(uint64_t handle);
    handle. */
 int aimux_trace_clear(uint64_t handle);
 
+/* ── Recording + mock replay (RFC-0023) ──────────────────────────────── */
+
+/* Start recording: complete Recording JSONL is written to {dir}/recordings.jsonl
+   (dir auto-created). Recording is opt-in; calling again replaces the
+   recorder. Returns 0, or -1 on null dir. */
+int aimux_init_recording(const char *dir);
+
+/* Start in-memory bounded recording (RingRecorder, FIFO eviction, dropped
+   count queryable). Returns 0, or -1 when cap == 0. */
+int aimux_init_recording_ring(uint64_t cap);
+
+/* Stop recording: the global recorder becomes None. Returns 0. */
+int aimux_recording_stop(void);
+
+/* Flush the global recorder (blocks until JSONL is on disk; no-op for the
+   ring recorder). Returns 0. */
+int aimux_recording_flush(void);
+
+/* Create a mock replay model from recorded JSONL (one Recording per line).
+   Returns {"handle":<u64>} or {"error":...}; the handle works with
+   aimux_generate_text / aimux_stream_text (no real API sent); caller frees
+   with aimux_free_string. */
+char *aimux_mock_replay_new(const char *recordings_jsonl);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

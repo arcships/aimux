@@ -182,4 +182,21 @@ public interface AimuxFFI extends Library {
     // Logging (RFC-0014).
 
     int aimux_init_logging(String level);
+
+    // ── Recording + mock replay (RFC-0023) ──────────────────────────────────
+
+    /** Start recording: complete Recording JSONL is written to {dir}/recordings.jsonl (dir auto-created). Returns 0, or -1 on null dir. */
+    int aimux_init_recording(String dir);
+
+    /** Start in-memory bounded recording (RingRecorder, FIFO eviction). Returns 0, or -1 when cap == 0. */
+    int aimux_init_recording_ring(long cap);
+
+    /** Stop recording: the global recorder becomes None. Returns 0. */
+    int aimux_recording_stop();
+
+    /** Flush the global recorder (blocks until JSONL is on disk; no-op for the ring recorder). Returns 0. */
+    int aimux_recording_flush();
+
+    /** Create a mock replay model from recorded JSONL (one Recording per line). Returns {"handle":<u64>} or {"error":...}; free with aimux_free_string. */
+    Pointer aimux_mock_replay_new(String recordingsJsonl);
 }

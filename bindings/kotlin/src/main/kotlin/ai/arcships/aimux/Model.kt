@@ -124,6 +124,15 @@ internal interface AimuxFFI : Library {
     // Logging (RFC-0014).
 
     fun aimux_init_logging(level: String): Int
+
+    // ── Recording + mock replay (RFC-0023) ──────────────────────────────────
+    // Recording is opt-in and global. All int-returning functions return 0 on
+    // success, or -1 on invalid input.
+    fun aimux_init_recording(dir: String): Int
+    fun aimux_init_recording_ring(cap: Long): Int
+    fun aimux_recording_stop(): Int
+    fun aimux_recording_flush(): Int
+    fun aimux_mock_replay_new(recordingsJsonl: String): Pointer?
 }
 
 internal object FFI {
@@ -348,6 +357,20 @@ class Model private constructor(handle: Long) : Closeable {
         fun providerFromEnv(name: String, modelId: String): Model {
             val h = extractHandle(
                 FFI.lib.aimux_provider_from_env(name, modelId), "Failed to create provider model '$name' from env")
+            return Model(h)
+        }
+
+        /**
+         * Create a mock replay model from recorded JSONL (RFC-0023).
+         *
+         * Matches recorded inputs and returns the recorded responses — no real
+         * API is sent. The handle works with [generateText] / [streamText].
+         *
+         * @param recordingsJsonl One `Recording` JSON per line.
+         */
+        fun mockReplay(recordingsJsonl: String): Model {
+            val h = extractHandle(
+                FFI.lib.aimux_mock_replay_new(recordingsJsonl), "Failed to create mock replay model")
             return Model(h)
         }
     }

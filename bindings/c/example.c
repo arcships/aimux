@@ -95,7 +95,45 @@ int main(void) {
     // On failure extract_handle already printed the detailed engine error
     // (e.g. "is DEEPSEEK_API_KEY set?" is now part of that message).
 
-    // 4. Cleanup
+    // 4. Recording + mock replay (RFC-0023): opt-in recording of the next
+    // call, then replay the recorded response WITHOUT a real API call.
+    printf("\n--- Recording (RFC-0023) ---\n");
+    aimux_init_recording("./recordings");
+    char *rec_result = aimux_generate_text(handle, "\"What is 2+2?\"", NULL);
+    if (rec_result) {
+        printf("Recorded call result: %s\n", rec_result);
+        aimux_free_string(rec_result);
+    }
+    aimux_recording_flush();
+    aimux_recording_stop();
+    printf("Recording flushed to ./recordings/recordings.jsonl\n");
+
+    printf("\n--- Mock replay (no real API) ---\n");
+    FILE *rf = fopen("./recordings/recordings.jsonl", "rb");
+    if (rf) {
+        fseek(rf, 0, SEEK_END);
+        long n = ftell(rf);
+        fseek(rf, 0, SEEK_SET);
+        char *buf = malloc((size_t)n + 1);
+        if (buf) {
+            fread(buf, 1, (size_t)n, rf);
+            buf[n] = '\0';
+            uint64_t mock = extract_handle(aimux_mock_replay_new(buf));
+            if (mock != 0) {
+                printf("Mock model created: handle=%lu\n", (unsigned long)mock);
+                char *mock_result = aimux_generate_text(mock, "\"What is 2+2?\"", NULL);
+                if (mock_result) {
+                    printf("Mock result (recorded, no network): %s\n", mock_result);
+                    aimux_free_string(mock_result);
+                }
+                aimux_drop_handle(mock);
+            }
+            free(buf);
+        }
+        fclose(rf);
+    }
+
+    // 5. Cleanup
     aimux_drop_handle(handle);
     printf("Handle dropped\n");
 
