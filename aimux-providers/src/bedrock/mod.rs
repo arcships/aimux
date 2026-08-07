@@ -1,4 +1,4 @@
-﻿//! Amazon Bedrock provider.
+//! Amazon Bedrock provider.
 //!
 //! Implements the `LanguageModel` trait against the Bedrock Converse API
 //! (`bedrock-runtime.{region}.amazonaws.com/model/{model-id}/converse`). The
@@ -214,5 +214,81 @@ impl Provider for BedrockProvider {
 
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
+    }
+
+    /// List foundation models via AWS Bedrock `ListFoundationModels` API
+    /// (SigV4-signed GET, RFC-0027).
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let region = self.config.region.clone();
+        let auth = self.config.auth.clone();
+        Box::pin(async move {
+            let url = format!("https://bedrock.{region}.api.amazonaws.com/foundation-models");
+            // Sign the request (empty body for GET).
+            let signed = match &auth {
+                BedrockAuth::SigV4(creds) => {
+                    sigv4::sign_request(creds, "bedrock", "GET", &url, "", &[])
+                }
+                BedrockAuth::BearerToken(_) => {
+                    return Err(AiMuxError::Unsupported(
+                        "list_models via BearerToken not supported for Bedrock; use SigV4 credentials".into(),
+                    ));
+                }
+            };
+            let mut headers = signed.headers;
+            headers.push(("Accept".to_string(), "application/json".to_string()));
+
+            use aimux_provider_utils::{
+                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send,
+            };
+            let resp = send(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url,
+                    headers,
+                    body: HttpBody::Empty,
+                    abort_signal: None,
+                    call_id: None,
+                    recording_context: None,
+                },
+                aimux_provider_utils::RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+            )
+            .await?;
+
+            // AWS response: { modelSummaries: [{ modelId, modelName, ... }] }
+            #[derive(serde::Deserialize)]
+            struct Resp {
+                #[serde(default, rename = "modelSummaries")]
+                summaries: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                #[serde(rename = "modelId")]
+                id: String,
+                #[serde(default, rename = "modelName")]
+                name: Option<String>,
+            }
+            let parsed: Resp = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(format!("bedrock list_models: parse: {e}")))?;
+            let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
+                .summaries
+                .into_iter()
+                .map(|e| aimux_core::model_catalogue::RuntimeModel {
+                    id: e.id,
+                    owned_by: e.name.or(Some("amazon".to_string())),
+                    created: None,
+                })
+                .collect();
+            Ok(runtime)
+        })
     }
 }

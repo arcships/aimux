@@ -62,7 +62,7 @@ use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 use aimux_providers::tavily::{TavilyConfig, TavilyProvider};
 use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
 use aimux_providers::xai::{XAIConfig, XAIProvider};
-use aimux_providers::{ProviderOptions, provider};
+use aimux_providers::{ProviderOptions, provider, provider_handle};
 
 use futures::StreamExt;
 use tokio::runtime::Runtime;
@@ -75,6 +75,7 @@ use tokio::runtime::Runtime;
 #[derive(Clone)]
 enum ModelHandle {
     Language(Arc<dyn LanguageModel>),
+    Provider(Arc<dyn aimux_core::provider::Provider>),
     Embedding(Arc<dyn aimux_core::embedding_model::EmbeddingModel>),
     Speech(Arc<dyn aimux_core::speech_model::SpeechModel>),
     Image(Arc<dyn aimux_core::image_model::ImageModel>),
@@ -122,6 +123,19 @@ fn get_model(handle: u64) -> Option<Arc<dyn LanguageModel>> {
         ModelHandle::Language(m) => Some(m),
         _ => None,
     }
+}
+
+/// Look up a provider by handle (RFC-0027 provider handles for list_models).
+fn get_provider(handle: u64) -> Option<Arc<dyn aimux_core::provider::Provider>> {
+    match get_handle(handle)? {
+        ModelHandle::Provider(p) => Some(p),
+        _ => None,
+    }
+}
+
+/// Register a provider instance, returning its opaque `u64` handle.
+fn intern_provider(provider: Arc<dyn aimux_core::provider::Provider>) -> u64 {
+    intern_handle(ModelHandle::Provider(provider))
 }
 
 /// Look up any handle (multimodal).
@@ -878,6 +892,142 @@ pub extern "C" fn aimux_provider_from_env(
     };
     match provider(&name, None, &model_id, None) {
         Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: provider handles (RFC-0027) — createProvider / listModels / model
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create a **provider handle** (RFC-0027) for a registry-backed provider.
+///
+/// Unlike `aimux_provider_new` (which binds to a single model_id), this returns
+/// a provider handle that supports `aimux_provider_list_models` (runtime
+/// discovery) and `aimux_provider_model` (build a model from a discovered id).
+///
+/// `api_key = null` reads the provider's env var from the registry entry.
+/// `config_json` is an optional `ProviderOptions` JSON string (same as
+/// `aimux_provider_new`). Returns a JSON handle `{"handle": <u64>}`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_provider_handle_new(
+    name: *const c_char,
+    api_key: *const c_char,
+    config_json: *const c_char,
+) -> *mut c_char {
+    let Some(name) = cstr_to_string(name) else {
+        return invalid_args_json();
+    };
+    let key = cstr_to_string(api_key);
+    let opts = match cstr_to_string(config_json) {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            match serde_json::from_str::<ProviderOptions>(&s) {
+                Ok(o) => Some(o),
+                Err(e) => {
+                    return into_cstring_raw(error_json(
+                        format!("invalid config_json: {e}"),
+                        "Json",
+                        None,
+                    ));
+                }
+            }
+        }
+        _ => None,
+    };
+    match provider_handle(&name, key, opts) {
+        Ok(p) => handle_json(intern_provider(Arc::from(p))),
+        Err(e) => error_json_from(&e),
+    }
+}
+
+/// List models on a provider handle (RFC-0027 runtime discovery).
+///
+/// `handle` is from `aimux_provider_handle_new`. Returns a JSON array of
+/// `ResolvedModel` (id + optional spec), or `{"error":"..."}` on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_provider_list_models(handle: u64) -> *mut c_char {
+    let Some(p) = get_provider(handle) else {
+        return into_cstring_raw(error_json(
+            "invalid or expired provider handle".to_string(),
+            "InvalidHandle",
+            None,
+        ));
+    };
+    // Block on the async list_models via a transient runtime. The FFI is
+    // sync-returning; the binding layer (napi/PyO3/etc.) bridges async.
+    let rt = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => tokio::runtime::Runtime::new()
+            .map_err(|e| {
+                into_cstring_raw(error_json(
+                    format!("cannot create tokio runtime: {e}"),
+                    "Runtime",
+                    None,
+                ))
+            })
+            .expect("aimux-ffi: cannot create tokio runtime")
+            .handle()
+            .clone(),
+    };
+    match rt.block_on(p.list_models()) {
+        Ok(models) => {
+            let json = serde_json::to_string(&models)
+                .unwrap_or_else(|e| format!(r#"{{"error":"serialize list_models: {e}"}}"#));
+            into_cstring_raw(json)
+        }
+        Err(e) => error_json_from(&e),
+    }
+}
+
+/// Build a language model from a provider handle + model_id (RFC-0027).
+///
+/// `handle` is from `aimux_provider_handle_new`. Returns a JSON model handle
+/// `{"handle": <u64>}` (same as `aimux_provider_new`), usable with
+/// `aimux_generate_text` etc.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_provider_model(handle: u64, model_id: *const c_char) -> *mut c_char {
+    let Some(p) = get_provider(handle) else {
+        return into_cstring_raw(error_json(
+            "invalid or expired provider handle".to_string(),
+            "InvalidHandle",
+            None,
+        ));
+    };
+    let Some(model_id) = cstr_to_string(model_id) else {
+        return invalid_args_json();
+    };
+    match p.language_model(&model_id) {
+        Ok(m) => handle_json(intern_model(Arc::from(m))),
+        Err(e) => error_json_from(&e),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: model specs (RFC-0027) — get_model_specs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+/// `Catalogue` (provider → model_id → ModelSpec), or `{"error":"..."}`.
+///
+/// `source_url` is an optional URL override (null = default anya2a endpoint).
+/// This is a **thin fetch** — no caching, no FS writes. The host decides how
+/// to cache/persist the result.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_get_model_specs(source_url: *const c_char) -> *mut c_char {
+    let url = cstr_to_string(source_url);
+    let rt = match tokio::runtime::Handle::try_current() {
+        Ok(h) => h,
+        Err(_) => tokio::runtime::Runtime::new()
+            .expect("aimux-ffi: cannot create tokio runtime")
+            .handle()
+            .clone(),
+    };
+    match rt.block_on(aimux_providers::get_model_specs(url.as_deref())) {
+        Ok(cat) => {
+            let json = serde_json::to_string(&cat)
+                .unwrap_or_else(|e| format!(r#"{{"error":"serialize catalogue: {e}"}}"#));
+            into_cstring_raw(json)
+        }
         Err(e) => error_json_from(&e),
     }
 }

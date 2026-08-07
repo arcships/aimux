@@ -74,6 +74,16 @@ public interface AimuxFFI extends Library {
 
     Pointer aimux_provider_from_env(String name, String modelId);
 
+    // ── Provider handles (RFC-0027) ─────────────────────────────────────────
+
+    Pointer aimux_provider_handle_new(String name, String apiKey, String configJson);
+
+    Pointer aimux_provider_list_models(long handle);
+
+    Pointer aimux_provider_model(long handle, String modelId);
+
+    Pointer aimux_get_model_specs(String sourceUrl);
+
     // ── Generation ──────────────────────────────────────────────────────────
 
     /** @return JSON result string (caller MUST free with {@link #aimux_free_string}). */

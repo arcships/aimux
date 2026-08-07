@@ -51,6 +51,12 @@ internal interface AimuxFFI : Library {
     fun aimux_provider_new(name: String, apiKey: String?, modelId: String, configJson: String?): Pointer?
     fun aimux_provider_from_env(name: String, modelId: String): Pointer?
 
+    // ── Provider handles (RFC-0027) ─────────────────────────────────────────
+    fun aimux_provider_handle_new(name: String, apiKey: String?, configJson: String?): Pointer?
+    fun aimux_provider_list_models(handle: Long): Pointer?
+    fun aimux_provider_model(handle: Long, modelId: String): Pointer?
+    fun aimux_get_model_specs(sourceUrl: String?): Pointer?
+
     fun aimux_generate_text(handle: Long, promptJson: String, optsJson: String?): Pointer?
     fun aimux_stream_text(
         handle: Long,
@@ -361,6 +367,20 @@ class Model private constructor(handle: Long) : Closeable {
         }
 
         /**
+         * Create a **provider handle** (RFC-0027) for a registry-backed provider.
+         *
+         * Unlike [provider] (which binds to a single modelId), this returns a
+         * [ProviderHandle] that supports [ProviderHandle.listModels] and
+         * [ProviderHandle.model].
+         */
+        fun createProvider(name: String, apiKey: String? = null, configJson: String? = null): ProviderHandle {
+            val h = extractHandle(
+                FFI.lib.aimux_provider_handle_new(name, apiKey, configJson),
+                "Failed to create provider handle '$name'")
+            return ProviderHandle(h)
+        }
+
+        /**
          * Create a mock replay model from recorded JSONL (RFC-0023).
          *
          * Matches recorded inputs and returns the recorded responses — no real
@@ -374,6 +394,74 @@ class Model private constructor(handle: Long) : Closeable {
             return Model(h)
         }
     }
+}
+
+/**
+ * A provider handle — created by `Model.createProvider`, supports `listModels()`
+ * (runtime discovery) and `model()` (build a model from a discovered id).
+ */
+class ProviderHandle internal constructor(handle: Long) : AutoCloseable {
+
+    private var handle: Long = handle
+    private var closed: Boolean = false
+
+    @Synchronized
+    override fun close() {
+        if (!closed && handle != 0L) {
+            FFI.lib.aimux_drop_handle(handle)
+            handle = 0L
+            closed = true
+        }
+    }
+
+    protected fun finalize() = close()
+
+    /**
+     * List models available on this provider (runtime discovery + anya2a spec).
+     * Returns a JSON array of ResolvedModel.
+     */
+    fun listModels(): String {
+        check(!closed && handle != 0L) { "ProviderHandle is closed" }
+        val ptr = FFI.lib.aimux_provider_list_models(handle)
+            ?: throw IllegalStateException("list_models returned null")
+        val result = try {
+            ptr.getString(0, "UTF-8")
+        } finally {
+            FFI.lib.aimux_free_string(ptr)
+        }
+        val obj = runCatching { AimuxJson.parseToJsonElement(result).jsonObject }.getOrNull()
+        val err = obj?.get("error")
+        if (err is JsonPrimitive && err.isString) {
+            throw IllegalStateException(err.content)
+        }
+        return result
+    }
+
+    /** Build a language model from a discovered model id. */
+    fun model(modelId: String): Model {
+        check(!closed && handle != 0L) { "ProviderHandle is closed" }
+        val h = extractHandle(
+            FFI.lib.aimux_provider_model(handle, modelId),
+            "Failed to create model '$modelId'")
+        return Model(h)
+    }
+}
+
+/**
+ * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+ * Catalogue string. Thin fetch — no caching.
+ *
+ * @param sourceUrl Optional URL override (null = default endpoint).
+ */
+fun getModelSpecs(sourceUrl: String? = null): String {
+    val ptr = FFI.lib.aimux_get_model_specs(sourceUrl)
+        ?: throw IllegalStateException("get_model_specs returned null")
+    val result = try { ptr.getString(0, "UTF-8") } finally { FFI.lib.aimux_free_string(ptr) }
+    val obj = runCatching { AimuxJson.parseToJsonElement(result).jsonObject }.getOrNull()
+    val err = obj?.get("error")
+    if (err is JsonPrimitive && err.isString) throw IllegalStateException(err.content)
+    return result
+}
 
     // ── Generation ─────────────────────────────────────────────────────────
 

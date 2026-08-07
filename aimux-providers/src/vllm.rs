@@ -1,4 +1,4 @@
-﻿//! vLLM provider — a thin OpenAI-compatible wrapper.
+//! vLLM provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <vllm.ai> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:8000/v1`. The `VLLM_BASE_URL` environment
@@ -64,4 +64,6 @@ impl Provider for VllmProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

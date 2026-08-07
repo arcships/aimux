@@ -95,6 +95,33 @@ int main(void) {
     // On failure extract_handle already printed the detailed engine error
     // (e.g. "is DEEPSEEK_API_KEY set?" is now part of that message).
 
+    // 3.6 Provider handle (RFC-0027): create a provider handle, list its
+    // models at runtime, then build a model from a discovered id. NULL
+    // api_key reads DEEPSEEK_API_KEY from the env.
+    uint64_t p_handle = extract_handle(aimux_provider_handle_new("deepseek", NULL, NULL));
+    if (p_handle != 0) {
+        printf("Provider handle: handle=%lu\n", (unsigned long)p_handle);
+
+        // List models (runtime discovery + anya2a enrichment). Returns a JSON
+        // array of ResolvedModel.
+        char *models_json = aimux_provider_list_models(p_handle);
+        if (models_json) {
+            printf("Models: %s\n", models_json);
+            aimux_free_string(models_json);
+        }
+
+        // Build a language model from a discovered id. Returns a model handle
+        // usable with aimux_generate_text etc. (same envelope as
+        // aimux_provider_new).
+        uint64_t m_handle = extract_handle(aimux_provider_model(p_handle, "deepseek-chat"));
+        if (m_handle != 0) {
+            printf("Model from provider handle: handle=%lu\n", (unsigned long)m_handle);
+            aimux_drop_handle(m_handle);
+        }
+
+        aimux_drop_handle(p_handle);
+    }
+
     // 4. Recording + mock replay (RFC-0023): opt-in recording of the next
     // call, then replay the recorded response WITHOUT a real API call.
     printf("\n--- Recording (RFC-0023) ---\n");

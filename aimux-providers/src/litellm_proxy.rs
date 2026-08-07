@@ -1,4 +1,4 @@
-﻿//! LiteLLM Proxy provider — a thin OpenAI-compatible wrapper.
+//! LiteLLM Proxy provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <litellm.ai> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:4000/v1`. The `LITELLM_PROXY_API_KEY` environment
@@ -64,4 +64,6 @@ impl Provider for LitellmProxyProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

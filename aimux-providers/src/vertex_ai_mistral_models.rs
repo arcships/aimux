@@ -1,4 +1,4 @@
-﻿//! Mistral models on Vertex AI MaaS — a thin OpenAI-compatible wrapper.
+//! Mistral models on Vertex AI MaaS — a thin OpenAI-compatible wrapper.
 //!
 //! Vertex AI serves partner and open models (Anthropic, AI21, DeepSeek, Llama,
 //! MiniMax, Mistral, Moonshot, OpenAI, Qwen, Z.AI) through an OpenAI-compatible
@@ -127,4 +127,6 @@ impl Provider for VertexAiMistralModelsProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

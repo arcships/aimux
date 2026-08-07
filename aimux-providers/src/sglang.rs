@@ -1,4 +1,4 @@
-﻿//! SGLang provider — a thin OpenAI-compatible wrapper.
+//! SGLang provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <github.com/sgl-project/sglang> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:30000/v1`. The `SGLANG_BASE_URL` environment
@@ -64,4 +64,6 @@ impl Provider for SglangProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

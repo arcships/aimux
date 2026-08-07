@@ -1,4 +1,4 @@
-﻿//! llama.cpp provider — a thin OpenAI-compatible wrapper.
+//! llama.cpp provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <github.com/ggerganov/llama.cpp> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:8080/v1`. The `LLAMACPP_BASE_URL` environment
@@ -64,4 +64,6 @@ impl Provider for LlamacppProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

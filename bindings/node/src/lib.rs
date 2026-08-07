@@ -976,6 +976,90 @@ pub async fn provider(
     })
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider handles (RFC-0027) — createProvider / listModels / model
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A provider handle — created by `createProvider`, supports `listModels()`
+/// (runtime discovery) and `model()` (build a model from a discovered id).
+///
+/// ```ts
+/// const p = await createProvider('deepseek', apiKey)
+/// const models = await p.listModels()
+/// const model = await p.model(models[0].id)
+/// const result = await generateText(model, 'Hello')
+/// ```
+#[napi]
+pub struct ProviderHandle {
+    inner: Arc<dyn aimux_core::provider::Provider>,
+}
+
+#[napi]
+impl ProviderHandle {
+    /// List models available on this provider (runtime discovery via the
+    /// provider's `/models` endpoint), enriched with community knowledge
+    /// (anya2a) when available. Returns a JSON array of `ResolvedModel`.
+    #[napi]
+    pub async fn list_models(&self) -> Result<String> {
+        let models = self
+            .inner
+            .list_models()
+            .await
+            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+        serde_json::to_string(&models)
+            .map_err(|e| Error::from_reason(format!("serialize list_models: {e}")))
+    }
+
+    /// Build a language model from a discovered model id. Returns a `Model`
+    /// usable with `generateText` / `streamText`.
+    #[napi]
+    pub async fn model(&self, model_id: String) -> Result<Model> {
+        let m = self
+            .inner
+            .language_model(&model_id)
+            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+        Ok(Model {
+            inner: Arc::from(m),
+        })
+    }
+}
+
+/// Create a **provider handle** (RFC-0027) for a registry-backed provider.
+///
+/// Unlike `provider()` (which binds to a single model_id), this returns a
+/// `ProviderHandle` that supports `listModels()` and `model()`.
+///
+/// `api_key` may be empty/null to read the provider's env var from the
+/// registry entry.
+#[napi]
+pub async fn create_provider(
+    name: String,
+    api_key: Option<String>,
+    config: Option<ProviderConfig>,
+) -> Result<ProviderHandle> {
+    let options = match config {
+        Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
+        None => None,
+    };
+    let p = aimux_providers::provider_handle(&name, api_key, options)
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    Ok(ProviderHandle {
+        inner: Arc::from(p),
+    })
+}
+
+/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+/// `Catalogue` (provider → model_id → ModelSpec). Thin fetch — no caching.
+/// `source_url` may be null for the default endpoint.
+#[napi]
+pub async fn get_model_specs(source_url: Option<String>) -> Result<String> {
+    let cat = aimux_providers::get_model_specs(source_url.as_deref())
+        .await
+        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+    serde_json::to_string(&cat)
+        .map_err(|e| Error::from_reason(format!("serialize catalogue: {e}")))
+}
+
 /// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
 fn provider_options_from_config(
     config: Option<Either<String, ProviderConfig>>,

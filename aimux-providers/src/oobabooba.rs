@@ -1,4 +1,4 @@
-﻿//! Oobabooga Text Generation WebUI provider — a thin OpenAI-compatible wrapper.
+//! Oobabooga Text Generation WebUI provider — a thin OpenAI-compatible wrapper.
 //!
 //! See <github.com/oobabooga> for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:5000/v1`. The `OOBABOOBA_BASE_URL` environment
@@ -64,4 +64,6 @@ impl Provider for OobaboobaProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.model(model_id)))
     }
+
+    crate::delegate_list_models!();
 }

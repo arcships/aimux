@@ -230,6 +230,102 @@ impl Provider for AzureProvider {
     fn language_model(&self, model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Ok(Box::new(self.deployment(model_id)))
     }
+
+    /// List deployments via `GET {prefix}/deployments?api-version=...`
+    /// (Azure OpenAI, RFC-0027). Azure lists *deployments*, not models — each
+    /// deployment's `id` is the model_id used by `language_model`.
+    fn list_models(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError>,
+                > + Send
+                + '_,
+        >,
+    > {
+        let config = self.config.clone();
+        Box::pin(async move {
+            let prefix = match &config.base_url {
+                Some(url) => aimux_provider_utils::without_trailing_slash(url),
+                None => format!(
+                    "https://{}.openai.azure.com/openai",
+                    config.resource_name.as_deref().ok_or_else(|| {
+                        AiMuxError::InvalidArgument(
+                            "azure list_models: resource_name or base_url required".into(),
+                        )
+                    })?
+                ),
+            };
+            let url = format!("{prefix}/deployments?api-version={}", config.api_version);
+
+            // Auth: api-key header or Bearer token.
+            let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
+            match &config.auth {
+                Some(AzureAuth::ApiKey(key)) => {
+                    headers.push(("api-key".to_string(), key.clone()));
+                }
+                Some(AzureAuth::TokenProvider(tp)) => {
+                    let token = tp
+                        .get_token()
+                        .await
+                        .map_err(|e| AiMuxError::Auth(format!("azure token provider: {e}")))?;
+                    headers.push(("Authorization".to_string(), format!("Bearer {token}")));
+                }
+                None => {
+                    return Err(AiMuxError::Auth(
+                        "azure list_models: no auth configured".into(),
+                    ));
+                }
+            }
+
+            use aimux_provider_utils::{
+                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
+            };
+            let resp = send_timed(
+                HttpRequest {
+                    method: HttpMethod::Get,
+                    url,
+                    headers,
+                    body: HttpBody::Empty,
+                    abort_signal: None,
+                    call_id: None,
+                    recording_context: None,
+                },
+                aimux_provider_utils::RetryConfig::default(),
+                &DEFAULT_ERROR_STRUCTURE,
+                None,
+            )
+            .await?;
+
+            // Azure response: { data: [{ id, model, ... }] }
+            #[derive(serde::Deserialize)]
+            struct Resp {
+                #[serde(default)]
+                data: Vec<Entry>,
+            }
+            #[derive(serde::Deserialize)]
+            struct Entry {
+                id: String,
+                #[serde(default)]
+                model: Option<String>,
+                #[serde(default, rename = "modelName")]
+                model_name: Option<String>,
+            }
+            let parsed: Resp = serde_json::from_slice(&resp.body)
+                .map_err(|e| AiMuxError::Json(format!("azure list_models: parse: {e}")))?;
+            let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
+                .data
+                .into_iter()
+                .map(|e| aimux_core::model_catalogue::RuntimeModel {
+                    id: e.id,
+                    owned_by: e.model_name.or(e.model),
+                    created: None,
+                })
+                .collect();
+            Ok(runtime)
+        })
+    }
 }
 
 // ── Model ────────────────────────────────────────────────────────────────────

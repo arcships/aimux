@@ -32,7 +32,9 @@ public class Model implements Closeable {
 
     private final AtomicLong handle;
 
-    private Model(long handle) {
+    // Package-private:同包 ProviderHandle.model() 需要构造 Model;
+    // 外部仍只能通过静态工厂 openai()/provider()/mockReplay() 创建。
+    Model(long handle) {
         this.handle = new AtomicLong(handle);
     }
 
@@ -242,6 +244,32 @@ public class Model implements Closeable {
             AimuxFFI.INSTANCE.aimux_provider_from_env(name, modelId),
             "Failed to create provider model from env: " + name);
         return new Model(h);
+    }
+
+    /**
+     * Create a **provider handle** (RFC-0027) for a registry-backed provider.
+     *
+     * <p>Unlike {@link #provider(String, String, String, String)} (which binds to
+     * a single modelId), this returns a {@link ProviderHandle} that supports
+     * {@link ProviderHandle#listModels()} and {@link ProviderHandle#model(String)}.
+     */
+    public static ProviderHandle createProvider(String name, String apiKey, String configJson) {
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_provider_handle_new(name, apiKey, configJson),
+            "Failed to create provider handle: " + name);
+        return new ProviderHandle(h);
+    }
+
+    /**
+     * Fetch the community model catalogue (anya2a). Returns a JSON-serialized
+     * Catalogue string. Thin fetch — no caching.
+     *
+     * @param sourceUrl Optional URL override (null = default endpoint).
+     */
+    public static String getModelSpecs(String sourceUrl) {
+        return AimuxResult.extractString(
+            AimuxFFI.INSTANCE.aimux_get_model_specs(sourceUrl),
+            "get_model_specs");
     }
 
     /**

@@ -14,10 +14,12 @@
 
 import {
   AbortBridge,
+  createProvider as rawCreateProvider,
+  getModelSpecs as rawGetModelSpecs,
   sessionCalls as nativeSessionCalls,
   listSessions as nativeListSessions,
 } from '../index.js'
-import type { Model } from '../index.js'
+import type { Model, ProviderConfig, ProviderHandle as RawProviderHandle } from '../index.js'
 
 // Canonical ts-rs generated types (local copy, packaged with the npm tarball).
 // These are type-only imports, so they are fully erased at runtime (the
@@ -47,6 +49,9 @@ import type {
   SessionView,
   ChatCompletion,
   ChatCompletionChunk,
+  
+  ModelSpec,
+  RuntimeModel,
 } from './types'
 
 // Re-export the raw napi constructors/factories so consumers can do everything
@@ -75,6 +80,9 @@ export {
   azure,
   provider,
 } from '../index.js'
+// `ProviderHandle` is the napi class for provider handles (RFC-0027); export
+// it as a type so typed-wrapper users can reference it.
+export type { ProviderHandle } from '../index.js'
 // Both meanings: the `ProviderName` const object (runtime, for `ProviderName.groq`)
 // and the derived string-union type. A value export resolves at runtime, so the
 // specifier needs the real `.ts` extension for Node's type-stripping test runs;
@@ -107,6 +115,9 @@ export type {
   SessionView,
   ChatCompletion,
   ChatCompletionChunk,
+  
+  ModelSpec,
+  RuntimeModel,
 }
 
 /**
@@ -259,4 +270,87 @@ export async function* streamTextAsOpenai(
   for await (const json of gen) {
     yield JSON.parse(json) as ChatCompletionChunk
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Provider handles (RFC-0027) — createProvider / listModels / model
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A typed wrapper around the raw napi `ProviderHandle` class. Created by
+ * {@link createProvider}, supports {@link ProviderHandleTyped.listModels} and
+ * {@link ProviderHandleTyped.model}.
+ *
+ * @example
+ * ```ts
+ * import { createProvider, generateText } from 'aimux'
+ * const p = await createProvider('deepseek', apiKey)
+ * const models = await p.listModels()
+ * const model = await p.model(models[0].id)
+ * const result = await generateText(model, 'Hello')
+ * ```
+ */
+export class ProviderHandleTyped {
+  constructor(private readonly raw: RawProviderHandle) {}
+
+  /** List models available on this provider (runtime discovery + anya2a spec). */
+  async listModels(): Promise<RuntimeModel[]> {
+    return JSON.parse(await this.raw.listModels()) as RuntimeModel[]
+  }
+
+  /** Build a language model from a discovered model id. */
+  async model(modelId: string): Promise<RawModel> {
+    return this.raw.model(modelId)
+  }
+}
+
+/**
+ * Create a **provider handle** (RFC-0027) for a registry-backed provider.
+ *
+ * Unlike `provider()` (which binds to a single modelId), this returns a handle
+ * that supports `listModels()` (runtime discovery) and `model()`.
+ *
+ * @param name     - Provider name (e.g. `"deepseek"`, `"groq"`).
+ * @param apiKey   - API key; omit/null to read the provider's env var.
+ * @param config   - Optional provider config (baseUrl, headers, …).
+ *
+ * @example
+ * ```ts
+ * import { createProvider, generateText } from 'aimux'
+ * const p = await createProvider('deepseek', process.env.DEEPSEEK_API_KEY)
+ * const models = await p.listModels()
+ * const model = await p.model(models[0].id)
+ * const result = await generateText(model, 'Hello')
+ * ```
+ */
+export async function createProvider(
+  name: string,
+  apiKey?: string,
+  config?: ProviderConfig,
+): Promise<ProviderHandleTyped> {
+  const raw = await rawCreateProvider(name, apiKey ?? null, config ?? null)
+  return new ProviderHandleTyped(raw)
+}
+
+/**
+ * Fetch the community model catalogue (anya2a). Returns a `Catalogue` object
+ * with a `lookup(provider, modelId)` method. Thin fetch — no caching; the host
+ * decides how to persist/reuse the result.
+ *
+ * @param sourceUrl - Optional URL override (default = anya2a endpoint).
+ *
+ * @example
+ * ```ts
+ * import { createProvider, getModelSpecs, generateText } from 'aimux'
+ * const [p, catalogue] = await Promise.all([
+ *   createProvider('deepseek', apiKey),
+ *   getModelSpecs(),
+ * ])
+ * const models = await p.listModels()
+ * const model = await p.model(models[0].id)
+ * const spec = catalogue.specs?.['deepseek']?.[models[0].id] // community portrait
+ * ```
+ */
+export async function getModelSpecs(sourceUrl?: string): Promise<unknown> {
+  return JSON.parse(await rawGetModelSpecs(sourceUrl ?? null))
 }
