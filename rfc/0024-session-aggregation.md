@@ -1,6 +1,6 @@
 # RFC-0024: 调用会话聚合(session_id 归组)
 
-> **Status**: IMPLEMENTED (P1/P2/P5 — 2026-08-05;P3/P4 待依赖 RFC-0023/0015,见 [§10](#10-implementation-order);P5 含 6 语言 typed options + FFI/Node/Python 查询 API)
+> **Status**: IMPLEMENTED (P1-P5 — 2026-08-06;P3 依赖 RFC-0023、P4 依赖 RFC-0015,两者已随其实施落地,见 [§10](#10-implementation-order))
 > **Date**: 2026-08-05
 > **Scope**: `aimux-core` 新增 `session_id` 字段(显式为主 + 隐式推断兜底),把连续调用聚合成会话组,为录制(RFC-0023)、缓存探测(RFC-0015)、回放提供链级视图。不做 fork 语义、不做 agent loop。
 > **Related**: [RFC-0023](0023-runtime-request-recording.md) 录制(Recording 加 session_id)、[RFC-0015](0015-cache-trace-audit.md) 缓存探测(链级聚合)、[RFC-0019](0019-session-affinity.md) 会话亲和(路由层 session,与本 RFC 可观测层 session 共享 id 概念但职责不同)、[RFC-0016](0016-align-with-aisdk.md) H4(不做 agent loop 边界)
@@ -258,8 +258,8 @@ pub fn list_sessions() -> Vec<SessionView>;
 |------|------|------|------|
 | **P1** | `CallOptions`/`GenerateTextOptions` 加 `session_id` 字段 + `SessionStore`(显式归组,无推断)+ 查询 API + 单测 | 无 | ✅ 已实施(2026-08-05) |
 | **P2** | `SessionInferer`(隐式推断,opt-in)+ 单测(强前缀归并、歧义边界) | P1 | ✅ 已实施(2026-08-05) |
-| **P3** | 录制(RFC-0023)集成:Recording 加 session_id + step + 按 session 查询/回放 | P1, RFC-0023 | ⏳ 待 RFC-0023 实施 |
-| **P4** | 缓存探测(RFC-0015)集成:TraceRecord 加 session_id + session 级命中演变聚合(`session_cache_trajectory` 随此引入) | P1, RFC-0015 | ⏳ 待 RFC-0015 实施 |
+| **P3** | 录制(RFC-0023)集成:Recording 加 session_id + step + 按 session 查询/回放 | P1, RFC-0023 | ✅ 已实施(2026-08-06):`Recording.session_id`/`step` + `Recorder::record_session`(事件链路 + writer 合并)+ 双入口接入 + 单测;按 session 查询由 jsonl 消费侧按 session_id 过滤 |
+| **P4** | 缓存探测(RFC-0015)集成:TraceRecord 加 session_id + session 级命中演变聚合(`session_cache_trajectory` 随此引入) | P1, RFC-0015 | ✅ 已实施(2026-08-06):`RingTraceStore::session_cache_trajectory` + `SessionStepStat` + FFI/Node 查询 API + 单测;TraceRecord.session_id 随 RFC-0015 实施时已就位 |
 | **P5** | 绑定层透传 + 查询 API(Node/C ABI/Python)+ 文档 | P1 | ✅ 已实施(2026-08-05) |
 
 **建议先做 P1**(显式归组即可用:开发者传 session_id,aimux 归组报告)。P2 推断是增强。P3/P4 是与录制/探测的集成,各自独立。

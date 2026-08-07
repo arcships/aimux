@@ -20,7 +20,8 @@ pub use fingerprint::{BlockChainFingerprint, Chain, Fingerprint, denoise};
 pub use layer::{CacheAuditor, RuleAuditor, TraceLayer};
 pub use record::{RequestCacheHints, TraceRecord, UsageSnapshot};
 pub use store::{
-    BreakKind, PrefixBreak, RingTraceStore, SessionChainView, TraceFilter, TraceSink, TraceStats,
+    BreakKind, PrefixBreak, RingTraceStore, SessionChainView, SessionStepStat, TraceFilter,
+    TraceSink, TraceStats,
 };
 pub use verdict::{
     JudgmentInput, LcpInput, ProviderAuditSpec, ProviderFamily, SessionStats, Verdict,
