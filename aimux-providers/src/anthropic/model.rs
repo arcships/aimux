@@ -89,6 +89,18 @@ impl LanguageModel for AnthropicModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: "explicit".to_string(),
+            profile: None,
+            provider_options: serde_json::to_value(&self.config.headers).ok(),
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let options = merge_anthropic_body_overrides(options, &self.config.body_overrides);
         let req = build_request_body_with_warnings(&self.model_id, &options, false)?;
@@ -163,5 +175,21 @@ fn merge_anthropic_body_overrides(
             opts
         }
         (None, _) => options.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_snapshot_matches_model_identity() {
+        let config = AnthropicConfig::new("sk-test");
+        let model = AnthropicModel::new("claude-sonnet-4-20250514".to_string(), config);
+        let snap = model.config_snapshot();
+        assert_eq!(snap.provider, model.provider());
+        assert_eq!(snap.model_id, model.model_id());
+        assert!(snap.base_url.is_some());
+        assert_eq!(snap.api_key_source, "explicit");
     }
 }

@@ -202,6 +202,10 @@ impl LanguageModel for OpenAIModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        super::config_snapshot_from_config("openai", &self.model_id, &self.config)
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
         let retry_config = resolve_retry_config(&self.config.retry_config, options.max_retries);

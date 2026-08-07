@@ -112,6 +112,10 @@ impl LanguageModel for OpenAIResponsesModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        super::config_snapshot_from_config(&self.config.provider, &self.model_id, &self.config)
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
         let request_result = build_responses_request_body(&self.model_id, options, false);

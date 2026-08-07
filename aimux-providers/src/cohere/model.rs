@@ -108,6 +108,18 @@ impl LanguageModel for CohereModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: "explicit".to_string(),
+            profile: None,
+            provider_options: None,
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body_result = build_request_body(&self.model_id, options, false);
         let body = body_result.body.clone();
@@ -535,5 +547,23 @@ impl LanguageModel for CohereModel {
             request_body: Some(body),
             response_headers: Some(response_headers),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_snapshot_reports_config() {
+        let model = CohereModel::new("command-r-plus".to_string(), CohereConfig::new("test-key"));
+        let snapshot = model.config_snapshot();
+        assert_eq!(snapshot.provider, "cohere");
+        assert_eq!(snapshot.model_id, "command-r-plus");
+        assert_eq!(
+            snapshot.base_url.as_deref(),
+            Some("https://api.cohere.com/v2")
+        );
+        assert_eq!(snapshot.api_key_source, "explicit");
     }
 }

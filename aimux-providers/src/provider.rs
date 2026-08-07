@@ -130,6 +130,13 @@ pub fn provider(
         ))
     })?;
 
+    // api_key 来源标注(回放重建用):显式传 key → explicit;否则 env。
+    let source: Option<String> = if api_key.is_some() {
+        Some("explicit".to_string())
+    } else {
+        Some(format!("env:{}", entry.env_var))
+    };
+
     let key = match api_key {
         Some(key) => key,
         None => aimux_provider_utils::load_api_key(None, &entry.env_var, &entry.display)?,
@@ -138,7 +145,8 @@ pub fn provider(
     let mut config = OpenAIConfig::new(key)
         .with_base_url(entry.base_url.clone())
         .with_provider(entry.name.clone())
-        .with_profile(profile_from_registry(&entry.profile));
+        .with_profile(profile_from_registry(&entry.profile))
+        .with_api_key_source(source.as_deref());
 
     if let Some(opts) = options {
         if let Some(url) = opts.base_url {

@@ -109,6 +109,18 @@ impl LanguageModel for GoogleModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: "explicit".to_string(),
+            profile: None,
+            provider_options: None,
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
@@ -698,3 +710,26 @@ fn parse_google_error_body(body: &str) -> AiMuxError {
 // Suppress unused warning for GoogleUsageMetadata (re-exported via convert).
 #[allow(unused_imports)]
 use GoogleUsageMetadata as _GoogleUsageMetadata;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::google::GoogleConfig;
+
+    #[test]
+    fn config_snapshot_records_provider_identity() {
+        let config = GoogleConfig::new("sk-test");
+        let model = GoogleModel::new("gemini-2.0-flash".to_string(), config);
+
+        let snap = model.config_snapshot();
+        assert_eq!(snap.provider, "google.generative-ai");
+        assert_eq!(snap.model_id, "gemini-2.0-flash");
+        assert_eq!(
+            snap.base_url.as_deref(),
+            Some("https://generativelanguage.googleapis.com/v1beta")
+        );
+        assert_eq!(snap.api_key_source, "explicit");
+        assert_eq!(snap.profile, None);
+        assert_eq!(snap.provider_options, None);
+    }
+}

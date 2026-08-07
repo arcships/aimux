@@ -212,6 +212,18 @@ impl LanguageModel for MistralModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: "explicit".to_string(),
+            profile: None,
+            provider_options: None,
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options, false);
         let headers = self.build_headers(options.headers.as_ref());
@@ -619,5 +631,26 @@ fn stream_error_to_ai_error(err_obj: &Value) -> AiMuxError {
         },
         404 => AiMuxError::ModelNotFound(message),
         _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_snapshot_reports_config() {
+        let model = MistralModel::new(
+            "mistral-small-latest".to_string(),
+            MistralConfig::new("test-key"),
+        );
+        let snapshot = model.config_snapshot();
+        assert_eq!(snapshot.provider, "mistral");
+        assert_eq!(snapshot.model_id, "mistral-small-latest");
+        assert_eq!(
+            snapshot.base_url.as_deref(),
+            Some("https://api.mistral.ai/v1")
+        );
+        assert_eq!(snapshot.api_key_source, "explicit");
     }
 }
