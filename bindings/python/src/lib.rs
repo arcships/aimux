@@ -18,7 +18,7 @@ use aimux_core::generate::{
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -638,6 +638,7 @@ impl ProviderHandle {
             .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
         Ok(Model {
             inner: Arc::from(m),
+            trace_store: None,
         })
     }
 }
@@ -670,6 +671,18 @@ fn create_provider(
     Ok(ProviderHandle {
         inner: Arc::from(p),
     })
+}
+
+/// Fetch the community model catalogue (RFC-0027) and return it as a JSON
+/// string (serialized `Catalogue`). `source_url` defaults to the anya2a
+/// `dist/all.json`.
+#[pyfunction]
+fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
+    let catalogue = runtime()
+        .block_on(async { aimux_providers::get_model_specs(source_url).await })
+        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    serde_json::to_string(&catalogue)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize catalogue: {e}")))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -718,6 +731,72 @@ fn list_sessions() -> String {
         .unwrap_or_else(|e| format!("{{\"error\":\"serialize: {e}\"}}"))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Recording + mock replay (RFC-0023)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 启动录制(RFC-0023):把完整 `Recording` 写 JSONL 到 `{dir}/recordings.jsonl`
+/// (目录自动创建)。录制 opt-in;再次调用(不同 dir)替换 recorder。
+#[pyfunction]
+fn init_recording(dir: &str) {
+    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+        aimux_core::recording::JsonlRecorder::new(dir.to_string()),
+    )));
+}
+
+/// 启动内存有界录制(RFC-0023 P6):FIFO ring,容量 `cap`,丢弃计数可查。
+/// `cap == 0` 时 no-op。
+#[pyfunction]
+fn init_recording_ring(cap: u64) {
+    if cap > 0 {
+        aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+            aimux_core::recording::RingRecorder::with_capacity(cap as usize),
+        )));
+    }
+}
+
+/// 停止录制:全局 recorder = None(新调用不再录制)。
+#[pyfunction]
+fn recording_stop() {
+    aimux_core::recording::init_recording(None);
+}
+
+/// 刷盘全局 recorder(阻塞至 JSONL 落盘;ring 模式 no-op)。
+#[pyfunction]
+fn recording_flush() {
+    if let Some(rec) = aimux_core::recording::recorder() {
+        rec.flush();
+    }
+}
+
+/// 从录制 JSONL 创建 mock 回放 model(RFC-0023 P3):按输入匹配录制响应,
+/// 不发真实 API。返回的 Model 可用于 generate_text / stream_text。
+#[pyfunction]
+fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
+    let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
+    for (idx, line) in recordings_jsonl.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let rec = serde_json::from_str(line)
+            .map_err(|e| PyValueError::new_err(format!("[Recording] line {}: {e}", idx + 1)))?;
+        recordings.push(rec);
+    }
+    if recordings.is_empty() {
+        return Err(PyValueError::new_err("[Recording] no recordings"));
+    }
+    let model = aimux_core::replay::MockReplayModel::new(
+        recordings[0].provider.provider.clone(),
+        recordings[0].provider.model_id.clone(),
+        recordings,
+    );
+    Ok(Model {
+        inner: Arc::new(model),
+        trace_store: None,
+    })
+}
+
 #[pymodule]
 fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
@@ -727,6 +806,11 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(init_session_infer, m)?)?;
     m.add_function(wrap_pyfunction!(session_calls, m)?)?;
     m.add_function(wrap_pyfunction!(list_sessions, m)?)?;
+    m.add_function(wrap_pyfunction!(init_recording, m)?)?;
+    m.add_function(wrap_pyfunction!(init_recording_ring, m)?)?;
+    m.add_function(wrap_pyfunction!(recording_stop, m)?)?;
+    m.add_function(wrap_pyfunction!(recording_flush, m)?)?;
+    m.add_function(wrap_pyfunction!(mock_replay, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;

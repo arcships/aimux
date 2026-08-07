@@ -2287,3 +2287,85 @@ pub extern "C" fn aimux_trace_clear(handle: u64) -> i32 {
         None => -1,
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C ABI: recording + mock replay (RFC-0023)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Start recording (RFC-0023 P1/P2): writes complete `Recording` JSONL to
+/// `{dir}/recordings.jsonl` (dir auto-created). Recording is **opt-in**.
+/// Calling again with a different dir replaces the recorder. Returns 0 on
+/// success, -1 on null `dir`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_init_recording(dir: *const c_char) -> i32 {
+    let Some(dir) = cstr_to_string(dir) else {
+        return -1;
+    };
+    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+        aimux_core::recording::JsonlRecorder::new(dir),
+    )));
+    0
+}
+
+/// Start in-memory bounded recording (RFC-0023 P6): `RingRecorder` with `cap`
+/// entries, FIFO eviction, dropped-count queryable. Returns 0 on success,
+/// -1 when `cap == 0`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_init_recording_ring(cap: u64) -> i32 {
+    if cap == 0 {
+        return -1;
+    }
+    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+        aimux_core::recording::RingRecorder::with_capacity(cap as usize),
+    )));
+    0
+}
+
+/// Stop recording: global recorder = None (new calls are unrecorded). Returns 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_recording_stop() -> i32 {
+    aimux_core::recording::init_recording(None);
+    0
+}
+
+/// Flush the global recorder (blocks until JSONL is on disk; no-op for the
+/// ring recorder). Returns 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_recording_flush() -> i32 {
+    if let Some(rec) = aimux_core::recording::recorder() {
+        rec.flush();
+    }
+    0
+}
+
+/// Create a mock replay model from recorded JSONL (RFC-0023 P3). `recordings`
+/// is one `Recording` JSON per line. Returns `{"handle":<u64>}` or
+/// `{"error":...}` (the handle works with `aimux_generate_text` /
+/// `aimux_stream_text`, no real API is sent); caller frees with
+/// `aimux_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_mock_replay_new(recordings_jsonl: *const c_char) -> *mut c_char {
+    let Some(recordings_jsonl) = cstr_to_string(recordings_jsonl) else {
+        return error_json_raw("invalid recordings_jsonl");
+    };
+    let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
+    for (idx, line) in recordings_jsonl.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str(line) {
+            Ok(r) => recordings.push(r),
+            Err(e) => return error_json_raw(format!("recordings line {}: {e}", idx + 1)),
+        }
+    }
+    if recordings.is_empty() {
+        return error_json_raw("no recordings");
+    }
+    let model = aimux_core::replay::MockReplayModel::new(
+        recordings[0].provider.provider.clone(),
+        recordings[0].provider.model_id.clone(),
+        recordings,
+    );
+    handle_json(intern_model(Arc::new(model)))
+}

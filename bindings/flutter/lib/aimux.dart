@@ -72,6 +72,18 @@ typedef _DropHandleDart = void Function(int);
 typedef _InitLoggingC = Void Function(Pointer<Utf8> level);
 typedef _InitLoggingDart = void Function(Pointer<Utf8> level);
 
+// Recording + mock replay (RFC-0023). int-returning functions return 0 on
+// success or -1 on invalid input; mock_replay_new returns a constructor-style
+// JSON string owned by the caller (free with aimux_free_string).
+typedef _RecordingDirC = Int32 Function(Pointer<Utf8> dir);
+typedef _RecordingDirDart = int Function(Pointer<Utf8> dir);
+typedef _RecordingRingC = Int32 Function(Uint64 cap);
+typedef _RecordingRingDart = int Function(int cap);
+typedef _RecordingNoArgC = Int32 Function();
+typedef _RecordingNoArgDart = int Function();
+typedef _MockReplayC = Pointer<Utf8> Function(Pointer<Utf8> recordingsJsonl);
+typedef _MockReplayDart = Pointer<Utf8> Function(Pointer<Utf8> recordingsJsonl);
+
 typedef _FreeStringC = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
 
@@ -135,6 +147,11 @@ final class _AimuxFFI {
   final void Function(int) dropHandle;
   final void Function(Pointer<Utf8>) freeString;
   final void Function(Pointer<Utf8>) initLogging;
+  final int Function(Pointer<Utf8>) initRecording;
+  final int Function(int) initRecordingRing;
+  final int Function() recordingStop;
+  final int Function() recordingFlush;
+  final Pointer<Utf8> Function(Pointer<Utf8>) mockReplayNew;
 
   _AimuxFFI._(
       this._lib,
@@ -153,7 +170,12 @@ final class _AimuxFFI {
       this.streamTextAsOpenAI,
       this.dropHandle,
       this.freeString,
-      this.initLogging);
+      this.initLogging,
+      this.initRecording,
+      this.initRecordingRing,
+      this.recordingStop,
+      this.recordingFlush,
+      this.mockReplayNew);
 
   factory _AimuxFFI() {
     final dylib = _openLibrary();
@@ -186,6 +208,16 @@ final class _AimuxFFI {
       dylib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle'),
       dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
       dylib.lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging'),
+      dylib.lookupFunction<_RecordingDirC, _RecordingDirDart>(
+          'aimux_init_recording'),
+      dylib.lookupFunction<_RecordingRingC, _RecordingRingDart>(
+          'aimux_init_recording_ring'),
+      dylib.lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
+          'aimux_recording_stop'),
+      dylib.lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
+          'aimux_recording_flush'),
+      dylib.lookupFunction<_MockReplayC, _MockReplayDart>(
+          'aimux_mock_replay_new'),
     );
   }
 
@@ -900,4 +932,50 @@ T _withUtf8<T>(String s, T Function(Pointer<Utf8>) fn) {
 void initLogging(String level) {
   final ffi = _AimuxFFI();
   _withUtf8(level.isEmpty ? 'warn' : level, ffi.initLogging);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recording + mock replay (RFC-0023)
+//
+// Recording is opt-in and global (not tied to a Model instance). All
+// int-returning functions return 0 on success, or -1 on invalid input.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Start recording: complete Recording JSONL is written to
+/// `{dir}/recordings.jsonl` (dir is auto-created). Calling again replaces the
+/// recorder. Returns 0, or -1 when [dir] is null/empty.
+int initRecording(String dir) {
+  final ffi = _AimuxFFI();
+  return _withUtf8(dir, ffi.initRecording);
+}
+
+/// Start in-memory bounded recording (ring recorder, FIFO eviction, dropped
+/// count queryable). Returns 0, or -1 when [cap] == 0.
+int initRecordingRing(int cap) {
+  final ffi = _AimuxFFI();
+  return ffi.initRecordingRing(cap);
+}
+
+/// Stop recording: the global recorder becomes None. Returns 0.
+int recordingStop() {
+  final ffi = _AimuxFFI();
+  return ffi.recordingStop();
+}
+
+/// Flush the global recorder (blocks until JSONL is on disk; no-op for the
+/// ring recorder). Returns 0.
+int recordingFlush() {
+  final ffi = _AimuxFFI();
+  return ffi.recordingFlush();
+}
+
+/// Create a mock replay model from recorded JSONL (one `Recording` per line).
+///
+/// Matches recorded inputs and returns the recorded responses — no real API
+/// is sent. The returned [Model] works with [Model.generateText] /
+/// [Model.streamText]. Call [Model.close] to release the native handle.
+Model mockReplay(String recordingsJsonl) {
+  final ffi = _AimuxFFI();
+  final ptr = _withUtf8(recordingsJsonl, ffi.mockReplayNew);
+  return Model._(_extractHandle(ffi, ptr), ffi);
 }

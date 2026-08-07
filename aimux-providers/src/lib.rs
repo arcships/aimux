@@ -36,9 +36,11 @@ macro_rules! delegate_list_models {
 // phase 4 — use [`provider`] / [`provider_from_env`] instead.
 pub mod provider;
 pub mod provider_name;
+pub mod replay;
 pub use provider::{
     ProviderOptions, provider, provider_from_env, provider_handle, provider_registry_entry,
 };
+pub use replay::rebuild_provider;
 
 pub mod catalogue;
 pub use catalogue::{Catalogue, get_model_specs};

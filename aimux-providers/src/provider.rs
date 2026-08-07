@@ -147,12 +147,21 @@ pub fn provider_handle(
         ))
     })?;
 
+    // api_key 来源标注(回放重建用):显式传 key → explicit;否则 env。
+    let source: Option<String> = if api_key.is_some() {
+        Some("explicit".to_string())
+    } else {
+        Some(format!("env:{}", entry.env_var))
+    };
+
     let key = match api_key {
         Some(key) => key,
         None => aimux_provider_utils::load_api_key(None, &entry.env_var, &entry.display)?,
     };
 
-    let config = build_provider_config(entry, key, options);
+    let mut config = build_provider_config(entry, key, options);
+    // api_key 来源标注(回放重建用):explicit/env 在 provider() 已解析。
+    config = config.with_api_key_source(source.as_deref());
     Ok(Box::new(OpenAIProvider::new(config)))
 }
 

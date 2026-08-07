@@ -32,7 +32,9 @@ public class Model implements Closeable {
 
     private final AtomicLong handle;
 
-    private Model(long handle) {
+    // Package-private:同包 ProviderHandle.model() 需要构造 Model;
+    // 外部仍只能通过静态工厂 openai()/provider()/mockReplay() 创建。
+    Model(long handle) {
         this.handle = new AtomicLong(handle);
     }
 
@@ -279,6 +281,24 @@ public class Model implements Closeable {
      */
     public static Model deepseek(String apiKey, String modelId) {
         return provider("deepseek", apiKey, modelId, null);
+    }
+
+    /**
+     * Create a mock replay model from recorded JSONL (RFC-0023). The returned
+     * model's {@code generateText} / {@code streamText} calls replay recorded
+     * responses from {@code recordingsJsonl} (one Recording per line) instead of
+     * sending real API requests.
+     *
+     * @param recordingsJsonl Recorded JSONL (one Recording per line).
+     * @return A new {@link Model} backed by the replay handle.
+     * @throws IllegalArgumentException if the mock replay model could not be
+     *                                  constructed.
+     */
+    public static Model mockReplay(String recordingsJsonl) {
+        long h = AimuxResult.extractHandle(
+            AimuxFFI.INSTANCE.aimux_mock_replay_new(recordingsJsonl),
+            "Failed to create mock replay model");
+        return new Model(h);
     }
 
     // ── Generation ─────────────────────────────────────────────────────────

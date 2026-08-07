@@ -25,7 +25,8 @@ impl OnnxConfig {
             OpenAIConfig::new(api_key)
                 .with_base_url(DEFAULT_BASE_URL)
                 .with_provider(PROVIDER_NAME)
-                .with_profile(OpenAICompatProfile::full()),
+                .with_profile(OpenAICompatProfile::full())
+                .with_api_key_source(Some("none")),
         )
     }
 

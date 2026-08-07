@@ -407,6 +407,18 @@ impl LanguageModel for CodexModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.openai.base_url.clone()),
+            api_key_source: "explicit".to_string(),
+            profile: None,
+            provider_options: None,
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         match self.config.mode {
             CodexMode::ApiKey => self.inner().do_generate(options).await,
@@ -497,4 +509,23 @@ pub async fn codex_refresh_at(
             .map(str::to_string),
         expires_in_secs: data.get("expires_in").and_then(|v| v.as_u64()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_snapshot_matches_model_identity() {
+        let config = CodexConfig::new("sk-test");
+        let model = CodexModel {
+            model_id: "gpt-5.2-codex".to_string(),
+            config,
+        };
+        let snap = model.config_snapshot();
+        assert_eq!(snap.provider, model.provider());
+        assert_eq!(snap.model_id, model.model_id());
+        assert!(snap.base_url.is_some());
+        assert_eq!(snap.api_key_source, "explicit");
+    }
 }

@@ -240,6 +240,23 @@ impl LanguageModel for AzureResponsesModel {
         &self.deployment
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id().to_string(),
+            base_url: self.config.base_url.clone(),
+            // Azure 不记录明文 key/token;来源统一记为 explicit。
+            api_key_source: "explicit".to_string(),
+            profile: None,
+            provider_options: Some(serde_json::json!({
+                "resource_name": self.config.resource_name,
+                "api_version": self.config.api_version,
+                "use_deployment_based_urls": self.config.use_deployment_based_urls,
+            })),
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
         let request_result = build_responses_request_body(&self.deployment, options, false);
@@ -335,5 +352,31 @@ impl LanguageModel for AzureResponsesModel {
             request_body: Some(body),
             response_headers: Some(response_headers),
         })
+    }
+}
+
+// ── Unit tests ───────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_snapshot_matches_config() {
+        let m = AzureResponsesModel::new(
+            "gpt-4o".to_string(),
+            AzureConfig::new()
+                .with_base_url("https://gateway.example.com/openai")
+                .with_api_version("2025-04-01-preview")
+                .use_v1_urls()
+                .with_api_key("k"),
+        );
+        let snap = m.config_snapshot();
+        assert_eq!(snap.provider, "azure.responses");
+        assert_eq!(snap.model_id, "gpt-4o");
+        assert_eq!(
+            snap.base_url.as_deref(),
+            Some("https://gateway.example.com/openai")
+        );
+        assert_eq!(snap.api_key_source, "explicit");
     }
 }
