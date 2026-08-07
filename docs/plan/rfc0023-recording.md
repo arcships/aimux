@@ -91,7 +91,12 @@
 |---|---|---|
 | P1 录制核心 | ✅ 已合并(PR #85) | completion barrier + transport_closed、专用 writer thread + oneshot flush + Drop join、脱敏超集、call_id 统一、complete 标记、ISO 时间戳 |
 | **P2 层 B HTTP 录制** | ✅ 已实施(双模型二次评审通过) | per-attempt exchange、流式骨架 + patch 补全(Drop 幂等)、R7 recorder 快照(RecordingContext 透传)、UTF-8 安全截断、OpenAI/Anthropic/Azure/Codex call_id 透传、429→200 per-attempt 测试 |
-| 队列语义 | ⏳ 延期 | P1 无界 channel;bounded/drop-newest + 丢弃计数留 P5/P6(RingRecorder 兜底) |
+| **P3 mock 响应回放** | ✅ 已实施 | `MockReplayModel`(OpenAI 兼容 MVP)+ `ReplayMatcher`(`ExactMatcher`/`ScoreMatcher`)+ `from_jsonl` + 10 单测 |
+| **P4 请求回放** | ✅ 已实施 | `replay_with_model`(core,provider 无关)+ `ReplayOverrides` + `rebuild_provider`(aimux-providers,OpenAI 兼容族)+ `tools/aimux-replay` CLI(`--dry-run`/`--api-key`/`--prompt`/`--call-id`) |
+| **P5 绑定层透传 + matcher + 脱敏验证** | ✅ 已实施 | C ABI:`aimux_init_recording`/`aimux_init_recording_ring`/`aimux_recording_stop`/`aimux_recording_flush`/`aimux_mock_replay_new`;Node:`initRecording`/`initRecordingRing`/`recordingStop`/`recordingFlush`/`mockReplay`;`PrefixMatcher`(消息级前缀,最长命中)+ 录制边界脱敏端到端验证 |
+| **P6 RingRecorder** | ✅ 已实施 | 内存有界 ring(默认 2048)+ FIFO 淘汰 + `dropped_count` 可查 + `pending`/`completed` 分片 + completion barrier + `export_jsonl`/`clear` + 5 单测;`RingTraceStore` 同款样式各自实现 |
+| **config_snapshot 覆盖** | ✅ 已实施 | OpenAI 兼容族(OpenAIModel/OpenAIResponsesModel,经 OpenAIConfig `api_key_source` 字段,覆盖 251 注册表 provider)+ 20 本地 wrapper 标 `none` + Anthropic/Google/Azure/Codex/Mistral/Cohere 原生族;profile/provider_options 可重建,round-trip 测试 |
+| 队列语义 | ✅ 已覆盖 | RingRecorder 即 bounded + drop-newest + 计数;JsonlRecorder 保持 unbounded(专用 writer thread,文档说明) |
 
 ## 参考
 
