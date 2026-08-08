@@ -1,4 +1,4 @@
-﻿//! aimux-node: Node.js binding (napi-rs v3, native path).
+//! aimux-node: Node.js binding (napi-rs v3, native path).
 //!
 //! This is the **flagship binding** — directly uses aimux-providers, bypassing
 //! aimux-ffi. napi-rs maps Rust async to JS Promise/AsyncIterator, giving
@@ -10,15 +10,17 @@
 //! - `streamText` returns an AsyncGenerator yielding StreamPart JSON strings.
 //! - The TS wrapper layer (index.ts) parses JSON into typed objects.
 
+mod error;
 mod multimodal;
 pub use multimodal::*;
 
 use std::future::Future;
 use std::sync::Arc;
 
+use crate::error::{AimuxResult, MResult, MappedError, StreamItem};
+use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
-    GenerateTextOptions,
+    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -111,65 +113,75 @@ impl Model {
     /// Aggregated probe statistics (RFC-0015 §5.3), filtered by a JSON
     /// `TraceFilter` (optional). Returns a JSON `TraceStats[]` string.
     #[napi]
-    pub fn trace_aggregate(&self, filter_json: Option<String>) -> Result<String> {
-        let Some(store) = &self.trace_store else {
-            return Err(Error::from_reason(
-                "[Trace] model is not traced; call trace() first",
-            ));
-        };
-        let filter = match filter_json {
-            Some(f) => serde_json::from_str(&f)
-                .map_err(|e| Error::from_reason(format!("[Trace] invalid filter: {e}")))?,
-            None => Default::default(),
-        };
-        serde_json::to_string(&store.aggregate(&filter))
-            .map_err(|e| Error::from_reason(format!("[Json] serialize: {e}")))
+    pub fn trace_aggregate(&self, filter_json: Option<String>) -> AimuxResult<String> {
+        AimuxResult((|| -> crate::error::MResult<String> {
+            let Some(store) = &self.trace_store else {
+                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                    "model is not traced; call trace() first".into(),
+                )));
+            };
+            let filter = match filter_json {
+                Some(f) => serde_json::from_str(&f).map_err(|e| {
+                    MappedError::from(&AiMuxError::InvalidArgument(format!("invalid filter: {e}")))
+                })?,
+                None => Default::default(),
+            };
+            serde_json::to_string(&store.aggregate(&filter))
+                .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+        })())
     }
 
     /// One session's chain view (RFC-0015 §5.3). Returns a JSON
     /// `SessionChainView` string or an error when the session is unknown.
     #[napi]
-    pub fn trace_session_chain(&self, session_id: String) -> Result<String> {
-        let Some(store) = &self.trace_store else {
-            return Err(Error::from_reason(
-                "[Trace] model is not traced; call trace() first",
-            ));
-        };
-        let view = store
-            .session_chain(&session_id)
-            .ok_or_else(|| Error::from_reason("[Trace] unknown session"))?;
-        serde_json::to_string(&view)
-            .map_err(|e| Error::from_reason(format!("[Json] serialize: {e}")))
+    pub fn trace_session_chain(&self, session_id: String) -> AimuxResult<String> {
+        AimuxResult((|| -> crate::error::MResult<String> {
+            let Some(store) = &self.trace_store else {
+                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                    "model is not traced; call trace() first".into(),
+                )));
+            };
+            let view = store
+                .session_chain(&session_id)
+                .ok_or_else(|| MappedError::from(&AiMuxError::Other("unknown session".into())))?;
+            serde_json::to_string(&view)
+                .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+        })())
     }
 
     /// One session's per-step cache-hit trajectory (RFC-0024 §4.3). Returns
     /// a JSON array of `SessionStepStat` (empty when the session is unknown
     /// or the model is not traced).
     #[napi]
-    pub fn trace_session_trajectory(&self, session_id: String) -> Result<String> {
-        let Some(store) = &self.trace_store else {
-            return Err(Error::from_reason(
-                "[Trace] model is not traced; call trace() first",
-            ));
-        };
-        let stats = store.session_cache_trajectory(&session_id);
-        serde_json::to_string(&stats)
-            .map_err(|e| Error::from_reason(format!("[Json] serialize: {e}")))
+    pub fn trace_session_trajectory(&self, session_id: String) -> AimuxResult<String> {
+        AimuxResult((|| -> crate::error::MResult<String> {
+            let Some(store) = &self.trace_store else {
+                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                    "model is not traced; call trace() first".into(),
+                )));
+            };
+            let stats = store.session_cache_trajectory(&session_id);
+            serde_json::to_string(&stats)
+                .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+        })())
     }
 
     /// Export all probe records as JSONL (one `TraceRecord` per line).
     #[napi]
-    pub fn trace_export_jsonl(&self) -> Result<String> {
-        let Some(store) = &self.trace_store else {
-            return Err(Error::from_reason(
-                "[Trace] model is not traced; call trace() first",
-            ));
-        };
-        let mut buf = Vec::new();
-        store
-            .export_jsonl(&mut buf)
-            .map_err(|e| Error::from_reason(format!("[Trace] export: {e}")))?;
-        String::from_utf8(buf).map_err(|e| Error::from_reason(format!("[Trace] utf8: {e}")))
+    pub fn trace_export_jsonl(&self) -> AimuxResult<String> {
+        AimuxResult((|| -> crate::error::MResult<String> {
+            let Some(store) = &self.trace_store else {
+                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                    "model is not traced; call trace() first".into(),
+                )));
+            };
+            let mut buf = Vec::new();
+            store
+                .export_jsonl(&mut buf)
+                .map_err(|e| MappedError::from(&AiMuxError::Other(format!("export: {e}"))))?;
+            String::from_utf8(buf)
+                .map_err(|e| MappedError::from(&AiMuxError::Other(format!("utf8: {e}"))))
+        })())
     }
 
     /// Clear all probe records of this traced model.
@@ -193,17 +205,24 @@ impl Model {
         prompt: String,
         options: Option<String>,
         bridge: Option<&AbortBridge>,
-    ) -> Result<String> {
-        let parsed_prompt = parse_prompt(&prompt)?;
-        let mut opts = parse_opts(options.as_deref())?;
-        opts.abort_signal = bridge.map(|b| b.core_signal());
+    ) -> AimuxResult<String> {
+        AimuxResult({
+            let __r: crate::error::MResult<String> = async {
+                let parsed_prompt = parse_prompt(&prompt)?;
+                let mut opts = parse_opts(options.as_deref())?;
+                opts.abort_signal = bridge.map(|b| b.core_signal());
 
-        let result = generate_text(&*self.inner, parsed_prompt, opts)
-            .await
-            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+                let result = generate_text(&*self.inner, parsed_prompt, opts)
+                    .await
+                    .map_err(|e| MappedError::from(&e))?;
 
-        serde_json::to_string(&result)
-            .map_err(|e| Error::from_reason(format!("[Json] serialize result: {e}")))
+                serde_json::to_string(&result).map_err(|e| {
+                    MappedError::from(&AiMuxError::Json(format!("serialize result: {e}")))
+                })
+            }
+            .await;
+            __r
+        })
     }
 
     /// Stream text from the model.
@@ -216,60 +235,75 @@ impl Model {
         prompt: String,
         options: Option<String>,
         bridge: Option<&AbortBridge>,
-    ) -> Result<StreamTextGenerator> {
-        let model = self.inner.clone();
-        // Extract the core signal on the napi thread; it is `Send` and can
-        // move into the spawned task.
-        let abort_signal = bridge.map(|b| b.core_signal());
+    ) -> AimuxResult<StreamTextGenerator> {
+        AimuxResult({
+            let __r: crate::error::MResult<StreamTextGenerator> = async {
+                let model = self.inner.clone();
+                // Extract the core signal on the napi thread; it is `Send` and can
+                // move into the spawned task.
+                let abort_signal = bridge.map(|b| b.core_signal());
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(64);
+                let (tx, rx) =
+                    tokio::sync::mpsc::channel::<std::result::Result<String, MappedError>>(64);
 
-        // Spawn the stream-driving task immediately on napi's tokio runtime.
-        napi::tokio::spawn(async move {
-            let prompt = match parse_prompt(&prompt) {
-                Ok(p) => p,
-                Err(e) => {
-                    let _ = tx.send(Err(format!("[InvalidPrompt] invalid prompt: {e}"))).await;
-                    return;
-                }
-            };
-            let mut opts = match parse_opts(options.as_deref()) {
-                Ok(o) => o,
-                Err(e) => {
-                    let _ = tx.send(Err(format!("invalid options: {e}"))).await;
-                    return;
-                }
-            };
-            opts.abort_signal = abort_signal;
+                // Spawn the stream-driving task immediately on napi's tokio runtime.
+                napi::tokio::spawn(async move {
+                    let prompt = match parse_prompt(&prompt) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(MappedError::from(&AiMuxError::InvalidPrompt(format!(
+                                    "invalid prompt: {e}"
+                                )))))
+                                .await;
+                            return;
+                        }
+                    };
+                    let mut opts = match parse_opts(options.as_deref()) {
+                        Ok(o) => o,
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(MappedError::from(&AiMuxError::InvalidArgument(
+                                    format!("invalid options: {e}"),
+                                ))))
+                                .await;
+                            return;
+                        }
+                    };
+                    opts.abort_signal = abort_signal;
 
-            match stream_text(&*model, prompt, opts).await {
-                Ok(stream_result) => {
-                    use futures::StreamExt;
-                    let mut stream = stream_result.stream;
-                    while let Some(item) = stream.next().await {
-                        match item {
-                            Ok(part) => {
-                                let json = serde_json::to_string(&part)
-                                    .unwrap_or_else(|_| "{}".to_string());
-                                if tx.send(Ok(json)).await.is_err() {
-                                    break; // receiver dropped (JS stopped iterating)
+                    match stream_text(&*model, prompt, opts).await {
+                        Ok(stream_result) => {
+                            use futures::StreamExt;
+                            let mut stream = stream_result.stream;
+                            while let Some(item) = stream.next().await {
+                                match item {
+                                    Ok(part) => {
+                                        let json = serde_json::to_string(&part)
+                                            .unwrap_or_else(|_| "{}".to_string());
+                                        if tx.send(Ok(json)).await.is_err() {
+                                            break; // receiver dropped (JS stopped iterating)
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(Err(MappedError::from(&e))).await;
+                                        break;
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
-                                break;
-                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(MappedError::from(&e))).await;
                         }
                     }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
-                }
-            }
-        });
+                });
 
-        Ok(StreamTextGenerator {
-            rx: std::sync::Arc::new(tokio::sync::Mutex::new(Some(rx))),
+                Ok(StreamTextGenerator {
+                    rx: std::sync::Arc::new(tokio::sync::Mutex::new(Some(rx))),
+                })
+            }
+            .await;
+            __r
         })
     }
 
@@ -282,17 +316,24 @@ impl Model {
         prompt: String,
         options: Option<String>,
         bridge: Option<&AbortBridge>,
-    ) -> Result<String> {
-        let parsed_prompt = parse_prompt(&prompt)?;
-        let mut opts = parse_opts(options.as_deref())?;
-        opts.abort_signal = bridge.map(|b| b.core_signal());
+    ) -> AimuxResult<String> {
+        AimuxResult({
+            let __r: crate::error::MResult<String> = async {
+                let parsed_prompt = parse_prompt(&prompt)?;
+                let mut opts = parse_opts(options.as_deref())?;
+                opts.abort_signal = bridge.map(|b| b.core_signal());
 
-        let result = generate_text_as_openai(&*self.inner, parsed_prompt, opts)
-            .await
-            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
+                let result = generate_text_as_openai(&*self.inner, parsed_prompt, opts)
+                    .await
+                    .map_err(|e| MappedError::from(&e))?;
 
-        serde_json::to_string(&result)
-            .map_err(|e| Error::from_reason(format!("[Json] serialize result: {e}")))
+                serde_json::to_string(&result).map_err(|e| {
+                    MappedError::from(&AiMuxError::Json(format!("serialize result: {e}")))
+                })
+            }
+            .await;
+            __r
+        })
     }
 
     /// Stream text as OpenAI Chat Completion chunks.
@@ -305,80 +346,92 @@ impl Model {
         prompt: String,
         options: Option<String>,
         bridge: Option<&AbortBridge>,
-    ) -> Result<StreamTextGenerator> {
-        let model = self.inner.clone();
-        let abort_signal = bridge.map(|b| b.core_signal());
+    ) -> AimuxResult<StreamTextGenerator> {
+        AimuxResult({
+            let __r: crate::error::MResult<StreamTextGenerator> = async {
+                let model = self.inner.clone();
+                let abort_signal = bridge.map(|b| b.core_signal());
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<String, String>>(64);
+                let (tx, rx) =
+                    tokio::sync::mpsc::channel::<std::result::Result<String, MappedError>>(64);
 
-        napi::tokio::spawn(async move {
-            let prompt = match parse_prompt(&prompt) {
-                Ok(p) => p,
-                Err(e) => {
-                    let _ = tx
-                        .send(Err(format!("[InvalidPrompt] invalid prompt: {e}")))
-                        .await;
-                    return;
-                }
-            };
-            let mut opts = match parse_opts(options.as_deref()) {
-                Ok(o) => o,
-                Err(e) => {
-                    let _ = tx.send(Err(format!("invalid options: {e}"))).await;
-                    return;
-                }
-            };
+                napi::tokio::spawn(async move {
+                    let prompt = match parse_prompt(&prompt) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(MappedError::from(&AiMuxError::InvalidPrompt(format!(
+                                    "invalid prompt: {e}"
+                                )))))
+                                .await;
+                            return;
+                        }
+                    };
+                    let mut opts = match parse_opts(options.as_deref()) {
+                        Ok(o) => o,
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(MappedError::from(&AiMuxError::InvalidArgument(
+                                    format!("invalid options: {e}"),
+                                ))))
+                                .await;
+                            return;
+                        }
+                    };
 
-            // Extract OpenAI stream options from providerOptions.openai.stream_options.
-            let stream_options = opts
-                .provider_options
-                .as_ref()
-                .and_then(|po| po.get("openai"))
-                .and_then(|o| o.get("stream_options"))
-                .cloned()
-                .map(|v| OpenAiStreamOptions {
-                    include_usage: v
-                        .get("include_usage")
-                        .and_then(|b| b.as_bool())
-                        .unwrap_or(true),
-                    include_reasoning: v
-                        .get("include_reasoning")
-                        .and_then(|b| b.as_bool())
-                        .unwrap_or(true),
-                })
-                .unwrap_or_default();
+                    // Extract OpenAI stream options from providerOptions.openai.stream_options.
+                    let stream_options = opts
+                        .provider_options
+                        .as_ref()
+                        .and_then(|po| po.get("openai"))
+                        .and_then(|o| o.get("stream_options"))
+                        .cloned()
+                        .map(|v| OpenAiStreamOptions {
+                            include_usage: v
+                                .get("include_usage")
+                                .and_then(|b| b.as_bool())
+                                .unwrap_or(true),
+                            include_reasoning: v
+                                .get("include_reasoning")
+                                .and_then(|b| b.as_bool())
+                                .unwrap_or(true),
+                        })
+                        .unwrap_or_default();
 
-            opts.abort_signal = abort_signal;
+                    opts.abort_signal = abort_signal;
 
-            match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
-                Ok(stream_result) => {
-                    use futures::StreamExt;
-                    let mut stream = stream_result.stream;
-                    while let Some(item) = stream.next().await {
-                        match item {
-                            Ok(chunk) => {
-                                let json = serde_json::to_string(&chunk)
-                                    .unwrap_or_else(|_| "{}".to_string());
-                                if tx.send(Ok(json)).await.is_err() {
-                                    break;
+                    match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
+                        Ok(stream_result) => {
+                            use futures::StreamExt;
+                            let mut stream = stream_result.stream;
+                            while let Some(item) = stream.next().await {
+                                match item {
+                                    Ok(chunk) => {
+                                        let json = serde_json::to_string(&chunk)
+                                            .unwrap_or_else(|_| "{}".to_string());
+                                        if tx.send(Ok(json)).await.is_err() {
+                                            break;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let _ = tx.send(Err(MappedError::from(&e))).await;
+                                        break;
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                let _ =
-                                    tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
-                                break;
-                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Err(MappedError::from(&e))).await;
                         }
                     }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
-                }
-            }
-        });
+                });
 
-        Ok(StreamTextGenerator {
-            rx: std::sync::Arc::new(tokio::sync::Mutex::new(Some(rx))),
+                Ok(StreamTextGenerator {
+                    rx: std::sync::Arc::new(tokio::sync::Mutex::new(Some(rx))),
+                })
+            }
+            .await;
+            __r
         })
     }
 }
@@ -390,12 +443,16 @@ impl Model {
 /// receives from the channel.
 #[napi(async_iterator)]
 pub struct StreamTextGenerator {
-    rx: std::sync::Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::Receiver<std::result::Result<String, String>>>>>,
+    rx: std::sync::Arc<
+        tokio::sync::Mutex<
+            Option<tokio::sync::mpsc::Receiver<std::result::Result<String, MappedError>>>,
+        >,
+    >,
 }
 
 #[napi]
 impl AsyncGenerator for StreamTextGenerator {
-    type Yield = String;
+    type Yield = StreamItem;
     type Next = ();
     type Return = ();
 
@@ -410,8 +467,10 @@ impl AsyncGenerator for StreamTextGenerator {
             match guard.as_mut() {
                 Some(rx) => {
                     match rx.recv().await {
-                        Some(Ok(json)) => Ok(Some(json)),
-                        Some(Err(e)) => Err(Error::from_reason(e)),
+                        Some(Ok(json)) => Ok(Some(StreamItem::Json(json))),
+                        // Converting Failure to a napi value (JS thread, Env
+                        // present) rejects `next()` with a structured error.
+                        Some(Err(m)) => Ok(Some(StreamItem::Failure(m))),
                         None => Ok(None), // stream finished
                     }
                 }
@@ -489,7 +548,11 @@ fn apply_provider_config_openai(
 /// 日志输出到 stderr。
 #[napi]
 pub fn init_logging(level: String) {
-    let level = if level.trim().is_empty() { "warn".to_string() } else { level };
+    let level = if level.trim().is_empty() {
+        "warn".to_string()
+    } else {
+        level
+    };
     aimux_providers::init_logging(&level);
 }
 
@@ -551,47 +614,61 @@ pub fn recording_flush() {
 /// 从录制 JSONL 创建 mock 回放模型(RFC-0023 P3):按输入匹配录制响应,
 /// **不发真实 API**。返回的 `Model` 可用于 `generateText` / `streamText`。
 #[napi]
-pub fn mock_replay(recordings_jsonl: String) -> Result<Model> {
-    let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
-    for (idx, line) in recordings_jsonl.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+pub fn mock_replay(recordings_jsonl: String) -> AimuxResult<Model> {
+    AimuxResult((|| -> crate::error::MResult<Model> {
+        let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
+        for (idx, line) in recordings_jsonl.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let rec = serde_json::from_str(line).map_err(|e| {
+                MappedError::from(&AiMuxError::InvalidArgument(format!(
+                    "recordings line {}: {e}",
+                    idx + 1
+                )))
+            })?;
+            recordings.push(rec);
         }
-        let rec = serde_json::from_str(line)
-            .map_err(|e| Error::from_reason(format!("[Recording] line {}: {e}", idx + 1)))?;
-        recordings.push(rec);
-    }
-    if recordings.is_empty() {
-        return Err(Error::from_reason("[Recording] no recordings"));
-    }
-    let model = aimux_core::replay::MockReplayModel::new(
-        recordings[0].provider.provider.clone(),
-        recordings[0].provider.model_id.clone(),
-        recordings,
-    );
-    Ok(Model {
-        inner: std::sync::Arc::new(model),
-        trace_store: None,
-    })
+        if recordings.is_empty() {
+            return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                "no recordings".into(),
+            )));
+        }
+        let model = aimux_core::replay::MockReplayModel::new(
+            recordings[0].provider.provider.clone(),
+            recordings[0].provider.model_id.clone(),
+            recordings,
+        );
+        Ok(Model {
+            inner: std::sync::Arc::new(model),
+            trace_store: None,
+        })
+    })())
 }
 
 /// Query: all calls of a session (RFC-0024), as a JSON-serialized
 /// `SessionCall[]` (ordered by step). Empty array if the session is unknown
 /// or no store is registered.
 #[napi]
-pub fn session_calls(session_id: String) -> Result<String> {
-    let calls = aimux_core::session::session_calls(&session_id);
-    serde_json::to_string(&calls)
-        .map_err(|e| Error::from_reason(format!("[Json] serialize sessionCalls: {e}")))
+pub fn session_calls(session_id: String) -> AimuxResult<String> {
+    AimuxResult((|| -> crate::error::MResult<String> {
+        let calls = aimux_core::session::session_calls(&session_id);
+        serde_json::to_string(&calls).map_err(|e| {
+            MappedError::from(&AiMuxError::Json(format!("serialize sessionCalls: {e}")))
+        })
+    })())
 }
 
 /// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
 #[napi]
-pub fn list_sessions() -> Result<String> {
-    let views = aimux_core::session::list_sessions();
-    serde_json::to_string(&views)
-        .map_err(|e| Error::from_reason(format!("[Json] serialize listSessions: {e}")))
+pub fn list_sessions() -> AimuxResult<String> {
+    AimuxResult((|| -> crate::error::MResult<String> {
+        let views = aimux_core::session::list_sessions();
+        serde_json::to_string(&views).map_err(|e| {
+            MappedError::from(&AiMuxError::Json(format!("serialize listSessions: {e}")))
+        })
+    })())
 }
 
 /// Create an OpenAI model instance.
@@ -600,27 +677,33 @@ pub async fn openai(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
 
-    let mut cfg = OpenAIConfig::new(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
+            let mut cfg = OpenAIConfig::new(api_key);
+            match config {
+                Some(Either::A(url)) => {
+                    cfg = cfg.with_base_url(url);
+                }
+                Some(Either::B(opts)) => {
+                    cfg = apply_provider_config_openai(cfg, &opts);
+                }
+                None => {}
+            }
+            let provider = OpenAIProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-        Some(Either::B(opts)) => {
-            cfg = apply_provider_config_openai(cfg, &opts);
-        }
-        None => {}
-    }
-    let provider = OpenAIProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -630,45 +713,54 @@ pub async fn anthropic(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
 
-    let mut cfg = AnthropicConfig::new(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
-        }
-        Some(Either::B(opts)) => {
-            if let Some(url) = &opts.base_url {
-                cfg = cfg.with_base_url(url);
-            }
-            if let Some(ref json_str) = opts.headers {
-                if let Ok(h) = serde_json::from_str::<std::collections::HashMap<String, String>>(json_str) {
-                    cfg = cfg.with_headers(h);
+            let mut cfg = AnthropicConfig::new(api_key);
+            match config {
+                Some(Either::A(url)) => {
+                    cfg = cfg.with_base_url(url);
                 }
-            }
-            if let Some(max) = opts.max_retries {
-                cfg = cfg.with_retry_config(aimux_provider_utils::RetryConfig {
-                    max_retries: max,
-                    ..aimux_provider_utils::RetryConfig::default()
-                });
-            }
-            if let Some(ref json_str) = opts.body_overrides {
-                if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    cfg = cfg.with_body_overrides(overrides);
+                Some(Either::B(opts)) => {
+                    if let Some(url) = &opts.base_url {
+                        cfg = cfg.with_base_url(url);
+                    }
+                    if let Some(ref json_str) = opts.headers {
+                        if let Ok(h) = serde_json::from_str::<
+                            std::collections::HashMap<String, String>,
+                        >(json_str)
+                        {
+                            cfg = cfg.with_headers(h);
+                        }
+                    }
+                    if let Some(max) = opts.max_retries {
+                        cfg = cfg.with_retry_config(aimux_provider_utils::RetryConfig {
+                            max_retries: max,
+                            ..aimux_provider_utils::RetryConfig::default()
+                        });
+                    }
+                    if let Some(ref json_str) = opts.body_overrides {
+                        if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            cfg = cfg.with_body_overrides(overrides);
+                        }
+                    }
                 }
+                None => {}
             }
+            let provider = AnthropicProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-        None => {}
-    }
-    let provider = AnthropicProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -678,13 +770,19 @@ pub async fn deepseek(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    let options = provider_options_from_config(config)?;
-    let model = aimux_providers::provider("deepseek", Some(api_key), &model_id, options)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            let options = provider_options_from_config(config)?;
+            let model = aimux_providers::provider("deepseek", Some(api_key), &model_id, options)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
+        }
+        .await;
+        __r
     })
 }
 
@@ -698,29 +796,35 @@ pub async fn google(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::google::{GoogleConfig, GoogleProvider};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::google::{GoogleConfig, GoogleProvider};
 
-    let mut cfg = GoogleConfig::new(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
-        }
-        Some(Either::B(opts)) => {
-            if let Some(url) = &opts.base_url {
-                cfg = cfg.with_base_url(url);
+            let mut cfg = GoogleConfig::new(api_key);
+            match config {
+                Some(Either::A(url)) => {
+                    cfg = cfg.with_base_url(url);
+                }
+                Some(Either::B(opts)) => {
+                    if let Some(url) = &opts.base_url {
+                        cfg = cfg.with_base_url(url);
+                    }
+                }
+                None => {}
             }
+            let provider = GoogleProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-        None => {}
-    }
-    let provider = GoogleProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -730,29 +834,35 @@ pub async fn cohere(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::cohere::{CohereConfig, CohereProvider};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::cohere::{CohereConfig, CohereProvider};
 
-    let mut cfg = CohereConfig::new(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
-        }
-        Some(Either::B(opts)) => {
-            if let Some(url) = &opts.base_url {
-                cfg = cfg.with_base_url(url);
+            let mut cfg = CohereConfig::new(api_key);
+            match config {
+                Some(Either::A(url)) => {
+                    cfg = cfg.with_base_url(url);
+                }
+                Some(Either::B(opts)) => {
+                    if let Some(url) = &opts.base_url {
+                        cfg = cfg.with_base_url(url);
+                    }
+                }
+                None => {}
             }
+            let provider = CohereProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-        None => {}
-    }
-    let provider = CohereProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -762,29 +872,35 @@ pub async fn mistral(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::mistral::{MistralConfig, MistralProvider};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::mistral::{MistralConfig, MistralProvider};
 
-    let mut cfg = MistralConfig::new(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
-        }
-        Some(Either::B(opts)) => {
-            if let Some(url) = &opts.base_url {
-                cfg = cfg.with_base_url(url);
+            let mut cfg = MistralConfig::new(api_key);
+            match config {
+                Some(Either::A(url)) => {
+                    cfg = cfg.with_base_url(url);
+                }
+                Some(Either::B(opts)) => {
+                    if let Some(url) = &opts.base_url {
+                        cfg = cfg.with_base_url(url);
+                    }
+                }
+                None => {}
             }
+            let provider = MistralProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-        None => {}
-    }
-    let provider = MistralProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -794,29 +910,35 @@ pub async fn xai(
     api_key: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::xai::{XAIConfig, XAIProvider};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::xai::{XAIConfig, XAIProvider};
 
-    let mut cfg = XAIConfig::new(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
-        }
-        Some(Either::B(opts)) => {
-            if let Some(url) = &opts.base_url {
-                cfg = cfg.with_base_url(url);
+            let mut cfg = XAIConfig::new(api_key);
+            match config {
+                Some(Either::A(url)) => {
+                    cfg = cfg.with_base_url(url);
+                }
+                Some(Either::B(opts)) => {
+                    if let Some(url) = &opts.base_url {
+                        cfg = cfg.with_base_url(url);
+                    }
+                }
+                None => {}
             }
+            let provider = XAIProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-        None => {}
-    }
-    let provider = XAIProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -828,30 +950,36 @@ pub async fn bedrock(
     region: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::bedrock::{BedrockProvider, BedrockProviderConfig};
 
-    let mut cfg = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
-    if let Some(cfg_config) = config {
-        match cfg_config {
-            Either::A(url) => {
-                cfg = cfg.with_base_url(url);
-            }
-            Either::B(opts) => {
-                if let Some(url) = &opts.base_url {
-                    cfg = cfg.with_base_url(url);
+            let mut cfg = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
+            if let Some(cfg_config) = config {
+                match cfg_config {
+                    Either::A(url) => {
+                        cfg = cfg.with_base_url(url);
+                    }
+                    Either::B(opts) => {
+                        if let Some(url) = &opts.base_url {
+                            cfg = cfg.with_base_url(url);
+                        }
+                    }
                 }
             }
+            let provider = BedrockProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-    }
-    let provider = BedrockProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -863,30 +991,36 @@ pub async fn vertex(
     location: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::vertex::{VertexProvider, VertexProviderConfig};
 
-    let mut cfg = VertexProviderConfig::new(access_token, project, location);
-    if let Some(cfg_config) = config {
-        match cfg_config {
-            Either::A(url) => {
-                cfg = cfg.with_base_url(url);
-            }
-            Either::B(opts) => {
-                if let Some(url) = &opts.base_url {
-                    cfg = cfg.with_base_url(url);
+            let mut cfg = VertexProviderConfig::new(access_token, project, location);
+            if let Some(cfg_config) = config {
+                match cfg_config {
+                    Either::A(url) => {
+                        cfg = cfg.with_base_url(url);
+                    }
+                    Either::B(opts) => {
+                        if let Some(url) = &opts.base_url {
+                            cfg = cfg.with_base_url(url);
+                        }
+                    }
                 }
             }
+            let provider = VertexProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-    }
-    let provider = VertexProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -897,30 +1031,38 @@ pub async fn anthropic_aws(
     region: String,
     model_id: String,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::anthropic_aws::{AnthropicAwsProvider, AnthropicAwsProviderConfig};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::anthropic_aws::{
+                AnthropicAwsProvider, AnthropicAwsProviderConfig,
+            };
 
-    let mut cfg = AnthropicAwsProviderConfig::with_api_key(api_key, region);
-    if let Some(cfg_config) = config {
-        match cfg_config {
-            Either::A(url) => {
-                cfg = cfg.with_base_url(url);
-            }
-            Either::B(opts) => {
-                if let Some(url) = &opts.base_url {
-                    cfg = cfg.with_base_url(url);
+            let mut cfg = AnthropicAwsProviderConfig::with_api_key(api_key, region);
+            if let Some(cfg_config) = config {
+                match cfg_config {
+                    Either::A(url) => {
+                        cfg = cfg.with_base_url(url);
+                    }
+                    Either::B(opts) => {
+                        if let Some(url) = &opts.base_url {
+                            cfg = cfg.with_base_url(url);
+                        }
+                    }
                 }
             }
+            let provider = AnthropicAwsProvider::new(cfg);
+            let model = provider
+                .language_model(&model_id)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-    }
-    let provider = AnthropicAwsProvider::new(cfg);
-    let model = provider
-        .language_model(&model_id)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -934,38 +1076,43 @@ pub async fn azure(
     deployment: String,
     api_version: Option<String>,
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Model> {
-    use aimux_core::provider::Provider;
-    use aimux_providers::azure::{AzureConfig, AzureProvider};
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            use aimux_core::provider::Provider;
+            use aimux_providers::azure::{AzureConfig, AzureProvider};
 
-    let mut cfg = AzureConfig::new().with_api_key(api_key);
-    match config {
-        Some(Either::A(url)) => {
-            cfg = cfg.with_base_url(url);
-        }
-        Some(Either::B(opts)) => {
-            if let Some(url) = &opts.base_url {
-                cfg = cfg.with_base_url(url);
+            let mut cfg = AzureConfig::new().with_api_key(api_key);
+            match config {
+                Some(Either::A(url)) => {
+                    cfg = cfg.with_base_url(url);
+                }
+                Some(Either::B(opts)) => {
+                    if let Some(url) = &opts.base_url {
+                        cfg = cfg.with_base_url(url);
+                    }
+                }
+                None => {}
             }
+            if let Some(version) = api_version {
+                if !version.is_empty() {
+                    cfg = cfg.with_api_version(version);
+                }
+            }
+            if !resource_name.is_empty() {
+                cfg = cfg.with_resource_name(resource_name);
+            }
+            let provider = AzureProvider::new(cfg).map_err(|e| MappedError::from(&e))?;
+            let model = provider
+                .language_model(&deployment)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
         }
-        None => {}
-    }
-    if let Some(version) = api_version {
-        if !version.is_empty() {
-            cfg = cfg.with_api_version(version);
-        }
-    }
-    if !resource_name.is_empty() {
-        cfg = cfg.with_resource_name(resource_name);
-    }
-    let provider = AzureProvider::new(cfg)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    let model = provider
-        .language_model(&deployment)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+        .await;
+        __r
     })
 }
 
@@ -978,16 +1125,22 @@ pub async fn provider(
     api_key: Option<String>,
     model_id: String,
     config: Option<ProviderConfig>,
-) -> Result<Model> {
-    let options = match config {
-        Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
-        None => None,
-    };
-    let model = aimux_providers::provider(&name, api_key, &model_id, options)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(Model {
-        inner: Arc::from(model),
-        trace_store: None,
+) -> AimuxResult<Model> {
+    AimuxResult({
+        let __r: crate::error::MResult<Model> = async {
+            let options = match config {
+                Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
+                None => None,
+            };
+            let model = aimux_providers::provider(&name, api_key, &model_id, options)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(Model {
+                inner: Arc::from(model),
+                trace_store: None,
+            })
+        }
+        .await;
+        __r
     })
 }
 
@@ -1017,29 +1170,42 @@ impl ProviderHandle {
     /// To supplement with model specs (context length, capabilities, reasoning),
     /// call `getModelSpecs` separately and merge in the host (RFC-0027).
     #[napi]
-    pub async fn list_models(&self) -> Result<String> {
-        let models = self
-            .inner
-            .list_models()
-            .await
-            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-        serde_json::to_string(&models)
-            .map_err(|e| Error::from_reason(format!("serialize list_models: {e}")))
+    pub async fn list_models(&self) -> AimuxResult<String> {
+        AimuxResult({
+            let __r: crate::error::MResult<String> = async {
+                let models = self
+                    .inner
+                    .list_models()
+                    .await
+                    .map_err(|e| MappedError::from(&e))?;
+                serde_json::to_string(&models).map_err(|e| {
+                    MappedError::from(&AiMuxError::Json(format!("serialize list_models: {e}")))
+                })
+            }
+            .await;
+            __r
+        })
     }
 
     /// Build a language model from a discovered model id. Returns a `Model`
     /// usable with `generateText` / `streamText`.
     #[napi]
-    pub async fn model(&self, model_id: String) -> Result<Model> {
-        let m = self
-            .inner
-            .language_model(&model_id)
-            .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-        Ok(Model {
-            inner: Arc::from(m),
-            // A model built from a provider handle starts untraced; enable
-            // probing via `Model::trace()` (same as Python binding).
-            trace_store: None,
+    pub async fn model(&self, model_id: String) -> AimuxResult<Model> {
+        AimuxResult({
+            let __r: crate::error::MResult<Model> = async {
+                let m = self
+                    .inner
+                    .language_model(&model_id)
+                    .map_err(|e| MappedError::from(&e))?;
+                Ok(Model {
+                    inner: Arc::from(m),
+                    // A model built from a provider handle starts untraced; enable
+                    // probing via `Model::trace()` (same as Python binding).
+                    trace_store: None,
+                })
+            }
+            .await;
+            __r
         })
     }
 }
@@ -1056,15 +1222,21 @@ pub async fn create_provider(
     name: String,
     api_key: Option<String>,
     config: Option<ProviderConfig>,
-) -> Result<ProviderHandle> {
-    let options = match config {
-        Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
-        None => None,
-    };
-    let p = aimux_providers::provider_handle(&name, api_key, options)
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    Ok(ProviderHandle {
-        inner: Arc::from(p),
+) -> AimuxResult<ProviderHandle> {
+    AimuxResult({
+        let __r: crate::error::MResult<ProviderHandle> = async {
+            let options = match config {
+                Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
+                None => None,
+            };
+            let p = aimux_providers::provider_handle(&name, api_key, options)
+                .map_err(|e| MappedError::from(&e))?;
+            Ok(ProviderHandle {
+                inner: Arc::from(p),
+            })
+        }
+        .await;
+        __r
     })
 }
 
@@ -1072,18 +1244,25 @@ pub async fn create_provider(
 /// `Catalogue` (provider → model_id → ModelSpec). Thin fetch — no caching.
 /// `source_url` may be null for the default endpoint.
 #[napi]
-pub async fn get_model_specs(source_url: Option<String>) -> Result<String> {
-    let cat = aimux_providers::get_model_specs(source_url.as_deref())
-        .await
-        .map_err(|e| Error::from_reason(format!("[{}] {e}", e.error_type())))?;
-    serde_json::to_string(&cat)
-        .map_err(|e| Error::from_reason(format!("serialize catalogue: {e}")))
+pub async fn get_model_specs(source_url: Option<String>) -> AimuxResult<String> {
+    AimuxResult({
+        let __r: crate::error::MResult<String> = async {
+            let cat = aimux_providers::get_model_specs(source_url.as_deref())
+                .await
+                .map_err(|e| MappedError::from(&e))?;
+            serde_json::to_string(&cat).map_err(|e| {
+                MappedError::from(&AiMuxError::Json(format!("serialize catalogue: {e}")))
+            })
+        }
+        .await;
+        __r
+    })
 }
 
 /// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
 fn provider_options_from_config(
     config: Option<Either<String, ProviderConfig>>,
-) -> Result<Option<aimux_providers::ProviderOptions>> {
+) -> MResult<Option<aimux_providers::ProviderOptions>> {
     let opts = match config {
         None => None,
         Some(Either::A(url)) => Some(aimux_providers::ProviderOptions {
@@ -1126,9 +1305,9 @@ fn provider_options_from_config(
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn parse_prompt(json: &str) -> Result<ModelPrompt> {
+fn parse_prompt(json: &str) -> MResult<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| Error::from_reason(format!("[Json] invalid prompt JSON: {e}")))?;
+        .map_err(|e| MappedError::from(&AiMuxError::Json(format!("invalid prompt JSON: {e}"))))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -1136,10 +1315,10 @@ fn parse_prompt(json: &str) -> Result<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| Error::from_reason(format!("[Json] invalid prompt: {e}")))
+        .map_err(|e| MappedError::from(&AiMuxError::Json(format!("invalid prompt: {e}"))))
 }
 
-fn parse_opts(json: Option<&str>) -> Result<GenerateTextOptions> {
+fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
     match json {
         None => Ok(GenerateTextOptions::default()),
         Some(s) => {
@@ -1147,8 +1326,9 @@ fn parse_opts(json: Option<&str>) -> Result<GenerateTextOptions> {
             if trimmed.is_empty() || trimmed == "null" {
                 return Ok(GenerateTextOptions::default());
             }
-            serde_json::from_str(s)
-                .map_err(|e| Error::from_reason(format!("[Json] invalid options JSON: {e}")))
+            serde_json::from_str(s).map_err(|e| {
+                MappedError::from(&AiMuxError::Json(format!("invalid options JSON: {e}")))
+            })
         }
     }
 }

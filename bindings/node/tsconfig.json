@@ -13,5 +13,5 @@
     "esModuleInterop": true,
     "types": []
   },
-  "include": ["src/index.ts", "src/types.ts"]
+  "include": ["src/index.ts", "src/types.ts", "src/error.ts"]
 }
