@@ -47,12 +47,13 @@ public final class Files implements Closeable {
      * Create an OpenAI files manager.
      *
      * @param apiKey OpenAI API key.
-     * @return a new Files; throws {@link IllegalArgumentException} on failure.
+     * @return a new Files.
+     * @throws AimuxException on failure.
      */
     public static Files openai(String apiKey) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_files_new(apiKey), "Failed to create OpenAI files manager");
-        return new Files(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_files_new(apiKey, err);
+        return new Files(AimuxResult.extractHandle(h, err, "Failed to create OpenAI files manager"));
     }
 
     /**
@@ -60,13 +61,13 @@ public final class Files implements Closeable {
      *
      * @param apiKey  OpenAI API key.
      * @param baseUrl Custom base URL.
-     * @return a new Files; throws {@link IllegalArgumentException} on failure.
+     * @return a new Files.
+     * @throws AimuxException on failure.
      */
     public static Files openaiWithBase(String apiKey, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_files_new_with_base(apiKey, baseUrl),
-            "Failed to create OpenAI files manager");
-        return new Files(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_files_new_with_base(apiKey, baseUrl, err);
+        return new Files(AimuxResult.extractHandle(h, err, "Failed to create OpenAI files manager"));
     }
 
     /**
@@ -74,8 +75,8 @@ public final class Files implements Closeable {
      *
      * @param dataBase64 Base64-encoded file bytes.
      * @param mediaType  Media type of the file (e.g. {@code application/pdf}).
-     * @return JSON-serialized {@code UploadFileResult}. If the engine returns
-     *         an {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code UploadFileResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String uploadFile(String dataBase64, String mediaType) {
         return uploadFile(dataBase64, mediaType, null);
@@ -88,13 +89,15 @@ public final class Files implements Closeable {
      * @param mediaType  Media type of the file (e.g. {@code application/pdf}).
      * @param optsJson   Optional JSON-serialized {@code UploadFileCallOptions},
      *                   or {@code null} for defaults.
-     * @return JSON-serialized {@code UploadFileResult}. If the engine returns
-     *         an {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code UploadFileResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String uploadFile(String dataBase64, String mediaType, String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
             AimuxFFI.INSTANCE.aimux_file_upload(
-                requireHandle(), dataBase64, mediaType, optsJson),
+                requireHandle(), dataBase64, mediaType, optsJson, err),
+            err,
             "file_upload");
     }
 }

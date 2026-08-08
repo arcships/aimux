@@ -17,23 +17,11 @@ package aimux
 #include <stdint.h>
 #include <stdlib.h>
 #include "aimux-ffi.h"
-
-// Functions exported by libaimux_ffi.a but not yet declared in aimux-ffi.h.
-char *aimux_cohere_reranking_new(const char *api_key, const char *model_id);
-char *aimux_cohere_reranking_new_with_base(const char *api_key, const char *model_id, const char *base_url);
-char *aimux_rerank(uint64_t handle, const char *opts_json);
-char *aimux_google_video_new(const char *api_key, const char *model_id);
-char *aimux_google_video_new_with_base(const char *api_key, const char *model_id, const char *base_url);
-char *aimux_video_generate(uint64_t handle, const char *opts_json);
-char *aimux_tavily_search_new(const char *api_key, const char *model_id);
-char *aimux_tavily_search_new_with_base(const char *api_key, const char *model_id, const char *base_url);
-char *aimux_search(uint64_t handle, const char *opts_json);
 */
 import "C"
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -55,7 +43,7 @@ func (h *multimodalHandle) acquire() (uint64, func(), error) {
 	h.mu.RLock()
 	if h.closed {
 		h.mu.RUnlock()
-		return 0, nil, errors.New("aimux: model already closed")
+		return 0, nil, newError(CodeInvalidArgument, "aimux: model already closed")
 	}
 	return h.handle, h.mu.RUnlock, nil
 }
@@ -74,36 +62,25 @@ func (h *multimodalHandle) close() {
 }
 
 // callFFIString is a helper for the common pattern: acquire handle, call a
-// C function that returns char*, copy the result, free the C string, check
-// for error envelope.
-func callFFIString(h *multimodalHandle, fn func(handle C.uint64_t) *C.char) (string, error) {
+// C function that returns char* and fills AimuxError on failure.
+func callFFIString(h *multimodalHandle, fn func(handle C.uint64_t, err *C.AimuxError) *C.char) (string, error) {
 	handle, release, err := h.acquire()
 	if err != nil {
 		return "", err
 	}
 	defer release()
 
-	ptr := fn(C.uint64_t(handle))
-	if ptr == nil {
-		return "", errors.New("aimux: FFI call returned null")
-	}
-	defer C.aimux_free_string(ptr)
-
-	result := C.GoString(ptr)
-	if msg := extractError(result); msg != "" {
-		return "", fmt.Errorf("aimux: %s", msg)
-	}
-	return result, nil
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return fn(C.uint64_t(handle), cerr)
+	})
 }
 
-// newMultimodalHandle calls a C constructor and parses its JSON result
-// (`{"handle":<u64>}` on success, `{"error":...}` on failure).
-func newMultimodalHandle(fn func() *C.char) (*multimodalHandle, error) {
-	h, err := parseHandleJSON(fn())
-	if err != nil {
-		return nil, err
+// newMultimodalHandleU64 wraps a constructor handle + AimuxError.
+func newMultimodalHandleU64(h C.uint64_t, cerr *C.AimuxError) (*multimodalHandle, error) {
+	if h == 0 {
+		return nil, errorFromC(cerr)
 	}
-	return &multimodalHandle{handle: h}, nil
+	return &multimodalHandle{handle: uint64(h)}, nil
 }
 
 // cstringPair creates two C strings and returns them with a cleanup func.
@@ -133,34 +110,38 @@ func cstringTriple(a, b, c string) (*C.char, *C.char, *C.char, func()) {
 // empty, the no-base C constructor is used; otherwise the _with_base variant.
 func newMultimodalModelWithBase(
 	apiKey, modelID, baseURL string,
-	plain func(ca, cb *C.char) *C.char,
-	withBase func(ca, cb, cbase *C.char) *C.char,
+	plain func(ca, cb *C.char, err *C.AimuxError) C.uint64_t,
+	withBase func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t,
 ) (*multimodalHandle, error) {
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
 	if baseURL == "" {
 		ca, cb, cleanup := cstringPair(apiKey, modelID)
 		defer cleanup()
-		return newMultimodalHandle(func() *C.char { return plain(ca, cb) })
+		return newMultimodalHandleU64(plain(ca, cb, &cerr), &cerr)
 	}
 	ca, cb, cbase, cleanup := cstringTriple(apiKey, modelID, baseURL)
 	defer cleanup()
-	return newMultimodalHandle(func() *C.char { return withBase(ca, cb, cbase) })
+	return newMultimodalHandleU64(withBase(ca, cb, cbase, &cerr), &cerr)
 }
 
 // newMultimodalModelFiles is the constructor for the Files manager, which
 // takes only an api_key (no model_id) and optionally a base_url.
 func newMultimodalModelFiles(
 	apiKey, baseURL string,
-	plain func(ca *C.char) *C.char,
-	withBase func(ca, cbase *C.char) *C.char,
+	plain func(ca *C.char, err *C.AimuxError) C.uint64_t,
+	withBase func(ca, cbase *C.char, err *C.AimuxError) C.uint64_t,
 ) (*multimodalHandle, error) {
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
 	ca := C.CString(apiKey)
 	defer C.free(unsafe.Pointer(ca))
 	if baseURL == "" {
-		return newMultimodalHandle(func() *C.char { return plain(ca) })
+		return newMultimodalHandleU64(plain(ca, &cerr), &cerr)
 	}
 	cbase := C.CString(baseURL)
 	defer C.free(unsafe.Pointer(cbase))
-	return newMultimodalHandle(func() *C.char { return withBase(ca, cbase) })
+	return newMultimodalHandleU64(withBase(ca, cbase, &cerr), &cerr)
 }
 
 // ── EmbeddingModel ──────────────────────────────────────────────────────────
@@ -206,17 +187,9 @@ func (m *EmbeddingModel) Embed(values []string, opts *EmbeddingCallOptions) (str
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	ptr := C.aimux_embed(C.uint64_t(handle), cVals, cOpts)
-	if ptr == nil {
-		return "", errors.New("aimux: embed returned null")
-	}
-	defer C.aimux_free_string(ptr)
-
-	result := C.GoString(ptr)
-	if msg := extractError(result); msg != "" {
-		return "", fmt.Errorf("aimux: %s", msg)
-	}
-	return result, nil
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return C.aimux_embed(C.uint64_t(handle), cVals, cOpts, cerr)
+	})
 }
 
 // ParseEmbeddingResult parses the JSON string returned by Embed.
@@ -238,8 +211,10 @@ func NewOpenAIEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
 // NewOpenAIEmbeddingWithBase creates an OpenAI embedding model with a custom base URL.
 func NewOpenAIEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_openai_embedding_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_openai_embedding_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_embedding_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_openai_embedding_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -257,8 +232,10 @@ func NewCohereEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
 // NewCohereEmbeddingWithBase creates a Cohere embedding model with a custom base URL.
 func NewCohereEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_cohere_embedding_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_cohere_embedding_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_cohere_embedding_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_cohere_embedding_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -276,8 +253,10 @@ func NewGoogleEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
 // NewGoogleEmbeddingWithBase creates a Google embedding model with a custom base URL.
 func NewGoogleEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_google_embedding_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_google_embedding_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_google_embedding_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_google_embedding_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -306,10 +285,10 @@ func (m *SpeechModel) Generate(opts *SpeechCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t) *C.char {
+	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_speech_generate(handle, cOpts)
+		return C.aimux_speech_generate(handle, cOpts, err)
 	})
 }
 
@@ -329,8 +308,10 @@ func NewOpenAISpeech(apiKey, modelID string) (*SpeechModel, error) {
 // NewOpenAISpeechWithBase creates an OpenAI speech model with a custom base URL.
 func NewOpenAISpeechWithBase(apiKey, modelID, baseURL string) (*SpeechModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_openai_speech_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_openai_speech_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_speech_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_openai_speech_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -358,10 +339,10 @@ func (m *ImageModel) Generate(opts *ImageCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t) *C.char {
+	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_image_generate(handle, cOpts)
+		return C.aimux_image_generate(handle, cOpts, err)
 	})
 }
 
@@ -381,8 +362,10 @@ func NewOpenAIImage(apiKey, modelID string) (*ImageModel, error) {
 // NewOpenAIImageWithBase creates an OpenAI image model with a custom base URL.
 func NewOpenAIImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_openai_image_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_openai_image_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_image_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_openai_image_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -400,8 +383,10 @@ func NewGoogleImage(apiKey, modelID string) (*ImageModel, error) {
 // NewGoogleImageWithBase creates a Google image model with a custom base URL.
 func NewGoogleImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_google_image_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_google_image_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_google_image_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_google_image_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -444,17 +429,9 @@ func (m *TranscriptionModel) Generate(audioBase64, mediaType string, opts *Trans
 		cOpts = cc
 	}
 
-	ptr := C.aimux_transcription_generate(C.uint64_t(handle), ca, cb, cOpts)
-	if ptr == nil {
-		return "", errors.New("aimux: transcription_generate returned null")
-	}
-	defer C.aimux_free_string(ptr)
-
-	result := C.GoString(ptr)
-	if msg := extractError(result); msg != "" {
-		return "", fmt.Errorf("aimux: %s", msg)
-	}
-	return result, nil
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return C.aimux_transcription_generate(C.uint64_t(handle), ca, cb, cOpts, cerr)
+	})
 }
 
 func ParseTranscriptionResult(jsonStr string) (*TranscriptionResult, error) {
@@ -473,8 +450,12 @@ func NewOpenAITranscription(apiKey, modelID string) (*TranscriptionModel, error)
 // NewOpenAITranscriptionWithBase creates an OpenAI transcription model with a custom base URL.
 func NewOpenAITranscriptionWithBase(apiKey, modelID, baseURL string) (*TranscriptionModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_openai_transcription_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_openai_transcription_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_openai_transcription_new(ca, cb, err)
+		},
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_openai_transcription_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -517,17 +498,9 @@ func (f *Files) Upload(dataBase64, mediaType string, opts *UploadFileCallOptions
 		cOpts = cc
 	}
 
-	ptr := C.aimux_file_upload(C.uint64_t(handle), ca, cb, cOpts)
-	if ptr == nil {
-		return "", errors.New("aimux: file_upload returned null")
-	}
-	defer C.aimux_free_string(ptr)
-
-	result := C.GoString(ptr)
-	if msg := extractError(result); msg != "" {
-		return "", fmt.Errorf("aimux: %s", msg)
-	}
-	return result, nil
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return C.aimux_file_upload(C.uint64_t(handle), ca, cb, cOpts, cerr)
+	})
 }
 
 func ParseUploadFileResult(jsonStr string) (*UploadFileResult, error) {
@@ -546,8 +519,10 @@ func NewOpenAIFiles(apiKey string) (*Files, error) {
 // NewOpenAIFilesWithBase creates an OpenAI files manager with a custom base URL.
 func NewOpenAIFilesWithBase(apiKey, baseURL string) (*Files, error) {
 	mh, err := newMultimodalModelFiles(apiKey, baseURL,
-		func(ca *C.char) *C.char { return C.aimux_openai_files_new(ca) },
-		func(ca, cbase *C.char) *C.char { return C.aimux_openai_files_new_with_base(ca, cbase) },
+		func(ca *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_files_new(ca, err) },
+		func(ca, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_openai_files_new_with_base(ca, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -576,10 +551,10 @@ func (m *RerankingModel) Rerank(opts *RerankingCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t) *C.char {
+	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_rerank(handle, cOpts)
+		return C.aimux_rerank(handle, cOpts, err)
 	})
 }
 
@@ -599,8 +574,10 @@ func NewCohereReranking(apiKey, modelID string) (*RerankingModel, error) {
 // NewCohereRerankingWithBase creates a Cohere reranking model with a custom base URL.
 func NewCohereRerankingWithBase(apiKey, modelID, baseURL string) (*RerankingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_cohere_reranking_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_cohere_reranking_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_cohere_reranking_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_cohere_reranking_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -628,10 +605,10 @@ func (m *VideoModel) Generate(opts *VideoCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t) *C.char {
+	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_video_generate(handle, cOpts)
+		return C.aimux_video_generate(handle, cOpts, err)
 	})
 }
 
@@ -651,8 +628,10 @@ func NewGoogleVideo(apiKey, modelID string) (*VideoModel, error) {
 // NewGoogleVideoWithBase creates a Google video model with a custom base URL.
 func NewGoogleVideoWithBase(apiKey, modelID, baseURL string) (*VideoModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char) *C.char { return C.aimux_google_video_new(ca, cb) },
-		func(ca, cb, cbase *C.char) *C.char { return C.aimux_google_video_new_with_base(ca, cb, cbase) },
+		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_google_video_new(ca, cb, err) },
+		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
+			return C.aimux_google_video_new_with_base(ca, cb, cbase, err)
+		},
 	)
 	if err != nil {
 		return nil, err
@@ -680,10 +659,10 @@ func (m *SearchModel) Search(opts *SearchCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t) *C.char {
+	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_search(handle, cOpts)
+		return C.aimux_search(handle, cOpts, err)
 	})
 }
 
@@ -706,22 +685,17 @@ func NewTavilySearch(apiKey string) (*SearchModel, error) {
 func NewTavilySearchWithBase(apiKey, baseURL string) (*SearchModel, error) {
 	ca := C.CString(apiKey)
 	defer C.free(unsafe.Pointer(ca))
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
+	var h C.uint64_t
 	if baseURL == "" {
-		mh, err := newMultimodalHandle(func() *C.char {
-			return C.aimux_tavily_search_new(ca, nil)
-		})
-		if err != nil {
-			return nil, err
-		}
-		m := &SearchModel{h: mh}
-		runtime.SetFinalizer(m, func(m *SearchModel) { m.Close() })
-		return m, nil
+		h = C.aimux_tavily_search_new(ca, nil, &cerr)
+	} else {
+		cbase := C.CString(baseURL)
+		defer C.free(unsafe.Pointer(cbase))
+		h = C.aimux_tavily_search_new_with_base(ca, nil, cbase, &cerr)
 	}
-	cbase := C.CString(baseURL)
-	defer C.free(unsafe.Pointer(cbase))
-	mh, err := newMultimodalHandle(func() *C.char {
-		return C.aimux_tavily_search_new_with_base(ca, nil, cbase)
-	})
+	mh, err := newMultimodalHandleU64(h, &cerr)
 	if err != nil {
 		return nil, err
 	}

@@ -363,10 +363,8 @@ class TypedModelTest {
     // ── Coverage gap from review #2: TypedModel error paths ─────────────────
 
     @Test
-    void generateTextErrorEnvelopeThrowsAimuxException() {
-        // An invalid prompt makes the engine return {"error":"..."}; the typed
-        // layer's decodeResult must surface it as AimuxException (not return it
-        // silently like the raw Model layer does).
+    void generateTextInvalidPromptThrowsAimuxException() {
+        // Invalid prompt → C AimuxError → AimuxException (typed layer).
         try (TypedModel model =
                  TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
             assertThatThrownBy(() -> model.generateText("not-valid-json"))
@@ -374,11 +372,8 @@ class TypedModelTest {
         }
     }
 
-    // Note: stream-level error propagation (onError / streamTextStream throwing)
-    // is not deterministically triggerable via the mock server — the engine's
-    // stream error path depends on mid-stream provider behavior that a
-    // single-response mock cannot reproduce. The generateText error path above
-    // covers the error-envelope → AimuxException conversion; the stream path
-    // shares the same AimuxResult.throwIfErrorEnvelope helper.
+    // Note: mid-stream provider errors are not deterministically triggerable
+    // via a single-response mock; terminal stream failures throw AimuxException
+    // from the C return/err path (same as raw Model.streamTextStream).
 }
 

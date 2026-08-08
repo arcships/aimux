@@ -48,12 +48,13 @@ public final class ImageModel implements Closeable {
      *
      * @param apiKey  OpenAI API key.
      * @param modelId Model ID (e.g. {@code dall-e-3}).
-     * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new ImageModel.
+     * @throws AimuxException on failure.
      */
     public static ImageModel openai(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_image_new(apiKey, modelId), "Failed to create OpenAI image model");
-        return new ImageModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_image_new(apiKey, modelId, err);
+        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI image model"));
     }
 
     /**
@@ -62,13 +63,13 @@ public final class ImageModel implements Closeable {
      * @param apiKey  OpenAI API key.
      * @param modelId Model ID (e.g. {@code dall-e-3}).
      * @param baseUrl Custom base URL.
-     * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new ImageModel.
+     * @throws AimuxException on failure.
      */
     public static ImageModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create OpenAI image model");
-        return new ImageModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl, err);
+        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI image model"));
     }
 
     /**
@@ -76,12 +77,13 @@ public final class ImageModel implements Closeable {
      *
      * @param apiKey  Google API key.
      * @param modelId Model ID (e.g. {@code gemini-2.5-flash-image}).
-     * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new ImageModel.
+     * @throws AimuxException on failure.
      */
     public static ImageModel google(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_google_image_new(apiKey, modelId), "Failed to create Google image model");
-        return new ImageModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_google_image_new(apiKey, modelId, err);
+        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create Google image model"));
     }
 
     /**
@@ -90,24 +92,27 @@ public final class ImageModel implements Closeable {
      * @param apiKey  Google API key.
      * @param modelId Model ID.
      * @param baseUrl Custom base URL.
-     * @return a new ImageModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new ImageModel.
+     * @throws AimuxException on failure.
      */
     public static ImageModel googleWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_google_image_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create Google image model");
-        return new ImageModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_google_image_new_with_base(apiKey, modelId, baseUrl, err);
+        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create Google image model"));
     }
 
     /**
      * Generate images from the given options.
      *
      * @param optsJson JSON-serialized {@code ImageCallOptions}.
-     * @return JSON-serialized {@code ImageResult}. If the engine returns an
-     *         {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code ImageResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String generate(String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_image_generate(requireHandle(), optsJson), "image_generate");
+            AimuxFFI.INSTANCE.aimux_image_generate(requireHandle(), optsJson, err),
+            err,
+            "image_generate");
     }
 }

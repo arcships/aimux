@@ -23,6 +23,7 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty("jna.library.path", rootProject.projectDir.resolve("../../target/release").canonicalPath)
 }
 
 // Package the native library into the JAR for distribution.

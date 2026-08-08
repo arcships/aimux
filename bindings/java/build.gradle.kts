@@ -36,6 +36,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // Point JNA at the freshly built native library (cargo build --release -p aimux-ffi).
+    systemProperty("jna.library.path", projectDir.resolve("../../target/release").canonicalPath)
     testLogging {
         events("passed", "skipped", "failed")
     }

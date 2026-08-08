@@ -49,12 +49,13 @@ public final class SearchModel implements Closeable {
      * and ignored).
      *
      * @param apiKey Tavily API key.
-     * @return a new SearchModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new SearchModel.
+     * @throws AimuxException on failure.
      */
     public static SearchModel tavily(String apiKey) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_tavily_search_new(apiKey, ""), "Failed to create Tavily search model");
-        return new SearchModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_tavily_search_new(apiKey, "", err);
+        return new SearchModel(AimuxResult.extractHandle(h, err, "Failed to create Tavily search model"));
     }
 
     /**
@@ -62,24 +63,27 @@ public final class SearchModel implements Closeable {
      *
      * @param apiKey  Tavily API key.
      * @param baseUrl Custom base URL.
-     * @return a new SearchModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new SearchModel.
+     * @throws AimuxException on failure.
      */
     public static SearchModel tavilyWithBase(String apiKey, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_tavily_search_new_with_base(apiKey, "", baseUrl),
-            "Failed to create Tavily search model");
-        return new SearchModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_tavily_search_new_with_base(apiKey, "", baseUrl, err);
+        return new SearchModel(AimuxResult.extractHandle(h, err, "Failed to create Tavily search model"));
     }
 
     /**
      * Perform a web search.
      *
      * @param optsJson JSON-serialized {@code SearchCallOptions}.
-     * @return JSON-serialized {@code SearchResult}. If the engine returns
-     *         an {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code SearchResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String search(String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_search(requireHandle(), optsJson), "search");
+            AimuxFFI.INSTANCE.aimux_search(requireHandle(), optsJson, err),
+            err,
+            "search");
     }
 }

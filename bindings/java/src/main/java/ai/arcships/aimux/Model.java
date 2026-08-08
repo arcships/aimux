@@ -1,11 +1,12 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+
 import java.io.Closeable;
 import java.util.Spliterator;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -15,7 +16,8 @@ import java.util.stream.StreamSupport;
  *
  * <p>This is the raw JSON layer of the aimux Java binding: it wraps the
  * aimux-ffi C ABI via JNA and exposes the same wire format as the Kotlin
- * binding (JSON in, JSON out).
+ * binding (JSON in, JSON out). Failures throw {@link AimuxException} (typed
+ * subclasses) from the C {@code AimuxError} out-param.
  *
  * <p>Implements {@link Closeable} — you MUST call {@link #close()} (or use a
  * try-with-resources block) to release the native handle and avoid memory
@@ -32,8 +34,9 @@ public class Model implements Closeable {
 
     private final AtomicLong handle;
 
-    // Package-private:同包 ProviderHandle.model() 需要构造 Model;
-    // 外部仍只能通过静态工厂 openai()/provider()/mockReplay() 创建。
+    // Package-private: ProviderHandle.model() (same package) needs to construct
+    // a Model; external callers can still only go through the static factories
+    // openai()/provider()/mockReplay().
     Model(long handle) {
         this.handle = new AtomicLong(handle);
     }
@@ -69,149 +72,140 @@ public class Model implements Closeable {
 
     /** Create an OpenAI model instance. */
     public static Model openai(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_new(apiKey, modelId), "Failed to create OpenAI model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_new(apiKey, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create OpenAI model"));
     }
 
     /** Create an OpenAI model instance with a custom base URL. */
     public static Model openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_new_with_base(apiKey, modelId, baseUrl), "Failed to create OpenAI model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_new_with_base(apiKey, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create OpenAI model"));
     }
 
     /** Create an Anthropic model instance. */
     public static Model anthropic(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_anthropic_new(apiKey, modelId), "Failed to create Anthropic model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_anthropic_new(apiKey, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Anthropic model"));
     }
 
     /** Create an Anthropic model instance with a custom base URL. */
     public static Model anthropicWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl), "Failed to create Anthropic model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Anthropic model"));
     }
 
     /** Create a Cohere model instance. */
     public static Model cohere(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_cohere_new(apiKey, modelId), "Failed to create Cohere model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_cohere_new(apiKey, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Cohere model"));
     }
 
     /** Create a Cohere model instance with a custom base URL. */
     public static Model cohereWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_cohere_new_with_base(apiKey, modelId, baseUrl), "Failed to create Cohere model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_cohere_new_with_base(apiKey, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Cohere model"));
     }
 
     /** Create a Mistral model instance. */
     public static Model mistral(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_mistral_new(apiKey, modelId), "Failed to create Mistral model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_mistral_new(apiKey, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Mistral model"));
     }
 
     /** Create a Mistral model instance with a custom base URL. */
     public static Model mistralWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_mistral_new_with_base(apiKey, modelId, baseUrl), "Failed to create Mistral model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_mistral_new_with_base(apiKey, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Mistral model"));
     }
 
     /** Create an xAI model instance. */
     public static Model xai(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_xai_new(apiKey, modelId), "Failed to create xAI model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_xai_new(apiKey, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create xAI model"));
     }
 
     /** Create an xAI model instance with a custom base URL. */
     public static Model xaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_xai_new_with_base(apiKey, modelId, baseUrl), "Failed to create xAI model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_xai_new_with_base(apiKey, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create xAI model"));
     }
 
     /** Create a Bedrock model instance (AWS SigV4 credentials). */
     public static Model bedrock(String accessKeyId, String secretAccessKey, String region, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId),
-            "Failed to create Bedrock model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Bedrock model"));
     }
 
     /** Create a Bedrock model instance with a custom base URL. */
     public static Model bedrockWithBase(String accessKeyId, String secretAccessKey, String region,
                                         String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_bedrock_new_with_base(
-                accessKeyId, secretAccessKey, region, modelId, baseUrl),
-            "Failed to create Bedrock model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_bedrock_new_with_base(
+            accessKeyId, secretAccessKey, region, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Bedrock model"));
     }
 
     /** Create a Vertex AI model instance (GCP bearer token). */
     public static Model vertex(String accessToken, String project, String location, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_vertex_new(accessToken, project, location, modelId),
-            "Failed to create Vertex model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_vertex_new(accessToken, project, location, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Vertex model"));
     }
 
     /** Create a Vertex AI model instance with a custom base URL. */
     public static Model vertexWithBase(String accessToken, String project, String location,
                                        String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_vertex_new_with_base(
-                accessToken, project, location, modelId, baseUrl),
-            "Failed to create Vertex model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_vertex_new_with_base(
+            accessToken, project, location, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Vertex model"));
     }
 
     /** Create an Anthropic-on-AWS model instance (API key + region). */
     public static Model anthropicAws(String apiKey, String region, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_anthropic_aws_new(apiKey, region, modelId),
-            "Failed to create Anthropic AWS model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_anthropic_aws_new(apiKey, region, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Anthropic AWS model"));
     }
 
     /** Create an Anthropic-on-AWS model instance with a custom base URL. */
     public static Model anthropicAwsWithBase(String apiKey, String region, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl),
-            "Failed to create Anthropic AWS model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Anthropic AWS model"));
     }
 
     /** Create an Azure OpenAI model instance (API key + resource name). */
     public static Model azure(String apiKey, String resourceName, String deployment) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, null),
-            "Failed to create Azure model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, null, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Azure model"));
     }
 
     /** Create an Azure OpenAI model instance with an explicit api-version. */
     public static Model azureWithVersion(String apiKey, String resourceName, String deployment,
                                          String apiVersion) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, apiVersion),
-            "Failed to create Azure model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_azure_new(apiKey, resourceName, deployment, apiVersion, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Azure model"));
     }
 
     /** Create an Azure OpenAI model instance with a custom base URL. */
     public static Model azureWithBase(String apiKey, String baseUrl, String deployment) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_azure_new_with_base(apiKey, baseUrl, deployment, null),
-            "Failed to create Azure model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_azure_new_with_base(apiKey, baseUrl, deployment, null, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create Azure model"));
     }
 
     /**
@@ -225,14 +219,13 @@ public class Model implements Closeable {
      *                   ({@code {"base_url": "...", "headers": {...}, "max_retries": 0,
      *                   "body_overrides": {...}}}); {@code null} for defaults.
      * @return A new {@link Model}.
-     * @throws IllegalArgumentException if the provider could not be constructed
-     *                                  (unknown provider, bad config, missing env key).
+     * @throws AimuxException if the provider could not be constructed
+     *                        (unknown provider, bad config, missing env key).
      */
     public static Model provider(String name, String apiKey, String modelId, String configJson) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_provider_new(name, apiKey, modelId, configJson),
-            "Failed to create provider model: " + name);
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_provider_new(name, apiKey, modelId, configJson, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create provider model: " + name));
     }
 
     /**
@@ -240,24 +233,22 @@ public class Model implements Closeable {
      * provider's env var (RFC-0017 phase 4).
      */
     public static Model providerFromEnv(String name, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_provider_from_env(name, modelId),
-            "Failed to create provider model from env: " + name);
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_provider_from_env(name, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create provider model from env: " + name));
     }
 
     /**
-     * Create a **provider handle** (RFC-0027) for a registry-backed provider.
+     * Create a <strong>provider handle</strong> (RFC-0027) for a registry-backed provider.
      *
      * <p>Unlike {@link #provider(String, String, String, String)} (which binds to
      * a single modelId), this returns a {@link ProviderHandle} that supports
      * {@link ProviderHandle#listModels()} and {@link ProviderHandle#model(String)}.
      */
     public static ProviderHandle createProvider(String name, String apiKey, String configJson) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_provider_handle_new(name, apiKey, configJson),
-            "Failed to create provider handle: " + name);
-        return new ProviderHandle(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_provider_handle_new(name, apiKey, configJson, err);
+        return new ProviderHandle(AimuxResult.extractHandle(h, err, "Failed to create provider handle: " + name));
     }
 
     /**
@@ -267,8 +258,10 @@ public class Model implements Closeable {
      * @param sourceUrl Optional URL override (null = default endpoint).
      */
     public static String getModelSpecs(String sourceUrl) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_get_model_specs(sourceUrl),
+            AimuxFFI.INSTANCE.aimux_get_model_specs(sourceUrl, err),
+            err,
             "get_model_specs");
     }
 
@@ -291,14 +284,12 @@ public class Model implements Closeable {
      *
      * @param recordingsJsonl Recorded JSONL (one Recording per line).
      * @return A new {@link Model} backed by the replay handle.
-     * @throws IllegalArgumentException if the mock replay model could not be
-     *                                  constructed.
+     * @throws AimuxException if the mock replay model could not be constructed.
      */
     public static Model mockReplay(String recordingsJsonl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_mock_replay_new(recordingsJsonl),
-            "Failed to create mock replay model");
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_mock_replay_new(recordingsJsonl, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create mock replay model"));
     }
 
     // ── Generation ─────────────────────────────────────────────────────────
@@ -308,19 +299,15 @@ public class Model implements Closeable {
      *
      * @param promptJson JSON prompt string (bare value or {@code {"prompt": ...}}).
      * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
-     * @return JSON-serialized result (or {@code {"error":"..."}} on failure).
+     * @return JSON-serialized result.
+     * @throws AimuxException on engine / transport failure.
      */
     public String generateText(String promptJson, String optsJson) {
-        com.sun.jna.Pointer ptr =
-            AimuxFFI.INSTANCE.aimux_generate_text(requireHandle(), promptJson, optsJson);
-        if (ptr == null) {
-            throw new RuntimeException("generate_text returned null");
-        }
-        try {
-            return ptr.getString(0, "UTF-8");
-        } finally {
-            AimuxFFI.INSTANCE.aimux_free_string(ptr);
-        }
+        AimuxCError err = AimuxResult.newError();
+        return AimuxResult.extractString(
+            AimuxFFI.INSTANCE.aimux_generate_text(requireHandle(), promptJson, optsJson, err),
+            err,
+            "generate_text");
     }
 
     /** Generate text with default options. */
@@ -337,43 +324,42 @@ public class Model implements Closeable {
      * Callbacks run on the calling thread; do NOT re-enter the FFI layer from
      * inside a callback (would deadlock the tokio runtime).
      *
+     * <p>C ABI has no {@code on_error} callback — terminal failures throw
+     * {@link AimuxException} after the blocking call returns.
+     *
      * @param promptJson JSON prompt string.
      * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
      * @param onPart     Called for each stream part (JSON string).
      * @param onDone     Called once when the stream ends normally.
-     * @param onError    Called on a stream-level error (JSON error string).
+     * @throws AimuxException when the stream fails (return status 0).
      */
     public void streamText(String promptJson, String optsJson,
                            final Consumer<String> onPart,
-                           final Runnable onDone,
-                           final Consumer<String> onError) {
+                           final Runnable onDone) {
         // JNA callbacks — must be held in local variables to prevent GC.
-        final com.sun.jna.Callback partCb = new com.sun.jna.Callback() {
-            @SuppressWarnings("unused")
-            public void callback(com.sun.jna.Pointer jsonPtr) {
-                // The pointer is valid only during the callback — copy now.
+        // C signatures: on_part(json, stream_ctx), on_done(stream_ctx).
+        final AimuxFFI.StreamPartCallback partCb = new AimuxFFI.StreamPartCallback() {
+            @Override
+            public void invoke(Pointer jsonPtr, Pointer streamCtx) {
                 if (jsonPtr != null) {
                     onPart.accept(jsonPtr.getString(0, "UTF-8"));
                 }
             }
         };
-        final com.sun.jna.Callback doneCb = new com.sun.jna.Callback() {
-            @SuppressWarnings("unused")
-            public void callback() {
+        final AimuxFFI.StreamDoneCallback doneCb = new AimuxFFI.StreamDoneCallback() {
+            @Override
+            public void invoke(Pointer streamCtx) {
                 onDone.run();
             }
         };
-        final com.sun.jna.Callback errCb = new com.sun.jna.Callback() {
-            @SuppressWarnings("unused")
-            public void callback(com.sun.jna.Pointer errPtr) {
-                if (errPtr != null) {
-                    onError.accept(errPtr.getString(0, "UTF-8"));
-                }
-            }
-        };
 
-        AimuxFFI.INSTANCE.aimux_stream_text(
-            requireHandle(), promptJson, optsJson, partCb, doneCb, errCb);
+        AimuxCError err = AimuxResult.newError();
+        int rc = AimuxFFI.INSTANCE.aimux_stream_text(
+            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err);
+        if (rc == 0) {
+            // Prefer throw over onError for terminal C failures.
+            throw AimuxException.fromC(err);
+        }
     }
 
     /**
@@ -382,9 +368,8 @@ public class Model implements Closeable {
      * <p>The FFI call starts on the first terminal operation of the returned
      * stream (mirror of Kotlin's {@code streamTextSequence}). Iteration pulls
      * parts from a {@link LinkedBlockingQueue} fed by the stream callbacks;
-     * the stream ends at the sentinel. If the provider reported a stream
-     * error, a {@link RuntimeException} carrying the error JSON is thrown when
-     * the end of the stream is reached.
+     * the stream ends at the sentinel. Terminal stream failures throw
+     * {@link AimuxException} from the blocking FFI call.
      *
      * <pre>{@code
      * model.streamTextStream("\"Write a haiku\"").forEach(System.out::println);
@@ -393,7 +378,8 @@ public class Model implements Closeable {
      * @param promptJson JSON prompt string.
      * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
      */
-    public Stream<String> streamTextStream(final String promptJson, final String optsJson) {        // Sentinel for end-of-stream. Java's LinkedBlockingQueue rejects null
+    public Stream<String> streamTextStream(final String promptJson, final String optsJson) {
+        // Sentinel for end-of-stream. Java's LinkedBlockingQueue rejects null
         // elements, so use a unique object instead of Kotlin's null sentinel.
         final Object END = new Object();
         return StreamSupport.stream(
@@ -402,7 +388,6 @@ public class Model implements Closeable {
                 private final LinkedBlockingQueue<Object> parts =
                     new LinkedBlockingQueue<>();
                 private final AtomicBoolean started = new AtomicBoolean(false);
-                private final AtomicReference<String> error = new AtomicReference<>();
                 private boolean exhausted;
 
                 @Override
@@ -411,11 +396,7 @@ public class Model implements Closeable {
                         try {
                             streamText(promptJson, optsJson,
                                 parts::add,
-                                () -> parts.add(END), // sentinel = end of stream
-                                err -> {
-                                    error.set(err);
-                                    parts.add(END);
-                                });
+                                () -> parts.add(END));
                         } catch (RuntimeException e) {
                             parts.add(END); // prevent a hang on later iteration
                             throw e;
@@ -433,10 +414,6 @@ public class Model implements Closeable {
                     }
                     if (part == END) {
                         exhausted = true;
-                        String err = error.get();
-                        if (err != null) {
-                            throw new RuntimeException(err);
-                        }
                         return false;
                     }
                     action.accept((String) part);
@@ -458,19 +435,15 @@ public class Model implements Closeable {
      *
      * @param promptJson JSON prompt string (bare value or {@code {"prompt": ...}}).
      * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
-     * @return JSON-serialized ChatCompletion (or {@code {"error":"..."}} on failure).
+     * @return JSON-serialized ChatCompletion.
+     * @throws AimuxException on engine / transport failure.
      */
     public String generateTextAsOpenAI(String promptJson, String optsJson) {
-        com.sun.jna.Pointer ptr =
-            AimuxFFI.INSTANCE.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson);
-        if (ptr == null) {
-            throw new RuntimeException("generate_text_as_openai returned null");
-        }
-        try {
-            return ptr.getString(0, "UTF-8");
-        } finally {
-            AimuxFFI.INSTANCE.aimux_free_string(ptr);
-        }
+        AimuxCError err = AimuxResult.newError();
+        return AimuxResult.extractString(
+            AimuxFFI.INSTANCE.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson, err),
+            err,
+            "generate_text_as_openai");
     }
 
     /** Generate text with OpenAI output and default options. */
@@ -487,37 +460,32 @@ public class Model implements Closeable {
      * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
      * @param onPart     Called for each ChatCompletionChunk (JSON string).
      * @param onDone     Called once when the stream ends normally.
-     * @param onError    Called on a stream-level error (JSON error string).
+     * @throws AimuxException when the stream fails (return status 0).
      */
     public void streamTextAsOpenAI(String promptJson, String optsJson,
                                    final Consumer<String> onPart,
-                                   final Runnable onDone,
-                                   final Consumer<String> onError) {
-        final com.sun.jna.Callback partCb = new com.sun.jna.Callback() {
-            @SuppressWarnings("unused")
-            public void callback(com.sun.jna.Pointer jsonPtr) {
+                                   final Runnable onDone) {
+        final AimuxFFI.StreamPartCallback partCb = new AimuxFFI.StreamPartCallback() {
+            @Override
+            public void invoke(Pointer jsonPtr, Pointer streamCtx) {
                 if (jsonPtr != null) {
                     onPart.accept(jsonPtr.getString(0, "UTF-8"));
                 }
             }
         };
-        final com.sun.jna.Callback doneCb = new com.sun.jna.Callback() {
-            @SuppressWarnings("unused")
-            public void callback() {
+        final AimuxFFI.StreamDoneCallback doneCb = new AimuxFFI.StreamDoneCallback() {
+            @Override
+            public void invoke(Pointer streamCtx) {
                 onDone.run();
             }
         };
-        final com.sun.jna.Callback errCb = new com.sun.jna.Callback() {
-            @SuppressWarnings("unused")
-            public void callback(com.sun.jna.Pointer errPtr) {
-                if (errPtr != null) {
-                    onError.accept(errPtr.getString(0, "UTF-8"));
-                }
-            }
-        };
 
-        AimuxFFI.INSTANCE.aimux_stream_text_as_openai(
-            requireHandle(), promptJson, optsJson, partCb, doneCb, errCb);
+        AimuxCError err = AimuxResult.newError();
+        int rc = AimuxFFI.INSTANCE.aimux_stream_text_as_openai(
+            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err);
+        if (rc == 0) {
+            throw AimuxException.fromC(err);
+        }
     }
 
     /**
@@ -534,7 +502,6 @@ public class Model implements Closeable {
                 Long.MAX_VALUE, Spliterator.ORDERED) {
                 private final LinkedBlockingQueue<Object> parts = new LinkedBlockingQueue<>();
                 private final AtomicBoolean started = new AtomicBoolean(false);
-                private final AtomicReference<String> error = new AtomicReference<>();
                 private boolean exhausted;
 
                 @Override
@@ -543,11 +510,7 @@ public class Model implements Closeable {
                         try {
                             streamTextAsOpenAI(promptJson, optsJson,
                                 parts::add,
-                                () -> parts.add(END),
-                                err -> {
-                                    error.set(err);
-                                    parts.add(END);
-                                });
+                                () -> parts.add(END));
                         } catch (RuntimeException e) {
                             parts.add(END);
                             throw e;
@@ -565,10 +528,6 @@ public class Model implements Closeable {
                     }
                     if (part == END) {
                         exhausted = true;
-                        String err = error.get();
-                        if (err != null) {
-                            throw new RuntimeException(err);
-                        }
                         return false;
                     }
                     action.accept((String) part);
