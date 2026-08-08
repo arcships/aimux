@@ -79,6 +79,47 @@ asarUnpack:
 Linux musl distributions such as Alpine are not included in the six desktop
 targets. The GNU/Linux builds use rustls and do not require system OpenSSL.
 
+## Errors
+
+Engine and binding failures throw an **`AimuxError` subclass hierarchy**
+(Vercel AI SDK style — `instanceof`, not stringly `code` checks):
+
+```text
+Error
+ └── AimuxError
+      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── InvalidArgumentError / InvalidPromptError
+      ├── RateLimitedError          // status 429, retryMs
+      ├── AuthenticationError       // status 401
+      ├── TokenExpiredError
+      ├── ModelNotFoundError / NoSuchModelError
+      ├── UnsupportedError / UnknownProviderError
+      ├── APICallError / TimeoutError
+      ├── RequestAbortedError
+      └── OtherError
+```
+
+Every instance has `message`, `status` (HTTP or `-1`), and `retryMs` (hint or `-1`).
+
+```typescript
+import { generateText, AimuxError, RateLimitedError, AuthenticationError } from 'aimux'
+
+try {
+  await generateText(model, 'hi')
+} catch (e) {
+  if (e instanceof RateLimitedError) {
+    // e.retryMs, e.status === 429
+  } else if (e instanceof AuthenticationError) {
+    // e.status === 401
+  } else if (e instanceof AimuxError) {
+    // any engine / binding failure
+  }
+}
+```
+
+The ts-rs wire type `AiMuxError` is only for payload unions inside
+`StreamPart`, not for throws.
+
 ## Text Generation
 
 Non-streaming text generation; returns the complete result.

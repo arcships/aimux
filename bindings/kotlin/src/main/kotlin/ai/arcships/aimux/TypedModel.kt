@@ -17,9 +17,6 @@
 package ai.arcships.aimux
 
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.Closeable
 
 /**
@@ -72,17 +69,16 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
     }
 
     private fun decodeResult(resultJson: String): GenerateTextResult {
-        // The raw layer returns {"error": "..."} on failure rather than throwing.
-        // Surface the engine's failure as an exception while keeping the typed
-        // happy path clean.
-        val firstChar = resultJson.trimStart().firstOrNull()
-        if (firstChar == '{') {
-            val obj = AimuxJson.parseToJsonElement(resultJson).jsonObject
-            obj["error"]?.jsonPrimitive?.contentOrNull?.let { msg ->
-                throw AimuxException(msg)
-            }
+        // Engine failures throw AimuxException.fromC in the raw layer.
+        // Decode failures are local InvalidArgumentError.
+        return try {
+            AimuxJson.decodeFromString(GenerateTextResult.serializer(), resultJson)
+        } catch (e: Exception) {
+            throw InvalidArgumentError(
+                "failed to decode GenerateTextResult: ${e.message ?: e::class.simpleName}",
+                cause = e,
+            )
         }
-        return AimuxJson.decodeFromString(GenerateTextResult.serializer(), resultJson)
     }
 
     // ── streamText ───────────────────────────────────────────────────────
@@ -151,12 +147,15 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
                 try {
                     onPart(AimuxJson.decodeFromString(StreamPartSerializer, partJson))
                 } catch (error: Exception) {
-                    onError("failed to decode StreamPart: ${error.message ?: error::class.simpleName}")
+                    onError(
+                        "failed to decode StreamPart: ${error.message ?: error::class.simpleName}",
+                    )
                 }
             },
             onDone = onDone,
-            onError = onError,
         )
+        // raw.streamText throws AimuxException on native failure; onError only
+        // reports local decode failures.
     }
 
     /**
@@ -187,22 +186,33 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
         promptJson: String,
         options: GenerateTextOptions?,
     ): Sequence<StreamPart> = sequence {
-        val parts = java.util.concurrent.LinkedBlockingQueue<StreamPart?>()
-        var error: String? = null
+        // LinkedBlockingQueue rejects null, so end-of-stream is a sentinel object.
+        val eos = Any()
+        val parts = java.util.concurrent.LinkedBlockingQueue<Any>()
+        var streamError: AimuxException? = null
 
-        streamTextParts(
-            promptJson = promptJson,
-            options = options,
-            onPart = { parts.put(it) },
-            onDone = { parts.put(null) },
-            onError = { error = it; parts.put(null) },
-        )
+        try {
+            streamTextParts(
+                promptJson = promptJson,
+                options = options,
+                onPart = { parts.put(it) },
+                onDone = { parts.put(eos) },
+                onError = { msg ->
+                    streamError = OtherError(msg)
+                    parts.put(eos)
+                },
+            )
+        } catch (e: AimuxException) {
+            streamError = e
+            parts.put(eos)
+        }
 
         while (true) {
-            val part = parts.take() ?: break
-            yield(part)
+            val part = parts.take()
+            if (part === eos) break
+            yield(part as StreamPart)
         }
-        error?.let { throw AimuxException(it) }
+        streamError?.let { throw it }
     }
 
     // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
@@ -242,14 +252,14 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
     }
 
     private fun decodeChatCompletion(resultJson: String): ChatCompletion {
-        val firstChar = resultJson.trimStart().firstOrNull()
-        if (firstChar == '{') {
-            val obj = AimuxJson.parseToJsonElement(resultJson).jsonObject
-            obj["error"]?.jsonPrimitive?.contentOrNull?.let { msg ->
-                throw AimuxException(msg)
-            }
+        return try {
+            AimuxJson.decodeFromString(ChatCompletion.serializer(), resultJson)
+        } catch (e: Exception) {
+            throw InvalidArgumentError(
+                "failed to decode ChatCompletion: ${e.message ?: e::class.simpleName}",
+                cause = e,
+            )
         }
-        return AimuxJson.decodeFromString(ChatCompletion.serializer(), resultJson)
     }
 
     /**
@@ -321,7 +331,6 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
                 }
             },
             onDone = onDone,
-            onError = onError,
         )
     }
 
@@ -355,22 +364,33 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
         promptJson: String,
         options: GenerateTextOptions?,
     ): Sequence<ChatCompletionChunk> = sequence {
-        val parts = java.util.concurrent.LinkedBlockingQueue<ChatCompletionChunk?>()
-        var error: String? = null
+        // LinkedBlockingQueue rejects null, so end-of-stream is a sentinel object.
+        val eos = Any()
+        val parts = java.util.concurrent.LinkedBlockingQueue<Any>()
+        var streamError: AimuxException? = null
 
-        streamTextAsOpenAIChunks(
-            promptJson = promptJson,
-            options = options,
-            onPart = { parts.put(it) },
-            onDone = { parts.put(null) },
-            onError = { error = it; parts.put(null) },
-        )
+        try {
+            streamTextAsOpenAIChunks(
+                promptJson = promptJson,
+                options = options,
+                onPart = { parts.put(it) },
+                onDone = { parts.put(eos) },
+                onError = { msg ->
+                    streamError = OtherError(msg)
+                    parts.put(eos)
+                },
+            )
+        } catch (e: AimuxException) {
+            streamError = e
+            parts.put(eos)
+        }
 
         while (true) {
-            val part = parts.take() ?: break
-            yield(part)
+            val part = parts.take()
+            if (part === eos) break
+            yield(part as ChatCompletionChunk)
         }
-        error?.let { throw AimuxException(it) }
+        streamError?.let { throw it }
     }
 
     // ── Companion: provider constructors that own the handle ─────────────
@@ -400,10 +420,3 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
             TypedModel(Model.provider(name, apiKey, modelId, configJson), ownsModel = true)
     }
 }
-
-/** Raised when the engine returns an `{"error": "..."}` result or stream error. */
-class AimuxException(message: String) : RuntimeException(message)
-
-/** Returns the string content of a [JsonPrimitive], or null if not a string primitive. */
-private val JsonPrimitive.contentOrNull: String?
-    get() = if (isString) content else null

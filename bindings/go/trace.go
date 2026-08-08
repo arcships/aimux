@@ -12,8 +12,6 @@ package aimux
 import "C"
 
 import (
-	"errors"
-	"fmt"
 	"unsafe"
 )
 
@@ -42,37 +40,29 @@ func (m *Model) traceWrap(audited bool, strict C.int) (*Model, error) {
 	}
 	defer release()
 
-	var ptr *C.char
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
+	var h C.uint64_t
 	if audited {
-		ptr = C.aimux_trace_new_audited(C.uint64_t(handle), strict)
+		h = C.aimux_trace_new_audited(C.uint64_t(handle), strict, &cerr)
 	} else {
-		ptr = C.aimux_trace_new(C.uint64_t(handle))
+		h = C.aimux_trace_new(C.uint64_t(handle), &cerr)
 	}
-	if ptr == nil {
-		return nil, errors.New("aimux: trace_new returned null")
-	}
-	// parseHandleJSON frees the C string (defer inside it) — do NOT free
-	// here too (double free).
-
-	handle, err = parseHandleJSON(ptr)
-	if err != nil {
-		return nil, err
-	}
-	return &Model{handle: handle}, nil
+	return wrapHandleU64(h, &cerr)
 }
 
 // TraceAggregate returns aggregated probe statistics (JSON TraceStats[]),
 // filtered by an optional serialized TraceFilter ("" = all).
 func (m *Model) TraceAggregate(filterJson string) (string, error) {
-	return m.traceQuery(filterJson, func(h C.uint64_t, c *C.char) *C.char {
-		return C.aimux_trace_aggregate(h, c)
+	return m.traceQuery(filterJson, func(h C.uint64_t, c *C.char, err *C.AimuxError) *C.char {
+		return C.aimux_trace_aggregate(h, c, err)
 	})
 }
 
 // TraceSessionChain returns one session's chain view (JSON SessionChainView).
 func (m *Model) TraceSessionChain(sessionId string) (string, error) {
-	return m.traceQuery(sessionId, func(h C.uint64_t, c *C.char) *C.char {
-		return C.aimux_trace_session_chain(h, c)
+	return m.traceQuery(sessionId, func(h C.uint64_t, c *C.char, err *C.AimuxError) *C.char {
+		return C.aimux_trace_session_chain(h, c, err)
 	})
 }
 
@@ -85,17 +75,9 @@ func (m *Model) TraceExportJsonl() (string, error) {
 	}
 	defer release()
 
-	ptr := C.aimux_trace_export_jsonl(C.uint64_t(handle))
-	if ptr == nil {
-		return "", errors.New("aimux: trace_export_jsonl returned null")
-	}
-	defer C.aimux_free_string(ptr)
-
-	result := C.GoString(ptr)
-	if msg := extractError(result); msg != "" {
-		return "", fmt.Errorf("aimux: %s", msg)
-	}
-	return result, nil
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return C.aimux_trace_export_jsonl(C.uint64_t(handle), cerr)
+	})
 }
 
 // TraceClear drops all probe records of this model.
@@ -107,13 +89,13 @@ func (m *Model) TraceClear() error {
 	defer release()
 
 	if rc := C.aimux_trace_clear(C.uint64_t(handle)); rc != 0 {
-		return errors.New("aimux: trace_clear failed (invalid handle)")
+		return newError(CodeInvalidArgument, "aimux: trace_clear failed (invalid handle)")
 	}
 	return nil
 }
 
 // traceQuery runs a query taking one C string argument.
-func (m *Model) traceQuery(arg string, call func(C.uint64_t, *C.char) *C.char) (string, error) {
+func (m *Model) traceQuery(arg string, call func(C.uint64_t, *C.char, *C.AimuxError) *C.char) (string, error) {
 	handle, release, err := m.acquireHandle()
 	if err != nil {
 		return "", err
@@ -123,15 +105,7 @@ func (m *Model) traceQuery(arg string, call func(C.uint64_t, *C.char) *C.char) (
 	cArg := C.CString(arg)
 	defer C.free(unsafe.Pointer(cArg))
 
-	ptr := call(C.uint64_t(handle), cArg)
-	if ptr == nil {
-		return "", errors.New("aimux: trace query returned null")
-	}
-	defer C.aimux_free_string(ptr)
-
-	result := C.GoString(ptr)
-	if msg := extractError(result); msg != "" {
-		return "", fmt.Errorf("aimux: %s", msg)
-	}
-	return result, nil
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return call(C.uint64_t(handle), cArg, cerr)
+	})
 }

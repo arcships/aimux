@@ -7,25 +7,222 @@ import CAimuxFFI
 import Foundation
 
 // ─────────────────────────────────────────────────────────────────────────────
+// C AimuxError (aimux-error.h) — distinct from the Swift enum below.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// C `struct AimuxError` imported from `CAimuxFFI` / aimux-error.h.
+///
+/// Kept as an internal alias so the public Swift type can remain `AimuxError`.
+typealias CAimuxError = CAimuxFFI.AimuxError
+
+/// Run a fallible FFI call with a cleared, stack-allocated C error.
+///
+/// `body` performs the C call and returns `nil` when the C return sentinel
+/// indicates failure (NULL result / zero handle / zero rc); this helper then
+/// maps the filled `*err` via `AimuxError.fromC` (which frees the C-allocated
+/// `message` and `error_value`) and throws it.
+func withCError<T>(
+    _ body: (UnsafeMutablePointer<CAimuxError>?) -> T?
+) throws -> T {
+    precondition(MemoryLayout<CAimuxError>.size == 40,
+                 "CAimuxError layout mismatch with aimux-error.h")
+    var e = CAimuxError()
+    aimux_error_clear(&e)
+    guard let result = body(&e) else {
+        throw AimuxError.fromC(e)
+    }
+    return result
+}
+
+/// `withCError` for calls returning an owned `char*` (JSON) result: copies it
+/// into a Swift `String` and frees the C allocation, or throws on `NULL`.
+func ffiStringCall(
+    _ body: (UnsafeMutablePointer<CAimuxError>?) -> UnsafeMutablePointer<CChar>?
+) throws -> String {
+    try withCError { err in
+        guard let ptr = body(err) else { return nil }
+        defer { aimux_free_string(ptr) }
+        return String(cString: ptr)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Errors
 // ─────────────────────────────────────────────────────────────────────────────
 
-public enum AimuxError: Error, CustomStringConvertible {
+/// Structured aimux failure type (Swift `Error`).
+///
+/// Maps 1:1 from aimux-ffi `AimuxErrorCode` / core `AiMuxError` variants, plus
+/// binding-local cases (`invalidHandle`, `serializationError`).
+///
+/// ```swift
+/// do {
+///     let result = try model.generateText(prompt: "\"hi\"")
+/// } catch let e as AimuxError {
+///     print(e.message, e.status, e.retryMs)
+///     if case .rateLimited = e { /* back off */ }
+/// }
+/// ```
+public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatable, Sendable {
+    /// Local: model/provider handle is 0 or already released.
     case invalidHandle
-    case invalidPrompt
-    case invalidOptions(String)
-    case providerError(String)
-    case streamError(String)
+
+    case provider(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case http(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case json(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case stream(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case tool(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case invalidArgument(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case invalidPrompt(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case rateLimited(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case authentication(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case tokenExpired(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case modelNotFound(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case unsupported(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case noSuchModel(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case unknownProvider(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case apiCall(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case timeout(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case aborted(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case other(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    /// `AIMUX_E_UNKNOWN` or an unexpected/future code.
+    case unknown(message: String, status: Int, retryMs: Int64, errorValue: String?)
+
+    /// Binding-local encode/decode failure (not produced by the C ABI).
     case serializationError(String)
 
-    public var description: String {
+    // MARK: Accessors
+
+    /// The C-derived payload, or `nil` for the binding-local cases.
+    private var payload: (message: String, status: Int, retryMs: Int64, errorValue: String?)? {
         switch self {
-        case .invalidHandle: return "invalid model handle"
-        case .invalidPrompt: return "invalid prompt JSON"
-        case .invalidOptions(let msg): return "invalid options: \(msg)"
-        case .providerError(let msg): return "provider error: \(msg)"
-        case .streamError(let msg): return "stream error: \(msg)"
-        case .serializationError(let msg): return "serialization error: \(msg)"
+        case .invalidHandle, .serializationError:
+            return nil
+        case .provider(let m, let s, let r, let v),
+             .http(let m, let s, let r, let v),
+             .json(let m, let s, let r, let v),
+             .stream(let m, let s, let r, let v),
+             .tool(let m, let s, let r, let v),
+             .invalidArgument(let m, let s, let r, let v),
+             .invalidPrompt(let m, let s, let r, let v),
+             .rateLimited(let m, let s, let r, let v),
+             .authentication(let m, let s, let r, let v),
+             .tokenExpired(let m, let s, let r, let v),
+             .modelNotFound(let m, let s, let r, let v),
+             .unsupported(let m, let s, let r, let v),
+             .noSuchModel(let m, let s, let r, let v),
+             .unknownProvider(let m, let s, let r, let v),
+             .apiCall(let m, let s, let r, let v),
+             .timeout(let m, let s, let r, let v),
+             .aborted(let m, let s, let r, let v),
+             .other(let m, let s, let r, let v),
+             .unknown(let m, let s, let r, let v):
+            return (m, s, r, v)
+        }
+    }
+
+    /// Human-readable message (C `message` field or local description).
+    public var message: String {
+        if let payload { return payload.message }
+        if case .serializationError(let msg) = self { return msg }
+        return "invalid model handle"
+    }
+
+    /// HTTP status code, or `nil` when not applicable (C reports `-1`).
+    public var status: Int? {
+        guard let payload, payload.status >= 0 else { return nil }
+        return payload.status
+    }
+
+    /// Rate-limit retry hint in milliseconds, or `nil` when not applicable
+    /// (C reports `-1`). `0` means retry immediately.
+    public var retryMs: Int64? {
+        guard let payload, payload.retryMs >= 0 else { return nil }
+        return payload.retryMs
+    }
+
+    /// Raw lossless machine-readable form of the source error: the
+    /// externally-tagged JSON of aimux-core's `AiMuxError`, e.g.
+    /// `{"RateLimited":{"retry_after_ms":1500,"message":"..."}}`.
+    /// `nil` for failures synthesized at the FFI boundary (bad argument,
+    /// invalid handle) and for the binding-local cases.
+    public var errorValue: String? {
+        payload?.errorValue
+    }
+
+    public var description: String {
+        message
+    }
+
+    public var errorDescription: String? {
+        message
+    }
+
+    // MARK: C mapping
+
+    /// Map a filled C `AimuxError` (by value) into the Swift enum.
+    ///
+    /// Call only after the FFI return sentinel indicates failure. When `code`
+    /// is `AIMUX_OK` (caller passed `NULL` err or forgot to check), returns
+    /// `.unknown` with a generic message.
+    ///
+    /// Consumes the C-allocated `message` and `error_value`: each is copied
+    /// into a Swift string and freed with `aimux_free_string`. Do not reuse
+    /// `e.message` / `e.error_value` after.
+    public static func fromC(_ e: CAimuxFFI.AimuxError) -> AimuxError {
+        var rawMsg = ""
+        if let msgPtr = e.message {
+            rawMsg = String(cString: msgPtr)
+            aimux_free_string(msgPtr)
+        }
+        var errorValue: String?
+        if let valPtr = e.error_value {
+            errorValue = String(cString: valPtr)
+            aimux_free_string(valPtr)
+        }
+        let status = Int(e.status)
+        let retryMs = e.retry_ms
+        let message = rawMsg.isEmpty ? "aimux: operation failed" : rawMsg
+
+        switch e.code {
+        case AIMUX_E_PROVIDER:
+            return .provider(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_HTTP:
+            return .http(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_JSON:
+            return .json(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_STREAM:
+            return .stream(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_TOOL:
+            return .tool(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_INVALID_ARGUMENT:
+            return .invalidArgument(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_INVALID_PROMPT:
+            return .invalidPrompt(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_RATE_LIMITED:
+            return .rateLimited(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_AUTH:
+            return .authentication(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_TOKEN_EXPIRED:
+            return .tokenExpired(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_MODEL_NOT_FOUND:
+            return .modelNotFound(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_UNSUPPORTED:
+            return .unsupported(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_NO_SUCH_MODEL:
+            return .noSuchModel(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_UNKNOWN_PROVIDER:
+            return .unknownProvider(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_API_CALL:
+            return .apiCall(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_TIMEOUT:
+            return .timeout(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_ABORTED:
+            return .aborted(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_OTHER:
+            return .other(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        default:
+            return .unknown(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         }
     }
 }
@@ -42,8 +239,8 @@ public final class Model: @unchecked Sendable {
     // The opaque handle from aimux-ffi. 0 means invalid/freed.
     private var handle: UInt64
 
-    /// Private initializer — use `Model.openai()` etc. to create.
-    private init(handle: UInt64) {
+    /// File-private initializer — use `Model.openai()` etc. to create.
+    fileprivate init(handle: UInt64) {
         self.handle = handle
     }
 
@@ -53,26 +250,15 @@ public final class Model: @unchecked Sendable {
         }
     }
 
-    /// Parse a constructor's JSON result (`{"handle":<u64>}` on success,
-    /// `{"error":"..."}` on failure), free the pointer, and return the handle.
-    static func extractHandle(_ ptr: UnsafeMutablePointer<CChar>?) throws -> UInt64 {
-        guard let ptr = ptr else {
-            throw AimuxError.serializationError("constructor returned null")
+    /// Run a C constructor that returns a `uint64_t` handle and fills
+    /// `AimuxError *err` on failure.
+    static func wrapHandle(
+        _ call: (UnsafeMutablePointer<CAimuxError>?) -> UInt64
+    ) throws -> UInt64 {
+        try withCError { err in
+            let h = call(err)
+            return h == 0 ? nil : h
         }
-        let result = String(cString: ptr)
-        aimux_free_string(ptr)
-
-        guard let data = result.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AimuxError.serializationError("invalid constructor response: \(result)")
-        }
-        if let error = json["error"] as? String {
-            throw AimuxError.providerError(error)
-        }
-        if let handle = json["handle"] as? NSNumber {
-            return handle.uint64Value
-        }
-        throw AimuxError.serializationError("invalid constructor response: \(result)")
     }
 
     // ── Provider constructors ──────────────────────────────────────────────
@@ -93,13 +279,13 @@ public final class Model: @unchecked Sendable {
 
     /// Create an OpenAI model instance.
     public static func openai(apiKey: String, modelId: String) throws -> Model {
-        let handle = try extractHandle(aimux_openai_new(apiKey, modelId))
+        let handle = try wrapHandle { aimux_openai_new(apiKey, modelId, $0) }
         return Model(handle: handle)
     }
 
     /// Create an Anthropic model instance.
     public static func anthropic(apiKey: String, modelId: String) throws -> Model {
-        let handle = try extractHandle(aimux_anthropic_new(apiKey, modelId))
+        let handle = try wrapHandle { aimux_anthropic_new(apiKey, modelId, $0) }
         return Model(handle: handle)
     }
 
@@ -108,49 +294,49 @@ public final class Model: @unchecked Sendable {
     /// An empty `baseUrl` falls back to the provider's standard URL
     /// (see `aimux_openai_new_with_base`).
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
-        let handle = try extractHandle(aimux_openai_new_with_base(apiKey, modelId, baseUrl))
+        let handle = try wrapHandle { aimux_openai_new_with_base(apiKey, modelId, baseUrl, $0) }
         return Model(handle: handle)
     }
 
     /// Create an Anthropic model instance with a custom base URL.
     public static func anthropic(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
-        let handle = try extractHandle(aimux_anthropic_new_with_base(apiKey, modelId, baseUrl))
+        let handle = try wrapHandle { aimux_anthropic_new_with_base(apiKey, modelId, baseUrl, $0) }
         return Model(handle: handle)
     }
 
     /// Create a Cohere model instance.
     public static func cohere(apiKey: String, modelId: String) throws -> Model {
-        let handle = try extractHandle(aimux_cohere_new(apiKey, modelId))
+        let handle = try wrapHandle { aimux_cohere_new(apiKey, modelId, $0) }
         return Model(handle: handle)
     }
 
     /// Create a Cohere model instance with a custom base URL.
     public static func cohere(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
-        let handle = try extractHandle(aimux_cohere_new_with_base(apiKey, modelId, baseUrl))
+        let handle = try wrapHandle { aimux_cohere_new_with_base(apiKey, modelId, baseUrl, $0) }
         return Model(handle: handle)
     }
 
     /// Create a Mistral model instance.
     public static func mistral(apiKey: String, modelId: String) throws -> Model {
-        let handle = try extractHandle(aimux_mistral_new(apiKey, modelId))
+        let handle = try wrapHandle { aimux_mistral_new(apiKey, modelId, $0) }
         return Model(handle: handle)
     }
 
     /// Create a Mistral model instance with a custom base URL.
     public static func mistral(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
-        let handle = try extractHandle(aimux_mistral_new_with_base(apiKey, modelId, baseUrl))
+        let handle = try wrapHandle { aimux_mistral_new_with_base(apiKey, modelId, baseUrl, $0) }
         return Model(handle: handle)
     }
 
     /// Create an xAI model instance.
     public static func xai(apiKey: String, modelId: String) throws -> Model {
-        let handle = try extractHandle(aimux_xai_new(apiKey, modelId))
+        let handle = try wrapHandle { aimux_xai_new(apiKey, modelId, $0) }
         return Model(handle: handle)
     }
 
     /// Create an xAI model instance with a custom base URL.
     public static func xai(apiKey: String, modelId: String, baseUrl: String) throws -> Model {
-        let handle = try extractHandle(aimux_xai_new_with_base(apiKey, modelId, baseUrl))
+        let handle = try wrapHandle { aimux_xai_new_with_base(apiKey, modelId, baseUrl, $0) }
         return Model(handle: handle)
     }
 
@@ -158,7 +344,9 @@ public final class Model: @unchecked Sendable {
     public static func bedrock(
         accessKeyId: String, secretAccessKey: String, region: String, modelId: String
     ) throws -> Model {
-        let handle = try extractHandle(aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId))
+        let handle = try wrapHandle {
+            aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId, $0)
+        }
         return Model(handle: handle)
     }
 
@@ -166,8 +354,9 @@ public final class Model: @unchecked Sendable {
     public static func bedrock(
         accessKeyId: String, secretAccessKey: String, region: String, modelId: String, baseUrl: String
     ) throws -> Model {
-        let handle = try extractHandle(
-            aimux_bedrock_new_with_base(accessKeyId, secretAccessKey, region, modelId, baseUrl))
+        let handle = try wrapHandle {
+            aimux_bedrock_new_with_base(accessKeyId, secretAccessKey, region, modelId, baseUrl, $0)
+        }
         return Model(handle: handle)
     }
 
@@ -175,7 +364,9 @@ public final class Model: @unchecked Sendable {
     public static func vertex(
         accessToken: String, project: String, location: String, modelId: String
     ) throws -> Model {
-        let handle = try extractHandle(aimux_vertex_new(accessToken, project, location, modelId))
+        let handle = try wrapHandle {
+            aimux_vertex_new(accessToken, project, location, modelId, $0)
+        }
         return Model(handle: handle)
     }
 
@@ -183,14 +374,15 @@ public final class Model: @unchecked Sendable {
     public static func vertex(
         accessToken: String, project: String, location: String, modelId: String, baseUrl: String
     ) throws -> Model {
-        let handle = try extractHandle(
-            aimux_vertex_new_with_base(accessToken, project, location, modelId, baseUrl))
+        let handle = try wrapHandle {
+            aimux_vertex_new_with_base(accessToken, project, location, modelId, baseUrl, $0)
+        }
         return Model(handle: handle)
     }
 
     /// Create an Anthropic-on-AWS model instance (API key + region).
     public static func anthropicAws(apiKey: String, region: String, modelId: String) throws -> Model {
-        let handle = try extractHandle(aimux_anthropic_aws_new(apiKey, region, modelId))
+        let handle = try wrapHandle { aimux_anthropic_aws_new(apiKey, region, modelId, $0) }
         return Model(handle: handle)
     }
 
@@ -198,7 +390,9 @@ public final class Model: @unchecked Sendable {
     public static func anthropicAws(
         apiKey: String, region: String, modelId: String, baseUrl: String
     ) throws -> Model {
-        let handle = try extractHandle(aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl))
+        let handle = try wrapHandle {
+            aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl, $0)
+        }
         return Model(handle: handle)
     }
 
@@ -207,7 +401,9 @@ public final class Model: @unchecked Sendable {
     public static func azure(
         apiKey: String, resourceName: String, deployment: String, apiVersion: String? = nil
     ) throws -> Model {
-        let handle = try extractHandle(aimux_azure_new(apiKey, resourceName, deployment, apiVersion))
+        let handle = try wrapHandle {
+            aimux_azure_new(apiKey, resourceName, deployment, apiVersion, $0)
+        }
         return Model(handle: handle)
     }
 
@@ -215,7 +411,9 @@ public final class Model: @unchecked Sendable {
     public static func azureWithBase(
         apiKey: String, baseUrl: String, deployment: String, apiVersion: String? = nil
     ) throws -> Model {
-        let handle = try extractHandle(aimux_azure_new_with_base(apiKey, baseUrl, deployment, apiVersion))
+        let handle = try wrapHandle {
+            aimux_azure_new_with_base(apiKey, baseUrl, deployment, apiVersion, $0)
+        }
         return Model(handle: handle)
     }
 
@@ -229,8 +427,12 @@ public final class Model: @unchecked Sendable {
     ///   - configJson: Optional JSON object of `ProviderOptions`
     ///     (`{"base_url": "...", "headers": {...}, "max_retries": 0,
     ///     "body_overrides": {...}}`); `nil` for defaults.
-    public static func provider(name: String, apiKey: String? = nil, modelId: String, configJson: String? = nil) throws -> Model {
-        let handle = try extractHandle(aimux_provider_new(name, apiKey, modelId, configJson))
+    public static func provider(
+        name: String, apiKey: String? = nil, modelId: String, configJson: String? = nil
+    ) throws -> Model {
+        let handle = try wrapHandle {
+            aimux_provider_new(name, apiKey, modelId, configJson, $0)
+        }
         return Model(handle: handle)
     }
 
@@ -281,7 +483,7 @@ public final class Model: @unchecked Sendable {
     /// - Parameter recordingsJsonl: The recorded JSONL content.
     /// - Returns: A `Model` backed by the mock replay handle.
     public static func mockReplay(recordingsJsonl: String) throws -> Model {
-        let handle = try extractHandle(aimux_mock_replay_new(recordingsJsonl))
+        let handle = try wrapHandle { aimux_mock_replay_new(recordingsJsonl, $0) }
         return Model(handle: handle)
     }
 
@@ -291,8 +493,12 @@ public final class Model: @unchecked Sendable {
     ///
     /// Unlike `provider()` (which binds to a single modelId), this returns a
     /// `ProviderHandle` that supports `listModels()` and `model()`.
-    public static func createProvider(name: String, apiKey: String? = nil, configJson: String? = nil) throws -> ProviderHandle {
-        let handle = try extractHandle(aimux_provider_handle_new(name, apiKey, configJson))
+    public static func createProvider(
+        name: String, apiKey: String? = nil, configJson: String? = nil
+    ) throws -> ProviderHandle {
+        let handle = try wrapHandle {
+            aimux_provider_handle_new(name, apiKey, configJson, $0)
+        }
         return ProviderHandle(handle: handle)
     }
 
@@ -305,27 +511,7 @@ public final class Model: @unchecked Sendable {
     ///   - options: Optional GenerateTextOptions (serialized as JSON).
     /// - Returns: The JSON-serialized GenerateTextResult.
     public func generateText(prompt: String, options: String? = nil) throws -> String {
-        let resultPtr = aimux_generate_text(
-            handle,
-            prompt,
-            options
-        )
-
-        guard let ptr = resultPtr else {
-            throw AimuxError.serializationError("generate_text returned null")
-        }
-
-        let result = String(cString: ptr)
-        aimux_free_string(ptr)
-
-        // Check for error in the result JSON
-        if let data = result.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let error = json["error"] as? String {
-            throw AimuxError.providerError(error)
-        }
-
-        return result
+        try ffiStringCall { aimux_generate_text(handle, prompt, options, $0) }
     }
 
     /// Generate text (non-streaming) with OpenAI Chat Completions output.
@@ -338,82 +524,30 @@ public final class Model: @unchecked Sendable {
     ///   - options: Optional GenerateTextOptions (serialized as JSON).
     /// - Returns: The JSON-serialized ChatCompletion.
     public func generateTextAsOpenAI(prompt: String, options: String? = nil) throws -> String {
-        let resultPtr = aimux_generate_text_as_openai(
-            handle,
-            prompt,
-            options
-        )
-
-        guard let ptr = resultPtr else {
-            throw AimuxError.serializationError("generate_text_as_openai returned null")
-        }
-
-        let result = String(cString: ptr)
-        aimux_free_string(ptr)
-
-        // Check for error in the result JSON
-        if let data = result.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let error = json["error"] as? String {
-            throw AimuxError.providerError(error)
-        }
-
-        return result
+        try ffiStringCall { aimux_generate_text_as_openai(handle, prompt, options, $0) }
     }
 
     /// Stream text from the model.
+    ///
+    /// The C ABI returns `int32` success (non-zero) / failure (0) and fills
+    /// `AimuxError *err` on failure — there is no C `onError` callback.
+    /// Failures are surfaced via `onError` with a structured `AimuxError`.
     ///
     /// - Parameters:
     ///   - prompt: A prompt string (serialized as JSON).
     ///   - options: Optional GenerateTextOptions (serialized as JSON).
     ///   - onPart: Called for each StreamPart (JSON string).
     ///   - onDone: Called when the stream completes normally.
-    ///   - onError: Called on a stream error.
+    ///   - onError: Called on stream failure (`AimuxError.fromC`).
     public func streamText(
         prompt: String,
         options: String? = nil,
         onPart: @escaping (String) -> Void,
         onDone: @escaping () -> Void,
-        onError: @escaping (String) -> Void
+        onError: @escaping (AimuxError) -> Void
     ) {
-        // The C callbacks are simple function pointers. We use a trampoline
-        // through a context object because C function pointers can't capture
-        // Swift closures.
-
-        let context = StreamContext(
-            onPart: onPart,
-            onDone: onDone,
-            onError: onError
-        )
-
-        // The C ABI has no user-data parameter, so keep the context in the
-        // invoking thread's dictionary. aimux_stream_text is synchronous and
-        // invokes callbacks on that same thread, while concurrent streams on
-        // other threads receive independent contexts.
-        let previousContext = StreamContext.current
-        StreamContext.current = context
-        defer { StreamContext.current = previousContext }
-
-        aimux_stream_text(
-            handle,
-            prompt,
-            options,
-            { jsonPtr in
-                if let ptr = jsonPtr {
-                    let json = String(cString: ptr)
-                    StreamContext.current?.onPart(json)
-                }
-            },
-            {
-                StreamContext.current?.onDone()
-            },
-            { errPtr in
-                if let ptr = errPtr {
-                    let err = String(cString: ptr)
-                    StreamContext.current?.onError(err)
-                }
-            }
-        )
+        stream(aimux_stream_text, prompt: prompt, options: options,
+               onPart: onPart, onDone: onDone, onError: onError)
     }
 
     /// Stream text from the model with OpenAI Chat Completions output.
@@ -423,50 +557,52 @@ public final class Model: @unchecked Sendable {
     /// any provider (RFC-0026). Stream options (`include_usage`,
     /// `include_reasoning`) are passed via `options` →
     /// `providerOptions.openai.stream_options`.
-    ///
-    /// - Parameters:
-    ///   - prompt: A prompt string (serialized as JSON).
-    ///   - options: Optional GenerateTextOptions (serialized as JSON).
-    ///   - onPart: Called for each ChatCompletionChunk (JSON string).
-    ///   - onDone: Called when the stream completes normally.
-    ///   - onError: Called on a stream error.
     public func streamTextAsOpenAI(
         prompt: String,
         options: String? = nil,
         onPart: @escaping (String) -> Void,
         onDone: @escaping () -> Void,
-        onError: @escaping (String) -> Void
+        onError: @escaping (AimuxError) -> Void
     ) {
-        let context = StreamContext(
-            onPart: onPart,
-            onDone: onDone,
-            onError: onError
-        )
+        stream(aimux_stream_text_as_openai, prompt: prompt, options: options,
+               onPart: onPart, onDone: onDone, onError: onError)
+    }
 
-        let previousContext = StreamContext.current
-        StreamContext.current = context
-        defer { StreamContext.current = previousContext }
+    /// C `aimux_stream_text` / `aimux_stream_text_as_openai` signature.
+    private typealias StreamFn = (
+        UInt64, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+        (@convention(c) (UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void)?,
+        (@convention(c) (UnsafeMutableRawPointer?) -> Void)?,
+        UnsafeMutableRawPointer?, UnsafeMutablePointer<CAimuxError>?
+    ) -> Int32
 
-        aimux_stream_text_as_openai(
-            handle,
-            prompt,
-            options,
-            { jsonPtr in
-                if let ptr = jsonPtr {
-                    let json = String(cString: ptr)
-                    StreamContext.current?.onPart(json)
-                }
-            },
-            {
-                StreamContext.current?.onDone()
-            },
-            { errPtr in
-                if let ptr = errPtr {
-                    let err = String(cString: ptr)
-                    StreamContext.current?.onError(err)
-                }
+    /// Shared body of the two closure-based stream methods (they differ only
+    /// by C symbol).
+    private func stream(
+        _ fn: StreamFn,
+        prompt: String,
+        options: String?,
+        onPart: @escaping (String) -> Void,
+        onDone: @escaping () -> Void,
+        onError: @escaping (AimuxError) -> Void
+    ) {
+        let context = StreamContext(onPart: onPart, onDone: onDone)
+        let unmanaged = Unmanaged.passRetained(context)
+        defer { unmanaged.release() }
+
+        do {
+            _ = try withCError { err -> Int32? in
+                let rc = fn(handle, prompt, options,
+                            aimuxStreamOnPart, aimuxStreamOnDone,
+                            unmanaged.toOpaque(), err)
+                return rc == 0 ? nil : rc
             }
-        )
+        } catch let e as AimuxError {
+            onError(e)
+        } catch {
+            // withCError only throws AimuxError.
+            onError(.unknown(message: "\(error)", status: -1, retryMs: -1, errorValue: nil))
+        }
     }
 
     /// Stream text as an AsyncSequence of StreamPart JSON strings.
@@ -477,40 +613,30 @@ public final class Model: @unchecked Sendable {
     ///     print(part)
     /// }
     /// ```
-    public func streamTextAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error> {
+    public func streamTextAsync(
+        prompt: String, options: String? = nil
+    ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             self.streamText(
-                prompt: prompt,
-                options: options,
-                onPart: { part in
-                    continuation.yield(part)
-                },
-                onDone: {
-                    continuation.finish()
-                },
-                onError: { err in
-                    continuation.finish(throwing: AimuxError.streamError(err))
-                }
+                prompt: prompt, options: options,
+                onPart: { continuation.yield($0) },
+                onDone: { continuation.finish() },
+                onError: { continuation.finish(throwing: $0) }
             )
         }
     }
 
     /// Stream text with OpenAI Chat Completions output as an AsyncSequence of
     /// ChatCompletionChunk JSON strings (RFC-0026).
-    public func streamTextAsOpenAIAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error> {
+    public func streamTextAsOpenAIAsync(
+        prompt: String, options: String? = nil
+    ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             self.streamTextAsOpenAI(
-                prompt: prompt,
-                options: options,
-                onPart: { part in
-                    continuation.yield(part)
-                },
-                onDone: {
-                    continuation.finish()
-                },
-                onError: { err in
-                    continuation.finish(throwing: AimuxError.streamError(err))
-                }
+                prompt: prompt, options: options,
+                onPart: { continuation.yield($0) },
+                onDone: { continuation.finish() },
+                onError: { continuation.finish(throwing: $0) }
             )
         }
     }
@@ -540,23 +666,13 @@ public final class ProviderHandle: @unchecked Sendable {
     /// Returns a JSON array of ResolvedModel.
     public func listModels() throws -> String {
         guard handle != 0 else { throw AimuxError.invalidHandle }
-        guard let ptr = aimux_provider_list_models(handle) else {
-            throw AimuxError.serializationError("list_models returned null")
-        }
-        let result = String(cString: ptr)
-        aimux_free_string(ptr)
-        if let data = result.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let error = json["error"] as? String {
-            throw AimuxError.providerError(error)
-        }
-        return result
+        return try ffiStringCall { aimux_provider_list_models(handle, $0) }
     }
 
     /// Build a language model from a discovered model id.
     public func model(_ modelId: String) throws -> Model {
         guard handle != 0 else { throw AimuxError.invalidHandle }
-        let h = try Model.extractHandle(aimux_provider_model(handle, modelId))
+        let h = try Model.wrapHandle { aimux_provider_model(handle, modelId, $0) }
         return Model(handle: h)
     }
 }
@@ -570,52 +686,41 @@ public final class ProviderHandle: @unchecked Sendable {
 ///
 /// - Parameter sourceUrl: Optional URL override (nil = default endpoint).
 public func getModelSpecs(sourceUrl: String? = nil) throws -> String {
-    guard let ptr = aimux_get_model_specs(sourceUrl) else {
-        throw AimuxError.serializationError("get_model_specs returned null")
-    }
-    let result = String(cString: ptr)
-    aimux_free_string(ptr)
-    if let data = result.data(using: .utf8),
-       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let error = json["error"] as? String {
-        throw AimuxError.providerError(error)
-    }
-    return result
+    try ffiStringCall { aimux_get_model_specs(sourceUrl, $0) }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stream context (trampoline for C callbacks)
+// Stream context + C trampolines
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Holds the Swift closures for stream callbacks.
-/// The current context is stored per thread because the C ABI cannot pass
-/// user-data through its callback function pointers.
+/// Passed through the C ABI `stream_ctx` void* (not thread-local).
 private final class StreamContext {
     let onPart: (String) -> Void
     let onDone: () -> Void
-    let onError: (String) -> Void
 
-    init(onPart: @escaping (String) -> Void,
-         onDone: @escaping () -> Void,
-         onError: @escaping (String) -> Void) {
+    init(onPart: @escaping (String) -> Void, onDone: @escaping () -> Void) {
         self.onPart = onPart
         self.onDone = onDone
-        self.onError = onError
     }
+}
 
-    private static let threadKey = "org.aimux.swift.stream-context"
-
-    /// Current active context for the invoking thread.
-    static var current: StreamContext? {
-        get { Thread.current.threadDictionary[threadKey] as? StreamContext }
-        set {
-            if let newValue {
-                Thread.current.threadDictionary[threadKey] = newValue
-            } else {
-                Thread.current.threadDictionary.removeObject(forKey: threadKey)
-            }
-        }
+/// C-compatible trampoline: `on_part(const char *json, void *stream_ctx)`.
+private func aimuxStreamOnPart(
+    _ jsonPtr: UnsafePointer<CChar>?,
+    _ ctx: UnsafeMutableRawPointer?
+) {
+    guard let ctx else { return }
+    let context = Unmanaged<StreamContext>.fromOpaque(ctx).takeUnretainedValue()
+    if let jsonPtr {
+        context.onPart(String(cString: jsonPtr))
     }
+}
+
+/// C-compatible trampoline: `on_done(void *stream_ctx)`.
+private func aimuxStreamOnDone(_ ctx: UnsafeMutableRawPointer?) {
+    guard let ctx else { return }
+    Unmanaged<StreamContext>.fromOpaque(ctx).takeUnretainedValue().onDone()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -11,293 +11,170 @@
 // library (libaimux_ffi.so / .dylib / .dll) must be on the library path or
 // bundled in the Flutter app. All calls are synchronous (the C ABI blocks until
 // completion).
+//
+// Engine failures throw [AimuxException] (see errors.dart).
 
-import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io';
 import 'package:ffi/ffi.dart';
 
+import 'errors.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
-// FFI type aliases
+// FFI type aliases (AimuxError *err trailing out-param)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Constructors taking (api_key, model_id) → handle. Shared by every embedding,
-// speech, image, transcription, reranking, video, and search provider.
-typedef _NewC = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
-typedef _NewDart = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
+// Constructors taking (api_key, model_id, err) → uint64_t handle.
+typedef _NewC = Uint64 Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
+typedef _NewDart = int Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
 
-// Constructors taking (api_key, model_id, base_url) → handle (the _with_base
-// variants). Same signature for every provider.
-typedef _NewWithBaseC = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
-typedef _NewWithBaseDart = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
+// Constructors taking (api_key, model_id, base_url, err) → handle.
+typedef _NewWithBaseC = Uint64 Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
+typedef _NewWithBaseDart = int Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
 
-// Files constructors take only (api_key) — no model_id.
-typedef _FilesNewC = Pointer<Utf8> Function(Pointer<Utf8> apiKey);
-typedef _FilesNewDart = Pointer<Utf8> Function(Pointer<Utf8> apiKey);
+// Files constructors take only (api_key, err) — no model_id.
+typedef _FilesNewC = Uint64 Function(
+    Pointer<Utf8> apiKey, Pointer<AimuxCError> err);
+typedef _FilesNewDart = int Function(
+    Pointer<Utf8> apiKey, Pointer<AimuxCError> err);
 
-// Files constructors with a custom base URL: (api_key, base_url).
-typedef _FilesNewWithBaseC = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl);
-typedef _FilesNewWithBaseDart = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl);
+// Files constructors with a custom base URL: (api_key, base_url, err).
+typedef _FilesNewWithBaseC = Uint64 Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
+typedef _FilesNewWithBaseDart = int Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
 
-// aimux_embed(handle, values_json, opts_json) — opts nullable.
-typedef _EmbedC = Pointer<Utf8> Function(
-    Uint64 handle, Pointer<Utf8> valuesJson, Pointer<Utf8>? optsJson);
-typedef _EmbedDart = Pointer<Utf8> Function(
-    int handle, Pointer<Utf8> valuesJson, Pointer<Utf8>? optsJson);
+// aimux_embed(handle, values_json, opts_json, err) — opts nullable.
+typedef _EmbedC = Pointer<Utf8> Function(Uint64 handle, Pointer<Utf8> valuesJson,
+    Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
+typedef _EmbedDart = Pointer<Utf8> Function(int handle, Pointer<Utf8> valuesJson,
+    Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
 
-// Single-arg generate functions: (handle, opts_json) → string.
-// Covers speech_generate, image_generate, video_generate, rerank, search.
+// Single-arg generate functions: (handle, opts_json, err) → string.
 typedef _GenerateOpts1C = Pointer<Utf8> Function(
-    Uint64 handle, Pointer<Utf8> optsJson);
+    Uint64 handle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
 typedef _GenerateOpts1Dart = Pointer<Utf8> Function(
-    int handle, Pointer<Utf8> optsJson);
+    int handle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
 
-// Three-arg generate functions: (handle, a, b, opts_json) → string, opts
-// nullable. Covers transcription_generate and file_upload.
+// Three-arg generate functions: (handle, a, b, opts_json, err) → string.
 typedef _GenerateOpts3C = Pointer<Utf8> Function(
-    Uint64 handle, Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8>? optsJson);
+    Uint64 handle,
+    Pointer<Utf8> a,
+    Pointer<Utf8> b,
+    Pointer<Utf8>? optsJson,
+    Pointer<AimuxCError> err);
 typedef _GenerateOpts3Dart = Pointer<Utf8> Function(
-    int handle, Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8>? optsJson);
+    int handle,
+    Pointer<Utf8> a,
+    Pointer<Utf8> b,
+    Pointer<Utf8>? optsJson,
+    Pointer<AimuxCError> err);
 
 // Resource management (same as aimux.dart).
 typedef _DropHandleC = Void Function(Uint64);
 typedef _DropHandleDart = void Function(int);
-typedef _FreeStringC = Void Function(Pointer<Utf8>);
-typedef _FreeStringDart = void Function(Pointer<Utf8>);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FFI library wrapper
+// FFI library wrapper (process-wide singleton — dlopen + symbol lookups
+// happen once, lazily per symbol)
 // ─────────────────────────────────────────────────────────────────────────────
 
 final class _MultimodalFFI {
-  // Constructors — (api_key, model_id)
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiEmbeddingNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) cohereEmbeddingNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) googleEmbeddingNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiSpeechNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiImageNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) googleImageNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)
-      openaiTranscriptionNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) cohereRerankingNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) googleVideoNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) tavilySearchNew;
+  final DynamicLibrary _lib = openAimuxLibrary();
 
-  // Constructors — (api_key, model_id, base_url)
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      openaiEmbeddingNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      cohereEmbeddingNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      googleEmbeddingNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      openaiSpeechNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      openaiImageNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      googleImageNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      openaiTranscriptionNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      cohereRerankingNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      googleVideoNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      tavilySearchNewWithBase;
+  // Constructors — (api_key, model_id, err)
+  late final openaiEmbeddingNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_openai_embedding_new');
+  late final cohereEmbeddingNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_cohere_embedding_new');
+  late final googleEmbeddingNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_google_embedding_new');
+  late final openaiSpeechNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_openai_speech_new');
+  late final openaiImageNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_openai_image_new');
+  late final googleImageNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_google_image_new');
+  late final openaiTranscriptionNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_openai_transcription_new');
+  late final cohereRerankingNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_cohere_reranking_new');
+  late final googleVideoNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_google_video_new');
+  late final tavilySearchNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_tavily_search_new');
+
+  // Constructors — (api_key, model_id, base_url, err)
+  late final openaiEmbeddingNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_openai_embedding_new_with_base');
+  late final cohereEmbeddingNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_cohere_embedding_new_with_base');
+  late final googleEmbeddingNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_google_embedding_new_with_base');
+  late final openaiSpeechNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_openai_speech_new_with_base');
+  late final openaiImageNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_openai_image_new_with_base');
+  late final googleImageNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_google_image_new_with_base');
+  late final openaiTranscriptionNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_openai_transcription_new_with_base');
+  late final cohereRerankingNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_cohere_reranking_new_with_base');
+  late final googleVideoNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_google_video_new_with_base');
+  late final tavilySearchNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_tavily_search_new_with_base');
 
   // Files constructors
-  final Pointer<Utf8> Function(Pointer<Utf8>) openaiFilesNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>)
-      openaiFilesNewWithBase;
+  late final openaiFilesNew =
+      _lib.lookupFunction<_FilesNewC, _FilesNewDart>('aimux_openai_files_new');
+  late final openaiFilesNewWithBase = _lib
+      .lookupFunction<_FilesNewWithBaseC, _FilesNewWithBaseDart>(
+          'aimux_openai_files_new_with_base');
 
   // Generate / embed / rerank / search / upload
-  final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) embed;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>) speechGenerate;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>) imageGenerate;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>) videoGenerate;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>) rerank;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>) search;
-  final Pointer<Utf8> Function(
-      int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?) transcriptionGenerate;
-  final Pointer<Utf8> Function(
-      int, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?) fileUpload;
+  late final embed = _lib.lookupFunction<_EmbedC, _EmbedDart>('aimux_embed');
+  late final speechGenerate = _lib
+      .lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>(
+          'aimux_speech_generate');
+  late final imageGenerate = _lib
+      .lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>(
+          'aimux_image_generate');
+  late final videoGenerate = _lib
+      .lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>(
+          'aimux_video_generate');
+  late final rerank =
+      _lib.lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>('aimux_rerank');
+  late final search =
+      _lib.lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>('aimux_search');
+  late final transcriptionGenerate = _lib
+      .lookupFunction<_GenerateOpts3C, _GenerateOpts3Dart>(
+          'aimux_transcription_generate');
+  late final fileUpload = _lib
+      .lookupFunction<_GenerateOpts3C, _GenerateOpts3Dart>('aimux_file_upload');
 
   // Resource management
-  final void Function(int) dropHandle;
-  final void Function(Pointer<Utf8>) freeString;
-
-  _MultimodalFFI._(
-      this.openaiEmbeddingNew,
-      this.cohereEmbeddingNew,
-      this.googleEmbeddingNew,
-      this.openaiSpeechNew,
-      this.openaiImageNew,
-      this.googleImageNew,
-      this.openaiTranscriptionNew,
-      this.cohereRerankingNew,
-      this.googleVideoNew,
-      this.tavilySearchNew,
-      this.openaiEmbeddingNewWithBase,
-      this.cohereEmbeddingNewWithBase,
-      this.googleEmbeddingNewWithBase,
-      this.openaiSpeechNewWithBase,
-      this.openaiImageNewWithBase,
-      this.googleImageNewWithBase,
-      this.openaiTranscriptionNewWithBase,
-      this.cohereRerankingNewWithBase,
-      this.googleVideoNewWithBase,
-      this.tavilySearchNewWithBase,
-      this.openaiFilesNew,
-      this.openaiFilesNewWithBase,
-      this.embed,
-      this.speechGenerate,
-      this.imageGenerate,
-      this.videoGenerate,
-      this.rerank,
-      this.search,
-      this.transcriptionGenerate,
-      this.fileUpload,
-      this.dropHandle,
-      this.freeString);
-
-  factory _MultimodalFFI() {
-    final dylib = _openLibrary();
-
-    return _MultimodalFFI._(
-      // (api_key, model_id) constructors
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_openai_embedding_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_cohere_embedding_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_google_embedding_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_openai_speech_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_openai_image_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_google_image_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_openai_transcription_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_cohere_reranking_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_google_video_new'),
-      dylib.lookupFunction<_NewC, _NewDart>('aimux_tavily_search_new'),
-      // (api_key, model_id, base_url) constructors
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_openai_embedding_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_cohere_embedding_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_google_embedding_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_openai_speech_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_openai_image_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_google_image_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_openai_transcription_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_cohere_reranking_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_google_video_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_tavily_search_new_with_base'),
-      // Files constructors
-      dylib.lookupFunction<_FilesNewC, _FilesNewDart>('aimux_openai_files_new'),
-      dylib.lookupFunction<_FilesNewWithBaseC, _FilesNewWithBaseDart>(
-          'aimux_openai_files_new_with_base'),
-      // Generate / embed / rerank / search / upload
-      dylib.lookupFunction<_EmbedC, _EmbedDart>('aimux_embed'),
-      dylib.lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>(
-          'aimux_speech_generate'),
-      dylib.lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>(
-          'aimux_image_generate'),
-      dylib.lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>(
-          'aimux_video_generate'),
-      dylib.lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>('aimux_rerank'),
-      dylib.lookupFunction<_GenerateOpts1C, _GenerateOpts1Dart>('aimux_search'),
-      dylib.lookupFunction<_GenerateOpts3C, _GenerateOpts3Dart>(
-          'aimux_transcription_generate'),
-      dylib.lookupFunction<_GenerateOpts3C, _GenerateOpts3Dart>(
-          'aimux_file_upload'),
-      // Resource management
-      dylib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle'),
-      dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
-    );
-  }
-
-  /// Opens the aimux-ffi native library for the current platform.
-  ///
-  /// Same layout as `_AimuxFFI._openLibrary` in aimux.dart:
-  ///   - Android: `libaimux_ffi.so` bundled via android/src/main/jniLibs.
-  ///   - iOS:     statically linked `libaimux_ffi.a` (process symbols).
-  ///   - Desktop: platform library path (dev/test usage).
-  static DynamicLibrary _openLibrary() {
-    if (Platform.isAndroid) return DynamicLibrary.open('libaimux_ffi.so');
-    if (Platform.isIOS) return DynamicLibrary.process();
-    return DynamicLibrary.open(_platformLibName());
-  }
-
-  static String _platformLibName() {
-    if (Platform.isLinux) return 'libaimux_ffi.so';
-    if (Platform.isMacOS) return 'libaimux_ffi.dylib';
-    if (Platform.isWindows) return 'aimux_ffi.dll';
-    throw UnsupportedError('Unsupported platform');
-  }
+  late final dropHandle =
+      _lib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Manage a NUL-terminated C string for the duration of [fn]. Same helper as
-// aimux.dart (duplicated here to keep this file self-contained).
-T _withUtf8<T>(String s, T Function(Pointer<Utf8>) fn) {
-  final ptr = s.toNativeUtf8();
-  try {
-    return fn(ptr);
-  } finally {
-    calloc.free(ptr);
-  }
-}
-
-// Shared "call FFI → copy Pointer → toDartString → free → check error → return
-// String" helper. Mirrors Go's callFFIString + extractError: a null pointer is
-// an error, an {"error":"..."} envelope is thrown as StateError, everything
-// else is returned as the raw JSON string. Non-JSON results are returned
-// as-is (defensive — the ABI guarantees JSON results).
-String _readResult(_MultimodalFFI ffi, Pointer<Utf8> ptr) {
-  if (ptr == nullptr) throw StateError('aimux: FFI call returned null');
-  final result = ptr.toDartString();
-  ffi.freeString(ptr);
-  try {
-    final decoded = jsonDecode(result);
-    if (decoded is Map<String, dynamic> && decoded.containsKey('error')) {
-      throw StateError('aimux: ${decoded['error']}');
-    }
-  } on FormatException {
-    // Not valid JSON — return the raw string (defensive).
-  }
-  return result;
-}
-
-// Parse a constructor's JSON result (`{"handle":<u64>}` on success,
-// `{"error":"..."}` on failure), free the pointer, and return the handle.
-// Mirrors aimux.dart's `_extractHandle` (duplicated here to keep this file
-// self-contained, same as `_withUtf8`).
-int _extractHandle(_MultimodalFFI ffi, Pointer<Utf8> ptr) {
-  if (ptr == nullptr) throw StateError('constructor returned null');
-  final result = ptr.toDartString();
-  ffi.freeString(ptr);
-  final decoded = jsonDecode(result);
-  if (decoded is Map<String, dynamic>) {
-    final error = decoded['error'];
-    if (error is String) throw StateError(error);
-    final handle = decoded['handle'];
-    if (handle is int) return handle;
-  }
-  throw StateError('invalid constructor response: $result');
-}
+/// Process-wide FFI table. Lazily created on first use; shared by every
+/// multimodal model instance.
+final _MultimodalFFI _ffi = _MultimodalFFI();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EmbeddingModel
@@ -308,82 +185,47 @@ int _extractHandle(_MultimodalFFI ffi, Pointer<Utf8> ptr) {
 /// Call [close] to release the native handle.
 class EmbeddingModel {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  EmbeddingModel._(this._handle, this._ffi);
+  EmbeddingModel._(this._handle);
 
   /// Create an OpenAI embedding model (e.g. text-embedding-3-small).
   ///
   /// Pass [baseUrl] to target an OpenAI-compatible endpoint. When null, the
   /// provider's standard URL is used via `aimux_openai_embedding_new`.
   factory EmbeddingModel.openai(String apiKey, String modelId,
-      {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.openaiEmbeddingNew(keyPtr, idPtr);
-        }
-        return _withUtf8(
-            baseUrl,
-            (basePtr) =>
-                ffi.openaiEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return EmbeddingModel._(_extractHandle(ffi, ptr), ffi);
-  }
+          {String? baseUrl}) =>
+      EmbeddingModel._(construct2(apiKey, modelId, baseUrl,
+          _ffi.openaiEmbeddingNew, _ffi.openaiEmbeddingNewWithBase));
 
   /// Create a Cohere embedding model (e.g. embed-english-v3.0).
   factory EmbeddingModel.cohere(String apiKey, String modelId,
-      {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.cohereEmbeddingNew(keyPtr, idPtr);
-        }
-        return _withUtf8(
-            baseUrl,
-            (basePtr) =>
-                ffi.cohereEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return EmbeddingModel._(_extractHandle(ffi, ptr), ffi);
-  }
+          {String? baseUrl}) =>
+      EmbeddingModel._(construct2(apiKey, modelId, baseUrl,
+          _ffi.cohereEmbeddingNew, _ffi.cohereEmbeddingNewWithBase));
 
   /// Create a Google embedding model (e.g. gemini-embedding-001).
   factory EmbeddingModel.google(String apiKey, String modelId,
-      {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.googleEmbeddingNew(keyPtr, idPtr);
-        }
-        return _withUtf8(
-            baseUrl,
-            (basePtr) =>
-                ffi.googleEmbeddingNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return EmbeddingModel._(_extractHandle(ffi, ptr), ffi);
-  }
+          {String? baseUrl}) =>
+      EmbeddingModel._(construct2(apiKey, modelId, baseUrl,
+          _ffi.googleEmbeddingNew, _ffi.googleEmbeddingNewWithBase));
 
   /// Generate embeddings for [valuesJson] (a JSON array of strings).
   ///
   /// [optsJson] — optional serialized EmbeddingCallOptions.
-  /// Returns the JSON-serialized EmbeddingResult, or throws on error.
+  /// Returns the JSON-serialized EmbeddingResult, or throws [AimuxException].
   String embed(String valuesJson, [String? optsJson]) {
     _checkOpen();
-    return _withUtf8(valuesJson, (valuesPtr) {
-      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-      try {
-        final resultPtr = _ffi.embed(_handle, valuesPtr, optsPtr);
-        return _readResult(_ffi, resultPtr);
-      } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
-      }
+    return withAimuxCError((err) {
+      return withUtf8(valuesJson, (valuesPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final resultPtr = _ffi.embed(_handle, valuesPtr, optsPtr, err);
+          return takeString(resultPtr, err);
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
     });
   }
 
@@ -409,34 +251,26 @@ class EmbeddingModel {
 /// Call [close] to release the native handle.
 class SpeechModel {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  SpeechModel._(this._handle, this._ffi);
+  SpeechModel._(this._handle);
 
   /// Create an OpenAI speech (TTS) model.
-  factory SpeechModel.openai(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.openaiSpeechNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.openaiSpeechNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return SpeechModel._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory SpeechModel.openai(String apiKey, String modelId,
+          {String? baseUrl}) =>
+      SpeechModel._(construct2(apiKey, modelId, baseUrl, _ffi.openaiSpeechNew,
+          _ffi.openaiSpeechNewWithBase));
 
   /// Generate speech audio from [optsJson] (serialized SpeechCallOptions).
   ///
-  /// Returns the JSON-serialized SpeechResult, or throws on error.
+  /// Returns the JSON-serialized SpeechResult, or throws [AimuxException].
   String generate(String optsJson) {
     _checkOpen();
-    return _withUtf8(optsJson, (optsPtr) {
-      final resultPtr = _ffi.speechGenerate(_handle, optsPtr);
-      return _readResult(_ffi, resultPtr);
+    return withAimuxCError((err) {
+      return withUtf8(optsJson, (optsPtr) {
+        final resultPtr = _ffi.speechGenerate(_handle, optsPtr, err);
+        return takeString(resultPtr, err);
+      });
     });
   }
 
@@ -462,47 +296,36 @@ class SpeechModel {
 /// Call [close] to release the native handle.
 class TranscriptionModel {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  TranscriptionModel._(this._handle, this._ffi);
+  TranscriptionModel._(this._handle);
 
   /// Create an OpenAI transcription (STT) model.
   factory TranscriptionModel.openai(String apiKey, String modelId,
-      {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.openaiTranscriptionNew(keyPtr, idPtr);
-        }
-        return _withUtf8(
-            baseUrl,
-            (basePtr) =>
-                ffi.openaiTranscriptionNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return TranscriptionModel._(_extractHandle(ffi, ptr), ffi);
-  }
+          {String? baseUrl}) =>
+      TranscriptionModel._(construct2(apiKey, modelId, baseUrl,
+          _ffi.openaiTranscriptionNew, _ffi.openaiTranscriptionNewWithBase));
 
   /// Transcribe audio to text.
   ///
   /// [audioBase64] — base64-encoded audio data.
   /// [mediaType] — media type of the audio (e.g. "audio/wav").
   /// [optsJson] — optional serialized TranscriptionCallOptions.
-  /// Returns the JSON-serialized TranscriptionResult, or throws on error.
+  /// Returns the JSON-serialized TranscriptionResult, or throws [AimuxException].
   String generate(String audioBase64, String mediaType, [String? optsJson]) {
     _checkOpen();
-    return _withUtf8(audioBase64, (audioPtr) {
-      return _withUtf8(mediaType, (mediaPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-        try {
-          final resultPtr =
-              _ffi.transcriptionGenerate(_handle, audioPtr, mediaPtr, optsPtr);
-          return _readResult(_ffi, resultPtr);
-        } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
-        }
+    return withAimuxCError((err) {
+      return withUtf8(audioBase64, (audioPtr) {
+        return withUtf8(mediaType, (mediaPtr) {
+          final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+          try {
+            final resultPtr = _ffi.transcriptionGenerate(
+                _handle, audioPtr, mediaPtr, optsPtr, err);
+            return takeString(resultPtr, err);
+          } finally {
+            if (optsPtr != nullptr) calloc.free(optsPtr);
+          }
+        });
       });
     });
   }
@@ -529,49 +352,30 @@ class TranscriptionModel {
 /// Call [close] to release the native handle.
 class ImageModel {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  ImageModel._(this._handle, this._ffi);
+  ImageModel._(this._handle);
 
   /// Create an OpenAI image model (e.g. dall-e-3).
-  factory ImageModel.openai(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.openaiImageNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.openaiImageNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return ImageModel._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory ImageModel.openai(String apiKey, String modelId, {String? baseUrl}) =>
+      ImageModel._(construct2(apiKey, modelId, baseUrl, _ffi.openaiImageNew,
+          _ffi.openaiImageNewWithBase));
 
   /// Create a Google image model (e.g. gemini-2.5-flash-image).
-  factory ImageModel.google(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.googleImageNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.googleImageNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return ImageModel._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory ImageModel.google(String apiKey, String modelId, {String? baseUrl}) =>
+      ImageModel._(construct2(apiKey, modelId, baseUrl, _ffi.googleImageNew,
+          _ffi.googleImageNewWithBase));
 
   /// Generate images from [optsJson] (serialized ImageCallOptions).
   ///
-  /// Returns the JSON-serialized ImageResult, or throws on error.
+  /// Returns the JSON-serialized ImageResult, or throws [AimuxException].
   String generate(String optsJson) {
     _checkOpen();
-    return _withUtf8(optsJson, (optsPtr) {
-      final resultPtr = _ffi.imageGenerate(_handle, optsPtr);
-      return _readResult(_ffi, resultPtr);
+    return withAimuxCError((err) {
+      return withUtf8(optsJson, (optsPtr) {
+        final resultPtr = _ffi.imageGenerate(_handle, optsPtr, err);
+        return takeString(resultPtr, err);
+      });
     });
   }
 
@@ -597,34 +401,25 @@ class ImageModel {
 /// Call [close] to release the native handle.
 class VideoModel {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  VideoModel._(this._handle, this._ffi);
+  VideoModel._(this._handle);
 
   /// Create a Google video model (e.g. veo-3.0).
-  factory VideoModel.google(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.googleVideoNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.googleVideoNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return VideoModel._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory VideoModel.google(String apiKey, String modelId, {String? baseUrl}) =>
+      VideoModel._(construct2(apiKey, modelId, baseUrl, _ffi.googleVideoNew,
+          _ffi.googleVideoNewWithBase));
 
   /// Generate videos from [optsJson] (serialized VideoCallOptions).
   ///
-  /// Returns the JSON-serialized VideoResult, or throws on error.
+  /// Returns the JSON-serialized VideoResult, or throws [AimuxException].
   String generate(String optsJson) {
     _checkOpen();
-    return _withUtf8(optsJson, (optsPtr) {
-      final resultPtr = _ffi.videoGenerate(_handle, optsPtr);
-      return _readResult(_ffi, resultPtr);
+    return withAimuxCError((err) {
+      return withUtf8(optsJson, (optsPtr) {
+        final resultPtr = _ffi.videoGenerate(_handle, optsPtr, err);
+        return takeString(resultPtr, err);
+      });
     });
   }
 
@@ -650,38 +445,27 @@ class VideoModel {
 /// Call [close] to release the native handle.
 class RerankingModel {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  RerankingModel._(this._handle, this._ffi);
+  RerankingModel._(this._handle);
 
   /// Create a Cohere reranking model (e.g. rerank-v3.0).
   factory RerankingModel.cohere(String apiKey, String modelId,
-      {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.cohereRerankingNew(keyPtr, idPtr);
-        }
-        return _withUtf8(
-            baseUrl,
-            (basePtr) =>
-                ffi.cohereRerankingNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return RerankingModel._(_extractHandle(ffi, ptr), ffi);
-  }
+          {String? baseUrl}) =>
+      RerankingModel._(construct2(apiKey, modelId, baseUrl,
+          _ffi.cohereRerankingNew, _ffi.cohereRerankingNewWithBase));
 
   /// Rerank documents against a query.
   ///
   /// [optsJson] — serialized RerankingCallOptions.
-  /// Returns the JSON-serialized RerankingResult, or throws on error.
+  /// Returns the JSON-serialized RerankingResult, or throws [AimuxException].
   String rerank(String optsJson) {
     _checkOpen();
-    return _withUtf8(optsJson, (optsPtr) {
-      final resultPtr = _ffi.rerank(_handle, optsPtr);
-      return _readResult(_ffi, resultPtr);
+    return withAimuxCError((err) {
+      return withUtf8(optsJson, (optsPtr) {
+        final resultPtr = _ffi.rerank(_handle, optsPtr, err);
+        return takeString(resultPtr, err);
+      });
     });
   }
 
@@ -707,36 +491,27 @@ class RerankingModel {
 /// Call [close] to release the native handle.
 class SearchModel {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  SearchModel._(this._handle, this._ffi);
+  SearchModel._(this._handle);
 
   /// Create a Tavily search model. Tavily uses a fixed endpoint, so no model
   /// ID is needed — an empty string is passed (the C ABI ignores it).
-  factory SearchModel.tavily(String apiKey, {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8('', (idPtr) {
-        if (baseUrl == null) {
-          return ffi.tavilySearchNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.tavilySearchNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return SearchModel._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory SearchModel.tavily(String apiKey, {String? baseUrl}) =>
+      SearchModel._(construct2(apiKey, '', baseUrl, _ffi.tavilySearchNew,
+          _ffi.tavilySearchNewWithBase));
 
   /// Perform a web search.
   ///
   /// [optsJson] — serialized SearchCallOptions.
-  /// Returns the JSON-serialized SearchResult, or throws on error.
+  /// Returns the JSON-serialized SearchResult, or throws [AimuxException].
   String search(String optsJson) {
     _checkOpen();
-    return _withUtf8(optsJson, (optsPtr) {
-      final resultPtr = _ffi.search(_handle, optsPtr);
-      return _readResult(_ffi, resultPtr);
+    return withAimuxCError((err) {
+      return withUtf8(optsJson, (optsPtr) {
+        final resultPtr = _ffi.search(_handle, optsPtr, err);
+        return takeString(resultPtr, err);
+      });
     });
   }
 
@@ -762,22 +537,24 @@ class SearchModel {
 /// Call [close] to release the native handle.
 class Files {
   final int _handle;
-  final _MultimodalFFI _ffi;
   bool _closed = false;
 
-  Files._(this._handle, this._ffi);
+  Files._(this._handle);
 
   /// Create an OpenAI files manager. Files take only an API key (no model ID).
   factory Files.openai(String apiKey, {String? baseUrl}) {
-    final ffi = _MultimodalFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      if (baseUrl == null) {
-        return ffi.openaiFilesNew(keyPtr);
-      }
-      return _withUtf8(
-          baseUrl, (basePtr) => ffi.openaiFilesNewWithBase(keyPtr, basePtr));
+    final handle = withAimuxCError((err) {
+      return withUtf8(apiKey, (keyPtr) {
+        if (baseUrl == null) {
+          return takeHandle(_ffi.openaiFilesNew(keyPtr, err), err);
+        }
+        return withUtf8(baseUrl, (basePtr) {
+          return takeHandle(
+              _ffi.openaiFilesNewWithBase(keyPtr, basePtr, err), err);
+        });
+      });
     });
-    return Files._(_extractHandle(ffi, ptr), ffi);
+    return Files._(handle);
   }
 
   /// Upload a file to the provider.
@@ -785,19 +562,21 @@ class Files {
   /// [dataBase64] — base64-encoded file data.
   /// [mediaType] — media type of the file (e.g. "application/pdf").
   /// [optsJson] — optional serialized UploadFileCallOptions.
-  /// Returns the JSON-serialized UploadFileResult, or throws on error.
+  /// Returns the JSON-serialized UploadFileResult, or throws [AimuxException].
   String uploadFile(String dataBase64, String mediaType, [String? optsJson]) {
     _checkOpen();
-    return _withUtf8(dataBase64, (dataPtr) {
-      return _withUtf8(mediaType, (mediaPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-        try {
-          final resultPtr =
-              _ffi.fileUpload(_handle, dataPtr, mediaPtr, optsPtr);
-          return _readResult(_ffi, resultPtr);
-        } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
-        }
+    return withAimuxCError((err) {
+      return withUtf8(dataBase64, (dataPtr) {
+        return withUtf8(mediaType, (mediaPtr) {
+          final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+          try {
+            final resultPtr =
+                _ffi.fileUpload(_handle, dataPtr, mediaPtr, optsPtr, err);
+            return takeString(resultPtr, err);
+          } finally {
+            if (optsPtr != nullptr) calloc.free(optsPtr);
+          }
+        });
       });
     });
   }

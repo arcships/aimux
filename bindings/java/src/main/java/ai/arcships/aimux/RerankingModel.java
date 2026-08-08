@@ -49,12 +49,14 @@ public final class RerankingModel implements Closeable {
      *
      * @param apiKey  Cohere API key.
      * @param modelId Model ID (e.g. {@code rerank-v3.0}).
-     * @return a new RerankingModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new RerankingModel.
+     * @throws AimuxException on failure.
      */
     public static RerankingModel cohere(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_cohere_reranking_new(apiKey, modelId), "Failed to create Cohere reranking model");
-        return new RerankingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_cohere_reranking_new(apiKey, modelId, err);
+        return new RerankingModel(
+            AimuxResult.extractHandle(h, err, "Failed to create Cohere reranking model"));
     }
 
     /**
@@ -63,24 +65,28 @@ public final class RerankingModel implements Closeable {
      * @param apiKey  Cohere API key.
      * @param modelId Model ID.
      * @param baseUrl Custom base URL.
-     * @return a new RerankingModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new RerankingModel.
+     * @throws AimuxException on failure.
      */
     public static RerankingModel cohereWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create Cohere reranking model");
-        return new RerankingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl, err);
+        return new RerankingModel(
+            AimuxResult.extractHandle(h, err, "Failed to create Cohere reranking model"));
     }
 
     /**
      * Rerank documents against a query.
      *
      * @param optsJson JSON-serialized {@code RerankingCallOptions}.
-     * @return JSON-serialized {@code RerankingResult}. If the engine returns
-     *         an {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code RerankingResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String rerank(String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_rerank(requireHandle(), optsJson), "rerank");
+            AimuxFFI.INSTANCE.aimux_rerank(requireHandle(), optsJson, err),
+            err,
+            "rerank");
     }
 }

@@ -1496,32 +1496,32 @@ public extension Model {
         options: GenerateTextOptions? = nil,
         onPart: @escaping (StreamPart) -> Void,
         onDone: @escaping () -> Void,
-        onError: @escaping (String) -> Void
+        onError: @escaping (AimuxError) -> Void
     ) {
         let promptJson: String
         do {
             promptJson = try AimuxCodable.jsonString(for: prompt)
         } catch {
-            onError("invalid prompt: \(error)")
+            onError(.serializationError("invalid prompt: \(error)"))
             return
         }
         let optsJson: String?
         do {
             optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         } catch {
-            onError("invalid options: \(error)")
+            onError(.serializationError("invalid options: \(error)"))
             return
         }
         streamText(prompt: promptJson, options: optsJson,
                    onPart: { json in
                        guard let data = json.data(using: .utf8) else {
-                           onError("stream part was non-UTF-8")
+                           onError(.serializationError("stream part was non-UTF-8"))
                            return
                        }
                        if let part = try? JSONDecoder().decode(StreamPart.self, from: data) {
                            onPart(part)
                        } else {
-                           onError("failed to decode StreamPart: \(json)")
+                           onError(.serializationError("failed to decode StreamPart: \(json)"))
                        }
                    },
                    onDone: onDone,
@@ -1530,8 +1530,9 @@ public extension Model {
 
     /// Stream text as an `AsyncSequence` of typed `StreamPart`s.
     ///
-    /// The stream finishes on normal completion and throws `AimuxError.streamError`
-    /// when the native stream or typed decoding reports an error.
+    /// The stream finishes on normal completion and throws `AimuxError`
+    /// (preserving C codes via `fromC`, or `.serializationError` for local
+    /// decode failures) when the native stream or typed decoding fails.
     func streamTextAsync(
         prompt: ModelPrompt,
         options: GenerateTextOptions? = nil
@@ -1541,7 +1542,7 @@ public extension Model {
                 prompt: prompt, options: options,
                 onPart: { continuation.yield($0) },
                 onDone: { continuation.finish() },
-                onError: { continuation.finish(throwing: AimuxError.streamError($0)) }
+                onError: { continuation.finish(throwing: $0) }
             )
         }
     }
@@ -1585,32 +1586,32 @@ public extension Model {
         options: GenerateTextOptions? = nil,
         onPart: @escaping (ChatCompletionChunk) -> Void,
         onDone: @escaping () -> Void,
-        onError: @escaping (String) -> Void
+        onError: @escaping (AimuxError) -> Void
     ) {
         let promptJson: String
         do {
             promptJson = try AimuxCodable.jsonString(for: prompt)
         } catch {
-            onError("invalid prompt: \(error)")
+            onError(.serializationError("invalid prompt: \(error)"))
             return
         }
         let optsJson: String?
         do {
             optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         } catch {
-            onError("invalid options: \(error)")
+            onError(.serializationError("invalid options: \(error)"))
             return
         }
         streamTextAsOpenAI(prompt: promptJson, options: optsJson,
                            onPart: { json in
                                guard let data = json.data(using: .utf8) else {
-                                   onError("stream chunk was non-UTF-8")
+                                   onError(.serializationError("stream chunk was non-UTF-8"))
                                    return
                                }
                                if let chunk = try? JSONDecoder().decode(ChatCompletionChunk.self, from: data) {
                                    onPart(chunk)
                                } else {
-                                   onError("failed to decode ChatCompletionChunk: \(json)")
+                                   onError(.serializationError("failed to decode ChatCompletionChunk: \(json)"))
                                }
                            },
                            onDone: onDone,
@@ -1628,7 +1629,7 @@ public extension Model {
                 prompt: prompt, options: options,
                 onPart: { continuation.yield($0) },
                 onDone: { continuation.finish() },
-                onError: { continuation.finish(throwing: AimuxError.streamError($0)) }
+                onError: { continuation.finish(throwing: $0) }
             )
         }
     }

@@ -48,12 +48,13 @@ public final class VideoModel implements Closeable {
      *
      * @param apiKey  Google API key.
      * @param modelId Model ID (e.g. {@code veo-3.0}).
-     * @return a new VideoModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new VideoModel.
+     * @throws AimuxException on failure.
      */
     public static VideoModel google(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_google_video_new(apiKey, modelId), "Failed to create Google video model");
-        return new VideoModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_google_video_new(apiKey, modelId, err);
+        return new VideoModel(AimuxResult.extractHandle(h, err, "Failed to create Google video model"));
     }
 
     /**
@@ -62,24 +63,27 @@ public final class VideoModel implements Closeable {
      * @param apiKey  Google API key.
      * @param modelId Model ID.
      * @param baseUrl Custom base URL.
-     * @return a new VideoModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new VideoModel.
+     * @throws AimuxException on failure.
      */
     public static VideoModel googleWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_google_video_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create Google video model");
-        return new VideoModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_google_video_new_with_base(apiKey, modelId, baseUrl, err);
+        return new VideoModel(AimuxResult.extractHandle(h, err, "Failed to create Google video model"));
     }
 
     /**
      * Generate videos from the given options.
      *
      * @param optsJson JSON-serialized {@code VideoCallOptions}.
-     * @return JSON-serialized {@code VideoResult}. If the engine returns
-     *         an {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code VideoResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String generate(String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_video_generate(requireHandle(), optsJson), "video_generate");
+            AimuxFFI.INSTANCE.aimux_video_generate(requireHandle(), optsJson, err),
+            err,
+            "video_generate");
     }
 }

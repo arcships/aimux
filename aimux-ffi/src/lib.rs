@@ -35,7 +35,7 @@
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -190,14 +190,14 @@ thread_local! {
     /// Re-entrancy guard: set while an FFI entry point is `block_on`-ing the
     /// shared runtime on the current thread.
     ///
-    /// Stream callbacks (`on_part`/`on_done`/`on_error`) run synchronously on
+    /// Stream callbacks (`on_part`/`on_done`) run synchronously on
     /// the same thread/call-stack that entered the FFI function, so a callback
     /// that calls back into the FFI layer would enter a second `block_on` on
     /// this thread. tokio rejects nested `block_on` with a **panic**; Rust's
     /// non-unwind `extern "C"` ABI terminates the process rather than letting
     /// the panic propagate (and `panic = "abort"` terminates at the panic site).
     /// [`ffi_block_on`] checks this guard and turns that re-entrant call into
-    /// an error envelope instead (issue M7).
+    /// a failure sentinel + optional AimuxError instead (issue M7).
     static IN_FFI_BLOCK_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -298,65 +298,178 @@ fn into_cstring_raw(s: String) -> *mut c_char {
         .into_raw()
 }
 
-/// Build the error envelope every FFI error path returns:
-/// `{"error":"<message>","error_type":"<variant>","status_code":<u16|null>}`.
-fn error_json(msg: impl std::fmt::Display, error_type: &str, status_code: Option<u16>) -> String {
-    serde_json::json!({
-        "error": msg.to_string(),
-        "error_type": error_type,
-        "status_code": status_code,
-    })
-    .to_string()
+// ── C AimuxError (aimux-error.h) ─────────────────────────────────────────────
+
+pub const AIMUX_OK: i32 = 0;
+pub const AIMUX_E_UNKNOWN: i32 = 1;
+pub const AIMUX_E_PROVIDER: i32 = 2;
+pub const AIMUX_E_HTTP: i32 = 3;
+pub const AIMUX_E_JSON: i32 = 4;
+pub const AIMUX_E_STREAM: i32 = 5;
+pub const AIMUX_E_TOOL: i32 = 6;
+pub const AIMUX_E_INVALID_ARGUMENT: i32 = 7;
+pub const AIMUX_E_INVALID_PROMPT: i32 = 8;
+pub const AIMUX_E_RATE_LIMITED: i32 = 9;
+pub const AIMUX_E_AUTH: i32 = 10;
+pub const AIMUX_E_TOKEN_EXPIRED: i32 = 11;
+pub const AIMUX_E_MODEL_NOT_FOUND: i32 = 12;
+pub const AIMUX_E_UNSUPPORTED: i32 = 13;
+pub const AIMUX_E_NO_SUCH_MODEL: i32 = 14;
+pub const AIMUX_E_UNKNOWN_PROVIDER: i32 = 15;
+pub const AIMUX_E_API_CALL: i32 = 16;
+pub const AIMUX_E_TIMEOUT: i32 = 17;
+pub const AIMUX_E_ABORTED: i32 = 18;
+pub const AIMUX_E_OTHER: i32 = 19;
+
+/// Layout must match `aimux-error.h` `AimuxError` (40 bytes).
+///
+/// On failure the callee overwrites every field; `message` is allocated with
+/// [`into_cstring_raw`] and the caller releases it with `aimux_free_string`.
+/// `error_value` is the lossless externally-tagged serde JSON of the source
+/// [`AiMuxError`] (null when the failure was synthesized at the FFI boundary
+/// and has no core error value). `reserved` is future ABI room (the
+/// caller-allocated size can never change) and is zeroed on failure.
+#[repr(C)]
+pub struct CAimuxError {
+    pub code: i32,
+    pub status: i32,
+    pub retry_ms: i64,
+    pub message: *mut c_char,
+    pub error_value: *mut c_char,
+    pub reserved: [*mut c_void; 1],
 }
 
-/// Build an owned error JSON string for a plain message (`error_type: "Other"`).
-fn error_json_raw(msg: impl std::fmt::Display) -> *mut c_char {
-    into_cstring_raw(error_json(msg, "Other", None))
+fn aimux_error_code(err: &AiMuxError) -> i32 {
+    match err {
+        AiMuxError::Provider(_) => AIMUX_E_PROVIDER,
+        AiMuxError::Http(_) => AIMUX_E_HTTP,
+        AiMuxError::Json(_) => AIMUX_E_JSON,
+        AiMuxError::Stream(_) => AIMUX_E_STREAM,
+        AiMuxError::Tool(_) => AIMUX_E_TOOL,
+        AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
+        AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
+        AiMuxError::RateLimited { .. } => AIMUX_E_RATE_LIMITED,
+        AiMuxError::Auth(_) => AIMUX_E_AUTH,
+        AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
+        AiMuxError::ModelNotFound(_) => AIMUX_E_MODEL_NOT_FOUND,
+        AiMuxError::Unsupported(_) => AIMUX_E_UNSUPPORTED,
+        AiMuxError::NoSuchModel(_) => AIMUX_E_NO_SUCH_MODEL,
+        AiMuxError::UnknownProvider(_) => AIMUX_E_UNKNOWN_PROVIDER,
+        AiMuxError::ApiCall(_) => AIMUX_E_API_CALL,
+        AiMuxError::Timeout(_) => AIMUX_E_TIMEOUT,
+        AiMuxError::Aborted => AIMUX_E_ABORTED,
+        AiMuxError::Other(_) => AIMUX_E_OTHER,
+    }
 }
 
-/// Build an error JSON string from an `AiMuxError`, preserving the variant
-/// name and HTTP status code for programmatic use by bindings.
-fn error_json_from(err: &AiMuxError) -> *mut c_char {
-    into_cstring_raw(error_json(err, err.error_type(), err.status_code()))
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fill_error(err: *mut CAimuxError, code: i32, status: i32, retry_ms: i64, msg: &str) {
+    if err.is_null() {
+        return;
+    }
+    let e = unsafe { &mut *err };
+    e.code = code;
+    e.status = status;
+    e.retry_ms = retry_ms;
+    e.message = into_cstring_raw(msg.to_string());
+    e.error_value = std::ptr::null_mut();
+    e.reserved = [std::ptr::null_mut(); 1];
 }
 
-/// Build the success envelope every constructor returns: `{"handle":<u64>}`.
-/// `handle` is always >0 (0 is never interned).
-fn handle_json(handle: u64) -> *mut c_char {
-    into_cstring_raw(serde_json::json!({ "handle": handle }).to_string())
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fill_from_aimux(err: *mut CAimuxError, ae: &AiMuxError) {
+    let code = aimux_error_code(ae);
+    let status = ae.status_code().map(|s| s as i32).unwrap_or(-1);
+    let retry_ms = ae.retry_after_hint().unwrap_or(-1);
+    let msg = ae.to_string();
+    unsafe { fill_error(err, code, status, retry_ms, &msg) };
+    if err.is_null() {
+        return;
+    }
+    // Lossless machine-readable payload alongside the Display message.
+    if let Ok(v) = serde_json::to_string(ae) {
+        unsafe { (*err).error_value = into_cstring_raw(v) };
+    }
 }
 
-/// Recorded when a constructor's C-string arguments are null or not UTF-8.
 const INVALID_ARGS: &str = "missing or invalid required argument(s): null or invalid UTF-8";
 
-/// Error envelope for null / invalid-UTF-8 constructor arguments
-/// (`error_type: "InvalidArgument"`).
-fn invalid_args_json() -> *mut c_char {
-    into_cstring_raw(error_json(INVALID_ARGS, "InvalidArgument", None))
+trait Sentinel {
+    fn sentinel() -> Self;
+}
+impl Sentinel for u64 {
+    fn sentinel() -> Self {
+        0
+    }
+}
+impl Sentinel for *mut c_char {
+    fn sentinel() -> Self {
+        std::ptr::null_mut()
+    }
+}
+impl Sentinel for i32 {
+    fn sentinel() -> Self {
+        0
+    }
 }
 
-/// Invoke the `on_error` callback with an error JSON string.
+/// Fill optional `err` and return the failure sentinel for `T`.
 ///
-/// The pointer is valid only for the duration of the callback (no leak: the
-/// backing `CString` is freed when this function returns).
-fn fire_error(on_error: extern "C" fn(*const c_char), msg: impl std::fmt::Display) {
-    if let Ok(cstr) = CString::new(error_json(msg, "Other", None)) {
-        on_error(cstr.as_ptr());
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fail<T: Sentinel>(
+    err: *mut CAimuxError,
+    code: i32,
+    status: i32,
+    retry_ms: i64,
+    msg: &str,
+) -> T {
+    unsafe { fill_error(err, code, status, retry_ms, msg) };
+    T::sentinel()
+}
+
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fail_ai<T: Sentinel>(err: *mut CAimuxError, ae: &AiMuxError) -> T {
+    unsafe { fill_from_aimux(err, ae) };
+    T::sentinel()
+}
+
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fail_invalid_args<T: Sentinel>(err: *mut CAimuxError) -> T {
+    unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, INVALID_ARGS) }
+}
+
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fail_other<T: Sentinel>(err: *mut CAimuxError, msg: impl std::fmt::Display) -> T {
+    unsafe { fail(err, AIMUX_E_OTHER, -1, -1, &msg.to_string()) }
+}
+
+/// Failure for a malformed JSON argument.
+///
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fail_json<T: Sentinel>(err: *mut CAimuxError, msg: impl std::fmt::Display) -> T {
+    unsafe { fail(err, AIMUX_E_JSON, -1, -1, &msg.to_string()) }
+}
+
+/// Failure for an invalid, expired, or wrong-typed handle.
+///
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fail_invalid_handle<T: Sentinel>(err: *mut CAimuxError, what: &str) -> T {
+    unsafe {
+        fail(
+            err,
+            AIMUX_E_INVALID_ARGUMENT,
+            -1,
+            -1,
+            &format!("invalid or expired {what} handle"),
+        )
     }
 }
 
-/// Like `fire_error` but preserves the `AiMuxError` variant name and status code.
-fn fire_error_struct(on_error: extern "C" fn(*const c_char), err: &AiMuxError) {
-    if let Ok(cstr) = CString::new(error_json(err, err.error_type(), err.status_code())) {
-        on_error(cstr.as_ptr());
-    }
-}
-
-/// 从两个 C 字符串构造 (key, model_id)，失败返回 None。
+/// Build (key, model_id) from two C strings; None if either is null/invalid.
 ///
 /// # Safety
 ///
-/// 调用者必须确保 `a` 和 `b` 要么是 null，要么指向有效的以 NUL 结尾的 C 字符串。
+/// `a` and `b` must each be null or point to a valid NUL-terminated C string.
 unsafe fn parse_two_args(a: *const c_char, b: *const c_char) -> Option<(String, String)> {
     match (cstr_to_string(a), cstr_to_string(b)) {
         (Some(k), Some(m)) => Some((k, m)),
@@ -364,7 +477,7 @@ unsafe fn parse_two_args(a: *const c_char, b: *const c_char) -> Option<(String, 
     }
 }
 
-/// 解析四个 C 字符串参数；任一为 null 则整体失败。
+/// Parse four C string arguments; any null fails the whole call.
 unsafe fn parse_four_args(
     a: *const c_char,
     b: *const c_char,
@@ -382,35 +495,59 @@ unsafe fn parse_four_args(
     }
 }
 
-/// 执行一个 async 操作并返回 JSON 字符串（caller 必须 free）。
-fn run_and_serialize<F, T>(_model_msg: &str, f: F) -> *mut c_char
+/// Run an async operation and return its result as JSON (caller frees).
+fn run_and_serialize<F, T>(err: *mut CAimuxError, f: F) -> *mut c_char
 where
     F: std::future::Future<Output = Result<T, AiMuxError>>,
     T: serde::Serialize,
 {
     let result = ffi_block_on(f).and_then(|inner| inner);
     match result {
-        Ok(r) => serde_json::to_string(&r)
-            .map(into_cstring_raw)
-            .unwrap_or_else(|e| error_json_raw(format!("serialize: {e}"))),
-        Err(e) => error_json_from(&e),
+        Ok(r) => match serde_json::to_string(&r) {
+            Ok(s) => into_cstring_raw(s),
+            Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
+        },
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
-/// 解析 base_url 参数，空字符串视为未设置。
+/// Parse the base_url argument; an empty string means unset.
 fn parse_base_url(base_url: *const c_char) -> Option<String> {
     cstr_to_string(base_url).filter(|url| !url.is_empty())
 }
 
-/// 解析 JSON C 字符串参数为类型 `T`，失败返回错误 JSON `*mut c_char`。
-fn parse_json_arg<T: DeserializeOwned>(json: *const c_char, name: &str) -> Result<T, *mut c_char> {
+/// Parse a JSON C-string argument into `T`. A null/invalid pointer maps to
+/// `AIMUX_E_INVALID_ARGUMENT`; a JSON parse failure maps to `AIMUX_E_JSON`.
+fn parse_json_arg<T: DeserializeOwned>(
+    json: *const c_char,
+    name: &str,
+) -> Result<T, (i32, String)> {
     let s = match cstr_to_string(json) {
         Some(s) => s,
-        None => return Err(error_json_raw(format!("invalid {name}"))),
+        None => return Err((AIMUX_E_INVALID_ARGUMENT, format!("invalid {name}"))),
     };
-    match serde_json::from_str::<T>(&s) {
-        Ok(v) => Ok(v),
-        Err(e) => Err(error_json_raw(format!("invalid {name}: {e}"))),
+    serde_json::from_str::<T>(&s).map_err(|e| (AIMUX_E_JSON, format!("invalid {name}: {e}")))
+}
+
+/// Fail with the (code, message) pair produced by [`parse_json_arg`].
+///
+/// # Safety: `err` null or writable `CAimuxError`.
+unsafe fn fail_code<T: Sentinel>(err: *mut CAimuxError, (code, msg): (i32, String)) -> T {
+    unsafe { fail(err, code, -1, -1, &msg) }
+}
+
+/// Parse the optional `config_json` argument (`ProviderOptions`); empty or
+/// "null" means unset.
+fn parse_provider_options(
+    config_json: *const c_char,
+) -> Result<Option<ProviderOptions>, (i32, String)> {
+    match cstr_to_string(config_json) {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            serde_json::from_str::<ProviderOptions>(&s)
+                .map(Some)
+                .map_err(|e| (AIMUX_E_JSON, format!("invalid config_json: {e}")))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -420,16 +557,20 @@ fn parse_json_arg<T: DeserializeOwned>(json: *const c_char, name: &str) -> Resul
 
 /// Create an OpenAI model instance.
 ///
-/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
 /// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_new(api_key: *const c_char, model_id: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_openai_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -441,35 +582,37 @@ pub extern "C" fn aimux_openai_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match OpenAIProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
 /// Create an Anthropic model instance.
 ///
-/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
 /// arguments or invalid model id).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_anthropic_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match AnthropicProvider::new(AnthropicConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -481,17 +624,18 @@ pub extern "C" fn aimux_anthropic_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = AnthropicConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match AnthropicProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -501,7 +645,8 @@ pub extern "C" fn aimux_anthropic_aws_new(
     api_key: *const c_char,
     region: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(region),
@@ -511,13 +656,13 @@ pub extern "C" fn aimux_anthropic_aws_new(
         _ => None,
     };
     let Some((api_key, region, model_id)) = parsed else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
         .language_model(&model_id)
     {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -528,7 +673,8 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
     region: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(region),
@@ -538,15 +684,15 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
         _ => None,
     };
     let Some((api_key, region, model_id)) = parsed else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match AnthropicAwsProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -560,7 +706,8 @@ pub extern "C" fn aimux_azure_new(
     resource_name: *const c_char,
     deployment: *const c_char,
     api_version: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(resource_name),
@@ -570,7 +717,7 @@ pub extern "C" fn aimux_azure_new(
         _ => None,
     };
     let Some((api_key, resource_name, deployment)) = parsed else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = AzureConfig::new()
         .with_api_key(api_key)
@@ -580,10 +727,10 @@ pub extern "C" fn aimux_azure_new(
     }
     match AzureProvider::new(config) {
         Ok(p) => match p.language_model(&deployment) {
-            Ok(m) => handle_json(intern_model(Arc::from(m))),
-            Err(e) => error_json_from(&e),
+            Ok(m) => intern_model(Arc::from(m)),
+            Err(e) => unsafe { fail_ai(err, &e) },
         },
-        Err(e) => error_json_from(&e),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -597,7 +744,8 @@ pub extern "C" fn aimux_azure_new_with_base(
     base_url: *const c_char,
     deployment: *const c_char,
     api_version: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let parsed = match (
         cstr_to_string(api_key),
         cstr_to_string(base_url),
@@ -607,7 +755,7 @@ pub extern "C" fn aimux_azure_new_with_base(
         _ => None,
     };
     let Some((api_key, base_url, deployment)) = parsed else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = AzureConfig::new()
         .with_api_key(api_key)
@@ -617,10 +765,10 @@ pub extern "C" fn aimux_azure_new_with_base(
     }
     match AzureProvider::new(config) {
         Ok(p) => match p.language_model(&deployment) {
-            Ok(m) => handle_json(intern_model(Arc::from(m))),
-            Err(e) => error_json_from(&e),
+            Ok(m) => intern_model(Arc::from(m)),
+            Err(e) => unsafe { fail_ai(err, &e) },
         },
-        Err(e) => error_json_from(&e),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -633,11 +781,12 @@ pub extern "C" fn aimux_bedrock_new(
     secret_access_key: *const c_char,
     region: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((access_key_id, secret_access_key, region, model_id)) =
         (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
     else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match BedrockProvider::new(BedrockProviderConfig::new(
         access_key_id,
@@ -646,8 +795,8 @@ pub extern "C" fn aimux_bedrock_new(
     ))
     .language_model(&model_id)
     {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -659,19 +808,20 @@ pub extern "C" fn aimux_bedrock_new_with_base(
     region: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((access_key_id, secret_access_key, region, model_id)) =
         (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
     else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match BedrockProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -684,17 +834,18 @@ pub extern "C" fn aimux_vertex_new(
     project: *const c_char,
     location: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((access_token, project, location, model_id)) =
         (unsafe { parse_four_args(access_token, project, location, model_id) })
     else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
         .language_model(&model_id)
     {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -706,34 +857,39 @@ pub extern "C" fn aimux_vertex_new_with_base(
     location: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((access_token, project, location, model_id)) =
         (unsafe { parse_four_args(access_token, project, location, model_id) })
     else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = VertexProviderConfig::new(access_token, project, location);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match VertexProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
 /// Create a Cohere model instance.
 ///
-/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
 /// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_cohere_new(api_key: *const c_char, model_id: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_cohere_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -743,35 +899,37 @@ pub extern "C" fn aimux_cohere_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = CohereConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match CohereProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
 /// Create a Mistral model instance.
 ///
-/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
 /// arguments or invalid model id).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_mistral_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match MistralProvider::new(MistralConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -781,32 +939,37 @@ pub extern "C" fn aimux_mistral_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = MistralConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match MistralProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
 /// Create an xAI model instance.
 ///
-/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (null
+/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
 /// arguments or invalid model id).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_xai_new(api_key: *const c_char, model_id: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_xai_new(
+    api_key: *const c_char,
+    model_id: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -816,17 +979,18 @@ pub extern "C" fn aimux_xai_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = XAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     match XAIProvider::new(config).language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -840,7 +1004,7 @@ pub extern "C" fn aimux_xai_new_with_base(
 ///   (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`);
 ///   NULL / empty / "null" for defaults.
 ///
-/// Returns `{"handle":<u64>}` on success, `{"error":...}` on failure (unknown
+/// Returns a non-zero handle on success, or 0 on failure filling `*err` (unknown
 /// provider, bad config, missing env key, or invalid model id).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_new(
@@ -848,32 +1012,22 @@ pub extern "C" fn aimux_provider_new(
     api_key: *const c_char,
     model_id: *const c_char,
     config_json: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(name) = cstr_to_string(name) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let Some(model_id) = cstr_to_string(model_id) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let key = cstr_to_string(api_key); // None => env var from registry entry
-    let opts = match cstr_to_string(config_json) {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-            match serde_json::from_str::<ProviderOptions>(&s) {
-                Ok(o) => Some(o),
-                Err(e) => {
-                    return into_cstring_raw(error_json(
-                        format!("invalid config_json: {e}"),
-                        "Json",
-                        None,
-                    ));
-                }
-            }
-        }
-        _ => None,
+    let opts = match parse_provider_options(config_json) {
+        Ok(o) => o,
+        Err(e) => return unsafe { fail_code(err, e) },
     };
     match provider(&name, key, &model_id, opts) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -883,16 +1037,17 @@ pub extern "C" fn aimux_provider_new(
 pub extern "C" fn aimux_provider_from_env(
     name: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(name) = cstr_to_string(name) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let Some(model_id) = cstr_to_string(model_id) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match provider(&name, None, &model_id, None) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -908,35 +1063,25 @@ pub extern "C" fn aimux_provider_from_env(
 ///
 /// `api_key = null` reads the provider's env var from the registry entry.
 /// `config_json` is an optional `ProviderOptions` JSON string (same as
-/// `aimux_provider_new`). Returns a JSON handle `{"handle": <u64>}`.
+/// `aimux_provider_new`). Returns a non-zero handle on success, or 0 filling `*err`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_handle_new(
     name: *const c_char,
     api_key: *const c_char,
     config_json: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(name) = cstr_to_string(name) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let key = cstr_to_string(api_key);
-    let opts = match cstr_to_string(config_json) {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-            match serde_json::from_str::<ProviderOptions>(&s) {
-                Ok(o) => Some(o),
-                Err(e) => {
-                    return into_cstring_raw(error_json(
-                        format!("invalid config_json: {e}"),
-                        "Json",
-                        None,
-                    ));
-                }
-            }
-        }
-        _ => None,
+    let opts = match parse_provider_options(config_json) {
+        Ok(o) => o,
+        Err(e) => return unsafe { fail_code(err, e) },
     };
     match provider_handle(&name, key, opts) {
-        Ok(p) => handle_json(intern_provider(Arc::from(p))),
-        Err(e) => error_json_from(&e),
+        Ok(p) => intern_provider(Arc::from(p)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -945,62 +1090,42 @@ pub extern "C" fn aimux_provider_handle_new(
 /// `handle` is from `aimux_provider_handle_new`. Returns a JSON array of
 /// sparse `RuntimeModel` (id / owned_by / created) — **no community
 /// enrichment**. To supplement with model specs, call `aimux_get_model_specs`
-/// separately and merge in the host. Returns `{"error":"..."}` on failure.
+/// separately and merge in the host. Returns NULL on failure (fills `*err`).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_provider_list_models(handle: u64) -> *mut c_char {
+pub extern "C" fn aimux_provider_list_models(handle: u64, err: *mut CAimuxError) -> *mut c_char {
     let Some(p) = get_provider(handle) else {
-        return into_cstring_raw(error_json(
-            "invalid or expired provider handle".to_string(),
-            "InvalidHandle",
-            None,
-        ));
+        return unsafe { fail_invalid_handle(err, "provider") };
     };
-    // Block on the async list_models via a transient runtime. The FFI is
-    // sync-returning; the binding layer (napi/PyO3/etc.) bridges async.
-    let rt = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => tokio::runtime::Runtime::new()
-            .map_err(|e| {
-                into_cstring_raw(error_json(
-                    format!("cannot create tokio runtime: {e}"),
-                    "Runtime",
-                    None,
-                ))
-            })
-            .expect("aimux-ffi: cannot create tokio runtime")
-            .handle()
-            .clone(),
-    };
-    match rt.block_on(p.list_models()) {
-        Ok(models) => {
-            let json = serde_json::to_string(&models)
-                .unwrap_or_else(|e| format!(r#"{{"error":"serialize list_models: {e}"}}"#));
-            into_cstring_raw(json)
-        }
-        Err(e) => error_json_from(&e),
+    match ffi_block_on(p.list_models()) {
+        Err(e) => unsafe { fail_ai(err, &e) },
+        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
+        Ok(Ok(models)) => match serde_json::to_string(&models) {
+            Ok(s) => into_cstring_raw(s),
+            Err(e) => unsafe { fail_other(err, format!("serialize list_models: {e}")) },
+        },
     }
 }
 
 /// Build a language model from a provider handle + model_id (RFC-0027).
 ///
 /// `handle` is from `aimux_provider_handle_new`. Returns a JSON model handle
-/// `{"handle": <u64>}` (same as `aimux_provider_new`), usable with
+/// a non-zero handle (same as `aimux_provider_new`), usable with
 /// `aimux_generate_text` etc.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_provider_model(handle: u64, model_id: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_provider_model(
+    handle: u64,
+    model_id: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(p) = get_provider(handle) else {
-        return into_cstring_raw(error_json(
-            "invalid or expired provider handle".to_string(),
-            "InvalidHandle",
-            None,
-        ));
+        return unsafe { fail_invalid_handle(err, "provider") };
     };
     let Some(model_id) = cstr_to_string(model_id) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     match p.language_model(&model_id) {
-        Ok(m) => handle_json(intern_model(Arc::from(m))),
-        Err(e) => error_json_from(&e),
+        Ok(m) => intern_model(Arc::from(m)),
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -1009,28 +1134,24 @@ pub extern "C" fn aimux_provider_model(handle: u64, model_id: *const c_char) -> 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
-/// `Catalogue` (provider → model_id → ModelSpec), or `{"error":"..."}`.
+/// `Catalogue` (provider → model_id → ModelSpec), or NULL on failure.
 ///
 /// `source_url` is an optional URL override (null = default anya2a endpoint).
 /// This is a **thin fetch** — no caching, no FS writes. The host decides how
 /// to cache/persist the result.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_get_model_specs(source_url: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_get_model_specs(
+    source_url: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let url = cstr_to_string(source_url);
-    let rt = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => tokio::runtime::Runtime::new()
-            .expect("aimux-ffi: cannot create tokio runtime")
-            .handle()
-            .clone(),
-    };
-    match rt.block_on(aimux_providers::get_model_specs(url.as_deref())) {
-        Ok(cat) => {
-            let json = serde_json::to_string(&cat)
-                .unwrap_or_else(|e| format!(r#"{{"error":"serialize catalogue: {e}"}}"#));
-            into_cstring_raw(json)
-        }
-        Err(e) => error_json_from(&e),
+    match ffi_block_on(aimux_providers::get_model_specs(url.as_deref())) {
+        Err(e) => unsafe { fail_ai(err, &e) },
+        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
+        Ok(Ok(cat)) => match serde_json::to_string(&cat) {
+            Ok(s) => into_cstring_raw(s),
+            Err(e) => unsafe { fail_other(err, format!("serialize catalogue: {e}")) },
+        },
     }
 }
 
@@ -1045,35 +1166,39 @@ pub extern "C" fn aimux_get_model_specs(source_url: *const c_char) -> *mut c_cha
 /// (empty / null for defaults).
 ///
 /// Returns a JSON string — the serialized `GenerateTextResult`, or
-/// `{"error":"..."}` on failure — that the caller MUST free with
+/// NULL on failure (fills `*err`) — success JSON the caller MUST free with
 /// [`aimux_free_string`]. Returns a null pointer only if allocation fails.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_generate_text(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
+    err: *mut CAimuxError,
 ) -> *mut c_char {
     let model = match get_model(handle) {
         Some(m) => m,
-        None => return error_json_raw("invalid handle"),
+        None => return unsafe { fail_invalid_handle(err, "model") },
     };
     let prompt = match cstr_to_string(prompt_json) {
         Some(s) => match parse_prompt(&s) {
             Ok(p) => p,
-            Err(e) => return error_json_raw(format!("invalid prompt_json: {e}")),
+            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
         },
-        None => return error_json_raw("invalid prompt_json"),
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
+        }
     };
     let opts = match cstr_to_string(opts_json) {
         Some(s) => match parse_opts(&s) {
             Ok(o) => o,
-            Err(e) => return error_json_raw(format!("invalid opts_json: {e}")),
+            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
         },
         None => GenerateTextOptions::default(),
     };
-    run_and_serialize("generate_text", async move {
-        generate_text(&*model, prompt, opts).await
-    })
+    run_and_serialize(
+        err,
+        async move { generate_text(&*model, prompt, opts).await },
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1084,32 +1209,32 @@ pub extern "C" fn aimux_generate_text(
 ///
 /// Blocks the calling thread until the stream completes (synchronous +
 /// callback mode). Callbacks are invoked in the same call stack:
-/// - `on_part(json)`: each `StreamPart` serialized as JSON. The pointer is
-///   valid only during the call.
-/// - `on_done()`: invoked once when the stream ends normally.
-/// - `on_error(err_json)`: invoked on a stream-level error (an `Err` from the
-///   stream, or failure to start streaming). Valid only during the call.
+/// - `on_part(json, stream_ctx)`: each `StreamPart` as JSON (valid only during
+///   the call). `StreamPart::Error` is data on this path, not a terminal fail.
+/// - `on_done(stream_ctx)`: once on normal completion (not on failure).
 ///
-/// `StreamPart::Error` (a provider-reported mid-stream error) is delivered via
-/// `on_part` like any other part; the C caller may parse it to react.
+/// Returns non-zero (e.g. 1) on success; 0 on failure (fills `*err` when non-NULL).
+/// No JSON error envelope.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_stream_text(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char),
-    on_done: extern "C" fn(),
-    on_error: extern "C" fn(*const c_char),
-) {
+    on_part: extern "C" fn(*const c_char, *mut c_void),
+    on_done: extern "C" fn(*mut c_void),
+    stream_ctx: *mut c_void,
+    err: *mut CAimuxError,
+) -> i32 {
     stream_text_with_signal(
         handle,
         prompt_json,
         opts_json,
         on_part,
         on_done,
-        on_error,
+        stream_ctx,
+        err,
         None,
-    );
+    )
 }
 
 /// Create a per-call abort signal for a cancelable FFI operation.
@@ -1152,15 +1277,15 @@ pub extern "C" fn aimux_stream_text_with_abort(
     abort_handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char),
-    on_done: extern "C" fn(),
-    on_error: extern "C" fn(*const c_char),
-) {
+    on_part: extern "C" fn(*const c_char, *mut c_void),
+    on_done: extern "C" fn(*mut c_void),
+    stream_ctx: *mut c_void,
+    err: *mut CAimuxError,
+) -> i32 {
     let abort_signal = match get_abort_signal(abort_handle) {
         Some(signal) => signal,
         None => {
-            fire_error(on_error, "invalid abort handle");
-            return;
+            return unsafe { fail_invalid_handle(err, "abort") };
         }
     };
     stream_text_with_signal(
@@ -1169,9 +1294,10 @@ pub extern "C" fn aimux_stream_text_with_abort(
         opts_json,
         on_part,
         on_done,
-        on_error,
+        stream_ctx,
+        err,
         Some(abort_signal),
-    );
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1186,33 +1312,36 @@ pub extern "C" fn aimux_stream_text_with_abort(
 /// standard OpenAI format.
 ///
 /// Returns a JSON string — the serialized `ChatCompletion`, or
-/// `{"error":"..."}` on failure — that the caller MUST free with
+/// NULL on failure (fills `*err`) — success JSON the caller MUST free with
 /// [`aimux_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_generate_text_as_openai(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
+    err: *mut CAimuxError,
 ) -> *mut c_char {
     let model = match get_model(handle) {
         Some(m) => m,
-        None => return error_json_raw("invalid handle"),
+        None => return unsafe { fail_invalid_handle(err, "model") },
     };
     let prompt = match cstr_to_string(prompt_json) {
         Some(s) => match parse_prompt(&s) {
             Ok(p) => p,
-            Err(e) => return error_json_raw(format!("invalid prompt_json: {e}")),
+            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
         },
-        None => return error_json_raw("invalid prompt_json"),
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
+        }
     };
     let opts = match cstr_to_string(opts_json) {
         Some(s) => match parse_opts(&s) {
             Ok(o) => o,
-            Err(e) => return error_json_raw(format!("invalid opts_json: {e}")),
+            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
         },
         None => GenerateTextOptions::default(),
     };
-    run_and_serialize("generate_text_as_openai", async move {
+    run_and_serialize(err, async move {
         generate_text_as_openai(&*model, prompt, opts).await
     })
 }
@@ -1227,26 +1356,29 @@ pub extern "C" fn aimux_generate_text_as_openai(
 /// `include_usage` (bool, default true) and `include_reasoning` (bool, default
 /// true) fields to control the chunk output.
 ///
-/// `StreamPart::Error` is mapped to a content delta + finish chunk; stream-level
-/// errors are delivered via `on_error` as usual.
+/// `StreamPart::Error` is mapped to a content delta + finish chunk; terminal
+/// failures return 0 and fill `*err` when non-NULL (same polarity as
+/// [`aimux_stream_text`]).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_stream_text_as_openai(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char),
-    on_done: extern "C" fn(),
-    on_error: extern "C" fn(*const c_char),
-) {
+    on_part: extern "C" fn(*const c_char, *mut c_void),
+    on_done: extern "C" fn(*mut c_void),
+    stream_ctx: *mut c_void,
+    err: *mut CAimuxError,
+) -> i32 {
     stream_text_as_openai_with_signal(
         handle,
         prompt_json,
         opts_json,
         on_part,
         on_done,
-        on_error,
+        stream_ctx,
+        err,
         None,
-    );
+    )
 }
 
 /// Cancelable streaming OpenAI-compatible output (see
@@ -1257,15 +1389,15 @@ pub extern "C" fn aimux_stream_text_as_openai_with_abort(
     abort_handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char),
-    on_done: extern "C" fn(),
-    on_error: extern "C" fn(*const c_char),
-) {
+    on_part: extern "C" fn(*const c_char, *mut c_void),
+    on_done: extern "C" fn(*mut c_void),
+    stream_ctx: *mut c_void,
+    err: *mut CAimuxError,
+) -> i32 {
     let abort_signal = match get_abort_signal(abort_handle) {
         Some(signal) => signal,
         None => {
-            fire_error(on_error, "invalid abort handle");
-            return;
+            return unsafe { fail_invalid_handle(err, "abort") };
         }
     };
     stream_text_as_openai_with_signal(
@@ -1274,9 +1406,10 @@ pub extern "C" fn aimux_stream_text_as_openai_with_abort(
         opts_json,
         on_part,
         on_done,
-        on_error,
+        stream_ctx,
+        err,
         Some(abort_signal),
-    );
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1284,30 +1417,26 @@ fn stream_text_as_openai_with_signal(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char),
-    on_done: extern "C" fn(),
-    on_error: extern "C" fn(*const c_char),
+    on_part: extern "C" fn(*const c_char, *mut c_void),
+    on_done: extern "C" fn(*mut c_void),
+    stream_ctx: *mut c_void,
+    err: *mut CAimuxError,
     abort_signal: Option<AbortSignal>,
-) {
+) -> i32 {
     let model = match get_model(handle) {
         Some(m) => m,
-        None => {
-            fire_error(on_error, "invalid handle");
-            return;
-        }
+        None => return unsafe { fail_invalid_handle(err, "model") },
     };
 
     let prompt = match cstr_to_string(prompt_json) {
         Some(s) => match parse_prompt(&s) {
             Ok(p) => p,
             Err(e) => {
-                fire_error(on_error, format!("invalid prompt_json: {e}"));
-                return;
+                return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) };
             }
         },
         None => {
-            fire_error(on_error, "invalid prompt_json");
-            return;
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
         }
     };
 
@@ -1315,8 +1444,7 @@ fn stream_text_as_openai_with_signal(
         Some(s) => match parse_opts(&s) {
             Ok(o) => o,
             Err(e) => {
-                fire_error(on_error, format!("invalid opts_json: {e}"));
-                return;
+                return unsafe { fail_json(err, format!("invalid opts_json: {e}")) };
             }
         },
         None => GenerateTextOptions::default(),
@@ -1343,6 +1471,8 @@ fn stream_text_as_openai_with_signal(
         .unwrap_or_default();
 
     opts.abort_signal = abort_signal.clone();
+    // stream_ctx is only for C callbacks; not Send across the async boundary.
+    let stream_ctx = stream_ctx as usize;
 
     let outcome = ffi_block_on(async move {
         let stream_result = match abort_signal.as_ref() {
@@ -1364,8 +1494,7 @@ fn stream_text_as_openai_with_signal(
                             tokio::select! {
                                 biased;
                                 _ = signal.cancelled() => {
-                                    fire_error_struct(on_error, &AiMuxError::Aborted);
-                                    return;
+                                    return Err(AiMuxError::Aborted);
                                 }
                                 item = stream.next() => item,
                             }
@@ -1380,24 +1509,22 @@ fn stream_text_as_openai_with_signal(
                             let json =
                                 serde_json::to_string(&chunk).unwrap_or_else(|_| "{}".to_string());
                             if let Ok(cstr) = CString::new(json) {
-                                on_part(cstr.as_ptr());
+                                on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
                             }
                         }
-                        Err(e) => {
-                            fire_error_struct(on_error, &e);
-                            return;
-                        }
+                        Err(e) => return Err(e),
                     }
                 }
-                on_done();
+                on_done(stream_ctx as *mut c_void);
+                Ok(())
             }
-            Err(e) => fire_error_struct(on_error, &e),
+            Err(e) => Err(e),
         }
     });
-    // A re-entrant call (FFI invoked from inside a callback) fails here with
-    // an error envelope instead of panicking across the C boundary (M7).
-    if let Err(err) = outcome {
-        fire_error_struct(on_error, &err);
+    match outcome {
+        Ok(Ok(())) => 1,
+        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -1406,30 +1533,26 @@ fn stream_text_with_signal(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char),
-    on_done: extern "C" fn(),
-    on_error: extern "C" fn(*const c_char),
+    on_part: extern "C" fn(*const c_char, *mut c_void),
+    on_done: extern "C" fn(*mut c_void),
+    stream_ctx: *mut c_void,
+    err: *mut CAimuxError,
     abort_signal: Option<AbortSignal>,
-) {
+) -> i32 {
     let model = match get_model(handle) {
         Some(m) => m,
-        None => {
-            fire_error(on_error, "invalid handle");
-            return;
-        }
+        None => return unsafe { fail_invalid_handle(err, "model") },
     };
 
     let prompt = match cstr_to_string(prompt_json) {
         Some(s) => match parse_prompt(&s) {
             Ok(p) => p,
             Err(e) => {
-                fire_error(on_error, format!("invalid prompt_json: {e}"));
-                return;
+                return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) };
             }
         },
         None => {
-            fire_error(on_error, "invalid prompt_json");
-            return;
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
         }
     };
 
@@ -1437,13 +1560,13 @@ fn stream_text_with_signal(
         Some(s) => match parse_opts(&s) {
             Ok(o) => o,
             Err(e) => {
-                fire_error(on_error, format!("invalid opts_json: {e}"));
-                return;
+                return unsafe { fail_json(err, format!("invalid opts_json: {e}")) };
             }
         },
         None => GenerateTextOptions::default(),
     };
     opts.abort_signal = abort_signal.clone();
+    let stream_ctx = stream_ctx as usize;
 
     let outcome = ffi_block_on(async move {
         let stream_result = match abort_signal.as_ref() {
@@ -1465,8 +1588,7 @@ fn stream_text_with_signal(
                             tokio::select! {
                                 biased;
                                 _ = signal.cancelled() => {
-                                    fire_error_struct(on_error, &AiMuxError::Aborted);
-                                    return;
+                                    return Err(AiMuxError::Aborted);
                                 }
                                 item = stream.next() => item,
                             }
@@ -1480,27 +1602,23 @@ fn stream_text_with_signal(
                         Ok(part) => {
                             let json =
                                 serde_json::to_string(&part).unwrap_or_else(|_| "{}".to_string());
-                            // `cstr` lives for this block: pointer is valid
-                            // during `on_part`, freed when the block ends.
                             if let Ok(cstr) = CString::new(json) {
-                                on_part(cstr.as_ptr());
+                                on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
                             }
                         }
-                        Err(e) => {
-                            fire_error_struct(on_error, &e);
-                            return;
-                        }
+                        Err(e) => return Err(e),
                     }
                 }
-                on_done();
+                on_done(stream_ctx as *mut c_void);
+                Ok(())
             }
-            Err(e) => fire_error_struct(on_error, &e),
+            Err(e) => Err(e),
         }
     });
-    // A re-entrant call (FFI invoked from inside a callback) fails here with
-    // an error envelope instead of panicking across the C boundary (M7).
-    if let Err(err) = outcome {
-        fire_error_struct(on_error, &err);
+    match outcome {
+        Ok(Ok(())) => 1,
+        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
+        Err(e) => unsafe { fail_ai(err, &e) },
     }
 }
 
@@ -1544,12 +1662,13 @@ pub unsafe extern "C" fn aimux_free_string(ptr: *mut c_char) {
 pub extern "C" fn aimux_openai_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).embedding_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1557,28 +1676,30 @@ pub extern "C" fn aimux_openai_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).embedding_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_cohere_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1586,28 +1707,30 @@ pub extern "C" fn aimux_cohere_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = CohereConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = CohereProvider::new(config).embedding_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1615,16 +1738,17 @@ pub extern "C" fn aimux_google_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = GoogleConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = GoogleProvider::new(config).embedding_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Embedding(Arc::new(model))))
+    intern_handle(ModelHandle::Embedding(Arc::new(model)))
 }
 
 /// Generate embeddings. `values_json` is a JSON array of strings.
@@ -1634,14 +1758,17 @@ pub extern "C" fn aimux_embed(
     handle: u64,
     values_json: *const c_char,
     opts_json: *const c_char,
+    err: *mut CAimuxError,
 ) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Embedding(m)) => m,
-        _ => return error_json_raw("invalid embedding handle"),
+        _ => return unsafe { fail_invalid_handle(err, "embedding") },
     };
     let values_json = match cstr_to_string(values_json) {
         Some(s) => s,
-        None => return error_json_raw("invalid values_json"),
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid values_json") };
+        }
     };
     let mut opts = aimux_core::embedding_model::EmbeddingCallOptions::new("");
     if let Some(s) = cstr_to_string(opts_json)
@@ -1650,15 +1777,15 @@ pub extern "C" fn aimux_embed(
     {
         match serde_json::from_str::<aimux_core::embedding_model::EmbeddingCallOptions>(&s) {
             Ok(o) => opts = o,
-            Err(e) => return error_json_raw(format!("invalid opts: {e}")),
+            Err(e) => return unsafe { fail_json(err, format!("invalid opts: {e}")) },
         }
     }
     let values: Vec<String> = match serde_json::from_str(&values_json) {
         Ok(v) => v,
-        Err(e) => return error_json_raw(format!("invalid values: {e}")),
+        Err(e) => return unsafe { fail_json(err, format!("invalid values: {e}")) },
     };
     opts.values = values;
-    run_and_serialize("embed", async move { model.do_embed(&opts).await })
+    run_and_serialize(err, async move { model.do_embed(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1669,12 +1796,13 @@ pub extern "C" fn aimux_embed(
 pub extern "C" fn aimux_openai_speech_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).speech(&model_id);
-    handle_json(intern_handle(ModelHandle::Speech(Arc::new(model))))
+    intern_handle(ModelHandle::Speech(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1682,30 +1810,35 @@ pub extern "C" fn aimux_openai_speech_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).speech(&model_id);
-    handle_json(intern_handle(ModelHandle::Speech(Arc::new(model))))
+    intern_handle(ModelHandle::Speech(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_speech_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_speech_generate(
+    handle: u64,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Speech(m)) => m,
-        _ => return error_json_raw("invalid speech handle"),
+        _ => return unsafe { fail_invalid_handle(err, "speech") },
     };
     let opts: aimux_core::speech_model::SpeechCallOptions =
         match parse_json_arg(opts_json, "opts_json") {
             Ok(o) => o,
-            Err(e) => return e,
+            Err(e) => return unsafe { fail_code(err, e) },
         };
-    run_and_serialize("speech", async move { model.do_generate(&opts).await })
+    run_and_serialize(err, async move { model.do_generate(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1716,12 +1849,13 @@ pub extern "C" fn aimux_speech_generate(handle: u64, opts_json: *const c_char) -
 pub extern "C" fn aimux_openai_image_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).image(&model_id);
-    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
+    intern_handle(ModelHandle::Image(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1729,28 +1863,30 @@ pub extern "C" fn aimux_openai_image_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).image(&model_id);
-    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
+    intern_handle(ModelHandle::Image(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_image_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
-    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
+    intern_handle(ModelHandle::Image(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1758,30 +1894,35 @@ pub extern "C" fn aimux_google_image_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = GoogleConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = GoogleProvider::new(config).image(&model_id);
-    handle_json(intern_handle(ModelHandle::Image(Arc::new(model))))
+    intern_handle(ModelHandle::Image(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_image_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_image_generate(
+    handle: u64,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Image(m)) => m,
-        _ => return error_json_raw("invalid image handle"),
+        _ => return unsafe { fail_invalid_handle(err, "image") },
     };
     let opts: aimux_core::image_model::ImageCallOptions =
         match parse_json_arg(opts_json, "opts_json") {
             Ok(o) => o,
-            Err(e) => return e,
+            Err(e) => return unsafe { fail_code(err, e) },
         };
-    run_and_serialize("image", async move { model.do_generate(&opts).await })
+    run_and_serialize(err, async move { model.do_generate(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1792,12 +1933,13 @@ pub extern "C" fn aimux_image_generate(handle: u64, opts_json: *const c_char) ->
 pub extern "C" fn aimux_openai_transcription_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).transcription(&model_id);
-    handle_json(intern_handle(ModelHandle::Transcription(Arc::new(model))))
+    intern_handle(ModelHandle::Transcription(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1805,16 +1947,17 @@ pub extern "C" fn aimux_openai_transcription_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = OpenAIProvider::new(config).transcription(&model_id);
-    handle_json(intern_handle(ModelHandle::Transcription(Arc::new(model))))
+    intern_handle(ModelHandle::Transcription(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1823,27 +1966,37 @@ pub extern "C" fn aimux_transcription_generate(
     audio_base64: *const c_char,
     media_type: *const c_char,
     _opts_json: *const c_char,
+    err: *mut CAimuxError,
 ) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Transcription(m)) => m,
-        _ => return error_json_raw("invalid transcription handle"),
+        _ => return unsafe { fail_invalid_handle(err, "transcription") },
     };
     let audio_base64 = match cstr_to_string(audio_base64) {
         Some(s) => s,
-        None => return error_json_raw("invalid audio_base64"),
+        None => {
+            return unsafe {
+                fail(
+                    err,
+                    AIMUX_E_INVALID_ARGUMENT,
+                    -1,
+                    -1,
+                    "invalid audio_base64",
+                )
+            };
+        }
     };
     let media_type = match cstr_to_string(media_type) {
         Some(s) => s,
-        None => return error_json_raw("invalid media_type"),
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid media_type") };
+        }
     };
     let opts = aimux_core::transcription_model::TranscriptionCallOptions::new(
         aimux_core::transcription_model::AudioInput::Base64(audio_base64),
         media_type,
     );
-    run_and_serialize(
-        "transcription",
-        async move { model.do_generate(&opts).await },
-    )
+    run_and_serialize(err, async move { model.do_generate(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1851,28 +2004,29 @@ pub extern "C" fn aimux_transcription_generate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_files_new(api_key: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_openai_files_new(api_key: *const c_char, err: *mut CAimuxError) -> u64 {
     let Some(api_key) = cstr_to_string(api_key) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let files = OpenAIProvider::new(OpenAIConfig::new(api_key)).files();
-    handle_json(intern_handle(ModelHandle::Files(Arc::new(files))))
+    intern_handle(ModelHandle::Files(Arc::new(files)))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_files_new_with_base(
     api_key: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(api_key) = cstr_to_string(api_key) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let files = OpenAIProvider::new(config).files();
-    handle_json(intern_handle(ModelHandle::Files(Arc::new(files))))
+    intern_handle(ModelHandle::Files(Arc::new(files)))
 }
 
 #[unsafe(no_mangle)]
@@ -1881,18 +2035,23 @@ pub extern "C" fn aimux_file_upload(
     data_base64: *const c_char,
     media_type: *const c_char,
     _opts_json: *const c_char,
+    err: *mut CAimuxError,
 ) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Files(m)) => m,
-        _ => return error_json_raw("invalid files handle"),
+        _ => return unsafe { fail_invalid_handle(err, "files") },
     };
     let data_base64 = match cstr_to_string(data_base64) {
         Some(s) => s,
-        None => return error_json_raw("invalid data_base64"),
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid data_base64") };
+        }
     };
     let media_type = match cstr_to_string(media_type) {
         Some(s) => s,
-        None => return error_json_raw("invalid media_type"),
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid media_type") };
+        }
     };
     let opts = aimux_core::files_model::UploadFileCallOptions::new(
         aimux_core::files_model::UploadFileData::Data {
@@ -1900,7 +2059,7 @@ pub extern "C" fn aimux_file_upload(
         },
         media_type,
     );
-    run_and_serialize("file_upload", async move { model.upload_file(&opts).await })
+    run_and_serialize(err, async move { model.upload_file(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1912,12 +2071,13 @@ pub extern "C" fn aimux_file_upload(
 pub extern "C" fn aimux_cohere_reranking_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = CohereProvider::new(CohereConfig::new(api_key)).reranking_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Reranking(Arc::new(model))))
+    intern_handle(ModelHandle::Reranking(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1925,33 +2085,38 @@ pub extern "C" fn aimux_cohere_reranking_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = CohereConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = CohereProvider::new(config).reranking_model(&model_id);
-    handle_json(intern_handle(ModelHandle::Reranking(Arc::new(model))))
+    intern_handle(ModelHandle::Reranking(Arc::new(model)))
 }
 
 /// Rerank documents. `opts_json` is JSON-serialized `RerankingCallOptions`
 /// (must contain `query` and `documents`). Returns `RerankingResult` JSON
-/// (caller must free), or `{"error":"..."}` on failure.
+/// (caller must free), or NULL on failure (fills `*err` when non-NULL).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_rerank(handle: u64, opts_json: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_rerank(
+    handle: u64,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Reranking(m)) => m,
-        _ => return error_json_raw("invalid reranking handle"),
+        _ => return unsafe { fail_invalid_handle(err, "reranking") },
     };
     let opts: aimux_core::reranking_model::RerankingCallOptions =
         match parse_json_arg(opts_json, "opts_json") {
             Ok(o) => o,
-            Err(e) => return e,
+            Err(e) => return unsafe { fail_code(err, e) },
         };
-    run_and_serialize("rerank", async move { model.do_rerank(&opts).await })
+    run_and_serialize(err, async move { model.do_rerank(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1963,12 +2128,13 @@ pub extern "C" fn aimux_rerank(handle: u64, opts_json: *const c_char) -> *mut c_
 pub extern "C" fn aimux_google_video_new(
     api_key: *const c_char,
     model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = GoogleProvider::new(GoogleConfig::new(api_key)).video(&model_id);
-    handle_json(intern_handle(ModelHandle::Video(Arc::new(model))))
+    intern_handle(ModelHandle::Video(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -1976,33 +2142,38 @@ pub extern "C" fn aimux_google_video_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = GoogleConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = GoogleProvider::new(config).video(&model_id);
-    handle_json(intern_handle(ModelHandle::Video(Arc::new(model))))
+    intern_handle(ModelHandle::Video(Arc::new(model)))
 }
 
 /// Generate video. `opts_json` is JSON-serialized `VideoCallOptions`
 /// (must contain `prompt`). Returns `VideoResult` JSON (caller must free),
-/// or `{"error":"..."}` on failure.
+/// or NULL on failure (fills `*err` when non-NULL).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_video_generate(handle: u64, opts_json: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_video_generate(
+    handle: u64,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Video(m)) => m,
-        _ => return error_json_raw("invalid video handle"),
+        _ => return unsafe { fail_invalid_handle(err, "video") },
     };
     let opts: aimux_core::video_model::VideoCallOptions =
         match parse_json_arg(opts_json, "opts_json") {
             Ok(o) => o,
-            Err(e) => return e,
+            Err(e) => return unsafe { fail_code(err, e) },
         };
-    run_and_serialize("video", async move { model.do_generate(&opts).await })
+    run_and_serialize(err, async move { model.do_generate(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2015,12 +2186,13 @@ pub extern "C" fn aimux_video_generate(handle: u64, opts_json: *const c_char) ->
 pub extern "C" fn aimux_tavily_search_new(
     api_key: *const c_char,
     _model_id: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(api_key) = cstr_to_string(api_key) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let model = TavilyProvider::new(TavilyConfig::new(api_key)).search_model();
-    handle_json(intern_handle(ModelHandle::Search(Arc::new(model))))
+    intern_handle(ModelHandle::Search(Arc::new(model)))
 }
 
 #[unsafe(no_mangle)]
@@ -2028,33 +2200,38 @@ pub extern "C" fn aimux_tavily_search_new_with_base(
     api_key: *const c_char,
     _model_id: *const c_char,
     base_url: *const c_char,
-) -> *mut c_char {
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(api_key) = cstr_to_string(api_key) else {
-        return invalid_args_json();
+        return unsafe { fail_invalid_args(err) };
     };
     let mut config = TavilyConfig::new(api_key);
     if let Some(url) = parse_base_url(base_url) {
         config = config.with_base_url(url);
     }
     let model = TavilyProvider::new(config).search_model();
-    handle_json(intern_handle(ModelHandle::Search(Arc::new(model))))
+    intern_handle(ModelHandle::Search(Arc::new(model)))
 }
 
 /// Execute a search. `opts_json` is JSON-serialized `SearchCallOptions`
 /// (must contain `query`). Returns `SearchResult` JSON (caller must free),
-/// or `{"error":"..."}` on failure.
+/// or NULL on failure (fills `*err` when non-NULL).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_search(handle: u64, opts_json: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_search(
+    handle: u64,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let model = match get_handle(handle) {
         Some(ModelHandle::Search(m)) => m,
-        _ => return error_json_raw("invalid search handle"),
+        _ => return unsafe { fail_invalid_handle(err, "search") },
     };
     let opts: aimux_core::search_model::SearchCallOptions =
         match parse_json_arg(opts_json, "opts_json") {
             Ok(o) => o,
-            Err(e) => return e,
+            Err(e) => return unsafe { fail_code(err, e) },
         };
-    run_and_serialize("search", async move { model.do_search(&opts).await })
+    run_and_serialize(err, async move { model.do_search(&opts).await })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2073,13 +2250,14 @@ pub extern "C" fn aimux_search(handle: u64, opts_json: *const c_char) -> *mut c_
 pub extern "C" fn aimux_codex_refresh(
     refresh_token: *const c_char,
     client_id: *const c_char,
+    err: *mut CAimuxError,
 ) -> *mut c_char {
     let (Some(refresh_token), Some(client_id)) =
         (cstr_to_string(refresh_token), cstr_to_string(client_id))
     else {
-        return error_json_raw("invalid arguments");
+        return unsafe { fail_invalid_args(err) };
     };
-    run_and_serialize("codex_refresh", async move {
+    run_and_serialize(err, async move {
         aimux_providers::codex_refresh(&refresh_token, &client_id).await
     })
 }
@@ -2139,30 +2317,33 @@ pub extern "C" fn aimux_session_infer_init(enabled: i32) -> i32 {
 /// Query: all calls of a session, ordered by step (RFC-0024).
 ///
 /// Returns a JSON string — a serialized `SessionCall[]` (empty array if the
-/// session is unknown or no store is registered), or `{"error":"..."}` on
+/// session is unknown or no store is registered), or NULL on
 /// failure — that the caller MUST free with [`aimux_free_string`]. Returns a
 /// null pointer only if allocation fails.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_session_calls(session_id: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_session_calls(
+    session_id: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let Some(id) = cstr_to_string(session_id) else {
-        return error_json_raw("invalid session_id");
+        return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid session_id") };
     };
     match serde_json::to_string(&aimux_core::session::session_calls(&id)) {
         Ok(s) => into_cstring_raw(s),
-        Err(e) => error_json_raw(format!("serialize: {e}")),
+        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
     }
 }
 
 /// Query: all known sessions (RFC-0024).
 ///
-/// Returns a JSON string — a serialized `SessionView[]`, or `{"error":"..."}`
+/// Returns a JSON string — a serialized `SessionView[]`, or NULL
 /// on failure — that the caller MUST free with [`aimux_free_string`]. Returns
 /// a null pointer only if allocation fails.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_list_sessions() -> *mut c_char {
+pub extern "C" fn aimux_list_sessions(err: *mut CAimuxError) -> *mut c_char {
     match serde_json::to_string(&aimux_core::session::list_sessions()) {
         Ok(s) => into_cstring_raw(s),
-        Err(e) => error_json_raw(format!("serialize: {e}")),
+        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
     }
 }
 
@@ -2186,13 +2367,12 @@ fn get_trace_store(handle: u64) -> Option<Arc<RingTraceStore>> {
 
 /// Wrap a model handle in a probe layer (RFC-0015). Returns a new handle that
 /// can be used with `aimux_generate_text` / `aimux_stream_text` (probed) and
-/// with the `aimux_trace_*` query functions. Returns `{"handle":<u64>}` or
-/// `{"error":...}` (null args / invalid handle); caller frees with
+/// with the `aimux_trace_*` query functions. Returns a non-zero handle or 0 on failure (fills `*err`); drop with
 /// `aimux_free_string`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_new(handle: u64) -> *mut c_char {
+pub extern "C" fn aimux_trace_new(handle: u64, err: *mut CAimuxError) -> u64 {
     let Some(model) = get_model(handle) else {
-        return error_json_raw("invalid handle");
+        return unsafe { fail_invalid_handle(err, "model") };
     };
     let store = Arc::new(RingTraceStore::new());
     let layer = Arc::new(TraceLayer::new(model, store.clone()));
@@ -2201,17 +2381,17 @@ pub extern "C" fn aimux_trace_new(handle: u64) -> *mut c_char {
         .lock()
         .expect("aimux-ffi: trace registry mutex poisoned")
         .insert(new_handle, store);
-    handle_json(new_handle)
+    new_handle
 }
 
 /// Wrap a model handle in a probe layer WITH the built-in rules auditor
 /// (RFC-0015 §4). `strict` nonzero = strict mode (self-hosted single
-/// instance); zero = shared mode (safe default). Returns `{"handle":<u64>}`
-/// or `{"error":...}`; caller frees with `aimux_free_string`.
+/// instance); zero = shared mode (safe default). Returns non-zero handle or 0;
+/// drop with `aimux_drop_handle`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_new_audited(handle: u64, strict: i32) -> *mut c_char {
+pub extern "C" fn aimux_trace_new_audited(handle: u64, strict: i32, err: *mut CAimuxError) -> u64 {
     let Some(model) = get_model(handle) else {
-        return error_json_raw("invalid handle");
+        return unsafe { fail_invalid_handle(err, "model") };
     };
     let store = Arc::new(RingTraceStore::new());
     let layer = Arc::new(TraceLayer::new(model, store.clone()).with_rules_auditor(strict != 0));
@@ -2220,81 +2400,90 @@ pub extern "C" fn aimux_trace_new_audited(handle: u64, strict: i32) -> *mut c_ch
         .lock()
         .expect("aimux-ffi: trace registry mutex poisoned")
         .insert(new_handle, store);
-    handle_json(new_handle)
+    new_handle
 }
 
 /// Query: aggregated probe statistics, filtered by `filter_json` (a serialized
-/// `TraceFilter`, NULL = all). Returns JSON `TraceStats[]` or `{"error":...}`;
+/// `TraceFilter`, NULL = all). Returns JSON `TraceStats[]` or NULL on failure;
 /// caller frees with `aimux_free_string`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_aggregate(handle: u64, filter_json: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_trace_aggregate(
+    handle: u64,
+    filter_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let Some(store) = get_trace_store(handle) else {
-        return error_json_raw("invalid trace handle");
+        return unsafe { fail_invalid_handle(err, "trace") };
     };
     let filter = match parse_json_arg::<TraceFilter>(filter_json, "filter_json") {
         Ok(f) => f,
-        Err(e) => return e,
+        Err(e) => return unsafe { fail_code(err, e) },
     };
     match serde_json::to_string(&store.aggregate(&filter)) {
         Ok(s) => into_cstring_raw(s),
-        Err(e) => error_json_raw(format!("serialize: {e}")),
+        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
     }
 }
 
 /// Query: one session's chain view. Returns JSON `SessionChainView` or
-/// `{"error":...}` (unknown session); caller frees with `aimux_free_string`.
+/// NULL on failure (e.g. unknown session); caller frees with `aimux_free_string`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_session_chain(handle: u64, session_id: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_trace_session_chain(
+    handle: u64,
+    session_id: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
     let Some(store) = get_trace_store(handle) else {
-        return error_json_raw("invalid trace handle");
+        return unsafe { fail_invalid_handle(err, "trace") };
     };
     let Some(id) = cstr_to_string(session_id) else {
-        return error_json_raw("invalid session_id");
+        return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid session_id") };
     };
     match store.session_chain(&id) {
         Some(view) => match serde_json::to_string(&view) {
             Ok(s) => into_cstring_raw(s),
-            Err(e) => error_json_raw(format!("serialize: {e}")),
+            Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
         },
-        None => error_json_raw("unknown session"),
+        None => unsafe { fail_other(err, "unknown session") },
     }
 }
 
 /// Query: one session's per-step cache-hit trajectory (RFC-0024 §4.3).
 /// Returns a JSON array of `SessionStepStat` (empty for unknown sessions) or
-/// `{"error":...}`; caller frees with `aimux_free_string`.
+/// NULL on failure; caller frees success with `aimux_free_string`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_trace_session_trajectory(
     handle: u64,
     session_id: *const c_char,
+    err: *mut CAimuxError,
 ) -> *mut c_char {
     let Some(store) = get_trace_store(handle) else {
-        return error_json_raw("invalid trace handle");
+        return unsafe { fail_invalid_handle(err, "trace") };
     };
     let Some(id) = cstr_to_string(session_id) else {
-        return error_json_raw("invalid session_id");
+        return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid session_id") };
     };
     match serde_json::to_string(&store.session_cache_trajectory(&id)) {
         Ok(s) => into_cstring_raw(s),
-        Err(e) => error_json_raw(format!("serialize: {e}")),
+        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
     }
 }
 
 /// Export all probe records as JSONL (one `TraceRecord` per line). Returns a
-/// JSON string (with embedded newlines) or `{"error":...}`; caller frees with
+/// JSON string (with embedded newlines) or NULL on failure; caller frees with
 /// `aimux_free_string`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_export_jsonl(handle: u64) -> *mut c_char {
+pub extern "C" fn aimux_trace_export_jsonl(handle: u64, err: *mut CAimuxError) -> *mut c_char {
     let Some(store) = get_trace_store(handle) else {
-        return error_json_raw("invalid trace handle");
+        return unsafe { fail_invalid_handle(err, "trace") };
     };
     let mut buf = Vec::new();
     match store.export_jsonl(&mut buf) {
         Ok(()) => match String::from_utf8(buf) {
             Ok(s) => into_cstring_raw(s),
-            Err(e) => error_json_raw(format!("utf8: {e}")),
+            Err(e) => unsafe { fail_other(err, format!("utf8: {e}")) },
         },
-        Err(e) => error_json_raw(format!("export: {e}")),
+        Err(e) => unsafe { fail_other(err, format!("export: {e}")) },
     }
 }
 
@@ -2361,14 +2550,25 @@ pub extern "C" fn aimux_recording_flush() -> i32 {
 }
 
 /// Create a mock replay model from recorded JSONL (RFC-0023 P3). `recordings`
-/// is one `Recording` JSON per line. Returns `{"handle":<u64>}` or
-/// `{"error":...}` (the handle works with `aimux_generate_text` /
+/// is one `Recording` JSON per line. Returns non-zero handle or 0
+/// (the handle works with `aimux_generate_text` /
 /// `aimux_stream_text`, no real API is sent); caller frees with
 /// `aimux_free_string`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_mock_replay_new(recordings_jsonl: *const c_char) -> *mut c_char {
+pub extern "C" fn aimux_mock_replay_new(
+    recordings_jsonl: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
     let Some(recordings_jsonl) = cstr_to_string(recordings_jsonl) else {
-        return error_json_raw("invalid recordings_jsonl");
+        return unsafe {
+            fail(
+                err,
+                AIMUX_E_INVALID_ARGUMENT,
+                -1,
+                -1,
+                "invalid recordings_jsonl",
+            )
+        };
     };
     let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
     for (idx, line) in recordings_jsonl.lines().enumerate() {
@@ -2378,16 +2578,115 @@ pub extern "C" fn aimux_mock_replay_new(recordings_jsonl: *const c_char) -> *mut
         }
         match serde_json::from_str(line) {
             Ok(r) => recordings.push(r),
-            Err(e) => return error_json_raw(format!("recordings line {}: {e}", idx + 1)),
+            Err(e) => {
+                return unsafe { fail_json(err, format!("recordings line {}: {e}", idx + 1)) };
+            }
         }
     }
     if recordings.is_empty() {
-        return error_json_raw("no recordings");
+        return unsafe { fail_other(err, "no recordings") };
     }
     let model = aimux_core::replay::MockReplayModel::new(
         recordings[0].provider.provider.clone(),
         recordings[0].provider.model_id.clone(),
         recordings,
     );
-    handle_json(intern_model(Arc::new(model)))
+    intern_model(Arc::new(model))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn c_error_layout_is_40_bytes() {
+        assert_eq!(std::mem::size_of::<CAimuxError>(), 40);
+    }
+
+    /// Pin the full 18-variant → code mapping and the status/retry derivation.
+    #[test]
+    fn error_code_mapping_covers_all_variants() {
+        let s = |t: &str| t.to_string();
+        let cases: Vec<(AiMuxError, i32)> = vec![
+            (AiMuxError::Provider(s("x")), AIMUX_E_PROVIDER),
+            (AiMuxError::Http(s("x")), AIMUX_E_HTTP),
+            (AiMuxError::Json(s("x")), AIMUX_E_JSON),
+            (AiMuxError::Stream(s("x")), AIMUX_E_STREAM),
+            (AiMuxError::Tool(s("x")), AIMUX_E_TOOL),
+            (
+                AiMuxError::InvalidArgument(s("x")),
+                AIMUX_E_INVALID_ARGUMENT,
+            ),
+            (AiMuxError::InvalidPrompt(s("x")), AIMUX_E_INVALID_PROMPT),
+            (
+                AiMuxError::RateLimited {
+                    retry_after_ms: 1500,
+                    message: s("slow down"),
+                },
+                AIMUX_E_RATE_LIMITED,
+            ),
+            (AiMuxError::Auth(s("x")), AIMUX_E_AUTH),
+            (AiMuxError::TokenExpired(s("x")), AIMUX_E_TOKEN_EXPIRED),
+            (AiMuxError::ModelNotFound(s("x")), AIMUX_E_MODEL_NOT_FOUND),
+            (AiMuxError::Unsupported(s("x")), AIMUX_E_UNSUPPORTED),
+            (AiMuxError::NoSuchModel(s("x")), AIMUX_E_NO_SUCH_MODEL),
+            (
+                AiMuxError::UnknownProvider(s("x")),
+                AIMUX_E_UNKNOWN_PROVIDER,
+            ),
+            (AiMuxError::ApiCall(s("x")), AIMUX_E_API_CALL),
+            (AiMuxError::Timeout(s("x")), AIMUX_E_TIMEOUT),
+            (AiMuxError::Aborted, AIMUX_E_ABORTED),
+            (AiMuxError::Other(s("x")), AIMUX_E_OTHER),
+        ];
+        for (e, code) in &cases {
+            assert_eq!(aimux_error_code(e), *code, "variant {e:?}");
+        }
+
+        // fill_from_aimux derives status/retry_ms/message from the same source.
+        let mut c = CAimuxError {
+            code: AIMUX_OK,
+            status: 0,
+            retry_ms: 0,
+            message: std::ptr::null_mut(),
+            error_value: std::ptr::null_mut(),
+            reserved: [std::ptr::null_mut(); 1],
+        };
+        let rl = AiMuxError::RateLimited {
+            retry_after_ms: 1500,
+            message: "slow down".into(),
+        };
+        unsafe { fill_from_aimux(&mut c, &rl) };
+        assert_eq!(c.code, AIMUX_E_RATE_LIMITED);
+        assert_eq!(c.status, 429);
+        assert_eq!(c.retry_ms, 1500);
+        let m = unsafe { CStr::from_ptr(c.message) }.to_str().unwrap();
+        assert!(m.contains("slow down"), "{m}");
+        // error_value round-trips to the exact source enum value.
+        let v = unsafe { CStr::from_ptr(c.error_value) }.to_str().unwrap();
+        let back: AiMuxError = serde_json::from_str(v).unwrap();
+        assert!(
+            matches!(back, AiMuxError::RateLimited { retry_after_ms: 1500, ref message } if message == "slow down"),
+            "{v}"
+        );
+        unsafe { aimux_free_string(c.message) };
+        unsafe { aimux_free_string(c.error_value) };
+    }
+
+    /// Interior NUL bytes must not corrupt or truncate the message.
+    #[test]
+    fn fill_error_sanitizes_interior_nul() {
+        let mut c = CAimuxError {
+            code: AIMUX_OK,
+            status: -1,
+            retry_ms: -1,
+            message: std::ptr::null_mut(),
+            error_value: std::ptr::null_mut(),
+            reserved: [std::ptr::null_mut(); 1],
+        };
+        unsafe { fill_error(&mut c, AIMUX_E_OTHER, -1, -1, "a\0b") };
+        let m = unsafe { CStr::from_ptr(c.message) }.to_str().unwrap();
+        assert_eq!(m, "a\u{FFFD}b");
+        unsafe { aimux_free_string(c.message) };
+    }
 }

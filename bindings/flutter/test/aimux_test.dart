@@ -24,9 +24,10 @@ void main() {
 
   test('generateText rejects invalid prompt JSON', () {
     final model = Model.openai('sk-test-fake-key', 'gpt-4o-mini');
+    // Engine invalid-input failures surface as AimuxException (not StateError).
     expect(
       () => model.generateText('{invalid json}'),
-      throwsA(isA<StateError>()),
+      throwsA(isA<AimuxException>()),
     );
     model.close();
   });
@@ -37,9 +38,10 @@ void main() {
     model.close(); // should not throw
   });
 
-  test('generateText on closed model throws', () {
+  test('generateText on closed model throws StateError', () {
     final model = Model.openai('sk-test-fake-key', 'gpt-4o-mini');
     model.close();
+    // Local closed-handle errors stay StateError (not AimuxException).
     expect(
       () => model.generateText('"hello"'),
       throwsA(isA<StateError>()),

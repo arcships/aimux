@@ -5,7 +5,7 @@ Multi-language bindings for aimux. All bindings share the same Rust core (aimux-
 ```
                   ┌─ Native path ──→ aimux-core + aimux-providers (directly maps Rust types + async)
 Binding layer ────┤
-                  └─ C ABI path ──→ aimux-ffi (opaque handle + JSON + push callback)
+                  └─ C ABI path ──→ aimux-ffi (handles + JSON results + AimuxError *err)
 ```
 
 | Binding | Path | Tool | Status | Directory |

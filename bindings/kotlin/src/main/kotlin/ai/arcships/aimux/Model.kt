@@ -4,141 +4,155 @@
  * Uses JNA to call the aimux-ffi C ABI. This is the C ABI path (§3.2).
  * The native library (libaimux_ffi.so / .dylib / .dll) must be on the
  * library path or bundled in the JAR's native/ directory.
+ *
+ * Errors: fallible calls take trailing [AimuxCError]; failure returns 0 / NULL.
+ * Map with [AimuxException.fromC]. No JSON error envelope on the primary path.
  */
 
 package ai.arcships.aimux
 
+import com.sun.jna.Callback
 import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.longOrNull
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JNA interface — direct mapping to the C ABI.
+// JNA interface — direct mapping to the C ABI (uint64_t handles + AimuxError *).
 // ─────────────────────────────────────────────────────────────────────────────
 
 internal interface AimuxFFI : Library {
-    fun aimux_openai_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_anthropic_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_openai_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_anthropic_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_cohere_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_cohere_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_mistral_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_mistral_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_xai_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_xai_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_bedrock_new(accessKeyId: String, secretAccessKey: String, region: String, modelId: String): Pointer?
+    fun aimux_openai_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_anthropic_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_openai_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_anthropic_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_cohere_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_cohere_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_mistral_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_mistral_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_xai_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_xai_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_bedrock_new(
+        accessKeyId: String, secretAccessKey: String, region: String, modelId: String, err: AimuxCError?
+    ): Long
     fun aimux_bedrock_new_with_base(
-        accessKeyId: String, secretAccessKey: String, region: String, modelId: String, baseUrl: String
-    ): Pointer?
-    fun aimux_vertex_new(accessToken: String, project: String, location: String, modelId: String): Pointer?
+        accessKeyId: String, secretAccessKey: String, region: String, modelId: String, baseUrl: String, err: AimuxCError?
+    ): Long
+    fun aimux_vertex_new(
+        accessToken: String, project: String, location: String, modelId: String, err: AimuxCError?
+    ): Long
     fun aimux_vertex_new_with_base(
-        accessToken: String, project: String, location: String, modelId: String, baseUrl: String
-    ): Pointer?
-    fun aimux_anthropic_aws_new(apiKey: String, region: String, modelId: String): Pointer?
-    fun aimux_anthropic_aws_new_with_base(apiKey: String, region: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_azure_new(apiKey: String, resourceName: String, deployment: String, apiVersion: String?): Pointer?
-    fun aimux_azure_new_with_base(apiKey: String, baseUrl: String, deployment: String, apiVersion: String?): Pointer?
+        accessToken: String, project: String, location: String, modelId: String, baseUrl: String, err: AimuxCError?
+    ): Long
+    fun aimux_anthropic_aws_new(apiKey: String, region: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_anthropic_aws_new_with_base(
+        apiKey: String, region: String, modelId: String, baseUrl: String, err: AimuxCError?
+    ): Long
+    fun aimux_azure_new(
+        apiKey: String, resourceName: String, deployment: String, apiVersion: String?, err: AimuxCError?
+    ): Long
+    fun aimux_azure_new_with_base(
+        apiKey: String, baseUrl: String, deployment: String, apiVersion: String?, err: AimuxCError?
+    ): Long
 
     // ── Registry provider (RFC-0017 phase 4) ───────────────────────────────
-    // apiKey may be null (read the provider's env var from the registry entry);
-    // configJson may be null (defaults) or a JSON object of ProviderOptions.
-    fun aimux_provider_new(name: String, apiKey: String?, modelId: String, configJson: String?): Pointer?
-    fun aimux_provider_from_env(name: String, modelId: String): Pointer?
+    fun aimux_provider_new(name: String, apiKey: String?, modelId: String, configJson: String?, err: AimuxCError?): Long
+    fun aimux_provider_from_env(name: String, modelId: String, err: AimuxCError?): Long
 
     // ── Provider handles (RFC-0027) ─────────────────────────────────────────
-    fun aimux_provider_handle_new(name: String, apiKey: String?, configJson: String?): Pointer?
-    fun aimux_provider_list_models(handle: Long): Pointer?
-    fun aimux_provider_model(handle: Long, modelId: String): Pointer?
-    fun aimux_get_model_specs(sourceUrl: String?): Pointer?
+    fun aimux_provider_handle_new(name: String, apiKey: String?, configJson: String?, err: AimuxCError?): Long
+    fun aimux_provider_list_models(handle: Long, err: AimuxCError?): Pointer?
+    fun aimux_provider_model(handle: Long, modelId: String, err: AimuxCError?): Long
+    fun aimux_get_model_specs(sourceUrl: String?, err: AimuxCError?): Pointer?
 
-    fun aimux_generate_text(handle: Long, promptJson: String, optsJson: String?): Pointer?
+    fun aimux_generate_text(handle: Long, promptJson: String, optsJson: String?, err: AimuxCError?): Pointer?
     fun aimux_stream_text(
         handle: Long,
         promptJson: String,
         optsJson: String?,
-        onPart: com.sun.jna.Callback?,
-        onDone: com.sun.jna.Callback?,
-        onError: com.sun.jna.Callback?,
-    )
+        onPart: Callback?,
+        onDone: Callback?,
+        streamCtx: Pointer?,
+        err: AimuxCError?,
+    ): Int
 
     // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
-    fun aimux_generate_text_as_openai(handle: Long, promptJson: String, optsJson: String?): Pointer?
+    fun aimux_generate_text_as_openai(handle: Long, promptJson: String, optsJson: String?, err: AimuxCError?): Pointer?
     fun aimux_stream_text_as_openai(
         handle: Long,
         promptJson: String,
         optsJson: String?,
-        onPart: com.sun.jna.Callback?,
-        onDone: com.sun.jna.Callback?,
-        onError: com.sun.jna.Callback?,
-    )
+        onPart: Callback?,
+        onDone: Callback?,
+        streamCtx: Pointer?,
+        err: AimuxCError?,
+    ): Int
 
     fun aimux_drop_handle(handle: Long)
     fun aimux_free_string(ptr: Pointer?)
 
     // ── Embedding ──────────────────────────────────────────────────────────
-    fun aimux_openai_embedding_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_openai_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_cohere_embedding_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_cohere_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_google_embedding_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_google_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_embed(handle: Long, valuesJson: String, optsJson: String?): Pointer?
+    fun aimux_openai_embedding_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_openai_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_cohere_embedding_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_cohere_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_google_embedding_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_google_embedding_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_embed(handle: Long, valuesJson: String, optsJson: String?, err: AimuxCError?): Pointer?
 
     // ── Speech (TTS) ───────────────────────────────────────────────────────
-    fun aimux_openai_speech_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_openai_speech_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_speech_generate(handle: Long, optsJson: String): Pointer?
+    fun aimux_openai_speech_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_openai_speech_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_speech_generate(handle: Long, optsJson: String, err: AimuxCError?): Pointer?
 
     // ── Image ──────────────────────────────────────────────────────────────
-    fun aimux_openai_image_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_openai_image_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_google_image_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_google_image_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_image_generate(handle: Long, optsJson: String): Pointer?
+    fun aimux_openai_image_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_openai_image_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_google_image_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_google_image_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_image_generate(handle: Long, optsJson: String, err: AimuxCError?): Pointer?
 
     // ── Transcription (STT) ────────────────────────────────────────────────
-    fun aimux_openai_transcription_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_openai_transcription_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_transcription_generate(handle: Long, audioBase64: String, mediaType: String, optsJson: String?): Pointer?
+    fun aimux_openai_transcription_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_openai_transcription_new_with_base(
+        apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?
+    ): Long
+    fun aimux_transcription_generate(
+        handle: Long, audioBase64: String, mediaType: String, optsJson: String?, err: AimuxCError?
+    ): Pointer?
 
     // ── Files ──────────────────────────────────────────────────────────────
-    fun aimux_openai_files_new(apiKey: String): Pointer?
-    fun aimux_openai_files_new_with_base(apiKey: String, baseUrl: String): Pointer?
-    fun aimux_file_upload(handle: Long, dataBase64: String, mediaType: String, optsJson: String?): Pointer?
+    fun aimux_openai_files_new(apiKey: String, err: AimuxCError?): Long
+    fun aimux_openai_files_new_with_base(apiKey: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_file_upload(
+        handle: Long, dataBase64: String, mediaType: String, optsJson: String?, err: AimuxCError?
+    ): Pointer?
 
     // ── Reranking ──────────────────────────────────────────────────────────
-    fun aimux_cohere_reranking_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_cohere_reranking_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_rerank(handle: Long, optsJson: String): Pointer?
+    fun aimux_cohere_reranking_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_cohere_reranking_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_rerank(handle: Long, optsJson: String, err: AimuxCError?): Pointer?
 
     // ── Video ──────────────────────────────────────────────────────────────
-    fun aimux_google_video_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_google_video_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_video_generate(handle: Long, optsJson: String): Pointer?
+    fun aimux_google_video_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_google_video_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_video_generate(handle: Long, optsJson: String, err: AimuxCError?): Pointer?
 
     // ── Search ─────────────────────────────────────────────────────────────
-    fun aimux_tavily_search_new(apiKey: String, modelId: String): Pointer?
-    fun aimux_tavily_search_new_with_base(apiKey: String, modelId: String, baseUrl: String): Pointer?
-    fun aimux_search(handle: Long, optsJson: String): Pointer?
+    fun aimux_tavily_search_new(apiKey: String, modelId: String, err: AimuxCError?): Long
+    fun aimux_tavily_search_new_with_base(apiKey: String, modelId: String, baseUrl: String, err: AimuxCError?): Long
+    fun aimux_search(handle: Long, optsJson: String, err: AimuxCError?): Pointer?
 
     // Logging (RFC-0014).
-
     fun aimux_init_logging(level: String): Int
 
     // ── Recording + mock replay (RFC-0023) ──────────────────────────────────
-    // Recording is opt-in and global. All int-returning functions return 0 on
-    // success, or -1 on invalid input.
     fun aimux_init_recording(dir: String): Int
     fun aimux_init_recording_ring(cap: Long): Int
     fun aimux_recording_stop(): Int
     fun aimux_recording_flush(): Int
-    fun aimux_mock_replay_new(recordingsJsonl: String): Pointer?
+    fun aimux_mock_replay_new(recordingsJsonl: String, err: AimuxCError?): Long
 }
 
 internal object FFI {
@@ -146,27 +160,41 @@ internal object FFI {
 }
 
 /**
- * Read a constructor's JSON result (`{"handle":<u64>}` on success,
- * `{"error":"..."}` on failure), free the pointer, and return the handle.
- *
- * @param ptr     Pointer returned by an `aimux_*_new*` function (null = fatal FFI failure).
- * @param context Description of what was being constructed, used to prefix the
- *                thrown message (e.g. `"Failed to create OpenAI model"`).
+ * Map a failed FFI call's [err] to a typed [AimuxException] and throw it.
+ * Frees the FFI-allocated [AimuxCError.message] and [AimuxCError.error_value]
+ * exactly once each (fromC itself is a pure mapping and never frees).
  */
-internal fun extractHandle(ptr: Pointer?, context: String): Long {
-    if (ptr == null) throw IllegalArgumentException("$context: constructor returned null")
-    val result = try {
+internal fun throwFromC(err: AimuxCError): Nothing {
+    val ex = AimuxException.fromC(err)
+    FFI.lib.aimux_free_string(err.message)
+    FFI.lib.aimux_free_string(err.error_value)
+    throw ex
+}
+
+/**
+ * Turn a constructor `uint64_t` handle + filled [AimuxCError] into a non-zero handle.
+ * Throws [AimuxException] (typed subclass) when [handle] is 0.
+ */
+internal fun extractHandle(handle: Long, err: AimuxCError): Long {
+    if (handle == 0L) throwFromC(err)
+    return handle
+}
+
+/** Allocate, run [block], map 0 → typed [AimuxException]. */
+internal inline fun withCErrorHandle(block: (AimuxCError) -> Long): Long {
+    val err = AimuxCError()
+    return extractHandle(block(err), err)
+}
+
+/** Allocate, run [block]; NULL → throw typed [AimuxException]; free the result on success. */
+internal inline fun withCErrorString(block: (AimuxCError) -> Pointer?): String {
+    val err = AimuxCError()
+    val ptr = block(err) ?: throwFromC(err)
+    return try {
         ptr.getString(0, "UTF-8")
     } finally {
         FFI.lib.aimux_free_string(ptr)
     }
-    val obj = runCatching { AimuxJson.parseToJsonElement(result).jsonObject }.getOrNull()
-    val err = obj?.get("error")
-    if (err is JsonPrimitive && err.isString) {
-        throw IllegalArgumentException("$context: ${err.content}")
-    }
-    (obj?.get("handle") as? JsonPrimitive)?.longOrNull?.let { return it }
-    throw IllegalArgumentException("$context: invalid constructor response: $result")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,7 +213,7 @@ internal fun extractHandle(ptr: Pointer?, context: String): Long {
  * }
  * ```
  */
-class Model private constructor(handle: Long) : Closeable {
+class Model internal constructor(handle: Long) : Closeable {
     private val handle = AtomicLong(handle)
 
     override fun close() {
@@ -203,144 +231,294 @@ class Model private constructor(handle: Long) : Closeable {
         close()
     }
 
+    // ── Generation ─────────────────────────────────────────────────────────
+
+    /**
+     * Generate text (non-streaming).
+     *
+     * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
+     * @param optsJson Optional JSON-serialized GenerateTextOptions.
+     * @return JSON-serialized GenerateTextResult.
+     * @throws AimuxException on engine / binding failure (typed subclass via C AimuxError).
+     */
+    fun generateText(promptJson: String, optsJson: String? = null): String =
+        withCErrorString { err ->
+            FFI.lib.aimux_generate_text(requireHandle(), promptJson, optsJson, err)
+        }
+
+    /**
+     * Stream text from the model.
+     *
+     * Blocks the calling thread until the stream completes. Stream failures
+     * throw [AimuxException] (on_done is not invoked on failure). Mid-stream
+     * errors surface the same way after any parts already delivered to [onPart].
+     *
+     * @param promptJson JSON prompt string.
+     * @param optsJson Optional JSON-serialized GenerateTextOptions.
+     * @param onPart Called for each StreamPart (JSON string).
+     * @param onDone Called when the stream completes normally.
+     */
+    fun streamText(
+        promptJson: String,
+        optsJson: String? = null,
+        onPart: (String) -> Unit,
+        onDone: () -> Unit,
+    ) {
+        // JNA callbacks — must be held in variables to prevent GC.
+        // C ABI: on_part(const char* json, void* stream_ctx), on_done(void* stream_ctx).
+        val partCb = object : Callback {
+            @Suppress("unused")
+            fun callback(jsonPtr: Pointer?, @Suppress("UNUSED_PARAMETER") streamCtx: Pointer?) {
+                if (jsonPtr != null) {
+                    onPart(jsonPtr.getString(0, "UTF-8"))
+                }
+            }
+        }
+        val doneCb = object : Callback {
+            @Suppress("unused")
+            fun callback(@Suppress("UNUSED_PARAMETER") streamCtx: Pointer?) {
+                onDone()
+            }
+        }
+
+        val err = AimuxCError()
+        val rc = FFI.lib.aimux_stream_text(
+            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err,
+        )
+        if (rc == 0) throwFromC(err)
+    }
+
+    /**
+     * Stream text as a Sequence of StreamPart JSON strings.
+     *
+     * Usage:
+     * ```kotlin
+     * model.streamTextSequence("\"Write a haiku\"").forEach { part ->
+     *     println(part)
+     * }
+     * ```
+     */
+    fun streamTextSequence(
+        promptJson: String,
+        optsJson: String? = null,
+    ): Sequence<String> = sequence {
+        // LinkedBlockingQueue rejects null, so end-of-stream is a sentinel object.
+        val eos = Any()
+        val parts = java.util.concurrent.LinkedBlockingQueue<Any>()
+        var streamError: AimuxException? = null
+
+        try {
+            streamText(
+                promptJson = promptJson,
+                optsJson = optsJson,
+                onPart = { parts.put(it) },
+                onDone = { parts.put(eos) },
+            )
+        } catch (e: AimuxException) {
+            streamError = e
+            parts.put(eos)
+        }
+
+        while (true) {
+            val part = parts.take()
+            if (part === eos) break
+            yield(part as String)
+        }
+
+        streamError?.let { throw it }
+    }
+
+    // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
+
+    /**
+     * Generate text (non-streaming) with OpenAI Chat Completions output.
+     *
+     * @return JSON-serialized ChatCompletion.
+     * @throws AimuxException on engine / binding failure.
+     */
+    fun generateTextAsOpenAI(promptJson: String, optsJson: String? = null): String =
+        withCErrorString { err ->
+            FFI.lib.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson, err)
+        }
+
+    /**
+     * Stream text with OpenAI Chat Completions output.
+     * Each [onPart] receives a serialized ChatCompletionChunk JSON string.
+     *
+     * @throws AimuxException on stream failure (on_done not invoked).
+     */
+    fun streamTextAsOpenAI(
+        promptJson: String,
+        optsJson: String? = null,
+        onPart: (String) -> Unit,
+        onDone: () -> Unit,
+    ) {
+        val partCb = object : Callback {
+            @Suppress("unused")
+            fun callback(jsonPtr: Pointer?, @Suppress("UNUSED_PARAMETER") streamCtx: Pointer?) {
+                if (jsonPtr != null) {
+                    onPart(jsonPtr.getString(0, "UTF-8"))
+                }
+            }
+        }
+        val doneCb = object : Callback {
+            @Suppress("unused")
+            fun callback(@Suppress("UNUSED_PARAMETER") streamCtx: Pointer?) {
+                onDone()
+            }
+        }
+
+        val err = AimuxCError()
+        val rc = FFI.lib.aimux_stream_text_as_openai(
+            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err,
+        )
+        if (rc == 0) throwFromC(err)
+    }
+
+    /**
+     * Stream text with OpenAI Chat Completions output as a [Sequence] of
+     * ChatCompletionChunk JSON strings (RFC-0026).
+     */
+    fun streamTextAsOpenAISequence(
+        promptJson: String,
+        optsJson: String? = null,
+    ): Sequence<String> = sequence {
+        // LinkedBlockingQueue rejects null, so end-of-stream is a sentinel object.
+        val eos = Any()
+        val parts = java.util.concurrent.LinkedBlockingQueue<Any>()
+        var streamError: AimuxException? = null
+
+        try {
+            streamTextAsOpenAI(
+                promptJson = promptJson,
+                optsJson = optsJson,
+                onPart = { parts.put(it) },
+                onDone = { parts.put(eos) },
+            )
+        } catch (e: AimuxException) {
+            streamError = e
+            parts.put(eos)
+        }
+
+        while (true) {
+            val part = parts.take()
+            if (part === eos) break
+            yield(part as String)
+        }
+
+        streamError?.let { throw it }
+    }
+
     // ── Provider constructors ──────────────────────────────────────────────
 
     companion object {
         /** Create an OpenAI model instance. */
-        fun openai(apiKey: String, modelId: String): Model {
-            val h = extractHandle(FFI.lib.aimux_openai_new(apiKey, modelId), "Failed to create OpenAI model")
-            return Model(h)
-        }
+        fun openai(apiKey: String, modelId: String): Model =
+            Model(withCErrorHandle { err -> FFI.lib.aimux_openai_new(apiKey, modelId, err) })
 
         /** Create an Anthropic model instance. */
-        fun anthropic(apiKey: String, modelId: String): Model {
-            val h = extractHandle(FFI.lib.aimux_anthropic_new(apiKey, modelId), "Failed to create Anthropic model")
-            return Model(h)
-        }
+        fun anthropic(apiKey: String, modelId: String): Model =
+            Model(withCErrorHandle { err -> FFI.lib.aimux_anthropic_new(apiKey, modelId, err) })
 
         /** Create an OpenAI model instance with a custom base URL. */
-        fun openai(apiKey: String, modelId: String, baseUrl: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_openai_new_with_base(apiKey, modelId, baseUrl), "Failed to create OpenAI model")
-            return Model(h)
-        }
+        fun openai(apiKey: String, modelId: String, baseUrl: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_openai_new_with_base(apiKey, modelId, baseUrl, err)
+            })
 
         /** Create an Anthropic model instance with a custom base URL. */
-        fun anthropic(apiKey: String, modelId: String, baseUrl: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl), "Failed to create Anthropic model")
-            return Model(h)
-        }
+        fun anthropic(apiKey: String, modelId: String, baseUrl: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_anthropic_new_with_base(apiKey, modelId, baseUrl, err)
+            })
 
         /** Create a Cohere model instance. */
-        fun cohere(apiKey: String, modelId: String): Model {
-            val h = extractHandle(FFI.lib.aimux_cohere_new(apiKey, modelId), "Failed to create Cohere model")
-            return Model(h)
-        }
+        fun cohere(apiKey: String, modelId: String): Model =
+            Model(withCErrorHandle { err -> FFI.lib.aimux_cohere_new(apiKey, modelId, err) })
 
         /** Create a Cohere model instance with a custom base URL. */
-        fun cohere(apiKey: String, modelId: String, baseUrl: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_cohere_new_with_base(apiKey, modelId, baseUrl), "Failed to create Cohere model")
-            return Model(h)
-        }
+        fun cohere(apiKey: String, modelId: String, baseUrl: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_cohere_new_with_base(apiKey, modelId, baseUrl, err)
+            })
 
         /** Create a Mistral model instance. */
-        fun mistral(apiKey: String, modelId: String): Model {
-            val h = extractHandle(FFI.lib.aimux_mistral_new(apiKey, modelId), "Failed to create Mistral model")
-            return Model(h)
-        }
+        fun mistral(apiKey: String, modelId: String): Model =
+            Model(withCErrorHandle { err -> FFI.lib.aimux_mistral_new(apiKey, modelId, err) })
 
         /** Create a Mistral model instance with a custom base URL. */
-        fun mistral(apiKey: String, modelId: String, baseUrl: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_mistral_new_with_base(apiKey, modelId, baseUrl), "Failed to create Mistral model")
-            return Model(h)
-        }
+        fun mistral(apiKey: String, modelId: String, baseUrl: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_mistral_new_with_base(apiKey, modelId, baseUrl, err)
+            })
 
         /** Create an xAI model instance. */
-        fun xai(apiKey: String, modelId: String): Model {
-            val h = extractHandle(FFI.lib.aimux_xai_new(apiKey, modelId), "Failed to create xAI model")
-            return Model(h)
-        }
+        fun xai(apiKey: String, modelId: String): Model =
+            Model(withCErrorHandle { err -> FFI.lib.aimux_xai_new(apiKey, modelId, err) })
 
         /** Create an xAI model instance with a custom base URL. */
-        fun xai(apiKey: String, modelId: String, baseUrl: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_xai_new_with_base(apiKey, modelId, baseUrl), "Failed to create xAI model")
-            return Model(h)
-        }
+        fun xai(apiKey: String, modelId: String, baseUrl: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_xai_new_with_base(apiKey, modelId, baseUrl, err)
+            })
 
         /** Create a Bedrock model instance (AWS SigV4 credentials). */
-        fun bedrock(accessKeyId: String, secretAccessKey: String, region: String, modelId: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId),
-                "Failed to create Bedrock model")
-            return Model(h)
-        }
+        fun bedrock(accessKeyId: String, secretAccessKey: String, region: String, modelId: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_bedrock_new(accessKeyId, secretAccessKey, region, modelId, err)
+            })
 
         /** Create a Bedrock model instance with a custom base URL. */
         fun bedrock(
             accessKeyId: String, secretAccessKey: String, region: String, modelId: String, baseUrl: String
-        ): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_bedrock_new_with_base(accessKeyId, secretAccessKey, region, modelId, baseUrl),
-                "Failed to create Bedrock model")
-            return Model(h)
-        }
+        ): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_bedrock_new_with_base(accessKeyId, secretAccessKey, region, modelId, baseUrl, err)
+            })
 
         /** Create a Vertex AI model instance (GCP bearer token). */
-        fun vertex(accessToken: String, project: String, location: String, modelId: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_vertex_new(accessToken, project, location, modelId), "Failed to create Vertex model")
-            return Model(h)
-        }
+        fun vertex(accessToken: String, project: String, location: String, modelId: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_vertex_new(accessToken, project, location, modelId, err)
+            })
 
         /** Create a Vertex AI model instance with a custom base URL. */
         fun vertex(
             accessToken: String, project: String, location: String, modelId: String, baseUrl: String
-        ): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_vertex_new_with_base(accessToken, project, location, modelId, baseUrl),
-                "Failed to create Vertex model")
-            return Model(h)
-        }
+        ): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_vertex_new_with_base(accessToken, project, location, modelId, baseUrl, err)
+            })
 
         /** Create an Anthropic-on-AWS model instance (API key + region). */
-        fun anthropicAws(apiKey: String, region: String, modelId: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_anthropic_aws_new(apiKey, region, modelId), "Failed to create Anthropic AWS model")
-            return Model(h)
-        }
+        fun anthropicAws(apiKey: String, region: String, modelId: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_anthropic_aws_new(apiKey, region, modelId, err)
+            })
 
         /** Create an Anthropic-on-AWS model instance with a custom base URL. */
-        fun anthropicAws(apiKey: String, region: String, modelId: String, baseUrl: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl),
-                "Failed to create Anthropic AWS model")
-            return Model(h)
-        }
+        fun anthropicAws(apiKey: String, region: String, modelId: String, baseUrl: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_anthropic_aws_new_with_base(apiKey, region, modelId, baseUrl, err)
+            })
 
         /** Create an Azure OpenAI model instance (API key + resource name). */
-        fun azure(apiKey: String, resourceName: String, deployment: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_azure_new(apiKey, resourceName, deployment, null), "Failed to create Azure model")
-            return Model(h)
-        }
+        fun azure(apiKey: String, resourceName: String, deployment: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_azure_new(apiKey, resourceName, deployment, null, err)
+            })
 
         /** Create an Azure OpenAI model instance with an explicit api-version. */
-        fun azureWithVersion(apiKey: String, resourceName: String, deployment: String, apiVersion: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_azure_new(apiKey, resourceName, deployment, apiVersion), "Failed to create Azure model")
-            return Model(h)
-        }
+        fun azureWithVersion(apiKey: String, resourceName: String, deployment: String, apiVersion: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_azure_new(apiKey, resourceName, deployment, apiVersion, err)
+            })
 
         /** Create an Azure OpenAI model instance with a custom base URL. */
-        fun azureWithBase(apiKey: String, baseUrl: String, deployment: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_azure_new_with_base(apiKey, baseUrl, deployment, null), "Failed to create Azure model")
-            return Model(h)
-        }
+        fun azureWithBase(apiKey: String, baseUrl: String, deployment: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_azure_new_with_base(apiKey, baseUrl, deployment, null, err)
+            })
 
         /**
          * Create a model from the provider registry by name (RFC-0017 phase 4).
@@ -349,22 +527,18 @@ class Model private constructor(handle: Long) : Closeable {
          * @param apiKey     API key, or null to read the provider's env var from
          *                   the registry entry.
          * @param modelId    Model id.
-         * @param configJson Optional JSON object of ProviderOptions
-         *                   (`{"base_url": "...", "headers": {...}, "max_retries": 0,
-         *                   "body_overrides": {...}}`); null for defaults.
+         * @param configJson Optional JSON object of ProviderOptions; null for defaults.
          */
-        fun provider(name: String, apiKey: String? = null, modelId: String, configJson: String? = null): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_provider_new(name, apiKey, modelId, configJson), "Failed to create provider model '$name'")
-            return Model(h)
-        }
+        fun provider(name: String, apiKey: String? = null, modelId: String, configJson: String? = null): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_provider_new(name, apiKey, modelId, configJson, err)
+            })
 
         /** Create a model from the provider registry, reading the API key from the provider's env var. */
-        fun providerFromEnv(name: String, modelId: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_provider_from_env(name, modelId), "Failed to create provider model '$name' from env")
-            return Model(h)
-        }
+        fun providerFromEnv(name: String, modelId: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_provider_from_env(name, modelId, err)
+            })
 
         /**
          * Create a **provider handle** (RFC-0027) for a registry-backed provider.
@@ -373,26 +547,20 @@ class Model private constructor(handle: Long) : Closeable {
          * [ProviderHandle] that supports [ProviderHandle.listModels] and
          * [ProviderHandle.model].
          */
-        fun createProvider(name: String, apiKey: String? = null, configJson: String? = null): ProviderHandle {
-            val h = extractHandle(
-                FFI.lib.aimux_provider_handle_new(name, apiKey, configJson),
-                "Failed to create provider handle '$name'")
-            return ProviderHandle(h)
-        }
+        fun createProvider(name: String, apiKey: String? = null, configJson: String? = null): ProviderHandle =
+            ProviderHandle(withCErrorHandle { err ->
+                FFI.lib.aimux_provider_handle_new(name, apiKey, configJson, err)
+            })
 
         /**
          * Create a mock replay model from recorded JSONL (RFC-0023).
          *
-         * Matches recorded inputs and returns the recorded responses — no real
-         * API is sent. The handle works with [generateText] / [streamText].
-         *
          * @param recordingsJsonl One `Recording` JSON per line.
          */
-        fun mockReplay(recordingsJsonl: String): Model {
-            val h = extractHandle(
-                FFI.lib.aimux_mock_replay_new(recordingsJsonl), "Failed to create mock replay model")
-            return Model(h)
-        }
+        fun mockReplay(recordingsJsonl: String): Model =
+            Model(withCErrorHandle { err ->
+                FFI.lib.aimux_mock_replay_new(recordingsJsonl, err)
+            })
     }
 }
 
@@ -422,27 +590,17 @@ class ProviderHandle internal constructor(handle: Long) : AutoCloseable {
      */
     fun listModels(): String {
         check(!closed && handle != 0L) { "ProviderHandle is closed" }
-        val ptr = FFI.lib.aimux_provider_list_models(handle)
-            ?: throw IllegalStateException("list_models returned null")
-        val result = try {
-            ptr.getString(0, "UTF-8")
-        } finally {
-            FFI.lib.aimux_free_string(ptr)
+        return withCErrorString { err ->
+            FFI.lib.aimux_provider_list_models(handle, err)
         }
-        val obj = runCatching { AimuxJson.parseToJsonElement(result).jsonObject }.getOrNull()
-        val err = obj?.get("error")
-        if (err is JsonPrimitive && err.isString) {
-            throw IllegalStateException(err.content)
-        }
-        return result
     }
 
     /** Build a language model from a discovered model id. */
     fun model(modelId: String): Model {
         check(!closed && handle != 0L) { "ProviderHandle is closed" }
-        val h = extractHandle(
-            FFI.lib.aimux_provider_model(handle, modelId),
-            "Failed to create model '$modelId'")
+        val h = withCErrorHandle { err ->
+            FFI.lib.aimux_provider_model(handle, modelId, err)
+        }
         return Model(h)
     }
 }
@@ -453,210 +611,7 @@ class ProviderHandle internal constructor(handle: Long) : AutoCloseable {
  *
  * @param sourceUrl Optional URL override (null = default endpoint).
  */
-fun getModelSpecs(sourceUrl: String? = null): String {
-    val ptr = FFI.lib.aimux_get_model_specs(sourceUrl)
-        ?: throw IllegalStateException("get_model_specs returned null")
-    val result = try { ptr.getString(0, "UTF-8") } finally { FFI.lib.aimux_free_string(ptr) }
-    val obj = runCatching { AimuxJson.parseToJsonElement(result).jsonObject }.getOrNull()
-    val err = obj?.get("error")
-    if (err is JsonPrimitive && err.isString) throw IllegalStateException(err.content)
-    return result
-}
-
-    // ── Generation ─────────────────────────────────────────────────────────
-
-    /**
-     * Generate text (non-streaming).
-     *
-     * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
-     * @param optsJson Optional JSON-serialized GenerateTextOptions.
-     * @return JSON-serialized GenerateTextResult (or {"error":"..."} on failure).
-     */
-    fun generateText(promptJson: String, optsJson: String? = null): String {
-        val ptr = FFI.lib.aimux_generate_text(requireHandle(), promptJson, optsJson)
-            ?: throw RuntimeException("generate_text returned null")
-
-        try {
-            return ptr.getString(0, "UTF-8")
-        } finally {
-            FFI.lib.aimux_free_string(ptr)
-        }
+fun getModelSpecs(sourceUrl: String? = null): String =
+    withCErrorString { err ->
+        FFI.lib.aimux_get_model_specs(sourceUrl, err)
     }
-
-    /**
-     * Stream text from the model.
-     *
-     * Blocks the calling thread until the stream completes.
-     *
-     * @param promptJson JSON prompt string.
-     * @param optsJson Optional JSON-serialized GenerateTextOptions.
-     * @param onPart Called for each StreamPart (JSON string).
-     * @param onDone Called when the stream completes normally.
-     * @param onError Called on a stream error (JSON error string).
-     */
-    fun streamText(
-        promptJson: String,
-        optsJson: String? = null,
-        onPart: (String) -> Unit,
-        onDone: () -> Unit,
-        onError: (String) -> Unit,
-    ) {
-        // JNA callbacks — must be held in variables to prevent GC.
-        val partCb = object : com.sun.jna.Callback {
-            @Suppress("unused")
-            fun callback(jsonPtr: Pointer?) {
-                if (jsonPtr != null) {
-                    onPart(jsonPtr.getString(0, "UTF-8"))
-                }
-            }
-        }
-        val doneCb = object : com.sun.jna.Callback {
-            @Suppress("unused")
-            fun callback() {
-                onDone()
-            }
-        }
-        val errCb = object : com.sun.jna.Callback {
-            @Suppress("unused")
-            fun callback(errPtr: Pointer?) {
-                if (errPtr != null) {
-                    onError(errPtr.getString(0, "UTF-8"))
-                }
-            }
-        }
-
-        FFI.lib.aimux_stream_text(requireHandle(), promptJson, optsJson, partCb, doneCb, errCb)
-    }
-
-    /**
-     * Stream text as a Sequence of StreamPart JSON strings.
-     *
-     * Usage:
-     * ```kotlin
-     * model.streamTextSequence("\"Write a haiku\"").forEach { part ->
-     *     println(part)
-     * }
-     * ```
-     */
-    fun streamTextSequence(
-        promptJson: String,
-        optsJson: String? = null,
-    ): Sequence<String> = sequence {
-        val parts = java.util.concurrent.LinkedBlockingQueue<String?>()
-        var error: String? = null
-
-        streamText(
-            promptJson = promptJson,
-            optsJson = optsJson,
-            onPart = { parts.put(it) },
-            onDone = { parts.put(null) }, // sentinel = end
-            onError = { error = it; parts.put(null) },
-        )
-
-        while (true) {
-            val part = parts.take() ?: break
-            yield(part)
-        }
-
-        error?.let { throw RuntimeException(it) }
-    }
-
-    // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
-
-    /**
-     * Generate text (non-streaming) with OpenAI Chat Completions output.
-     *
-     * Same as [generateText], but returns a serialized ChatCompletion (OpenAI
-     * "chat.completion" object). Works with any provider.
-     *
-     * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
-     * @param optsJson Optional JSON-serialized GenerateTextOptions.
-     * @return JSON-serialized ChatCompletion (or {"error":"..."} on failure).
-     */
-    fun generateTextAsOpenAI(promptJson: String, optsJson: String? = null): String {
-        val ptr = FFI.lib.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson)
-            ?: throw RuntimeException("generate_text_as_openai returned null")
-
-        try {
-            return ptr.getString(0, "UTF-8")
-        } finally {
-            FFI.lib.aimux_free_string(ptr)
-        }
-    }
-
-    /**
-     * Stream text from the model with OpenAI Chat Completions output.
-     *
-     * Blocks the calling thread until the stream completes. Each `onPart`
-     * receives a serialized ChatCompletionChunk (OpenAI "chat.completion.chunk"
-     * object). Works with any provider.
-     *
-     * @param promptJson JSON prompt string.
-     * @param optsJson Optional JSON-serialized GenerateTextOptions. May carry
-     *                 `providerOptions.openai.stream_options` with
-     *                 `include_usage` / `include_reasoning`.
-     * @param onPart Called for each ChatCompletionChunk (JSON string).
-     * @param onDone Called when the stream completes normally.
-     * @param onError Called on a stream error (JSON error string).
-     */
-    fun streamTextAsOpenAI(
-        promptJson: String,
-        optsJson: String? = null,
-        onPart: (String) -> Unit,
-        onDone: () -> Unit,
-        onError: (String) -> Unit,
-    ) {
-        // JNA callbacks — must be held in variables to prevent GC.
-        val partCb = object : com.sun.jna.Callback {
-            @Suppress("unused")
-            fun callback(jsonPtr: Pointer?) {
-                if (jsonPtr != null) {
-                    onPart(jsonPtr.getString(0, "UTF-8"))
-                }
-            }
-        }
-        val doneCb = object : com.sun.jna.Callback {
-            @Suppress("unused")
-            fun callback() {
-                onDone()
-            }
-        }
-        val errCb = object : com.sun.jna.Callback {
-            @Suppress("unused")
-            fun callback(errPtr: Pointer?) {
-                if (errPtr != null) {
-                    onError(errPtr.getString(0, "UTF-8"))
-                }
-            }
-        }
-
-        FFI.lib.aimux_stream_text_as_openai(requireHandle(), promptJson, optsJson, partCb, doneCb, errCb)
-    }
-
-    /**
-     * Stream text with OpenAI Chat Completions output as a [Sequence] of
-     * ChatCompletionChunk JSON strings (RFC-0026).
-     */
-    fun streamTextAsOpenAISequence(
-        promptJson: String,
-        optsJson: String? = null,
-    ): Sequence<String> = sequence {
-        val parts = java.util.concurrent.LinkedBlockingQueue<String?>()
-        var error: String? = null
-
-        streamTextAsOpenAI(
-            promptJson = promptJson,
-            optsJson = optsJson,
-            onPart = { parts.put(it) },
-            onDone = { parts.put(null) }, // sentinel = end
-            onError = { error = it; parts.put(null) },
-        )
-
-        while (true) {
-            val part = parts.take() ?: break
-            yield(part)
-        }
-
-        error?.let { throw RuntimeException(it) }
-    }
-}

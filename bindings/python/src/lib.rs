@@ -7,18 +7,20 @@
 // edition-2024 lint. Suppress until pyo3 0.23+ lands.
 #![allow(unsafe_op_in_unsafe_fn)]
 
+mod error;
 mod multimodal;
 pub use multimodal::*;
 
 use std::sync::Arc;
 
+use crate::error::to_py_err;
+use aimux_core::AiMuxError;
 use aimux_core::generate::{
     GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,9 +30,7 @@ use pyo3::prelude::*;
 pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     use std::sync::OnceLock;
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| {
-        tokio::runtime::Runtime::new().expect("failed to build tokio runtime")
-    })
+    RT.get_or_init(|| tokio::runtime::Runtime::new().expect("failed to build tokio runtime"))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,46 +76,46 @@ impl Model {
     #[pyo3(signature = (filter_json=None))]
     fn trace_aggregate(&self, filter_json: Option<&str>) -> PyResult<String> {
         let Some(store) = &self.trace_store else {
-            return Err(PyRuntimeError::new_err(
-                "[Trace] model is not traced; call trace() first",
-            ));
+            return Err(to_py_err(&AiMuxError::InvalidArgument(
+                "model is not traced; call trace() first".into(),
+            )));
         };
         let filter = match filter_json {
             Some(f) => serde_json::from_str(f).map_err(|e| {
-                PyRuntimeError::new_err(format!("[Trace] invalid filter: {e}"))
+                to_py_err(&AiMuxError::InvalidArgument(format!("invalid filter: {e}")))
             })?,
             None => Default::default(),
         };
         serde_json::to_string(&store.aggregate(&filter))
-            .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize: {e}")))
+            .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
     }
 
     /// One session's chain view. Returns a JSON `SessionChainView` string.
     fn trace_session_chain(&self, session_id: &str) -> PyResult<String> {
         let Some(store) = &self.trace_store else {
-            return Err(PyRuntimeError::new_err(
-                "[Trace] model is not traced; call trace() first",
-            ));
+            return Err(to_py_err(&AiMuxError::InvalidArgument(
+                "model is not traced; call trace() first".into(),
+            )));
         };
-        let view = store.session_chain(session_id).ok_or_else(|| {
-            PyRuntimeError::new_err("[Trace] unknown session")
-        })?;
+        let view = store
+            .session_chain(session_id)
+            .ok_or_else(|| to_py_err(&AiMuxError::Other("unknown session".into())))?;
         serde_json::to_string(&view)
-            .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize: {e}")))
+            .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
     }
 
     /// Export all probe records as JSONL (one `TraceRecord` per line).
     fn trace_export_jsonl(&self) -> PyResult<String> {
         let Some(store) = &self.trace_store else {
-            return Err(PyRuntimeError::new_err(
-                "[Trace] model is not traced; call trace() first",
-            ));
+            return Err(to_py_err(&AiMuxError::InvalidArgument(
+                "model is not traced; call trace() first".into(),
+            )));
         };
         let mut buf = Vec::new();
         store
             .export_jsonl(&mut buf)
-            .map_err(|e| PyRuntimeError::new_err(format!("[Trace] export: {e}")))?;
-        String::from_utf8(buf).map_err(|e| PyRuntimeError::new_err(format!("[Trace] utf8: {e}")))
+            .map_err(|e| to_py_err(&AiMuxError::Other(format!("export: {e}"))))?;
+        String::from_utf8(buf).map_err(|e| to_py_err(&AiMuxError::Other(format!("utf8: {e}"))))
     }
 
     /// Clear all probe records of this traced model.
@@ -136,14 +136,12 @@ impl Model {
         let opts = parse_opts(opts_json)?;
 
         let rt = runtime();
-        let result = rt.block_on(async move {
-            generate_text(&*self.inner, prompt, opts).await
-        });
+        let result = rt.block_on(async move { generate_text(&*self.inner, prompt, opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("[{}] {e}", e.error_type()))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 
@@ -156,7 +154,7 @@ impl Model {
         let opts = parse_opts(opts_json)?;
         let model = self.inner.clone();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, String>>(64);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, AiMuxError>>(64);
 
         rt_spawn(async move {
             match stream_text(&*model, prompt, opts).await {
@@ -173,14 +171,14 @@ impl Model {
                                 }
                             }
                             Err(e) => {
-                                let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                                let _ = tx.send(Err(e)).await;
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                    let _ = tx.send(Err(e)).await;
                 }
             }
         });
@@ -203,14 +201,13 @@ impl Model {
         let opts = parse_opts(opts_json)?;
 
         let rt = runtime();
-        let result = rt.block_on(async move {
-            generate_text_as_openai(&*self.inner, prompt, opts).await
-        });
+        let result =
+            rt.block_on(async move { generate_text_as_openai(&*self.inner, prompt, opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("[Json] serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("[{}] {e}", e.error_type()))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 
@@ -249,7 +246,7 @@ impl Model {
             })
             .unwrap_or_default();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, String>>(64);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, AiMuxError>>(64);
 
         rt_spawn(async move {
             match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
@@ -266,14 +263,14 @@ impl Model {
                                 }
                             }
                             Err(e) => {
-                                let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                                let _ = tx.send(Err(e)).await;
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(format!("[{}] {e}", e.error_type()))).await;
+                    let _ = tx.send(Err(e)).await;
                 }
             }
         });
@@ -285,7 +282,7 @@ impl Model {
 /// Python iterator that yields StreamPart JSON strings from a tokio channel.
 #[pyclass]
 struct StreamIterator {
-    rx: tokio::sync::mpsc::Receiver<Result<String, String>>,
+    rx: tokio::sync::mpsc::Receiver<Result<String, AiMuxError>>,
 }
 
 #[pymethods]
@@ -296,13 +293,11 @@ impl StreamIterator {
 
     fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<PyObject>> {
         // Block on the next channel item, allowing other Python threads to run.
-        let item = py.allow_threads(|| {
-            runtime().block_on(self.rx.recv())
-        });
+        let item = py.allow_threads(|| runtime().block_on(self.rx.recv()));
 
         match item {
             Some(Ok(json)) => Ok(Some(json.to_object(py).into())),
-            Some(Err(e)) => Err(PyRuntimeError::new_err(e)),
+            Some(Err(e)) => Err(to_py_err(&e)),
             None => Ok(None), // stream finished
         }
     }
@@ -326,7 +321,7 @@ fn openai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
     let provider = OpenAIProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -347,7 +342,7 @@ fn anthropic(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<
     let provider = AnthropicProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -363,7 +358,7 @@ fn deepseek(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<M
         ..Default::default()
     });
     let model = aimux_providers::provider("deepseek", Some(api_key.to_string()), model_id, options)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -385,7 +380,7 @@ fn google(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
     let provider = GoogleProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -406,7 +401,7 @@ fn cohere(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mod
     let provider = CohereProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -427,7 +422,7 @@ fn mistral(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Mo
     let provider = MistralProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -448,7 +443,7 @@ fn xai(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<Model>
     let provider = XAIProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -475,7 +470,7 @@ fn bedrock(
     let provider = BedrockProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -502,7 +497,7 @@ fn vertex(
     let provider = VertexProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -528,7 +523,7 @@ fn anthropic_aws(
     let provider = AnthropicAwsProvider::new(config);
     let model = provider
         .language_model(model_id)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -562,11 +557,10 @@ fn azure(
     if !resource_name.is_empty() {
         config = config.with_resource_name(resource_name);
     }
-    let provider = AzureProvider::new(config)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    let provider = AzureProvider::new(config).map_err(|e| to_py_err(&e))?;
     let model = provider
         .language_model(deployment)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -588,18 +582,17 @@ fn provider(
     config_json: Option<&str>,
 ) -> PyResult<Model> {
     let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-            Some(serde_json::from_str(s).map_err(|e| {
-                PyRuntimeError::new_err(format!("[Json] invalid config: {e}"))
-            })?)
-        }
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(
+            serde_json::from_str(s)
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid config: {e}"))))?,
+        ),
         _ => None,
     };
     if let Some(url) = base_url {
         options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
     }
-    let model = aimux_providers::provider(name, api_key, model_id, options)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    let model =
+        aimux_providers::provider(name, api_key, model_id, options).map_err(|e| to_py_err(&e))?;
     Ok(Model {
         inner: Arc::from(model),
         trace_store: None,
@@ -625,9 +618,9 @@ impl ProviderHandle {
         let rt = runtime();
         let models = rt
             .block_on(async { self.inner.list_models().await })
-            .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+            .map_err(|e| to_py_err(&e))?;
         serde_json::to_string(&models)
-            .map_err(|e| PyRuntimeError::new_err(format!("serialize list_models: {e}")))
+            .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize list_models: {e}"))))
     }
 
     /// Build a language model from a discovered model id.
@@ -635,7 +628,7 @@ impl ProviderHandle {
         let m = self
             .inner
             .language_model(model_id)
-            .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+            .map_err(|e| to_py_err(&e))?;
         Ok(Model {
             inner: Arc::from(m),
             trace_store: None,
@@ -656,18 +649,16 @@ fn create_provider(
     config_json: Option<&str>,
 ) -> PyResult<ProviderHandle> {
     let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-            Some(serde_json::from_str(s).map_err(|e| {
-                PyRuntimeError::new_err(format!("[Json] invalid config: {e}"))
-            })?)
-        }
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(
+            serde_json::from_str(s)
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid config: {e}"))))?,
+        ),
         _ => None,
     };
     if let Some(url) = base_url {
         options.get_or_insert_with(Default::default).base_url = Some(url.to_string());
     }
-    let p = aimux_providers::provider_handle(name, api_key, options)
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+    let p = aimux_providers::provider_handle(name, api_key, options).map_err(|e| to_py_err(&e))?;
     Ok(ProviderHandle {
         inner: Arc::from(p),
     })
@@ -680,9 +671,9 @@ fn create_provider(
 fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
     let catalogue = runtime()
         .block_on(async { aimux_providers::get_model_specs(source_url).await })
-        .map_err(|e| PyRuntimeError::new_err(format!("[{}] {e}", e.error_type())))?;
+        .map_err(|e| to_py_err(&e))?;
     serde_json::to_string(&catalogue)
-        .map_err(|e| PyRuntimeError::new_err(format!("serialize catalogue: {e}")))
+        .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize catalogue: {e}"))))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -695,7 +686,11 @@ fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
 /// 日志输出到 stderr。
 #[pyfunction]
 fn init_logging(level: &str) {
-    let level = if level.trim().is_empty() { "warn" } else { level };
+    let level = if level.trim().is_empty() {
+        "warn"
+    } else {
+        level
+    };
     aimux_providers::init_logging(level);
 }
 
@@ -779,12 +774,18 @@ fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
         if line.is_empty() {
             continue;
         }
-        let rec = serde_json::from_str(line)
-            .map_err(|e| PyValueError::new_err(format!("[Recording] line {}: {e}", idx + 1)))?;
+        let rec = serde_json::from_str(line).map_err(|e| {
+            to_py_err(&AiMuxError::InvalidArgument(format!(
+                "recordings line {}: {e}",
+                idx + 1
+            )))
+        })?;
         recordings.push(rec);
     }
     if recordings.is_empty() {
-        return Err(PyValueError::new_err("[Recording] no recordings"));
+        return Err(to_py_err(&AiMuxError::InvalidArgument(
+            "no recordings".into(),
+        )));
     }
     let model = aimux_core::replay::MockReplayModel::new(
         recordings[0].provider.provider.clone(),
@@ -799,6 +800,7 @@ fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
 
 #[pymodule]
 fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    crate::error::register(m)?;
     m.add_class::<Model>()?;
     m.add_class::<StreamIterator>()?;
     m.add_function(wrap_pyfunction!(init_logging, m)?)?;
@@ -865,7 +867,7 @@ where
 
 fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| PyRuntimeError::new_err(format!("[Json] invalid prompt JSON: {e}")))?;
+        .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid prompt JSON: {e}"))))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -873,7 +875,7 @@ fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| PyRuntimeError::new_err(format!("[Json] invalid prompt: {e}")))
+        .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid prompt: {e}"))))
 }
 
 fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
@@ -885,7 +887,7 @@ fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
                 return Ok(GenerateTextOptions::default());
             }
             serde_json::from_str(s)
-                .map_err(|e| PyRuntimeError::new_err(format!("[Json] invalid options JSON: {e}")))
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid options JSON: {e}"))))
         }
     }
 }

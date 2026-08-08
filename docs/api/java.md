@@ -59,17 +59,72 @@ try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
 `deepseek(apiKey, modelId)` remains as a shortcut (registry-backed).
 Unknown names throw an error listing the available providers.
 
+## Errors
+
+Engine and binding failures throw an **`AimuxException` subclass hierarchy**
+(OpenAI Java / Vercel AI SDK style — `instanceof`, not stringly `code` checks):
+
+```text
+RuntimeException
+ └── AimuxException
+      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── InvalidArgumentError / InvalidPromptError
+      ├── RateLimitedError          // status 429, retryMs
+      ├── AuthenticationError       // status 401
+      ├── TokenExpiredError
+      ├── ModelNotFoundError / NoSuchModelError
+      ├── UnsupportedError / UnknownProviderError
+      ├── APICallError / TimeoutError
+      ├── RequestAbortedError
+      └── OtherError
+```
+
+Every instance has:
+
+| Field | Meaning |
+|-------|---------|
+| `getMessage()` | human-readable text from C |
+| `getCode()` | `AimuxErrorCode` value 0–19 (matches `aimux-error.h`) |
+| `getStatus()` | HTTP status, or `-1` |
+| `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
+
+Transport: fallible C calls take a trailing `AimuxError *err` and return
+`0` / `NULL` on failure. The Java binding maps that into the hierarchy via
+`AimuxException.fromC(AimuxCError)` — **not** JSON error envelopes on the
+main path. Subclasses are nested under `AimuxException` (e.g.
+`AimuxException.RateLimitedError`).
+
+```java
+import ai.arcships.aimux.AimuxException;
+import ai.arcships.aimux.AimuxException.AuthenticationError;
+import ai.arcships.aimux.AimuxException.RateLimitedError;
+import ai.arcships.aimux.Model;
+
+try (Model model = Model.openai("sk-...", "gpt-4o")) {
+    model.generateText("\"hi\"");
+} catch (RateLimitedError e) {
+    // e.getRetryMs(), e.getStatus() == 429
+} catch (AuthenticationError e) {
+    // e.getStatus() == 401
+} catch (AimuxException e) {
+    // any engine / binding failure
+}
+```
+
+Stream terminal failures also throw (there is no C `on_error` callback). The
+raw `streamText` `onError` parameter is retained for API compatibility (e.g.
+typed decode issues) but is not used for C-level failures.
+
 ## Architecture
 
 Two layers, mirroring the Kotlin binding:
 
 - **Raw layer** (`Model`, `EmbeddingModel`, `SpeechModel`, …) — JNA → C ABI,
-  JSON strings in and out. `Model.generateText` returns the raw JSON result
-  (or an `{"error":"..."}` envelope, which the caller must check). The
-  multimodal raw classes throw `AimuxException` on an error envelope.
+  JSON strings in and out. Failures throw typed `AimuxException` subclasses
+  from the C `AimuxError` out-param (handle `0` / pointer `NULL`).
 - **Typed layer** (`TypedModel`, `Types`, `MultimodalTypes`) — Jackson POJOs
   with the same wire format as all other bindings. `TypedModel` decodes results
-  into typed objects and surfaces engine errors as `AimuxException`.
+  into typed objects; engine errors propagate as `AimuxException`.
 
 Serialization uses `JsonInclude.Include.NON_NULL` (null fields omitted on
 encode; zero values and empty collections are retained).
@@ -261,13 +316,12 @@ the `aimux-core` `.ts` wire definitions exactly (`{headers, body, ...}`).
 
 ## Error Handling
 
-- **Raw text layer** (`Model.generateText`): returns the raw JSON string; an
-  engine failure comes back as `{"error":"..."}` (caller must check).
-- **Typed text layer** (`TypedModel`): `decodeResult` inspects the envelope and
-  throws `AimuxException` with the error message.
-- **Raw multimodal layer** (`EmbeddingModel`, `SpeechModel`, …): every call
-  goes through `AimuxResult.extractString`, which throws `AimuxException` on an
-  error envelope (parity with the Kotlin binding).
+- **All fallible raw APIs** (`Model.generateText`, multimodal, …): C sentinel
+  failure fills `AimuxError *`; Java throws `AimuxException.fromC` (typed
+  subclasses — see [Errors](#errors) above). Success payloads are plain result
+  JSON strings, not error envelopes.
+- **Typed text layer** (`TypedModel`): engine failures throw the same hierarchy;
+  local decode failures throw `AimuxException` / `InvalidArgumentError`.
 
 ## Coverage
 

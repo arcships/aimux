@@ -94,8 +94,54 @@ model.streamText(prompt: "\"Write a haiku\"") { part in
 | `streamTextAsync` | `func streamTextAsync(prompt: String, options: String? = nil) -> AsyncThrowingStream<String, Error>` | Streaming as an `AsyncSequence` |
 | `generate` | `func generate(prompt: String, options: [String: Any]? = nil) throws -> [String: Any]` | Convenience: parses `generateText` into a dictionary |
 
-`AimuxError` is the error enum (`.invalidHandle`, `.invalidPrompt`,
-`.invalidOptions`, `.providerError`, `.streamError`, `.serializationError`).
+### Errors
+
+`AimuxError` is a structured Swift `Error` enum mapped from the C ABI
+`AimuxError` / `AimuxErrorCode` (see `aimux-error.h`). Fallible FFI calls pass
+an out-param; on failure the return sentinel is `0` / `NULL` and the filled
+struct is converted with `AimuxError.fromC(_:)`.
+
+| Case | C code | Notes |
+|------|--------|--------|
+| `.provider` | `AIMUX_E_PROVIDER` | Provider-layer failure |
+| `.http` | `AIMUX_E_HTTP` | HTTP transport |
+| `.json` | `AIMUX_E_JSON` | JSON parse/serialize |
+| `.stream` | `AIMUX_E_STREAM` | Streaming failure |
+| `.tool` | `AIMUX_E_TOOL` | Tool-related failure |
+| `.invalidArgument` | `AIMUX_E_INVALID_ARGUMENT` | Bad argument |
+| `.invalidPrompt` | `AIMUX_E_INVALID_PROMPT` | Bad prompt JSON |
+| `.rateLimited` | `AIMUX_E_RATE_LIMITED` | HTTP 429; check `retryMs` |
+| `.authentication` | `AIMUX_E_AUTH` | Auth failure |
+| `.tokenExpired` | `AIMUX_E_TOKEN_EXPIRED` | Expired token |
+| `.modelNotFound` | `AIMUX_E_MODEL_NOT_FOUND` | HTTP 404 model |
+| `.unsupported` | `AIMUX_E_UNSUPPORTED` | Unsupported feature |
+| `.noSuchModel` | `AIMUX_E_NO_SUCH_MODEL` | Registry miss |
+| `.unknownProvider` | `AIMUX_E_UNKNOWN_PROVIDER` | Unknown provider name |
+| `.apiCall` | `AIMUX_E_API_CALL` | Provider API call failed |
+| `.timeout` | `AIMUX_E_TIMEOUT` | Request timed out |
+| `.aborted` | `AIMUX_E_ABORTED` | Request aborted |
+| `.other` | `AIMUX_E_OTHER` | Unclassified core error |
+| `.unknown` | `AIMUX_E_UNKNOWN` / unexpected | Future or empty err |
+| `.invalidHandle` | *(local)* | Zero / freed handle |
+| `.serializationError` | *(local)* | Binding encode/decode |
+
+Every engine-mapped case carries `message`, `status` (HTTP or `-1`), and
+`retryMs` (`-1` if none; `0` = retry now). Accessors:
+
+```swift
+do {
+    _ = try model.generateText(prompt: "\"hi\"")
+} catch let e as AimuxError {
+    print(e.message, e.status, e.retryMs)
+    if case .rateLimited(_, _, let retryMs) = e, retryMs >= 0 {
+        // back off
+    }
+}
+```
+
+Streaming: `aimux_stream_text` returns non-zero on success and fills `err` on
+failure (no C `onError` callback). The Swift push API still takes `onError`
+and receives `e.message`; `streamTextAsync` throws the structured `AimuxError`.
 
 ## Types
 

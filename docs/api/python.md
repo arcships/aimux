@@ -304,7 +304,7 @@ from aimux.wrapper import (
     # type aliases
     Role, FinishReasonUnified, ReasoningEffort, MessageContent, ContentPart,
     Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent,
-    FileData, FileBytes, Warning, AiMuxError,
+    FileData, FileBytes, Warning, AiMuxErrorValue,
     # pydantic models
     TokenUsage, Usage, FinishReason, ResponseMetadata, ToolCall,
     ModelMessage, FunctionTool, ProviderTool, TextContentPart,
@@ -314,8 +314,48 @@ from aimux.wrapper import (
 )
 ```
 
-Errors from the native layer surface as `RuntimeError` (the wrapper does not
-define its own exception type yet).
+Engine and binding failures raise an **exception hierarchy** (explicit types —
+OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
+
+```text
+Exception
+ └── AimuxError
+      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── InvalidArgumentError / InvalidPromptError
+      ├── RateLimitError
+      ├── AuthenticationError / TokenExpiredError
+      ├── ModelNotFoundError / NoSuchModelError
+      ├── UnsupportedError / UnknownProviderError
+      ├── APICallError / APITimeoutError
+      ├── RequestAbortedError
+      └── OtherError
+```
+
+Instances carry `status` (HTTP status or `None`), `retry_ms` (hint or `None`),
+and `error_value: str | None` — the raw externally-tagged AiMuxError JSON
+(e.g. `'{"RateLimited":{"retry_after_ms":1500,"message":"..."}}'`), the
+machine-readable companion to `str(e)`.
+
+```python
+from aimux import (
+    generate_text,
+    AimuxError,
+    RateLimitError,
+    AuthenticationError,
+)
+
+try:
+    generate_text(model, "hi")
+except RateLimitError as e:
+    ...  # e.retry_ms, e.status
+except AuthenticationError:
+    ...
+except AimuxError:
+    ...  # any engine / binding failure
+```
+
+(The pydantic wire type named `AiMuxErrorValue` in `aimux.wrapper` is only for
+stream/payload shapes, not the raised exception.)
 
 Key shapes (mirroring the shared JSON schema):
 

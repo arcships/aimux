@@ -1,200 +1,261 @@
 # aimux · C ABI (C/C++)
 
-> The C ABI boundary (`aimux-ffi`) provides FFI interfaces for Swift / Kotlin / Flutter / Go / C++. All functions communicate via JSON strings.
+> The C ABI boundary (`aimux-ffi`) is shared by Swift / Kotlin / Flutter / Go / Java / C++.
+> **Results** are JSON strings. **Errors** are not JSON: they use return-value
+> sentinels plus an optional `AimuxError *` out-parameter (see
+> [aimux-error.h](../../aimux-ffi/aimux-error.h)).
 
 Shared reference — feature descriptions, factory functions, and the coverage
 matrix — lives in the [API overview](../API.md).
 
 ## Install
 
-Get `aimux-ffi.h` + the platform shared library from
+Get `aimux-ffi.h`, `aimux-error.h`, and the platform shared library from
 [GitHub Releases](https://github.com/arcships/aimux/releases)
 (`libaimux_ffi-linux-x64.so` / `libaimux_ffi-macos-arm64.dylib` /
 `aimux_ffi-windows-x64.dll`), then link against it:
 
 ```bash
-gcc -o example example.c -I. -L. -laimux_ffi -lpthread -ldl -lm   # Linux (aimux-ffi.h in the same directory)
+gcc -o example example.c -I. -L. -laimux_ffi -lpthread -ldl -lm
 ```
 
-Header: [aimux-ffi.h](../../aimux-ffi/aimux-ffi.h).
+Headers:
 
-## Quick Start
+- [aimux-ffi.h](../../aimux-ffi/aimux-ffi.h) — ABI symbols  
+- [aimux-error.h](../../aimux-ffi/aimux-error.h) — `AimuxError` / `AimuxErrorCode`
+
+## Error handling
+
+### How to tell failure
+
+**Only the return value decides success or failure.**
+
+| Return type | Success | Failure |
+|-------------|---------|---------|
+| Constructor / handle (`uint64_t`) | `≥ 1` | **`0`** |
+| Payload (`char *` JSON) | non-`NULL` | **`NULL`** |
+| Stream (`int32_t`) | non-zero (e.g. `1`) | **`0`** |
 
 ```c
+if (!result) {
+    /* failed — then read *err if you passed one */
+}
+```
+
+Do **not** sniff JSON for `"error"` or rely on `err` alone without checking the return value.
+
+### Optional details: `AimuxError *err`
+
+Every fallible call takes a trailing `AimuxError *err` (may be `NULL`).
+
+| | |
+|--|--|
+| Failure + `err != NULL` | Callee fills `*err` (`code != AIMUX_OK`, non-empty `message`) |
+| Failure + `err == NULL` | Still fails; no details (caller discarded them) |
+| Success | Use the return value; `*err` is **not touched** |
+
+The struct is 40 bytes (four fields plus two reserved pointer slots for future ABI extension); on failure `message` is allocated by aimux and the
+caller **must release it with `aimux_free_string`** after reading. Initialize
+with `aimux_error_clear` (or `= {0}`) before first use.
+
+```c
+typedef struct AimuxError {
+    AimuxErrorCode code;   /* switch on this */
+    int status;            /* HTTP status, or -1 */
+    int64_t retry_ms;      /* RateLimited hint, or -1; 0 = retry now */
+    char *message;         /* owned; free with aimux_free_string */
+    char *error_value;     /* owned; lossless AiMuxError JSON, or NULL */
+    void *reserved[1];     /* future ABI room; always zero */
+} AimuxError;
+```
+
+`error_value` carries the machine-readable source error — the
+externally-tagged JSON of aimux-core's `AiMuxError`, e.g.
+`{"RateLimited":{"retry_after_ms":1500,"message":"quota"}}`. It is NULL when
+the failure was synthesized at the FFI boundary (bad argument, invalid
+handle). Free it with `aimux_free_string` like `message`.
+
+Internal panics abort the process (the workspace builds with `panic=abort`).
+
+Codes: `AIMUX_OK`, `AIMUX_E_UNKNOWN`, plus **18** values mirroring
+`aimux-core::AiMuxError` (`AIMUX_E_PROVIDER` … `AIMUX_E_OTHER`). The enum is
+append-only; always handle `default` / `AIMUX_E_UNKNOWN`.
+
+### Quick start
+
+```c
+#include "aimux-error.h"
 #include "aimux-ffi.h"
 
-uint64_t handle = aimux_openai_new("sk-...", "gpt-4o");
-// prompt_json is a JSON string; opts_json is a GenerateTextOptions JSON
-const char *result = aimux_generate_text(handle, "\"What is Rust?\"", "{}");
-// result is a GenerateResult JSON string
+AimuxError err;
+aimux_error_clear(&err);
+uint64_t handle = aimux_openai_new("sk-...", "gpt-4o", &err);
+if (!handle) {
+    fprintf(stderr, "%s\n", err.message);
+    aimux_free_string(err.message);
+    aimux_free_string(err.error_value);
+    return 1;
+}
+
+char *result = aimux_generate_text(handle, "\"What is Rust?\"", "{}", &err);
+if (!result) {
+    fprintf(stderr, "%s\n", err.message);
+    aimux_free_string(err.message);
+    aimux_free_string(err.error_value);
+    aimux_drop_handle(handle);
+    return 1;
+}
+printf("%s\n", result);
 aimux_free_string(result);
 aimux_drop_handle(handle);
 ```
 
-## Function List
+### Branching on code
 
-### Language Model
+```c
+if (!handle) {
+    switch (err.code) {
+    case AIMUX_E_RATE_LIMITED:
+        /* use err.retry_ms */
+        break;
+    case AIMUX_E_AUTH:
+        fprintf(stderr, "auth HTTP %d: %s\n", err.status, err.message);
+        break;
+    default:
+        fprintf(stderr, "%s\n", err.message);
+        break;
+    }
+    aimux_free_string(err.message);
+    aimux_free_string(err.error_value);
+}
+```
 
-| Function | Description |
-|------|------|
-| `aimux_openai_new(api_key, model_id)` | Create an OpenAI language model |
-| `aimux_openai_new_with_base(api_key, model_id, base_url)` | Create an OpenAI language model (custom base_url, for mock testing) |
-| `aimux_anthropic_new(api_key, model_id)` | Create an Anthropic language model |
-| `aimux_anthropic_new_with_base(api_key, model_id, base_url)` | Create an Anthropic language model (custom base_url) |
-| `aimux_cohere_new(api_key, model_id)` / `aimux_cohere_new_with_base(...)` | Create a Cohere language model |
-| `aimux_mistral_new(api_key, model_id)` / `aimux_mistral_new_with_base(...)` | Create a Mistral language model |
-| `aimux_xai_new(api_key, model_id)` / `aimux_xai_new_with_base(...)` | Create an xAI language model |
-| `aimux_bedrock_new(access_key_id, secret_access_key, region, model_id)` / `aimux_bedrock_new_with_base(..., base_url)` | Create a Bedrock language model (AWS SigV4 credentials) |
-| `aimux_vertex_new(access_token, project, location, model_id)` / `aimux_vertex_new_with_base(..., base_url)` | Create a Vertex AI language model (GCP bearer token) |
-| `aimux_anthropic_aws_new(api_key, region, model_id)` / `aimux_anthropic_aws_new_with_base(..., base_url)` | Create an Anthropic-on-AWS language model |
-| `aimux_azure_new(api_key, resource_name, deployment, api_version)` / `aimux_azure_new_with_base(api_key, base_url, deployment, api_version)` | Create an Azure OpenAI language model (`api_version` NULL = default) |
-| `aimux_provider_new(name, api_key, model_id, config_json)` | Create a language model from the built-in registry by provider name (`api_key` may be NULL to read the provider's env var; `config_json` optional `{"base_url":...}` JSON or NULL) |
-| `aimux_provider_from_env(name, model_id)` | Create a registry language model, reading the API key from the provider's env var |
-| `aimux_generate_text(handle, prompt_json, opts_json)` | Non-streaming generation (returns a JSON string) |
-| `aimux_stream_text(handle, prompt_json, opts_json, on_part, on_done, on_error)` | Streaming generation (push callback) |
+### Streaming
 
-### Vector Embedding
+- Terminal failure: return `0`, fill `err` if non-NULL; `on_done` is not called.
+- No `on_error` callback.
+- `on_part(json, stream_ctx)` / `on_done(stream_ctx)`.
+- A provider `StreamPart::Error` is **data** on `on_part`, not a terminal call failure.
 
-| Function | Description |
-|------|------|
-| `aimux_openai_embedding_new(api_key, model_id)` | Create an OpenAI embedding model |
-| `aimux_openai_embedding_new_with_base(api_key, model_id, base_url)` | Create an OpenAI embedding model (custom base_url) |
-| `aimux_cohere_embedding_new(api_key, model_id)` | Create a Cohere embedding model |
-| `aimux_cohere_embedding_new_with_base(api_key, model_id, base_url)` | Create a Cohere embedding model (custom base_url) |
-| `aimux_google_embedding_new(api_key, model_id)` | Create a Google embedding model |
-| `aimux_google_embedding_new_with_base(api_key, model_id, base_url)` | Create a Google embedding model (custom base_url) |
-| `aimux_embed(handle, values_json, opts_json)` | Generate vector embeddings |
+```c
+static void on_part(const char *json, void *ctx) {
+    (void)ctx;
+    printf("%s\n", json); /* copy if you need it after return */
+}
 
-### Speech
+static void on_done(void *ctx) { (void)ctx; }
 
-| Function | Description |
-|------|------|
-| `aimux_openai_speech_new(api_key, model_id)` | Create a TTS model |
-| `aimux_openai_speech_new_with_base(api_key, model_id, base_url)` | Create a TTS model (custom base_url) |
-| `aimux_speech_generate(handle, opts_json)` | Generate speech |
-| `aimux_openai_transcription_new(api_key, model_id)` | Create an STT model |
-| `aimux_openai_transcription_new_with_base(api_key, model_id, base_url)` | Create an STT model (custom base_url) |
-| `aimux_transcription_generate(handle, audio_base64, media_type, opts_json)` | Transcribe audio |
+AimuxError err;
+aimux_error_clear(&err);
+if (!aimux_stream_text(handle, "\"hi\"", NULL, on_part, on_done, NULL, &err)) {
+    fprintf(stderr, "%s\n", err.message);
+    aimux_free_string(err.message);
+    aimux_free_string(err.error_value);
+}
+```
 
-### Image
+## Function list
 
-| Function | Description |
-|------|------|
-| `aimux_openai_image_new(api_key, model_id)` | Create an OpenAI image model |
-| `aimux_openai_image_new_with_base(api_key, model_id, base_url)` | Create an OpenAI image model (custom base_url) |
-| `aimux_google_image_new(api_key, model_id)` | Create a Google image model |
-| `aimux_google_image_new_with_base(api_key, model_id, base_url)` | Create a Google image model (custom base_url) |
-| `aimux_image_generate(handle, opts_json)` | Generate an image |
+Unless noted, fallible symbols take a trailing `AimuxError *err` (may be `NULL`).
+Constructors return `uint64_t` (`0` = failure). Payload calls return `char *`
+(`NULL` = failure). Streams return `int32_t` (`0` = failure, non-zero = success).
 
-### Video Generation (added 2026-07-29)
+### Language model
 
 | Function | Description |
 |------|------|
-| `aimux_google_video_new(api_key, model_id)` | Create a Google video model |
-| `aimux_google_video_new_with_base(api_key, model_id, base_url)` | Create a Google video model (custom base_url) |
-| `aimux_video_generate(handle, opts_json)` | Generate a video (`VideoCallOptions` JSON) |
+| `aimux_openai_new(api_key, model_id, err)` | Create an OpenAI language model |
+| `aimux_openai_new_with_base(api_key, model_id, base_url, err)` | OpenAI with custom base_url |
+| `aimux_anthropic_new` / `_with_base` | Anthropic |
+| `aimux_cohere_new` / `_with_base` | Cohere |
+| `aimux_mistral_new` / `_with_base` | Mistral |
+| `aimux_xai_new` / `_with_base` | xAI |
+| `aimux_bedrock_new` / `_with_base` | Bedrock (AWS SigV4) |
+| `aimux_vertex_new` / `_with_base` | Vertex AI |
+| `aimux_anthropic_aws_new` / `_with_base` | Anthropic on AWS |
+| `aimux_azure_new` / `_with_base` | Azure OpenAI |
+| `aimux_provider_new(name, api_key, model_id, config_json, err)` | Registry provider (`api_key` NULL → env) |
+| `aimux_provider_from_env(name, model_id, err)` | Registry + env API key |
+| `aimux_provider_handle_new` / `aimux_provider_list_models` / `aimux_provider_model` | RFC-0027 provider handle |
+| `aimux_generate_text(handle, prompt_json, opts_json, err)` | Non-streaming (JSON result string) |
+| `aimux_stream_text(handle, prompt_json, opts_json, on_part, on_done, stream_ctx, err)` | Streaming (push callbacks) |
+| `aimux_generate_text_as_openai` / `aimux_stream_text_as_openai` / `_with_abort` | OpenAI-compatible shapes (RFC-0026) |
+| `aimux_abort_signal_new` / `_abort` / `_drop` | Stream cancellation |
 
-### Reranking (added 2026-07-29)
+### Embedding / speech / image / video / rerank / search / files
 
-| Function | Description |
-|------|------|
-| `aimux_cohere_reranking_new(api_key, model_id)` | Create a Cohere reranking model |
-| `aimux_cohere_reranking_new_with_base(api_key, model_id, base_url)` | Create a Cohere reranking model (custom base_url) |
-| `aimux_rerank(handle, opts_json)` | Rerank (`RerankingCallOptions` JSON) |
+Same pattern: `*_new(..., err)` → handle; `aimux_embed` / `aimux_speech_generate` /
+`aimux_image_generate` / `aimux_video_generate` / `aimux_rerank` / `aimux_search` /
+`aimux_transcription_generate` / `aimux_file_upload` → `char *` or failure `NULL`.
 
-### Search (added 2026-07-29)
-
-| Function | Description |
-|------|------|
-| `aimux_tavily_search_new(api_key, model_id)` | Create a Tavily search model (`model_id` is a placeholder only; Tavily uses a fixed endpoint) |
-| `aimux_tavily_search_new_with_base(api_key, model_id, base_url)` | Create a Tavily search model (custom base_url) |
-| `aimux_search(handle, opts_json)` | Execute a search (`SearchCallOptions` JSON) |
-
-### File
-
-| Function | Description |
-|------|------|
-| `aimux_openai_files_new(api_key)` | Create a file manager |
-| `aimux_openai_files_new_with_base(api_key, base_url)` | Create a file manager (custom base_url) |
-| `aimux_file_upload(handle, data_base64, media_type, opts_json)` | Upload a file |
-
-### Resource Management
+### Resource management
 
 | Function | Description |
 |------|------|
-| `aimux_drop_handle(handle)` | Free the model handle (0 is a no-op) |
-| `aimux_free_string(ptr)` | Free a returned string |
+| `aimux_drop_handle(handle)` | Free a handle (`0` is a no-op); no `err` |
+| `aimux_free_string(ptr)` | Free a result string (`NULL` is safe) |
 
-### Session Grouping (RFC-0024, added 2026-08-05)
-
-| Function | Description |
-|------|------|
-| `aimux_session_store_init()` | Register the global session store (replaces any previous one); until called, calls are not grouped and queries return empty |
-| `aimux_session_infer_init(enabled)` | Enable/disable the opt-in session inferer (0/1); explicit `session_id` in options always wins |
-| `aimux_session_calls(session_id)` | Query a session's calls, ordered by step — JSON `SessionCall[]`, caller frees with `aimux_free_string` |
-| `aimux_list_sessions()` | Query all known sessions — JSON `SessionView[]`, caller frees with `aimux_free_string` |
-
-Pass `"session_id": "..."` inside `opts_json` of `aimux_generate_text` / `aimux_stream_text`
-to group a call into a session.
-
-### Cache Probing (RFC-0015, added 2026-08-05)
+### Session (RFC-0024)
 
 | Function | Description |
 |------|------|
-| `aimux_trace_new(handle)` | Wrap a model handle in a probe layer — the returned handle works with `aimux_generate_text` / `aimux_stream_text` (fingerprints recorded) and the `aimux_trace_*` queries |
-| `aimux_trace_new_audited(handle, strict)` | Same, with the built-in rules auditor attached (strict 0/1) |
-| `aimux_trace_aggregate(handle, filter_json)` | Aggregated stats — JSON `TraceStats[]` (`filter_json` = serialized `TraceFilter`, NULL = all) |
-| `aimux_trace_session_chain(handle, session_id)` | One session's chain view — JSON `SessionChainView` |
-| `aimux_trace_export_jsonl(handle)` | All probe records as JSONL (one `TraceRecord` per line) |
-| `aimux_trace_clear(handle)` | Drop all probe records (returns 0) |
+| `aimux_session_store_init()` | Register global session store |
+| `aimux_session_infer_init(enabled)` | Opt-in session inferer |
+| `aimux_session_calls(session_id, err)` | JSON `SessionCall[]` |
+| `aimux_list_sessions(err)` | JSON `SessionView[]` |
 
-Probing is opt-in and explicit: no global state, no plaintext bodies (only
-block-hash fingerprints are stored). Note: the request body / response
-headers are exposed on the non-streaming result; streaming paths follow the
-RFC-0016 M2 contract (`include_raw_chunks` controls Raw parts) — the earlier
-synthetic `aimux_meta` stream part was removed when M2 landed, and
-`include_raw_chunks` only emits provider raw stream events (it does not
-expose the stream request body / response headers).
+Pass `"session_id": "..."` inside `opts_json` of generate/stream to group a call.
+
+### Cache probing (RFC-0015)
+
+| Function | Description |
+|------|------|
+| `aimux_trace_new(handle, err)` | Probe wrapper handle |
+| `aimux_trace_new_audited(handle, strict, err)` | With rules auditor |
+| `aimux_trace_aggregate(handle, filter_json, err)` | JSON `TraceStats[]` |
+| `aimux_trace_session_chain(handle, session_id, err)` | JSON `SessionChainView` |
+| `aimux_trace_session_trajectory(handle, session_id, err)` | Per-step stats JSON |
+| `aimux_trace_export_jsonl(handle, err)` | JSONL export |
+| `aimux_trace_clear(handle)` | Clear records (returns `int`, no `err`) |
+
+Legacy `int`-returning utilities (`aimux_init_logging`, `aimux_session_*_init`,
+`aimux_trace_clear`, `aimux_recording_*`) keep `0 = success / -1 = failure` —
+the opposite polarity of streams; they take no `err`.
+
+### Recording (RFC-0023)
+
+| Function | Description |
+|------|------|
+| `aimux_init_recording(dir)` / `aimux_init_recording_ring(cap)` | Opt-in recording |
+| `aimux_recording_stop` / `aimux_recording_flush` | Stop / flush |
+| `aimux_mock_replay_new(recordings_jsonl, err)` | Replay model handle |
 
 ## Examples
 
-### Video Generation
+### Video
 
 ```c
-uint64_t handle = aimux_google_video_new(api_key, "veo-3.0");
-// opts_json: {"prompt":"A cat playing piano","n":1}
-const char *result = aimux_video_generate(handle, opts_json);
-aimux_drop_handle(handle);
+AimuxError err;
+uint64_t handle = aimux_google_video_new(api_key, "veo-3.0", &err);
+if (!handle) { /* err */ }
+char *result = aimux_video_generate(handle, opts_json, &err);
+if (!result) { /* err */ }
 aimux_free_string(result);
+aimux_drop_handle(handle);
 ```
 
-### Reranking
+### Reranking / search
 
-```c
-uint64_t handle = aimux_cohere_reranking_new(api_key, "rerank-v3.0");
-// opts_json: {"query":"What is Rust?","documents":{"Text":{"values":["doc1","doc2"]}},"top_n":3}
-const char *result = aimux_rerank(handle, opts_json);
-aimux_drop_handle(handle);
-aimux_free_string(result);
-```
+Same pattern: `*_new(..., &err)`, then `aimux_rerank` / `aimux_search` with `&err`.
 
-### Search
+## Memory management
 
-```c
-uint64_t handle = aimux_tavily_search_new(api_key, "tavily-search");
-// opts_json: {"query":"What is Rust?","max_results":5}
-const char *result = aimux_search(handle, opts_json);
-// result: {"results":[{"title":"...","url":"...","content":"..."}],"answer":null}
-aimux_drop_handle(handle);
-aimux_free_string(result);
-```
+- Result `char *` from generate/embed/…: free with `aimux_free_string`.
+- Stream callback `const char *`: valid only for the duration of the callback; copy if needed.
+- `AimuxError`: caller storage; on failure free `err.message` and `err.error_value` with `aimux_free_string`.
+- `aimux_drop_handle(0)` is a no-op.
 
-## Memory Management
+## Headers
 
-- `aimux_generate_text` and similar functions return `char*`; the caller must release it with `aimux_free_string`
-- The `const char*` received by the `aimux_stream_text` callback is valid only during the callback; it must be copied synchronously within the callback
-- `aimux_drop_handle` frees the model handle (0 is a no-op)
-
-## Header File
-
-`aimux-ffi/aimux-ffi.h` — the complete C header file; C++ can use it directly by wrapping it in `extern "C"`.
+- `aimux-ffi/aimux-ffi.h` — full C ABI (`extern "C"` for C++)
+- `aimux-ffi/aimux-error.h` — included by `aimux-ffi.h`; can be included alone for the error types

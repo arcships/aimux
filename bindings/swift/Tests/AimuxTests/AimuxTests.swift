@@ -30,7 +30,7 @@ final class AimuxTests: XCTestCase {
     func testProviderModelCreationWithProviderName() throws {
         // Recommended typed spelling: ProviderName enum case (key is
         // validated on the first API call, not construction).
-        let model = try Aimux.provider(
+        let model = try Model.provider(
             name: ProviderName.groq.rawValue, apiKey: "sk-test-fake-key", modelId: "llama-3.3-70b"
         )
         XCTAssertNotNil(model)
@@ -39,6 +39,22 @@ final class AimuxTests: XCTestCase {
     func testInvalidPromptThrows() throws {
         let model = try Model.openai(apiKey: "sk-test-fake-key", modelId: "gpt-4o-mini")
         XCTAssertThrowsError(try model.generateText(prompt: "{invalid json}"))
+    }
+
+    func testUnknownProviderErrorValue() {
+        XCTAssertThrowsError(try Model.provider(
+            name: "no-such-provider", apiKey: "sk-test-fake-key", modelId: "whatever"
+        )) { error in
+            guard let e = error as? AimuxError else {
+                return XCTFail("expected AimuxError, got \(error)")
+            }
+            guard case .unknownProvider = e else {
+                return XCTFail("expected .unknownProvider, got \(e)")
+            }
+            // errorValue is the raw externally-tagged core AiMuxError JSON.
+            XCTAssertTrue(e.errorValue?.contains("UnknownProvider") == true,
+                          "errorValue should contain UnknownProvider, got \(e.errorValue ?? "nil")")
+        }
     }
 
     func testStreamTextReturnsAsyncSequence() throws {
@@ -194,7 +210,7 @@ final class AimuxTests: XCTestCase {
             apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
         )
         var parts: [String] = []
-        var streamErr: String?
+        var streamErr: AimuxError?
         model.streamText(
             prompt: jsonEncodeString("Say hello"),
             onPart: { parts.append($0) },
@@ -232,7 +248,7 @@ final class AimuxTests: XCTestCase {
             ]],
         ])
         var parts: [String] = []
-        var streamErr: String?
+        var streamErr: AimuxError?
         model.streamText(
             prompt: jsonEncodeString("What's the weather?"),
             options: opts,

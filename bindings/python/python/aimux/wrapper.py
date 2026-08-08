@@ -41,7 +41,7 @@ __all__ = [
     "FileData",
     "FileBytes",
     "Warning",
-    "AiMuxError",
+    "AiMuxErrorValue",
     # models
     "TokenUsage",
     "Usage",
@@ -95,10 +95,11 @@ ReasoningEffort = Literal[
     "provider-default", "none", "minimal", "low", "medium", "high", "xhigh"
 ]
 
-#: Opaque provider error (Rust ``AiMuxError``). A mixed newtype/struct
+#: Opaque provider error value (Rust ``AiMuxError``). A mixed newtype/struct
 #: externally-tagged enum, so it is left as an arbitrary JSON value rather than
-#: a discriminated union.
-AiMuxError = Any
+#: a discriminated union. Named ``AiMuxErrorValue`` to avoid confusion with the
+#: raised ``AimuxError`` exception.
+AiMuxErrorValue = Any
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -451,7 +452,7 @@ class _SPFinish(BaseModel):
 
 class _SPError(BaseModel):
     type: Literal["Error"]
-    error: Any  # AiMuxError
+    error: Any  # AiMuxErrorValue
 
 
 class _SPToolInputStart(BaseModel):

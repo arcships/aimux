@@ -21,6 +21,37 @@ go build ./...
 Details (version pinning, unsupported platforms):
 [bindings/go/README.md](../../bindings/go/README.md).
 
+Requires **Go 1.26+** (uses `errors.AsType` for structured errors).
+
+## Errors
+
+Go follows openai-go / anthropic-sdk-go: **one `*aimux.Error` struct**
+implementing `error` (not a class tree). Inspect with **Go 1.26
+`errors.AsType`**:
+
+```go
+result, err := model.GenerateText(`"hi"`, "")
+if err != nil {
+    if e, ok := errors.AsType[*aimux.Error](err); ok {
+        // e.Code, e.Message, e.Status, e.RetryMs
+        switch e.Code {
+        case aimux.CodeRateLimited:
+            // e.RetryMs may be a delay hint
+        case aimux.CodeAuth:
+            // e.Status often 401
+        }
+    }
+    return err
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `Code` | kind (`CodeAuth`, `CodeRateLimited`, …; matches C `AimuxErrorCode`) |
+| `Message` | human-readable text |
+| `Status` | HTTP status, or `-1` |
+| `RetryMs` | rate-limit hint, or `-1` (`0` = retry now) |
+
 ## Quick Start
 
 ```go

@@ -415,7 +415,6 @@ class StructuredE2ETest {
                     weatherToolsOpts(),
                     onPart = { parts.put(it) },
                     onDone = { parts.put(null) },
-                    onError = { parts.put(null) },
                 )
             }
             streamThread.isDaemon = true

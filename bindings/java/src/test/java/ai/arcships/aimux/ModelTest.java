@@ -30,7 +30,7 @@ class ModelTest {
     @Test
     void openaiCreatesModelInstance() {
         // Even with a fake key, the provider should construct. A non-zero
-        // handle is guaranteed by the factory (it throws IllegalArgumentException
+        // handle is guaranteed by the factory (it throws AimuxException
         // if the FFI returns 0).
         try (Model model = Model.openai("sk-test-fake-key", "gpt-4o-mini")) {
             assertThat(model).isNotNull();
@@ -90,10 +90,9 @@ class ModelTest {
     @Test
     void generateTextRejectsInvalidPrompt() {
         try (Model model = Model.openai("sk-test-fake-key", "gpt-4o-mini")) {
-            // Invalid prompts are rejected client-side before any network I/O
-            // and surface as the C ABI error envelope ({"error":"..."}).
-            String result = model.generateText("{invalid json}");
-            assertThat(result).contains("\"error\"");
+            // Invalid prompts fail via C AimuxError → AimuxException (no JSON envelope).
+            assertThatThrownBy(() -> model.generateText("{invalid json}"))
+                .isInstanceOf(AimuxException.class);
         }
     }
 
@@ -125,8 +124,13 @@ class ModelTest {
             // Run the blocking FFI stream call on a separate daemon thread so
             // the main thread can observe callbacks as they arrive (same
             // pattern as the Kotlin E2E test).
-            Thread streamThread = new Thread(() ->
-                model.streamText("\"Hello\"", null, parts::add, () -> done.set(true), error::set));
+            Thread streamThread = new Thread(() -> {
+                try {
+                    model.streamText("\"Hello\"", null, parts::add, () -> done.set(true));
+                } catch (RuntimeException e) {
+                    error.set(e.getMessage());
+                }
+            });
             streamThread.setDaemon(true);
             streamThread.start();
 
