@@ -90,13 +90,13 @@ aimux/
 ├── aimux-providers       # 290+ provider implementations (250 registry-backed + native)
 ├── aimux-stream          # SSE / NDJSON stream parsing
 ├── aimux-provider-utils  # HTTP utilities: retry, backoff, error parsing, API-key loading
-└── aimux-ffi             # C ABI (opaque handle + JSON + push callback) for non-native bindings
+└── aimux-ffi             # C ABI (handles + JSON results + AimuxError out-param) for non-native bindings
 ```
 
 ```
            ┌─ native path ──→ aimux-core + aimux-providers (direct Rust types + async)
 bindings ──┤
-           └─ C ABI path  ──→ aimux-ffi (opaque handle + JSON + push callback)
+           └─ C ABI path  ──→ aimux-ffi (handles + JSON results + AimuxError *err)
 ```
 
 ## Installation
