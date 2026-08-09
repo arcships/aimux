@@ -87,7 +87,14 @@ pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, Strin
 /// Resolve the effective `RetryConfig`: if the caller passed a per-call
 /// `max_retries` override, clone the provider config and substitute it;
 /// otherwise return the provider config as-is (RFC-0017).
-fn resolve_retry_config(provider: &RetryConfig, max_retries_override: Option<u32>) -> RetryConfig {
+///
+/// Shared across the OpenAI-compatible chat path and the native providers
+/// (google/cohere/mistral/azure/bedrock) so per-call `max_retries` is honoured
+/// everywhere (M1b). `RetryConfig` is `Copy`, so this is cheap.
+pub(crate) fn resolve_retry_config(
+    provider: &RetryConfig,
+    max_retries_override: Option<u32>,
+) -> RetryConfig {
     match max_retries_override {
         Some(n) => RetryConfig {
             max_retries: n,
@@ -202,8 +209,13 @@ struct ToolCallAccumulator {
 
 #[async_trait]
 impl LanguageModel for OpenAIModel {
+    /// Provider identity for recording/routing. Uses `config.provider` (the
+    /// registry entry name, e.g. `"deepseek"`/`"groq"`) rather than a hardcoded
+    /// `"openai"`, so OpenAI-compatible providers keep their real identity —
+    /// mirroring the Responses path ([`OpenAIResponsesModel::provider`]).
+    /// Direct `OpenAIProvider` use defaults to `"openai"`.
     fn provider(&self) -> &str {
-        "openai"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -211,7 +223,7 @@ impl LanguageModel for OpenAIModel {
     }
 
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        super::config_snapshot_from_config("openai", &self.model_id, &self.config)
+        super::config_snapshot_from_config(&self.config.provider, &self.model_id, &self.config)
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

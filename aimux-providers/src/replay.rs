@@ -37,7 +37,7 @@ pub fn rebuild_provider(
     p: &ProviderRecord,
     api_key: Option<&str>,
 ) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-    if p.provider != "openai" {
+    if !is_openai_compatible_provider(&p.provider) {
         return Err(AiMuxError::Unsupported(format!(
             "mock replay: rebuild_provider covers only the OpenAI-compatible family \
              (recorded provider '{}'); pass a model instance to replay_with_model",
@@ -51,8 +51,11 @@ pub fn rebuild_provider(
     }
 
     let key = resolve_api_key(p, api_key)?;
+    // Preserve the recorded provider name (registry entry / thin-wrapper name)
+    // so the rebuilt model keeps its real identity (RFC-0023 C2). Direct OpenAI
+    // recordings carry `"openai"` and round-trip unchanged.
     let mut config = OpenAIConfig::new(key)
-        .with_provider("openai")
+        .with_provider(&p.provider)
         .with_profile(profile_from_value(p.profile.as_ref()));
 
     if let Some(base_url) = &p.base_url {
@@ -87,6 +90,53 @@ pub fn rebuild_provider(
     }
 
     OpenAIProvider::new(config).language_model(&p.model_id)
+}
+
+/// Whether a recorded provider name belongs to the OpenAI-compatible family
+/// (rebuildable via `OpenAIProvider`). After RFC-0023 C2, OpenAI-compatible
+/// models surface their *real* provider name (registry entry or thin-wrapper
+/// name) instead of a hardcoded `"openai"`, so the replay guard must recognise
+/// all of them. Native protocols (anthropic / google / azure / bedrock / …)
+/// are rejected — their snapshots are not OpenAI-shaped.
+///
+/// Covers:
+/// - `"openai"` (direct `OpenAIProvider`),
+/// - any name in `provider_registry.json` (cloud OpenAI-compatible providers),
+/// - the fixed set of local/server thin wrappers that wrap `OpenAIProvider`.
+fn is_openai_compatible_provider(name: &str) -> bool {
+    if name == "openai" {
+        return true;
+    }
+    // Registry-backed cloud OpenAI-compatible providers (deepseek, groq, …).
+    if crate::provider::provider_registry_entry(name).is_some() {
+        return true;
+    }
+    // Local / self-hosted inference servers that wrap `OpenAIProvider`.
+    // Keep in sync with the thin-wrapper modules (each sets `with_provider`).
+    const THIN_WRAPPERS: &[&str] = &[
+        "ollama",
+        "lmstudio",
+        "vllm",
+        "llamafile",
+        "mistralrs",
+        "llamacpp",
+        "localai",
+        "local",
+        "mlx",
+        "omlx",
+        "onnx",
+        "oobabooba",
+        "openvino",
+        "sglang",
+        "xinference",
+        "cybertron",
+        "docker_model_runner",
+        "gaudi",
+        "jlama",
+        "litellm_proxy",
+        "openrouter",
+    ];
+    THIN_WRAPPERS.contains(&name)
 }
 
 /// 从录制 JSON 恢复 `OpenAICompatProfile`;缺失/未知字段回退默认(`full()`)。
@@ -261,7 +311,7 @@ mod tests {
             .with_profile(crate::openai::OpenAICompatProfile::groq());
         let model = crate::openai::OpenAIProvider::new(config).model("llama-3.3-70b");
         let snap = model.config_snapshot();
-        assert_eq!(snap.provider, "openai"); // LanguageModel::provider() = 协议名
+        assert_eq!(snap.provider, "groq"); // RFC-0023 C2: surfaces the registry name, not "openai"
         assert_eq!(
             snap.base_url.as_deref(),
             Some("https://api.groq.com/openai/v1")
