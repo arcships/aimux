@@ -50,11 +50,17 @@ public final class Aimux {
      * Start in-memory bounded recording (RingRecorder, FIFO eviction; RFC-0023).
      *
      * @param cap Maximum number of in-memory recordings before old ones are evicted.
-     * @throws IllegalArgumentException if {@code cap == 0}.
+     * @throws IllegalArgumentException if {@code cap <= 0}. The bound is checked
+     *                                  before the FFI call so a negative Java
+     *                                  {@code long} is never reinterpreted by
+     *                                  JNA/the C ABI as a huge {@code uint64_t}.
      */
     public static void initRecordingRing(long cap) {
+        if (cap <= 0) {
+            throw new IllegalArgumentException("initRecordingRing: cap must be > 0");
+        }
         if (AimuxFFI.INSTANCE.aimux_init_recording_ring(cap) != 0) {
-            throw new IllegalArgumentException("Failed to initialize ring recording: cap must be > 0");
+            throw new IllegalArgumentException("Failed to initialize ring recording");
         }
     }
 

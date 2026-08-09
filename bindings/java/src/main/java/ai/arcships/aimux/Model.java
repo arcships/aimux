@@ -6,7 +6,7 @@ import java.io.Closeable;
 import java.util.Spliterator;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -29,27 +29,64 @@ import java.util.stream.StreamSupport;
  *     String result = model.generateText("\"Hello!\"");
  * }
  * }</pre>
+ *
+ * <p><b>Thread-safety / concurrency.</b> Model is safe for concurrent use.
+ * It guards the native handle with a Go-style {@link ReentrantReadWriteLock}
+ * (fair, FIFO): every FFI call ({@link #generateText}, {@link #streamText},
+ * streaming variants) holds the <em>read</em> lock for its entire duration,
+ * and {@link #close()} takes the <em>write</em> lock. As a result {@code close()}
+ * blocks until all in-flight calls finish before dropping the native handle —
+ * this closes the use-after-free race where a caller could observe a non-zero
+ * handle and then race with {@code close()}'s drop. Because a streaming call
+ * holds the read lock until the stream completes, {@code close()} will not
+ * interrupt or drop a handle out from under an active stream. Do not call
+ * {@code close()} from within a stream callback (would self-deadlock).
  */
 public class Model implements Closeable {
 
-    private final AtomicLong handle;
+    // Go-style read/write lock: every FFI call holds the read lock for its
+    // entire duration; close() takes the write lock and thus blocks until all
+    // in-flight calls finish before dropping the native handle. This closes the
+    // read-then-drop use-after-free race the AtomicLong version had (a reader
+    // could observe a non-zero handle, then race with close()'s getAndSet+drop).
+    // Fair (FIFO) so a pending close is not starved by barging readers — matches
+    // Go's sync.RWMutex writer-priority semantics.
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock(true);
+    private long handle;
+    private boolean closed;
 
     // Package-private: ProviderHandle.model() (same package) needs to construct
     // a Model; external callers can still only go through the static factories
     // openai()/provider()/mockReplay().
     Model(long handle) {
-        this.handle = new AtomicLong(handle);
+        this.handle = handle;
     }
 
     /**
      * Release the native handle. Idempotent and thread-safe: subsequent calls
      * are no-ops, and every other method throws {@link IllegalStateException}.
+     *
+     * <p>Acquires the write lock and therefore <em>blocks until all in-flight
+     * FFI calls</em> (which hold the read lock) finish before dropping the
+     * native handle — prevents a use-after-free race between a concurrent
+     * caller and {@code close()}. A streaming call holds the read lock for the
+     * entire stream, so {@code close()} blocks until the stream completes. Do
+     * not call {@code close()} from within a stream callback (would
+     * self-deadlock).
      */
     @Override
     public void close() {
-        long h = handle.getAndSet(0L);
-        if (h != 0L) {
+        lock.writeLock().lock();
+        try {
+            if (closed || handle == 0L) {
+                return;
+            }
+            long h = handle;
+            handle = 0L;
+            closed = true;
             AimuxFFI.INSTANCE.aimux_drop_handle(h);
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
@@ -60,12 +97,15 @@ public class Model implements Closeable {
         super.finalize();
     }
 
-    private long requireHandle() {
-        long h = handle.get();
-        if (h == 0L) {
+    // Caller MUST already hold the read lock (each public FFI method acquires
+    // it and releases it in a finally after the FFI call returns). Holding the
+    // read lock across the FFI call is what lets close()'s write lock wait for
+    // the call to finish, closing the use-after-free race.
+    private long requireHandleLocked() {
+        if (closed || handle == 0L) {
             throw new IllegalStateException("Model is closed");
         }
-        return h;
+        return handle;
     }
 
     // ── Provider constructors ──────────────────────────────────────────────
@@ -303,11 +343,17 @@ public class Model implements Closeable {
      * @throws AimuxException on engine / transport failure.
      */
     public String generateText(String promptJson, String optsJson) {
-        AimuxCError err = AimuxResult.newError();
-        return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_generate_text(requireHandle(), promptJson, optsJson, err),
-            err,
-            "generate_text");
+        lock.readLock().lock();
+        try {
+            long h = requireHandleLocked();
+            AimuxCError err = AimuxResult.newError();
+            return AimuxResult.extractString(
+                AimuxFFI.INSTANCE.aimux_generate_text(h, promptJson, optsJson, err),
+                err,
+                "generate_text");
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /** Generate text with default options. */
@@ -353,12 +399,21 @@ public class Model implements Closeable {
             }
         };
 
-        AimuxCError err = AimuxResult.newError();
-        int rc = AimuxFFI.INSTANCE.aimux_stream_text(
-            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err);
-        if (rc == 0) {
-            // Prefer throw over onError for terminal C failures.
-            throw AimuxException.fromC(err);
+        // Hold the read lock for the whole blocking stream so close() cannot
+        // drop the handle mid-stream (it blocks on the write lock until the
+        // stream completes).
+        lock.readLock().lock();
+        try {
+            long h = requireHandleLocked();
+            AimuxCError err = AimuxResult.newError();
+            int rc = AimuxFFI.INSTANCE.aimux_stream_text(
+                h, promptJson, optsJson, partCb, doneCb, null, err);
+            if (rc == 0) {
+                // Prefer throw over onError for terminal C failures.
+                throw AimuxException.fromC(err);
+            }
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
@@ -439,11 +494,17 @@ public class Model implements Closeable {
      * @throws AimuxException on engine / transport failure.
      */
     public String generateTextAsOpenAI(String promptJson, String optsJson) {
-        AimuxCError err = AimuxResult.newError();
-        return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson, err),
-            err,
-            "generate_text_as_openai");
+        lock.readLock().lock();
+        try {
+            long h = requireHandleLocked();
+            AimuxCError err = AimuxResult.newError();
+            return AimuxResult.extractString(
+                AimuxFFI.INSTANCE.aimux_generate_text_as_openai(h, promptJson, optsJson, err),
+                err,
+                "generate_text_as_openai");
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     /** Generate text with OpenAI output and default options. */
@@ -480,11 +541,19 @@ public class Model implements Closeable {
             }
         };
 
-        AimuxCError err = AimuxResult.newError();
-        int rc = AimuxFFI.INSTANCE.aimux_stream_text_as_openai(
-            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err);
-        if (rc == 0) {
-            throw AimuxException.fromC(err);
+        // Hold the read lock for the whole blocking stream so close() cannot
+        // drop the handle mid-stream.
+        lock.readLock().lock();
+        try {
+            long h = requireHandleLocked();
+            AimuxCError err = AimuxResult.newError();
+            int rc = AimuxFFI.INSTANCE.aimux_stream_text_as_openai(
+                h, promptJson, optsJson, partCb, doneCb, null, err);
+            if (rc == 0) {
+                throw AimuxException.fromC(err);
+            }
+        } finally {
+            lock.readLock().unlock();
         }
     }
 

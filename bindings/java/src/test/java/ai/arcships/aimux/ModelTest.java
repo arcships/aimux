@@ -177,6 +177,74 @@ class ModelTest {
         }
     }
 
+    // ── concurrency (T6: close vs. in-flight FFI call) ─────────────────────
+
+    /**
+     * Smoke test for the read/write-lock close-race fix (T6): one thread loops
+     * {@code generateText} (each call holds the read lock for the whole FFI
+     * call) while another calls {@code close()} (write lock). The write lock
+     * must wait for the in-flight read to finish, so {@code close()} never drops
+     * a handle out from under an active call — i.e. no use-after-free / native
+     * crash. After {@code close()} completes, further calls must throw a
+     * predictable {@link IllegalStateException}. A use-after-free would crash
+     * the JVM (SIGSEGV) and fail the whole test process, not just this method.
+     */
+    @Test
+    void concurrentCloseAndGenerateDoesNotCrash() throws InterruptedException {
+        try (MockProviderServer server = new MockProviderServer();
+             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+            server.setResponseBody(plainOpenAiResponse());
+
+            final int iterations = 300;
+            final AtomicReference<Throwable> unexpected = new AtomicReference<>(null);
+            final AtomicBoolean sawClosed = new AtomicBoolean(false);
+
+            // Worker: loop generateText. Pre-close calls succeed against the
+            // mock; post-close calls throw IllegalStateException (closed). Any
+            // other throwable (incl. a native crash, which surfaces as an Error)
+            // is recorded and fails the test.
+            Thread worker = new Thread(() -> {
+                for (int i = 0; i < iterations; i++) {
+                    try {
+                        model.generateText("\"Hello\"");
+                    } catch (IllegalStateException e) {
+                        sawClosed.set(true);
+                    } catch (AimuxException e) {
+                        // A transient transport hiccup during teardown is
+                        // acceptable; keep looping.
+                    } catch (Throwable t) {
+                        unexpected.set(t);
+                        break;
+                    }
+                }
+            });
+            worker.setDaemon(true);
+            worker.start();
+
+            // Closer: close after a brief delay so it races with in-flight calls.
+            Thread closer = new Thread(() -> {
+                try {
+                    Thread.sleep(15);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                model.close();
+            });
+            closer.setDaemon(true);
+            closer.start();
+
+            worker.join(60_000);
+            closer.join(5_000);
+
+            assertThat(unexpected.get()).as("unexpected exception in worker").isNull();
+            // After close, calls must report closed predictably (close-then-use
+            // ordering assertion).
+            assertThatThrownBy(() -> model.generateText("\"Hello\""))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Model is closed");
+        }
+    }
+
     // ── canned OpenAI responses ────────────────────────────────────────────
 
     /** Plain OpenAI chat-completions response (no tool calls). */
