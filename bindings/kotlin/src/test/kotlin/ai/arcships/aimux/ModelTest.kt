@@ -2,7 +2,11 @@ package ai.arcships.aimux
 
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.jupiter.api.Test
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class ModelTest {
 
@@ -106,4 +110,101 @@ class ModelTest {
         // Calling close twice should not crash.
         model.close()
     }
+
+    // ── concurrency (T6: close vs. in-flight FFI call) ─────────────────────
+
+    /**
+     * Smoke test for the read/write-lock close-race fix (T6): one thread loops
+     * `generateText` (each call holds the read lock for the whole FFI call)
+     * while another calls `close()` (write lock). The write lock must wait for
+     * the in-flight read to finish, so `close()` never drops a handle out from
+     * under an active call — i.e. no use-after-free / native crash. After
+     * `close()` completes, further calls must throw a predictable
+     * [IllegalStateException]. A use-after-free would crash the JVM (SIGSEGV)
+     * and fail the whole test process, not just this method.
+     */
+    @Test
+    fun `concurrent close and generate does not crash`() {
+        // Reuses the internal MockProviderServer (same test module/package).
+        val server = MockProviderServer()
+        server.responseBody = plainOpenAiResponse()
+        try {
+            val model = Model.openai("sk-test-fake-key", "gpt-4o-mini", server.baseUrl)
+            val iterations = 300
+            val unexpected = AtomicReference<Throwable?>(null)
+            val sawClosed = AtomicBoolean(false)
+
+            // Worker: loop generateText. Pre-close calls succeed against the
+            // mock; post-close calls throw IllegalStateException (closed). Any
+            // other throwable (incl. a native crash, which surfaces as an Error)
+            // is recorded and fails the test.
+            val worker = Thread {
+                for (i in 0 until iterations) {
+                    try {
+                        model.generateText("\"Hello\"")
+                    } catch (e: IllegalStateException) {
+                        sawClosed.set(true)
+                    } catch (e: AimuxException) {
+                        // A transient transport hiccup during teardown is
+                        // acceptable; keep looping.
+                    } catch (t: Throwable) {
+                        unexpected.set(t)
+                        break
+                    }
+                }
+            }.apply { isDaemon = true }
+
+            // Closer: close after a brief delay so it races with in-flight calls.
+            val closer = Thread {
+                try {
+                    Thread.sleep(15)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+                model.close()
+            }.apply { isDaemon = true }
+
+            worker.start()
+            closer.start()
+            worker.join(60_000)
+            closer.join(5_000)
+
+            assertThat(unexpected.get()).`as`("unexpected exception in worker").isNull()
+            // After close, calls must report closed predictably (close-then-use
+            // ordering assertion).
+            assertThatThrownBy { model.generateText("\"Hello\"") }
+                .isInstanceOf(IllegalStateException::class.java)
+                .hasMessage("Model is closed")
+        } finally {
+            server.stop()
+        }
+    }
+
+    // ── canned OpenAI responses ────────────────────────────────────────────
+
+    /** Plain OpenAI chat-completions response (no tool calls). */
+    private fun plainOpenAiResponse(): String =
+        JSONObject().apply {
+            put("id", "chatcmpl-test")
+            put("model", "gpt-4o")
+            put(
+                "choices",
+                JSONArray().put(
+                    JSONObject()
+                        .put(
+                            "message",
+                            JSONObject()
+                                .put("role", "assistant")
+                                .put("content", "Rust is a systems programming language."),
+                        ).put("finish_reason", "stop"),
+                ),
+            )
+            put(
+                "usage",
+                JSONObject()
+                    .put("prompt_tokens", 10)
+                    .put("completion_tokens", 8)
+                    .put("total_tokens", 18),
+            )
+        }.toString()
 }
