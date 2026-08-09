@@ -220,8 +220,11 @@ uint64_t aimux_provider_handle_new(const char *name, const char *api_key,
                                 const char *config_json, AimuxError *err);
 
 /**
- * List models on a provider handle (runtime discovery + anya2a enrichment).
- * Returns a JSON array of ResolvedModel, or NULL with details in `*err`.
+ * List models on a provider handle (RFC-0027 runtime discovery).
+ * Returns a JSON array of sparse RuntimeModel (id / owned_by / created) —
+ * no community enrichment. To supplement with model specs, call
+ * aimux_get_model_specs separately and merge in the host.
+ * Returns NULL on failure (fills `*err`).
  */
 char *aimux_provider_list_models(uint64_t handle, AimuxError *err);
 

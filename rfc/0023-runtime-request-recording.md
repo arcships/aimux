@@ -1,6 +1,6 @@
 # RFC-0023: 调用上下文录制与回放
 
-> **Status**: DRAFT (pending review)
+> **Status**: IMPLEMENTED (P1-P6 + config_snapshot 已实施,2026-08-10;实施进度见 [docs/plan/rfc0023-recording.md](../docs/plan/rfc0023-recording.md))
 > **Date**: 2026-08-05(重写:从"仅 HTTP 录制"扩展为"三层完整上下文录制 + 两种回放模式")
 > **Scope**: `aimux-core` + `aimux-provider-utils` 新增可选的完整调用上下文录制(输入侧 + 配置侧 + HTTP 侧)与两种回放模式(请求回放 / mock 响应回放),opt-in,默认关闭
 > **Related**: [RFC-0003](0003-test-cassette.md) 测试 cassette(格式与匹配基础)、[RFC-0014](0014-logging.md) 统一日志(零成本门控范本)、[RFC-0015](0015-cache-trace-audit.md) 缓存审计(sink 抽象兄弟)、[RFC-0020](0020-external-provider-config.md) 外部 provider 配置(配置侧录制关联)
@@ -473,11 +473,11 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |------|------|------|------|
-| **P1** | `recording.rs`:`Recorder` trait + `Recording` 数据模型(含 `OutcomeStatus` + completion barrier)+ `JsonlRecorder`(专用 writer thread + oneshot flush)+ `init_recording`(RwLock)+ 层 A 录制接入(generate.rs,流式 outcome 终结)+ `call_id` 传递 + 全侧脱敏 + 单测 | 无 | 待实施 |
-| **P2** | 层 B 录制接入(http.rs:`send_with_retry_raw` per-attempt + `send_stream` 骨架 + `ObservedByteStream` 累积)+ `config_snapshot` 默认方法 + OpenAI 等主要 provider 覆盖 + 116 处 `HttpRequest` 透传 | P1 | 待实施 |
-| **P3** | `replay.rs`:`MockReplayModel`(OpenAI 兼容 MVP)+ `ScoreMatcher`/`ExactMatcher` + 单测(mock 响应回放) | P1 | 待实施 |
-| **P4** | `replay.rs`:`replay_with_model`(core,provider 无关)+ `aimux-providers` 的 `rebuild_provider`(自动构造)+ CLI(`--dry-run`) | P1(**不再依赖 RFC-0020**,2026-08-06 对齐修订,见 §3.6.1) | 待实施 |
-| **P5** | 绑定层透传(Node + C ABI 本期)+ `PrefixMatcher` + 脱敏验证 + 文档 | P1-P3 | 待实施 |
-| **P6** | `RingRecorder`(与 RingTraceStore 同款样式,2026-08-06 对齐确认纳入本期) | P1 | 待实施 |
+| **P1** | `recording.rs`:`Recorder` trait + `Recording` 数据模型(含 `OutcomeStatus` + completion barrier)+ `JsonlRecorder`(专用 writer thread + oneshot flush)+ `init_recording`(RwLock)+ 层 A 录制接入(generate.rs,流式 outcome 终结)+ `call_id` 传递 + 全侧脱敏 + 单测 | 无 | ✅ 已实施(2026-08-10):completion barrier + 专用 writer thread(oneshot flush + Drop join)+ 脱敏超集 + call_id 统一 + ISO 时间戳 |
+| **P2** | 层 B 录制接入(http.rs:`send_with_retry_raw` per-attempt + `send_stream` 骨架 + `ObservedByteStream` 累积)+ `config_snapshot` 默认方法 + OpenAI 等主要 provider 覆盖 + 116 处 `HttpRequest` 透传 | P1 | ✅ 已实施(2026-08-10):per-attempt exchange + 流式骨架 patch 补全(Drop 幂等)+ R7 recorder 快照(RecordingContext 透传)+ UTF-8 安全截断 + config_snapshot 覆盖(OpenAI 兼容族 + 原生族) |
+| **P3** | `replay.rs`:`MockReplayModel`(OpenAI 兼容 MVP)+ `ScoreMatcher`/`ExactMatcher` + 单测(mock 响应回放) | P1 | ✅ 已实施(2026-08-10):MockReplayModel + ReplayMatcher(ExactMatcher/ScoreMatcher)+ from_jsonl + 单测 |
+| **P4** | `replay.rs`:`replay_with_model`(core,provider 无关)+ `aimux-providers` 的 `rebuild_provider`(自动构造)+ CLI(`--dry-run`) | P1(**不再依赖 RFC-0020**,2026-08-06 对齐修订,见 §3.6.1) | ✅ 已实施(2026-08-10):replay_with_model + RebuildProvider(OpenAI 兼容族)+ tools/aimux-replay CLI(--dry-run/--api-key/--prompt/--call-id) |
+| **P5** | 绑定层透传(Node + C ABI 本期)+ `PrefixMatcher` + 脱敏验证 + 文档 | P1-P3 | ✅ 已实施(2026-08-10):C ABI + Node 绑定透传 + PrefixMatcher + 脱敏端到端验证 |
+| **P6** | `RingRecorder`(与 RingTraceStore 同款样式,2026-08-06 对齐确认纳入本期) | P1 | ✅ 已实施(2026-08-10):RingRecorder(默认 2048 + FIFO 淘汰 + dropped_count 可查 + export_jsonl/clear) |
 
 **建议顺序**:P1(录制核心)→ P2(HTTP 层 + 配置侧)→ P3(mock 回放,最常用)→ P4(请求回放)→ P5(绑定)→ P6(RingRecorder)。P1+P2 完成即可 debug 取证;P3 完成即可离线测试;P4 完成即可回归/A/B。

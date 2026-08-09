@@ -1,8 +1,8 @@
 # RFC-0023 录制与回放 — 方案对齐记录
 
 > 本文件是 #48(RFC-0023)的**对齐追踪入口**:先对齐方案,再实施。
-> 关联:issue [#48](https://github.com/arcships/aimux/issues/48)、[RFC-0023](../../rfc/0023-runtime-request-recording.md)(DRAFT)
-> 状态:2026-08-06 对齐完成 + 双模型评审完成,待修订 RFC 定稿后实施
+> 关联:issue [#48](https://github.com/arcships/aimux/issues/48)、[RFC-0023](../../rfc/0023-runtime-request-recording.md)(IMPLEMENTED)
+> 状态:已完成(P1-P6 + config_snapshot 全部实施,2026-08-10;见下方实施进度)
 > (P1-P3 曾实施后回滚,代码在 `backup/rfc0023-p1-p3` 分支,仅作参考)
 
 ## 流程状态
@@ -12,8 +12,8 @@
 2. 评审 RFC-0023 DRAFT  ✅ 完成(gpt-5.6-sol + glm-5.2,结论:需修订后定稿)
 3. 逐项确认设计决策      ✅ 完成(B1-B4/C1/D1/D2/D3)
 4. 对齐 RFC-0015 sink   ✅ 完成
-5. 按评审修订 RFC       ← 当前步骤
-6. 锁定实施草案 → 再实施
+5. 按评审修订 RFC       ✅ 完成
+6. 锁定实施草案 → 实施  ✅ 完成(P1-P6 + config_snapshot,2026-08-10)
 ```
 
 ## 双模型评审结论(2026-08-06)
