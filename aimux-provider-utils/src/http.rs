@@ -407,7 +407,7 @@ pub async fn send_stream(
             status,
             headers: resp_headers,
             ttfb_ms: None,
-            body: String::new(),
+            body: ByteAccumulator::new(RECORD_BODY_CAP),
             chunks: 0usize,
         })
     } else {
@@ -441,18 +441,17 @@ struct StreamRec {
     status: u16,
     headers: Vec<(String, String)>,
     ttfb_ms: Option<u64>,
-    body: String,
+    /// 原始字节累积(跨 chunk 边界 UTF-8 安全;受 RECORD_BODY_CAP 上限)。
+    body: ByteAccumulator,
     chunks: usize,
 }
 
 impl StreamRec {
     /// 终结时补全 response(transport 结束时对 attempt 定位更新)。
     fn finalize(&mut self, error: Option<String>) {
-        let body = if self.body.is_empty() {
-            None
-        } else {
-            Some(std::mem::take(&mut self.body))
-        };
+        // 流结束时统一做一次 UTF-8 解码:跨 chunk 边界的多字节字符不再被
+        // lossy 拆成 U+FFFD(A6)。
+        let body = self.body.decode();
         let response = aimux_core::recording::ResponseRecord {
             status: self.status,
             headers: self.headers.clone(),
@@ -503,8 +502,9 @@ impl Stream for ObservedByteStream {
                 }
                 this.chunks += 1;
                 if let Some(rec) = &mut this.record {
-                    let s = String::from_utf8_lossy(bytes);
-                    push_utf8_capped(&mut rec.body, &s, RECORD_BODY_CAP);
+                    // 累积原始字节(不在每个 chunk 上单独 lossy 解码,避免跨
+                    // chunk 边界拆坏多字节字符;A6)。结尾 finalize 统一解码。
+                    rec.body.push(bytes);
                     rec.chunks = this.chunks as usize;
                 }
             }
@@ -940,22 +940,61 @@ fn truncate_utf8(s: &str, cap: usize) -> &str {
     &s[..end]
 }
 
-/// 流式累积:把 `chunk` 追加到 `buf`(受 cap 限制,安全截断)。
-fn push_utf8_capped(buf: &mut String, chunk: &str, cap: usize) {
-    if buf.len() >= cap {
-        return;
-    }
-    let take = cap - buf.len();
-    let chunk = if chunk.len() > take {
-        let mut end = take;
-        while end > 0 && !chunk.is_char_boundary(end) {
-            end -= 1;
+/// 有界字节累积器:流式录制按原始字节累积,流末统一解码。
+///
+/// 解决每个网络 chunk 单独 `String::from_utf8_lossy` 导致跨 chunk 边界的
+/// 多字节字符(中文/emoji)被拆成 U+FFFD 的问题(A6)。累积受 `cap` 限制,
+/// 超出即截断并标记;截断处可能切在多字节字符中间,解码时去掉末尾替换符
+/// 并追加 `…(truncated)` 标记。仅用于流式 SSE 录制(非流式 body 不经此路径)。
+struct ByteAccumulator {
+    buf: Vec<u8>,
+    cap: usize,
+    truncated: bool,
+}
+
+impl ByteAccumulator {
+    fn new(cap: usize) -> Self {
+        Self {
+            buf: Vec::new(),
+            cap,
+            truncated: false,
         }
-        &chunk[..end]
-    } else {
-        chunk
-    };
-    buf.push_str(chunk);
+    }
+
+    /// 追加一个网络 chunk(受 cap 限制,超出标记截断)。
+    fn push(&mut self, bytes: &[u8]) {
+        if self.truncated {
+            return;
+        }
+        let remaining = self.cap.saturating_sub(self.buf.len());
+        if remaining == 0 {
+            self.truncated = true;
+            return;
+        }
+        if bytes.len() <= remaining {
+            self.buf.extend_from_slice(bytes);
+        } else {
+            // 截断到 cap(可能切在多字节字符中间;decode 时处理边界)。
+            self.buf.extend_from_slice(&bytes[..remaining]);
+            self.truncated = true;
+        }
+    }
+
+    /// 终结解码:统一一次 UTF-8 解码(跨 chunk 多字节字符不破坏)。
+    /// 截断时去掉末尾的 U+FFFD(来自 cap 处的不完整字符)并追加标记。
+    fn decode(&self) -> Option<String> {
+        if self.buf.is_empty() {
+            return None;
+        }
+        let mut s = String::from_utf8_lossy(&self.buf).into_owned();
+        if self.truncated {
+            while s.ends_with('\u{FFFD}') {
+                s.pop();
+            }
+            s.push_str("…(truncated)");
+        }
+        Some(s)
+    }
 }
 
 /// 脱敏 URL query 中的敏感参数(值替换为 `[REDACTED]`),保留 path 与非敏感 query。
@@ -1771,5 +1810,60 @@ mod tests {
         let (d2, k2) = s2.next_deadline().unwrap();
         assert_eq!(k2, TimeoutKind::Total);
         assert_eq!(d2, now + Duration::from_millis(500));
+    }
+
+    #[test]
+    fn byte_accumulator_preserves_multibyte_across_chunk_split() {
+        // "中" = E4 B8 AD(3 字节)。拆成两个 chunk 各含半个字符,
+        // 验证累积后统一解码不产生 U+FFFD(A6 回归)。
+        let mut acc = ByteAccumulator::new(RECORD_BODY_CAP);
+        let ch = "中";
+        acc.push(&ch.as_bytes()[..1]); // E4(不完整首字节)
+        acc.push(&ch.as_bytes()[1..]); // B8 AD(补全该字符)
+        let decoded = acc.decode().unwrap();
+        assert_eq!(decoded, "中", "跨 chunk 多字节字符必须完整保留");
+        assert!(!decoded.contains('\u{FFFD}'), "不得出现替换符");
+    }
+
+    #[test]
+    fn byte_accumulator_preserves_emoji_across_chunk_split() {
+        // 😀 = F0 9F 98 80(4 字节)。拆成 2+2 各半。
+        let mut acc = ByteAccumulator::new(RECORD_BODY_CAP);
+        let b = "😀".as_bytes();
+        acc.push(&b[..2]);
+        acc.push(&b[2..]);
+        let decoded = acc.decode().unwrap();
+        assert_eq!(decoded, "😀");
+        assert!(!decoded.contains('\u{FFFD}'), "不得出现替换符");
+    }
+
+    #[test]
+    fn byte_accumulator_truncates_at_cap_and_marks() {
+        // cap 远小于内容 → 截断到 cap 并追加标记;不 panic。
+        let mut acc = ByteAccumulator::new(4);
+        acc.push(b"0123456789");
+        let decoded = acc.decode().unwrap();
+        assert_eq!(decoded, "0123…(truncated)");
+    }
+
+    #[test]
+    fn byte_accumulator_truncates_multibyte_without_dangling_replacement() {
+        // cap 切在多字节字符中间:"中文"(E4 B8 AD E6 96 87)cap=4 →
+        // E4 B8 AD E6(末尾 E6 是 "文" 的不完整首字节)。
+        let mut acc = ByteAccumulator::new(4);
+        acc.push("中文".as_bytes());
+        let decoded = acc.decode().unwrap();
+        assert!(decoded.ends_with("…(truncated)"), "应标记截断: {decoded}");
+        assert!(
+            !decoded.contains('\u{FFFD}'),
+            "截断处不得残留替换符: {decoded}"
+        );
+        assert!(decoded.starts_with("中"), "完整字符保留: {decoded}");
+    }
+
+    #[test]
+    fn byte_accumulator_empty_decodes_to_none() {
+        let acc = ByteAccumulator::new(RECORD_BODY_CAP);
+        assert!(acc.decode().is_none());
     }
 }
