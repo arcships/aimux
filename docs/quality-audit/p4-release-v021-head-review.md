@@ -568,4 +568,56 @@
 2. **B2 仍是 Python 用户可见 blocker**：一行 import 即可修，强烈建议随错误传输一并发布前修掉。
 3. **T6 JVM close 竞态**：引入 Go 式 RWMutex/lease，Java/Kotlin 各三处。
 4. **Swift/Go status 默认值对齐**（R4-2）。
-5. **trajectory step 语义修正 + 索引化**（R4-4/R4-5）。
+5. **trajectory step 语义修正 + 索引化**（R4-4/R4-5）。---
+
+## 14. 修复执行记录（2026-08-10，分支 fix/audit-rounds-1-4 → PR）
+
+> 按用户指示，用 glm-5.2 逐项修复、每项一个提交。基线 commit `d429f38`（本审计文档），共 **23 个修复提交**（c0fceba..HEAD）。修复完成即提 PR（见 §14.4）。
+
+### 14.1 修复清单（按提交顺序）
+
+| # | Commit | 内容 | 状态 |
+|---|---|---|---|
+| 1 | `ceb5b04` | fix(python): B2 get_model_specs import | ✅ |
+| 2 | `d530989` | fix(python): T5 recording/mock_replay 导出 | ✅ |
+| 3 | `ef479a8` | fix(python): D6 session 异常化 | ✅ |
+| 4 | `3fe2fcf` | chore(release): B3 版本 0.3.0 + CHANGELOG | ✅ |
+| 5 | `6184284` | fix(recording): B1/N3 脱敏统一（含 token/key，key 精确匹配不误伤） | ✅ |
+| 6 | `0e91616` | fix(replay): A1/A2/A8/A11 matcher 正确性 | ✅ |
+| 7 | `0ee7ee4` | test(http): URL query 脱敏 | ✅ |
+| 8 | `ed0eb97` | fix(http): A5 非 2xx 结构化响应 | ✅ |
+| 9 | `91115d7` | fix(http): A6 跨 chunk UTF-8 保真（ByteAccumulator） | ✅ |
+| 10 | `7613fae` | fix(trace): B1-trace/C4-1/C4-2/F1 判定四项 | ✅ |
+| 11 | `5876bf8` | fix(recording): A3/A4/A9/N4/C4-6/C4-7/N11 可靠性 | ✅ |
+| 12 | `336d0f0` | fix(providers): C2 OpenAI Chat 身份 | ✅ |
+| 13 | `bb2df59` | fix(providers): C3/C6/M1b api_key_source/形状/retry | ✅ |
+| 14 | `4987695` | fix(providers): M2b config_snapshot 补 8 模型 | ✅ |
+| 15 | `3fa58e9` | fix(go): D7 cap<=0 拒绝 + R4-2 status 默认值 | ✅ |
+| 16 | `0f417f7` | fix(swift): T10 返回码检查 + R4-2 status 默认值 | ✅ |
+| 17 | `c6cf2b2` | docs: R5/R7/R8/R10/N3-1 文档对齐 | ✅ |
+| 18 | `60d4806` | docs(changelog): 恢复 [Unreleased] + 日期修正 | ✅ |
+| 19 | `dd0867f` | test(ffi): R4-1 判定为**误报**，补契约钉桩测试 | ✅ |
+| 20 | `2e01eec` | fix(flutter): T11/T12 cap 校验 + T9 NativeFinalizer | ✅ |
+| 21 | `1a3f06b` | fix(java): T6 R/W 锁 + T11 cap 校验 | ✅ |
+| 22 | `6c16238` | fix(kotlin): T6 R/W 锁 | ✅ |
+
+### 14.2 修复过程中的重要判定（需人工确认）
+
+1. **R4-1 为误报（Kai 用类型系统证据 + 实测推翻）**：多模态 provider 构造方法全部返回模型而非 `Result`，编译即证明不可失败；唯一失败路径（null/非法 UTF-8 参数）已正确走 `fail_invalid_args`。已补 4 组契约测试钉桩（`dd0867f`），无需生产代码改动。
+2. **`is_sensitive_key` 的 `key` 用精确匹配而非 contains**（Aiden）：裸 `?key=` 脱敏、`X-Key`/`monkey`/`keyword` 不误伤，与既有测试 `redact_json_hides_sensitive_values_everywhere` 一致。
+3. **`flush()`/`new` 保持签名，新增 `try_flush`/`try_new`**（Bram）：FFI/bindings 外部调用点不改签名，避免跨文件连锁；inconsistency 用旁路集合而非新增 Recording 字段（防破坏 replay.rs 全字段字面量）。
+4. **Kotlin `@Synchronized` 移除**（Iris2）：R/W 锁已串行化 close，双锁机制冗余。
+5. **Flutter NativeFinalizer 复用 `aimux_drop_handle`**（Nori）：依赖 64 位 void*/uint64_t ABI 一致，32 位平台需加 trampoline（已注释）。
+6. **0.3.0 拆入 breaking 全部未做兼容化处理**：RateLimited 变体/struct 字段/错误传输等按 0.x 惯例直接破坏，CHANGELOG 已列迁移说明。
+
+### 14.3 验证状态（收尾轮）
+
+- 各修复 commit 均独立跑过 cargo check/clippy（`-D warnings` 零警告）+ 相关测试。
+- 全 workspace 测试/clippy 由主进程在最终状态统一复核（见 §14.5 输出）。
+- 预存失败（非本分支引入，均已在 worktree 原始代码验证）：Java `streamTextInvokesOnDone` SIGSEGV（native 库）、Java/Kotlin 部分依赖旧 `.so` 的断言、Go streaming SIGSEGV、Flutter `generateText rejects invalid prompt JSON`——与 native 库构建状态相关，建议重建 `.so` 后复测。
+
+### 14.4 PR
+
+- 分支：`fix/audit-rounds-1-4`（24 commits, c0fceba..HEAD）
+- PR 标题：`fix: address audit rounds 1-4 findings (blockers, matcher, recording, trace, providers, bindings)`
+- 未包含（新 backlog）：T3 Flutter 真增量流式、C4-8 流式 replay 完整字段（tool_calls/reasoning）、F2-F8 性能项、R4-4/5 trajectory 索引化、D7 之外的表单/README 微调、T13 半信封（已含）、C5 owned_by 语义（涉及公开类型，单独立项）。
