@@ -42,6 +42,7 @@ from .aimux import (
     azure,
     provider as _native_provider,
     create_provider as _native_create_provider,
+    get_model_specs as _native_get_model_specs,
     ProviderHandle,
     init_session_store,
     init_session_infer,
