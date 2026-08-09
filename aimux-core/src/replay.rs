@@ -20,7 +20,7 @@ use crate::generate::{GenerateTextOptions, GenerateTextResult, generate_text};
 use crate::language_model::LanguageModel;
 use crate::language_model_message::LanguageModelPrompt;
 use crate::message::{MessageContent, ModelMessage, ModelPrompt};
-use crate::options::CallOptions;
+use crate::options::{CallOptions, ToolChoice};
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
@@ -38,7 +38,10 @@ pub trait ReplayMatcher: Send + Sync {
     ) -> Result<&'a Recording, AiMuxError>;
 }
 
-/// 精确匹配:provider/model_id + prompt 序列化完全相同才命中。
+/// 精确匹配:provider/model_id 相同,且 prompt + 影响响应的可重放选项
+/// (temperature/max_output_tokens/seed/response_format/tools/tool_choice)
+/// 规范相同才命中。运行时字段(call_id/abort_signal/recording_context)与脱敏
+/// 字段(headers/provider_options/body_overrides)不参与比较。
 pub struct ExactMatcher {
     provider: String,
     model_id: String,
@@ -59,20 +62,54 @@ impl ReplayMatcher for ExactMatcher {
         options: &CallOptions,
         recordings: &'a [Recording],
     ) -> Result<&'a Recording, AiMuxError> {
-        let needle = serde_json::to_string(&options.prompt).unwrap_or_default();
+        let needle = canonical_call_key(options);
         recordings
             .iter()
             .find(|r| {
                 r.provider.provider == self.provider
                     && r.provider.model_id == self.model_id
-                    && serde_json::to_string(&r.input.prompt)
-                        .map(|s| s == needle)
-                        .unwrap_or(false)
+                    && canonical_recording_key(r) == needle
             })
             .ok_or_else(|| {
                 AiMuxError::InvalidArgument("mock replay: no exact matching recording".into())
             })
     }
+}
+
+/// `CallOptions` 中影响响应、可重放选项的规范键(ExactMatcher 用)。
+///
+/// 含 prompt + temperature/max_output_tokens/seed/response_format/tools/
+/// tool_choice;排除运行时字段(call_id/abort_signal/recording_context)与脱敏
+/// 字段(headers/provider_options/body_overrides)。序列化为 `Value` 后比较,
+/// 等价于"稳定规范哈希"但无碰撞风险。
+fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
+    serde_json::json!({
+        "prompt": serde_json::to_value(&opts.prompt).unwrap_or_default(),
+        "temperature": opts.temperature,
+        "max_output_tokens": opts.max_output_tokens,
+        "seed": opts.seed,
+        "response_format": serde_json::to_value(&opts.response_format).unwrap_or_default(),
+        "tools": serde_json::to_value(&opts.tools).unwrap_or_default(),
+        "tool_choice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
+    })
+}
+
+/// 从录制侧提取同样的规范键(向后兼容:缺失 Option 字段按 null,缺失
+/// `tool_choice` 按 `ToolChoice::default()`=Auto,与 `CallOptions` 缺省一致)。
+fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
+    let o = &rec.input.options;
+    serde_json::json!({
+        "prompt": serde_json::to_value(&rec.input.prompt).unwrap_or_default(),
+        "temperature": o.get("temperature").cloned().unwrap_or_default(),
+        "max_output_tokens": o.get("max_output_tokens").cloned().unwrap_or_default(),
+        "seed": o.get("seed").cloned().unwrap_or_default(),
+        "response_format": o.get("response_format").cloned().unwrap_or_default(),
+        "tools": o.get("tools").cloned().unwrap_or_default(),
+        "tool_choice": o
+            .get("tool_choice")
+            .cloned()
+            .unwrap_or_else(|| serde_json::to_value(ToolChoice::default()).unwrap_or_default()),
+    })
 }
 
 /// 打分匹配:provider/model_id 必匹配。
@@ -129,8 +166,12 @@ fn message_text(m: &crate::language_model_message::LanguageModelPromptMessage) -
 }
 
 /// 计算一次候选录制的匹配分。
+///
+/// prompt 相关性 = 公共前缀消息数 × 100 + 第一个不同消息(或最后一个公共
+/// 消息)的文本 LCP 字节数。两者都为 0(完全无关)时直接返回 0,不命中;
+/// temperature 一致**只能在已有 prompt 相关性时加分**(否则会命中完全无关
+/// 但 temperature 碰巧一致的请求)。
 fn match_score(options: &CallOptions, rec: &Recording) -> u64 {
-    let mut score: u64 = 0;
     // 公共前缀消息数(role + content 完全相同)。
     let common = options
         .prompt
@@ -138,19 +179,29 @@ fn match_score(options: &CallOptions, rec: &Recording) -> u64 {
         .zip(rec.input.prompt.iter())
         .take_while(|(a, b)| a.role == b.role && a.content == b.content)
         .count();
-    score += (common as u64) * 100;
-    // 字符级 LCP:第一个不同的消息(或双方最后一个消息),在文本内容上计算
-    // (避免 JSON 结构前缀的伪匹配)。
-    let lcp_idx = common.min(options.prompt.len().min(rec.input.prompt.len()) - 1);
-    if let (Some(a), Some(b)) = (options.prompt.get(lcp_idx), rec.input.prompt.get(lcp_idx)) {
-        let lcp = message_text(a)
-            .bytes()
-            .zip(message_text(b).bytes())
-            .take_while(|(x, y)| x == y)
-            .count();
-        score += lcp as u64;
+    // 字符级 LCP:第一个不同消息(或双方最后一个消息),在文本内容上计算
+    // (避免 JSON 结构前缀的伪匹配)。任一 prompt 为空时无消息可比,LCP=0
+    // (显式处理,避免 `len()-1` 下溢:debug panic / release wrap)。
+    let min_len = options.prompt.len().min(rec.input.prompt.len());
+    let lcp: u64 = if min_len == 0 {
+        0
+    } else {
+        let lcp_idx = common.min(min_len - 1);
+        match (options.prompt.get(lcp_idx), rec.input.prompt.get(lcp_idx)) {
+            (Some(a), Some(b)) => message_text(a)
+                .bytes()
+                .zip(message_text(b).bytes())
+                .take_while(|(x, y)| x == y)
+                .count() as u64,
+            _ => 0,
+        }
+    };
+    let prompt_relevance = (common as u64) * 100 + lcp;
+    if prompt_relevance == 0 {
+        return 0; // 完全无关:不命中,temperature 也不加分(A1)。
     }
-    // temperature 一致加分(弱信号,排在 LCP 后)。
+    // temperature 一致加分(弱信号,仅在 prompt 相关时生效)。
+    let mut score = prompt_relevance;
     if options.temperature
         == rec
             .input
@@ -331,36 +382,50 @@ fn parse_finish(raw: Option<&str>) -> (FinishReasonUnified, Option<String>) {
     (unified, raw.map(|s| s.to_string()))
 }
 
+/// 从 `serde_json::Value` 取一个 u64 usage 计数并转 u32;溢出返回明确错误
+/// (替代 `as u64 as u32` 的静默截断)。`null`/缺失 → `None`。
+fn u32_from_json(v: &serde_json::Value, field: &str) -> Result<Option<u32>, AiMuxError> {
+    v.as_u64()
+        .map(|n| {
+            u32::try_from(n)
+                .map_err(|_| AiMuxError::Json(format!("mock replay: usage '{field}' overflows u32: {n}")))
+        })
+        .transpose()
+}
+
 /// 从 OpenAI `usage` 对象提取 core Usage。
-fn parse_usage(v: &serde_json::Value) -> Usage {
+fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
     let u = &v["usage"];
     if u.is_null() {
-        return Usage::default();
+        return Ok(Usage::default());
     }
-    let get = |k: &str| u[k].as_u64().map(|n| n as u32);
-    Usage {
+    let prompt_details = &u["prompt_tokens_details"];
+    let completion_details = &u["completion_tokens_details"];
+    Ok(Usage {
         input_tokens: crate::types::TokenUsage {
-            total: get("prompt_tokens"),
+            total: u32_from_json(&u["prompt_tokens"], "prompt_tokens")?,
             no_cache: None,
-            cache_read: u["prompt_tokens_details"]["cached_tokens"]
-                .as_u64()
-                .map(|n| n as u32),
+            cache_read: u32_from_json(
+                &prompt_details["cached_tokens"],
+                "prompt_tokens_details.cached_tokens",
+            )?,
             cache_write: None,
             text: None,
             reasoning: None,
         },
         output_tokens: crate::types::TokenUsage {
-            total: get("completion_tokens"),
+            total: u32_from_json(&u["completion_tokens"], "completion_tokens")?,
             no_cache: None,
             cache_read: None,
             cache_write: None,
             text: None,
-            reasoning: u["completion_tokens_details"]["reasoning_tokens"]
-                .as_u64()
-                .map(|n| n as u32),
+            reasoning: u32_from_json(
+                &completion_details["reasoning_tokens"],
+                "completion_tokens_details.reasoning_tokens",
+            )?,
         },
         raw: Some(u.clone()),
-    }
+    })
 }
 
 /// 重建非流式结果。
@@ -410,7 +475,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
     Ok(GenerateResult {
         content,
         finish_reason: FinishReason { unified, raw },
-        usage: parse_usage(&v),
+        usage: parse_usage(&v)?,
         warnings,
         provider_metadata: None,
         response: ResponseMetadata {
@@ -463,7 +528,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
             let (unified, raw) = parse_finish(Some(fr));
             parts.push(Ok(StreamPart::Finish {
                 finish_reason: FinishReason { unified, raw },
-                usage: parse_usage(&v),
+                usage: parse_usage(&v)?,
                 provider_metadata: None,
             }));
         }
@@ -702,18 +767,62 @@ mod tests {
 
     #[test]
     fn exact_matcher_hits_only_identical_prompt() {
+        // openai_recording 的 options 含 temperature=0.7;ExactMatcher 现把生成
+        // 参数纳入匹配,故命中需 prompt + temperature 都一致(A8)。
         let recs = [openai_recording("t1", "ping", "pong", "stop")];
         let matcher = ExactMatcher::new("openai", "gpt-4o");
         assert!(
             matcher
-                .r#match(&sample_options("ping", None), &recs)
+                .r#match(&sample_options("ping", Some(0.7)), &recs)
                 .is_ok()
         );
+        // prompt 不同 → miss(temperature 已对齐,差异仅来自 prompt)。
         assert!(
             matcher
-                .r#match(&sample_options("pong", None), &recs)
+                .r#match(&sample_options("pong", Some(0.7)), &recs)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn exact_matcher_different_temperature_misses() {
+        // A8:prompt 相同但 temperature 不同 → miss。
+        let recs = [openai_recording("t1", "ping", "pong", "stop")]; // temp 0.7
+        let matcher = ExactMatcher::new("openai", "gpt-4o");
+        assert!(
+            matcher
+                .r#match(&sample_options("ping", Some(0.1)), &recs)
+                .is_err()
+        );
+        // temperature 一致 → hit(对照)。
+        assert!(
+            matcher
+                .r#match(&sample_options("ping", Some(0.7)), &recs)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn exact_matcher_different_options_misses() {
+        // A8:prompt + temperature 都相同,但 max_output_tokens 不同 → miss。
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        // 录制侧用完整 CallOptions(temperature 0.7 + max_output_tokens 128),
+        // 与真实录制路径(InputRecord::from_call_options)一致。
+        let mut call = sample_options("ping", Some(0.7));
+        call.max_output_tokens = Some(128);
+        rec.input.options = serde_json::to_value(&call).unwrap();
+        let recs = [rec];
+        let matcher = ExactMatcher::new("openai", "gpt-4o");
+
+        // max_output_tokens=256 ≠ 128 → miss。
+        let mut req = sample_options("ping", Some(0.7));
+        req.max_output_tokens = Some(256);
+        assert!(matcher.r#match(&req, &recs).is_err());
+
+        // 完全一致 → hit(对照)。
+        let mut req2 = sample_options("ping", Some(0.7));
+        req2.max_output_tokens = Some(128);
+        assert!(matcher.r#match(&req2, &recs).is_ok());
     }
 
     #[test]
@@ -734,6 +843,46 @@ mod tests {
             .unwrap();
         assert_eq!(hit.call_id, "t1");
         // temperature 一致加分。
+        let hit = matcher
+            .r#match(&sample_options("hello", Some(0.7)), &recs)
+            .unwrap();
+        assert_eq!(hit.call_id, "t1");
+    }
+
+    #[test]
+    fn match_score_empty_prompt_no_underflow() {
+        // A2:任一 prompt 为空时 `len()-1` 曾下溢(debug panic / release wrap)。
+        let rec = openai_recording("t1", "hello", "a", "stop");
+        let empty_req = GenerateTextOptions::default().into_call_options(vec![]);
+        // 请求侧空 prompt → 安全返回 0,不 panic。
+        assert_eq!(match_score(&empty_req, &rec), 0);
+        // 录制侧空 prompt → 安全返回 0。
+        let mut rec_empty = rec.clone();
+        rec_empty.input.prompt = vec![];
+        assert_eq!(match_score(&sample_options("hello", None), &rec_empty), 0);
+        // 双侧空 prompt → 安全返回 0。
+        assert_eq!(match_score(&empty_req, &rec_empty), 0);
+    }
+
+    #[test]
+    fn score_matcher_unrelated_prompt_with_matching_temperature_misses() {
+        // A1:双方 temperature 都是 None(相等),但 prompt 完全无关 → 必须 miss。
+        // 旧实现 temperature 一致 +1 会使 score=1>0 错误命中。
+        let mut rec = openai_recording("t1", "alpha", "a", "stop");
+        rec.input.options = serde_json::json!({}); // temperature 缺失→None
+        let recs = [rec];
+        let matcher = ScoreMatcher::new("openai", "gpt-4o");
+        // "zzzzz" 与 "alpha" 无公共前缀消息、LCP=0。
+        assert!(matcher
+            .r#match(&sample_options("zzzzz", None), &recs)
+            .is_err());
+    }
+
+    #[test]
+    fn score_matcher_related_prompt_with_matching_temperature_hits() {
+        // A1:prompt 相关 + temperature 一致 → 正常命中(temperature 加分仍生效)。
+        let recs = [openai_recording("t1", "hello", "a", "stop")]; // temp 0.7
+        let matcher = ScoreMatcher::new("openai", "gpt-4o");
         let hit = matcher
             .r#match(&sample_options("hello", Some(0.7)), &recs)
             .unwrap();
@@ -842,6 +991,29 @@ mod tests {
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
         assert_eq!(result.usage.input_tokens.total, Some(5));
         assert_eq!(result.response.model_id.as_deref(), Some("gpt-4o"));
+    }
+
+    #[test]
+    fn mock_model_usage_overflow_errors() {
+        // A11:usage 计数超过 u32 上限应返回明确错误,而非 `as u32` 静默截断。
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        let body = serde_json::json!({
+            "id": "chatcmpl-mock",
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": { "role": "assistant", "content": "pong" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 5_000_000_000_u64, "completion_tokens": 3, "total_tokens": 8 }
+        });
+        rec.exchanges[0].response.as_mut().unwrap().body = Some(body.to_string());
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt
+            .block_on(async { model.do_generate(&sample_options("ping", None)).await.unwrap_err() });
+        assert!(matches!(err, AiMuxError::Json(_)), "{err}");
+        assert!(err.to_string().contains("overflows u32"), "{err}");
     }
 
     #[test]
