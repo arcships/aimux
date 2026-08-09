@@ -47,4 +47,36 @@ void main() {
       throwsA(isA<StateError>()),
     );
   });
+
+  // T11/T12: initRecordingRing must validate cap up front. A negative Dart int
+  // would otherwise be reinterpreted as a huge u64 by the FFI; cap == 0 is
+  // rejected by the C ABI. Both are caught in Dart with ArgumentError,
+  // matching Kotlin/Java.
+  test('initRecordingRing rejects cap <= 0 (T11/T12)', () {
+    expect(() => initRecordingRing(0), throwsArgumentError);
+    expect(() => initRecordingRing(-1), throwsArgumentError);
+    expect(() => initRecordingRing(-9999), throwsArgumentError);
+  });
+
+  test('initRecordingRing accepts positive cap', () {
+    expect(initRecordingRing(8), 0);
+    recordingStop();
+  });
+
+  // T9: Model/ProviderHandle register a NativeFinalizer so a forgotten close()
+  // does not leak the native handle. close() detaches the finalizer first,
+  // so an explicit close cannot double-free.
+  test('Model close is idempotent and detaches the finalizer (T9)', () {
+    final model = Model.openai('sk-test-fake-key', 'gpt-4o-mini');
+    model.close();
+    model.close(); // second close is a no-op (finalizer already detached)
+    expect(() => model.generateText('"hi"'), throwsA(isA<StateError>()));
+  });
+
+  test('ProviderHandle close is idempotent and detaches the finalizer (T9)', () {
+    final p = createProvider('deepseek', 'sk-test-fake-key', null);
+    p.close();
+    p.close(); // should not throw
+    expect(() => p.listModels(), throwsA(isA<StateError>()));
+  });
 }

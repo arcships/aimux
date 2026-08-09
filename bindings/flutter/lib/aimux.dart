@@ -218,6 +218,14 @@ final class _AimuxFFI {
           'aimux_stream_text_as_openai');
   late final dropHandle =
       _lib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle');
+  // NativeFinalizer callback pointer: aimux_drop_handle reinterpreted as
+  // Void Function(Pointer<Void>). The handle value is attached as the token
+  // (its address == the uint64 handle); on 64-bit the ABI is identical, so
+  // the finalizer releases the handle when a Model/ProviderHandle is GC'd
+  // without close(). NativeFinalizerFunction is already a NativeFunction<…>,
+  // so it is looked up directly (no extra NativeFunction wrapper).
+  late final dropHandlePtr =
+      _lib.lookup<NativeFinalizerFunction>('aimux_drop_handle');
   late final initLogging = _lib
       .lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging');
   late final initRecording = _lib
@@ -238,6 +246,13 @@ final class _AimuxFFI {
 /// Process-wide FFI table. Lazily created on first use; shared by every
 /// [Model] / [ProviderHandle] and the top-level functions.
 final _AimuxFFI _ffi = _AimuxFFI();
+
+/// Process-wide native finalizer that releases a handle when a [Model] or
+/// [ProviderHandle] is garbage-collected without [Model.close] /
+/// [ProviderHandle.close] (T9). The token attached is the handle value
+/// encoded as a `Pointer` (its address == the uint64 handle), so the
+/// `aimux_drop_handle` native callback receives it as a uint64.
+final NativeFinalizer _handleFinalizer = NativeFinalizer(_ffi.dropHandlePtr);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stream callback trampolines (global — safe because aimux_stream_text
@@ -304,11 +319,17 @@ int _construct4(
 ///
 /// Call [close] to release the native handle. Engine failures throw
 /// [AimuxException] (or a subclass); using a closed handle throws [StateError].
-class Model {
+/// Implements [Finalizable] so a [NativeFinalizer] can release the handle if
+/// [close] is forgotten (T9).
+class Model implements Finalizable {
   final int _handle;
   bool _closed = false;
 
-  Model._(this._handle);
+  Model._(this._handle) {
+    // Register a native finalizer so the handle is released even if close()
+    // is never called. The token is the handle value as a Pointer.
+    _handleFinalizer.attach(this, Pointer<Void>.fromAddress(_handle));
+  }
 
   /// Create an OpenAI model instance.
   ///
@@ -581,11 +602,14 @@ class Model {
   }
 
   /// Release the native handle. Safe to call multiple times.
+  ///
+  /// Detaches the native finalizer first so the GC cannot double-free the
+  /// handle after an explicit close.
   void close() {
-    if (!_closed) {
-      _ffi.dropHandle(_handle);
-      _closed = true;
-    }
+    if (_closed) return;
+    _closed = true;
+    _handleFinalizer.detach(this);
+    _ffi.dropHandle(_handle);
   }
 
   void _checkOpen() {
@@ -657,7 +681,8 @@ class ProviderConfig {
 /// Created by [createProvider]. Unlike [Model.provider] (which binds to a
 /// single model id), a provider handle supports runtime model discovery via
 /// [listModels] and building a [Model] from a discovered id via [model].
-/// Call [close] to release the native handle.
+/// Call [close] to release the native handle. Implements [Finalizable] so a
+/// [NativeFinalizer] can release the handle if [close] is forgotten (T9).
 ///
 /// ```dart
 /// final p = createProvider('deepseek', apiKey);
@@ -673,11 +698,15 @@ class ProviderConfig {
 ///   p.close();
 /// }
 /// ```
-class ProviderHandle {
+class ProviderHandle implements Finalizable {
   final int _handle;
   bool _closed = false;
 
-  ProviderHandle._(this._handle);
+  ProviderHandle._(this._handle) {
+    // Register a native finalizer so the handle is released even if close()
+    // is never called. The token is the handle value as a Pointer.
+    _handleFinalizer.attach(this, Pointer<Void>.fromAddress(_handle));
+  }
 
   /// List models available on this provider (runtime discovery via the
   /// provider's `/models` endpoint), enriched with community knowledge
@@ -710,11 +739,14 @@ class ProviderHandle {
   }
 
   /// Release the native provider handle. Safe to call multiple times.
+  ///
+  /// Detaches the native finalizer first so the GC cannot double-free the
+  /// handle after an explicit close.
   void close() {
-    if (!_closed) {
-      _ffi.dropHandle(_handle);
-      _closed = true;
-    }
+    if (_closed) return;
+    _closed = true;
+    _handleFinalizer.detach(this);
+    _ffi.dropHandle(_handle);
   }
 
   void _checkOpen() {
@@ -805,8 +837,18 @@ void initLogging(String level) {
 int initRecording(String dir) => withUtf8(dir, _ffi.initRecording);
 
 /// Start in-memory bounded recording (ring recorder, FIFO eviction, dropped
-/// count queryable). Returns 0, or -1 when [cap] == 0.
-int initRecordingRing(int cap) => _ffi.initRecordingRing(cap);
+/// count queryable).
+///
+/// [cap] must be positive: the C ABI rejects `0` (returns -1), and a negative
+/// Dart int would be reinterpreted as a huge u64 by the FFI. This binding
+/// validates up front and throws [ArgumentError] for `cap <= 0`, matching
+/// Kotlin/Java. Returns 0 on success.
+int initRecordingRing(int cap) {
+  if (cap <= 0) {
+    throw ArgumentError.value(cap, 'cap', 'must be positive');
+  }
+  return _ffi.initRecordingRing(cap);
+}
 
 /// Stop recording: the global recorder becomes None. Returns 0.
 int recordingStop() => _ffi.recordingStop();
