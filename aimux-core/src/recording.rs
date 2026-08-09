@@ -7,7 +7,7 @@
 //! - **call_id 关联**:一次逻辑调用一个 `call_id`(与 RFC-0015/24/25 语义一致,
 //!   区别于 HTTP 请求级 ID 与跨服务 trace)。
 //! - **默认关闭**:不调 `init_recording`,热路径 = 1 读锁 + clone(次 ns 级)。
-//! - **隐私受控**:api_key / Authorization 恒脱敏(contains 式,含 `x-goog-api-key`);
+//! - **隐私受控**:api_key / Authorization / token 系恒脱敏(contains 式,含 `x-goog-api-key`、`x-amz-security-token`);
 //!   `InputRecord.options` 序列化前递归脱敏。
 //! - **completion barrier**:outcome 与全部 exchange(流式含终结)齐才写行。
 //! - **专用 writer thread + oneshot flush**:同步 `flush()` 阻塞至落盘,不依赖运行时。
@@ -172,7 +172,7 @@ fn default_finalized() -> bool {
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
-    /// 敏感头(authorization/cookie/含 api-key 等)已脱敏为 "[REDACTED]"。
+    /// 敏感头(authorization/cookie/含 api-key/key/token 等)已脱敏为 "[REDACTED]"。
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
     pub body: Option<String>,
@@ -352,14 +352,24 @@ pub fn new_call_id() -> String {
 // ── 脱敏(contains 式;与 logging.rs 同规则)──────────────────────────────
 
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
+///
+/// needle 集合与 `aimux_provider_utils::logging::is_sensitive_key` 对齐
+/// (`authorization`/`api-key`/`apikey`/`key`/`token`),录制侧额外覆盖
+/// `cookie`/`set-cookie`(logging 不脱敏 cookie)。其中 `key` 取 **exact** 匹配
+/// 而非 contains——避免误伤 `X-Key`/`monkey`/`keyboard`/`keyword` 等含 "key"
+/// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。其余 needle
+/// 维持 contains,以覆盖 `x-goog-api-key`/`x-amz-security-token`/`proxy-
+/// authorization` 等变体。
 pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    n == "authorization"
-        || n == "proxy-authorization"
-        || n == "cookie"
+    n == "cookie"
         || n == "set-cookie"
+        || n == "key"
+        || n.contains("authorization")
         || n.contains("api-key")
         || n.contains("api_key")
+        || n.contains("apikey")
+        || n.contains("token")
 }
 
 /// 递归脱敏(JSON 中含敏感键的项值替换为 `[REDACTED]`)。
