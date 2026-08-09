@@ -95,9 +95,22 @@ impl LanguageModel for AnthropicModel {
             provider: self.provider().to_string(),
             model_id: self.model_id.clone(),
             base_url: Some(self.config.base_url.clone()),
-            api_key_source: "explicit".to_string(),
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
             profile: None,
-            provider_options: serde_json::to_value(&self.config.headers).ok(),
+            // RFC-0023 C6: ProviderOptions-shaped object (headers/max_retries/
+            // body_overrides are the shared ProviderOptions fields) plus the
+            // Anthropic-specific `api_version`. Sensitive headers are redacted
+            // at the recording boundary (recording.rs redacts provider_options).
+            provider_options: Some(serde_json::json!({
+                "headers": self.config.headers,
+                "api_version": self.config.api_version,
+                "max_retries": self.config.retry_config.max_retries,
+                "body_overrides": self.config.body_overrides,
+            })),
         }
     }
 

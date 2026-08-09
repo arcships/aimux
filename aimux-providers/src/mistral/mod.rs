@@ -16,13 +16,17 @@ pub use embedding::MistralEmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{load_api_key, without_trailing_slash};
+use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
 
 /// Configuration for the Mistral provider.
 #[derive(Debug, Clone)]
 pub struct MistralConfig {
     pub api_key: String,
     pub base_url: String,
+    /// api_key 来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    pub retry_config: RetryConfig,
 }
 
 impl MistralConfig {
@@ -31,6 +35,8 @@ impl MistralConfig {
         Self {
             api_key: api_key.into(),
             base_url: "https://api.mistral.ai/v1".to_string(),
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         }
     }
 
@@ -40,10 +46,22 @@ impl MistralConfig {
         self
     }
 
+    /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.api_key_source = source.map(|s| s.to_string());
+        self
+    }
+
+    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
     /// Create from environment variable `MISTRAL_API_KEY`.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "MISTRAL_API_KEY", "Mistral")?;
-        Ok(Self::new(api_key))
+        Ok(Self::new(api_key).with_api_key_source(Some("env:MISTRAL_API_KEY")))
     }
 }
 
@@ -113,7 +131,7 @@ impl Provider for MistralProvider {
                     call_id: None,
                     recording_context: None,
                 },
-                aimux_provider_utils::RetryConfig::default(),
+                config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
                 None,
             )

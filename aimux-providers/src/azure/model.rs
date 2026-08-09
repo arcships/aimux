@@ -84,6 +84,11 @@ pub struct AzureConfig {
     pub auth: Option<AzureAuth>,
     /// Provider-level extra headers merged into every request.
     pub extra_headers: HashMap<String, String>,
+    /// api_key 来源(RFC-0023):`None` = explicit (api-key 或 token provider);
+    /// `Some("env:VAR")` = 环境变量。不存明文。
+    pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    pub retry_config: RetryConfig,
 }
 
 impl AzureConfig {
@@ -97,6 +102,8 @@ impl AzureConfig {
             use_deployment_based_urls: true,
             auth: None,
             extra_headers: HashMap::new(),
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         }
     }
 
@@ -130,6 +137,18 @@ impl AzureConfig {
         self
     }
 
+    /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.api_key_source = source.map(|s| s.to_string());
+        self
+    }
+
+    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
     /// Add a provider-level extra header.
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.extra_headers.insert(key.into(), value.into());
@@ -154,7 +173,9 @@ impl AzureConfig {
     /// may also be supplied via [`with_resource_name`]).
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "AZURE_API_KEY", "Azure OpenAI")?;
-        let mut config = Self::new().with_api_key(api_key);
+        let mut config = Self::new()
+            .with_api_key(api_key)
+            .with_api_key_source(Some("env:AZURE_API_KEY"));
         if let Ok(resource) = std::env::var("AZURE_RESOURCE_NAME")
             && !resource.is_empty()
         {
@@ -292,7 +313,7 @@ impl Provider for AzureProvider {
                     call_id: None,
                     recording_context: None,
                 },
-                aimux_provider_utils::RetryConfig::default(),
+                config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
                 None,
             )
@@ -440,8 +461,12 @@ impl LanguageModel for AzureModel {
             provider: self.provider().to_string(),
             model_id: self.model_id().to_string(),
             base_url: self.config.base_url.clone(),
-            // Azure 不记录明文 key/token;来源统一记为 explicit。
-            api_key_source: "explicit".to_string(),
+            // Azure 不记录明文 key/token;来源按构造方式标注(env/explicit)。
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
             profile: None,
             provider_options: Some(serde_json::json!({
                 "resource_name": self.config.resource_name,
@@ -453,6 +478,8 @@ impl LanguageModel for AzureModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
+        let retry_config =
+            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
         execute_generate(
             &self.endpoint(),
             &headers,
@@ -460,13 +487,15 @@ impl LanguageModel for AzureModel {
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
-            &RetryConfig::default(),
+            &retry_config,
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
+        let retry_config =
+            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
         execute_stream(
             &self.endpoint(),
             &headers,
@@ -474,7 +503,7 @@ impl LanguageModel for AzureModel {
             options,
             "azure",
             &crate::openai::OpenAICompatProfile::full(),
-            &RetryConfig::default(),
+            &retry_config,
         )
         .await
     }

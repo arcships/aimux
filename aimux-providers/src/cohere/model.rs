@@ -19,7 +19,7 @@ use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usa
 
 use aimux_provider_utils::response::ErrorStructure;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
+    HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed,
 };
 use aimux_stream::SseStream;
 
@@ -114,7 +114,11 @@ impl LanguageModel for CohereModel {
             provider: self.provider().to_string(),
             model_id: self.model_id.clone(),
             base_url: Some(self.config.base_url.clone()),
-            api_key_source: "explicit".to_string(),
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
             profile: None,
             provider_options: None,
         }
@@ -124,6 +128,8 @@ impl LanguageModel for CohereModel {
         let body_result = build_request_body(&self.model_id, options, false);
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config =
+            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
 
         let resp = send_timed(
             HttpRequest {
@@ -139,7 +145,7 @@ impl LanguageModel for CohereModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &COHERE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
@@ -250,6 +256,8 @@ impl LanguageModel for CohereModel {
         let body_result = build_request_body(&self.model_id, options, true);
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config =
+            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
 
         let resp = send_stream_timed(
             HttpRequest {
@@ -265,7 +273,7 @@ impl LanguageModel for CohereModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &COHERE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
