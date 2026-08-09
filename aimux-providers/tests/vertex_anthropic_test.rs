@@ -60,6 +60,7 @@ fn make_model(server: &MockServer) -> VertexAnthropicModel {
         project: Some("test-project".to_string()),
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test-token".to_string()),
+        api_key_source: None,
     };
     VertexProvider::new(config)
         .anthropic_model(MODEL_ID)

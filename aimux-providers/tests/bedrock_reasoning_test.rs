@@ -108,6 +108,8 @@ fn make_model(server: &MockServer) -> BedrockModel {
         BedrockConfig {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("test-token".to_string()),
+            retry_config: aimux_provider_utils::RetryConfig::default(),
+            api_key_source: None,
         },
     )
 }

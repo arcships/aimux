@@ -23,7 +23,7 @@ mod types;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::without_trailing_slash;
+use aimux_provider_utils::{RetryConfig, without_trailing_slash};
 
 pub use embedding::BedrockEmbeddingModel;
 pub use image::BedrockImageModel;
@@ -47,6 +47,10 @@ pub struct BedrockProviderConfig {
     pub auth: BedrockAuth,
     /// AWS region, used for constructing model ARNs and agent-runtime URLs.
     pub region: String,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    pub retry_config: RetryConfig,
+    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    pub api_key_source: Option<String>,
 }
 
 impl BedrockProviderConfig {
@@ -67,6 +71,8 @@ impl BedrockProviderConfig {
                 region: region.clone(),
             }),
             region,
+            retry_config: RetryConfig::default(),
+            api_key_source: None,
         }
     }
 
@@ -78,12 +84,26 @@ impl BedrockProviderConfig {
             base_url,
             auth: BedrockAuth::BearerToken(token.into()),
             region,
+            retry_config: RetryConfig::default(),
+            api_key_source: None,
         }
     }
 
     /// Override the base URL (useful for tests / proxies).
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
+        self
+    }
+
+    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
+    /// 标注凭证来源(RFC-0023 回放重建用)。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.api_key_source = source.map(|s| s.to_string());
         self
     }
 
@@ -105,7 +125,8 @@ impl BedrockProviderConfig {
             && !token.trim().is_empty()
         {
             let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-            return Ok(Self::with_bearer_token(token, region));
+            return Ok(Self::with_bearer_token(token, region)
+                .with_api_key_source(Some("env:AWS_BEARER_TOKEN_BEDROCK")));
         }
 
         let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").map_err(|_| {
@@ -122,7 +143,8 @@ impl BedrockProviderConfig {
         })?;
         let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
 
-        let mut config = Self::new(access_key_id, secret_access_key, region);
+        let mut config = Self::new(access_key_id, secret_access_key, region)
+            .with_api_key_source(Some("env:AWS_ACCESS_KEY_ID"));
         if let Ok(token) = std::env::var("AWS_SESSION_TOKEN") {
             config = config.with_session_token(token);
         }
@@ -159,6 +181,8 @@ impl BedrockProvider {
             BedrockConfig {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
+                retry_config: self.config.retry_config,
+                api_key_source: self.config.api_key_source.clone(),
             },
         )
     }
@@ -171,6 +195,8 @@ impl BedrockProvider {
             BedrockConfig {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
+                retry_config: self.config.retry_config,
+                api_key_source: self.config.api_key_source.clone(),
             },
         )
     }
@@ -183,6 +209,8 @@ impl BedrockProvider {
             BedrockConfig {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
+                retry_config: self.config.retry_config,
+                api_key_source: self.config.api_key_source.clone(),
             },
         )
     }
@@ -230,6 +258,7 @@ impl Provider for BedrockProvider {
     > {
         let region = self.config.region.clone();
         let auth = self.config.auth.clone();
+        let retry_config = self.config.retry_config;
         Box::pin(async move {
             let url = format!("https://bedrock.{region}.api.amazonaws.com/foundation-models");
             // Sign the request (empty body for GET).
@@ -259,7 +288,7 @@ impl Provider for BedrockProvider {
                     call_id: None,
                     recording_context: None,
                 },
-                aimux_provider_utils::RetryConfig::default(),
+                retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
             )
             .await?;

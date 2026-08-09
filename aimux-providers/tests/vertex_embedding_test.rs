@@ -74,6 +74,7 @@ fn test_provider(base_url: String) -> VertexProvider {
         project: Some("test-project".to_string()),
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test-token".to_string()),
+        api_key_source: None,
     };
     VertexProvider::new(config)
 }
@@ -283,6 +284,7 @@ fn gemini_embedding_2_max_per_call() {
         project: Some("test-project".to_string()),
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test".to_string()),
+        api_key_source: None,
     };
     let provider = VertexProvider::new(config);
     let model = provider.embedding_model("gemini-embedding-2");

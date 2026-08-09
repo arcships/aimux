@@ -89,6 +89,15 @@ impl LanguageModel for HuggingFaceResponsesModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        // M2b: HuggingFace wraps OpenAIConfig — reuse the OpenAI snapshot helper.
+        crate::openai::config_snapshot_from_config(
+            self.provider(),
+            &self.model_id,
+            self.config.openai_config(),
+        )
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let request = build_request_body_with_warnings(&self.model_id, options, false)?;
         let body = request.body;

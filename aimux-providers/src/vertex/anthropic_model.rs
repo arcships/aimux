@@ -63,6 +63,8 @@ const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
 pub struct VertexAnthropicConfig {
     pub base_url: String,
     pub auth: VertexAuth,
+    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    pub api_key_source: Option<String>,
 }
 
 /// An Anthropic Claude language model served via Vertex AI `rawPredict`.
@@ -144,6 +146,31 @@ impl LanguageModel for VertexAnthropicModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        // M2b: record identity + credential source + auth kind. Never serialize
+        // the bearer token or API key plaintext.
+        let auth_kind = match &self.config.auth {
+            VertexAuth::BearerToken(_) => "bearer_token",
+            VertexAuth::ApiKey(_) => "api_key",
+        };
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
+            profile: None,
+            provider_options: Some(serde_json::json!({
+                "auth_kind": auth_kind,
+                "anthropic_version": ANTHROPIC_VERTEX_VERSION,
+            })),
+        }
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

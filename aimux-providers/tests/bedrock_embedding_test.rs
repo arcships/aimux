@@ -29,6 +29,8 @@ fn test_provider(base_url: String) -> BedrockProvider {
         base_url,
         auth: BedrockAuth::BearerToken("test-auth".to_string()),
         region: "us-east-1".to_string(),
+        retry_config: aimux_provider_utils::RetryConfig::default(),
+        api_key_source: None,
     };
     BedrockProvider::new(config)
 }

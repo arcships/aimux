@@ -184,6 +184,25 @@ impl LanguageModel for OpenResponsesModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        // M2b: generic Responses wrapper — no tracked api_key (auth is caller-
+        // managed via the headers closure), so mark `none`. Record the endpoint
+        // URL and provider-options key; the headers closure is opaque, so only
+        // note its presence (never call it here — it may carry secrets).
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.url.clone()),
+            api_key_source: "none".to_string(),
+            profile: None,
+            provider_options: Some(serde_json::json!({
+                "provider_options_name": self.config.provider_options_name,
+                "has_headers": self.config.headers.is_some(),
+            })),
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
         let (body, warnings) =
