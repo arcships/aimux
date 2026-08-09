@@ -262,12 +262,12 @@ pub async fn send(
             tokio::select! {
                 biased;
                 _ = signal.cancelled() => {
-                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, "aborted after 2xx");
+                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, "aborted after 2xx", None);
                     record_transport_closed(&request);
                     return Err(AiMuxError::Aborted);
                 }
                 b = bytes => b.map_err(|e| {
-                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, &e.to_string());
+                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, &e.to_string(), None);
                     record_transport_closed(&request);
                     AiMuxError::Http(e.to_string())
                 })?,
@@ -279,6 +279,7 @@ pub async fn send(
                 attempt,
                 started.elapsed().as_millis() as u64,
                 &e.to_string(),
+                None,
             );
             record_transport_closed(&request);
             AiMuxError::Http(e.to_string())
@@ -1056,14 +1057,61 @@ fn record_transport_closed(request: &HttpRequest) {
     }
 }
 
+/// 收集响应头并脱敏(录制 ResponseRecord.headers 用;敏感头值替换为 [REDACTED])。
+fn redacted_response_headers(headers: &reqwest::header::HeaderMap) -> Vec<(String, String)> {
+    use aimux_core::recording::is_sensitive_key;
+    headers
+        .iter()
+        .map(|(k, v)| {
+            let key = k.to_string();
+            if is_sensitive_key(&key) {
+                (key, "[REDACTED]".to_string())
+            } else {
+                (key, v.to_str().unwrap_or("").to_string())
+            }
+        })
+        .collect()
+}
+
+/// 由非 2xx 响应构造结构化 [`ResponseRecord`](aimux_core::recording::ResponseRecord)
+/// (用于失败 attempt 的录制;A5)。`body` 已由 `read_error_body` 截断到 64KiB,
+/// 这里再做一次 `RECORD_BODY_CAP` 安全截断(边界对齐 UTF-8 字符)。
+fn error_response_record(
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: &str,
+) -> aimux_core::recording::ResponseRecord {
+    aimux_core::recording::ResponseRecord {
+        status,
+        headers,
+        body: if body.is_empty() {
+            None
+        } else {
+            Some(truncate_utf8(body, RECORD_BODY_CAP).to_string())
+        },
+        stream_chunks: None,
+        ttfb_ms: None,
+    }
+}
+
 /// 录制失败 attempt 的 exchange(终态,error 携带原因)。
-fn record_failed_exchange(request: &HttpRequest, attempt: u32, latency_ms: u64, error: &str) {
+///
+/// `response`:`Some` 表示已收到合法 HTTP 响应(4xx/5xx,含 429)——结构化
+/// status/headers/body 一并录制;`None` 表示 DNS/连接/TLS/abort 等无 HTTP
+/// 响应的传输层失败。`error` 字符串始终保留(日志/诊断用),录制结构完整(A5)。
+fn record_failed_exchange(
+    request: &HttpRequest,
+    attempt: u32,
+    latency_ms: u64,
+    error: &str,
+    response: Option<aimux_core::recording::ResponseRecord>,
+) {
     record_exchange(
         request,
         aimux_core::recording::HttpExchange {
             attempt,
             request: to_http_record(request),
-            response: None,
+            response,
             timing: aimux_core::recording::TimingRecord {
                 latency_ms,
                 ttfb_ms: None,
@@ -1126,6 +1174,10 @@ async fn send_with_retry_raw(
                             .and_then(|v| v.to_str().ok()),
                         SystemTime::now(),
                     );
+                    // 已收到合法 HTTP 响应:结构化录制 status/headers/body(A5),
+                    // 同时保留 error 字符串用于诊断。headers 必须在 read_error_body
+                    // 消费 resp 之前采集。
+                    let resp_headers = redacted_response_headers(resp.headers());
                     // Keep the provider's rate-limit body (e.g. "quota
                     // exceeded" vs "too many requests") so consumers can tell
                     // the two apart (issue M6).
@@ -1135,6 +1187,7 @@ async fn send_with_retry_raw(
                         attempt,
                         latency_ms,
                         &format!("HTTP {status_code}: {body}"),
+                        Some(error_response_record(status_code, resp_headers, &body)),
                     );
                     last_error = AiMuxError::RateLimited {
                         retry_after_ms: hint.unwrap_or(1000).max(0) as u64,
@@ -1142,24 +1195,34 @@ async fn send_with_retry_raw(
                     };
                 } else if resp.status().is_server_error() {
                     // 5xx: 可重试。
+                    let resp_headers = redacted_response_headers(resp.headers());
                     let body = read_error_body(resp, request).await?;
                     record_failed_exchange(
                         request,
                         attempt,
                         latency_ms,
                         &format!("HTTP {status_code}: {body}"),
+                        Some(error_response_record(status_code, resp_headers, &body)),
                     );
                     last_error = AiMuxError::ApiCall(format!("HTTP {}: {}", status_code, body));
                 } else {
                     // 非 4xx 非 5xx：不可重试，立即返回。
+                    let resp_headers = redacted_response_headers(resp.headers());
                     let body = read_error_body(resp, request).await?;
                     let err = parse_provider_error(status_code, &body, error_structure);
-                    record_failed_exchange(request, attempt, latency_ms, &err.to_string());
+                    record_failed_exchange(
+                        request,
+                        attempt,
+                        latency_ms,
+                        &err.to_string(),
+                        Some(error_response_record(status_code, resp_headers, &body)),
+                    );
                     return Err(err);
                 }
             }
             Err(e) => {
-                record_failed_exchange(request, attempt, latency_ms, &e.to_string());
+                // 传输层失败(DNS/连接/TLS):无 HTTP 响应,response 保持 None(A5)。
+                record_failed_exchange(request, attempt, latency_ms, &e.to_string(), None);
                 last_error = e;
             }
         }

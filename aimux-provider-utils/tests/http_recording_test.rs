@@ -146,7 +146,7 @@ async fn send_records_failure_without_closing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat"))
-        .respond_with(ResponseTemplate::new(500))
+        .respond_with(ResponseTemplate::new(500).set_body_string("server boom"))
         .mount(&server)
         .await;
 
@@ -164,11 +164,28 @@ async fn send_records_failure_without_closing() {
     rec_arc.flush();
     let rec = wait_line(&dir);
 
+    // A5:5xx 是合法 HTTP 响应,结构化录制 status/headers/body(不仅 error)。
+    let ex_fail = rec
+        .exchanges
+        .iter()
+        .find(|e| e.error.is_some())
+        .expect("失败应有 error 字段");
     assert!(
-        rec.exchanges.iter().any(|e| e.error.is_some()),
-        "失败应有 error 字段"
+        ex_fail.error.as_deref().unwrap().contains("HTTP 500"),
+        "error 字符串保留用于诊断: {:?}",
+        ex_fail.error
     );
-    // 失败也是完整调用(wire 已终结:无响应但有 error 字段)。
+    let resp = ex_fail
+        .response
+        .as_ref()
+        .expect("5xx 应有结构化 response (A5)");
+    assert_eq!(resp.status, 500, "5xx response 应保留 status");
+    assert_eq!(
+        resp.body.as_deref(),
+        Some("server boom"),
+        "5xx response body 应结构化录制"
+    );
+    // 失败也是完整调用(wire 已终结:有结构化 response + error 字段)。
     assert!(rec.complete, "失败调用也应标记 complete");
     aimux_core::recording::init_recording(None);
     let _ = std::fs::remove_dir_all(&dir);
@@ -259,7 +276,7 @@ async fn retry_records_per_attempt_success_after_429() {
     // 首次 429,第二次 200。
     Mock::given(method("POST"))
         .and(path("/v1/chat"))
-        .respond_with(ResponseTemplate::new(429))
+        .respond_with(ResponseTemplate::new(429).set_body_string("rate limited"))
         .up_to_n_times(1)
         .mount(&server)
         .await;
@@ -290,10 +307,26 @@ async fn retry_records_per_attempt_success_after_429() {
         "expected retry exchanges, got {}",
         rec.exchanges.len()
     );
-    // 第一条是 429(无 response body,有 error)。
+    // 第一条是 429:有 error 且结构化 response(A5:不再丢失 status/headers/body)。
+    let ex429 = rec
+        .exchanges
+        .iter()
+        .find(|e| e.error.is_some())
+        .expect("attempt 0 should be a 429 failure");
     assert!(
-        rec.exchanges[0].error.is_some(),
-        "attempt 0 should be a 429 failure"
+        ex429.error.as_deref().unwrap().contains("HTTP 429"),
+        "429 error 字符串保留: {:?}",
+        ex429.error
+    );
+    let r429 = ex429
+        .response
+        .as_ref()
+        .expect("429 应有结构化 response (A5)");
+    assert_eq!(r429.status, 429, "429 response 应保留 status");
+    assert_eq!(
+        r429.body.as_deref(),
+        Some("rate limited"),
+        "429 response body 应结构化录制"
     );
     // 最后一条成功,status 200。
     assert_eq!(
