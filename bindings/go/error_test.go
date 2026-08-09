@@ -71,3 +71,32 @@ func TestErrorValueSynthesizedFailure(t *testing.T) {
 		t.Fatalf("expected empty ErrorValue for FFI-synthesized failure, got %q", e.ErrorValue)
 	}
 }
+
+// TestDefaultStatus verifies R4-2: when C reports status == -1, well-known
+// HTTP error kinds get the conventional default status (matching Kotlin /
+// Flutter / Node). A concrete status is never overwritten.
+func TestDefaultStatus(t *testing.T) {
+	cases := []struct {
+		code     Code
+		in, want int
+	}{
+		{CodeRateLimited, -1, 429},
+		{CodeAuth, -1, 401},
+		{CodeTokenExpired, -1, 401},
+		{CodeModelNotFound, -1, 404},
+		// Concrete statuses are preserved.
+		{CodeRateLimited, 503, 503},
+		{CodeAuth, 403, 403},
+		{CodeModelNotFound, 404, 404},
+		// Non-HTTP kinds keep -1.
+		{CodeTimeout, -1, -1},
+		{CodeAborted, -1, -1},
+		{CodeInvalidArgument, -1, -1},
+	}
+	for _, c := range cases {
+		got := defaultStatus(c.code, c.in)
+		if got != c.want {
+			t.Errorf("defaultStatus(%s, %d) = %d; want %d", c.code, c.in, got, c.want)
+		}
+	}
+}

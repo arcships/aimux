@@ -174,3 +174,26 @@ func TestProviderWithBaseQuotedURLDoesNotInjectJSON(t *testing.T) {
 		t.Fatalf("config JSON injection: %v", err)
 	}
 }
+
+// TestInitRecordingRingRejectsZeroCap verifies D7: cap == 0 is rejected with
+// an error instead of being silently rewritten to 2048. The check happens in
+// Go before any FFI call, so this does not touch the global recorder state.
+func TestInitRecordingRingRejectsZeroCap(t *testing.T) {
+	err := InitRecordingRing(0)
+	if err == nil {
+		t.Fatal("expected error for cap == 0, got nil")
+	}
+	if !strings.Contains(err.Error(), "cap > 0") {
+		t.Fatalf("expected cap error message, got: %v", err)
+	}
+}
+
+// TestInitRecordingRingAcceptsPositiveCap verifies a positive cap does not
+// return an error (the C ABI accepts it and returns 0).
+func TestInitRecordingRingAcceptsPositiveCap(t *testing.T) {
+	if err := InitRecordingRing(8); err != nil {
+		t.Fatalf("expected success for cap=8, got: %v", err)
+	}
+	// Reset global recorder state so this doesn't leak into other tests.
+	RecordingStop()
+}
