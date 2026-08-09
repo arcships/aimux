@@ -22,7 +22,9 @@ fn monotonic_origin() -> &'static Instant {
 }
 
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
@@ -158,15 +160,33 @@ impl TraceLayer {
             .session_id
             .clone()
             .or_else(|| self.default_session.clone());
-        let scope_key = hash::hash64(self.scope_salt, self.inner.model_id().as_bytes());
+        // B1: scope_key isolates by (provider, base_url, model_id) — not just
+        // model_id — so two TraceLayers over the same model_id but different
+        // providers (or base_urls) sharing one RingTraceStore never cross-match
+        // their LCP history. `base_url` comes from the inner model's config
+        // snapshot; providers that only report a minimal snapshot omit it, in
+        // which case provider + model_id still isolate the scope. The default
+        // `scope_salt` stays process-level (set in `new` / `with_default_session`).
+        let provider = self.inner.provider();
+        let model_id = self.inner.model_id();
+        let base_url = self.inner.config_snapshot().base_url;
+        let mut scope_bytes = Vec::with_capacity(
+            provider.len() + model_id.len() + base_url.as_deref().map_or(0, str::len),
+        );
+        scope_bytes.extend_from_slice(provider.as_bytes());
+        scope_bytes.extend_from_slice(model_id.as_bytes());
+        if let Some(b) = &base_url {
+            scope_bytes.extend_from_slice(b.as_bytes());
+        }
+        let scope_key = hash::hash64(self.scope_salt, &scope_bytes);
         let sent_at_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         let monotonic_ms = monotonic_origin().elapsed().as_millis() as u64;
         RecordCtx {
-            provider: self.inner.provider().to_string(),
-            model: self.inner.model_id().to_string(),
+            provider: provider.to_string(),
+            model: model_id.to_string(),
             sink: self.sink.clone(),
             auditor: self.auditor.clone(),
             strict: self.strict,
@@ -397,6 +417,89 @@ impl RecordCtx {
     }
 }
 
+/// Drop-guard stream wrapper (F1): ensures the trace is recorded even when the
+/// caller drops the stream before completion (`take(N)` / abort / timeout).
+/// Mirrors `RecordingOutcomeStream`'s Drop pattern (recording.rs): the previous
+/// generator-based record only fired when the stream ran to completion, so
+/// early drops silently lost the call. This wrapper records on natural EOF, on
+/// a terminal part (`Finish` / `Error` / transport `Err`), or — via `Drop` —
+/// when the caller abandons the stream mid-flight.
+struct TraceRecordingStream<S> {
+    inner: S,
+    rec_ctx: Option<Arc<RecordCtx>>,
+    /// Accumulated usage (`Finish`) / error (`Error` / `Err`) observed so far.
+    usage: Usage,
+    error: Option<String>,
+    /// Whether the terminal record has been emitted (idempotent guard).
+    recorded: bool,
+}
+
+impl<S> TraceRecordingStream<S> {
+    /// Emit the trace record exactly once (idempotent across EOF / terminal /
+    /// Drop). `rec_ctx` is consumed so a later `Drop` is a no-op.
+    fn record_now(&mut self, usage: Usage, error: Option<String>) {
+        if self.recorded {
+            return;
+        }
+        self.recorded = true;
+        if let Some(ctx) = self.rec_ctx.take() {
+            ctx.record(&usage, error, None);
+        }
+    }
+}
+
+impl<S> Stream for TraceRecordingStream<S>
+where
+    S: Stream<Item = Result<StreamPart, AiMuxError>> + Unpin,
+{
+    type Item = Result<StreamPart, AiMuxError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.inner).poll_next(cx) {
+            Poll::Ready(Some(Ok(part))) => {
+                // Accumulate terminal evidence (mirrors the original
+                // end-of-stream record).
+                match &part {
+                    StreamPart::Finish { usage: u, .. } => this.usage = u.clone(),
+                    StreamPart::Error { error: e } => {
+                        this.error.get_or_insert_with(|| e.to_string());
+                    }
+                    _ => {}
+                }
+                Poll::Ready(Some(Ok(part)))
+            }
+            Poll::Ready(Some(Err(e))) => {
+                this.error.get_or_insert_with(|| e.to_string());
+                Poll::Ready(Some(Err(e)))
+            }
+            Poll::Ready(None) => {
+                // Natural end: record accumulated state (matches the original).
+                let usage = std::mem::take(&mut this.usage);
+                let error = this.error.take();
+                this.record_now(usage, error);
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<S> Drop for TraceRecordingStream<S> {
+    fn drop(&mut self) {
+        if !self.recorded {
+            // Caller dropped before completion — record what was observed with
+            // a non-success marker so the call is not silently lost (F1).
+            let usage = std::mem::take(&mut self.usage);
+            let error = self
+                .error
+                .take()
+                .or_else(|| Some("stream dropped before completion".into()));
+            self.record_now(usage, error);
+        }
+    }
+}
+
 #[async_trait]
 impl LanguageModel for TraceLayer {
     fn specification_version(&self) -> &'static str {
@@ -450,9 +553,8 @@ impl LanguageModel for TraceLayer {
         let started = Instant::now();
 
         // Wrap the stream: observe TTFT on the first MODEL-OUTPUT part
-        // (TextDelta / Reasoning / ToolCall — not StreamStart or meta), then
-        // record once the caller consumed it (usage arrives in Finish).
-        let stream = result.stream.map(move |item| {
+        // (TextDelta / Reasoning / ToolCall — not StreamStart or meta).
+        let observed = result.stream.map(move |item| {
             if ttft_obs.load(Ordering::Relaxed) == u64::MAX {
                 let is_model_output = matches!(
                     &item,
@@ -467,26 +569,19 @@ impl LanguageModel for TraceLayer {
             item
         });
 
+        // F1: wrap with a Drop-guard stream so the trace is recorded even when
+        // the caller drops the stream before completion (take(N) / abort /
+        // timeout). The generator-only record previously lost such calls.
+        let guarded = TraceRecordingStream {
+            inner: observed,
+            rec_ctx: Some(rec_ctx),
+            usage: Usage::default(),
+            error: None,
+            recorded: false,
+        };
+
         Ok(StreamResult {
-            stream: Box::pin(async_stream::stream! {
-                let mut s = stream;
-                let mut usage = Usage::default();
-                let mut error: Option<String> = None;
-                while let Some(item) = s.next().await {
-                    match &item {
-                        Ok(StreamPart::Finish { usage: u, .. }) => usage = u.clone(),
-                        Ok(StreamPart::Error { error: e }) => {
-                            error.get_or_insert_with(|| e.to_string());
-                        }
-                        Err(e) => {
-                            error.get_or_insert_with(|| e.to_string());
-                        }
-                        _ => {}
-                    }
-                    yield item;
-                }
-                rec_ctx.record(&usage, error, None);
-            }),
+            stream: Box::pin(guarded),
             request_body: result.request_body,
             response_headers: result.response_headers,
         })
