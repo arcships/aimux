@@ -714,16 +714,16 @@ fn init_session_infer(enabled: bool) {
 /// Query: all calls of a session (RFC-0024), as a JSON-serialized
 /// `SessionCall[]` (ordered by step). Empty array if unknown / no store.
 #[pyfunction]
-fn session_calls(session_id: &str) -> String {
+fn session_calls(session_id: &str) -> PyResult<String> {
     serde_json::to_string(&aimux_core::session::session_calls(session_id))
-        .unwrap_or_else(|e| format!("{{\"error\":\"serialize: {e}\"}}"))
+        .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
 }
 
 /// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
 #[pyfunction]
-fn list_sessions() -> String {
+fn list_sessions() -> PyResult<String> {
     serde_json::to_string(&aimux_core::session::list_sessions())
-        .unwrap_or_else(|e| format!("{{\"error\":\"serialize: {e}\"}}"))
+        .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
