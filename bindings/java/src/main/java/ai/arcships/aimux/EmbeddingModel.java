@@ -49,42 +49,39 @@ public final class EmbeddingModel implements Closeable {
     // ── Provider constructors ──────────────────────────────────────────────
 
     public static EmbeddingModel openai(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_embedding_new(apiKey, modelId), "Failed to create OpenAI embedding model");
-        return new EmbeddingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_embedding_new(apiKey, modelId, err);
+        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI embedding model"));
     }
 
     public static EmbeddingModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create OpenAI embedding model");
-        return new EmbeddingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl, err);
+        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI embedding model"));
     }
 
     public static EmbeddingModel cohere(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_cohere_embedding_new(apiKey, modelId), "Failed to create Cohere embedding model");
-        return new EmbeddingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_cohere_embedding_new(apiKey, modelId, err);
+        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Cohere embedding model"));
     }
 
     public static EmbeddingModel cohereWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create Cohere embedding model");
-        return new EmbeddingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl, err);
+        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Cohere embedding model"));
     }
 
     public static EmbeddingModel google(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_google_embedding_new(apiKey, modelId), "Failed to create Google embedding model");
-        return new EmbeddingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_google_embedding_new(apiKey, modelId, err);
+        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Google embedding model"));
     }
 
     public static EmbeddingModel googleWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create Google embedding model");
-        return new EmbeddingModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl, err);
+        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Google embedding model"));
     }
 
     // ── Embedding ──────────────────────────────────────────────────────────
@@ -94,7 +91,10 @@ public final class EmbeddingModel implements Closeable {
     }
 
     public String embed(String valuesJson, String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_embed(requireHandle(), valuesJson, optsJson), "embed");
+            AimuxFFI.INSTANCE.aimux_embed(requireHandle(), valuesJson, optsJson, err),
+            err,
+            "embed");
     }
 }

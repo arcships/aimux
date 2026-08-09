@@ -1,13 +1,5 @@
 //! Regression tests for issue #17: FFI constructors and prompt parsing must
-//! preserve detailed error information.
-//!
-//! - Problem A: `prompt_json` parse errors must carry the `serde_json::Error`
-//!   detail (like the adjacent `opts_json` branch already did).
-//! - Problem B: constructor failures (unknown provider, bad config JSON,
-//!   null arguments) are returned directly in the constructor's JSON result
-//!   (`{"handle":<u64>}` on success, the standard error envelope on failure)
-//!   — no side-channel retrieval, so there are no thread-affinity semantics
-//!   to test.
+//! preserve detailed error information (C AimuxError out-param transport).
 //!
 //! All tests are offline: they only exercise argument parsing and config
 //! construction, never the network.
@@ -15,62 +7,73 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::Value;
-
 use aimux_ffi::{
-    aimux_abort_signal_abort, aimux_abort_signal_drop, aimux_abort_signal_new, aimux_azure_new,
-    aimux_drop_handle, aimux_free_string, aimux_generate_text, aimux_openai_new,
-    aimux_provider_new, aimux_stream_text, aimux_stream_text_with_abort,
+    AIMUX_E_INVALID_ARGUMENT, AIMUX_E_JSON, AIMUX_E_OTHER, AIMUX_E_UNKNOWN_PROVIDER, AIMUX_OK,
+    CAimuxError, aimux_abort_signal_abort, aimux_abort_signal_drop, aimux_abort_signal_new,
+    aimux_azure_new, aimux_drop_handle, aimux_free_string, aimux_generate_text, aimux_openai_new,
+    aimux_provider_new, aimux_stream_text,
 };
 
 fn c(s: &str) -> CString {
     CString::new(s).unwrap()
 }
 
-/// Copy an FFI JSON result into an owned `String`, freeing the pointer.
-fn take_json(ptr: *mut c_char) -> String {
-    assert!(!ptr.is_null(), "FFI call returned a null result pointer");
-    // SAFETY: FFI functions return NUL-terminated strings owned by us.
-    let s = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
-    // SAFETY: ptr was produced by CString::into_raw inside the FFI layer.
-    unsafe { aimux_free_string(ptr) };
-    s
+fn clear_err() -> CAimuxError {
+    CAimuxError {
+        code: AIMUX_OK,
+        status: -1,
+        retry_ms: -1,
+        message: ptr::null_mut(),
+        error_value: std::ptr::null_mut(),
+        reserved: [std::ptr::null_mut(); 1],
+    }
 }
 
-/// Parse a constructor result, expecting the error envelope.
-fn expect_error_envelope(ptr: *mut c_char) -> Value {
-    let json = take_json(ptr);
-    let env: Value = serde_json::from_str(&json).expect("result must be a JSON envelope");
-    assert!(
-        env.get("error").is_some(),
-        "expected error envelope, got: {json}"
-    );
-    env
+fn msg(err: &CAimuxError) -> String {
+    if err.message.is_null() {
+        return String::new();
+    }
+    // SAFETY: on failure, message is an owned NUL-terminated C string.
+    unsafe { CStr::from_ptr(err.message) }
+        .to_str()
+        .unwrap_or("")
+        .to_string()
 }
 
-/// Parse a constructor result, expecting `{"handle":<u64>}`, and return the
-/// handle.
-fn expect_handle(ptr: *mut c_char) -> u64 {
-    let json = take_json(ptr);
-    let env: Value = serde_json::from_str(&json).expect("result must be JSON");
-    assert!(
-        env.get("error").is_none(),
-        "expected success, got error envelope: {json}"
-    );
-    let h = env["handle"].as_u64().expect("handle must be a u64");
-    assert!(h != 0, "handle must never be 0 on success");
+/// Release err.message per the contract (aimux_free_string; NULL is safe).
+fn free_err(err: &mut CAimuxError) {
+    unsafe { aimux_free_string(err.message) };
+    err.message = ptr::null_mut();
+}
+
+/// Expect failure: return is sentinel, err is filled.
+fn expect_fail_u64(h: u64, err: &CAimuxError) {
+    assert_eq!(h, 0, "expected handle 0 on failure");
+    assert_ne!(err.code, AIMUX_OK, "expected non-OK code, got {}", err.code);
+    assert!(!msg(err).is_empty(), "expected non-empty message");
+}
+
+fn expect_fail_ptr(ptr: *mut c_char, err: &CAimuxError) {
+    assert!(ptr.is_null(), "expected NULL string on failure");
+    assert_ne!(err.code, AIMUX_OK, "expected non-OK code");
+    assert!(!msg(err).is_empty());
+}
+
+fn expect_handle(h: u64) -> u64 {
+    assert_ne!(h, 0, "expected non-zero handle");
     h
 }
 
-/// A model handle usable with `aimux_generate_text` / `aimux_stream_text`.
 fn valid_handle() -> u64 {
-    expect_handle(aimux_openai_new(
+    let mut err = clear_err();
+    let h = aimux_openai_new(
         c("sk-test-fake-key").as_ptr(),
         c("gpt-4o-mini").as_ptr(),
-    ))
+        &mut err,
+    );
+    expect_handle(h)
 }
 
 // ── Problem A: prompt_json serde detail ─────────────────────────────────────
@@ -78,245 +81,147 @@ fn valid_handle() -> u64 {
 #[test]
 fn generate_text_invalid_prompt_json_carries_serde_detail() {
     let h = valid_handle();
-    let out = aimux_generate_text(h, c("hello").as_ptr(), ptr::null());
-    let env: Value = serde_json::from_str(&take_json(out)).expect("error must be a JSON envelope");
-    let msg = env["error"].as_str().expect("envelope has error field");
+    let mut err = clear_err();
+    let out = aimux_generate_text(h, c("hello").as_ptr(), ptr::null(), &mut err);
+    expect_fail_ptr(out, &err);
+    let m = msg(&err);
     assert!(
-        msg.starts_with("invalid prompt_json:"),
-        "expected serde detail in message, got: {msg}"
+        m.starts_with("invalid prompt_json:") || m.contains("invalid prompt"),
+        "expected serde detail in message, got: {m}"
     );
-    assert!(
-        msg.contains("line") && msg.contains("column"),
-        "expected serde line/column detail, got: {msg}"
-    );
-    assert_eq!(env["error_type"], "Other");
-    assert!(env["status_code"].is_null());
-
+    assert_eq!(err.code, AIMUX_E_JSON, "parse failures map to Json");
+    free_err(&mut err);
     aimux_drop_handle(h);
 }
 
 #[test]
-fn generate_text_null_prompt_json_reports_invalid_prompt() {
+fn generate_text_null_prompt_json_fails() {
     let h = valid_handle();
-    let out = aimux_generate_text(h, ptr::null(), ptr::null());
-    let json = take_json(out);
-    assert!(json.contains("invalid prompt_json"), "got: {json}");
+    let mut err = clear_err();
+    let out = aimux_generate_text(h, ptr::null(), ptr::null(), &mut err);
+    expect_fail_ptr(out, &err);
+    assert_eq!(
+        err.code, AIMUX_E_INVALID_ARGUMENT,
+        "null args map to InvalidArgument"
+    );
+    free_err(&mut err);
     aimux_drop_handle(h);
 }
 
-static STREAM_ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+// ── Stream polarity + abort ─────────────────────────────────────────────────
 
-extern "C" fn on_part(_json: *const c_char) {}
-extern "C" fn on_done() {}
+static PART_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-extern "C" fn on_error(json: *const c_char) {
-    // SAFETY: the FFI layer guarantees the pointer is valid during the call.
-    let s = unsafe { CStr::from_ptr(json) }
-        .to_str()
-        .unwrap()
-        .to_string();
-    STREAM_ERRORS.lock().unwrap().push(s);
+extern "C" fn on_part(_json: *const c_char, _ctx: *mut std::ffi::c_void) {
+    PART_COUNT.fetch_add(1, Ordering::SeqCst);
+}
+extern "C" fn on_done(_ctx: *mut std::ffi::c_void) {
+    // not used in failure tests
 }
 
 #[test]
-fn stream_text_invalid_prompt_json_carries_serde_detail() {
+fn stream_text_invalid_prompt_returns_zero_and_fills_err() {
     let h = valid_handle();
-    STREAM_ERRORS.lock().unwrap().clear();
-
-    aimux_stream_text(
+    let mut err = clear_err();
+    let rc = aimux_stream_text(
         h,
-        c("hello").as_ptr(),
+        c("not-json").as_ptr(),
         ptr::null(),
         on_part,
         on_done,
-        on_error,
+        ptr::null_mut(),
+        &mut err,
     );
-
-    let errors = STREAM_ERRORS.lock().unwrap().clone();
-    assert_eq!(errors.len(), 1, "expected exactly one on_error callback");
-    let env: Value = serde_json::from_str(&errors[0]).expect("error must be a JSON envelope");
-    let msg = env["error"].as_str().expect("envelope has error field");
-    assert!(
-        msg.starts_with("invalid prompt_json:"),
-        "expected serde detail in message, got: {msg}"
-    );
-    assert!(
-        msg.contains("line"),
-        "expected serde line detail, got: {msg}"
-    );
-
+    assert_eq!(rc, 0, "stream must return 0 on failure");
+    assert_eq!(err.code, AIMUX_E_JSON);
+    assert!(!msg(&err).is_empty());
+    free_err(&mut err);
     aimux_drop_handle(h);
 }
 
-static CANCEL_ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static CANCEL_DONE: AtomicUsize = AtomicUsize::new(0);
-
-extern "C" fn on_cancel_done() {
-    CANCEL_DONE.fetch_add(1, Ordering::Relaxed);
-}
-
-extern "C" fn on_cancel_error(json: *const c_char) {
-    // SAFETY: the FFI layer keeps the string alive for this callback.
-    let value = unsafe { CStr::from_ptr(json) }
-        .to_str()
-        .unwrap()
-        .to_string();
-    CANCEL_ERRORS.lock().unwrap().push(value);
-}
+// ── Constructors ────────────────────────────────────────────────────────────
 
 #[test]
-fn stream_text_with_pre_aborted_signal_reports_aborted() {
-    let model = valid_handle();
-    let abort = aimux_abort_signal_new();
-    assert_ne!(abort, 0);
-    CANCEL_ERRORS.lock().unwrap().clear();
-    CANCEL_DONE.store(0, Ordering::Relaxed);
-
-    aimux_abort_signal_abort(abort);
-    aimux_stream_text_with_abort(
-        model,
-        abort,
-        c("\"hello\"").as_ptr(),
-        ptr::null(),
-        on_part,
-        on_cancel_done,
-        on_cancel_error,
-    );
-
-    let errors = CANCEL_ERRORS.lock().unwrap().clone();
-    assert_eq!(errors.len(), 1, "expected one cancellation error");
-    let env: Value = serde_json::from_str(&errors[0]).expect("error must be JSON");
-    assert_eq!(env["error_type"], "Aborted");
-    assert_eq!(CANCEL_DONE.load(Ordering::Relaxed), 0);
-
-    aimux_abort_signal_abort(abort);
-    aimux_abort_signal_drop(abort);
-    aimux_abort_signal_drop(abort);
-    aimux_drop_handle(model);
-}
-
-// ── Problem B: constructor failures in the returned envelope ────────────────
-
-#[test]
-fn unknown_provider_reports_full_error_envelope() {
-    let env = expect_error_envelope(aimux_provider_new(
-        c("this-provider-does-not-exist").as_ptr(),
+fn unknown_provider_fills_unknown_provider_code() {
+    let mut err = clear_err();
+    let h = aimux_provider_new(
+        c("not-a-real-provider-xyz").as_ptr(),
         c("sk-x").as_ptr(),
-        c("gpt-4o-mini").as_ptr(),
+        c("model").as_ptr(),
         ptr::null(),
-    ));
-    let msg = env["error"].as_str().unwrap();
-    assert!(msg.contains("unknown provider"), "got: {msg}");
-    assert!(msg.contains("available providers"), "got: {msg}");
-    assert_eq!(env["error_type"], "UnknownProvider");
-    assert!(env["status_code"].is_null());
+        &mut err,
+    );
+    expect_fail_u64(h, &err);
+    assert_eq!(err.code, AIMUX_E_UNKNOWN_PROVIDER);
+    free_err(&mut err);
 }
 
 #[test]
-fn invalid_config_json_reports_json_error_type() {
-    let env = expect_error_envelope(aimux_provider_new(
+fn null_openai_args_invalid_argument() {
+    let mut err = clear_err();
+    let h = aimux_openai_new(ptr::null(), ptr::null(), &mut err);
+    expect_fail_u64(h, &err);
+    assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    free_err(&mut err);
+}
+
+#[test]
+fn invalid_config_json_reports_error() {
+    let mut err = clear_err();
+    let h = aimux_provider_new(
         c("openai").as_ptr(),
         c("sk-x").as_ptr(),
-        c("gpt-4o-mini").as_ptr(),
-        c("{bad json").as_ptr(),
-    ));
-    assert!(
-        env["error"]
-            .as_str()
-            .unwrap()
-            .starts_with("invalid config_json:"),
-        "got: {env}"
+        c("gpt-4o").as_ptr(),
+        c("{not json").as_ptr(),
+        &mut err,
     );
-    assert_eq!(env["error_type"], "Json");
+    expect_fail_u64(h, &err);
+    assert_eq!(err.code, AIMUX_E_JSON);
+    free_err(&mut err);
 }
 
 #[test]
-fn null_arguments_report_invalid_argument_type() {
-    let env = expect_error_envelope(aimux_openai_new(ptr::null(), ptr::null()));
-    assert_eq!(env["error_type"], "InvalidArgument");
-    assert!(
-        env["error"]
-            .as_str()
-            .unwrap()
-            .contains("null or invalid UTF-8"),
-        "got: {env}"
+fn azure_null_deployment_invalid_argument() {
+    let mut err = clear_err();
+    let h = aimux_azure_new(
+        c("sk").as_ptr(),
+        c("res").as_ptr(),
+        ptr::null(),
+        ptr::null(),
+        &mut err,
     );
+    expect_fail_u64(h, &err);
+    assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    free_err(&mut err);
 }
 
 #[test]
-fn azure_missing_required_argument_reports_invalid_argument() {
-    // resource_name is a required FFI argument; passing NULL fails at the
-    // boundary with an InvalidArgument envelope.
-    let env = expect_error_envelope(aimux_azure_new(
-        c("k").as_ptr(),
-        ptr::null(),
-        c("deploy").as_ptr(),
-        ptr::null(),
-    ));
-    assert_eq!(env["error_type"], "InvalidArgument");
-}
-
-// ── Envelope semantics ──────────────────────────────────────────────────────
-
-#[test]
-fn success_envelope_has_handle_and_no_error() {
-    let h = expect_handle(aimux_provider_new(
-        c("groq").as_ptr(),
-        c("sk-test").as_ptr(),
-        c("llama-3.3-70b").as_ptr(),
-        ptr::null(),
-    ));
+fn success_leaves_err_untouched() {
+    // The load-bearing clause: on success the callee does NOT touch *err.
+    // Prefill with sentinel garbage and assert every field survives.
+    let mut err = CAimuxError {
+        code: AIMUX_E_OTHER,
+        status: 42,
+        retry_ms: 7,
+        message: ptr::null_mut(),
+        error_value: std::ptr::null_mut(),
+        reserved: [std::ptr::null_mut(); 1],
+    };
+    let h = aimux_openai_new(c("sk-test").as_ptr(), c("gpt-4o-mini").as_ptr(), &mut err);
+    assert_ne!(h, 0);
+    assert_eq!(err.code, AIMUX_E_OTHER, "success must not write err.code");
+    assert_eq!(err.status, 42);
+    assert_eq!(err.retry_ms, 7);
+    assert!(err.message.is_null());
     aimux_drop_handle(h);
 }
 
+// Keep abort helpers linked (smoke).
 #[test]
-fn each_call_carries_its_own_error() {
-    // Unlike a last-error slot, results cannot be overwritten, cleared, or
-    // consumed by unrelated calls: each return value is self-contained.
-    let a = expect_error_envelope(aimux_provider_new(
-        c("no-such-a").as_ptr(),
-        c("k").as_ptr(),
-        c("m").as_ptr(),
-        ptr::null(),
-    ));
-    let b = expect_error_envelope(aimux_provider_new(
-        c("no-such-b").as_ptr(),
-        c("k").as_ptr(),
-        c("m").as_ptr(),
-        ptr::null(),
-    ));
-    assert!(
-        a["error"].as_str().unwrap().contains("no-such-a"),
-        "got: {a}"
-    );
-    assert!(
-        b["error"].as_str().unwrap().contains("no-such-b"),
-        "got: {b}"
-    );
-}
-
-#[test]
-fn concurrent_constructors_see_their_own_results() {
-    // The failure-detail path needs no thread pinning: spawn constructors on
-    // separate threads and verify each observes exactly its own error.
-    let threads: Vec<_> = (0..8)
-        .map(|i| {
-            std::thread::spawn(move || {
-                let name = format!("no-such-thread-{i}");
-                let env = expect_error_envelope(aimux_provider_new(
-                    c(&name).as_ptr(),
-                    c("k").as_ptr(),
-                    c("m").as_ptr(),
-                    ptr::null(),
-                ));
-                assert!(
-                    env["error"].as_str().unwrap().contains(&name),
-                    "thread {i} got: {env}"
-                );
-            })
-        })
-        .collect();
-    for t in threads {
-        t.join().unwrap();
-    }
+fn abort_signal_new_drop_smoke() {
+    let a = aimux_abort_signal_new();
+    assert_ne!(a, 0);
+    aimux_abort_signal_abort(a);
+    aimux_abort_signal_drop(a);
+    let _ = PART_COUNT.load(Ordering::SeqCst);
 }

@@ -38,13 +38,16 @@ public class ProviderHandle implements AutoCloseable {
      *
      * @return a JSON array of ResolvedModel
      * @throws IllegalStateException if this handle is closed
+     * @throws AimuxException on engine / transport failure
      */
     public String listModels() {
         if (closed || handle == 0) {
             throw new IllegalStateException("ProviderHandle is closed");
         }
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_provider_list_models(handle),
+            AimuxFFI.INSTANCE.aimux_provider_list_models(handle, err),
+            err,
             "list_models");
     }
 
@@ -54,14 +57,14 @@ public class ProviderHandle implements AutoCloseable {
      * @param modelId the model id (e.g. from {@link #listModels()})
      * @return a new {@link Model}
      * @throws IllegalStateException if this handle is closed
+     * @throws AimuxException on construction failure
      */
     public Model model(String modelId) {
         if (closed || handle == 0) {
             throw new IllegalStateException("ProviderHandle is closed");
         }
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_provider_model(handle, modelId),
-            "Failed to create model: " + modelId);
-        return new Model(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_provider_model(handle, modelId, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create model: " + modelId));
     }
 }

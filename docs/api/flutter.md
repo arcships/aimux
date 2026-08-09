@@ -66,6 +66,53 @@ model2.close();
 
 Unknown names throw an error listing the available providers.
 
+## Errors
+
+Engine and binding failures throw an **`AimuxException` subclass hierarchy**
+(idiomatic Dart — `is` / `on` type checks, not stringly `code` switches):
+
+```text
+Exception (implements)
+ └── AimuxException
+      ├── UnknownError
+      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── InvalidArgumentError / InvalidPromptError
+      ├── RateLimitedError          // status 429, retryMs
+      ├── AuthenticationError       // status 401
+      ├── TokenExpiredError
+      ├── ModelNotFoundError / NoSuchModelError
+      ├── UnsupportedError / UnknownProviderError
+      ├── APICallError / TimeoutError
+      ├── RequestAbortedError
+      └── OtherError
+```
+
+Every instance has `message`, `code` (`AimuxErrorCode` constants matching C
+`AimuxErrorCode`), `status` (HTTP or `-1`), and `retryMs` (hint or `-1`;
+`0` = retry now). Built from the C `AimuxError` out-param via
+`AimuxException.fromC` — constructors return `uint64_t` (`0` = failure),
+payload calls return `char*` (`NULL` = failure), streams return `int32_t`
+(`0` = failure). No JSON error-envelope sniffing on the main path.
+
+```dart
+import 'package:aimux/aimux.dart'; // exports errors.dart
+
+try {
+  final result = model.generateText('hi');
+} on RateLimitedError catch (e) {
+  // e.retryMs, e.status == 429
+} on AuthenticationError catch (e) {
+  // e.status == 401
+} on AimuxException catch (e) {
+  // any engine / binding failure
+}
+```
+
+Local closed-handle checks still throw `StateError` (not `AimuxException`).
+Stream terminal failures surface via `Stream.addError(AimuxException)` —
+there is no `on_error` callback; provider mid-stream `StreamPart::Error` is
+data on `on_part`.
+
 ## Text Generation
 
 ```dart

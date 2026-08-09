@@ -1,17 +1,17 @@
-//! Smoke tests for the native-protocol C ABI constructors added in 0.2.0
+//! Smoke tests for the native-protocol C ABI constructors
 //! (cohere / mistral / xai / bedrock / vertex / anthropic_aws / azure).
 //!
 //! Constructing a model only builds a config + provider — no network is
-//! touched, so fake keys are fine. Constructors return a JSON string
-//! (`{"handle":<u64>}` on success, `{"error":...}` on failure).
+//! touched, so fake keys are fine. Constructors return `uint64_t` handle
+//! (0 = failure, details in `AimuxError *err`).
 
 use std::ffi::CString;
-use std::os::raw::c_char;
+use std::ptr;
 
 use aimux_ffi::{
-    aimux_anthropic_aws_new, aimux_anthropic_aws_new_with_base, aimux_azure_new,
-    aimux_azure_new_with_base, aimux_bedrock_new, aimux_bedrock_new_with_base, aimux_cohere_new,
-    aimux_cohere_new_with_base, aimux_drop_handle, aimux_free_string, aimux_mistral_new,
+    AIMUX_OK, CAimuxError, aimux_anthropic_aws_new, aimux_anthropic_aws_new_with_base,
+    aimux_azure_new, aimux_azure_new_with_base, aimux_bedrock_new, aimux_bedrock_new_with_base,
+    aimux_cohere_new, aimux_cohere_new_with_base, aimux_drop_handle, aimux_mistral_new,
     aimux_mistral_new_with_base, aimux_vertex_new, aimux_vertex_new_with_base, aimux_xai_new,
     aimux_xai_new_with_base,
 };
@@ -20,81 +20,66 @@ fn c(s: &str) -> CString {
     CString::new(s).unwrap()
 }
 
-/// Copy a constructor's JSON result into an owned `String`, freeing the
-/// native pointer.
-fn take_json(json_ptr: *mut c_char, name: &str) -> String {
-    assert!(!json_ptr.is_null(), "{name}: null result pointer");
-    let json = unsafe { std::ffi::CStr::from_ptr(json_ptr) }
-        .to_str()
-        .unwrap()
-        .to_string();
-    unsafe { aimux_free_string(json_ptr) };
-    json
+fn clear_err() -> CAimuxError {
+    CAimuxError {
+        code: AIMUX_OK,
+        status: -1,
+        retry_ms: -1,
+        message: std::ptr::null_mut(),
+        error_value: std::ptr::null_mut(),
+        reserved: [std::ptr::null_mut(); 1],
+    }
 }
 
-/// Assert a constructor's JSON result is `{"handle":<u64>}` (not an error
-/// envelope) and release the handle.
-fn expect_handle(json_ptr: *mut c_char, name: &str) {
-    let json = take_json(json_ptr, name);
-    let value: serde_json::Value = serde_json::from_str(&json).unwrap_or_else(|e| {
-        panic!("{name}: result is not valid JSON ({e}): {json}");
-    });
-    assert!(
-        value.get("error").is_none(),
-        "{name}: expected success, got error envelope: {json}"
-    );
-    let handle = value
-        .get("handle")
-        .and_then(|h| h.as_u64())
-        .unwrap_or_else(|| panic!("{name}: expected {{\"handle\":<u64>}}, got {json}"));
-    assert!(handle != 0, "{name}: handle should never be 0 on success");
-    aimux_drop_handle(handle);
+fn expect_handle(h: u64, name: &str) {
+    assert_ne!(h, 0, "{name}: expected non-zero handle");
+    aimux_drop_handle(h);
 }
 
-/// Assert a constructor's JSON result is an error envelope
-/// (`{"error":...}`), not a handle.
-fn expect_error(json_ptr: *mut c_char, name: &str) {
-    let json = take_json(json_ptr, name);
-    let value: serde_json::Value = serde_json::from_str(&json).unwrap_or_else(|e| {
-        panic!("{name}: result is not valid JSON ({e}): {json}");
-    });
-    assert!(
-        value.get("error").is_some(),
-        "{name}: expected error envelope, got {json}"
-    );
+fn expect_fail(h: u64, err: &CAimuxError, name: &str) {
+    assert_eq!(h, 0, "{name}: expected handle 0");
+    assert_ne!(err.code, AIMUX_OK, "{name}: expected error code");
 }
 
 #[test]
 fn simple_key_constructors() {
     let key = c("sk-test-fake-key");
     let model = c("command-r-plus");
-    expect_handle(aimux_cohere_new(key.as_ptr(), model.as_ptr()), "cohere_new");
+    let mut err = clear_err();
+    expect_handle(
+        aimux_cohere_new(key.as_ptr(), model.as_ptr(), &mut err),
+        "cohere_new",
+    );
     let base = c("https://example.com/v1");
     expect_handle(
-        aimux_cohere_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr()),
+        aimux_cohere_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut err),
         "cohere_new_with_base",
     );
 
     let model = c("mistral-large-latest");
     expect_handle(
-        aimux_mistral_new(key.as_ptr(), model.as_ptr()),
+        aimux_mistral_new(key.as_ptr(), model.as_ptr(), &mut err),
         "mistral_new",
     );
     expect_handle(
-        aimux_mistral_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr()),
+        aimux_mistral_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut err),
         "mistral_new_with_base",
     );
 
     let model = c("grok-3");
-    expect_handle(aimux_xai_new(key.as_ptr(), model.as_ptr()), "xai_new");
     expect_handle(
-        aimux_xai_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr()),
+        aimux_xai_new(key.as_ptr(), model.as_ptr(), &mut err),
+        "xai_new",
+    );
+    expect_handle(
+        aimux_xai_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut err),
         "xai_new_with_base",
     );
 }
 
 #[test]
 fn credential_constructors() {
+    let mut err = clear_err();
     let access = c("AKIDEXAMPLE");
     let secret = c("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
     let region = c("us-east-1");
@@ -105,6 +90,7 @@ fn credential_constructors() {
             secret.as_ptr(),
             region.as_ptr(),
             model.as_ptr(),
+            &mut err,
         ),
         "bedrock_new",
     );
@@ -116,6 +102,7 @@ fn credential_constructors() {
             region.as_ptr(),
             model.as_ptr(),
             base.as_ptr(),
+            &mut err,
         ),
         "bedrock_new_with_base",
     );
@@ -130,6 +117,7 @@ fn credential_constructors() {
             project.as_ptr(),
             location.as_ptr(),
             model.as_ptr(),
+            &mut err,
         ),
         "vertex_new",
     );
@@ -140,6 +128,7 @@ fn credential_constructors() {
             location.as_ptr(),
             model.as_ptr(),
             base.as_ptr(),
+            &mut err,
         ),
         "vertex_new_with_base",
     );
@@ -147,7 +136,7 @@ fn credential_constructors() {
     let key = c("sk-ant-fake");
     let model = c("claude-3-5-sonnet-20240620-v1:0");
     expect_handle(
-        aimux_anthropic_aws_new(key.as_ptr(), region.as_ptr(), model.as_ptr()),
+        aimux_anthropic_aws_new(key.as_ptr(), region.as_ptr(), model.as_ptr(), &mut err),
         "anthropic_aws_new",
     );
     expect_handle(
@@ -156,6 +145,7 @@ fn credential_constructors() {
             region.as_ptr(),
             model.as_ptr(),
             base.as_ptr(),
+            &mut err,
         ),
         "anthropic_aws_new_with_base",
     );
@@ -163,6 +153,7 @@ fn credential_constructors() {
 
 #[test]
 fn azure_constructors() {
+    let mut err = clear_err();
     let key = c("sk-azure-fake");
     let resource = c("my-resource");
     let deployment = c("gpt-4o");
@@ -171,7 +162,8 @@ fn azure_constructors() {
             key.as_ptr(),
             resource.as_ptr(),
             deployment.as_ptr(),
-            std::ptr::null(),
+            ptr::null(),
+            &mut err,
         ),
         "azure_new (default api_version)",
     );
@@ -182,6 +174,7 @@ fn azure_constructors() {
             resource.as_ptr(),
             deployment.as_ptr(),
             version.as_ptr(),
+            &mut err,
         ),
         "azure_new (explicit api_version)",
     );
@@ -191,7 +184,8 @@ fn azure_constructors() {
             key.as_ptr(),
             base.as_ptr(),
             deployment.as_ptr(),
-            std::ptr::null(),
+            ptr::null(),
+            &mut err,
         ),
         "azure_new_with_base",
     );
@@ -199,14 +193,22 @@ fn azure_constructors() {
 
 #[test]
 fn invalid_args_return_error() {
-    // Null model_id must fail cleanly (error envelope, no panic).
+    let mut err = clear_err();
     let key = c("sk-test-fake-key");
-    expect_error(
-        aimux_cohere_new(key.as_ptr(), std::ptr::null()),
+    expect_fail(
+        aimux_cohere_new(key.as_ptr(), ptr::null(), &mut err),
+        &err,
         "cohere_new(null model_id)",
     );
-    expect_error(
-        aimux_bedrock_new(key.as_ptr(), key.as_ptr(), key.as_ptr(), std::ptr::null()),
+    expect_fail(
+        aimux_bedrock_new(
+            key.as_ptr(),
+            key.as_ptr(),
+            key.as_ptr(),
+            ptr::null(),
+            &mut err,
+        ),
+        &err,
         "bedrock_new(null model_id)",
     );
 }

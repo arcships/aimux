@@ -48,13 +48,13 @@ public final class SpeechModel implements Closeable {
      *
      * @param apiKey  OpenAI API key.
      * @param modelId Model ID (e.g. {@code tts-1}).
-     * @return a new SpeechModel; throws {@link IllegalArgumentException} if the
-     *         native constructor fails (handle == 0).
+     * @return a new SpeechModel.
+     * @throws AimuxException if the native constructor fails.
      */
     public static SpeechModel openai(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_speech_new(apiKey, modelId), "Failed to create OpenAI speech model");
-        return new SpeechModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_speech_new(apiKey, modelId, err);
+        return new SpeechModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI speech model"));
     }
 
     /**
@@ -63,24 +63,27 @@ public final class SpeechModel implements Closeable {
      * @param apiKey  OpenAI API key.
      * @param modelId Model ID (e.g. {@code tts-1}).
      * @param baseUrl Custom base URL (e.g. for proxies or local servers).
-     * @return a new SpeechModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new SpeechModel.
+     * @throws AimuxException on failure.
      */
     public static SpeechModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create OpenAI speech model");
-        return new SpeechModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl, err);
+        return new SpeechModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI speech model"));
     }
 
     /**
      * Generate speech audio from the given options.
      *
      * @param optsJson JSON-serialized {@code SpeechCallOptions}.
-     * @return JSON-serialized {@code SpeechResult}. If the engine returns an
-     *         {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code SpeechResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String generate(String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_speech_generate(requireHandle(), optsJson), "speech_generate");
+            AimuxFFI.INSTANCE.aimux_speech_generate(requireHandle(), optsJson, err),
+            err,
+            "speech_generate");
     }
 }

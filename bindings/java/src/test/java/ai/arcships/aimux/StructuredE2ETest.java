@@ -256,11 +256,15 @@ class StructuredE2ETest {
             // callbacks (which attach to the calling thread) don't deadlock with
             // tokio's block_on. The main thread collects parts via a queue.
             LinkedBlockingQueue<String> parts = new LinkedBlockingQueue<>();
-            Thread streamThread = new Thread(() ->
-                model.streamText("\"What is the weather in Tokyo?\"", weatherToolsOpts(),
-                    parts::add,
-                    () -> { try { parts.put("__done__"); } catch (InterruptedException ignored) { } },
-                    err -> { try { parts.put("__done__"); } catch (InterruptedException ignored) { } }));
+            Thread streamThread = new Thread(() -> {
+                try {
+                    model.streamText("\"What is the weather in Tokyo?\"", weatherToolsOpts(),
+                        parts::add,
+                        () -> { try { parts.put("__done__"); } catch (InterruptedException ignored) { } });
+                } catch (RuntimeException e) {
+                    try { parts.put("__done__"); } catch (InterruptedException ignored) { }
+                }
+            });
             streamThread.setDaemon(true);
             streamThread.start();
 

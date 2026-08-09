@@ -49,6 +49,51 @@ Model.provider(name = "groq", apiKey = "sk-...", modelId = "llama-3.3-70b").use 
 
 Unknown names throw an error listing the available providers.
 
+## Errors
+
+Engine and binding failures throw an **`AimuxException` open hierarchy**
+(Java-interop friendly; not sealed-only). Transport is Rust → C `AimuxError`
+→ `AimuxException.fromC` — **not** a JSON error envelope on the primary path.
+
+```text
+RuntimeException
+ └── AimuxException          // code, status, retryMs
+      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── InvalidArgumentError / InvalidPromptError
+      ├── RateLimitedError          // status 429, retryMs
+      ├── AuthenticationError       // status 401
+      ├── TokenExpiredError
+      ├── ModelNotFoundError / NoSuchModelError
+      ├── UnsupportedError / UnknownProviderError
+      ├── APICallError / TimeoutError
+      ├── RequestAbortedError
+      └── OtherError
+```
+
+```kotlin
+import ai.arcships.aimux.*
+
+try {
+    model.generateText("\"hi\"")
+} catch (e: RateLimitedError) {
+    // e.retryMs, e.status
+} catch (e: AuthenticationError) {
+    // e.status often 401
+} catch (e: AimuxException) {
+    // e.code (AIMUX_E_*), e.status, e.retryMs
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `code` | `AIMUX_E_*` matching C `AimuxErrorCode` (2..19 = core variants) |
+| `status` | HTTP status when known; otherwise `-1` |
+| `retryMs` | Rate-limit hint in ms; `-1` if none; `0` = retry immediately |
+
+Local decode failures in `TypedModel` throw `InvalidArgumentError`. Stream
+setup / terminal failures throw the typed hierarchy after optional legacy
+`onError` notification (native C ABI has no `on_error` callback).
+
 ## Text Generation
 
 ```kotlin
@@ -91,7 +136,8 @@ println(result.usage?.inputTokens?.total)
 | `streamText` | callback-based streaming (`onPart: (StreamPart) -> Unit`, `onDone`, `onError`) |
 | `streamTextSequence` | `fun streamTextSequence(...): Sequence<StreamPart>` — pull-based streaming |
 
-`TypedModel` is `Closeable` (use `use { }`); errors surface as `AimuxException`.
+`TypedModel` is `Closeable` (use `use { }`); engine errors surface as
+typed `AimuxException` subclasses (see [Errors](#errors)).
 
 ## Types
 

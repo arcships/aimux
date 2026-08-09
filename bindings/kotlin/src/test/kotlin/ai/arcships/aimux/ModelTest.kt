@@ -40,11 +40,26 @@ class ModelTest {
     }
 
     @Test
-    fun `generateText rejects invalid prompt`() {
+    fun `generateText maps a JSON parse failure to JsonError`() {
         Model.openai("sk-test-fake-key", "gpt-4o-mini").use { model ->
+            // Prompt JSON parse failures are AIMUX_E_JSON (code 4), not Other.
+            // Also exercises the real free-path: the FFI-allocated message is
+            // read and freed by throwFromC.
             assertThatThrownBy {
                 model.generateText("{invalid json}")
-            }.isInstanceOf(Exception::class.java)
+            }.isInstanceOf(JsonError::class.java)
+        }
+    }
+
+    @Test
+    fun `streamTextSequence surfaces a typed AimuxException on failure`() {
+        // Unroutable base URL: the 7-arg stream signature is only checked by
+        // JNA at call time, so actually consume the sequence and assert the
+        // typed error surfaces.
+        Model.openai("sk-test-fake-key", "gpt-4o-mini", "http://127.0.0.1:9").use { model ->
+            assertThatThrownBy {
+                model.streamTextSequence("\"hello\"").toList()
+            }.isInstanceOf(AimuxException::class.java)
         }
     }
 
@@ -56,6 +71,32 @@ class ModelTest {
             val seq = model.streamTextSequence("\"hello\"")
             assertThat(seq).isNotNull
         }
+    }
+
+    @Test
+    fun `unknown provider failure carries lossless errorValue JSON`() {
+        // Core-originated failure: error_value is the externally-tagged
+        // AiMuxError JSON. throwFromC frees both C strings after mapping.
+        assertThatThrownBy {
+            Model.provider("definitely-not-a-provider", apiKey = "k", modelId = "m")
+        }.isInstanceOf(UnknownProviderError::class.java)
+            .satisfies({ ex ->
+                assertThat((ex as AimuxException).errorValue).contains("UnknownProvider")
+            })
+    }
+
+    @Test
+    fun `FFI-synthesized failure has null errorValue`() {
+        // Invalid handle: the failure is synthesized at the FFI boundary,
+        // so C error_value is NULL and errorValue maps to Kotlin null.
+        val err = AimuxCError()
+        val res = FFI.lib.aimux_generate_text(0x7FFF_FFFFL, "\"hi\"", null, err)
+        assertThat(res).isNull()
+        val ex = AimuxException.fromC(err)
+        FFI.lib.aimux_free_string(err.message)
+        FFI.lib.aimux_free_string(err.error_value)
+        assertThat(ex).isInstanceOf(InvalidArgumentError::class.java)
+        assertThat(ex.errorValue).isNull()
     }
 
     @Test

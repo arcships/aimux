@@ -13,18 +13,19 @@
 
 use std::sync::Arc;
 
+use crate::error::to_py_err;
+use aimux_core::AiMuxError;
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel as EmbeddingModelTrait};
-use aimux_core::speech_model::{SpeechCallOptions, SpeechModel as SpeechModelTrait};
+use aimux_core::files_model::{Files as FilesTrait, UploadFileCallOptions};
 use aimux_core::image_model::{ImageCallOptions, ImageModel as ImageModelTrait};
+use aimux_core::reranking_model::{RerankingCallOptions, RerankingModel as RerankingModelTrait};
+use aimux_core::search_model::{SearchCallOptions, SearchModel as SearchModelTrait};
+use aimux_core::shared::FileBytes;
+use aimux_core::speech_model::{SpeechCallOptions, SpeechModel as SpeechModelTrait};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel as TranscriptionModelTrait,
 };
-use aimux_core::reranking_model::{RerankingCallOptions, RerankingModel as RerankingModelTrait};
 use aimux_core::video_model::{VideoCallOptions, VideoModel as VideoModelTrait};
-use aimux_core::search_model::{SearchCallOptions, SearchModel as SearchModelTrait};
-use aimux_core::files_model::{Files as FilesTrait, UploadFileCallOptions};
-use aimux_core::shared::FileBytes;
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,25 +45,26 @@ impl EmbeddingModel {
     #[pyo3(signature = (values_json, opts_json=None))]
     pub fn embed(&self, values_json: &str, opts_json: Option<&str>) -> PyResult<String> {
         let mut opts: EmbeddingCallOptions = match opts_json {
-            Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-                serde_json::from_str(s)
-                    .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?
-            }
+            Some(s) if !s.trim().is_empty() && s.trim() != "null" => serde_json::from_str(s)
+                .map_err(|e| {
+                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
+                })?,
             _ => EmbeddingCallOptions::new(""),
         };
         // Override values from the JSON array.
-        let values: Vec<String> = serde_json::from_str(values_json)
-            .map_err(|e| PyRuntimeError::new_err(format!("invalid values_json: {e}")))?;
+        let values: Vec<String> = serde_json::from_str(values_json).map_err(|e| {
+            to_py_err(&AiMuxError::InvalidArgument(format!(
+                "invalid values_json: {e}"
+            )))
+        })?;
         opts.values = values;
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.do_embed(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.do_embed(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -82,16 +84,14 @@ impl SpeechModel {
     /// Returns JSON-serialized SpeechResult (audio as base64 in JSON).
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: SpeechCallOptions = serde_json::from_str(opts_json)
-            .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?;
+            .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}"))))?;
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.do_generate(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -111,16 +111,14 @@ impl ImageModel {
     /// Returns JSON-serialized ImageResult (images as base64 in JSON).
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: ImageCallOptions = serde_json::from_str(opts_json)
-            .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?;
+            .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}"))))?;
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.do_generate(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -152,8 +150,9 @@ impl TranscriptionModel {
         );
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: TranscriptionCallOptions = serde_json::from_str(s)
-                    .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?;
+                let parsed: TranscriptionCallOptions = serde_json::from_str(s).map_err(|e| {
+                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
+                })?;
                 // Keep audio and media_type from our explicit args.
                 if let Some(p) = &parsed.provider_options {
                     opts.provider_options = Some(p.clone());
@@ -161,14 +160,12 @@ impl TranscriptionModel {
             }
         }
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.do_generate(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -195,27 +192,29 @@ impl RerankingModel {
         opts_json: Option<&str>,
     ) -> PyResult<String> {
         use aimux_core::reranking_model::RerankingDocuments;
-        let docs: RerankingDocuments = serde_json::from_str(docs_json)
-            .map_err(|e| PyRuntimeError::new_err(format!("invalid docs_json: {e}")))?;
+        let docs: RerankingDocuments = serde_json::from_str(docs_json).map_err(|e| {
+            to_py_err(&AiMuxError::InvalidArgument(format!(
+                "invalid docs_json: {e}"
+            )))
+        })?;
 
         let mut opts = RerankingCallOptions::new(query.to_string(), docs);
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: RerankingCallOptions = serde_json::from_str(s)
-                    .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?;
+                let parsed: RerankingCallOptions = serde_json::from_str(s).map_err(|e| {
+                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
+                })?;
                 opts.provider_options = parsed.provider_options;
                 opts.top_n = parsed.top_n;
             }
         }
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.do_rerank(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.do_rerank(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -235,16 +234,14 @@ impl VideoModel {
     /// Returns JSON-serialized VideoResult (typically contains a URL).
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: VideoCallOptions = serde_json::from_str(opts_json)
-            .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?;
+            .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}"))))?;
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.do_generate(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -267,20 +264,19 @@ impl SearchModel {
         let mut opts = SearchCallOptions::new(query.to_string());
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: SearchCallOptions = serde_json::from_str(s)
-                    .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?;
+                let parsed: SearchCallOptions = serde_json::from_str(s).map_err(|e| {
+                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
+                })?;
                 opts = parsed;
             }
         }
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.do_search(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.do_search(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -316,21 +312,20 @@ impl Files {
         );
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: UploadFileCallOptions = serde_json::from_str(s)
-                    .map_err(|e| PyRuntimeError::new_err(format!("invalid opts: {e}")))?;
+                let parsed: UploadFileCallOptions = serde_json::from_str(s).map_err(|e| {
+                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
+                })?;
                 opts.filename = parsed.filename;
                 opts.provider_options = parsed.provider_options;
             }
         }
 
-        let result = crate::runtime().block_on(async move {
-            self.inner.upload_file(&opts).await
-        });
+        let result = crate::runtime().block_on(async move { self.inner.upload_file(&opts).await });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| PyRuntimeError::new_err(format!("serialize result: {e}"))),
-            Err(e) => Err(PyRuntimeError::new_err(format!("{e}"))),
+                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
         }
     }
 }
@@ -362,7 +357,11 @@ pub fn openai_embedding(
 /// Create an OpenAI speech (TTS) model instance.
 #[pyfunction]
 #[pyo3(signature = (api_key, model_id, base_url=None))]
-pub fn openai_speech(api_key: &str, model_id: &str, base_url: Option<&str>) -> PyResult<SpeechModel> {
+pub fn openai_speech(
+    api_key: &str,
+    model_id: &str,
+    base_url: Option<&str>,
+) -> PyResult<SpeechModel> {
     use aimux_providers::openai::{OpenAIConfig, OpenAIProvider};
     let mut config = OpenAIConfig::new(api_key);
     if let Some(url) = base_url {

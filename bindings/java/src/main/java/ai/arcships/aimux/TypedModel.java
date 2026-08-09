@@ -1,7 +1,6 @@
 package ai.arcships.aimux;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -96,36 +95,12 @@ public class TypedModel implements Closeable {
     }
 
     private Types.GenerateTextResult decodeResult(String resultJson) {
-        // The raw layer returns {"error": "..."} on failure rather than throwing.
-        // Surface the engine's failure as an exception while keeping the typed
-        // happy path clean.
-        String trimmed = trimStart(resultJson);
-        if (trimmed.startsWith("{")) {
-            try {
-                JsonNode node = Types.AimuxJson.MAPPER.readTree(trimmed);
-                if (node != null && node.isObject()) {
-                    JsonNode err = node.get("error");
-                    if (err != null && err.isTextual()) {
-                        throw new AimuxException(err.asText());
-                    }
-                }
-            } catch (IOException e) {
-                // Not parseable as JSON — fall through to the decode below.
-            }
-        }
+        // Failures throw from the raw Model via AimuxCError → AimuxException.
         try {
             return Types.AimuxJson.MAPPER.readValue(resultJson, Types.GenerateTextResult.class);
         } catch (IOException e) {
             throw new AimuxException("failed to decode GenerateTextResult: " + e.getMessage(), e);
         }
-    }
-
-    private static String trimStart(String s) {
-        int i = 0;
-        while (i < s.length() && Character.isWhitespace(s.charAt(i))) {
-            i++;
-        }
-        return s.substring(i);
     }
 
     // ── streamText (callback version) ─────────────────────────────────────
@@ -135,13 +110,13 @@ public class TypedModel implements Closeable {
      * decoded {@link Types.StreamPart}.
      *
      * <p>Blocks the calling thread until the stream completes. A part that
-     * fails to decode is reported via {@code onError} (mirror of the Kotlin
-     * binding); stream-level engine errors are also reported via {@code onError}.
+     * fails to decode is reported via {@code onError}. Terminal C-level stream
+     * failures throw {@link AimuxException} from the raw layer.
      *
      * @param prompt  Plain text prompt.
      * @param onPart  Called for each decoded {@link Types.StreamPart}.
      * @param onDone  Called once when the stream completes normally.
-     * @param onError Called with a message on a stream or decode error.
+     * @param onError Called with a message on a decode error (not C terminal failures).
      */
     public void streamText(String prompt, Consumer<Types.StreamPart> onPart,
                            Runnable onDone, Consumer<String> onError) {
@@ -203,8 +178,7 @@ public class TypedModel implements Closeable {
                     onError.accept("failed to decode StreamPart: " + e.getMessage());
                 }
             },
-            onDone,
-            onError);
+            onDone);
     }
 
     // ── streamTextStream (pull version) ───────────────────────────────────
@@ -215,8 +189,8 @@ public class TypedModel implements Closeable {
      * <p>The FFI call starts on the first terminal operation of the returned
      * stream (mirror of Kotlin's {@code streamTextSequence}). Iteration pulls
      * parts from a {@link LinkedBlockingQueue} fed by the stream callbacks;
-     * the stream ends at the sentinel. If the provider reported a stream error,
-     * an {@link AimuxException} is thrown when the end of the stream is reached.
+     * the stream ends at the sentinel. Terminal stream failures throw
+     * {@link AimuxException} from the blocking FFI call.
      *
      * @param prompt Plain text prompt.
      * @return Lazy stream of decoded parts.
@@ -355,20 +329,6 @@ public class TypedModel implements Closeable {
     }
 
     private Types.ChatCompletion decodeChatCompletion(String resultJson) {
-        String trimmed = trimStart(resultJson);
-        if (trimmed.startsWith("{")) {
-            try {
-                JsonNode node = Types.AimuxJson.MAPPER.readTree(trimmed);
-                if (node != null && node.isObject()) {
-                    JsonNode err = node.get("error");
-                    if (err != null && err.isTextual()) {
-                        throw new AimuxException(err.asText());
-                    }
-                }
-            } catch (IOException e) {
-                // Not parseable as JSON — fall through to the decode below.
-            }
-        }
         try {
             return Types.AimuxJson.MAPPER.readValue(resultJson, Types.ChatCompletion.class);
         } catch (IOException e) {
@@ -446,8 +406,7 @@ public class TypedModel implements Closeable {
                     onError.accept("failed to decode ChatCompletionChunk: " + e.getMessage());
                 }
             },
-            onDone,
-            onError);
+            onDone);
     }
 
     /**

@@ -15,8 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <ul>
  *   <li>Provider variant construction (Cohere/Google embedding, Google image,
  *       all non-WithBase factories) — ~15 C ABI symbols previously untested.</li>
- *   <li>Error envelope → {@link AimuxException} (raw multimodal layer now
- *       checks the {@code {"error":"..."}} envelope via {@link AimuxResult}).</li>
+ *   <li>Engine failures → {@link AimuxException} (C {@code AimuxError} path).</li>
  *   <li>Lifecycle: close-then-call throws, double-close is safe.</li>
  *   <li>Search {@code answer} field assertion (previously only {@code results}
  *       was checked).</li>
@@ -85,12 +84,11 @@ class MultimodalCoverageTest {
         try (SearchModel m = SearchModel.tavily("sk-test")) { assertThat(m).isNotNull(); }
     }
 
-    // ── Error envelope → AimuxException ─────────────────────────────────────
+    // ── Invalid input → AimuxException (C AimuxError path) ──────────────────
 
     @Test
     void embeddingErrorEnvelopeThrowsAimuxException() {
-        // FFI returns {"error":"..."} for invalid input — the raw layer should
-        // surface it as AimuxException (parity with Kotlin's throwIfErrorEnvelope).
+        // Invalid input fails via C AimuxError → AimuxException (not a JSON envelope).
         try (EmbeddingModel model = EmbeddingModel.openaiWithBase("sk-test", "text-embedding-3-small", server.baseUrl())) {
             assertThatThrownBy(() -> model.embed("not-valid-json"))
                 .isInstanceOf(AimuxException.class);

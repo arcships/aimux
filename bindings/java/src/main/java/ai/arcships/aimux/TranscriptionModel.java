@@ -48,13 +48,14 @@ public final class TranscriptionModel implements Closeable {
      *
      * @param apiKey  OpenAI API key.
      * @param modelId Model ID (e.g. {@code whisper-1}).
-     * @return a new TranscriptionModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new TranscriptionModel.
+     * @throws AimuxException on failure.
      */
     public static TranscriptionModel openai(String apiKey, String modelId) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_transcription_new(apiKey, modelId),
-            "Failed to create OpenAI transcription model");
-        return new TranscriptionModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_transcription_new(apiKey, modelId, err);
+        return new TranscriptionModel(
+            AimuxResult.extractHandle(h, err, "Failed to create OpenAI transcription model"));
     }
 
     /**
@@ -63,13 +64,14 @@ public final class TranscriptionModel implements Closeable {
      * @param apiKey  OpenAI API key.
      * @param modelId Model ID (e.g. {@code whisper-1}).
      * @param baseUrl Custom base URL.
-     * @return a new TranscriptionModel; throws {@link IllegalArgumentException} on failure.
+     * @return a new TranscriptionModel.
+     * @throws AimuxException on failure.
      */
     public static TranscriptionModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        long h = AimuxResult.extractHandle(
-            AimuxFFI.INSTANCE.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl),
-            "Failed to create OpenAI transcription model");
-        return new TranscriptionModel(h);
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl, err);
+        return new TranscriptionModel(
+            AimuxResult.extractHandle(h, err, "Failed to create OpenAI transcription model"));
     }
 
     /**
@@ -77,8 +79,8 @@ public final class TranscriptionModel implements Closeable {
      *
      * @param audioBase64 Base64-encoded audio bytes.
      * @param mediaType   Media type of the audio (e.g. {@code audio/wav}).
-     * @return JSON-serialized {@code TranscriptionResult}. If the engine returns
-     *         an {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code TranscriptionResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String generate(String audioBase64, String mediaType) {
         return generate(audioBase64, mediaType, null);
@@ -91,13 +93,15 @@ public final class TranscriptionModel implements Closeable {
      * @param mediaType   Media type of the audio (e.g. {@code audio/wav}).
      * @param optsJson    Optional JSON-serialized {@code TranscriptionCallOptions},
      *                    or {@code null} for defaults.
-     * @return JSON-serialized {@code TranscriptionResult}. If the engine returns
-     *         an {@code {"error":"..."}} envelope, an {@link AimuxException} is thrown.
+     * @return JSON-serialized {@code TranscriptionResult}.
+     * @throws AimuxException on engine / transport failure.
      */
     public String generate(String audioBase64, String mediaType, String optsJson) {
+        AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(
             AimuxFFI.INSTANCE.aimux_transcription_generate(
-                requireHandle(), audioBase64, mediaType, optsJson),
+                requireHandle(), audioBase64, mediaType, optsJson, err),
+            err,
             "transcription_generate");
     }
 }

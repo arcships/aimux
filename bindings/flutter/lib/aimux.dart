@@ -5,66 +5,85 @@
 // must be on the library path or bundled in the Flutter app.
 //
 // This is the C ABI path (RFC §3.2) — same as Swift and Kotlin.
+//
+// Error transport: fallible calls take a trailing AimuxError *err (see
+// errors.dart). Success returns handle > 0 / non-null char* / stream != 0.
+// Failure returns 0 / NULL / 0 and fills *err → AimuxException.fromC.
 
 // The Flutter tool resolves `dartPluginClass` from the package's main
 // library, so the plugin registration class must be visible here.
 export 'aimux_plugin.dart';
+export 'errors.dart'
+    hide
+        openAimuxLibrary,
+        aimuxFreeString,
+        withUtf8,
+        takeHandle,
+        takeString,
+        construct2;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io';
 import 'package:ffi/ffi.dart';
 
+import 'errors.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
-// FFI type aliases
+// FFI type aliases (AimuxError *err trailing out-param)
 // ─────────────────────────────────────────────────────────────────────────────
 
-typedef _OpenaiNewC = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
-typedef _OpenaiNewDart = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId);
+typedef _NewC = Uint64 Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
+typedef _NewDart = int Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
 
-// Constructors with a custom base URL (aimux_*_new_with_base). The same
-// signature covers both OpenAI and Anthropic.
-typedef _NewWithBaseC = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
-typedef _NewWithBaseDart = Pointer<Utf8> Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Utf8> baseUrl);
+// Constructors with a custom base URL (aimux_*_new_with_base).
+typedef _NewWithBaseC = Uint64 Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
+typedef _NewWithBaseDart = int Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
 
 // Registry provider constructor (aimux_provider_new, RFC-0017 phase 4).
-// name/model_id are required; apiKey (null → provider env var from the
-// registry entry) and configJson (null → defaults) are optional.
-typedef _ProviderNewC = Pointer<Utf8> Function(Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
-typedef _ProviderNewDart = Pointer<Utf8> Function(Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey, Pointer<Utf8> modelId, Pointer<Utf8>? configJson);
+typedef _ProviderNewC = Uint64 Function(
+    Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey,
+    Pointer<Utf8> modelId,
+    Pointer<Utf8>? configJson,
+    Pointer<AimuxCError> err);
+typedef _ProviderNewDart = int Function(
+    Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey,
+    Pointer<Utf8> modelId,
+    Pointer<Utf8>? configJson,
+    Pointer<AimuxCError> err);
 
-// Provider handle constructor (aimux_provider_handle_new, RFC-0027). name is
-// required; apiKey (null → provider env var from the registry entry) and
-// configJson (null → defaults) are optional.
-typedef _ProviderHandleNewC = Pointer<Utf8> Function(
-    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson);
-typedef _ProviderHandleNewDart = Pointer<Utf8> Function(
-    Pointer<Utf8> name, Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson);
+// Provider handle constructor (aimux_provider_handle_new, RFC-0027).
+typedef _ProviderHandleNewC = Uint64 Function(Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<AimuxCError> err);
+typedef _ProviderHandleNewDart = int Function(Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<AimuxCError> err);
 
-// Provider handle list_models (aimux_provider_list_models, RFC-0027).
-typedef _ProviderListModelsC = Pointer<Utf8> Function(Uint64 handle);
-typedef _ProviderListModelsDart = Pointer<Utf8> Function(int handle);
+// Provider handle list_models / model (RFC-0027).
+typedef _ProviderListModelsC = Pointer<Utf8> Function(
+    Uint64 handle, Pointer<AimuxCError> err);
+typedef _ProviderListModelsDart = Pointer<Utf8> Function(
+    int handle, Pointer<AimuxCError> err);
 
-// Provider handle model (aimux_provider_model, RFC-0027).
-typedef _ProviderModelC = Pointer<Utf8> Function(
-    Uint64 handle, Pointer<Utf8> modelId);
-typedef _ProviderModelDart = Pointer<Utf8> Function(
-    int handle, Pointer<Utf8> modelId);
+typedef _ProviderModelC = Uint64 Function(
+    Uint64 handle, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
+typedef _ProviderModelDart = int Function(
+    int handle, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
 
-typedef _GetModelSpecsC = Pointer<Utf8> Function(Pointer<Utf8>? sourceUrl);
-typedef _GetModelSpecsDart = Pointer<Utf8> Function(Pointer<Utf8>? sourceUrl);
+typedef _GetModelSpecsC = Pointer<Utf8> Function(
+    Pointer<Utf8>? sourceUrl, Pointer<AimuxCError> err);
+typedef _GetModelSpecsDart = Pointer<Utf8> Function(
+    Pointer<Utf8>? sourceUrl, Pointer<AimuxCError> err);
 
-typedef _GenerateTextC = Pointer<Utf8> Function(
-    Uint64 handle, Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson);
-typedef _GenerateTextDart = Pointer<Utf8> Function(
-    int handle, Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson);
+typedef _GenerateTextC = Pointer<Utf8> Function(Uint64 handle,
+    Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
+typedef _GenerateTextDart = Pointer<Utf8> Function(int handle,
+    Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
 
 typedef _DropHandleC = Void Function(Uint64);
 typedef _DropHandleDart = void Function(int);
@@ -73,247 +92,152 @@ typedef _InitLoggingC = Void Function(Pointer<Utf8> level);
 typedef _InitLoggingDart = void Function(Pointer<Utf8> level);
 
 // Recording + mock replay (RFC-0023). int-returning functions return 0 on
-// success or -1 on invalid input; mock_replay_new returns a constructor-style
-// JSON string owned by the caller (free with aimux_free_string).
+// success or -1 on invalid input; mock_replay_new returns uint64_t handle.
 typedef _RecordingDirC = Int32 Function(Pointer<Utf8> dir);
 typedef _RecordingDirDart = int Function(Pointer<Utf8> dir);
 typedef _RecordingRingC = Int32 Function(Uint64 cap);
 typedef _RecordingRingDart = int Function(int cap);
 typedef _RecordingNoArgC = Int32 Function();
 typedef _RecordingNoArgDart = int Function();
-typedef _MockReplayC = Pointer<Utf8> Function(Pointer<Utf8> recordingsJsonl);
-typedef _MockReplayDart = Pointer<Utf8> Function(Pointer<Utf8> recordingsJsonl);
-
-typedef _FreeStringC = Void Function(Pointer<Utf8>);
-typedef _FreeStringDart = void Function(Pointer<Utf8>);
+typedef _MockReplayC = Uint64 Function(
+    Pointer<Utf8> recordingsJsonl, Pointer<AimuxCError> err);
+typedef _MockReplayDart = int Function(
+    Pointer<Utf8> recordingsJsonl, Pointer<AimuxCError> err);
 
 // Multi-arg constructor C signatures (bedrock/vertex/azure).
-typedef _FourStrC = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _FourStrDart = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _FiveStrC = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _FiveStrDart = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
-// Azure constructor C signatures: 3 required strings + a nullable
-// api_version (the C ABI's `const char *api_version` may be NULL).
-typedef _FourStrOptC = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?);
-typedef _FourStrOptDart = Pointer<Utf8> Function(
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>?);
+typedef _FourStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<AimuxCError>);
+typedef _FourStrDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<AimuxCError>);
+typedef _FiveStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<AimuxCError>);
+typedef _FiveStrDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<AimuxCError>);
+// Azure: 3 required strings + nullable api_version + err.
+typedef _FourStrOptC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>?, Pointer<AimuxCError>);
+typedef _FourStrOptDart = int Function(Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>?, Pointer<AimuxCError>);
 
-// Stream callback C signatures
-typedef _OnPartC = Void Function(Pointer<Utf8>);
-typedef _OnDoneC = Void Function();
-typedef _OnErrorC = Void Function(Pointer<Utf8>);
+// Stream callbacks: on_part(json, stream_ctx) / on_done(stream_ctx).
+// No on_error — terminal failures return 0 and fill AimuxError *err.
+typedef _OnPartC = Void Function(Pointer<Utf8> json, Pointer<Void> streamCtx);
+typedef _OnDoneC = Void Function(Pointer<Void> streamCtx);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FFI library wrapper
-// ─────────────────────────────────────────────────────────────────────────────
-
-final class _AimuxFFI {
-  final DynamicLibrary _lib;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) openaiNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>) anthropicNew;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      openaiNewWithBase;
-  final Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)
-      anthropicNewWithBase;
-  final Pointer<Utf8> Function(
-      Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>, Pointer<Utf8>?) providerNew;
-  final Pointer<Utf8> Function(
-      Pointer<Utf8>, Pointer<Utf8>?, Pointer<Utf8>?) providerHandleNew;
-  final Pointer<Utf8> Function(int) providerListModels;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>) providerModel;
-  final Pointer<Utf8> Function(Pointer<Utf8>?) getModelSpecs;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?) generateText;
-  final void Function(
-      int,
-      Pointer<Utf8>,
-      Pointer<Utf8>?,
-      Pointer<NativeFunction<_OnPartC>>,
-      Pointer<NativeFunction<_OnDoneC>>,
-      Pointer<NativeFunction<_OnErrorC>>) streamText;
-  final Pointer<Utf8> Function(int, Pointer<Utf8>, Pointer<Utf8>?)
-      generateTextAsOpenAI;
-  final void Function(
-      int,
-      Pointer<Utf8>,
-      Pointer<Utf8>?,
-      Pointer<NativeFunction<_OnPartC>>,
-      Pointer<NativeFunction<_OnDoneC>>,
-      Pointer<NativeFunction<_OnErrorC>>) streamTextAsOpenAI;
-  final void Function(int) dropHandle;
-  final void Function(Pointer<Utf8>) freeString;
-  final void Function(Pointer<Utf8>) initLogging;
-  final int Function(Pointer<Utf8>) initRecording;
-  final int Function(int) initRecordingRing;
-  final int Function() recordingStop;
-  final int Function() recordingFlush;
-  final Pointer<Utf8> Function(Pointer<Utf8>) mockReplayNew;
-
-  _AimuxFFI._(
-      this._lib,
-      this.openaiNew,
-      this.anthropicNew,
-      this.openaiNewWithBase,
-      this.anthropicNewWithBase,
-      this.providerNew,
-      this.providerHandleNew,
-      this.providerListModels,
-      this.providerModel,
-      this.getModelSpecs,
-      this.generateText,
-      this.streamText,
-      this.generateTextAsOpenAI,
-      this.streamTextAsOpenAI,
-      this.dropHandle,
-      this.freeString,
-      this.initLogging,
-      this.initRecording,
-      this.initRecordingRing,
-      this.recordingStop,
-      this.recordingFlush,
-      this.mockReplayNew);
-
-  factory _AimuxFFI() {
-    final dylib = _openLibrary();
-
-    return _AimuxFFI._(
-      dylib,
-      dylib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_openai_new'),
-      dylib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_anthropic_new'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_openai_new_with_base'),
-      dylib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_anthropic_new_with_base'),
-      dylib.lookupFunction<_ProviderNewC, _ProviderNewDart>(
-          'aimux_provider_new'),
-      dylib.lookupFunction<_ProviderHandleNewC, _ProviderHandleNewDart>(
-          'aimux_provider_handle_new'),
-      dylib.lookupFunction<_ProviderListModelsC, _ProviderListModelsDart>(
-          'aimux_provider_list_models'),
-      dylib.lookupFunction<_ProviderModelC, _ProviderModelDart>(
-          'aimux_provider_model'),
-      dylib.lookupFunction<_GetModelSpecsC, _GetModelSpecsDart>(
-          'aimux_get_model_specs'),
-      dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
-          'aimux_generate_text'),
-      dylib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text'),
-      dylib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
-          'aimux_generate_text_as_openai'),
-      dylib.lookupFunction<_StreamTextC, _StreamTextDart>(
-          'aimux_stream_text_as_openai'),
-      dylib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle'),
-      dylib.lookupFunction<_FreeStringC, _FreeStringDart>('aimux_free_string'),
-      dylib.lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging'),
-      dylib.lookupFunction<_RecordingDirC, _RecordingDirDart>(
-          'aimux_init_recording'),
-      dylib.lookupFunction<_RecordingRingC, _RecordingRingDart>(
-          'aimux_init_recording_ring'),
-      dylib.lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
-          'aimux_recording_stop'),
-      dylib.lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
-          'aimux_recording_flush'),
-      dylib.lookupFunction<_MockReplayC, _MockReplayDart>(
-          'aimux_mock_replay_new'),
-    );
-  }
-
-  /// Opens the aimux-ffi native library for the current platform.
-  ///
-  /// The library ships inside this Flutter plugin package:
-  ///   - Android: `libaimux_ffi.so` per ABI under android/src/main/jniLibs,
-  ///     loaded by name (the Android build system bundles it into the APK).
-  ///   - iOS:     `libaimux_ffi.a` is statically linked into the app binary
-  ///     via ios/aimux.podspec (vendored + force_load), so symbols resolve
-  ///     from the process itself.
-  ///   - Desktop: looked up on the platform library path (dev/test usage).
-  static DynamicLibrary _openLibrary() {
-    if (Platform.isAndroid) return DynamicLibrary.open('libaimux_ffi.so');
-    if (Platform.isIOS) return DynamicLibrary.process();
-    return DynamicLibrary.open(_platformLibName());
-  }
-
-  static String _platformLibName() {
-    if (Platform.isLinux) return 'libaimux_ffi.so';
-    if (Platform.isMacOS) return 'libaimux_ffi.dylib';
-    if (Platform.isWindows) return 'aimux_ffi.dll';
-    throw UnsupportedError('Unsupported platform');
-  }
-
-  // ── Native protocol constructors (C ABI 0.2.0) ──────────────────────────
-
-  Pointer<Utf8> cohereNew(Pointer<Utf8> key, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_cohere_new')(
-          key, model);
-  Pointer<Utf8> cohereNewWithBase(
-          Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_cohere_new_with_base')(key, model, base);
-  Pointer<Utf8> mistralNew(Pointer<Utf8> key, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_mistral_new')(
-          key, model);
-  Pointer<Utf8> mistralNewWithBase(
-          Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_mistral_new_with_base')(key, model, base);
-  Pointer<Utf8> xaiNew(Pointer<Utf8> key, Pointer<Utf8> model) => _lib
-      .lookupFunction<_OpenaiNewC, _OpenaiNewDart>('aimux_xai_new')(key, model);
-  Pointer<Utf8> xaiNewWithBase(
-          Pointer<Utf8> key, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_xai_new_with_base')(key, model, base);
-  Pointer<Utf8> bedrockNew(Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c,
-          Pointer<Utf8> model) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_bedrock_new')(
-          a, b, c, model);
-  Pointer<Utf8> bedrockNewWithBase(Pointer<Utf8> a, Pointer<Utf8> b,
-          Pointer<Utf8> c, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_FiveStrC, _FiveStrDart>(
-          'aimux_bedrock_new_with_base')(a, b, c, model, base);
-  Pointer<Utf8> vertexNew(Pointer<Utf8> a, Pointer<Utf8> b, Pointer<Utf8> c,
-          Pointer<Utf8> model) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_vertex_new')(
-          a, b, c, model);
-  Pointer<Utf8> vertexNewWithBase(Pointer<Utf8> a, Pointer<Utf8> b,
-          Pointer<Utf8> c, Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_FiveStrC, _FiveStrDart>(
-          'aimux_vertex_new_with_base')(a, b, c, model, base);
-  Pointer<Utf8> anthropicAwsNew(
-          Pointer<Utf8> key, Pointer<Utf8> region, Pointer<Utf8> model) =>
-      _lib.lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
-          'aimux_anthropic_aws_new')(key, region, model);
-  Pointer<Utf8> anthropicAwsNewWithBase(Pointer<Utf8> key, Pointer<Utf8> region,
-          Pointer<Utf8> model, Pointer<Utf8> base) =>
-      _lib.lookupFunction<_FourStrC, _FourStrDart>(
-          'aimux_anthropic_aws_new_with_base')(key, region, model, base);
-  Pointer<Utf8> azureNew(Pointer<Utf8> key, Pointer<Utf8> resource,
-          Pointer<Utf8> deployment, Pointer<Utf8>? version) =>
-      _lib.lookupFunction<_FourStrOptC, _FourStrOptDart>('aimux_azure_new')(
-          key, resource, deployment, version);
-  Pointer<Utf8> azureNewWithBase(Pointer<Utf8> key, Pointer<Utf8> base,
-          Pointer<Utf8> deployment, Pointer<Utf8>? version) =>
-      _lib.lookupFunction<_FourStrOptC, _FourStrOptDart>(
-          'aimux_azure_new_with_base')(key, base, deployment, version);
-}
-
-// Stream ABI type (can't use typedef with Pointer<NativeFunction> inline easily)
-typedef _StreamTextC = Void Function(
+typedef _StreamTextC = Int32 Function(
     Uint64,
     Pointer<Utf8>,
     Pointer<Utf8>?,
     Pointer<NativeFunction<_OnPartC>>,
     Pointer<NativeFunction<_OnDoneC>>,
-    Pointer<NativeFunction<_OnErrorC>>);
-typedef _StreamTextDart = void Function(
+    Pointer<Void>,
+    Pointer<AimuxCError>);
+typedef _StreamTextDart = int Function(
     int,
     Pointer<Utf8>,
     Pointer<Utf8>?,
     Pointer<NativeFunction<_OnPartC>>,
     Pointer<NativeFunction<_OnDoneC>>,
-    Pointer<NativeFunction<_OnErrorC>>);
+    Pointer<Void>,
+    Pointer<AimuxCError>);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FFI library wrapper (process-wide singleton — dlopen + symbol lookups
+// happen once, lazily per symbol)
+// ─────────────────────────────────────────────────────────────────────────────
+
+final class _AimuxFFI {
+  final DynamicLibrary _lib = openAimuxLibrary();
+
+  late final openaiNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_openai_new');
+  late final anthropicNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_anthropic_new');
+  late final openaiNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_openai_new_with_base');
+  late final anthropicNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_anthropic_new_with_base');
+  late final cohereNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_cohere_new');
+  late final cohereNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_cohere_new_with_base');
+  late final mistralNew =
+      _lib.lookupFunction<_NewC, _NewDart>('aimux_mistral_new');
+  late final mistralNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_mistral_new_with_base');
+  late final xaiNew = _lib.lookupFunction<_NewC, _NewDart>('aimux_xai_new');
+  late final xaiNewWithBase = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_xai_new_with_base');
+  late final bedrockNew =
+      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_bedrock_new');
+  late final bedrockNewWithBase = _lib
+      .lookupFunction<_FiveStrC, _FiveStrDart>('aimux_bedrock_new_with_base');
+  late final vertexNew =
+      _lib.lookupFunction<_FourStrC, _FourStrDart>('aimux_vertex_new');
+  late final vertexNewWithBase = _lib
+      .lookupFunction<_FiveStrC, _FiveStrDart>('aimux_vertex_new_with_base');
+  late final anthropicAwsNew = _lib
+      .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
+          'aimux_anthropic_aws_new');
+  late final anthropicAwsNewWithBase = _lib
+      .lookupFunction<_FourStrC, _FourStrDart>(
+          'aimux_anthropic_aws_new_with_base');
+  late final azureNew =
+      _lib.lookupFunction<_FourStrOptC, _FourStrOptDart>('aimux_azure_new');
+  late final azureNewWithBase = _lib
+      .lookupFunction<_FourStrOptC, _FourStrOptDart>(
+          'aimux_azure_new_with_base');
+  late final providerNew = _lib
+      .lookupFunction<_ProviderNewC, _ProviderNewDart>('aimux_provider_new');
+  late final providerHandleNew = _lib
+      .lookupFunction<_ProviderHandleNewC, _ProviderHandleNewDart>(
+          'aimux_provider_handle_new');
+  late final providerListModels = _lib
+      .lookupFunction<_ProviderListModelsC, _ProviderListModelsDart>(
+          'aimux_provider_list_models');
+  late final providerModel = _lib
+      .lookupFunction<_ProviderModelC, _ProviderModelDart>(
+          'aimux_provider_model');
+  late final getModelSpecs = _lib
+      .lookupFunction<_GetModelSpecsC, _GetModelSpecsDart>(
+          'aimux_get_model_specs');
+  late final generateText = _lib
+      .lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_text');
+  late final streamText =
+      _lib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text');
+  late final generateTextAsOpenAI = _lib
+      .lookupFunction<_GenerateTextC, _GenerateTextDart>(
+          'aimux_generate_text_as_openai');
+  late final streamTextAsOpenAI = _lib
+      .lookupFunction<_StreamTextC, _StreamTextDart>(
+          'aimux_stream_text_as_openai');
+  late final dropHandle =
+      _lib.lookupFunction<_DropHandleC, _DropHandleDart>('aimux_drop_handle');
+  late final initLogging = _lib
+      .lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging');
+  late final initRecording = _lib
+      .lookupFunction<_RecordingDirC, _RecordingDirDart>('aimux_init_recording');
+  late final initRecordingRing = _lib
+      .lookupFunction<_RecordingRingC, _RecordingRingDart>(
+          'aimux_init_recording_ring');
+  late final recordingStop = _lib
+      .lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
+          'aimux_recording_stop');
+  late final recordingFlush = _lib
+      .lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
+          'aimux_recording_flush');
+  late final mockReplayNew = _lib
+      .lookupFunction<_MockReplayC, _MockReplayDart>('aimux_mock_replay_new');
+}
+
+/// Process-wide FFI table. Lazily created on first use; shared by every
+/// [Model] / [ProviderHandle] and the top-level functions.
+final _AimuxFFI _ffi = _AimuxFFI();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stream callback trampolines (global — safe because aimux_stream_text
@@ -321,226 +245,169 @@ typedef _StreamTextDart = void Function(
 // ─────────────────────────────────────────────────────────────────────────────
 
 StreamController<Map<String, dynamic>>? _currentController;
-String? _currentError;
 
-void _onPart(Pointer<Utf8> jsonPtr) {
-  if (_currentController != null && jsonPtr != nullptr) {
-    final json = jsonPtr.toDartString();
-    _currentController!.add(jsonDecode(json) as Map<String, dynamic>);
+void _onPart(Pointer<Utf8> jsonPtr, Pointer<Void> streamCtx) {
+  final controller = _currentController;
+  if (controller == null || jsonPtr == nullptr) return;
+  // Never let an exception escape into the FFI boundary (undefined behavior);
+  // surface decode failures on the stream instead.
+  try {
+    controller.add(
+        jsonDecode(jsonPtr.toDartString()) as Map<String, dynamic>);
+  } catch (e, st) {
+    controller.addError(e, st);
   }
 }
 
-void _onDone() {
+void _onDone(Pointer<Void> streamCtx) {
   _currentController?.close();
 }
 
-void _onError(Pointer<Utf8> errPtr) {
-  if (errPtr != nullptr) {
-    _currentError = errPtr.toDartString();
-  }
-  _currentController?.addError(StateError(_currentError ?? 'stream error'));
-  _currentController?.close();
+// ─────────────────────────────────────────────────────────────────────────────
+// Constructor helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shared constructor for 4-string providers (bedrock/vertex).
+int _construct4(
+  String a,
+  String b,
+  String c,
+  String modelId,
+  String? baseUrl,
+  _FourStrDart plain,
+  _FiveStrDart withBase,
+) {
+  return withAimuxCError((err) {
+    return withUtf8(a, (aPtr) {
+      return withUtf8(b, (bPtr) {
+        return withUtf8(c, (cPtr) {
+          return withUtf8(modelId, (idPtr) {
+            if (baseUrl == null) {
+              return takeHandle(plain(aPtr, bPtr, cPtr, idPtr, err), err);
+            }
+            return withUtf8(baseUrl, (basePtr) {
+              return takeHandle(
+                  withBase(aPtr, bPtr, cPtr, idPtr, basePtr, err), err);
+            });
+          });
+        });
+      });
+    });
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Parse a constructor's JSON result (`{"handle":<u64>}` on success,
-// `{"error":"..."}` on failure), free the pointer, and return the handle.
-int _extractHandle(_AimuxFFI ffi, Pointer<Utf8> ptr) {
-  if (ptr == nullptr) throw StateError('constructor returned null');
-  final result = ptr.toDartString();
-  ffi.freeString(ptr);
-  final decoded = jsonDecode(result);
-  if (decoded is Map<String, dynamic>) {
-    final error = decoded['error'];
-    if (error is String) throw StateError(error);
-    final handle = decoded['handle'];
-    if (handle is int) return handle;
-  }
-  throw StateError('invalid constructor response: $result');
-}
-
 /// A model instance backed by a Rust `Arc<dyn LanguageModel>`.
 ///
-/// Call [close] to release the native handle.
+/// Call [close] to release the native handle. Engine failures throw
+/// [AimuxException] (or a subclass); using a closed handle throws [StateError].
 class Model {
   final int _handle;
-  final _AimuxFFI _ffi;
   bool _closed = false;
 
-  Model._(this._handle, this._ffi);
+  Model._(this._handle);
 
   /// Create an OpenAI model instance.
   ///
   /// Pass [baseUrl] to target an OpenAI-compatible endpoint (Azure, Groq,
   /// a local mock server, etc.). When null, the provider's standard URL is
   /// used via `aimux_openai_new`.
-  factory Model.openai(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.openaiNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.openaiNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return Model._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory Model.openai(String apiKey, String modelId, {String? baseUrl}) =>
+      Model._(construct2(
+          apiKey, modelId, baseUrl, _ffi.openaiNew, _ffi.openaiNewWithBase));
 
   /// Create an Anthropic model instance.
   ///
   /// Pass [baseUrl] to target a custom Anthropic-compatible endpoint. When
   /// null, the provider's standard URL is used via `aimux_anthropic_new`.
-  factory Model.anthropic(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.anthropicNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.anthropicNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return Model._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory Model.anthropic(String apiKey, String modelId, {String? baseUrl}) =>
+      Model._(construct2(apiKey, modelId, baseUrl, _ffi.anthropicNew,
+          _ffi.anthropicNewWithBase));
 
   /// Create a Cohere model instance.
-  factory Model.cohere(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.cohereNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.cohereNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return Model._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory Model.cohere(String apiKey, String modelId, {String? baseUrl}) =>
+      Model._(construct2(
+          apiKey, modelId, baseUrl, _ffi.cohereNew, _ffi.cohereNewWithBase));
 
   /// Create a Mistral model instance.
-  factory Model.mistral(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.mistralNew(keyPtr, idPtr);
-        }
-        return _withUtf8(baseUrl,
-            (basePtr) => ffi.mistralNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return Model._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory Model.mistral(String apiKey, String modelId, {String? baseUrl}) =>
+      Model._(construct2(
+          apiKey, modelId, baseUrl, _ffi.mistralNew, _ffi.mistralNewWithBase));
 
   /// Create an xAI model instance.
-  factory Model.xai(String apiKey, String modelId, {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return ffi.xaiNew(keyPtr, idPtr);
-        }
-        return _withUtf8(
-            baseUrl, (basePtr) => ffi.xaiNewWithBase(keyPtr, idPtr, basePtr));
-      });
-    });
-    return Model._(_extractHandle(ffi, ptr), ffi);
-  }
+  factory Model.xai(String apiKey, String modelId, {String? baseUrl}) =>
+      Model._(construct2(
+          apiKey, modelId, baseUrl, _ffi.xaiNew, _ffi.xaiNewWithBase));
 
   /// Create a Bedrock model instance (AWS SigV4 credentials).
   factory Model.bedrock(
-      String accessKeyId, String secretAccessKey, String region, String modelId,
-      {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(accessKeyId, (aPtr) {
-      return _withUtf8(secretAccessKey, (bPtr) {
-        return _withUtf8(region, (cPtr) {
-          return _withUtf8(modelId, (idPtr) {
-            if (baseUrl == null) {
-              return ffi.bedrockNew(aPtr, bPtr, cPtr, idPtr);
-            }
-            return _withUtf8(
-                baseUrl,
-                (basePtr) =>
-                    ffi.bedrockNewWithBase(aPtr, bPtr, cPtr, idPtr, basePtr));
-          });
-        });
-      });
-    });
-    return Model._(_extractHandle(ffi, ptr), ffi);
-  }
+          String accessKeyId, String secretAccessKey, String region,
+          String modelId,
+          {String? baseUrl}) =>
+      Model._(_construct4(accessKeyId, secretAccessKey, region, modelId,
+          baseUrl, _ffi.bedrockNew, _ffi.bedrockNewWithBase));
 
   /// Create a Vertex AI model instance (GCP bearer token).
   factory Model.vertex(
-      String accessToken, String project, String location, String modelId,
-      {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(accessToken, (aPtr) {
-      return _withUtf8(project, (bPtr) {
-        return _withUtf8(location, (cPtr) {
-          return _withUtf8(modelId, (idPtr) {
-            if (baseUrl == null) {
-              return ffi.vertexNew(aPtr, bPtr, cPtr, idPtr);
-            }
-            return _withUtf8(
-                baseUrl,
-                (basePtr) =>
-                    ffi.vertexNewWithBase(aPtr, bPtr, cPtr, idPtr, basePtr));
-          });
-        });
-      });
-    });
-    return Model._(_extractHandle(ffi, ptr), ffi);
-  }
+          String accessToken, String project, String location, String modelId,
+          {String? baseUrl}) =>
+      Model._(_construct4(accessToken, project, location, modelId, baseUrl,
+          _ffi.vertexNew, _ffi.vertexNewWithBase));
 
   /// Create an Anthropic-on-AWS model instance (API key + region).
   factory Model.anthropicAws(String apiKey, String region, String modelId,
       {String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(region, (rPtr) {
-        return _withUtf8(modelId, (idPtr) {
-          if (baseUrl == null) {
-            return ffi.anthropicAwsNew(keyPtr, rPtr, idPtr);
-          }
-          return _withUtf8(
-              baseUrl,
-              (basePtr) =>
-                  ffi.anthropicAwsNewWithBase(keyPtr, rPtr, idPtr, basePtr));
+    final handle = withAimuxCError((err) {
+      return withUtf8(apiKey, (keyPtr) {
+        return withUtf8(region, (rPtr) {
+          return withUtf8(modelId, (idPtr) {
+            if (baseUrl == null) {
+              return takeHandle(
+                  _ffi.anthropicAwsNew(keyPtr, rPtr, idPtr, err), err);
+            }
+            return withUtf8(baseUrl, (basePtr) {
+              return takeHandle(
+                  _ffi.anthropicAwsNewWithBase(
+                      keyPtr, rPtr, idPtr, basePtr, err),
+                  err);
+            });
+          });
         });
       });
     });
-    return Model._(_extractHandle(ffi, ptr), ffi);
+    return Model._(handle);
   }
 
   /// Create an Azure OpenAI model instance (API key + resource name).
   /// The deployment name is passed as [deployment]; [apiVersion] is optional.
   factory Model.azure(String apiKey, String resourceName, String deployment,
       {String? apiVersion, String? baseUrl}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(apiKey, (keyPtr) {
-      return _withUtf8(deployment, (dPtr) {
-        final vPtr = apiVersion != null ? apiVersion.toNativeUtf8() : nullptr;
-        try {
-          if (baseUrl == null) {
-            return _withUtf8(
-                resourceName, (rPtr) => ffi.azureNew(keyPtr, rPtr, dPtr, vPtr));
+    final handle = withAimuxCError((err) {
+      return withUtf8(apiKey, (keyPtr) {
+        return withUtf8(deployment, (dPtr) {
+          final vPtr =
+              apiVersion != null ? apiVersion.toNativeUtf8() : nullptr;
+          try {
+            if (baseUrl == null) {
+              return withUtf8(resourceName, (rPtr) {
+                return takeHandle(
+                    _ffi.azureNew(keyPtr, rPtr, dPtr, vPtr, err), err);
+              });
+            }
+            return withUtf8(baseUrl, (bPtr) {
+              return takeHandle(
+                  _ffi.azureNewWithBase(keyPtr, bPtr, dPtr, vPtr, err), err);
+            });
+          } finally {
+            if (vPtr != nullptr) calloc.free(vPtr);
           }
-          return _withUtf8(baseUrl,
-              (bPtr) => ffi.azureNewWithBase(keyPtr, bPtr, dPtr, vPtr));
-        } finally {
-          if (vPtr != nullptr) calloc.free(vPtr);
-        }
+        });
       });
     });
-    return Model._(_extractHandle(ffi, ptr), ffi);
+    return Model._(handle);
   }
 
   /// Create a model from the provider registry by name (RFC-0017 phase 4).
@@ -550,20 +417,23 @@ class Model {
   /// (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`).
   factory Model.provider(String name, String modelId,
       {String? apiKey, String? configJson}) {
-    final ffi = _AimuxFFI();
-    final ptr = _withUtf8(name, (namePtr) {
-      return _withUtf8(modelId, (idPtr) {
-        final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
-        final cfgPtr = configJson != null ? configJson.toNativeUtf8() : nullptr;
-        try {
-          return ffi.providerNew(namePtr, keyPtr, idPtr, cfgPtr);
-        } finally {
-          if (keyPtr != nullptr) calloc.free(keyPtr);
-          if (cfgPtr != nullptr) calloc.free(cfgPtr);
-        }
+    final handle = withAimuxCError((err) {
+      return withUtf8(name, (namePtr) {
+        return withUtf8(modelId, (idPtr) {
+          final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
+          final cfgPtr =
+              configJson != null ? configJson.toNativeUtf8() : nullptr;
+          try {
+            return takeHandle(
+                _ffi.providerNew(namePtr, keyPtr, idPtr, cfgPtr, err), err);
+          } finally {
+            if (keyPtr != nullptr) calloc.free(keyPtr);
+            if (cfgPtr != nullptr) calloc.free(cfgPtr);
+          }
+        });
       });
     });
-    return Model._(_extractHandle(ffi, ptr), ffi);
+    return Model._(handle);
   }
 
   /// Generate text (non-streaming).
@@ -571,6 +441,7 @@ class Model {
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.
   /// Returns the parsed GenerateTextResult as a Map.
+  /// Throws [AimuxException] on engine failure.
   Map<String, dynamic> generateText(
     Object prompt, [
     Map<String, dynamic>? options,
@@ -579,57 +450,102 @@ class Model {
     final promptJson = _promptToJson(prompt);
     final optsJson = options != null ? jsonEncode(options) : null;
 
-    final resultStr = _withUtf8(promptJson, (promptPtr) {
-      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-      try {
-        final resultPtr = _ffi.generateText(_handle, promptPtr, optsPtr);
-        if (resultPtr == nullptr)
-          throw StateError('generate_text returned null');
-        final result = resultPtr.toDartString();
-        _ffi.freeString(resultPtr);
-        return result;
-      } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
-      }
+    final resultStr = withAimuxCError((err) {
+      return withUtf8(promptJson, (promptPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final resultPtr =
+              _ffi.generateText(_handle, promptPtr, optsPtr, err);
+          return takeString(resultPtr, err);
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
     });
 
-    final result = jsonDecode(resultStr) as Map<String, dynamic>;
-    if (result.containsKey('error')) {
-      throw StateError(result['error'] as String);
-    }
-    return result;
+    return jsonDecode(resultStr) as Map<String, dynamic>;
   }
 
   /// Stream text from the model.
   ///
-  /// Returns a Stream of StreamPart maps. Blocks the current isolate
-  /// until the stream completes.
+  /// Returns a Stream of StreamPart maps. Terminal failures throw
+  /// [AimuxException] via [Stream.addError] (and do not call on_done).
+  ///
+  /// NOTE: the underlying `aimux_stream_text` call is synchronous — this
+  /// method blocks the calling isolate until the stream completes, so all
+  /// parts are effectively buffered and delivered only after completion. Run
+  /// it in a worker isolate for UI code. Making this truly incremental is
+  /// follow-up work.
   Stream<Map<String, dynamic>> streamText(
     Object prompt, [
     Map<String, dynamic>? options,
   ]) {
     _checkOpen();
+    return _stream(_ffi.streamText, prompt, options);
+  }
+
+  /// Stream text from the model with OpenAI Chat Completions output
+  /// (RFC-0026).
+  ///
+  /// Returns a Stream of ChatCompletionChunk maps (OpenAI
+  /// `chat.completion.chunk` objects). Stream options (`include_usage`,
+  /// `include_reasoning`) are passed via
+  /// `options['provider_options']['openai']['stream_options']`.
+  ///
+  /// NOTE: like [streamText], this blocks the calling isolate until the
+  /// stream completes and effectively buffers all parts until then.
+  Stream<Map<String, dynamic>> streamTextAsOpenAI(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) {
+    _checkOpen();
+    return _stream(_ffi.streamTextAsOpenAI, prompt, options);
+  }
+
+  Stream<Map<String, dynamic>> _stream(
+    _StreamTextDart streamFn,
+    Object prompt,
+    Map<String, dynamic>? options,
+  ) {
     final promptJson = _promptToJson(prompt);
     final optsJson = options != null ? jsonEncode(options) : null;
 
     final controller = StreamController<Map<String, dynamic>>();
 
-    _withUtf8(promptJson, (promptPtr) {
-      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-      try {
-        final partCb = Pointer.fromFunction<_OnPartC>(_onPart);
-        final doneCb = Pointer.fromFunction<_OnDoneC>(_onDone);
-        final errCb = Pointer.fromFunction<_OnErrorC>(_onError);
+    withAimuxCError((err) {
+      withUtf8(promptJson, (promptPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final partCb = Pointer.fromFunction<_OnPartC>(_onPart);
+          final doneCb = Pointer.fromFunction<_OnDoneC>(_onDone);
 
-        _currentController = controller;
-        _currentError = null;
+          final int ok;
+          _currentController = controller;
+          try {
+            ok = streamFn(
+              _handle,
+              promptPtr,
+              optsPtr,
+              partCb,
+              doneCb,
+              nullptr,
+              err,
+            );
+          } finally {
+            _currentController = null;
+          }
 
-        _ffi.streamText(_handle, promptPtr, optsPtr, partCb, doneCb, errCb);
-
-        _currentController = null;
-      } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
-      }
+          if (ok == 0) {
+            // Terminal failure: on_done was not called.
+            if (!controller.isClosed) {
+              controller.addError(AimuxException.fromC(err.ref));
+              controller.close();
+            }
+          }
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
     });
 
     return controller.stream;
@@ -648,65 +564,20 @@ class Model {
     final promptJson = _promptToJson(prompt);
     final optsJson = options != null ? jsonEncode(options) : null;
 
-    final resultStr = _withUtf8(promptJson, (promptPtr) {
-      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-      try {
-        final resultPtr =
-            _ffi.generateTextAsOpenAI(_handle, promptPtr, optsPtr);
-        if (resultPtr == nullptr)
-          throw StateError('generate_text_as_openai returned null');
-        final result = resultPtr.toDartString();
-        _ffi.freeString(resultPtr);
-        return result;
-      } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
-      }
+    final resultStr = withAimuxCError((err) {
+      return withUtf8(promptJson, (promptPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final resultPtr =
+              _ffi.generateTextAsOpenAI(_handle, promptPtr, optsPtr, err);
+          return takeString(resultPtr, err);
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
     });
 
-    final result = jsonDecode(resultStr) as Map<String, dynamic>;
-    if (result.containsKey('error')) {
-      throw StateError(result['error'] as String);
-    }
-    return result;
-  }
-
-  /// Stream text from the model with OpenAI Chat Completions output
-  /// (RFC-0026).
-  ///
-  /// Returns a Stream of ChatCompletionChunk maps (OpenAI
-  /// `chat.completion.chunk` objects). Blocks the current isolate until the
-  /// stream completes. Stream options (`include_usage`, `include_reasoning`)
-  /// are passed via `options['provider_options']['openai']['stream_options']`.
-  Stream<Map<String, dynamic>> streamTextAsOpenAI(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) {
-    _checkOpen();
-    final promptJson = _promptToJson(prompt);
-    final optsJson = options != null ? jsonEncode(options) : null;
-
-    final controller = StreamController<Map<String, dynamic>>();
-
-    _withUtf8(promptJson, (promptPtr) {
-      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-      try {
-        final partCb = Pointer.fromFunction<_OnPartC>(_onPart);
-        final doneCb = Pointer.fromFunction<_OnDoneC>(_onDone);
-        final errCb = Pointer.fromFunction<_OnErrorC>(_onError);
-
-        _currentController = controller;
-        _currentError = null;
-
-        _ffi.streamTextAsOpenAI(
-            _handle, promptPtr, optsPtr, partCb, doneCb, errCb);
-
-        _currentController = null;
-      } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
-      }
-    });
-
-    return controller.stream;
+    return jsonDecode(resultStr) as Map<String, dynamic>;
   }
 
   /// Release the native handle. Safe to call multiple times.
@@ -791,8 +662,8 @@ class ProviderConfig {
 /// ```dart
 /// final p = createProvider('deepseek', apiKey);
 /// try {
-///   final models = await p.listModels();
-///   final model = await p.model('deepseek-chat');
+///   final models = p.listModels();
+///   final model = p.model('deepseek-chat');
 ///   try {
 ///     print(model.generateText('Hello'));
 ///   } finally {
@@ -804,10 +675,9 @@ class ProviderConfig {
 /// ```
 class ProviderHandle {
   final int _handle;
-  final _AimuxFFI _ffi;
   bool _closed = false;
 
-  ProviderHandle._(this._handle, this._ffi);
+  ProviderHandle._(this._handle);
 
   /// List models available on this provider (runtime discovery via the
   /// provider's `/models` endpoint), enriched with community knowledge
@@ -815,21 +685,13 @@ class ProviderHandle {
   ///
   /// Returns a JSON array string of `ResolvedModel`
   /// (`[{"id":"...","owned_by":"...","created":<u64>,"spec":{...}}, ...]`).
-  /// Blocks the calling isolate until the network call completes.
-  Future<String> listModels() async {
+  /// Synchronous: blocks the calling isolate until the network call completes.
+  String listModels() {
     _checkOpen();
-    final ptr = _ffi.providerListModels(_handle);
-    if (ptr == nullptr) throw StateError('provider_list_models returned null');
-    final result = ptr.toDartString();
-    _ffi.freeString(ptr);
-    final decoded = jsonDecode(result);
-    if (decoded is Map<String, dynamic>) {
-      final error = decoded['error'];
-      if (error is String) throw StateError(error);
-      throw StateError('invalid provider_list_models response: $result');
-    }
-    // A JSON array of ResolvedModel on success.
-    return result;
+    return withAimuxCError((err) {
+      final ptr = _ffi.providerListModels(_handle, err);
+      return takeString(ptr, err);
+    });
   }
 
   /// Build a language [Model] from a discovered [modelId].
@@ -837,11 +699,14 @@ class ProviderHandle {
   /// The returned [Model] is backed by a fresh native handle (separate from
   /// this provider handle) and is usable with `generateText` / `streamText`.
   /// The caller owns the returned [Model] and must [Model.close] it.
-  Future<Model> model(String modelId) async {
+  Model model(String modelId) {
     _checkOpen();
-    final ptr = _withUtf8(modelId,
-        (idPtr) => _ffi.providerModel(_handle, idPtr));
-    return Model._(_extractHandle(_ffi, ptr), _ffi);
+    final handle = withAimuxCError((err) {
+      return withUtf8(modelId, (idPtr) {
+        return takeHandle(_ffi.providerModel(_handle, idPtr, err), err);
+      });
+    });
+    return Model._(handle);
   }
 
   /// Release the native provider handle. Safe to call multiple times.
@@ -869,44 +734,39 @@ class ProviderHandle {
 /// [config] overrides individual fields of the registry entry.
 ProviderHandle createProvider(
     String name, String? apiKey, ProviderConfig? config) {
-  final ffi = _AimuxFFI();
   final configJson = config?.toJson();
-  final ptr = _withUtf8(name, (namePtr) {
-    final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
-    final cfgPtr = configJson != null ? configJson.toNativeUtf8() : nullptr;
-    try {
-      return ffi.providerHandleNew(namePtr, keyPtr, cfgPtr);
-    } finally {
-      if (keyPtr != nullptr) calloc.free(keyPtr);
-      if (cfgPtr != nullptr) calloc.free(cfgPtr);
-    }
+  final handle = withAimuxCError((err) {
+    return withUtf8(name, (namePtr) {
+      final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
+      final cfgPtr = configJson != null ? configJson.toNativeUtf8() : nullptr;
+      try {
+        return takeHandle(
+            _ffi.providerHandleNew(namePtr, keyPtr, cfgPtr, err), err);
+      } finally {
+        if (keyPtr != nullptr) calloc.free(keyPtr);
+        if (cfgPtr != nullptr) calloc.free(cfgPtr);
+      }
+    });
   });
-  return ProviderHandle._(_extractHandle(ffi, ptr), ffi);
+  return ProviderHandle._(handle);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model specs (RFC-0027) — get_model_specs
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Module-level FFI handle for the top-level `getModelSpecs` (created once;
-/// mirrors the instance handle each `Model` holds).
-final _AimuxFFI _modelSpecsFfi = _AimuxFFI();
-
 /// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
 /// Catalogue string. Thin fetch — no caching.
 String getModelSpecs(String? sourceUrl) {
-  Pointer<Utf8>? urlPtr;
-  if (sourceUrl != null) {
-    urlPtr = sourceUrl.toNativeUtf8();
-  }
-  final ptr = _modelSpecsFfi.getModelSpecs(urlPtr);
-  if (urlPtr != null) calloc.free(urlPtr);
-  if (ptr == nullptr) {
-    throw StateError('get_model_specs returned null');
-  }
-  final result = ptr.toDartString();
-  _modelSpecsFfi.freeString(ptr);
-  return result;
+  return withAimuxCError((err) {
+    final urlPtr = sourceUrl != null ? sourceUrl.toNativeUtf8() : nullptr;
+    try {
+      final ptr = _ffi.getModelSpecs(urlPtr, err);
+      return takeString(ptr, err);
+    } finally {
+      if (urlPtr != nullptr) calloc.free(urlPtr);
+    }
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -916,15 +776,6 @@ String getModelSpecs(String? sourceUrl) {
 String _promptToJson(Object prompt) {
   if (prompt is String) return jsonEncode(prompt);
   return jsonEncode({'prompt': prompt});
-}
-
-T _withUtf8<T>(String s, T Function(Pointer<Utf8>) fn) {
-  final ptr = s.toNativeUtf8();
-  try {
-    return fn(ptr);
-  } finally {
-    calloc.free(ptr);
-  }
 }
 
 /// Initialize the global logger (RFC-0014).
@@ -938,8 +789,7 @@ T _withUtf8<T>(String s, T Function(Pointer<Utf8>) fn) {
 /// defaults to "warn". The `AIMUX_LOG` / `AIMUX_LOG_LEVEL` environment
 /// variables take precedence when set. Logs go to stderr.
 void initLogging(String level) {
-  final ffi = _AimuxFFI();
-  _withUtf8(level.isEmpty ? 'warn' : level, ffi.initLogging);
+  withUtf8(level.isEmpty ? 'warn' : level, _ffi.initLogging);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -952,30 +802,18 @@ void initLogging(String level) {
 /// Start recording: complete Recording JSONL is written to
 /// `{dir}/recordings.jsonl` (dir is auto-created). Calling again replaces the
 /// recorder. Returns 0, or -1 when [dir] is null/empty.
-int initRecording(String dir) {
-  final ffi = _AimuxFFI();
-  return _withUtf8(dir, ffi.initRecording);
-}
+int initRecording(String dir) => withUtf8(dir, _ffi.initRecording);
 
 /// Start in-memory bounded recording (ring recorder, FIFO eviction, dropped
 /// count queryable). Returns 0, or -1 when [cap] == 0.
-int initRecordingRing(int cap) {
-  final ffi = _AimuxFFI();
-  return ffi.initRecordingRing(cap);
-}
+int initRecordingRing(int cap) => _ffi.initRecordingRing(cap);
 
 /// Stop recording: the global recorder becomes None. Returns 0.
-int recordingStop() {
-  final ffi = _AimuxFFI();
-  return ffi.recordingStop();
-}
+int recordingStop() => _ffi.recordingStop();
 
 /// Flush the global recorder (blocks until JSONL is on disk; no-op for the
 /// ring recorder). Returns 0.
-int recordingFlush() {
-  final ffi = _AimuxFFI();
-  return ffi.recordingFlush();
-}
+int recordingFlush() => _ffi.recordingFlush();
 
 /// Create a mock replay model from recorded JSONL (one `Recording` per line).
 ///
@@ -983,7 +821,10 @@ int recordingFlush() {
 /// is sent. The returned [Model] works with [Model.generateText] /
 /// [Model.streamText]. Call [Model.close] to release the native handle.
 Model mockReplay(String recordingsJsonl) {
-  final ffi = _AimuxFFI();
-  final ptr = _withUtf8(recordingsJsonl, ffi.mockReplayNew);
-  return Model._(_extractHandle(ffi, ptr), ffi);
+  final handle = withAimuxCError((err) {
+    return withUtf8(recordingsJsonl, (jsonlPtr) {
+      return takeHandle(_ffi.mockReplayNew(jsonlPtr, err), err);
+    });
+  });
+  return Model._(handle);
 }
