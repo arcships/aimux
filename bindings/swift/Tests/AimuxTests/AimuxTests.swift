@@ -64,6 +64,27 @@ final class AimuxTests: XCTestCase {
         XCTAssertNotNil(stream)
     }
 
+    // MARK: - Recording ring (T10)
+
+    /// `initRecordingRing(cap: 0)` must throw instead of silently ignoring the
+    /// C ABI's -1 return (T10). Mirrors Kotlin/Java (throw) and Flutter
+    /// (surface the C error). cap == 0 is rejected by the C ABI without side
+    /// effects, so this does not mutate global recorder state.
+    func testInitRecordingRingRejectsZeroCap() {
+        XCTAssertThrowsError(try Model.initRecordingRing(cap: 0)) { error in
+            guard case .invalidArgument = error as? AimuxError else {
+                return XCTFail("expected .invalidArgument, got \(error)")
+            }
+        }
+    }
+
+    /// A positive cap constructs the ring recorder without throwing.
+    func testInitRecordingRingAcceptsPositiveCap() throws {
+        XCTAssertNoThrow(try Model.initRecordingRing(cap: 8))
+        // Reset global recorder state so this doesn't leak into other tests.
+        Model.recordingStop()
+    }
+
     // MARK: - base_url constructors (no network: just construction)
 
     func testOpenAIWithBaseUrlConstructs() throws {

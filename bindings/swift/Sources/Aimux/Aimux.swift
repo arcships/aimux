@@ -200,13 +200,14 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         case AIMUX_E_INVALID_PROMPT:
             return .invalidPrompt(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_RATE_LIMITED:
-            return .rateLimited(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            // Status defaults mirror Kotlin/Flutter/Node when C reports -1.
+            return .rateLimited(message: message, status: status == -1 ? 429 : status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_AUTH:
-            return .authentication(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .authentication(message: message, status: status == -1 ? 401 : status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_TOKEN_EXPIRED:
-            return .tokenExpired(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .tokenExpired(message: message, status: status == -1 ? 401 : status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_MODEL_NOT_FOUND:
-            return .modelNotFound(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .modelNotFound(message: message, status: status == -1 ? 404 : status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_UNSUPPORTED:
             return .unsupported(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_NO_SUCH_MODEL:
@@ -457,9 +458,20 @@ public final class Model: @unchecked Sendable {
     /// disk.
     ///
     /// - Parameter cap: Ring capacity. Defaults to the recommended `2048`;
-    ///   passing `0` is rejected by the C ABI (returns -1).
-    public static func initRecordingRing(cap: UInt64 = 2048) {
-        aimux_init_recording_ring(cap)
+    ///   must be > 0 — the C ABI rejects `0` (returns -1).
+    /// - Throws: `AimuxError.invalidArgument` when the C call fails (cap == 0
+    ///   returns -1). This matches Kotlin/Java (throw) and Flutter (surface
+    ///   the C error); the binding no longer silently ignores the return code.
+    public static func initRecordingRing(cap: UInt64 = 2048) throws {
+        let rc = aimux_init_recording_ring(cap)
+        if rc < 0 {
+            throw AimuxError.invalidArgument(
+                message: "aimux: initRecordingRing requires cap > 0 (got \(cap))",
+                status: -1,
+                retryMs: -1,
+                errorValue: nil
+            )
+        }
     }
 
     /// Stop recording: the global recorder becomes `None`.
