@@ -5,7 +5,9 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-08-07
+## [Unreleased]
+
+## [0.3.0] - 2026-08-10
 
 **Breaking release.** Reworks the error model across the C ABI and every
 binding, and adds observability primitives (request recording/replay, sessions,
@@ -292,6 +294,7 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 - RFC-0011 Go bindings (cgo static link + push callback → channel streaming)
 - RFC-0012 Source dedup (product source 68K → 51K lines, −25%)
 
+[Unreleased]: https://github.com/arcships/aimux/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/arcships/aimux/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/arcships/aimux/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/arcships/aimux/compare/v0.1.5...v0.2.0
