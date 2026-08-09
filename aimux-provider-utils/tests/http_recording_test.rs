@@ -466,7 +466,10 @@ async fn url_query_and_security_token_header_redacted() {
 
     // catch-all:整条录制序列化后不得出现明文凭据。
     let dump = serde_json::to_string(&rec).unwrap_or_default();
-    assert!(!dump.contains("SECRET"), "secret leaked in recording: {dump}");
+    assert!(
+        !dump.contains("SECRET"),
+        "secret leaked in recording: {dump}"
+    );
     assert!(
         !dump.contains("STS-TOKEN"),
         "STS token leaked in recording: {dump}"

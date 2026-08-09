@@ -9,8 +9,8 @@ use aimux_core::language_model::LanguageModel;
 
 use aimux_providers::provider;
 use aimux_providers::{
-    AnthropicConfig, AnthropicProvider, AzureConfig, AzureModel, CohereConfig, CohereProvider,
-    CodexConfig, CodexProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
+    AnthropicConfig, AnthropicProvider, AzureConfig, AzureModel, CodexConfig, CodexProvider,
+    CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
 };
 
 // ── C2: OpenAI-compatible chat path surfaces the registry provider name ─────
@@ -22,7 +22,10 @@ fn registry_chat_snapshot_records_real_provider() {
     let model = provider("deepseek", Some("sk-test".into()), "deepseek-chat", None)
         .expect("deepseek constructs via registry");
     let snap = model.config_snapshot();
-    assert_eq!(snap.provider, "deepseek", "snapshot must carry the registry name");
+    assert_eq!(
+        snap.provider, "deepseek",
+        "snapshot must carry the registry name"
+    );
     assert_eq!(snap.model_id, "deepseek-chat");
     assert_eq!(model.provider(), "deepseek");
     // Registry `provider(name, None, ..)` reads the env var → env source.
@@ -49,7 +52,9 @@ fn registry_chat_explicit_key_source() {
 #[test]
 fn google_api_key_source_env_vs_explicit() {
     let explicit = GoogleConfig::new("g-explicit");
-    let snap = GoogleProvider::new(explicit).model("gemini-2.0-flash").config_snapshot();
+    let snap = GoogleProvider::new(explicit)
+        .model("gemini-2.0-flash")
+        .config_snapshot();
     assert_eq!(snap.provider, "google.generative-ai");
     assert_eq!(snap.api_key_source, "explicit");
 
@@ -57,7 +62,9 @@ fn google_api_key_source_env_vs_explicit() {
     unsafe { std::env::set_var("GOOGLE_GENERATIVE_AI_API_KEY", "g-env") };
     let env_cfg = GoogleConfig::from_env().expect("env var set");
     unsafe { std::env::remove_var("GOOGLE_GENERATIVE_AI_API_KEY") };
-    let snap = GoogleProvider::new(env_cfg).model("gemini-2.0-flash").config_snapshot();
+    let snap = GoogleProvider::new(env_cfg)
+        .model("gemini-2.0-flash")
+        .config_snapshot();
     assert_eq!(
         snap.api_key_source, "env:GOOGLE_GENERATIVE_AI_API_KEY",
         "from_env must mark the env source"
@@ -93,8 +100,14 @@ fn anthropic_api_key_source_and_snapshot_shape() {
         .expect("anthropic snapshot must carry provider_options");
     assert!(opts.get("headers").is_some(), "missing headers: {opts}");
     assert_eq!(opts["api_version"], "2023-06-01");
-    assert!(opts.get("max_retries").is_some(), "missing max_retries: {opts}");
-    assert!(opts.get("body_overrides").is_some(), "missing body_overrides: {opts}");
+    assert!(
+        opts.get("max_retries").is_some(),
+        "missing max_retries: {opts}"
+    );
+    assert!(
+        opts.get("body_overrides").is_some(),
+        "missing body_overrides: {opts}"
+    );
 
     let json = serde_json::to_string(&snap).unwrap();
     assert!(!json.contains("a-env"), "plaintext key leaked: {json}");
@@ -106,7 +119,9 @@ fn mistral_api_key_source_env() {
     unsafe { std::env::set_var("MISTRAL_API_KEY", "m-env") };
     let cfg = MistralConfig::from_env().expect("env var set");
     unsafe { std::env::remove_var("MISTRAL_API_KEY") };
-    let snap = MistralProvider::new(cfg).model("mistral-small-latest").config_snapshot();
+    let snap = MistralProvider::new(cfg)
+        .model("mistral-small-latest")
+        .config_snapshot();
     assert_eq!(snap.provider, "mistral");
     assert_eq!(snap.api_key_source, "env:MISTRAL_API_KEY");
 }
@@ -117,7 +132,9 @@ fn cohere_api_key_source_env() {
     unsafe { std::env::set_var("COHERE_API_KEY", "c-env") };
     let cfg = CohereConfig::from_env().expect("env var set");
     unsafe { std::env::remove_var("COHERE_API_KEY") };
-    let snap = CohereProvider::new(cfg).model("command-r-plus").config_snapshot();
+    let snap = CohereProvider::new(cfg)
+        .model("command-r-plus")
+        .config_snapshot();
     assert_eq!(snap.provider, "cohere");
     assert_eq!(snap.api_key_source, "env:COHERE_API_KEY");
 }

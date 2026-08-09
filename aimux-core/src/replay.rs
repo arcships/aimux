@@ -387,8 +387,9 @@ fn parse_finish(raw: Option<&str>) -> (FinishReasonUnified, Option<String>) {
 fn u32_from_json(v: &serde_json::Value, field: &str) -> Result<Option<u32>, AiMuxError> {
     v.as_u64()
         .map(|n| {
-            u32::try_from(n)
-                .map_err(|_| AiMuxError::Json(format!("mock replay: usage '{field}' overflows u32: {n}")))
+            u32::try_from(n).map_err(|_| {
+                AiMuxError::Json(format!("mock replay: usage '{field}' overflows u32: {n}"))
+            })
         })
         .transpose()
 }
@@ -873,9 +874,11 @@ mod tests {
         let recs = [rec];
         let matcher = ScoreMatcher::new("openai", "gpt-4o");
         // "zzzzz" 与 "alpha" 无公共前缀消息、LCP=0。
-        assert!(matcher
-            .r#match(&sample_options("zzzzz", None), &recs)
-            .is_err());
+        assert!(
+            matcher
+                .r#match(&sample_options("zzzzz", None), &recs)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1010,8 +1013,12 @@ mod tests {
         rec.exchanges[0].response.as_mut().unwrap().body = Some(body.to_string());
         let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let err = rt
-            .block_on(async { model.do_generate(&sample_options("ping", None)).await.unwrap_err() });
+        let err = rt.block_on(async {
+            model
+                .do_generate(&sample_options("ping", None))
+                .await
+                .unwrap_err()
+        });
         assert!(matches!(err, AiMuxError::Json(_)), "{err}");
         assert!(err.to_string().contains("overflows u32"), "{err}");
     }

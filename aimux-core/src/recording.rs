@@ -501,14 +501,19 @@ impl JsonlRecorder {
     /// 文件:`{dir}/recordings.jsonl`。
     pub fn try_new(dir: impl Into<PathBuf>) -> Result<Self, RecordingError> {
         let dir = dir.into();
-        std::fs::create_dir_all(&dir)
-            .map_err(|source| RecordingError::Init { path: dir.clone(), source })?;
+        std::fs::create_dir_all(&dir).map_err(|source| RecordingError::Init {
+            path: dir.clone(),
+            source,
+        })?;
         let path = dir.join("recordings.jsonl");
         let file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .map_err(|source| RecordingError::OpenFile { path: path.clone(), source })?;
+            .map_err(|source| RecordingError::OpenFile {
+                path: path.clone(),
+                source,
+            })?;
         let w = BufWriter::new(file);
         let (tx, rx) = sync_channel::<RecordEvent>(JSONL_CHANNEL_CAPACITY);
         let inconsistent = Arc::new(Mutex::new(HashSet::new()));
@@ -839,7 +844,11 @@ enum UpdateMatch {
 /// inconsistent)。合并时保留已补全的 response/error/finalized(除非新骨架带值),
 /// 避免重复插入导致的重复条目或更新丢失。
 fn insert_exchange(rec: &mut Recording, exchange: HttpExchange) -> bool {
-    if let Some(existing) = rec.exchanges.iter_mut().find(|e| e.attempt == exchange.attempt) {
+    if let Some(existing) = rec
+        .exchanges
+        .iter_mut()
+        .find(|e| e.attempt == exchange.attempt)
+    {
         merge_exchange(existing, &exchange);
         true
     } else {
@@ -1041,7 +1050,14 @@ impl RingRecorder {
 
     /// 被标记为不一致的 call_id(C4-7,排序以稳定测试)。
     pub fn inconsistent_call_ids(&self) -> Vec<String> {
-        let mut v: Vec<String> = self.inner.lock().unwrap().inconsistent.iter().cloned().collect();
+        let mut v: Vec<String> = self
+            .inner
+            .lock()
+            .unwrap()
+            .inconsistent
+            .iter()
+            .cloned()
+            .collect();
         v.sort();
         v
     }
@@ -1086,7 +1102,9 @@ impl RingInner {
                 ),
             );
         }
-        self.pending.get_mut(call_id).expect("just inserted or present")
+        self.pending
+            .get_mut(call_id)
+            .expect("just inserted or present")
     }
 
     /// 惰性清理已终结的顺序条目,再淘汰最旧 pending 直到低于上限(A3)。
@@ -1100,7 +1118,9 @@ impl RingInner {
             self.pending_order.pop_front();
         }
         while self.pending.len() >= self.pending_max {
-            let Some(old) = self.pending_order.pop_front() else { break };
+            let Some(old) = self.pending_order.pop_front() else {
+                break;
+            };
             if let Some(mut rec) = self.pending.remove(&old) {
                 rec.complete = false;
                 if rec.outcome.status == OutcomeStatus::Pending {
@@ -1881,14 +1901,18 @@ mod tests {
         let min: u64 = s[14..16].parse().ok()?;
         let sec: u64 = s[17..19].parse().ok()?;
         let millis: u32 = s[20..s.len() - 1].parse().ok()?;
-        let total = days_from_civil(year, month, day) * 86_400 + (hour * 3600 + min * 60 + sec) as i64;
+        let total =
+            days_from_civil(year, month, day) * 86_400 + (hour * 3600 + min * 60 + sec) as i64;
         Some((total, millis))
     }
 
     #[test]
     fn format_rfc3339_utc_is_valid_rfc3339() {
         // epoch。
-        assert_eq!(format_rfc3339_utc(Duration::ZERO), "1970-01-01T00:00:00.000Z");
+        assert_eq!(
+            format_rfc3339_utc(Duration::ZERO),
+            "1970-01-01T00:00:00.000Z"
+        );
         // 1_700_000_000s(独立 days_from_civil 交叉验证)。
         let d = Duration::from_secs(1_700_000_000);
         let s = format_rfc3339_utc(d);
@@ -1898,7 +1922,8 @@ mod tests {
         assert_eq!(secs, 1_700_000_000);
         assert_eq!(millis, 0);
         // 毫秒精度保留。
-        let (s2, m2) = parse_rfc3339_secs(&format_rfc3339_utc(Duration::from_millis(12_345))).unwrap();
+        let (s2, m2) =
+            parse_rfc3339_secs(&format_rfc3339_utc(Duration::from_millis(12_345))).unwrap();
         assert_eq!((s2, m2), (12, 345));
         // iso8601_now() 同格式。
         let now = iso8601_now();
@@ -1912,7 +1937,9 @@ mod tests {
         // 容量 1 + 不消费:第 1 条入队,后两条 Full → drop-newest 并计数。
         let (tx, rx) = sync_channel::<RecordEvent>(1);
         let dropped = AtomicU64::new(0);
-        let ev = || RecordEvent::TransportClosed { call_id: "c".into() };
+        let ev = || RecordEvent::TransportClosed {
+            call_id: "c".into(),
+        };
         send_or_drop(&tx, ev(), &dropped);
         send_or_drop(&tx, ev(), &dropped);
         send_or_drop(&tx, ev(), &dropped);
@@ -1934,7 +1961,8 @@ mod tests {
 
     #[test]
     fn jsonl_try_new_fails_on_invalid_dir() {
-        let blocker = std::env::temp_dir().join(format!("aimux-rec-blocker-{}", std::process::id()));
+        let blocker =
+            std::env::temp_dir().join(format!("aimux-rec-blocker-{}", std::process::id()));
         let _ = std::fs::remove_file(&blocker);
         std::fs::write(&blocker, b"x").unwrap();
         // blocker 是文件 → create_dir_all(blocker/sub) 失败 → Err(Init)。
@@ -1961,11 +1989,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         // 非法目录 → new 降级(tx=None)→ try_flush 返回 WriterGone。
-        let blocker = std::env::temp_dir().join(format!("aimux-rec-blocker2-{}", std::process::id()));
+        let blocker =
+            std::env::temp_dir().join(format!("aimux-rec-blocker2-{}", std::process::id()));
         let _ = std::fs::remove_file(&blocker);
         std::fs::write(&blocker, b"x").unwrap();
         let disabled = JsonlRecorder::new(blocker.join("sub"));
-        assert!(matches!(disabled.try_flush(), Err(RecordingError::WriterGone)));
+        assert!(matches!(
+            disabled.try_flush(),
+            Err(RecordingError::WriterGone)
+        ));
         let _ = std::fs::remove_file(&blocker);
     }
 
@@ -2036,7 +2068,10 @@ mod tests {
         rec.flush();
         let content = std::fs::read_to_string(rec.path()).unwrap();
         let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
-        assert_eq!(parsed.provider.base_url.as_deref(), Some("https://api.openai.com"));
+        assert_eq!(
+            parsed.provider.base_url.as_deref(),
+            Some("https://api.openai.com")
+        );
         assert_eq!(parsed.provider.provider, "openai");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2133,11 +2168,12 @@ mod tests {
             apply_exchange_update(&mut rec, 1, resp_status(503), Some("amb".into())),
             UpdateMatch::Ambiguous
         );
-        assert!(rec
-            .exchanges
-            .iter()
-            .filter(|e| e.attempt == 1)
-            .all(|e| e.response.as_ref().is_none_or(|r| r.status != 503)));
+        assert!(
+            rec.exchanges
+                .iter()
+                .filter(|e| e.attempt == 1)
+                .all(|e| e.response.as_ref().is_none_or(|r| r.status != 503))
+        );
     }
 
     #[test]
@@ -2166,7 +2202,11 @@ mod tests {
         // 无骨架直接 update → 0 匹配 → 标记 inconsistent,不静默丢弃。
         ring.record_exchange_update("c", 0, &resp_status(200), None);
         assert!(ring.inconsistent_call_ids().contains(&"c".to_string()));
-        assert_eq!(ring.pending_count(), 1, "call still pending, no exchange created");
+        assert_eq!(
+            ring.pending_count(),
+            1,
+            "call still pending, no exchange created"
+        );
     }
 
     #[test]

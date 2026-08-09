@@ -790,27 +790,48 @@ fn scope_key_isolates_by_provider_same_model_id() {
 
     // Provider "alpha", model "shared-m": two identical calls. Call 2 must
     // match call 1 (same provider → same scope) → LCP upper bound present.
-    let a1: Arc<dyn LanguageModel> =
-        Arc::new(MockModel::with_identity("alpha", "shared-m", body.clone(), 0, 1536));
+    let a1: Arc<dyn LanguageModel> = Arc::new(MockModel::with_identity(
+        "alpha",
+        "shared-m",
+        body.clone(),
+        0,
+        1536,
+    ));
     let layer_a = Arc::new(TraceLayer::new(a1, store.clone()).with_rules_auditor(true));
     block_on(layer_a.do_generate(&model_opts(Some("sa")))).unwrap();
 
-    let a2: Arc<dyn LanguageModel> =
-        Arc::new(MockModel::with_identity("alpha", "shared-m", body.clone(), 0, 1536));
+    let a2: Arc<dyn LanguageModel> = Arc::new(MockModel::with_identity(
+        "alpha",
+        "shared-m",
+        body.clone(),
+        0,
+        1536,
+    ));
     let layer_a2 = Arc::new(TraceLayer::new(a2, store.clone()).with_rules_auditor(true));
     block_on(layer_a2.do_generate(&model_opts(Some("sa")))).unwrap();
 
     // Provider "beta", SAME model "shared-m", SAME body — must NOT match
     // alpha's records (different provider → different scope_key).
-    let b1: Arc<dyn LanguageModel> =
-        Arc::new(MockModel::with_identity("beta", "shared-m", body.clone(), 0, 1536));
+    let b1: Arc<dyn LanguageModel> = Arc::new(MockModel::with_identity(
+        "beta",
+        "shared-m",
+        body.clone(),
+        0,
+        1536,
+    ));
     let layer_b = Arc::new(TraceLayer::new(b1, store.clone()).with_rules_auditor(true));
     block_on(layer_b.do_generate(&model_opts(Some("sb")))).unwrap();
 
     let recs = store.aggregate(&TraceFilter::default());
     // Two groups: (alpha, shared-m) and (beta, shared-m).
-    let alpha = recs.iter().find(|r| r.provider == "alpha").expect("alpha group");
-    let beta = recs.iter().find(|r| r.provider == "beta").expect("beta group");
+    let alpha = recs
+        .iter()
+        .find(|r| r.provider == "alpha")
+        .expect("alpha group");
+    let beta = recs
+        .iter()
+        .find(|r| r.provider == "beta")
+        .expect("beta group");
     assert_eq!(alpha.requests, 2);
     assert_eq!(beta.requests, 1);
     // alpha call 2 matched call 1 → client upper bound present.

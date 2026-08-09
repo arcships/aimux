@@ -37,8 +37,8 @@ use aimux_core::result::{GenerateResult, StreamResult};
 
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed,
-    with_user_agent_suffix, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed, with_user_agent_suffix,
+    without_trailing_slash,
 };
 use aimux_stream::SseStream;
 
@@ -270,8 +270,10 @@ impl LanguageModel for AzureResponsesModel {
         Self::apply_file_id_prefixes(&mut body);
 
         let provider_key = provider_key().to_string();
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -324,8 +326,10 @@ impl LanguageModel for AzureResponsesModel {
             .and_then(|v| v.as_bool())
             == Some(true);
 
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {

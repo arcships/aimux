@@ -115,8 +115,9 @@ impl VertexProviderConfig {
         if let Ok(key) = std::env::var("GOOGLE_VERTEX_API_KEY")
             && !key.trim().is_empty()
         {
-            return Ok(Self::with_api_key(key)
-                .with_api_key_source(Some("env:GOOGLE_VERTEX_API_KEY")));
+            return Ok(
+                Self::with_api_key(key).with_api_key_source(Some("env:GOOGLE_VERTEX_API_KEY"))
+            );
         }
 
         // Standard auth with access token.

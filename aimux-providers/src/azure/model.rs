@@ -478,8 +478,10 @@ impl LanguageModel for AzureModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
         execute_generate(
             &self.endpoint(),
             &headers,
@@ -494,8 +496,10 @@ impl LanguageModel for AzureModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref()).await?;
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
         execute_stream(
             &self.endpoint(),
             &headers,

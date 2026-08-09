@@ -24,9 +24,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed,
-};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
 use super::MistralConfig;
@@ -231,8 +229,10 @@ impl LanguageModel for MistralModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options, false);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -324,8 +324,10 @@ impl LanguageModel for MistralModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options, true);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {

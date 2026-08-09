@@ -13,9 +13,10 @@ use aimux_ffi::{
     AIMUX_E_INVALID_ARGUMENT, AIMUX_E_JSON, AIMUX_E_OTHER, AIMUX_E_UNKNOWN_PROVIDER, AIMUX_OK,
     CAimuxError, aimux_abort_signal_abort, aimux_abort_signal_drop, aimux_abort_signal_new,
     aimux_azure_new, aimux_cohere_reranking_new, aimux_drop_handle, aimux_free_string,
-    aimux_generate_text, aimux_google_image_new, aimux_google_video_new, aimux_openai_embedding_new,
-    aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new, aimux_openai_speech_new,
-    aimux_openai_transcription_new, aimux_provider_new, aimux_stream_text, aimux_tavily_search_new,
+    aimux_generate_text, aimux_google_image_new, aimux_google_video_new,
+    aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new,
+    aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new, aimux_stream_text,
+    aimux_tavily_search_new,
 };
 
 fn c(s: &str) -> CString {
@@ -270,13 +271,19 @@ fn multimodal_null_api_key_fills_invalid_argument() {
     let mut err = clear_err();
     let h = aimux_openai_files_new(ptr::null(), &mut err);
     expect_fail_u64(h, &err);
-    assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT, "openai_files: null api_key");
+    assert_eq!(
+        err.code, AIMUX_E_INVALID_ARGUMENT,
+        "openai_files: null api_key"
+    );
     free_err(&mut err);
     // Tavily ignores model_id but still validates api_key.
     let mut err = clear_err();
     let h = aimux_tavily_search_new(ptr::null(), ptr::null(), &mut err);
     expect_fail_u64(h, &err);
-    assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT, "tavily_search: null api_key");
+    assert_eq!(
+        err.code, AIMUX_E_INVALID_ARGUMENT,
+        "tavily_search: null api_key"
+    );
     free_err(&mut err);
 }
 
@@ -301,7 +308,10 @@ fn multimodal_invalid_utf8_api_key_fills_invalid_argument() {
         let mut err = clear_err();
         let h = ctor(bad_key.as_ptr(), model.as_ptr(), &mut err);
         expect_fail_u64(h, &err);
-        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT, "{name}: invalid utf-8 api_key");
+        assert_eq!(
+            err.code, AIMUX_E_INVALID_ARGUMENT,
+            "{name}: invalid utf-8 api_key"
+        );
         free_err(&mut err);
     }
 }

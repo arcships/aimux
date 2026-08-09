@@ -143,8 +143,10 @@ impl LanguageModel for BedrockModel {
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -215,8 +217,10 @@ impl LanguageModel for BedrockModel {
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {

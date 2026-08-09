@@ -18,9 +18,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed,
-};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
 use super::CohereConfig;
@@ -128,8 +126,10 @@ impl LanguageModel for CohereModel {
         let body_result = build_request_body(&self.model_id, options, false);
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -256,8 +256,10 @@ impl LanguageModel for CohereModel {
         let body_result = build_request_body(&self.model_id, options, true);
         let body = body_result.body.clone();
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config =
-            crate::openai::model::resolve_retry_config(&self.config.retry_config, options.max_retries);
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {
