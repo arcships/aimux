@@ -1,6 +1,6 @@
 # RFC-0026: OpenAI Compatible 输出格式
 
-> 状态:草案
+> 状态:已实现(第一期核心转换层已落地:`aimux-core/src/openai_output.rs` 提供 `to_chat_completion`/`to_chat_completion_stream` + `generate.rs` 的 `generate_text_as_openai`/`stream_text_as_openai`;见 §8 实现计划)
 > 日期:2026-08-05
 > 依赖:RFC-0005(协议转换)、RFC-0016(对齐 AI SDK)
 

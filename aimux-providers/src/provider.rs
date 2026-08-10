@@ -252,7 +252,7 @@ mod tests {
             Ok(m) => m,
             Err(e) => panic!("groq should construct: {e}"),
         };
-        assert_eq!(model.provider(), "openai"); // LanguageModel::provider() is the protocol impl name (same as before phase 4)
+        assert_eq!(model.provider(), "groq"); // RFC-0023 C2: registry provider surfaces its real name, not "openai"
         assert_eq!(model.model_id(), "llama-3.3-70b");
     }
 

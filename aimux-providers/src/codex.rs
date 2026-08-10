@@ -113,7 +113,13 @@ impl CodexConfig {
     /// API-key mode reading `CODEX_API_KEY` from the environment.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = aimux_provider_utils::load_api_key(None, CODEX_API_KEY_ENV_VAR, "Codex")?;
-        Ok(Self::new(key))
+        Ok(Self::new(key).with_api_key_source(Some("env:CODEX_API_KEY")))
+    }
+
+    /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.openai = self.openai.with_api_key_source(source);
+        self
     }
 
     /// Override the base URL (tests / self-hosted endpoints).
@@ -413,7 +419,12 @@ impl LanguageModel for CodexModel {
             provider: self.provider().to_string(),
             model_id: self.model_id.clone(),
             base_url: Some(self.config.openai.base_url.clone()),
-            api_key_source: "explicit".to_string(),
+            api_key_source: self
+                .config
+                .openai
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
             profile: None,
             provider_options: None,
         }

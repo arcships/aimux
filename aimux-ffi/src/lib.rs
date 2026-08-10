@@ -2532,6 +2532,20 @@ pub extern "C" fn aimux_init_recording_ring(cap: u64) -> i32 {
     0
 }
 
+/// No-argument variant of [`aimux_init_recording_ring`]: initialize the global
+/// recorder with a `RingRecorder` at the library default capacity (2048
+/// entries, [`aimux_core::recording::RingRecorder::default`]). Ordinary callers
+/// should prefer this entry point and leave the ring size to the library; pass
+/// an explicit `cap` via [`aimux_init_recording_ring`] only when a different
+/// size is required. Returns 0 on success.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_init_recording_ring_default() -> i32 {
+    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+        aimux_core::recording::RingRecorder::default(),
+    )));
+    0
+}
+
 /// Stop recording: global recorder = None (new calls are unrecorded). Returns 0.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_recording_stop() -> i32 {

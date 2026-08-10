@@ -63,6 +63,10 @@ const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
 pub struct VertexAnthropicConfig {
     pub base_url: String,
     pub auth: VertexAuth,
+    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    pub retry_config: RetryConfig,
 }
 
 /// An Anthropic Claude language model served via Vertex AI `rawPredict`.
@@ -146,11 +150,40 @@ impl LanguageModel for VertexAnthropicModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        // M2b: record identity + credential source + auth kind. Never serialize
+        // the bearer token or API key plaintext.
+        let auth_kind = match &self.config.auth {
+            VertexAuth::BearerToken(_) => "bearer_token",
+            VertexAuth::ApiKey(_) => "api_key",
+        };
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
+            profile: None,
+            provider_options: Some(serde_json::json!({
+                "auth_kind": auth_kind,
+                "anthropic_version": ANTHROPIC_VERTEX_VERSION,
+            })),
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let anthropic_body = build_request_body(&self.model_id, options, false)?;
         let body = self.wrap_raw_predict_body(anthropic_body);
         let url = self.generate_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -163,7 +196,7 @@ impl LanguageModel for VertexAnthropicModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
@@ -252,6 +285,10 @@ impl LanguageModel for VertexAnthropicModel {
         let body = self.wrap_raw_predict_body(anthropic_body);
         let url = self.stream_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {
@@ -264,7 +301,7 @@ impl LanguageModel for VertexAnthropicModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )

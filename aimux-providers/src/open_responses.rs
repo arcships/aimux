@@ -52,6 +52,10 @@ pub struct OpenResponsesConfig {
     /// ID generator (retained for API parity with the TS config; not used
     /// by the model itself).
     pub generate_id: Arc<dyn Fn() -> String + Send + Sync>,
+    /// 凭证来源(RFC-0023):`None` = 未标注(回放时由 headers 闭包推断);
+    /// `Some("explicit")` / `Some("env:VAR")` = 调用方显式标注。Open Responses
+    /// 是通用包装,认证由调用方经 `headers` 闭包管理,故默认 `None`。
+    pub api_key_source: Option<String>,
 }
 
 impl std::fmt::Debug for OpenResponsesConfig {
@@ -62,6 +66,7 @@ impl std::fmt::Debug for OpenResponsesConfig {
             .field("url", &self.url)
             .field("headers", &self.headers.is_some())
             .field("generate_id", &"<closure>")
+            .field("api_key_source", &self.api_key_source)
             .finish()
     }
 }
@@ -86,6 +91,7 @@ impl OpenResponsesConfig {
                 let n = COUNTER.fetch_add(1, Ordering::Relaxed);
                 format!("id-{}", n)
             }),
+            api_key_source: None,
         }
     }
 
@@ -104,6 +110,14 @@ impl OpenResponsesConfig {
         F: Fn() -> String + Send + Sync + 'static,
     {
         self.generate_id = Arc::new(generate_id);
+        self
+    }
+
+    /// 标注凭证来源(RFC-0023 回放重建用)。Open Responses 的认证由调用方经
+    /// `headers` 闭包管理;此 setter 让调用方显式标注来源(如 `env:VAR`),
+    /// 覆盖 `config_snapshot` 对闭包的推断。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.api_key_source = source.map(|s| s.to_string());
         self
     }
 }
@@ -154,6 +168,7 @@ impl OpenResponsesModel {
                 url: config.url.clone(),
                 headers: config.headers.clone(),
                 generate_id: config.generate_id.clone(),
+                api_key_source: config.api_key_source.clone(),
             },
         }
     }
@@ -172,6 +187,42 @@ impl OpenResponsesModel {
         }
         headers
     }
+
+    /// Resolve the credential source for `config_snapshot` (M2b).
+    ///
+    /// Priority:
+    /// 1. An explicit `api_key_source` set via [`OpenResponsesConfig::with_api_key_source`]
+    ///    (e.g. `"env:VAR"`) — lets callers mark env-sourced auth precisely.
+    /// 2. Otherwise, inspect the `headers` closure for a known auth header
+    ///    *key* (`authorization` / `x-api-key` / `x-goog-api-key` / `api-key`).
+    ///    Only key names are inspected — header *values* are never recorded, so
+    ///    no secret leaks. If an auth header is present the source is
+    ///    `"explicit"` (caller-managed); this is the same closure already
+    ///    invoked by `build_headers` on every request, so calling it here is
+    ///    no riskier.
+    /// 3. No headers closure (and no explicit source) → `"none"` (e.g. a local
+    ///    LM Studio server with no auth).
+    fn resolve_api_key_source(&self) -> String {
+        if let Some(source) = &self.config.api_key_source {
+            return source.clone();
+        }
+        let Some(headers_factory) = &self.config.headers else {
+            return "none".to_string();
+        };
+        let headers = headers_factory();
+        let has_auth = headers.keys().any(|k| {
+            let lower = k.to_ascii_lowercase();
+            matches!(
+                lower.as_str(),
+                "authorization" | "x-api-key" | "x-goog-api-key" | "api-key"
+            )
+        });
+        if has_auth {
+            "explicit".to_string()
+        } else {
+            "none".to_string()
+        }
+    }
 }
 
 #[async_trait]
@@ -182,6 +233,26 @@ impl LanguageModel for OpenResponsesModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        // M2b: generic Responses wrapper — auth is caller-managed via the
+        // `headers` closure. Record the real credential source: an explicit
+        // marker if set, else inferred from the closure (auth header key
+        // present → "explicit"; no closure → "none"). Only key names are
+        // inspected — header values (secrets) are never serialized.
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.url.clone()),
+            api_key_source: self.resolve_api_key_source(),
+            profile: None,
+            provider_options: Some(serde_json::json!({
+                "provider_options_name": self.config.provider_options_name,
+                "has_headers": self.config.headers.is_some(),
+            })),
+        }
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

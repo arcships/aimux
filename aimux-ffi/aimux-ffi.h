@@ -220,8 +220,11 @@ uint64_t aimux_provider_handle_new(const char *name, const char *api_key,
                                 const char *config_json, AimuxError *err);
 
 /**
- * List models on a provider handle (runtime discovery + anya2a enrichment).
- * Returns a JSON array of ResolvedModel, or NULL with details in `*err`.
+ * List models on a provider handle (RFC-0027 runtime discovery).
+ * Returns a JSON array of sparse RuntimeModel (id / owned_by / created) —
+ * no community enrichment. To supplement with model specs, call
+ * aimux_get_model_specs separately and merge in the host.
+ * Returns NULL on failure (fills `*err`).
  */
 char *aimux_provider_list_models(uint64_t handle, AimuxError *err);
 
@@ -522,6 +525,12 @@ int aimux_init_recording(const char *dir);
 /* Start in-memory bounded recording (RingRecorder, FIFO eviction, dropped
    count queryable). Returns 0, or -1 when cap == 0. */
 int aimux_init_recording_ring(uint64_t cap);
+
+/* No-argument variant: start in-memory bounded recording with the library
+   default ring capacity (2048 entries). Ordinary callers should prefer this
+   entry point; pass an explicit cap via aimux_init_recording_ring only when a
+   different size is required. Returns 0. */
+int aimux_init_recording_ring_default(void);
 
 /* Stop recording: the global recorder becomes None. Returns 0. */
 int aimux_recording_stop(void);

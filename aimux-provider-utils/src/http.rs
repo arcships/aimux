@@ -262,12 +262,12 @@ pub async fn send(
             tokio::select! {
                 biased;
                 _ = signal.cancelled() => {
-                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, "aborted after 2xx");
+                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, "aborted after 2xx", None);
                     record_transport_closed(&request);
                     return Err(AiMuxError::Aborted);
                 }
                 b = bytes => b.map_err(|e| {
-                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, &e.to_string());
+                    record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, &e.to_string(), None);
                     record_transport_closed(&request);
                     AiMuxError::Http(e.to_string())
                 })?,
@@ -279,6 +279,7 @@ pub async fn send(
                 attempt,
                 started.elapsed().as_millis() as u64,
                 &e.to_string(),
+                None,
             );
             record_transport_closed(&request);
             AiMuxError::Http(e.to_string())
@@ -406,7 +407,7 @@ pub async fn send_stream(
             status,
             headers: resp_headers,
             ttfb_ms: None,
-            body: String::new(),
+            body: ByteAccumulator::new(RECORD_BODY_CAP),
             chunks: 0usize,
         })
     } else {
@@ -440,18 +441,17 @@ struct StreamRec {
     status: u16,
     headers: Vec<(String, String)>,
     ttfb_ms: Option<u64>,
-    body: String,
+    /// 原始字节累积(跨 chunk 边界 UTF-8 安全;受 RECORD_BODY_CAP 上限)。
+    body: ByteAccumulator,
     chunks: usize,
 }
 
 impl StreamRec {
     /// 终结时补全 response(transport 结束时对 attempt 定位更新)。
     fn finalize(&mut self, error: Option<String>) {
-        let body = if self.body.is_empty() {
-            None
-        } else {
-            Some(std::mem::take(&mut self.body))
-        };
+        // 流结束时统一做一次 UTF-8 解码:跨 chunk 边界的多字节字符不再被
+        // lossy 拆成 U+FFFD(A6)。
+        let body = self.body.decode();
         let response = aimux_core::recording::ResponseRecord {
             status: self.status,
             headers: self.headers.clone(),
@@ -502,8 +502,9 @@ impl Stream for ObservedByteStream {
                 }
                 this.chunks += 1;
                 if let Some(rec) = &mut this.record {
-                    let s = String::from_utf8_lossy(bytes);
-                    push_utf8_capped(&mut rec.body, &s, RECORD_BODY_CAP);
+                    // 累积原始字节(不在每个 chunk 上单独 lossy 解码,避免跨
+                    // chunk 边界拆坏多字节字符;A6)。结尾 finalize 统一解码。
+                    rec.body.push(bytes);
                     rec.chunks = this.chunks as usize;
                 }
             }
@@ -939,25 +940,64 @@ fn truncate_utf8(s: &str, cap: usize) -> &str {
     &s[..end]
 }
 
-/// 流式累积:把 `chunk` 追加到 `buf`(受 cap 限制,安全截断)。
-fn push_utf8_capped(buf: &mut String, chunk: &str, cap: usize) {
-    if buf.len() >= cap {
-        return;
-    }
-    let take = cap - buf.len();
-    let chunk = if chunk.len() > take {
-        let mut end = take;
-        while end > 0 && !chunk.is_char_boundary(end) {
-            end -= 1;
-        }
-        &chunk[..end]
-    } else {
-        chunk
-    };
-    buf.push_str(chunk);
+/// 有界字节累积器:流式录制按原始字节累积,流末统一解码。
+///
+/// 解决每个网络 chunk 单独 `String::from_utf8_lossy` 导致跨 chunk 边界的
+/// 多字节字符(中文/emoji)被拆成 U+FFFD 的问题(A6)。累积受 `cap` 限制,
+/// 超出即截断并标记;截断处可能切在多字节字符中间,解码时去掉末尾替换符
+/// 并追加 `…(truncated)` 标记。仅用于流式 SSE 录制(非流式 body 不经此路径)。
+struct ByteAccumulator {
+    buf: Vec<u8>,
+    cap: usize,
+    truncated: bool,
 }
 
-/// 把请求转成录制侧的 HttpRecord(敏感头 contains 式脱敏;body 截断)。
+impl ByteAccumulator {
+    fn new(cap: usize) -> Self {
+        Self {
+            buf: Vec::new(),
+            cap,
+            truncated: false,
+        }
+    }
+
+    /// 追加一个网络 chunk(受 cap 限制,超出标记截断)。
+    fn push(&mut self, bytes: &[u8]) {
+        if self.truncated {
+            return;
+        }
+        let remaining = self.cap.saturating_sub(self.buf.len());
+        if remaining == 0 {
+            self.truncated = true;
+            return;
+        }
+        if bytes.len() <= remaining {
+            self.buf.extend_from_slice(bytes);
+        } else {
+            // 截断到 cap(可能切在多字节字符中间;decode 时处理边界)。
+            self.buf.extend_from_slice(&bytes[..remaining]);
+            self.truncated = true;
+        }
+    }
+
+    /// 终结解码:统一一次 UTF-8 解码(跨 chunk 多字节字符不破坏)。
+    /// 截断时去掉末尾的 U+FFFD(来自 cap 处的不完整字符)并追加标记。
+    fn decode(&self) -> Option<String> {
+        if self.buf.is_empty() {
+            return None;
+        }
+        let mut s = String::from_utf8_lossy(&self.buf).into_owned();
+        if self.truncated {
+            while s.ends_with('\u{FFFD}') {
+                s.pop();
+            }
+            s.push_str("…(truncated)");
+        }
+        Some(s)
+    }
+}
+
+/// 把请求转成录制侧的 HttpRecord(敏感头脱敏;body 截断)。
 fn to_http_record(request: &HttpRequest) -> aimux_core::recording::HttpRecord {
     use aimux_core::recording::is_sensitive_key;
     let headers = request
@@ -1016,14 +1056,61 @@ fn record_transport_closed(request: &HttpRequest) {
     }
 }
 
+/// 收集响应头并脱敏(录制 ResponseRecord.headers 用;敏感头值替换为 [REDACTED])。
+fn redacted_response_headers(headers: &reqwest::header::HeaderMap) -> Vec<(String, String)> {
+    use aimux_core::recording::is_sensitive_key;
+    headers
+        .iter()
+        .map(|(k, v)| {
+            let key = k.to_string();
+            if is_sensitive_key(&key) {
+                (key, "[REDACTED]".to_string())
+            } else {
+                (key, v.to_str().unwrap_or("").to_string())
+            }
+        })
+        .collect()
+}
+
+/// 由非 2xx 响应构造结构化 [`ResponseRecord`](aimux_core::recording::ResponseRecord)
+/// (用于失败 attempt 的录制;A5)。`body` 已由 `read_error_body` 截断到 64KiB,
+/// 这里再做一次 `RECORD_BODY_CAP` 安全截断(边界对齐 UTF-8 字符)。
+fn error_response_record(
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: &str,
+) -> aimux_core::recording::ResponseRecord {
+    aimux_core::recording::ResponseRecord {
+        status,
+        headers,
+        body: if body.is_empty() {
+            None
+        } else {
+            Some(truncate_utf8(body, RECORD_BODY_CAP).to_string())
+        },
+        stream_chunks: None,
+        ttfb_ms: None,
+    }
+}
+
 /// 录制失败 attempt 的 exchange(终态,error 携带原因)。
-fn record_failed_exchange(request: &HttpRequest, attempt: u32, latency_ms: u64, error: &str) {
+///
+/// `response`:`Some` 表示已收到合法 HTTP 响应(4xx/5xx,含 429)——结构化
+/// status/headers/body 一并录制;`None` 表示 DNS/连接/TLS/abort 等无 HTTP
+/// 响应的传输层失败。`error` 字符串始终保留(日志/诊断用),录制结构完整(A5)。
+fn record_failed_exchange(
+    request: &HttpRequest,
+    attempt: u32,
+    latency_ms: u64,
+    error: &str,
+    response: Option<aimux_core::recording::ResponseRecord>,
+) {
     record_exchange(
         request,
         aimux_core::recording::HttpExchange {
             attempt,
             request: to_http_record(request),
-            response: None,
+            response,
             timing: aimux_core::recording::TimingRecord {
                 latency_ms,
                 ttfb_ms: None,
@@ -1086,6 +1173,10 @@ async fn send_with_retry_raw(
                             .and_then(|v| v.to_str().ok()),
                         SystemTime::now(),
                     );
+                    // 已收到合法 HTTP 响应:结构化录制 status/headers/body(A5),
+                    // 同时保留 error 字符串用于诊断。headers 必须在 read_error_body
+                    // 消费 resp 之前采集。
+                    let resp_headers = redacted_response_headers(resp.headers());
                     // Keep the provider's rate-limit body (e.g. "quota
                     // exceeded" vs "too many requests") so consumers can tell
                     // the two apart (issue M6).
@@ -1095,6 +1186,7 @@ async fn send_with_retry_raw(
                         attempt,
                         latency_ms,
                         &format!("HTTP {status_code}: {body}"),
+                        Some(error_response_record(status_code, resp_headers, &body)),
                     );
                     last_error = AiMuxError::RateLimited {
                         retry_after_ms: hint.unwrap_or(1000).max(0) as u64,
@@ -1102,24 +1194,34 @@ async fn send_with_retry_raw(
                     };
                 } else if resp.status().is_server_error() {
                     // 5xx: 可重试。
+                    let resp_headers = redacted_response_headers(resp.headers());
                     let body = read_error_body(resp, request).await?;
                     record_failed_exchange(
                         request,
                         attempt,
                         latency_ms,
                         &format!("HTTP {status_code}: {body}"),
+                        Some(error_response_record(status_code, resp_headers, &body)),
                     );
                     last_error = AiMuxError::ApiCall(format!("HTTP {}: {}", status_code, body));
                 } else {
                     // 非 4xx 非 5xx：不可重试，立即返回。
+                    let resp_headers = redacted_response_headers(resp.headers());
                     let body = read_error_body(resp, request).await?;
                     let err = parse_provider_error(status_code, &body, error_structure);
-                    record_failed_exchange(request, attempt, latency_ms, &err.to_string());
+                    record_failed_exchange(
+                        request,
+                        attempt,
+                        latency_ms,
+                        &err.to_string(),
+                        Some(error_response_record(status_code, resp_headers, &body)),
+                    );
                     return Err(err);
                 }
             }
             Err(e) => {
-                record_failed_exchange(request, attempt, latency_ms, &e.to_string());
+                // 传输层失败(DNS/连接/TLS):无 HTTP 响应,response 保持 None(A5)。
+                record_failed_exchange(request, attempt, latency_ms, &e.to_string(), None);
                 last_error = e;
             }
         }
@@ -1668,5 +1770,60 @@ mod tests {
         let (d2, k2) = s2.next_deadline().unwrap();
         assert_eq!(k2, TimeoutKind::Total);
         assert_eq!(d2, now + Duration::from_millis(500));
+    }
+
+    #[test]
+    fn byte_accumulator_preserves_multibyte_across_chunk_split() {
+        // "中" = E4 B8 AD(3 字节)。拆成两个 chunk 各含半个字符,
+        // 验证累积后统一解码不产生 U+FFFD(A6 回归)。
+        let mut acc = ByteAccumulator::new(RECORD_BODY_CAP);
+        let ch = "中";
+        acc.push(&ch.as_bytes()[..1]); // E4(不完整首字节)
+        acc.push(&ch.as_bytes()[1..]); // B8 AD(补全该字符)
+        let decoded = acc.decode().unwrap();
+        assert_eq!(decoded, "中", "跨 chunk 多字节字符必须完整保留");
+        assert!(!decoded.contains('\u{FFFD}'), "不得出现替换符");
+    }
+
+    #[test]
+    fn byte_accumulator_preserves_emoji_across_chunk_split() {
+        // 😀 = F0 9F 98 80(4 字节)。拆成 2+2 各半。
+        let mut acc = ByteAccumulator::new(RECORD_BODY_CAP);
+        let b = "😀".as_bytes();
+        acc.push(&b[..2]);
+        acc.push(&b[2..]);
+        let decoded = acc.decode().unwrap();
+        assert_eq!(decoded, "😀");
+        assert!(!decoded.contains('\u{FFFD}'), "不得出现替换符");
+    }
+
+    #[test]
+    fn byte_accumulator_truncates_at_cap_and_marks() {
+        // cap 远小于内容 → 截断到 cap 并追加标记;不 panic。
+        let mut acc = ByteAccumulator::new(4);
+        acc.push(b"0123456789");
+        let decoded = acc.decode().unwrap();
+        assert_eq!(decoded, "0123…(truncated)");
+    }
+
+    #[test]
+    fn byte_accumulator_truncates_multibyte_without_dangling_replacement() {
+        // cap 切在多字节字符中间:"中文"(E4 B8 AD E6 96 87)cap=4 →
+        // E4 B8 AD E6(末尾 E6 是 "文" 的不完整首字节)。
+        let mut acc = ByteAccumulator::new(4);
+        acc.push("中文".as_bytes());
+        let decoded = acc.decode().unwrap();
+        assert!(decoded.ends_with("…(truncated)"), "应标记截断: {decoded}");
+        assert!(
+            !decoded.contains('\u{FFFD}'),
+            "截断处不得残留替换符: {decoded}"
+        );
+        assert!(decoded.starts_with("中"), "完整字符保留: {decoded}");
+    }
+
+    #[test]
+    fn byte_accumulator_empty_decodes_to_none() {
+        let acc = ByteAccumulator::new(RECORD_BODY_CAP);
+        assert!(acc.decode().is_none());
     }
 }

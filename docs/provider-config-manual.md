@@ -116,7 +116,11 @@ await generateText(model, prompt, { bodyOverrides: { 'reasoning_effort': null } 
 
 ## 7. Model List API 与模型配置补充（RFC-0027）
 
-aimux 支持 `Provider::list_models()` 运行时发现可用模型,并用 `models.anya2a.com` 社区聚合数据补充模型配置/能力。
+aimux 提供两个**独立原语**,host 各自调用并按需合并(aimux 是库、不持有状态):
+- `Provider::list_models()` — 运行时从 provider `/models` 发现可用模型,返回 `RuntimeModel[]`(provider 官方数据,通常只有 id)。
+- `get_model_specs()` — 独立拉取 `models.anya2a.com` 社区聚合数据,返回 `ModelSpec` 配置/能力。
+
+aimux **不自动合并**二者:`list_models` 不带 anya2a 配置,`get_model_specs` 不带可用性。host 自行按 modelId 把 spec 合并进 `list_models` 的结果。
 
 ### 7.1 使用方式
 
@@ -124,38 +128,42 @@ aimux 支持 `Provider::list_models()` 运行时发现可用模型,并用 `model
 // 1. 创建 provider 句柄
 const p = await createProvider('deepseek', apiKey)
 
-// 2. 列出可用模型(+ anya2a 补充的配置)
+// 2. 列出可用模型(仅 provider 官方数据:RuntimeModel[],通常只有 id)
 const models = await p.listModels()
-// → [{ id: 'deepseek-v4', spec: { limits: { context: 1000000 }, reasoning: { effort: 'high' }, ... } }]
+// → [{ id: 'deepseek-v4', owned_by: 'deepseek', created: 1715367049 }, ...]
 
-// 3. 用户读 spec,按业务自己定 options
+// 3. 独立拉取 anya2a 社区配置(thin fetch,无缓存);host 自行按 modelId 合并
+const catalogue = await getModelSpecs()
+const spec = catalogue.specs?.['deepseek']?.['deepseek-v4']
+// → { limits: { context: 1000000 }, reasoning: { effort: 'high' }, ... } 或 undefined
+
+// 4. 用户读 spec,按业务自己定 options
 const model = await p.model('deepseek-v4')
 await generateText(model, prompt, { max_output_tokens: 8000, bodyOverrides: { thinking: { type: 'enabled' } } })
 ```
 
 ### 7.2 config 是咨询性的
 
-`listModels` 返回的 `spec`(ModelSpec)是**纯咨询**信息——给用户读,用户按自己业务决定请求时填什么。aimux **不在请求路径自动套用** config(不自动填充默认值、不自动门控能力)。这保留用户自定义空间。
+`get_model_specs` 返回的 `spec`(ModelSpec)是**纯咨询**信息——给用户读,用户按自己业务决定请求时填什么。aimux **不在请求路径自动套用** config(不自动填充默认值、不自动门控能力)。这保留用户自定义空间。
 
-### 7.3 两层数据源
+### 7.3 两个独立数据源
 
-| 数据源 | 角色 | 特点 |
-|---|---|---|
-| provider `/models` | 可用性权威 | 账号级(这 key 能调什么),实时但稀疏(通常只有 id) |
-| anya2a 缓存 | 补充配置/能力 | 社区知识(context/reasoning/cost),离线缓存、丰富但可能滞后 |
+| 数据源 | API | 角色 | 特点 |
+|---|---|---|---|
+| provider `/models` | `list_models()` | 可用性权威 | 账号级(这 key 能调什么),实时但稀疏(通常只有 id) |
+| anya2a 社区聚合 | `get_model_specs()` | 补充配置/能力 | 社区知识(context/reasoning/cost),丰富但可能滞后 |
 
-anya2a 只补 provider 列表里出现的 modelId,不作可用性依据。缺字段留空。
+anya2a 只补 provider 列表里出现的 modelId,不作可用性依据。缺字段留空。两者**独立拉取、无内置缓存**:`list_models` 每次实时调 provider,`get_model_specs` 是 thin fetch(无 FS 写入、无 TTL);host 决定如何缓存/持久化。
 
 ### 7.4 覆盖范围
 
 292/325 家真 LLM provider 已覆盖(89.8%):251 registry + 23 standalone + 10 vertex MaaS + 8 native。33 家 modality-only(speech/image/embed/search)返回 `Unsupported`。
 
-### 7.5 缓存与离线
+### 7.5 无内置缓存(不存在缓存/离线环境变量)
 
-- 默认缓存目录:`~/.cache/aimux/catalogue/`(或 `AIMUX_CATALOGUE_DIR`)
-- 默认 TTL:24h
-- 离线模式:`AIMUX_CATALOGUE_OFFLINE=1` 只读缓存不联网
-- catalogue 未命中 = 回退现状(spec 为 null,行为与今天一致)
+aimux 是库、不持有状态:`list_models` 与 `get_model_specs` 都是**实时拉取、无内置缓存**——没有缓存目录、没有 TTL、没有离线模式。如需缓存/离线,由 host 自行包装(例如把 `get_model_specs` 结果落盘并设过期)。
+
+> ⚠️ 不存在 `~/.cache/aimux/catalogue/`、`AIMUX_CATALOGUE_DIR`、`AIMUX_CATALOGUE_OFFLINE`、24h TTL 等——这些并非 aimux 提供的能力。catalogue 未命中(或未调用 `get_model_specs`)= 无 spec,行为与不补充配置时一致。
 
 ### 7.6 ModelSpec 字段 → 请求 options 对照
 

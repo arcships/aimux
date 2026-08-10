@@ -26,6 +26,8 @@ use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::vertex::{VertexAuth, VertexConfig, VertexModel, VertexProviderConfig};
 
+use aimux_provider_utils::RetryConfig;
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn test_prompt() -> LanguageModelPrompt {
@@ -46,6 +48,8 @@ fn make_model(server: &MockServer) -> VertexModel {
         VertexConfig {
             base_url: server.uri(),
             auth: VertexAuth::BearerToken("test-token".to_string()),
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         },
     )
 }
@@ -356,6 +360,8 @@ async fn vertex_api_key_auth() {
         VertexConfig {
             base_url: server.uri(),
             auth: VertexAuth::ApiKey("test-api-key".to_string()),
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         },
     );
 

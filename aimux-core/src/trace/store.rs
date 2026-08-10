@@ -164,68 +164,89 @@ impl TraceStore {
     }
 
     /// Longest common prefix against same-scope history (block granularity).
-    /// Any block failing 128-bit verification, or an expired candidate
-    /// (now − latest t_send > ttl_ms), stops the walk (monotonicity).
+    ///
+    /// C4-1: the matched prefix must come from a SINGLE record. The previous
+    /// implementation picked the best candidate independently per block, which
+    /// could stitch blocks from different records into a "historical prefix"
+    /// that no single request ever sent. Now block-0 candidates are collected
+    /// and each candidate's full common prefix with the request chain is
+    /// computed; the longest live (TTL-valid) prefix wins. Any block failing
+    /// 128-bit verification, or an expired candidate (now − t_send > ttl_ms),
+    /// is excluded (monotonicity).
     pub fn lookup(&mut self, scope: u64, chain: &Chain, now_ms: u64, ttl_ms: u64) -> LcpResult {
-        let mut blocks: u64 = 0;
-        let mut matched: Option<MatchInfo> = None;
+        let mut best: Option<(u64, MatchInfo)> = None; // (shared_blocks, info)
         let mut candidate_expired = false;
-        for (i, h) in chain.block_hashes.iter().enumerate() {
-            let key = (scope, hash::low64(*h));
-            let mut best: Option<MatchInfo> = None;
-            if let Some(refs) = self.index.get(&key) {
-                for r in refs {
-                    let slot = &self.ring[r.slot as usize];
-                    if slot.generation != r.generation {
-                        self.tombstone_hits += 1; // lazy-invalidation tombstone
-                        continue;
-                    }
-                    let Some(rec) = &slot.record else { continue };
-                    if rec.scope != scope {
-                        continue;
-                    }
-                    // Position must match (LCP is positional) + full
-                    // 128-bit verification rejects 64-bit index collisions.
-                    if r.block as usize != i {
-                        continue;
-                    }
-                    if rec.block_hashes.get(r.block as usize) != Some(h) {
-                        continue;
-                    }
-                    if best
-                        .as_ref()
-                        .map(|b| rec.t_send_ms > b.t_send_ms)
-                        .unwrap_or(true)
-                    {
-                        best = Some(MatchInfo {
-                            t_send_ms: rec.t_send_ms,
-                            session: rec.session.clone(),
-                            len_bytes: rec.len_bytes,
-                        });
-                    }
+
+        // The LCP is a prefix: only a record whose block 0 matches can
+        // contribute. An empty request chain matches nothing.
+        let Some(first) = chain.block_hashes.first() else {
+            self.maybe_rebuild_index();
+            return LcpResult {
+                lcp_bytes: 0,
+                matched_blocks: 0,
+                matched: None,
+                candidate_expired: false,
+            };
+        };
+        let key = (scope, hash::low64(*first));
+        if let Some(refs) = self.index.get(&key) {
+            for r in refs {
+                // Position must be block 0 (LCP is positional) + full 128-bit
+                // verification rejects 64-bit index collisions.
+                if r.block != 0 {
+                    continue;
                 }
-            }
-            match best {
-                Some(m) if now_ms.saturating_sub(m.t_send_ms) <= ttl_ms => {
-                    blocks = i as u64 + 1;
-                    matched = Some(m);
+                let slot = &self.ring[r.slot as usize];
+                if slot.generation != r.generation {
+                    self.tombstone_hits += 1; // lazy-invalidation tombstone
+                    continue;
                 }
-                Some(_m) => {
-                    // Candidate exists but outside its TTL window.
-                    if i == 0 {
-                        candidate_expired = true;
-                    }
-                    break;
+                let Some(rec) = &slot.record else { continue };
+                if rec.scope != scope {
+                    continue;
                 }
-                _ => break,
+                if rec.block_hashes.first() != Some(first) {
+                    continue;
+                }
+                // TTL window (monotonicity): expired candidates do not extend
+                // the prefix. A block-0 candidate that is expired marks the
+                // timing-violation flag (versus no candidate at all).
+                if now_ms.saturating_sub(rec.t_send_ms) > ttl_ms {
+                    candidate_expired = true;
+                    continue;
+                }
+                // Whole-prefix match against THIS record only (C4-1): no
+                // stitching across records.
+                let shared = common_prefix_blocks(&rec.block_hashes, &chain.block_hashes) as u64;
+                let info = MatchInfo {
+                    t_send_ms: rec.t_send_ms,
+                    session: rec.session.clone(),
+                    len_bytes: rec.len_bytes,
+                };
+                // Longest real prefix wins; tie-break by latest t_send_ms
+                // (mirrors the prior per-block "best" preference).
+                let better = best.as_ref().is_none_or(|(b, m)| {
+                    shared > *b || (shared == *b && rec.t_send_ms > m.t_send_ms)
+                });
+                if better {
+                    best = Some((shared, info));
+                }
             }
         }
         self.maybe_rebuild_index();
-        LcpResult {
-            lcp_bytes: blocks * chain.block_size as u64,
-            matched_blocks: blocks as u32,
-            matched,
-            candidate_expired,
+        match best {
+            Some((blocks, matched)) => LcpResult {
+                lcp_bytes: blocks * chain.block_size as u64,
+                matched_blocks: blocks as u32,
+                matched: Some(matched),
+                candidate_expired: false,
+            },
+            None => LcpResult {
+                lcp_bytes: 0,
+                matched_blocks: 0,
+                matched: None,
+                candidate_expired,
+            },
         }
     }
 
@@ -628,6 +649,18 @@ fn percentile(sorted: &[u64], p: f64) -> Option<u64> {
     Some(sorted[idx.min(sorted.len() - 1)])
 }
 
+/// Number of leading blocks two chains share (positional, 128-bit exact).
+/// Used by the LCP lookup to confine a prefix match to a single record (C4-1).
+fn common_prefix_blocks(a: &[u128], b: &[u128]) -> usize {
+    let n = a.len().min(b.len());
+    for i in 0..n {
+        if a[i] != b[i] {
+            return i;
+        }
+    }
+    n
+}
+
 /// Block-level LCP between two records' stored fingerprint chains.
 fn chain_lcp(a: &TraceRecord, b: &TraceRecord) -> (u64, u64) {
     let bs = a.fingerprint.block_size.max(1);
@@ -718,6 +751,103 @@ mod tests {
         assert_eq!(ra.matched_blocks, 0, "a evicted");
         let rc = st.lookup(1, &c, 3, u64::MAX);
         assert!(rc.matched.is_some(), "c live");
+    }
+
+    // ── C4-1: same-record prefix constraint ────────────────────────────────
+
+    /// Helper that inserts a record with crafted block hashes (bypasses the
+    /// chained `compute` so a cross-record stitch can be constructed).
+    fn insert_hashes(st: &mut TraceStore, scope: u64, t: u64, session: &str, hashes: &[u128]) {
+        st.insert(StoredRecord {
+            scope,
+            session: Some(session.into()),
+            len_bytes: (hashes.len() * 512) as u64,
+            t_send_ms: t,
+            block_hashes: hashes.to_vec(),
+        });
+    }
+
+    fn chain_with(hashes: &[u128]) -> Chain {
+        Chain {
+            body_hash: 0,
+            len_bytes: (hashes.len() * 512) as u64,
+            block_size: 512,
+            block_hashes: hashes.to_vec(),
+        }
+    }
+
+    /// Records `[A,X]` and `[Y,B]` exist; a request `[A,B]` must NOT report
+    /// LCP=2 (block 0 from record 1, block 1 from record 2 — a fabricated
+    /// prefix no single request ever sent). The match must stay within one
+    /// record, so LCP=1 (record 1's real prefix).
+    #[test]
+    fn lookup_does_not_stitch_blocks_across_records() {
+        let mut st = TraceStore::new(16, 512);
+        // Distinct low-64 bits so no reverse-index bucket collides.
+        let a: u128 = 0x0000_0000_0000_0000_0000_0000_0000_0001;
+        let b: u128 = 0x0000_0000_0000_0000_0000_0000_0000_0002;
+        let x: u128 = 0x0000_0000_0000_0000_0000_0000_0000_0003;
+        let y: u128 = 0x0000_0000_0000_0000_0000_0000_0000_0004;
+        insert_hashes(&mut st, 1, 0, "s1", &[a, x]);
+        insert_hashes(&mut st, 1, 1, "s2", &[y, b]);
+
+        let req = chain_with(&[a, b]);
+        let r = st.lookup(1, &req, 100, u64::MAX);
+        assert_eq!(
+            r.matched_blocks, 1,
+            "C4-1: prefix must come from one record (expected 1, got {})",
+            r.matched_blocks
+        );
+        assert!(r.matched.is_some(), "block-0 match still reported");
+        // The winning record is record 1 ([A,X]) — its session.
+        assert_eq!(r.matched.as_ref().unwrap().session.as_deref(), Some("s1"));
+    }
+
+    /// When two records share the real prefix [A,B] but diverge later, the
+    /// longest real prefix wins (not the latest block-0 candidate's tail).
+    #[test]
+    fn lookup_picks_longest_single_record_prefix() {
+        let mut st = TraceStore::new(16, 512);
+        let a: u128 = 1;
+        let b: u128 = 2;
+        let c: u128 = 3;
+        let x: u128 = 4;
+        // R1 = [A,B,C] (t=0, older, longer real prefix), R2 = [A,X] (t=9, newer).
+        insert_hashes(&mut st, 1, 0, "long", &[a, b, c]);
+        insert_hashes(&mut st, 1, 9, "short", &[a, x]);
+
+        let req = chain_with(&[a, b, c]);
+        let r = st.lookup(1, &req, 100, u64::MAX);
+        // R1 shares all 3 blocks; R2 shares only 1. Longest real prefix = 3.
+        assert_eq!(r.matched_blocks, 3, "longest single-record prefix wins");
+        assert_eq!(
+            r.matched.as_ref().unwrap().session.as_deref(),
+            Some("long"),
+            "must pick the record that owns the full prefix"
+        );
+    }
+
+    /// A block-0 candidate that is expired sets the timing-violation flag even
+    /// when no live candidate extends the prefix.
+    #[test]
+    fn lookup_expired_block0_candidate_flags_timing() {
+        let mut st = TraceStore::new(16, 512);
+        let a: u128 = 1;
+        let x: u128 = 2;
+        insert_hashes(&mut st, 1, 0, "s1", &[a, x]);
+
+        let req = chain_with(&[a, x]);
+        let ttl = 1_000u64;
+        let live = st.lookup(1, &req, ttl - 1, ttl);
+        assert!(live.matched.is_some(), "within TTL matches");
+        assert!(!live.candidate_expired);
+
+        let expired = st.lookup(1, &req, ttl + 1, ttl);
+        assert_eq!(expired.matched_blocks, 0, "over TTL abstains");
+        assert!(
+            expired.candidate_expired,
+            "expired block-0 candidate must flag timing violation"
+        );
     }
 
     // ── RFC-0024 P4: session_cache_trajectory ──────────────────────────────

@@ -27,6 +27,7 @@ const ENV_VAR: &str = "XAI_API_KEY";
 const PROVIDER_NAME: &str = "xai";
 
 /// Configuration for the xAI provider (wraps [`OpenAIConfig`]).
+#[derive(Clone)]
 pub struct XAIConfig(OpenAIConfig);
 
 impl XAIConfig {
@@ -38,7 +39,18 @@ impl XAIConfig {
     /// Create from the `XAI_API_KEY` environment variable.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "xAI")?;
-        Ok(Self::new(key))
+        Ok(Self::new(key).with_api_key_source(Some("env:XAI_API_KEY")))
+    }
+
+    /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.0 = self.0.with_api_key_source(source);
+        self
+    }
+
+    /// 内部 `OpenAIConfig` 引用(config_snapshot 复用 OpenAI helper 用,M2b)。
+    pub(crate) fn openai_config(&self) -> &OpenAIConfig {
+        &self.0
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
@@ -77,11 +89,12 @@ impl XAIProvider {
     }
 
     /// Create a model instance for the given xAI model id (e.g. `"grok-2"`).
+    ///
+    /// Clones the provider config so the model inherits the same
+    /// `api_key_source` / `retry_config` (M2b: previously reconstructed with
+    /// `XAIConfig::new`, which dropped the credential source).
     pub fn model(&self, model_id: &str) -> XaiModel {
-        XaiModel::new(
-            model_id.to_string(),
-            XAIConfig::new(self.config.api_key()).with_base_url(self.config.base_url()),
-        )
+        XaiModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Responses API model instance for the given xAI model id.
@@ -89,10 +102,7 @@ impl XAIProvider {
     /// Uses the xAI `/responses` endpoint with the Responses API wire format
     /// (input items, reasoning objects, provider-executed tools, etc.).
     pub fn responses_model(&self, model_id: &str) -> XaiResponsesModel {
-        XaiResponsesModel::new(
-            model_id.to_string(),
-            XAIConfig::new(self.config.api_key()).with_base_url(self.config.base_url()),
-        )
+        XaiResponsesModel::new(model_id.to_string(), self.config.clone())
     }
 }
 

@@ -44,6 +44,10 @@ pub struct AnthropicConfig {
     pub retry_config: RetryConfig,
     /// Provider 级请求体覆盖（RFC-0017）。在标准请求体之后 deep-merge。
     pub body_overrides: Option<Value>,
+    /// api_key 来源(RFC-0023 `ProviderRecord.api_key_source`):`None` = 显式
+    /// (config_snapshot 记为 "explicit");`Some("env:VAR")` = 来自环境变量;
+    /// `Some("none")` = 本地/匿名占位。不存明文之外的信息。
+    pub api_key_source: Option<String>,
 }
 
 impl AnthropicConfig {
@@ -59,6 +63,7 @@ impl AnthropicConfig {
             headers: None,
             retry_config: RetryConfig::default(),
             body_overrides: None,
+            api_key_source: None,
         }
     }
 
@@ -107,6 +112,12 @@ impl AnthropicConfig {
         self
     }
 
+    /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.api_key_source = source.map(|s| s.to_string());
+        self
+    }
+
     /// Load the configuration from the environment.
     ///
     /// Reads `ANTHROPIC_API_KEY` (required) and the optional
@@ -114,7 +125,7 @@ impl AnthropicConfig {
     /// use [`AnthropicConfig::builder`]`.auth_token` for token auth.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "ANTHROPIC_API_KEY", "Anthropic")?;
-        let mut config = Self::new(api_key);
+        let mut config = Self::new(api_key).with_api_key_source(Some("env:ANTHROPIC_API_KEY"));
         if let Ok(base) = std::env::var("ANTHROPIC_BASE_URL")
             && !base.is_empty()
         {
@@ -191,6 +202,7 @@ impl AnthropicConfigBuilder {
             headers: self.headers,
             retry_config: RetryConfig::default(),
             body_overrides: self.body_overrides,
+            api_key_source: None,
         })
     }
 }

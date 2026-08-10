@@ -44,6 +44,8 @@ fn make_model(server: &MockServer) -> BedrockModel {
         aimux_providers::bedrock::BedrockConfig {
             base_url: server.uri(),
             auth: aimux_providers::bedrock::BedrockAuth::BearerToken("test-token".to_string()),
+            retry_config: aimux_provider_utils::RetryConfig::default(),
+            api_key_source: None,
         },
     )
 }
@@ -422,6 +424,8 @@ async fn bedrock_sigv4_auth() {
                     region: "us-east-1".to_string(),
                 },
             ),
+            retry_config: aimux_provider_utils::RetryConfig::default(),
+            api_key_source: None,
         },
     );
 

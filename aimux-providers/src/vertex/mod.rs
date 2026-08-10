@@ -17,7 +17,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::without_trailing_slash;
+use aimux_provider_utils::{RetryConfig, without_trailing_slash};
 
 mod anthropic_model;
 mod embedding;
@@ -53,6 +53,11 @@ pub struct VertexProviderConfig {
     pub location: Option<String>,
     /// Authentication method.
     pub auth: VertexAuth,
+    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    /// 取代之前硬编码的 `RetryConfig::default()`,让 per-call `max_retries` 生效。
+    pub retry_config: RetryConfig,
 }
 
 impl VertexProviderConfig {
@@ -76,6 +81,8 @@ impl VertexProviderConfig {
             project: Some(project),
             location: Some(location),
             auth: VertexAuth::BearerToken(access_token.into()),
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         }
     }
 
@@ -86,12 +93,26 @@ impl VertexProviderConfig {
             project: None,
             location: None,
             auth: VertexAuth::ApiKey(api_key.into()),
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         }
     }
 
     /// Override the base URL (useful for tests / proxies).
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
+        self
+    }
+
+    /// 标注凭证来源(RFC-0023 回放重建用)。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.api_key_source = source.map(|s| s.to_string());
+        self
+    }
+
+    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
         self
     }
 
@@ -105,7 +126,9 @@ impl VertexProviderConfig {
         if let Ok(key) = std::env::var("GOOGLE_VERTEX_API_KEY")
             && !key.trim().is_empty()
         {
-            return Ok(Self::with_api_key(key));
+            return Ok(
+                Self::with_api_key(key).with_api_key_source(Some("env:GOOGLE_VERTEX_API_KEY"))
+            );
         }
 
         // Standard auth with access token.
@@ -123,7 +146,8 @@ impl VertexProviderConfig {
         let location =
             std::env::var("GOOGLE_VERTEX_LOCATION").unwrap_or_else(|_| "us-central1".to_string());
 
-        Ok(Self::new(access_token, project, location))
+        Ok(Self::new(access_token, project, location)
+            .with_api_key_source(Some("env:GOOGLE_VERTEX_ACCESS_TOKEN")))
     }
 }
 
@@ -173,6 +197,8 @@ impl VertexProvider {
             VertexConfig {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
+                api_key_source: self.config.api_key_source.clone(),
+                retry_config: self.config.retry_config,
             },
         ))
     }
@@ -197,6 +223,8 @@ impl VertexProvider {
             VertexAnthropicConfig {
                 base_url,
                 auth: self.config.auth.clone(),
+                api_key_source: self.config.api_key_source.clone(),
+                retry_config: self.config.retry_config,
             },
         ))
     }
@@ -209,6 +237,8 @@ impl VertexProvider {
             VertexConfig {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
+                api_key_source: self.config.api_key_source.clone(),
+                retry_config: self.config.retry_config,
             },
         )
     }
@@ -221,6 +251,8 @@ impl VertexProvider {
             VertexConfig {
                 base_url: self.config.base_url.clone(),
                 auth: self.config.auth.clone(),
+                api_key_source: self.config.api_key_source.clone(),
+                retry_config: self.config.retry_config,
             },
         )
     }
@@ -295,6 +327,7 @@ impl Provider for VertexProvider {
     > {
         let base_url = self.config.base_url.clone();
         let auth = self.config.auth.clone();
+        let retry_config = self.config.retry_config;
         Box::pin(async move {
             let base = base_url.trim_end_matches('/');
             let url = format!("{base}/models");
@@ -322,7 +355,7 @@ impl Provider for VertexProvider {
                     call_id: None,
                     recording_context: None,
                 },
-                aimux_provider_utils::RetryConfig::default(),
+                retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
                 None,
             )

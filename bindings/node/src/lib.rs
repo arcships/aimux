@@ -586,15 +586,38 @@ pub fn init_recording(dir: String) {
     )));
 }
 
-/// 启动内存有界录制(RFC-0023 P6):`RingRecorder`,容量 `cap`,FIFO 淘汰,
-/// 丢弃计数可查。`cap == 0` 时 no-op(不启动)。
+/// 启动内存有界录制(RFC-0023 P6):`RingRecorder`,FIFO 淘汰,丢弃计数可查。
+///
+/// `cap` 可省略:省略时使用库默认容量(等价于 FFI `aimux_init_recording_ring_default()`;
+/// 本绑定直接依赖 aimux-core 而非 aimux-ffi,故调用等价 core API `RingRecorder::default()`)。
+/// 显式传 `cap == 0` 抛错(与其余语言一致),`cap > 0` 启动指定容量的有界 ring。
 #[napi]
-pub fn init_recording_ring(cap: u32) {
-    if cap > 0 {
-        aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-            aimux_core::recording::RingRecorder::with_capacity(cap as usize),
-        )));
-    }
+pub fn init_recording_ring(cap: Option<u32>) -> error::AimuxResult<()> {
+    let result: error::MResult<()> = match cap {
+        // 省略 cap:库默认容量(镜像 FFI default 变体)。
+        None => {
+            aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+                aimux_core::recording::RingRecorder::default(),
+            )));
+            Ok(())
+        }
+        // 显式 cap == 0:拒绝(与 Kotlin/Java/Python 一致)。
+        Some(0) => Err(crate::error::MappedError {
+            code: "InvalidArgument".to_string(),
+            message: "initRecordingRing: cap must be > 0".to_string(),
+            status: -1,
+            retry_ms: -1,
+            error_value: None,
+        }),
+        // 显式 cap > 0:指定容量的有界 ring。
+        Some(c) => {
+            aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+                aimux_core::recording::RingRecorder::with_capacity(c as usize),
+            )));
+            Ok(())
+        }
+    };
+    result.into()
 }
 
 /// 停止录制:全局 recorder = None(新调用不再录制)。

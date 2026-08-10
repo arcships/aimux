@@ -43,6 +43,11 @@ pub struct BedrockModel {
 pub struct BedrockConfig {
     pub base_url: String,
     pub auth: BedrockAuth,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    pub retry_config: RetryConfig,
+    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    /// SigV4 记 access-key 来源;BearerToken 记 bearer-token 来源。不存明文。
+    pub api_key_source: Option<String>,
 }
 
 impl BedrockModel {
@@ -107,11 +112,41 @@ impl LanguageModel for BedrockModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        // M2b: record identity + credential source + region (encoded in
+        // base_url) + retry. Never serialize the SigV4 credentials or bearer
+        // token plaintext — only the auth *kind* and source marker.
+        let auth_kind = match &self.config.auth {
+            BedrockAuth::BearerToken(_) => "bearer_token",
+            BedrockAuth::SigV4(_) => "sigv4",
+        };
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
+            profile: None,
+            provider_options: Some(serde_json::json!({
+                "auth_kind": auth_kind,
+                "max_retries": self.config.retry_config.max_retries,
+            })),
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(false);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -124,7 +159,7 @@ impl LanguageModel for BedrockModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &DEFAULT_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
@@ -182,6 +217,10 @@ impl LanguageModel for BedrockModel {
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = self.endpoint(true);
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {
@@ -194,7 +233,7 @@ impl LanguageModel for BedrockModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &DEFAULT_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )

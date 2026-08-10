@@ -79,7 +79,11 @@ fn scenario1_append_only_loop_is_trusted() {
 }
 
 /// Scenario 2: overclaim beyond the block upper bound U=(j+1)·B.
-/// Byte-proxy evidence caps at Medium (RFC F2); exact-token evidence is High.
+/// C4-2: without a tokenizer (byte_proxy), bytes/4 is not a safe token bound
+/// (ASCII-heavy corpora underestimate tokens → `u` too small → real hits
+/// falsely accused). When the overclaim rests SOLELY on R-1.1 (no independent
+/// invariant), the verdict downgrades to Unknown instead of SuspectOverclaim.
+/// Exact-token evidence (byte_proxy=false) keeps the original SuspectOverclaim.
 #[test]
 fn scenario2_overclaim_is_suspect() {
     let spec = spec_for("openai", "gpt-5.6"); // gran=None (no quantization noise)
@@ -90,23 +94,27 @@ fn scenario2_overclaim_is_suspect() {
     inp.no_cache = Some(4096 - 600); // R-1.7 equality holds (write=0)
     inp = with_lcp(inp, 1536, true);
     let v = judge(&inp);
-    assert_eq!(v.kind, VerdictKind::SuspectOverclaim, "{}", v.describe());
-    assert!(v.violated.iter().any(|r| r == "R-1.1"));
-    // Byte proxy caps the confidence at Medium (RFC F2).
-    assert_eq!(
-        v.confidence,
-        aimux_core::trace::VerdictConfidence::Medium,
-        "{}",
+    // C4-2: byte-proxy-only overclaim → Unknown (not SuspectOverclaim).
+    assert_eq!(v.kind, VerdictKind::Unknown, "{}", v.describe());
+    assert!(
+        v.violated.iter().any(|r| r == "R-1.1"),
+        "R-1.1 still fires; only the verdict is downgraded: {}",
+        v.describe()
+    );
+    assert!(
+        v.notes.iter().any(|n| n.contains("C4-2")),
+        "downgrade must be explained: {}",
         v.describe()
     );
 
-    // With exact token evidence the same violation is High.
+    // With exact token evidence the same violation is SuspectOverclaim (High).
     let mut exact = base_input(spec);
     exact.byte_proxy = false;
     exact.claimed = 600;
     exact.no_cache = Some(4096 - 600);
     exact = with_lcp(exact, 1536, true);
     let ve = judge(&exact);
+    assert_eq!(ve.kind, VerdictKind::SuspectOverclaim, "{}", ve.describe());
     assert_eq!(
         ve.confidence,
         aimux_core::trace::VerdictConfidence::High,
@@ -217,6 +225,8 @@ fn scenario7_threshold() {
 }
 
 /// Scenario 8: cross-session — only the shared system segment counts.
+/// C4-2: the cross-session overclaim here rests solely on R-1.1 (byte proxy),
+/// so it downgrades to Unknown; with exact-token evidence it is SuspectOverclaim.
 #[test]
 fn scenario8_cross_session_system_segment_only() {
     let spec = spec_for("openai", "gpt-4o");
@@ -225,9 +235,32 @@ fn scenario8_cross_session_system_segment_only() {
     inp.claimed = 512; // > 128 tokens → over the shared segment (128-aligned)
     inp = with_lcp(inp, 2048, false); // large cross-session LCP
     let v = judge(&inp);
-    // Claimed exceeds the shared system segment → W via R-1.1.
-    assert_eq!(v.kind, VerdictKind::SuspectOverclaim, "{}", v.describe());
-    assert!(v.notes.iter().any(|n| n.contains("shared system segment")));
+    // C4-2: byte-proxy-only overclaim → Unknown (R-1.1 still fires).
+    assert_eq!(v.kind, VerdictKind::Unknown, "{}", v.describe());
+    assert!(
+        v.violated.iter().any(|r| r == "R-1.1"),
+        "R-1.1 still fires: {}",
+        v.describe()
+    );
+    assert!(
+        v.notes.iter().any(|n| n.contains("shared system segment")),
+        "R-2.1 note still present: {}",
+        v.describe()
+    );
+
+    // With exact token evidence the same cross-session overclaim is W (High).
+    let mut exact = base_input(spec);
+    exact.byte_proxy = false;
+    exact.system_tokens = 128;
+    exact.claimed = 512;
+    exact = with_lcp(exact, 2048, false);
+    let ve = judge(&exact);
+    assert_eq!(
+        ve.kind,
+        VerdictKind::SuspectOverclaim,
+        "exact-token cross-session overclaim stands: {}",
+        ve.describe()
+    );
 
     // Within the system segment → OK.
     let mut ok = base_input(spec);
@@ -351,10 +384,23 @@ fn token_body(system_tokens: u64, conv_tokens: u64, conv_start: u64) -> serde_js
 struct MockModel {
     body: serde_json::Value,
     usage: Usage,
+    provider: &'static str,
+    model: &'static str,
 }
 
 impl MockModel {
     fn new(body: serde_json::Value, claimed: u64, prompt_tokens: u64) -> Self {
+        Self::with_identity("mock", "mock-1", body, claimed, prompt_tokens)
+    }
+
+    /// Configurable identity (B1: same model_id, different provider).
+    fn with_identity(
+        provider: &'static str,
+        model: &'static str,
+        body: serde_json::Value,
+        claimed: u64,
+        prompt_tokens: u64,
+    ) -> Self {
         Self {
             body,
             usage: Usage {
@@ -372,6 +418,8 @@ impl MockModel {
                 },
                 raw: None,
             },
+            provider,
+            model,
         }
     }
 }
@@ -379,11 +427,11 @@ impl MockModel {
 #[async_trait::async_trait]
 impl LanguageModel for MockModel {
     fn provider(&self) -> &str {
-        "mock"
+        self.provider
     }
 
     fn model_id(&self) -> &str {
-        "mock-1"
+        self.model
     }
 
     async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -725,4 +773,177 @@ fn r22_suppressed_without_route_affinity_evidence() {
     let va = judge(&aff);
     assert_eq!(va.kind, VerdictKind::SuspectUnderclaim, "{}", va.describe());
     assert_eq!(va.confidence, aimux_core::trace::VerdictConfidence::Low);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B1 / C4-2 / F1 regression tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// B1: `scope_key` isolates by (provider, base_url, model_id). Two TraceLayers
+/// over the SAME model_id but DIFFERENT providers sharing one RingTraceStore
+/// must not cross-match LCP history. (Before the fix `scope_key` hashed only
+/// the model_id, so beta would have matched alpha's prefix.)
+#[test]
+fn scope_key_isolates_by_provider_same_model_id() {
+    let store = Arc::new(RingTraceStore::new());
+    let body = token_body(1024, 512, 0); // > 4 KiB → block-aligned prefix
+
+    // Provider "alpha", model "shared-m": two identical calls. Call 2 must
+    // match call 1 (same provider → same scope) → LCP upper bound present.
+    let a1: Arc<dyn LanguageModel> = Arc::new(MockModel::with_identity(
+        "alpha",
+        "shared-m",
+        body.clone(),
+        0,
+        1536,
+    ));
+    let layer_a = Arc::new(TraceLayer::new(a1, store.clone()).with_rules_auditor(true));
+    block_on(layer_a.do_generate(&model_opts(Some("sa")))).unwrap();
+
+    let a2: Arc<dyn LanguageModel> = Arc::new(MockModel::with_identity(
+        "alpha",
+        "shared-m",
+        body.clone(),
+        0,
+        1536,
+    ));
+    let layer_a2 = Arc::new(TraceLayer::new(a2, store.clone()).with_rules_auditor(true));
+    block_on(layer_a2.do_generate(&model_opts(Some("sa")))).unwrap();
+
+    // Provider "beta", SAME model "shared-m", SAME body — must NOT match
+    // alpha's records (different provider → different scope_key).
+    let b1: Arc<dyn LanguageModel> = Arc::new(MockModel::with_identity(
+        "beta",
+        "shared-m",
+        body.clone(),
+        0,
+        1536,
+    ));
+    let layer_b = Arc::new(TraceLayer::new(b1, store.clone()).with_rules_auditor(true));
+    block_on(layer_b.do_generate(&model_opts(Some("sb")))).unwrap();
+
+    let recs = store.aggregate(&TraceFilter::default());
+    // Two groups: (alpha, shared-m) and (beta, shared-m).
+    let alpha = recs
+        .iter()
+        .find(|r| r.provider == "alpha")
+        .expect("alpha group");
+    let beta = recs
+        .iter()
+        .find(|r| r.provider == "beta")
+        .expect("beta group");
+    assert_eq!(alpha.requests, 2);
+    assert_eq!(beta.requests, 1);
+    // alpha call 2 matched call 1 → client upper bound present.
+    assert!(
+        alpha.client_upper_bound_hit_rate.is_some(),
+        "same-provider continuation must produce an LCP upper bound"
+    );
+    // beta is isolated → no LCP evidence (would be Some if scope leaked).
+    assert!(
+        beta.client_upper_bound_hit_rate.is_none(),
+        "different provider must NOT cross-match LCP history (B1)"
+    );
+}
+
+/// C4-2 negative case: when an independent invariant (here R-1.6b quantization)
+/// ALSO fires, the overclaim does NOT rely solely on the byte proxy, so it is
+/// NOT downgraded to Unknown — it stays SuspectOverclaim (capped at Medium by
+/// the byte-proxy F2 rule, but still an overclaim).
+#[test]
+fn c42_byte_proxy_overclaim_with_independent_evidence_is_not_unknown() {
+    let spec = spec_for("openai", "gpt-4o"); // gran=128
+    // u = 512 tokens (LCP upper 2048 B / 4). claimed=700 > 640 (u+τ) → R-1.1,
+    // and 700 % 128 ≠ 0 → R-1.6b (independent). byte_proxy = true.
+    let mut inp = base_input(spec);
+    inp.claimed = 700;
+    inp = with_lcp(inp, 1536, true);
+    let v = judge(&inp);
+    assert_eq!(
+        v.kind,
+        VerdictKind::SuspectOverclaim,
+        "independent evidence (R-1.6b) keeps the overclaim: {}",
+        v.describe()
+    );
+    assert!(v.violated.iter().any(|r| r == "R-1.6b"));
+    assert!(v.violated.iter().any(|r| r == "R-1.1"));
+    // Byte-proxy R-1.1 is capped at Medium (F2); the independent R-1.6b is B.
+    assert_eq!(
+        v.confidence,
+        aimux_core::trace::VerdictConfidence::Medium,
+        "{}",
+        v.describe()
+    );
+}
+
+/// F1: a stream dropped before completion (take(N) / abort / timeout) must
+/// still record its trace — the Drop guard writes it with a non-success marker.
+#[test]
+fn trace_layer_stream_dropped_early_still_records() {
+    struct LongStream;
+    #[async_trait::async_trait]
+    impl LanguageModel for LongStream {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "mock-long"
+        }
+        async fn do_generate(&self, _: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unreachable!()
+        }
+        async fn do_stream(&self, _: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            Ok(StreamResult {
+                stream: Box::pin(async_stream::stream! {
+                    yield Ok(StreamPart::StreamStart { warnings: vec![] });
+                    // Several deltas but NO Finish — the caller drops mid-stream.
+                    for i in 0..5u32 {
+                        yield Ok(StreamPart::TextDelta {
+                            id: "t".into(),
+                            delta: format!("chunk{i}"),
+                            provider_metadata: None,
+                        });
+                    }
+                    yield Ok(StreamPart::Finish {
+                        finish_reason: FinishReason {
+                            unified: FinishReasonUnified::Stop,
+                            raw: None,
+                        },
+                        usage: Usage::default(),
+                        provider_metadata: None,
+                    });
+                }),
+                request_body: Some(token_body(1024, 512, 0)),
+                response_headers: None,
+            })
+        }
+    }
+
+    let store = Arc::new(RingTraceStore::new());
+    let layer = Arc::new(TraceLayer::new(Arc::new(LongStream), store.clone()));
+    let mut result = block_on(layer.do_stream(&model_opts(Some("sess-drop")))).unwrap();
+    // Consume only 2 parts, then drop the stream (no Finish seen).
+    let mut n = 0;
+    while let Some(_p) = block_on(async { futures::StreamExt::next(&mut result.stream).await }) {
+        n += 1;
+        if n >= 2 {
+            break;
+        }
+    }
+    drop(result); // early drop — must NOT lose the record (F1)
+
+    let recs = store.aggregate(&TraceFilter::default());
+    assert_eq!(
+        recs[0].requests, 1,
+        "early-dropped stream must still record its trace (F1)"
+    );
+    let json = {
+        let mut buf = Vec::new();
+        store.export_jsonl(&mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    };
+    assert!(
+        json.contains("stream dropped before completion"),
+        "dropped stream record must carry the non-success marker: {json}"
+    );
 }

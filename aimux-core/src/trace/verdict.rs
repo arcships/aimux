@@ -351,6 +351,14 @@ fn is_b_level(rule: &str) -> bool {
     matches!(rule, "R-1.1b" | "R-1.6b" | "R-1.7b")
 }
 
+/// R-1.1 / R-1.1b are the only rules whose overclaim signal is derived from
+/// the byte-proxy token bound (`u = upper_bytes/4`). Every other W/B rule
+/// (R-1.1abs / R-1.2 / equality / threshold / TTL / quantization) is independent
+/// of that conversion.
+fn is_byte_proxy_rule(rule: &str) -> bool {
+    matches!(rule, "R-1.1" | "R-1.1b")
+}
+
 /// The built-in rule auditor (RFC-0015 §4.2: 8 hard invariants + diagnosis).
 ///
 /// Pure function over evidence; no state, no IO.
@@ -587,9 +595,35 @@ pub fn judge(inp: &JudgmentInput) -> Verdict {
         }
     }
 
+    // C4-2: without a tokenizer (byte_proxy), `token_upper = upper_bytes/4` is
+    // NOT a safe upper bound — ASCII-heavy corpora have ~1 byte/token, so
+    // bytes/4 underestimates tokens → `u` is too small → real cache hits get
+    // falsely accused as overclaim (R-1.1 / R-1.1b). When the overclaim rests
+    // SOLELY on this conversion (no independent invariant — R-1.1abs / R-1.2 /
+    // equality / threshold / TTL / quantization — fires), downgrade to UNKNOWN
+    // rather than risk a false accusation. Tokenizer evidence
+    // (byte_proxy = false) keeps the original logic.
+    if inp.byte_proxy {
+        let has_independent = v
+            .violated
+            .iter()
+            .any(|r| (is_w_level(r) || is_b_level(r)) && !is_byte_proxy_rule(r));
+        if !has_independent && (has_w || has_b) {
+            v.kind = VerdictKind::Unknown;
+            v.confidence = VerdictConfidence::Medium;
+            v.notes.push(
+                "byte-proxy overclaim (bytes/4 is not a safe token bound) — \
+                 downgraded to Unknown (C4-2)"
+                    .into(),
+            );
+            return v;
+        }
+    }
+
     // Byte-proxy cap (RFC F2): without a tokenizer, R-1.1 evidence can
     // never rise above Medium — byte length overestimates token sharing for
-    // non-4-bytes/token corpora.
+    // non-4-bytes/token corpora. Only reaches here when independent evidence
+    // also fired (C4-2 above already handled the byte-proxy-only case).
     if inp.byte_proxy && has_w && !v.violated.iter().any(|r| r == "R-1.1abs") {
         let byte_proxy_only = v
             .violated

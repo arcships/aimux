@@ -38,13 +38,24 @@ impl HuggingFaceConfig {
     /// Create from the `HUGGINGFACE_API_KEY` environment variable.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "Hugging Face")?;
-        Ok(Self::new(key))
+        Ok(Self::new(key).with_api_key_source(Some("env:HUGGINGFACE_API_KEY")))
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
+    }
+
+    /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.0 = self.0.with_api_key_source(source);
+        self
+    }
+
+    /// 内部 `OpenAIConfig` 引用(config_snapshot 复用 OpenAI helper 用,M2b)。
+    pub(crate) fn openai_config(&self) -> &OpenAIConfig {
+        &self.0
     }
 }
 

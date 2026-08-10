@@ -18,7 +18,7 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::without_trailing_slash;
+use aimux_provider_utils::{RetryConfig, without_trailing_slash};
 
 mod model;
 
@@ -44,6 +44,11 @@ pub struct AnthropicAwsProviderConfig {
     pub api_version: String,
     /// Optional workspace ID sent as `anthropic-workspace-id` header.
     pub workspace_id: Option<String>,
+    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    /// 取代之前硬编码的 `RetryConfig::default()`,让 per-call `max_retries` 生效。
+    pub retry_config: RetryConfig,
 }
 
 impl AnthropicAwsProviderConfig {
@@ -65,6 +70,8 @@ impl AnthropicAwsProviderConfig {
             }),
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         }
     }
 
@@ -77,6 +84,8 @@ impl AnthropicAwsProviderConfig {
             auth: AnthropicAwsAuth::ApiKey(api_key.into()),
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
+            api_key_source: None,
+            retry_config: RetryConfig::default(),
         }
     }
 
@@ -98,6 +107,18 @@ impl AnthropicAwsProviderConfig {
         self
     }
 
+    /// 标注凭证来源(RFC-0023 回放重建用)。
+    pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
+        self.api_key_source = source.map(|s| s.to_string());
+        self
+    }
+
+    /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
     /// Add a session token for temporary STS credentials.
     pub fn with_session_token(mut self, token: impl Into<String>) -> Self {
         if let AnthropicAwsAuth::SigV4(ref mut creds) = self.auth {
@@ -115,7 +136,8 @@ impl AnthropicAwsProviderConfig {
             && !key.trim().is_empty()
         {
             let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-            return Ok(Self::with_api_key(key, region));
+            return Ok(Self::with_api_key(key, region)
+                .with_api_key_source(Some("env:ANTHROPIC_AWS_API_KEY")));
         }
 
         let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").map_err(|_| {
@@ -132,7 +154,8 @@ impl AnthropicAwsProviderConfig {
         })?;
         let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
 
-        let mut config = Self::new(access_key_id, secret_access_key, region);
+        let mut config = Self::new(access_key_id, secret_access_key, region)
+            .with_api_key_source(Some("env:AWS_ACCESS_KEY_ID"));
         if let Ok(token) = std::env::var("AWS_SESSION_TOKEN") {
             config = config.with_session_token(token);
         }
@@ -163,6 +186,8 @@ impl AnthropicAwsProvider {
                 auth: self.config.auth.clone(),
                 api_version: self.config.api_version.clone(),
                 workspace_id: self.config.workspace_id.clone(),
+                api_key_source: self.config.api_key_source.clone(),
+                retry_config: self.config.retry_config,
             },
         )
     }
@@ -223,7 +248,7 @@ impl Provider for AnthropicAwsProvider {
                     call_id: None,
                     recording_context: None,
                 },
-                aimux_provider_utils::RetryConfig::default(),
+                config.retry_config,
                 &DEFAULT_ERROR_STRUCTURE,
                 None,
             )

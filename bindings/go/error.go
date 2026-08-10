@@ -121,3 +121,24 @@ func (e *Error) Error() string {
 func newError(code Code, message string) *Error {
 	return &Error{Code: code, Message: message, Status: -1, RetryMs: -1}
 }
+
+// defaultStatus applies the well-known HTTP status defaults that
+// Kotlin/Flutter/Node use when the C ABI reports status == -1 (no concrete
+// HTTP status): RateLimited→429, Auth/TokenExpired→401, ModelNotFound→404.
+// Other kinds keep the raw status (including -1). Mirrors
+// bindings/kotlin Errors.kt createByCode and bindings/flutter errors.dart.
+func defaultStatus(code Code, status int) int {
+	if status != -1 {
+		return status
+	}
+	switch code {
+	case CodeRateLimited:
+		return 429
+	case CodeAuth, CodeTokenExpired:
+		return 401
+	case CodeModelNotFound:
+		return 404
+	default:
+		return status
+	}
+}

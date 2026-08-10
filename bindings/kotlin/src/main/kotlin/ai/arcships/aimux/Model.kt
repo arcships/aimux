@@ -16,7 +16,7 @@ import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import java.io.Closeable
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JNA interface — direct mapping to the C ABI (uint64_t handles + AimuxError *).
@@ -207,6 +207,17 @@ internal inline fun withCErrorString(block: (AimuxCError) -> Pointer?): String {
  * Implements [Closeable] — you MUST call [close] (or use `use {}`) to release
  * the native handle and avoid memory leaks.
  *
+ * **Thread-safety / concurrency.** [Model] is safe for concurrent use. It
+ * guards the native handle with a Go-style [ReentrantReadWriteLock] (fair,
+ * FIFO): every FFI call ([generateText], [streamText], streaming variants)
+ * holds the _read_ lock for its entire duration, and [close] takes the _write_
+ * lock. As a result [close] blocks until all in-flight calls finish before
+ * dropping the native handle — this closes the use-after-free race where a
+ * caller could observe a non-zero handle and then race with [close]'s drop.
+ * Because a streaming call holds the read lock until the stream completes,
+ * [close] will not interrupt or drop a handle out from under an active stream.
+ * Do not call [close] from within a stream callback (would self-deadlock).
+ *
  * ```kotlin
  * Model.openai("sk-...", "gpt-4o-mini").use { model ->
  *     val result = model.generateText("\"Hello!\"")
@@ -214,17 +225,49 @@ internal inline fun withCErrorString(block: (AimuxCError) -> Pointer?): String {
  * ```
  */
 class Model internal constructor(handle: Long) : Closeable {
-    private val handle = AtomicLong(handle)
+    // Go-style read/write lock: every FFI call holds the read lock for its
+    // entire duration; close() takes the write lock and thus blocks until all
+    // in-flight calls finish before dropping the native handle. This closes the
+    // read-then-drop use-after-free race the AtomicLong version had. Fair
+    // (FIFO) so a pending close is not starved by barging readers — matches
+    // Go's sync.RWMutex writer-priority semantics.
+    private val lock = ReentrantReadWriteLock(true)
+    private var handle: Long = handle
+    private var closed: Boolean = false
 
+    /**
+     * Release the native handle. Idempotent and thread-safe: subsequent calls
+     * are no-ops, and every other method throws [IllegalStateException].
+     *
+     * Acquires the write lock and therefore _blocks until all in-flight FFI
+     * calls_ (which hold the read lock) finish before dropping the native
+     * handle — prevents a use-after-free race between a concurrent caller and
+     * [close]. A streaming call holds the read lock for the entire stream, so
+     * [close] blocks until the stream completes. Do not call [close] from
+     * within a stream callback (would self-deadlock).
+     */
     override fun close() {
-        val h = handle.getAndSet(0L)
-        if (h != 0L) {
+        lock.writeLock().lock()
+        try {
+            if (closed || handle == 0L) {
+                return
+            }
+            val h = handle
+            handle = 0L
+            closed = true
             FFI.lib.aimux_drop_handle(h)
+        } finally {
+            lock.writeLock().unlock()
         }
     }
 
-    private fun requireHandle(): Long = handle.get().also {
-        check(it != 0L) { "Model is closed" }
+    // Caller MUST already hold the read lock (each public FFI method acquires
+    // it and releases it in a finally after the FFI call returns). Holding the
+    // read lock across the FFI call is what lets close()'s write lock wait for
+    // the call to finish, closing the use-after-free race.
+    private fun requireHandleLocked(): Long {
+        check(!closed && handle != 0L) { "Model is closed" }
+        return handle
     }
 
     protected fun finalize() {
@@ -241,10 +284,17 @@ class Model internal constructor(handle: Long) : Closeable {
      * @return JSON-serialized GenerateTextResult.
      * @throws AimuxException on engine / binding failure (typed subclass via C AimuxError).
      */
-    fun generateText(promptJson: String, optsJson: String? = null): String =
-        withCErrorString { err ->
-            FFI.lib.aimux_generate_text(requireHandle(), promptJson, optsJson, err)
+    fun generateText(promptJson: String, optsJson: String? = null): String {
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            return withCErrorString { err ->
+                FFI.lib.aimux_generate_text(h, promptJson, optsJson, err)
+            }
+        } finally {
+            lock.readLock().unlock()
         }
+    }
 
     /**
      * Stream text from the model.
@@ -281,11 +331,20 @@ class Model internal constructor(handle: Long) : Closeable {
             }
         }
 
-        val err = AimuxCError()
-        val rc = FFI.lib.aimux_stream_text(
-            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err,
-        )
-        if (rc == 0) throwFromC(err)
+        // Hold the read lock for the whole blocking stream so close() cannot
+        // drop the handle mid-stream (it blocks on the write lock until the
+        // stream completes).
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            val err = AimuxCError()
+            val rc = FFI.lib.aimux_stream_text(
+                h, promptJson, optsJson, partCb, doneCb, null, err,
+            )
+            if (rc == 0) throwFromC(err)
+        } finally {
+            lock.readLock().unlock()
+        }
     }
 
     /**
@@ -336,10 +395,17 @@ class Model internal constructor(handle: Long) : Closeable {
      * @return JSON-serialized ChatCompletion.
      * @throws AimuxException on engine / binding failure.
      */
-    fun generateTextAsOpenAI(promptJson: String, optsJson: String? = null): String =
-        withCErrorString { err ->
-            FFI.lib.aimux_generate_text_as_openai(requireHandle(), promptJson, optsJson, err)
+    fun generateTextAsOpenAI(promptJson: String, optsJson: String? = null): String {
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            return withCErrorString { err ->
+                FFI.lib.aimux_generate_text_as_openai(h, promptJson, optsJson, err)
+            }
+        } finally {
+            lock.readLock().unlock()
         }
+    }
 
     /**
      * Stream text with OpenAI Chat Completions output.
@@ -368,11 +434,19 @@ class Model internal constructor(handle: Long) : Closeable {
             }
         }
 
-        val err = AimuxCError()
-        val rc = FFI.lib.aimux_stream_text_as_openai(
-            requireHandle(), promptJson, optsJson, partCb, doneCb, null, err,
-        )
-        if (rc == 0) throwFromC(err)
+        // Hold the read lock for the whole blocking stream so close() cannot
+        // drop the handle mid-stream.
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            val err = AimuxCError()
+            val rc = FFI.lib.aimux_stream_text_as_openai(
+                h, promptJson, optsJson, partCb, doneCb, null, err,
+            )
+            if (rc == 0) throwFromC(err)
+        } finally {
+            lock.readLock().unlock()
+        }
     }
 
     /**
@@ -567,41 +641,83 @@ class Model internal constructor(handle: Long) : Closeable {
 /**
  * A provider handle — created by `Model.createProvider`, supports `listModels()`
  * (runtime discovery) and `model()` (build a model from a discovered id).
+ *
+ * **Thread-safety / concurrency.** Safe for concurrent use. The native handle
+ * is guarded by a Go-style [ReentrantReadWriteLock] (fair, FIFO):
+ * [listModels] and [model] hold the _read_ lock for the entire FFI call, and
+ * [close] takes the _write_ lock. [close] therefore blocks until in-flight
+ * calls finish before dropping the native handle — closes the check-then-use
+ * use-after-free race where a caller could pass the closed check and then race
+ * with [close]'s drop.
  */
 class ProviderHandle internal constructor(handle: Long) : AutoCloseable {
 
+    // Go-style read/write lock — see Model for the rationale. Each FFI call
+    // (listModels/model) holds the read lock for its whole duration; close()
+    // takes the write lock and waits for in-flight calls before dropping the
+    // handle, preventing a use-after-free.
+    private val lock = ReentrantReadWriteLock(true)
     private var handle: Long = handle
     private var closed: Boolean = false
 
-    @Synchronized
+    /**
+     * Release the native handle. Idempotent and thread-safe: subsequent calls
+     * are no-ops. Acquires the write lock and blocks until in-flight
+     * [listModels] / [model] calls finish before dropping the native handle
+     * (prevents use-after-free).
+     */
     override fun close() {
-        if (!closed && handle != 0L) {
-            FFI.lib.aimux_drop_handle(handle)
+        lock.writeLock().lock()
+        try {
+            if (closed || handle == 0L) {
+                return
+            }
+            val h = handle
             handle = 0L
             closed = true
+            FFI.lib.aimux_drop_handle(h)
+        } finally {
+            lock.writeLock().unlock()
         }
     }
 
     protected fun finalize() = close()
+
+    // Caller MUST already hold the read lock; held across the FFI call so
+    // close() cannot drop the handle mid-call.
+    private fun requireHandleLocked(): Long {
+        check(!closed && handle != 0L) { "ProviderHandle is closed" }
+        return handle
+    }
 
     /**
      * List models available on this provider (runtime discovery + anya2a spec).
      * Returns a JSON array of ResolvedModel.
      */
     fun listModels(): String {
-        check(!closed && handle != 0L) { "ProviderHandle is closed" }
-        return withCErrorString { err ->
-            FFI.lib.aimux_provider_list_models(handle, err)
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            return withCErrorString { err ->
+                FFI.lib.aimux_provider_list_models(h, err)
+            }
+        } finally {
+            lock.readLock().unlock()
         }
     }
 
     /** Build a language model from a discovered model id. */
     fun model(modelId: String): Model {
-        check(!closed && handle != 0L) { "ProviderHandle is closed" }
-        val h = withCErrorHandle { err ->
-            FFI.lib.aimux_provider_model(handle, modelId, err)
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            val newHandle = withCErrorHandle { err ->
+                FFI.lib.aimux_provider_model(h, modelId, err)
+            }
+            return Model(newHandle)
+        } finally {
+            lock.readLock().unlock()
         }
-        return Model(h)
     }
 }
 

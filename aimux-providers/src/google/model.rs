@@ -14,9 +14,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
-};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
 use super::GoogleConfig;
@@ -115,7 +113,11 @@ impl LanguageModel for GoogleModel {
             provider: self.provider().to_string(),
             model_id: self.model_id.clone(),
             base_url: Some(self.config.base_url.clone()),
-            api_key_source: "explicit".to_string(),
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
             profile: None,
             provider_options: None,
         }
@@ -124,6 +126,10 @@ impl LanguageModel for GoogleModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -136,7 +142,7 @@ impl LanguageModel for GoogleModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
@@ -203,6 +209,10 @@ impl LanguageModel for GoogleModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let (body, tool_warnings) = build_request_body_with_warnings(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {
@@ -215,7 +225,7 @@ impl LanguageModel for GoogleModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )

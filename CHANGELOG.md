@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-10
+
+**Breaking release.** Reworks the error model across the C ABI and every
+binding, and adds observability primitives (request recording/replay, sessions,
+tracing). See [Breaking](#breaking) and [Removed](#removed) for migration.
+
+### Breaking
+
+- **`AiMuxError::RateLimited` gained a `message: String` field** (aimux-core).
+  The variant is now `RateLimited { retry_after_ms, message }` so callers can
+  distinguish "quota exceeded" from "too many requests". `#[serde(default)]`
+  keeps deserializing pre-0.3.0 error payloads, but the generated TypeScript
+  binding marks `message` required — update any exhaustive destructuring or
+  manual serialization.
+- **`GenerateTextOptions` / `CallOptions` / `StreamTextResult` gained public
+  fields** (e.g. `session_id`, recording/trace controls, stream-result
+  metadata). Exhaustive struct initializers must add the new fields; prefer
+  struct-update (`..Default::default()`) to avoid breakage.
+- **C ABI error transport switched to an `AimuxError` out-parameter.** FFI
+  functions now take `err: *mut AimuxError` and return a failure sentinel
+  instead of a JSON envelope string. The old JSON error envelope and the
+  streaming `on_error` callback have been removed — C-ABI consumers must read
+  the out-param rather than parsing a JSON error.
+- **`aimux_last_error()` removed** from the C ABI. Error detail is now returned
+  via the `AimuxError` out-param on the call that failed; drop any
+  `aimux_last_error` declarations and handles.
+- **Error model restructured in Kotlin, Java, Go, Swift, and Flutter** to mirror
+  the new `AimuxError` (typed code + HTTP status + retry hint + message).
+  Binding consumers should migrate from the old string/JSON error shape to the
+  typed error struct.
+
+### Added
+
+- **Request recording & replay** (RFC-0023 / RFC-0024) — `recording.rs` /
+  `replay.rs` capture provider config plus request/response streams to JSONL
+  and replay them offline for regression and CI; `config_snapshot()` records
+  the minimal provider/model identity.
+- **Session grouping** — `session_id` on `GenerateTextOptions` groups related
+  calls for observability (RFC-0024; orthogonal to RFC-0019 session-affinity
+  headers).
+- **Request tracing store** — `aimux-core::trace` records call spans for
+  debugging and audit (RFC-0015).
+- **OpenAI Responses / output API** — the Azure Responses path
+  (`azure/responses.rs`) and the Codex subscription channel expose the
+  Responses API output flow.
+- **`list_models` / `get_model_specs`** — `Provider::list_models` enumerates a
+  provider's models; `get_model_specs` returns reasoning/capability metadata
+  (RFC-0027 host-side merge).
+- **Typed error model** across Rust and all eight bindings — machine-readable
+  `error_type`, HTTP status code, retry hint, and message.
+
+### Fixed
+
+- Audit rounds 1–4 fixes: Python binding exports (recording / mock-replay entry
+  points, `get_model_specs`), FFI error-transport correctness, and CI drift
+  (regenerated Node `index.js` / `index.d.ts`).
+
+### Removed
+
+- `aimux_last_error()` C ABI function (replaced by the `AimuxError` out-param).
+- C ABI JSON error envelope and the streaming `on_error` callback.
+
+## [0.2.1] - 2026-08-04
+
+Patch release following 0.2.0. First Maven Central (Java + Kotlin) and pub.dev
+(Flutter) release; Rust / Node / Python re-released to stay aligned with the
+new bindings.
+
 ## [0.2.0] - 2026-08-03
 
 **Breaking release.** This version replaces the 250 per-provider shell types
@@ -226,5 +294,8 @@ cancellation + timeout control. See [Removed](#removed) for migration.
 - RFC-0011 Go bindings (cgo static link + push callback → channel streaming)
 - RFC-0012 Source dedup (product source 68K → 51K lines, −25%)
 
-[Unreleased]: https://github.com/arcships/aimux/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/arcships/aimux/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/arcships/aimux/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/arcships/aimux/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/arcships/aimux/compare/v0.1.5...v0.2.0
 [0.1.0]: https://github.com/arcships/aimux/releases/tag/v0.1.0

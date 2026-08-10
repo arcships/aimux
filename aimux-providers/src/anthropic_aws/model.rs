@@ -30,6 +30,10 @@ pub struct AnthropicAwsConfig {
     pub auth: AnthropicAwsAuth,
     pub api_version: String,
     pub workspace_id: Option<String>,
+    /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
+    pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    pub retry_config: RetryConfig,
 }
 
 /// An Anthropic-AWS language model (e.g. `claude-sonnet-4-20250514`).
@@ -123,13 +127,44 @@ impl LanguageModel for AnthropicAwsModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        use aimux_core::recording::ProviderRecord;
+        // M2b: record identity + credential source + endpoint config. Only the
+        // auth *kind* is serialized — never the SigV4 credentials or api-key
+        // plaintext.
+        let auth_kind = match &self.config.auth {
+            AnthropicAwsAuth::ApiKey(_) => "api_key",
+            AnthropicAwsAuth::SigV4(_) => "sigv4",
+        };
+        ProviderRecord {
+            provider: self.provider().to_string(),
+            model_id: self.model_id.clone(),
+            base_url: Some(self.config.base_url.clone()),
+            api_key_source: self
+                .config
+                .api_key_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
+            profile: None,
+            provider_options: Some(serde_json::json!({
+                "auth_kind": auth_kind,
+                "api_version": self.config.api_version,
+                "workspace_id": self.config.workspace_id,
+            })),
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options, false)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
         anthropic_generate_core(
             &endpoint,
-            RetryConfig::default(),
+            retry_config,
             body,
             Vec::new(),
             build_headers,
@@ -145,9 +180,13 @@ impl LanguageModel for AnthropicAwsModel {
         let body = build_request_body(&self.model_id, options, true)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
         anthropic_stream_core(
             &endpoint,
-            RetryConfig::default(),
+            retry_config,
             body,
             Vec::new(),
             build_headers,

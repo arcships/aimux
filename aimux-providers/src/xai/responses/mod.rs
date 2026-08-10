@@ -90,6 +90,15 @@ impl LanguageModel for XaiResponsesModel {
         &self.model_id
     }
 
+    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
+        // M2b: reuse the OpenAI snapshot helper with xAI's provider name.
+        crate::openai::config_snapshot_from_config(
+            self.provider(),
+            &self.model_id,
+            self.config.openai_config(),
+        )
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let headers = self.build_headers(options.headers.as_ref());
         let request_result = build_responses_request_body(&self.model_id, options, false)?;

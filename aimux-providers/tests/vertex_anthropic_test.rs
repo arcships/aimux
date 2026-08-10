@@ -27,6 +27,8 @@ use aimux_providers::vertex::{
     VertexAnthropicModel, VertexAuth, VertexProvider, VertexProviderConfig,
 };
 
+use aimux_provider_utils::RetryConfig;
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MODEL_ID: &str = "claude-sonnet-4-20250514";
@@ -60,6 +62,8 @@ fn make_model(server: &MockServer) -> VertexAnthropicModel {
         project: Some("test-project".to_string()),
         location: Some("us-central1".to_string()),
         auth: VertexAuth::BearerToken("test-token".to_string()),
+        api_key_source: None,
+        retry_config: RetryConfig::default(),
     };
     VertexProvider::new(config)
         .anthropic_model(MODEL_ID)

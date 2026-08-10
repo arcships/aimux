@@ -12,8 +12,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use aimux_ffi::{
     AIMUX_E_INVALID_ARGUMENT, AIMUX_E_JSON, AIMUX_E_OTHER, AIMUX_E_UNKNOWN_PROVIDER, AIMUX_OK,
     CAimuxError, aimux_abort_signal_abort, aimux_abort_signal_drop, aimux_abort_signal_new,
-    aimux_azure_new, aimux_drop_handle, aimux_free_string, aimux_generate_text, aimux_openai_new,
-    aimux_provider_new, aimux_stream_text,
+    aimux_azure_new, aimux_cohere_reranking_new, aimux_drop_handle, aimux_free_string,
+    aimux_generate_text, aimux_google_image_new, aimux_google_video_new,
+    aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new,
+    aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new, aimux_stream_text,
+    aimux_tavily_search_new,
 };
 
 fn c(s: &str) -> CString {
@@ -224,4 +227,111 @@ fn abort_signal_new_drop_smoke() {
     aimux_abort_signal_abort(a);
     aimux_abort_signal_drop(a);
     let _ = PART_COUNT.load(Ordering::SeqCst);
+}
+
+// ── R4-1: multimodal constructors honor the AimuxError contract ─────────────
+//
+// The multimodal provider construction methods (embedding / speech / image /
+// transcription / files / reranking / video / search) return the model
+// *directly* rather than `Result`: they only stash the model id + config and
+// perform no validation or I/O, so construction is infallible (the type system
+// enforces this — the FFI compiles, so none of these calls can yield `Err`).
+// The only failure path in these FFI constructors is a null / invalid-UTF-8
+// argument, handled by `fail_invalid_args` → returns 0 and fills
+// `err.code = AIMUX_E_INVALID_ARGUMENT`.
+//
+// Note: an *empty* C string (`""`) is a valid non-null argument and does NOT
+// fail here — it constructs a model with a blank key (the error surfaces later,
+// at network time). Only null / invalid-UTF-8 pointers are failure triggers.
+
+type Ctor3 = extern "C" fn(*const c_char, *const c_char, *mut CAimuxError) -> u64;
+
+/// Model-id-bearing multimodal constructors: `(api_key, model_id, err) -> u64`.
+static MODEL_ID_CTORS: &[(&str, Ctor3)] = &[
+    ("openai_embedding", aimux_openai_embedding_new),
+    ("openai_speech", aimux_openai_speech_new),
+    ("openai_image", aimux_openai_image_new),
+    ("google_image", aimux_google_image_new),
+    ("openai_transcription", aimux_openai_transcription_new),
+    ("cohere_reranking", aimux_cohere_reranking_new),
+    ("google_video", aimux_google_video_new),
+];
+
+#[test]
+fn multimodal_null_api_key_fills_invalid_argument() {
+    let model = c("text-embedding-3-small");
+    for &(name, ctor) in MODEL_ID_CTORS {
+        let mut err = clear_err();
+        let h = ctor(ptr::null(), model.as_ptr(), &mut err);
+        expect_fail_u64(h, &err);
+        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT, "{name}: null api_key");
+        free_err(&mut err);
+    }
+    // Single-key constructor (no model_id).
+    let mut err = clear_err();
+    let h = aimux_openai_files_new(ptr::null(), &mut err);
+    expect_fail_u64(h, &err);
+    assert_eq!(
+        err.code, AIMUX_E_INVALID_ARGUMENT,
+        "openai_files: null api_key"
+    );
+    free_err(&mut err);
+    // Tavily ignores model_id but still validates api_key.
+    let mut err = clear_err();
+    let h = aimux_tavily_search_new(ptr::null(), ptr::null(), &mut err);
+    expect_fail_u64(h, &err);
+    assert_eq!(
+        err.code, AIMUX_E_INVALID_ARGUMENT,
+        "tavily_search: null api_key"
+    );
+    free_err(&mut err);
+}
+
+#[test]
+fn multimodal_null_model_id_fills_invalid_argument() {
+    let key = c("sk-test-fake-key");
+    for &(name, ctor) in MODEL_ID_CTORS {
+        let mut err = clear_err();
+        let h = ctor(key.as_ptr(), ptr::null(), &mut err);
+        expect_fail_u64(h, &err);
+        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT, "{name}: null model_id");
+        free_err(&mut err);
+    }
+}
+
+#[test]
+fn multimodal_invalid_utf8_api_key_fills_invalid_argument() {
+    // 0xFF is invalid UTF-8 → cstr_to_string returns None → fail_invalid_args.
+    let bad_key = CString::new(b"sk-\xff".to_vec()).unwrap();
+    let model = c("text-embedding-3-small");
+    for &(name, ctor) in MODEL_ID_CTORS {
+        let mut err = clear_err();
+        let h = ctor(bad_key.as_ptr(), model.as_ptr(), &mut err);
+        expect_fail_u64(h, &err);
+        assert_eq!(
+            err.code, AIMUX_E_INVALID_ARGUMENT,
+            "{name}: invalid utf-8 api_key"
+        );
+        free_err(&mut err);
+    }
+}
+
+#[test]
+fn multimodal_empty_key_construction_is_infallible() {
+    // The R4-1 finding suspected construction could fail (e.g. on a blank key)
+    // and bypass the error contract. It cannot: the multimodal provider
+    // constructors return the model directly (not `Result`), so even an empty
+    // api_key — a valid non-null C string — yields a non-zero handle and leaves
+    // `err` untouched. The error would only surface later, at network time.
+    // This test pins that behavior so a future "fix" cannot silently turn a
+    // success path into a failure.
+    let mut err = clear_err();
+    let h = aimux_openai_embedding_new(
+        c("").as_ptr(),
+        c("text-embedding-3-small").as_ptr(),
+        &mut err,
+    );
+    assert_ne!(h, 0, "empty api_key still constructs (infallible)");
+    assert_eq!(err.code, AIMUX_OK, "err untouched on success");
+    aimux_drop_handle(h);
 }

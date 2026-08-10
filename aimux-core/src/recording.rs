@@ -7,7 +7,8 @@
 //! - **call_id 关联**:一次逻辑调用一个 `call_id`(与 RFC-0015/24/25 语义一致,
 //!   区别于 HTTP 请求级 ID 与跨服务 trace)。
 //! - **默认关闭**:不调 `init_recording`,热路径 = 1 读锁 + clone(次 ns 级)。
-//! - **隐私受控**:api_key / Authorization 恒脱敏(contains 式,含 `x-goog-api-key`);
+//! - **隐私受控**:api_key / Authorization / cookie 系恒脱敏(contains 式,含 `x-goog-api-key`);
+//!   token 不再 contains(曾误伤 `max_output_tokens` 等用量字段),仅精确脱敏 `x-amz-security-token`;
 //!   `InputRecord.options` 序列化前递归脱敏。
 //! - **completion barrier**:outcome 与全部 exchange(流式含终结)齐才写行。
 //! - **专用 writer thread + oneshot flush**:同步 `flush()` 阻塞至落盘,不依赖运行时。
@@ -16,11 +17,11 @@
 use crate::language_model_message::LanguageModelPrompt;
 use crate::options::CallOptions;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, Sender, SyncSender, sync_channel};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -172,7 +173,7 @@ fn default_finalized() -> bool {
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
-    /// 敏感头(authorization/cookie/含 api-key 等)已脱敏为 "[REDACTED]"。
+    /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "[REDACTED]"。
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
     pub body: Option<String>,
@@ -248,6 +249,40 @@ impl OutcomeRecord {
 
 // ── Recorder trait(快照:一次调用绑定一个实例)──────────────────────────
 
+/// 录制器初始化/刷盘错误(A9/N4:把原本静默/panic 的失败显式暴露为 `Result`)。
+///
+/// 注意:`Recorder::flush` 仍返回 `()` 以兼容 FFI/绑定/既有测试调用点
+/// (`rec.flush()`);需要观测写失败时改用 [`Recorder::try_flush`]。
+#[derive(Debug, thiserror::Error)]
+pub enum RecordingError {
+    /// `create_dir_all` 失败(`try_new`)。
+    #[error("recording init failed for {path}: {source}")]
+    Init {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// 打开 jsonl 文件失败(`try_new`)。
+    #[error("failed to open recording file {path}: {source}")]
+    OpenFile {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// 派生 writer 线程失败(`try_new`,替代原 `.expect` panic)。
+    #[error("failed to spawn recording writer thread: {source}")]
+    Spawn {
+        #[source]
+        source: std::io::Error,
+    },
+    /// writer 线程已退出(通道断),flush 无法送达。
+    #[error("recording writer thread unavailable")]
+    WriterGone,
+    /// flush 在 30s 内未收到 writer 回执。
+    #[error("recording flush timed out")]
+    FlushTimeout,
+}
+
 /// 录制器 trait。
 pub trait Recorder: Send + Sync {
     /// 录制输入侧 + 配置侧最小信息(层 A 入口调用)。
@@ -277,7 +312,15 @@ pub trait Recorder: Send + Sync {
         let _ = call_id;
     }
     /// 同步 flush:阻塞到全部已写行落盘(oneshot 回执),关闭前调用确保不丢。
+    ///
+    /// 返回 `()` 以兼容既有调用点(FFI `aimux_recording_flush`、绑定、测试)。
+    /// 失败( writer 退出 / 超时)被静默吞掉;需观测写失败请用 [`try_flush`](Self::try_flush)。
     fn flush(&self);
+    /// 显式 flush:同 [`flush`](Self::flush) 但把 writer 退出/超时等写失败作为
+    /// `Result` 返回(A9/N4)。默认 `Ok(())`(无 I/O 的实现,如 `RingRecorder`)。
+    fn try_flush(&self) -> Result<(), RecordingError> {
+        Ok(())
+    }
 }
 
 // ── 全局门控(关闭时热路径 ≈1 读锁;支持替换/关闭/测试隔离)────────────
@@ -352,14 +395,29 @@ pub fn new_call_id() -> String {
 // ── 脱敏(contains 式;与 logging.rs 同规则)──────────────────────────────
 
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
+///
+/// needle 集合与 `aimux_provider_utils::logging::is_sensitive_key` 对齐
+/// (`authorization`/`api-key`/`apikey`/`key`),录制侧额外覆盖
+/// `cookie`/`set-cookie`(logging 不脱敏 cookie)。其中 `key` 取 **exact** 匹配
+/// 而非 contains——避免误伤 `X-Key`/`monkey`/`keyboard`/`keyword` 等含 "key"
+/// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。
+///
+/// **token 不再用 contains**——教训:`contains("token")` 会误伤
+/// `max_output_tokens`/`prompt_tokens`/`completion_tokens` 这类正常用量字段名
+/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。改为只
+/// 精确匹配 AWS Bedrock sigv4 真实写入的凭据头 `x-amz-security-token`(name 已
+/// lowercase 归一化,直接 `==` 比较即可)。其余 needle 维持 contains,以覆盖
+/// `x-goog-api-key`/`proxy-authorization` 等变体。
 pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    n == "authorization"
-        || n == "proxy-authorization"
-        || n == "cookie"
+    n == "cookie"
         || n == "set-cookie"
+        || n == "key"
+        || n == "x-amz-security-token"
+        || n.contains("authorization")
         || n.contains("api-key")
         || n.contains("api_key")
+        || n.contains("apikey")
 }
 
 /// 递归脱敏(JSON 中含敏感键的项值替换为 `[REDACTED]`)。
@@ -423,38 +481,114 @@ enum RecordEvent {
     Flush { ack: SyncSender<()> },
 }
 
+/// JsonlRecorder 事件通道容量(有界,A4):防止 writer 跟不上时录制热路径
+/// 无界堆积内存。满时 **drop-newest** 并递增 `dropped` 计数(经
+/// [`JsonlRecorder::dropped_count`] 可查),保持 `send_ev` 非阻塞;writer
+/// 已断开时同样丢弃并计数(失败可查而非静默)。
+const JSONL_CHANNEL_CAPACITY: usize = 1024;
+
 /// 每条完整 `Recording` 一行 jsonl;分片按 call_id 在专用线程合并。
-/// 热路径仅 mpsc send(非阻塞),I/O 全部在专用线程。
+/// 热路径仅 mpsc `try_send`(非阻塞,A4 有界 + drop-newest),I/O 全部在专用线程。
 pub struct JsonlRecorder {
-    tx: Option<Sender<RecordEvent>>,
+    tx: Option<SyncSender<RecordEvent>>,
     dir: PathBuf,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// 有界通道满 / writer 断开时丢弃的事件计数(drop-newest,可查)。
+    dropped: AtomicU64,
+    /// 被标记为不一致的 call_id(C4-7:重复 attempt / update 未命中或歧义)。
+    /// 存于 recorder 侧而非 `Recording` 字段——后者被 `replay.rs` 以全字段
+    /// 字面量构造,新增 serde 字段会破坏其它模块编译,故用旁路集合标记。
+    inconsistent: Arc<Mutex<HashSet<String>>>,
 }
 
 impl JsonlRecorder {
-    /// 在 `dir` 下创建录制器并启动 writer 线程。目录不存在自动创建。
+    /// 显式构造(`try_new`,A9/N4):`create_dir_all` / 打开文件 / 派生 writer
+    /// 线程失败均返回 `Err`(替代原 `.ok()` 静默与 `.expect` panic)。
     /// 文件:`{dir}/recordings.jsonl`。
-    pub fn new(dir: impl Into<PathBuf>) -> Self {
+    pub fn try_new(dir: impl Into<PathBuf>) -> Result<Self, RecordingError> {
         let dir = dir.into();
-        let (tx, rx) = std::sync::mpsc::channel::<RecordEvent>();
-        std::fs::create_dir_all(&dir).ok();
-        let writer_dir = dir.clone();
+        std::fs::create_dir_all(&dir).map_err(|source| RecordingError::Init {
+            path: dir.clone(),
+            source,
+        })?;
+        let path = dir.join("recordings.jsonl");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|source| RecordingError::OpenFile {
+                path: path.clone(),
+                source,
+            })?;
+        let w = BufWriter::new(file);
+        let (tx, rx) = sync_channel::<RecordEvent>(JSONL_CHANNEL_CAPACITY);
+        let inconsistent = Arc::new(Mutex::new(HashSet::new()));
+        let writer_inconsistent = inconsistent.clone();
         let handle = std::thread::Builder::new()
             .name("aimux-recording".into())
-            .spawn(move || writer_loop(rx, writer_dir))
-            .expect("failed to spawn recording writer thread");
-        Self {
+            .spawn(move || writer_loop(rx, w, writer_inconsistent))
+            .map_err(|source| RecordingError::Spawn { source })?;
+        Ok(Self {
             tx: Some(tx),
             dir,
             thread: Some(handle),
+            dropped: AtomicU64::new(0),
+            inconsistent,
+        })
+    }
+
+    /// 在 `dir` 下创建录制器并启动 writer 线程(兼容入口:FFI `aimux_init_recording`
+    /// 及绑定均以 infallible `new` 调用,A9 要求保持兼容)。内部委托 [`try_new`],
+    /// 失败时降级为无 writer 的 no-op recorder(`tx = None`,事件静默丢弃),
+    /// 行为等价于原先 `create_dir_all().ok()` + writer 打开文件失败早退。
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        let dir = dir.into();
+        Self::try_new(dir.clone()).unwrap_or_else(|_| Self::disabled(dir))
+    }
+
+    /// 降级 recorder:writer 不可用,事件入队即丢(`send_ev` no-op)。
+    fn disabled(dir: PathBuf) -> Self {
+        Self {
+            tx: None,
+            dir,
+            thread: None,
+            dropped: AtomicU64::new(0),
+            inconsistent: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
-    /// 事件入队(线程退出后静默丢弃)。
+    /// 事件入队(有界 `try_send`;满或 writer 断开 → drop-newest 并计数)。
     fn send_ev(&self, ev: RecordEvent) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(ev);
+            send_or_drop(tx, ev, &self.dropped);
         }
+    }
+
+    /// 有界通道溢出 / writer 断开时丢弃的事件总数(A4,drop-newest 可查)。
+    pub fn dropped_count(&self) -> u64 {
+        self.dropped.load(Ordering::Relaxed)
+    }
+
+    /// 被标记为不一致的 call_id(C4-7,诊断用;排序以稳定测试)。
+    pub fn inconsistent_call_ids(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.inconsistent.lock().unwrap().iter().cloned().collect();
+        v.sort();
+        v
+    }
+
+    /// 显式 flush(A9/N4):把 writer 退出 / 超时作为 `Result` 返回。阻塞至落盘。
+    pub fn try_flush(&self) -> Result<(), RecordingError> {
+        let Some(tx) = &self.tx else {
+            return Err(RecordingError::WriterGone);
+        };
+        let (ack_tx, ack_rx) = sync_channel::<()>(0);
+        // Flush 事件必须送达 writer(不可 drop-newest),故用阻塞 send 等待空位;
+        // writer 断开时立即返回 Err。30s 回执超时兜底 writer 卡死。
+        tx.send(RecordEvent::Flush { ack: ack_tx })
+            .map_err(|_| RecordingError::WriterGone)?;
+        ack_rx
+            .recv_timeout(Duration::from_secs(30))
+            .map_err(|_| RecordingError::FlushTimeout)
     }
 
     /// 录制文件路径。
@@ -540,15 +674,14 @@ impl Recorder for JsonlRecorder {
         });
     }
 
+    /// 兼容 flush:委托 [`try_flush`](JsonlRecorder::try_flush) 并吞掉错误
+    /// (FFI/绑定/既有测试以 `rec.flush()` 调用,需保持 `()` 返回)。
     fn flush(&self) {
-        let (ack_tx, ack_rx) = sync_channel::<()>(0);
-        // 写入 flush 事件;若 writer 已退出(通道断)则放弃等待。
-        if self.tx.is_none() {
-            return;
-        }
-        self.send_ev(RecordEvent::Flush { ack: ack_tx });
-        // 阻塞等 writer 回执(专用写线程,不占调用方热路径锁)。
-        let _ = ack_rx.recv_timeout(Duration::from_secs(30));
+        let _ = JsonlRecorder::try_flush(self);
+    }
+
+    fn try_flush(&self) -> Result<(), RecordingError> {
+        JsonlRecorder::try_flush(self)
     }
 }
 
@@ -570,16 +703,15 @@ fn entry_or_init<'a>(
 }
 
 /// writer 线程:按 call_id 合并分片;completion barrier 后写一行。
-fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
-    let path = dir.join("recordings.jsonl");
-    let Ok(file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    else {
-        return;
-    };
-    let mut w = BufWriter::new(file);
+///
+/// 文件已由 [`JsonlRecorder::try_new`] 打开并作为 `BufWriter` 传入(A9/N4:
+/// 打开失败在 `try_new` 走 `Result`,而非此处静默早退)。`inconsistent` 为与
+/// recorder 共享的旁路集合,用于标记 C4-7 检测到的不一致 call_id。
+fn writer_loop(
+    rx: Receiver<RecordEvent>,
+    mut w: BufWriter<std::fs::File>,
+    inconsistent: Arc<Mutex<HashSet<String>>>,
+) {
     let mut pending: HashMap<String, Recording> = HashMap::new();
 
     while let Ok(ev) = rx.recv() {
@@ -589,11 +721,15 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                 input,
                 provider,
             } => {
+                // C4-6:Input 仅在当前 provider 仍为空占位时填充最小 provider,
+                // 避免乱序(Provider 先到)时把已写入的完整快照覆盖回最小值。
                 let rec = pending
                     .entry(call_id.clone())
                     .or_insert_with(|| Recording::new(&call_id, input.clone(), provider.clone()));
                 rec.input = input;
-                rec.provider = provider;
+                if rec.provider.provider.is_empty() {
+                    rec.provider = provider;
+                }
             }
             RecordEvent::Session {
                 call_id,
@@ -605,15 +741,17 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                 rec.step = Some(step);
                 try_finalize(&mut w, &mut pending, &call_id);
             }
+            // C4-6:用 entry_or_init(而非 get_mut)兜底建条目,保证乱序
+            // (先于 Input 到达)的 Provider 快照不丢。
             RecordEvent::Provider { call_id, provider } => {
-                if let Some(rec) = pending.get_mut(&call_id) {
-                    rec.provider = provider;
-                }
+                entry_or_init(&mut pending, &call_id).provider = provider;
             }
             RecordEvent::Exchange { call_id, exchange } => {
-                entry_or_init(&mut pending, &call_id)
-                    .exchanges
-                    .push(exchange);
+                // C4-7:同 (call_id, attempt) 重复 → 合并骨架并标记 inconsistent。
+                let rec = entry_or_init(&mut pending, &call_id);
+                if insert_exchange(rec, exchange) {
+                    mark_inconsistent(&inconsistent, &call_id);
+                }
                 try_finalize(&mut w, &mut pending, &call_id);
             }
             RecordEvent::ExchangeUpdate {
@@ -622,14 +760,14 @@ fn writer_loop(rx: Receiver<RecordEvent>, dir: PathBuf) {
                 response,
                 error,
             } => {
-                if let Some(rec) = pending.get_mut(&call_id)
-                    && let Some(ex) = rec.exchanges.iter_mut().find(|ex| ex.attempt == attempt)
-                {
-                    ex.response = Some(response);
-                    if let Some(err) = error {
-                        ex.error = Some(err);
-                    }
-                    ex.finalized = true;
+                // C4-7:要求恰好一个匹配 attempt;0 或 >1 → 标记 inconsistent,
+                // 不静默 patch 第一条。
+                let rec = entry_or_init(&mut pending, &call_id);
+                if !matches!(
+                    apply_exchange_update(rec, attempt, response, error),
+                    UpdateMatch::Patched
+                ) {
+                    mark_inconsistent(&inconsistent, &call_id);
                 }
                 try_finalize(&mut w, &mut pending, &call_id);
             }
@@ -695,15 +833,140 @@ fn write_line(w: &mut impl Write, rec: Recording) {
     }
 }
 
+// ── 合并/一致性 helper(C4-7)─────────────────────────────────────────────
+
+/// `record_exchange_update` 的匹配结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UpdateMatch {
+    /// 恰好一个 attempt 匹配,已 patch。
+    Patched,
+    /// 无匹配骨架。
+    NotFound,
+    /// 多个匹配(重复 attempt),不静默 patch 第一条。
+    Ambiguous,
+}
+
+/// 插入一条 exchange;若同 attempt 已存在则合并骨架并返回 `true`(调用方标记
+/// inconsistent)。合并时保留已补全的 response/error/finalized(除非新骨架带值),
+/// 避免重复插入导致的重复条目或更新丢失。
+fn insert_exchange(rec: &mut Recording, exchange: HttpExchange) -> bool {
+    if let Some(existing) = rec
+        .exchanges
+        .iter_mut()
+        .find(|e| e.attempt == exchange.attempt)
+    {
+        merge_exchange(existing, &exchange);
+        true
+    } else {
+        rec.exchanges.push(exchange);
+        false
+    }
+}
+
+fn merge_exchange(existing: &mut HttpExchange, new: &HttpExchange) {
+    existing.request = new.request.clone();
+    existing.timing = new.timing.clone();
+    if new.response.is_some() {
+        existing.response = new.response.clone();
+    }
+    if new.error.is_some() {
+        existing.error = new.error.clone();
+    }
+    // 不回退已终结状态:新骨架 finalized=true 才推进,避免重复骨架把已补全的打成未终结。
+    if new.finalized {
+        existing.finalized = true;
+    }
+}
+
+/// 把 exchange 更新应用到恰好一个匹配 attempt;0 或 >1 匹配时不 patch,返回
+/// `NotFound`/`Ambiguous` 供调用方标记 inconsistent(C4-7:不得静默 patch 第一条)。
+fn apply_exchange_update(
+    rec: &mut Recording,
+    attempt: u32,
+    response: ResponseRecord,
+    error: Option<String>,
+) -> UpdateMatch {
+    let matches: Vec<usize> = rec
+        .exchanges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.attempt == attempt)
+        .map(|(i, _)| i)
+        .collect();
+    match matches.len() {
+        0 => UpdateMatch::NotFound,
+        1 => {
+            let ex = &mut rec.exchanges[matches[0]];
+            ex.response = Some(response);
+            if let Some(err) = error {
+                ex.error = Some(err);
+            }
+            ex.finalized = true;
+            UpdateMatch::Patched
+        }
+        _ => UpdateMatch::Ambiguous,
+    }
+}
+
+/// 标记 call_id 不一致(共享旁路集合;锁中毒时静默跳过,不影响写路径)。
+fn mark_inconsistent(set: &Mutex<HashSet<String>>, call_id: &str) {
+    if let Ok(mut g) = set.lock() {
+        g.insert(call_id.to_string());
+    }
+}
+
+// ── 有界 channel send(A4:drop-newest + 计数)─────────────────────────────
+
+/// 有界 `try_send`:满(drop-newest)或 writer 断开时丢弃事件并递增 `dropped`,
+/// 保持热路径非阻塞且失败可查(而非静默 `let _ = tx.send(...)`)。
+fn send_or_drop(tx: &SyncSender<RecordEvent>, ev: RecordEvent, dropped: &AtomicU64) {
+    if let Err(err) = tx.try_send(ev) {
+        // err 持有未入队事件,随 err 析构丢弃;仅计数,保持非阻塞。
+        drop(err);
+        dropped.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 // ── 工具 ───────────────────────────────────────────────────────────────────
 
+/// 当前 UTC 时间,RFC 3339 格式(毫秒精度,`...Z`)。
 fn iso8601_now() -> String {
-    // MVP:秒精度 + 时区标记 Z(毫秒精度留待列 `rfc3339` 公共 util 后统一)。
-    SystemTime::now()
+    let d = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| format!("{:?}", d))
-        .unwrap_or_default()
-        .replace("Duration", "t")
+        .unwrap_or_default();
+    format_rfc3339_utc(d)
+}
+
+/// 由 `duration_since(UNIX_EPOCH)` 计算 RFC 3339 UTC(`YYYY-MM-DDTHH:MM:SS.mmmZ`)。
+///
+/// N11:原实现 `format!("{:?}", d)` 产出非 RFC3339(`t123s`),回放/审计无法解析。
+/// 本 crate 未引入 chrono/humantime,故手写 Howard Hinnant `civil_from_days`
+/// 算法(与 `session::rfc3339_now` 同格式同算法),纯整数运算,无 panic。
+fn format_rfc3339_utc(d: Duration) -> String {
+    let secs = d.as_secs() as i64;
+    let millis = d.subsec_millis();
+    let (year, month, day) = civil_from_days(secs.div_euclid(86_400));
+    let hms = secs.rem_euclid(86_400);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{millis:03}Z",
+        hms / 3600,
+        (hms % 3600) / 60,
+        hms % 60,
+    )
+}
+
+/// 自 1970-01-01 起的天数 → (year, month, day)。`z >= 0` 对当前纪元恒成立。
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 // ── RingRecorder(P6:内存有界 ring;同 RingTraceStore 样式各自实现)────────
@@ -721,14 +984,28 @@ pub struct RingRecorder {
     inner: Mutex<RingInner>,
 }
 
+/// pending 上限(独立于 ring cap 的绝对上界,A3):防止未完成分片无界堆积。
+/// 取 `cap * 2`(饱和,至少 2),既与 ring 规模联动又保证测试可用小 cap 触发。
+fn ring_pending_max(cap: usize) -> usize {
+    cap.saturating_mul(2).max(2)
+}
+
 struct RingInner {
     cap: usize,
+    /// pending 上限(A3):超过即淘汰最旧 pending → 转 incomplete 入 ring。
+    pending_max: usize,
+    /// pending 插入顺序(淘汰最旧用;finalize/remove 不主动摘除,惰性清理)。
+    pending_order: VecDeque<String>,
     /// 未完成分片(barrier 未满足),按 call_id 合并。
     pending: HashMap<String, Recording>,
     /// 已完成录制(ready 后迁入),FIFO ring。
     completed: VecDeque<Recording>,
     /// ring 超容淘汰计数(队列语义:bounded + drop-newest 可查)。
     dropped: u64,
+    /// pending 超限淘汰计数(A3,可查)。
+    pending_evicted: u64,
+    /// 被标记为不一致的 call_id(C4-7)。
+    inconsistent: HashSet<String>,
 }
 
 impl RingRecorder {
@@ -742,9 +1019,13 @@ impl RingRecorder {
         Self {
             inner: Mutex::new(RingInner {
                 cap,
+                pending_max: ring_pending_max(cap),
+                pending_order: VecDeque::new(),
                 pending: HashMap::new(),
                 completed: VecDeque::with_capacity(cap),
                 dropped: 0,
+                pending_evicted: 0,
+                inconsistent: HashSet::new(),
             }),
         }
     }
@@ -768,14 +1049,37 @@ impl RingRecorder {
         self.inner.lock().unwrap().dropped
     }
 
+    /// pending 超限淘汰计数(A3,可查)。
+    pub fn pending_evicted_count(&self) -> u64 {
+        self.inner.lock().unwrap().pending_evicted
+    }
+
+    /// 被标记为不一致的 call_id(C4-7,排序以稳定测试)。
+    pub fn inconsistent_call_ids(&self) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .inner
+            .lock()
+            .unwrap()
+            .inconsistent
+            .iter()
+            .cloned()
+            .collect();
+        v.sort();
+        v
+    }
+
     pub fn clear(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.pending.clear();
+        inner.pending_order.clear();
         inner.completed.clear();
+        inner.inconsistent.clear();
         inner.dropped = 0;
+        inner.pending_evicted = 0;
     }
 
-    /// 导出全部已完成录制(每行一个 `Recording`)。pending 未完成条目不导出。
+    /// 导出全部已完成录制(每行一个 `Recording`)。pending 未完成条目不导出
+    /// (但被 A3 淘汰的 pending 会以 incomplete 形式进 ring,可导出)。
     pub fn export_jsonl(&self, w: &mut impl Write) -> std::io::Result<()> {
         let inner = self.inner.lock().unwrap();
         for rec in &inner.completed {
@@ -784,30 +1088,79 @@ impl RingRecorder {
         }
         Ok(())
     }
+}
 
-    /// 合并一个已 ready 的分片(单次持锁,barrier 满足则入 ring)。
-    fn finalize_locked(&self, inner: &mut RingInner, call_id: &str) {
-        if inner
-            .pending
-            .get(call_id)
-            .map(|r| r.ready())
-            .unwrap_or(false)
-            && let Some(mut rec) = inner.pending.remove(call_id)
+impl RingInner {
+    /// 取或建 pending 条目(有界,A3):新 call_id 触发惰性清理 + 必要时淘汰最旧。
+    fn entry_or_init_bounded(&mut self, call_id: &str) -> &mut Recording {
+        if !self.pending.contains_key(call_id) {
+            self.evict_pending_if_needed();
+            self.pending_order.push_back(call_id.to_string());
+            self.pending.insert(
+                call_id.to_string(),
+                Recording::new(
+                    call_id,
+                    InputRecord {
+                        prompt: Vec::new(),
+                        options: serde_json::Value::Null,
+                    },
+                    ProviderRecord::minimal("", ""),
+                ),
+            );
+        }
+        self.pending
+            .get_mut(call_id)
+            .expect("just inserted or present")
+    }
+
+    /// 惰性清理已终结的顺序条目,再淘汰最旧 pending 直到低于上限(A3)。
+    /// 淘汰的 pending 转 `complete=false` 的 incomplete 记录入 ring(不静默丢)。
+    fn evict_pending_if_needed(&mut self) {
+        while self
+            .pending_order
+            .front()
+            .is_some_and(|id| !self.pending.contains_key(id))
+        {
+            self.pending_order.pop_front();
+        }
+        while self.pending.len() >= self.pending_max {
+            let Some(old) = self.pending_order.pop_front() else {
+                break;
+            };
+            if let Some(mut rec) = self.pending.remove(&old) {
+                rec.complete = false;
+                if rec.outcome.status == OutcomeStatus::Pending {
+                    rec.outcome.status = OutcomeStatus::Incomplete;
+                }
+                self.pending_evicted += 1;
+                self.push(rec);
+            }
+        }
+    }
+
+    /// 合并一个已 ready 的分片(barrier 满足则入 ring)。
+    fn finalize(&mut self, call_id: &str) {
+        if self.pending.get(call_id).is_some_and(|r| r.ready())
+            && let Some(mut rec) = self.pending.remove(call_id)
         {
             if !rec.exchanges.is_empty() || rec.transport_closed {
                 rec.complete = true;
             }
-            self.push(inner, rec);
+            self.push(rec);
         }
     }
 
     /// FIFO ring 追加;超容淘汰最旧并计数。
-    fn push(&self, inner: &mut RingInner, rec: Recording) {
-        if inner.completed.len() >= inner.cap {
-            inner.completed.pop_front();
-            inner.dropped += 1;
+    fn push(&mut self, rec: Recording) {
+        if self.completed.len() >= self.cap {
+            self.completed.pop_front();
+            self.dropped += 1;
         }
-        inner.completed.push_back(rec);
+        self.completed.push_back(rec);
+    }
+
+    fn mark_inconsistent(&mut self, call_id: &str) {
+        self.inconsistent.insert(call_id.to_string());
     }
 }
 
@@ -820,15 +1173,13 @@ impl Default for RingRecorder {
 impl Recorder for RingRecorder {
     fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str) {
         let mut inner = self.inner.lock().unwrap();
-        let rec = inner.pending.entry(call_id.to_string()).or_insert_with(|| {
-            Recording::new(
-                call_id,
-                InputRecord::from_call_options(options),
-                ProviderRecord::minimal(provider, model_id),
-            )
-        });
+        // C4-6 + A3:有界建条目;Input 仅在 provider 仍为空占位时填最小 provider,
+        // 避免乱序(Provider 先到)覆盖完整快照。
+        let rec = inner.entry_or_init_bounded(call_id);
         rec.input = InputRecord::from_call_options(options);
-        rec.provider = ProviderRecord::minimal(provider, model_id);
+        if rec.provider.provider.is_empty() {
+            rec.provider = ProviderRecord::minimal(provider, model_id);
+        }
     }
 
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord) {
@@ -837,17 +1188,18 @@ impl Recorder for RingRecorder {
         snap.provider_options = snap.provider_options.take().map(redact_json);
         snap.profile = snap.profile.take().map(redact_json);
         let mut inner = self.inner.lock().unwrap();
-        if let Some(rec) = inner.pending.get_mut(call_id) {
-            rec.provider = snap;
-        }
+        // C4-6:entry_or_init_bounded 兜底建条目,保证乱序 Provider 快照不丢。
+        inner.entry_or_init_bounded(call_id).provider = snap;
     }
 
     fn record_exchange(&self, call_id: &str, exchange: &HttpExchange) {
         let mut inner = self.inner.lock().unwrap();
-        entry_or_init(&mut inner.pending, call_id)
-            .exchanges
-            .push(exchange.clone());
-        self.finalize_locked(&mut inner, call_id);
+        // C4-7:同 attempt 重复 → 合并并标记 inconsistent。
+        let rec = inner.entry_or_init_bounded(call_id);
+        if insert_exchange(rec, exchange.clone()) {
+            inner.mark_inconsistent(call_id);
+        }
+        inner.finalize(call_id);
     }
 
     fn record_exchange_update(
@@ -858,28 +1210,27 @@ impl Recorder for RingRecorder {
         error: Option<String>,
     ) {
         let mut inner = self.inner.lock().unwrap();
-        if let Some(rec) = inner.pending.get_mut(call_id)
-            && let Some(ex) = rec.exchanges.iter_mut().find(|ex| ex.attempt == attempt)
-        {
-            ex.response = Some(response.clone());
-            if let Some(err) = error {
-                ex.error = Some(err);
-            }
-            ex.finalized = true;
+        // C4-7:要求恰好一个匹配;0 或 >1 → 标记 inconsistent,不静默 patch 第一条。
+        let rec = inner.entry_or_init_bounded(call_id);
+        if !matches!(
+            apply_exchange_update(rec, attempt, response.clone(), error),
+            UpdateMatch::Patched
+        ) {
+            inner.mark_inconsistent(call_id);
         }
-        self.finalize_locked(&mut inner, call_id);
+        inner.finalize(call_id);
     }
 
     fn record_outcome(&self, call_id: &str, outcome: &OutcomeRecord) {
         let mut inner = self.inner.lock().unwrap();
-        entry_or_init(&mut inner.pending, call_id).outcome = outcome.clone();
-        self.finalize_locked(&mut inner, call_id);
+        inner.entry_or_init_bounded(call_id).outcome = outcome.clone();
+        inner.finalize(call_id);
     }
 
     fn record_transport_closed(&self, call_id: &str) {
         let mut inner = self.inner.lock().unwrap();
-        entry_or_init(&mut inner.pending, call_id).transport_closed = true;
-        self.finalize_locked(&mut inner, call_id);
+        inner.entry_or_init_bounded(call_id).transport_closed = true;
+        inner.finalize(call_id);
     }
 
     /// 内存模式:把 barrier 已满足的 pending 全部收进 completed(对应
@@ -895,9 +1246,15 @@ impl Recorder for RingRecorder {
         for id in ids {
             if let Some(mut rec) = inner.pending.remove(&id) {
                 rec.complete = true;
-                self.push(&mut inner, rec);
+                inner.push(rec);
             }
         }
+    }
+
+    /// 内存录制无 I/O,flush 不会失败:委托 [`flush`](Self::flush) 后返回 `Ok`。
+    fn try_flush(&self) -> Result<(), RecordingError> {
+        RingRecorder::flush(self);
+        Ok(())
     }
 }
 
@@ -1074,17 +1431,33 @@ mod tests {
     #[test]
     fn redact_json_hides_sensitive_values_everywhere() {
         let v = serde_json::json!({
-            "headers": { "Authorization": "Bearer sk-abc", "X-Key": "ok", "x-goog-api-key": "gkey" },
+            "headers": {
+                "Authorization": "Bearer sk-abc",
+                "X-Key": "ok",
+                "x-goog-api-key": "gkey",
+                "x-amz-security-token": "sts-tok"
+            },
             "provider_options": { "headers": { "Cookie": "s=1" } },
             "body_overrides": { "api_key": "sk-secret" },
+            // 用量字段名含 "token" 子串,但非凭据——contains("token") 曾误伤。
+            "usage": {
+                "max_output_tokens": 4096,
+                "prompt_tokens": 10,
+                "completion_tokens": 20
+            },
             "temperature": 0.5,
         });
         let r = redact_json(v);
         assert_eq!(r["headers"]["Authorization"], "[REDACTED]");
         assert_eq!(r["headers"]["x-goog-api-key"], "[REDACTED]");
+        assert_eq!(r["headers"]["x-amz-security-token"], "[REDACTED]");
         assert_eq!(r["headers"]["X-Key"], "ok");
         assert_eq!(r["provider_options"]["headers"]["Cookie"], "[REDACTED]");
         assert_eq!(r["body_overrides"]["api_key"], "[REDACTED]");
+        // 含 "token" 子串的用量字段不再被误脱敏(回归 contains("token"))。
+        assert_eq!(r["usage"]["max_output_tokens"], 4096);
+        assert_eq!(r["usage"]["prompt_tokens"], 10);
+        assert_eq!(r["usage"]["completion_tokens"], 20);
         assert_eq!(r["temperature"], 0.5);
     }
 
@@ -1514,5 +1887,360 @@ mod tests {
         assert_eq!(ring.len(), 0);
         assert_eq!(ring.pending_count(), 0);
         assert_eq!(ring.dropped_count(), 0);
+    }
+
+    // ── N11:RFC 3339 时间戳 ────────────────────────────────────────────────
+
+    /// `civil_from_days` 的逆运算(独立实现,交叉验证 `format_rfc3339_utc`)。
+    fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+        let y = if m <= 2 { y - 1 } else { y };
+        let era = (if y >= 0 { y } else { y - 399 }) / 400;
+        let yoe = (y - era * 400) as u64;
+        let mp = if m > 2 { m - 3 } else { m + 9 } as u64;
+        let doy = (153 * mp + 2) / 5 + d as u64 - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146_097 + doe as i64 - 719_468
+    }
+
+    /// 解析 `format_rfc3339_utc` 产物 → (总秒数, 毫秒)。None = 格式不符。
+    fn parse_rfc3339_secs(s: &str) -> Option<(i64, u32)> {
+        let b = s.as_bytes();
+        if s.len() < 24
+            || b[4] != b'-'
+            || b[7] != b'-'
+            || b[10] != b'T'
+            || b[13] != b':'
+            || b[16] != b':'
+            || b[19] != b'.'
+            || !s.ends_with('Z')
+        {
+            return None;
+        }
+        let year: i64 = s[0..4].parse().ok()?;
+        let month: u32 = s[5..7].parse().ok()?;
+        let day: u32 = s[8..10].parse().ok()?;
+        let hour: u64 = s[11..13].parse().ok()?;
+        let min: u64 = s[14..16].parse().ok()?;
+        let sec: u64 = s[17..19].parse().ok()?;
+        let millis: u32 = s[20..s.len() - 1].parse().ok()?;
+        let total =
+            days_from_civil(year, month, day) * 86_400 + (hour * 3600 + min * 60 + sec) as i64;
+        Some((total, millis))
+    }
+
+    #[test]
+    fn format_rfc3339_utc_is_valid_rfc3339() {
+        // epoch。
+        assert_eq!(
+            format_rfc3339_utc(Duration::ZERO),
+            "1970-01-01T00:00:00.000Z"
+        );
+        // 1_700_000_000s(独立 days_from_civil 交叉验证)。
+        let d = Duration::from_secs(1_700_000_000);
+        let s = format_rfc3339_utc(d);
+        assert_eq!(s.len(), 24);
+        assert!(s.ends_with('Z'));
+        let (secs, millis) = parse_rfc3339_secs(&s).expect("must parse");
+        assert_eq!(secs, 1_700_000_000);
+        assert_eq!(millis, 0);
+        // 毫秒精度保留。
+        let (s2, m2) =
+            parse_rfc3339_secs(&format_rfc3339_utc(Duration::from_millis(12_345))).unwrap();
+        assert_eq!((s2, m2), (12, 345));
+        // iso8601_now() 同格式。
+        let now = iso8601_now();
+        assert!(parse_rfc3339_secs(&now).is_some(), "now not rfc3339: {now}");
+    }
+
+    // ── A4:有界 channel + drop-newest 计数 ────────────────────────────────
+
+    #[test]
+    fn send_or_drop_counts_overflow() {
+        // 容量 1 + 不消费:第 1 条入队,后两条 Full → drop-newest 并计数。
+        let (tx, rx) = sync_channel::<RecordEvent>(1);
+        let dropped = AtomicU64::new(0);
+        let ev = || RecordEvent::TransportClosed {
+            call_id: "c".into(),
+        };
+        send_or_drop(&tx, ev(), &dropped);
+        send_or_drop(&tx, ev(), &dropped);
+        send_or_drop(&tx, ev(), &dropped);
+        assert_eq!(dropped.load(Ordering::Relaxed), 2);
+        assert!(rx.try_recv().is_ok()); // 第 1 条仍在
+        assert!(rx.try_recv().is_err()); // 无更多
+    }
+
+    #[test]
+    fn jsonl_dropped_count_starts_zero() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-drop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        assert_eq!(rec.dropped_count(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── A9/N4:try_new / try_flush ──────────────────────────────────────────
+
+    #[test]
+    fn jsonl_try_new_fails_on_invalid_dir() {
+        let blocker =
+            std::env::temp_dir().join(format!("aimux-rec-blocker-{}", std::process::id()));
+        let _ = std::fs::remove_file(&blocker);
+        std::fs::write(&blocker, b"x").unwrap();
+        // blocker 是文件 → create_dir_all(blocker/sub) 失败 → Err(Init)。
+        let res = JsonlRecorder::try_new(blocker.join("sub"));
+        assert!(
+            matches!(res, Err(RecordingError::Init { .. })),
+            "expected Init, got {:?}",
+            res.as_ref().err()
+        );
+        let _ = std::fs::remove_file(&blocker);
+    }
+
+    #[test]
+    fn jsonl_try_flush_ok_and_disabled_err() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-tf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        rec.record_input("c", &sample_options(), "openai", "gpt-4o");
+        rec.record_outcome("c", &success_outcome());
+        rec.record_transport_closed("c");
+        assert!(rec.try_flush().is_ok());
+        let content = std::fs::read_to_string(rec.path()).unwrap();
+        assert!(content.contains("\"call_id\":\"c\""));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // 非法目录 → new 降级(tx=None)→ try_flush 返回 WriterGone。
+        let blocker =
+            std::env::temp_dir().join(format!("aimux-rec-blocker2-{}", std::process::id()));
+        let _ = std::fs::remove_file(&blocker);
+        std::fs::write(&blocker, b"x").unwrap();
+        let disabled = JsonlRecorder::new(blocker.join("sub"));
+        assert!(matches!(
+            disabled.try_flush(),
+            Err(RecordingError::WriterGone)
+        ));
+        let _ = std::fs::remove_file(&blocker);
+    }
+
+    // ── A3:RingRecorder pending 有界 ───────────────────────────────────────
+
+    #[test]
+    fn ring_pending_evicts_oldest_when_bounded() {
+        let ring = RingRecorder::with_capacity(2); // pending_max = 4
+        for i in 1..=5u32 {
+            ring.record_input(&format!("call-{i}"), &sample_options(), "openai", "gpt-4o");
+        }
+        assert_eq!(ring.pending_count(), 4, "pending bounded to 4");
+        assert_eq!(ring.len(), 1, "oldest evicted into ring as incomplete");
+        assert_eq!(ring.pending_evicted_count(), 1);
+
+        let mut buf = Vec::new();
+        ring.export_jsonl(&mut buf).unwrap();
+        let parsed: Recording =
+            serde_json::from_str(std::str::from_utf8(&buf).unwrap().trim()).unwrap();
+        assert_eq!(parsed.call_id, "call-1", "oldest (call-1) evicted");
+        assert!(!parsed.complete, "evicted pending → incomplete");
+        assert_eq!(parsed.outcome.status, OutcomeStatus::Incomplete);
+    }
+
+    // ── C4-6:Provider 先于 Input 不丢 ─────────────────────────────────────
+
+    fn full_provider() -> ProviderRecord {
+        ProviderRecord {
+            provider: "openai".into(),
+            model_id: "gpt-4o".into(),
+            base_url: Some("https://api.openai.com".into()),
+            api_key_source: "env:OPENAI_API_KEY".into(),
+            profile: None,
+            provider_options: None,
+        }
+    }
+
+    #[test]
+    fn ring_provider_before_input_preserved() {
+        let ring = RingRecorder::new();
+        ring.record_provider("c", &full_provider()); // 乱序:Provider 先到
+        ring.record_input("c", &sample_options(), "minimal", "minimal-model");
+        ring.record_outcome("c", &success_outcome());
+        ring.record_transport_closed("c");
+
+        let mut buf = Vec::new();
+        ring.export_jsonl(&mut buf).unwrap();
+        let parsed: Recording =
+            serde_json::from_str(std::str::from_utf8(&buf).unwrap().trim()).unwrap();
+        assert_eq!(parsed.provider.provider, "openai");
+        assert_eq!(
+            parsed.provider.base_url.as_deref(),
+            Some("https://api.openai.com"),
+            "full snapshot preserved, not overwritten by minimal"
+        );
+        assert_eq!(parsed.provider.model_id, "gpt-4o");
+    }
+
+    #[test]
+    fn jsonl_provider_before_input_preserved() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-pbi-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        rec.record_provider("c", &full_provider()); // 乱序:Provider 先到
+        rec.record_input("c", &sample_options(), "minimal", "minimal-model");
+        rec.record_outcome("c", &success_outcome());
+        rec.record_transport_closed("c");
+        rec.flush();
+        let content = std::fs::read_to_string(rec.path()).unwrap();
+        let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
+        assert_eq!(
+            parsed.provider.base_url.as_deref(),
+            Some("https://api.openai.com")
+        );
+        assert_eq!(parsed.provider.provider, "openai");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── C4-7:重复 attempt / update 匹配语义 ────────────────────────────────
+
+    fn resp_status(status: u16) -> ResponseRecord {
+        ResponseRecord {
+            status,
+            headers: vec![],
+            body: None,
+            stream_chunks: None,
+            ttfb_ms: None,
+        }
+    }
+
+    fn skeleton_at(attempt: u32) -> HttpExchange {
+        HttpExchange {
+            attempt,
+            request: HttpRecord {
+                method: "post".into(),
+                url: "u".into(),
+                headers: vec![],
+                body: None,
+            },
+            response: None,
+            timing: TimingRecord {
+                latency_ms: 1,
+                ttfb_ms: None,
+            },
+            error: None,
+            finalized: false,
+        }
+    }
+
+    fn empty_recording(call_id: &str) -> Recording {
+        Recording::new(
+            call_id,
+            InputRecord {
+                prompt: Vec::new(),
+                options: serde_json::Value::Null,
+            },
+            ProviderRecord::minimal("", ""),
+        )
+    }
+
+    #[test]
+    fn insert_exchange_and_apply_update_match_semantics() {
+        let mut rec = empty_recording("c");
+
+        // 新 attempt → 插入(false)。
+        assert!(!insert_exchange(&mut rec, skeleton_at(0)));
+        assert!(!insert_exchange(&mut rec, skeleton_at(1)));
+        assert_eq!(rec.exchanges.len(), 2);
+
+        // 同 attempt 重复 → 合并(true),条目数不变,response/error/finalized 合并进。
+        let mut dup = skeleton_at(0);
+        dup.response = Some(resp_status(500));
+        dup.error = Some("dup".into());
+        dup.finalized = true;
+        assert!(insert_exchange(&mut rec, dup));
+        assert_eq!(rec.exchanges.len(), 2);
+        let e0 = rec.exchanges.iter().find(|e| e.attempt == 0).unwrap();
+        assert_eq!(e0.response.as_ref().unwrap().status, 500);
+        assert!(e0.finalized);
+        assert_eq!(e0.error.as_deref(), Some("dup"));
+
+        // apply:1 匹配 → Patched。
+        assert_eq!(
+            apply_exchange_update(&mut rec, 1, resp_status(200), None),
+            UpdateMatch::Patched
+        );
+        assert_eq!(
+            rec.exchanges
+                .iter()
+                .find(|e| e.attempt == 1)
+                .unwrap()
+                .response
+                .as_ref()
+                .unwrap()
+                .status,
+            200
+        );
+
+        // apply:0 匹配 → NotFound。
+        assert_eq!(
+            apply_exchange_update(&mut rec, 9, resp_status(200), None),
+            UpdateMatch::NotFound
+        );
+
+        // apply:2 匹配(手动塞重复)→ Ambiguous,不 patch 任何一条。
+        rec.exchanges.push(skeleton_at(1));
+        assert_eq!(
+            apply_exchange_update(&mut rec, 1, resp_status(503), Some("amb".into())),
+            UpdateMatch::Ambiguous
+        );
+        assert!(
+            rec.exchanges
+                .iter()
+                .filter(|e| e.attempt == 1)
+                .all(|e| e.response.as_ref().is_none_or(|r| r.status != 503))
+        );
+    }
+
+    #[test]
+    fn ring_duplicate_attempt_marks_inconsistent_and_merges() {
+        let ring = RingRecorder::new();
+        ring.record_input("c", &sample_options(), "openai", "gpt-4o");
+        ring.record_exchange("c", &sample_exchange()); // attempt 0
+        ring.record_exchange("c", &sample_exchange()); // 重复 attempt 0 → 合并 + 标记
+        assert!(ring.inconsistent_call_ids().contains(&"c".to_string()));
+
+        // 合并后仍只有 1 条 attempt=0;补齐 barrier 后导出验证。
+        ring.record_outcome("c", &success_outcome());
+        ring.record_transport_closed("c");
+        let mut buf = Vec::new();
+        ring.export_jsonl(&mut buf).unwrap();
+        let parsed: Recording =
+            serde_json::from_str(std::str::from_utf8(&buf).unwrap().trim()).unwrap();
+        assert_eq!(parsed.exchanges.len(), 1, "duplicate merged, not appended");
+        assert_eq!(parsed.exchanges[0].attempt, 0);
+    }
+
+    #[test]
+    fn ring_update_not_found_marks_inconsistent() {
+        let ring = RingRecorder::new();
+        ring.record_input("c", &sample_options(), "openai", "gpt-4o");
+        // 无骨架直接 update → 0 匹配 → 标记 inconsistent,不静默丢弃。
+        ring.record_exchange_update("c", 0, &resp_status(200), None);
+        assert!(ring.inconsistent_call_ids().contains(&"c".to_string()));
+        assert_eq!(
+            ring.pending_count(),
+            1,
+            "call still pending, no exchange created"
+        );
+    }
+
+    #[test]
+    fn jsonl_duplicate_attempt_marks_inconsistent() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-dup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+        rec.record_input("c", &sample_options(), "openai", "gpt-4o");
+        rec.record_exchange("c", &sample_exchange());
+        rec.record_exchange("c", &sample_exchange()); // 重复 attempt 0
+        rec.flush();
+        assert!(rec.inconsistent_call_ids().contains(&"c".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -63,6 +63,8 @@ fn make_model(server: &MockServer) -> BedrockModel {
         BedrockConfig {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("test-token".to_string()),
+            retry_config: aimux_provider_utils::RetryConfig::default(),
+            api_key_source: None,
         },
     )
 }
@@ -590,6 +592,8 @@ async fn arn_model_id_encoded_generate_route() {
         BedrockConfig {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("tok".to_string()),
+            retry_config: aimux_provider_utils::RetryConfig::default(),
+            api_key_source: None,
         },
     );
 
@@ -642,6 +646,8 @@ async fn arn_model_id_encoded_stream_route() {
         BedrockConfig {
             base_url: server.uri(),
             auth: BedrockAuth::BearerToken("tok".to_string()),
+            retry_config: aimux_provider_utils::RetryConfig::default(),
+            api_key_source: None,
         },
     );
 

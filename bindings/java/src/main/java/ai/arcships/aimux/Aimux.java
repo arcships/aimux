@@ -1,5 +1,8 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Library;
+import com.sun.jna.Native;
+
 /**
  * Top-level entry point for global aimux services (RFC-0014 logging).
  *
@@ -47,14 +50,43 @@ public final class Aimux {
     }
 
     /**
+     * Local JNA binding for the no-arg default-capacity ring entry point.
+     * Declared here (rather than the shared {@code AimuxFFI} interface) to keep
+     * this change scoped to {@code Aimux.java}. JNA caches the underlying native
+     * library by name, so loading {@code aimux_ffi} again for this interface
+     * reuses the already-open handle.
+     */
+    private interface RecordingDefaultFFI extends Library {
+        RecordingDefaultFFI INSTANCE = Native.load("aimux_ffi", RecordingDefaultFFI.class);
+        int aimux_init_recording_ring_default();
+    }
+
+    /**
+     * Start in-memory bounded recording with the library default capacity
+     * (RingRecorder, FIFO eviction; RFC-0023). Convenience overload — callers
+     * who don't need a specific cap should prefer this.
+     */
+    public static void initRecordingRing() {
+        if (RecordingDefaultFFI.INSTANCE.aimux_init_recording_ring_default() != 0) {
+            throw new IllegalArgumentException("Failed to initialize default ring recording");
+        }
+    }
+
+    /**
      * Start in-memory bounded recording (RingRecorder, FIFO eviction; RFC-0023).
      *
      * @param cap Maximum number of in-memory recordings before old ones are evicted.
-     * @throws IllegalArgumentException if {@code cap == 0}.
+     * @throws IllegalArgumentException if {@code cap <= 0}. The bound is checked
+     *                                  before the FFI call so a negative Java
+     *                                  {@code long} is never reinterpreted by
+     *                                  JNA/the C ABI as a huge {@code uint64_t}.
      */
     public static void initRecordingRing(long cap) {
+        if (cap <= 0) {
+            throw new IllegalArgumentException("initRecordingRing: cap must be > 0");
+        }
         if (AimuxFFI.INSTANCE.aimux_init_recording_ring(cap) != 0) {
-            throw new IllegalArgumentException("Failed to initialize ring recording: cap must be > 0");
+            throw new IllegalArgumentException("Failed to initialize ring recording");
         }
     }
 
