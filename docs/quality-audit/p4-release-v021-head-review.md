@@ -680,3 +680,16 @@
 - B1 原 finding（URL query 凭据落盘）按用户决策**接受为不修复**——风险接受记录：无主流 provider 使用 URL query 鉴权
 - N1（STS 头）保持修复；V12（误伤）彻底消除，ExactMatcher 不再对用量字段保守 miss
 - 验证：fmt/clippy/test 全绿（`redact_json_Hides...` 与 `security_token_header_redacted_usage_keys_preserved` 通过）
+
+---
+
+## 17. cap 可选化决策与实现（2026-08-10）
+
+**用户决策**：录制缓存这类设置普通用户不会去动——`cap` 必须支持**省略（用默认容量 2048）**；显式传 0 仍报错（保持上一轮统一语义）。
+
+**实现**（3 commits）：
+- `f89c301` feat(ffi)：新增 `aimux_init_recording_ring_default()`（core `RingRecorder::default()` = 2048）+ header + 2 测试（default 返回 0、显式 0 仍 -1）
+- `a5559f6` feat(bindings)：7 语言可选化——Node `Option<u32>`、Python `#[pyo3(signature=(cap=None))]`、Go variadic、Kotlin `Int? = null`、Java 重载、Swift `UInt64? = nil`、Flutter `[int? cap]`；缺省一律走默认容量。验证：Go/Flutter/Node/Python/Java/Kotlin 实测通过（各含新无参用例），Swift 静态自洽
+- `0cfb7f9`+`ef5ae0b` fix(node)：统一 Node 显式 0 从 no-op 改为抛错（与其余 6 语言一致）+ d.ts 同步 napi 产物
+
+**最终语义矩阵**：cap 省略 → 默认 2048；cap=0 → 全部 7 语言报错；cap>0 → 指定容量。Node/Python 直连 core（非 FFI），调用 `RingRecorder::default()` 等价实现（有注释）。
