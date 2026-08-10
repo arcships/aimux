@@ -526,6 +526,12 @@ int aimux_init_recording(const char *dir);
    count queryable). Returns 0, or -1 when cap == 0. */
 int aimux_init_recording_ring(uint64_t cap);
 
+/* No-argument variant: start in-memory bounded recording with the library
+   default ring capacity (2048 entries). Ordinary callers should prefer this
+   entry point; pass an explicit cap via aimux_init_recording_ring only when a
+   different size is required. Returns 0. */
+int aimux_init_recording_ring_default(void);
+
 /* Stop recording: the global recorder becomes None. Returns 0. */
 int aimux_recording_stop(void);
 
