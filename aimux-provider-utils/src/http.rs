@@ -997,47 +997,7 @@ impl ByteAccumulator {
     }
 }
 
-/// 脱敏 URL query 中的敏感参数(值替换为 `[REDACTED]`),保留 path 与非敏感 query。
-///
-/// 手写 `split('?')`→`split('&')`→`split_once('=')` 解析(不引入 `url::Url`
-/// 的规范化,保持录制 URL 原样,仅替换敏感值);fragment 先剥离以免 query 中
-/// 的 `#` 污染参数值。敏感键复用 `is_sensitive_key`(故 `api_key`/`token`/
-/// `key` 等均脱敏);flag 式(无 `=`)无可漏值,原样保留。
-fn redact_url(raw: &str) -> String {
-    use aimux_core::recording::is_sensitive_key;
-    // 先剥离 fragment:query 中的 '#' 会污染参数值。
-    let (before_frag, frag) = match raw.split_once('#') {
-        Some((b, f)) => (b, Some(f)),
-        None => (raw, None),
-    };
-    let (base, query) = match before_frag.split_once('?') {
-        Some((b, q)) => (b, q),
-        None => {
-            // 无 query:原样返回(补回 fragment)。
-            return match frag {
-                Some(f) => format!("{before_frag}#{f}"),
-                None => before_frag.to_string(),
-            };
-        }
-    };
-    let redacted = query
-        .split('&')
-        .map(|pair| match pair.split_once('=') {
-            // key=value 且 key 敏感 → 值脱敏。
-            Some((k, _)) if is_sensitive_key(k) => format!("{k}=[REDACTED]"),
-            _ => pair.to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join("&");
-    let mut out = format!("{base}?{redacted}");
-    if let Some(f) = frag {
-        out.push('#');
-        out.push_str(f);
-    }
-    out
-}
-
-/// 把请求转成录制侧的 HttpRecord(敏感头 contains 式脱敏;body 截断)。
+/// 把请求转成录制侧的 HttpRecord(敏感头脱敏;body 截断)。
 fn to_http_record(request: &HttpRequest) -> aimux_core::recording::HttpRecord {
     use aimux_core::recording::is_sensitive_key;
     let headers = request
@@ -1063,7 +1023,7 @@ fn to_http_record(request: &HttpRequest) -> aimux_core::recording::HttpRecord {
     };
     aimux_core::recording::HttpRecord {
         method: request.method.as_str().to_string(),
-        url: redact_url(&request.url),
+        url: request.url.clone(),
         headers,
         body,
     }

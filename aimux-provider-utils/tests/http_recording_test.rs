@@ -390,9 +390,10 @@ async fn utf8_body_truncates_without_panic_at_char_boundary() {
 
 #[tokio::test]
 #[serial]
-async fn url_query_and_security_token_header_redacted() {
-    // B1+N3:URL query 中的凭据(api_key/token/key)与 token 族头
-    // (AWS STS x-amz-security-token)必须脱敏;非敏感 query(如 model)保留。
+async fn security_token_header_redacted_usage_keys_preserved() {
+    // header 脱敏收窄:x-amz-security-token(AWS Bedrock sigv4 真实凭据头)恒脱敏;
+    // contains("token") 已移除,故 max_output_tokens 等用量键不再被误伤。
+    // URL query 不再脱敏(provider 均 header 鉴权),原样录制。
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat"))
@@ -404,12 +405,11 @@ async fn url_query_and_security_token_header_redacted() {
     let rec_arc: Arc<dyn Recorder> = Arc::new(recorder);
     recording::init_recording(Some(rec_arc.clone()));
 
-    // URL 携带敏感 query(api_key/token/key)+ 非敏感 query(model);
-    // header 携带 AWS STS 的 x-amz-security-token(Bedrock sigv4 写入)。
-    let url = format!(
-        "{}/v1/chat?api_key=SECRET&token=SECRET&key=SECRET&model=gpt",
-        server.uri()
-    );
+    // URL 仅携带非敏感 query(原样录制,不再脱敏);header 携带:
+    //  - x-amz-security-token(Bedrock sigv4 凭据)→ 必须脱敏
+    //  - max_output_tokens(用量字段,含 "token" 子串)→ 必须保留
+    //  - Authorization → 必须脱敏(contains authorization 回归保护)
+    let url = format!("{}/v1/chat?model=gpt&version=1", server.uri());
     let recording_context =
         aimux_core::recording::recorder().map(|recorder| aimux_core::recording::RecordingContext {
             call_id: "call-redact".to_string(),
@@ -421,6 +421,8 @@ async fn url_query_and_security_token_header_redacted() {
         headers: vec![
             ("Content-Type".to_string(), "application/json".to_string()),
             ("x-amz-security-token".to_string(), "STS-TOKEN".to_string()),
+            ("max_output_tokens".to_string(), "4096".to_string()),
+            ("Authorization".to_string(), "Bearer SECRET".to_string()),
         ],
         body: HttpBody::Json(serde_json::json!({"q": "hi"})),
         abort_signal: None,
@@ -438,17 +440,13 @@ async fn url_query_and_security_token_header_redacted() {
     let ex = &rec.exchanges[0];
     let recorded_url = &ex.request.url;
 
-    // 敏感 query 值脱敏;非敏感 query(model)保留;SECRET 不落盘。
+    // URL query 原样保留(不再脱敏):非敏感 query 完整落盘。
     assert!(
-        recorded_url.ends_with("?api_key=[REDACTED]&token=[REDACTED]&key=[REDACTED]&model=gpt"),
-        "query redaction mismatch: {recorded_url}"
-    );
-    assert!(
-        !recorded_url.contains("SECRET"),
-        "secret value leaked into recorded url: {recorded_url}"
+        recorded_url.ends_with("?model=gpt&version=1"),
+        "url should be recorded verbatim (no query redaction): {recorded_url}"
     );
 
-    // x-amz-security-token 头(token 族)脱敏。
+    // x-amz-security-token(AWS 凭据头)脱敏。
     let sec_token = ex
         .request
         .headers
@@ -456,23 +454,38 @@ async fn url_query_and_security_token_header_redacted() {
         .find(|(k, _)| k.eq_ignore_ascii_case("x-amz-security-token"))
         .expect("x-amz-security-token header recorded");
     assert_eq!(sec_token.1, "[REDACTED]");
-    assert!(
-        !ex.request
-            .headers
-            .iter()
-            .any(|(_, v)| v.contains("STS-TOKEN")),
-        "STS token leaked into recorded headers"
+
+    // max_output_tokens 含 "token" 子串但非凭据——contains("token") 收窄后保留。
+    let usage_key = ex
+        .request
+        .headers
+        .iter()
+        .find(|(k, _)| k == "max_output_tokens")
+        .expect("max_output_tokens header recorded");
+    assert_eq!(
+        usage_key.1, "4096",
+        "max_output_tokens must NOT be redacted (contains(token) narrowed): {:?}",
+        ex.request.headers
     );
+
+    // Authorization 仍按 contains(authorization) 脱敏(回归保护)。
+    let auth = ex
+        .request
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Authorization"))
+        .expect("Authorization header recorded");
+    assert_eq!(auth.1, "[REDACTED]");
 
     // catch-all:整条录制序列化后不得出现明文凭据。
     let dump = serde_json::to_string(&rec).unwrap_or_default();
     assert!(
-        !dump.contains("SECRET"),
-        "secret leaked in recording: {dump}"
-    );
-    assert!(
         !dump.contains("STS-TOKEN"),
         "STS token leaked in recording: {dump}"
+    );
+    assert!(
+        !dump.contains("SECRET"),
+        "secret leaked in recording: {dump}"
     );
 
     recording::init_recording(None);

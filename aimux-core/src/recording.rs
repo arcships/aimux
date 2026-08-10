@@ -7,7 +7,8 @@
 //! - **call_id 关联**:一次逻辑调用一个 `call_id`(与 RFC-0015/24/25 语义一致,
 //!   区别于 HTTP 请求级 ID 与跨服务 trace)。
 //! - **默认关闭**:不调 `init_recording`,热路径 = 1 读锁 + clone(次 ns 级)。
-//! - **隐私受控**:api_key / Authorization / token 系恒脱敏(contains 式,含 `x-goog-api-key`、`x-amz-security-token`);
+//! - **隐私受控**:api_key / Authorization / cookie 系恒脱敏(contains 式,含 `x-goog-api-key`);
+//!   token 不再 contains(曾误伤 `max_output_tokens` 等用量字段),仅精确脱敏 `x-amz-security-token`;
 //!   `InputRecord.options` 序列化前递归脱敏。
 //! - **completion barrier**:outcome 与全部 exchange(流式含终结)齐才写行。
 //! - **专用 writer thread + oneshot flush**:同步 `flush()` 阻塞至落盘,不依赖运行时。
@@ -172,7 +173,7 @@ fn default_finalized() -> bool {
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
-    /// 敏感头(authorization/cookie/含 api-key/key/token 等)已脱敏为 "[REDACTED]"。
+    /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "[REDACTED]"。
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
     pub body: Option<String>,
@@ -396,22 +397,27 @@ pub fn new_call_id() -> String {
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
 ///
 /// needle 集合与 `aimux_provider_utils::logging::is_sensitive_key` 对齐
-/// (`authorization`/`api-key`/`apikey`/`key`/`token`),录制侧额外覆盖
+/// (`authorization`/`api-key`/`apikey`/`key`),录制侧额外覆盖
 /// `cookie`/`set-cookie`(logging 不脱敏 cookie)。其中 `key` 取 **exact** 匹配
 /// 而非 contains——避免误伤 `X-Key`/`monkey`/`keyboard`/`keyword` 等含 "key"
-/// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。其余 needle
-/// 维持 contains,以覆盖 `x-goog-api-key`/`x-amz-security-token`/`proxy-
-/// authorization` 等变体。
+/// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。
+///
+/// **token 不再用 contains**——教训:`contains("token")` 会误伤
+/// `max_output_tokens`/`prompt_tokens`/`completion_tokens` 这类正常用量字段名
+/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。改为只
+/// 精确匹配 AWS Bedrock sigv4 真实写入的凭据头 `x-amz-security-token`(name 已
+/// lowercase 归一化,直接 `==` 比较即可)。其余 needle 维持 contains,以覆盖
+/// `x-goog-api-key`/`proxy-authorization` 等变体。
 pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n == "cookie"
         || n == "set-cookie"
         || n == "key"
+        || n == "x-amz-security-token"
         || n.contains("authorization")
         || n.contains("api-key")
         || n.contains("api_key")
         || n.contains("apikey")
-        || n.contains("token")
 }
 
 /// 递归脱敏(JSON 中含敏感键的项值替换为 `[REDACTED]`)。
@@ -1425,17 +1431,33 @@ mod tests {
     #[test]
     fn redact_json_hides_sensitive_values_everywhere() {
         let v = serde_json::json!({
-            "headers": { "Authorization": "Bearer sk-abc", "X-Key": "ok", "x-goog-api-key": "gkey" },
+            "headers": {
+                "Authorization": "Bearer sk-abc",
+                "X-Key": "ok",
+                "x-goog-api-key": "gkey",
+                "x-amz-security-token": "sts-tok"
+            },
             "provider_options": { "headers": { "Cookie": "s=1" } },
             "body_overrides": { "api_key": "sk-secret" },
+            // 用量字段名含 "token" 子串,但非凭据——contains("token") 曾误伤。
+            "usage": {
+                "max_output_tokens": 4096,
+                "prompt_tokens": 10,
+                "completion_tokens": 20
+            },
             "temperature": 0.5,
         });
         let r = redact_json(v);
         assert_eq!(r["headers"]["Authorization"], "[REDACTED]");
         assert_eq!(r["headers"]["x-goog-api-key"], "[REDACTED]");
+        assert_eq!(r["headers"]["x-amz-security-token"], "[REDACTED]");
         assert_eq!(r["headers"]["X-Key"], "ok");
         assert_eq!(r["provider_options"]["headers"]["Cookie"], "[REDACTED]");
         assert_eq!(r["body_overrides"]["api_key"], "[REDACTED]");
+        // 含 "token" 子串的用量字段不再被误脱敏(回归 contains("token"))。
+        assert_eq!(r["usage"]["max_output_tokens"], 4096);
+        assert_eq!(r["usage"]["prompt_tokens"], 10);
+        assert_eq!(r["usage"]["completion_tokens"], 20);
         assert_eq!(r["temperature"], 0.5);
     }
 
