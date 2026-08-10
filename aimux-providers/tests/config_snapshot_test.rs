@@ -11,6 +11,7 @@ use aimux_providers::provider;
 use aimux_providers::{
     AnthropicConfig, AnthropicProvider, AzureConfig, AzureModel, CodexConfig, CodexProvider,
     CohereConfig, CohereProvider, GoogleConfig, GoogleProvider, MistralConfig, MistralProvider,
+    XAIConfig, XAIProvider,
 };
 
 // ── C2: OpenAI-compatible chat path surfaces the registry provider name ─────
@@ -180,4 +181,28 @@ fn codex_api_key_source_env_vs_explicit() {
         .model("gpt-5.2-codex")
         .config_snapshot();
     assert_eq!(snap.api_key_source, "env:CODEX_API_KEY");
+}
+
+/// xAI `from_env` → `env:XAI_API_KEY`; `new` → `explicit`. M2b: `model()` must
+/// preserve the credential source instead of reconstructing `XAIConfig::new`
+/// (which previously dropped `api_key_source` → snapshot wrongly said
+/// "explicit" even for env-built providers).
+#[test]
+fn xai_api_key_source_env_vs_explicit() {
+    let snap = XAIProvider::new(XAIConfig::new("x-explicit"))
+        .model("grok-2")
+        .config_snapshot();
+    assert_eq!(snap.provider, "xai.chat");
+    assert_eq!(snap.api_key_source, "explicit");
+
+    unsafe { std::env::set_var("XAI_API_KEY", "x-env") };
+    let cfg = XAIConfig::from_env().expect("env var set");
+    unsafe { std::env::remove_var("XAI_API_KEY") };
+    let snap = XAIProvider::new(cfg).model("grok-2").config_snapshot();
+    assert_eq!(
+        snap.api_key_source, "env:XAI_API_KEY",
+        "model() must preserve the env credential source from from_env"
+    );
+    let json = serde_json::to_string(&snap).unwrap();
+    assert!(!json.contains("x-env"), "plaintext key leaked: {json}");
 }

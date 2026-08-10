@@ -27,6 +27,7 @@ const ENV_VAR: &str = "XAI_API_KEY";
 const PROVIDER_NAME: &str = "xai";
 
 /// Configuration for the xAI provider (wraps [`OpenAIConfig`]).
+#[derive(Clone)]
 pub struct XAIConfig(OpenAIConfig);
 
 impl XAIConfig {
@@ -88,11 +89,12 @@ impl XAIProvider {
     }
 
     /// Create a model instance for the given xAI model id (e.g. `"grok-2"`).
+    ///
+    /// Clones the provider config so the model inherits the same
+    /// `api_key_source` / `retry_config` (M2b: previously reconstructed with
+    /// `XAIConfig::new`, which dropped the credential source).
     pub fn model(&self, model_id: &str) -> XaiModel {
-        XaiModel::new(
-            model_id.to_string(),
-            XAIConfig::new(self.config.api_key()).with_base_url(self.config.base_url()),
-        )
+        XaiModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Responses API model instance for the given xAI model id.
@@ -100,10 +102,7 @@ impl XAIProvider {
     /// Uses the xAI `/responses` endpoint with the Responses API wire format
     /// (input items, reasoning objects, provider-executed tools, etc.).
     pub fn responses_model(&self, model_id: &str) -> XaiResponsesModel {
-        XaiResponsesModel::new(
-            model_id.to_string(),
-            XAIConfig::new(self.config.api_key()).with_base_url(self.config.base_url()),
-        )
+        XaiResponsesModel::new(model_id.to_string(), self.config.clone())
     }
 }
 

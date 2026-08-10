@@ -1,4 +1,4 @@
-﻿//! Open Responses provider tests, translated from the Vercel AI SDK TypeScript suite.
+//! Open Responses provider tests, translated from the Vercel AI SDK TypeScript suite.
 //!
 //! Translation sources:
 //! - `packages/open-responses/src/responses/map-open-responses-finish-reason.test.ts` (8 tests)
@@ -2127,5 +2127,91 @@ mod do_stream_tests {
 
         // Should not panic or error.
         let _parts = collect_stream(result).await;
+    }
+}
+
+// ============================================================================
+// config_snapshot / api_key_source (M2b)
+// ============================================================================
+
+#[cfg(test)]
+mod config_snapshot_tests {
+    use super::*;
+    use aimux_core::language_model::LanguageModel;
+
+    /// No `headers` closure → no auth → `api_key_source == "none"` (e.g. a local
+    /// LM Studio server).
+    #[test]
+    fn no_headers_means_none_source() {
+        let provider = OpenResponsesProvider::new(make_config_dummy());
+        let snap = provider.model("gemma-7b-it").config_snapshot();
+        assert_eq!(snap.provider, "lmstudio");
+        assert_eq!(snap.api_key_source, "none");
+    }
+
+    /// A `headers` closure that carries an `Authorization` header →
+    /// `api_key_source == "explicit"` (auth detected from the closure; the
+    /// secret value is never serialized).
+    #[test]
+    fn headers_with_auth_means_explicit_source() {
+        let config =
+            OpenResponsesConfig::new("lmstudio", "lmstudio", "https://example/v1/responses")
+                .with_headers(|| {
+                    let mut h = HashMap::new();
+                    h.insert(
+                        "Authorization".to_string(),
+                        "Bearer super-secret".to_string(),
+                    );
+                    h
+                });
+        let snap = OpenResponsesProvider::new(config)
+            .model("gemma-7b-it")
+            .config_snapshot();
+        assert_eq!(snap.api_key_source, "explicit");
+        let json = serde_json::to_string(&snap).unwrap();
+        assert!(
+            !json.contains("super-secret"),
+            "plaintext secret leaked: {json}"
+        );
+    }
+
+    /// An explicit `with_api_key_source` marker overrides closure inference
+    /// (lets a caller record an `env:VAR` source precisely).
+    #[test]
+    fn explicit_source_overrides_closure_inference() {
+        let config =
+            OpenResponsesConfig::new("lmstudio", "lmstudio", "https://example/v1/responses")
+                .with_headers(|| {
+                    let mut h = HashMap::new();
+                    h.insert("Authorization".to_string(), "Bearer k".to_string());
+                    h
+                })
+                .with_api_key_source(Some("env:OPEN_RESPONSES_API_KEY"));
+        let snap = OpenResponsesProvider::new(config)
+            .model("gemma-7b-it")
+            .config_snapshot();
+        assert_eq!(snap.api_key_source, "env:OPEN_RESPONSES_API_KEY");
+    }
+
+    /// A `headers` closure carrying only non-auth custom headers → `none`
+    /// (auth detection is key-name based, not "closure present").
+    #[test]
+    fn headers_without_auth_means_none_source() {
+        let config =
+            OpenResponsesConfig::new("lmstudio", "lmstudio", "https://example/v1/responses")
+                .with_headers(|| {
+                    let mut h = HashMap::new();
+                    h.insert("X-Custom".to_string(), "value".to_string());
+                    h
+                });
+        let snap = OpenResponsesProvider::new(config)
+            .model("gemma-7b-it")
+            .config_snapshot();
+        assert_eq!(snap.api_key_source, "none");
+    }
+
+    /// Minimal config without a mock server (snapshot needs no HTTP).
+    fn make_config_dummy() -> OpenResponsesConfig {
+        OpenResponsesConfig::new("lmstudio", "lmstudio", "https://example/v1/responses")
     }
 }
