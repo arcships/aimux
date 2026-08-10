@@ -663,3 +663,20 @@
 - N3-4 RFC-0027 P3 catalogue sync CLI
 - 预存 native 测试失败（Go streaming SIGSEGV、Java streaming SIGSEGV 等）：重建 target/release/.so 后复测归因
 - C4-10 trace 非法 hash 静默 0（nit）
+---
+
+## 16. 决策回滚记录（2026-08-10，PR #92 合入前）
+
+### 16.1 用户决策：删除 URL query 脱敏、收窄 token 规则
+
+**决策**（用户拍板）：URL query 认证脱敏无实际意义（主流 AI provider 均为 header 鉴权，无人把 key 放 URL），**删除该功能**；header 的 `x-amz-security-token`（AWS Bedrock 协议真实凭证头）**保留脱敏**，但 `contains("token")` 收窄为精确匹配，消除误伤 `max_output_tokens`/`prompt_tokens`/`completion_tokens` 的问题。
+
+**执行**（commit `3a65175`）：
+- `aimux-core/src/recording.rs`：`is_sensitive_key` 删 `contains("token")`、增 `n == "x-amz-security-token"`；注释记录教训；内联测试断言三个用量键不再误脱敏
+- `aimux-provider-utils/src/http.rs`：删除 `redact_url` 与调用，`to_http_record` 恢复 `url: request.url.clone()`
+- `aimux-provider-utils/tests/http_recording_test.rs`：删除 URL query 脱敏断言，保留 `x-amz-security-token` 断言，新增 `max_output_tokens` 保留断言
+
+**影响**：
+- B1 原 finding（URL query 凭据落盘）按用户决策**接受为不修复**——风险接受记录：无主流 provider 使用 URL query 鉴权
+- N1（STS 头）保持修复；V12（误伤）彻底消除，ExactMatcher 不再对用量字段保守 miss
+- 验证：fmt/clippy/test 全绿（`redact_json_Hides...` 与 `security_token_header_redacted_usage_keys_preserved` 通过）
