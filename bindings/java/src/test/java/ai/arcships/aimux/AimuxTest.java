@@ -2,6 +2,7 @@ package ai.arcships.aimux;
 
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -26,5 +27,15 @@ class AimuxTest {
         assertThatThrownBy(() -> Aimux.initRecordingRing(-1L))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("initRecordingRing: cap must be > 0");
+    }
+
+    @Test
+    void initRecordingRingNoArgUsesDefault() {
+        // The no-arg overload uses the library default capacity (FFI
+        // aimux_init_recording_ring_default). Unlike the cap-validation tests
+        // above, this one reaches the FFI and requires the native library on
+        // java.library.path / LD_LIBRARY_PATH.
+        assertThatCode(() -> Aimux.initRecordingRing()).doesNotThrowAnyException();
+        Aimux.recordingStop();
     }
 }

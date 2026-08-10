@@ -63,6 +63,13 @@ void main() {
     recordingStop();
   });
 
+  // Omitting cap uses the library default capacity (FFI
+  // aimux_init_recording_ring_default) and must not throw.
+  test('initRecordingRing with no cap uses library default', () {
+    expect(initRecordingRing(), 0);
+    recordingStop();
+  });
+
   // T9: Model/ProviderHandle register a NativeFinalizer so a forgotten close()
   // does not leak the native handle. close() detaches the finalizer first,
   // so an explicit close cannot double-free.

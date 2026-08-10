@@ -1,6 +1,7 @@
 package ai.arcships.aimux
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.json.JSONArray
 import org.json.JSONObject
@@ -178,6 +179,18 @@ class ModelTest {
         } finally {
             server.stop()
         }
+    }
+
+    // ── recording (RFC-0023) ────────────────────────────────────────────────
+
+    @Test
+    fun `initRecordingRing with null cap uses library default`() {
+        // Omitting cap uses the library default capacity (FFI
+        // aimux_init_recording_ring_default) and must not throw. This reaches
+        // the FFI, so it requires the native library on java.library.path /
+        // LD_LIBRARY_PATH (same as the other Model tests in this class).
+        assertThatCode { initRecordingRing() }.doesNotThrowAnyException()
+        recordingStop()
     }
 
     // ── canned OpenAI responses ────────────────────────────────────────────

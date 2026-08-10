@@ -295,10 +295,13 @@ export declare function initLogging(level: string): void
 export declare function initRecording(dir: string): void
 
 /**
- * 启动内存有界录制(RFC-0023 P6):`RingRecorder`,容量 `cap`,FIFO 淘汰,
- * 丢弃计数可查。`cap == 0` 时 no-op(不启动)。
+ * 启动内存有界录制(RFC-0023 P6):`RingRecorder`,FIFO 淘汰,丢弃计数可查。
+ *
+ * `cap` 可省略:省略时使用库默认容量(等价于 FFI `aimux_init_recording_ring_default()`;
+ * 本绑定直接依赖 aimux-core 而非 aimux-ffi,故调用等价 core API `RingRecorder::default()`)。
+ * 显式传 `cap == 0` 保持现行 no-op 行为(不启动录制),`cap > 0` 启动指定容量的有界 ring。
  */
-export declare function initRecordingRing(cap: number): void
+export declare function initRecordingRing(cap?: number | undefined | null): void
 
 /**
  * Enable/disable the global session inferer (RFC-0024, opt-in, off by

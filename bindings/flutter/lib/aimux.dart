@@ -233,6 +233,9 @@ final class _AimuxFFI {
   late final initRecordingRing = _lib
       .lookupFunction<_RecordingRingC, _RecordingRingDart>(
           'aimux_init_recording_ring');
+  late final initRecordingRingDefault = _lib
+      .lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
+          'aimux_init_recording_ring_default');
   late final recordingStop = _lib
       .lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
           'aimux_recording_stop');
@@ -839,11 +842,16 @@ int initRecording(String dir) => withUtf8(dir, _ffi.initRecording);
 /// Start in-memory bounded recording (ring recorder, FIFO eviction, dropped
 /// count queryable).
 ///
-/// [cap] must be positive: the C ABI rejects `0` (returns -1), and a negative
-/// Dart int would be reinterpreted as a huge u64 by the FFI. This binding
-/// validates up front and throws [ArgumentError] for `cap <= 0`, matching
-/// Kotlin/Java. Returns 0 on success.
-int initRecordingRing(int cap) {
+/// [cap] is optional: omit it (or pass null) to use the library default
+/// capacity (FFI `aimux_init_recording_ring_default`). When provided, [cap]
+/// must be positive: the C ABI rejects `0` (returns -1), and a negative Dart
+/// int would be reinterpreted as a huge u64 by the FFI. This binding validates
+/// up front and throws [ArgumentError] for `cap <= 0`, matching Kotlin/Java.
+/// Returns 0 on success.
+int initRecordingRing([int? cap]) {
+  if (cap == null) {
+    return _ffi.initRecordingRingDefault();
+  }
   if (cap <= 0) {
     throw ArgumentError.value(cap, 'cap', 'must be positive');
   }

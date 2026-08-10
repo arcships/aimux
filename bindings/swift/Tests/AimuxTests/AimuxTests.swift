@@ -85,6 +85,14 @@ final class AimuxTests: XCTestCase {
         Model.recordingStop()
     }
 
+    /// Omitting cap uses the library default capacity (FFI
+    /// aimux_init_recording_ring_default) and must not throw.
+    func testInitRecordingRingDefaultNoArg() throws {
+        XCTAssertNoThrow(try Model.initRecordingRing())
+        // Reset global recorder state so this doesn't leak into other tests.
+        Model.recordingStop()
+    }
+
     // MARK: - base_url constructors (no network: just construction)
 
     func testOpenAIWithBaseUrlConstructs() throws {

@@ -1,5 +1,5 @@
 import test from 'ava'
-import { openai, anthropic, deepseek, provider } from '../index.js'
+import { openai, anthropic, deepseek, provider, initRecordingRing, recordingStop } from '../index.js'
 
 // These tests verify the native module loads and the API surface works.
 // They do NOT make real API calls — they test error handling for invalid keys.
@@ -69,4 +69,12 @@ test('streamText returns an async generator', async (t) => {
   const gen = await model.streamText('"hello"')
   // It should have Symbol.asyncIterator
   t.is(typeof gen[Symbol.asyncIterator], 'function')
+})
+
+// Omitting cap uses the library default capacity (FFI
+// aimux_init_recording_ring_default) and must not throw. Requires the native
+// addon to be rebuilt (napi build) with the optional-cap signature.
+test('initRecordingRing with no cap uses library default', (t) => {
+  t.notThrows(() => initRecordingRing())
+  recordingStop()
 })

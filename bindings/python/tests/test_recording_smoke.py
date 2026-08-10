@@ -28,3 +28,13 @@ def test_recording_entries_in_all():
     """Every recording/replay entry point is part of the public API."""
     for name in _ENTRIES:
         assert name in aimux.__all__, f"missing from __all__: {name}"
+
+
+def test_init_recording_ring_no_arg_uses_default():
+    """Omitting cap uses the library default capacity and does not raise.
+
+    The ring recorder is in-memory (no disk I/O), so invoking it here is safe;
+    ``recording_stop`` resets the global recorder afterward.
+    """
+    aimux.init_recording_ring()
+    aimux.recording_stop()

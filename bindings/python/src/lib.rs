@@ -739,15 +739,31 @@ fn init_recording(dir: &str) {
     )));
 }
 
-/// 启动内存有界录制(RFC-0023 P6):FIFO ring,容量 `cap`,丢弃计数可查。
-/// `cap == 0` 时 no-op。
+/// 启动内存有界录制(RFC-0023 P6):FIFO ring,丢弃计数可查。
+///
+/// `cap` 可省略:省略时使用库默认容量(等价于 FFI `aimux_init_recording_ring_default()`;
+/// 本绑定直接依赖 aimux-core 而非 aimux-ffi,故调用等价 core API `RingRecorder::default()`)。
+/// 显式传 `cap == 0` 报错(保持与各绑定统一的"传 0 报错"语义)。
 #[pyfunction]
-fn init_recording_ring(cap: u64) {
-    if cap > 0 {
-        aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-            aimux_core::recording::RingRecorder::with_capacity(cap as usize),
-        )));
+#[pyo3(signature = (cap=None))]
+fn init_recording_ring(cap: Option<u64>) -> PyResult<()> {
+    match cap {
+        // 省略 cap:库默认容量(镜像 FFI default 变体)。
+        None => aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+            aimux_core::recording::RingRecorder::default(),
+        ))),
+        // 显式 cap == 0:报错(保持统一语义)。
+        Some(0) => {
+            return Err(to_py_err(&AiMuxError::InvalidArgument(
+                "init_recording_ring: cap must be > 0".into(),
+            )))
+        }
+        // 显式 cap > 0:指定容量的有界 ring。
+        Some(c) => aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+            aimux_core::recording::RingRecorder::with_capacity(c as usize),
+        ))),
     }
+    Ok(())
 }
 
 /// 停止录制:全局 recorder = None(新调用不再录制)。

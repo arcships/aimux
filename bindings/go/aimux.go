@@ -251,16 +251,31 @@ func InitRecording(dir string) {
 // InitRecordingRing starts in-memory bounded recording (RFC-0023 P6): FIFO
 // ring with the given capacity.
 //
-// cap must be > 0; the C ABI rejects cap == 0 (returns -1). Unlike the
-// previous behavior, this binding no longer silently rewrites cap == 0 to
-// 2048 — callers must pass an explicit capacity. This matches Kotlin/Java
-// (which throw) and Swift/Flutter (which surface the C error). Returns an
-// error when cap == 0 or the C call fails.
-func InitRecordingRing(cap uint64) error {
-	if cap == 0 {
+// cap is optional (variadic): omit it to use the library default capacity,
+// which calls the FFI aimux_init_recording_ring_default entry point. When
+// provided, cap must be > 0 — the C ABI rejects cap == 0 (returns -1). Unlike
+// the previous behavior, this binding no longer silently rewrites cap == 0 to
+// 2048; callers must omit cap for the default or pass an explicit > 0
+// capacity. This matches Kotlin/Java (which throw) and Swift/Flutter (which
+// surface the C error). Returns an error when cap == 0, more than one cap is
+// supplied, or the C call fails.
+func InitRecordingRing(cap ...uint64) error {
+	if len(cap) == 0 {
+		// No cap: library default capacity (FFI default entry point).
+		rc := C.aimux_init_recording_ring_default()
+		if rc != 0 {
+			return fmt.Errorf("aimux: InitRecordingRing default failed (rc=%d)", int32(rc))
+		}
+		return nil
+	}
+	if len(cap) > 1 {
+		return fmt.Errorf("aimux: InitRecordingRing accepts at most one cap, got %d", len(cap))
+	}
+	c := cap[0]
+	if c == 0 {
 		return fmt.Errorf("aimux: InitRecordingRing requires cap > 0 (got 0)")
 	}
-	rc := C.aimux_init_recording_ring(C.uint64_t(cap))
+	rc := C.aimux_init_recording_ring(C.uint64_t(c))
 	if rc != 0 {
 		return fmt.Errorf("aimux: InitRecordingRing failed (rc=%d)", int32(rc))
 	}

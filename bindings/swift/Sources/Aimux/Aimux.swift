@@ -457,16 +457,23 @@ public final class Model: @unchecked Sendable {
     /// oldest first. Use this when recordings don't need to be persisted to
     /// disk.
     ///
-    /// - Parameter cap: Ring capacity. Defaults to the recommended `2048`;
-    ///   must be > 0 — the C ABI rejects `0` (returns -1).
-    /// - Throws: `AimuxError.invalidArgument` when the C call fails (cap == 0
-    ///   returns -1). This matches Kotlin/Java (throw) and Flutter (surface
-    ///   the C error); the binding no longer silently ignores the return code.
-    public static func initRecordingRing(cap: UInt64 = 2048) throws {
-        let rc = aimux_init_recording_ring(cap)
+    /// - Parameter cap: Ring capacity. Pass `nil` (the default) to use the
+    ///   library default capacity (FFI `aimux_init_recording_ring_default`).
+    ///   An explicit cap must be > 0 — the C ABI rejects `0` (returns -1).
+    /// - Throws: `AimuxError.invalidArgument` when the C call fails (an explicit
+    ///   cap == 0 returns -1). This matches Kotlin/Java (throw) and Flutter
+    ///   (surface the C error); the binding no longer silently ignores the
+    ///   return code.
+    public static func initRecordingRing(cap: UInt64? = nil) throws {
+        let rc: Int32
+        if let c = cap {
+            rc = aimux_init_recording_ring(c)
+        } else {
+            rc = aimux_init_recording_ring_default()
+        }
         if rc < 0 {
             throw AimuxError.invalidArgument(
-                message: "aimux: initRecordingRing requires cap > 0 (got \(cap))",
+                message: "aimux: initRecordingRing requires cap > 0 (got \(cap ?? 0))",
                 status: -1,
                 retryMs: -1,
                 errorValue: nil

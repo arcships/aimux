@@ -1,5 +1,8 @@
 package ai.arcships.aimux
 
+import com.sun.jna.Library
+import com.sun.jna.Native
+
 /**
  * Recording + mock replay (RFC-0023).
  *
@@ -20,12 +23,31 @@ fun initRecording(dir: String) {
 }
 
 /**
+ * Local JNA binding for the no-arg default-capacity ring entry point. Declared
+ * here (rather than the shared `AimuxFFI` interface in Model.kt) to keep this
+ * change scoped to Recording.kt. JNA caches the underlying native library by
+ * name, so loading "aimux_ffi" again for this interface reuses the already-open
+ * handle.
+ */
+private interface RecordingDefaultFFI : Library {
+    fun aimux_init_recording_ring_default(): Int
+}
+
+private val recordingDefaultLib: RecordingDefaultFFI =
+    Native.load("aimux_ffi", RecordingDefaultFFI::class.java)
+
+/**
  * Start in-memory bounded recording (`RingRecorder`, FIFO eviction).
  *
- * @param cap Maximum number of entries held in memory.
- * @throws IllegalArgumentException if `cap == 0` (the C ABI returns -1).
+ * @param cap Maximum number of entries held in memory; `null` (default) uses
+ *   the library default capacity (FFI `aimux_init_recording_ring_default`).
+ * @throws IllegalArgumentException if `cap <= 0` (the C ABI returns -1).
  */
-fun initRecordingRing(cap: Int) {
+fun initRecordingRing(cap: Int? = null) {
+    if (cap == null) {
+        requireOk(recordingDefaultLib.aimux_init_recording_ring_default(), "initRecordingRing")
+        return
+    }
     if (cap <= 0) throw IllegalArgumentException("initRecordingRing: cap must be > 0")
     requireOk(FFI.lib.aimux_init_recording_ring(cap.toLong()), "initRecordingRing")
 }

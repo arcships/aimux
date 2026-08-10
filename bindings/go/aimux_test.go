@@ -197,3 +197,13 @@ func TestInitRecordingRingAcceptsPositiveCap(t *testing.T) {
 	// Reset global recorder state so this doesn't leak into other tests.
 	RecordingStop()
 }
+
+// TestInitRecordingRingDefaultNoArg verifies the no-arg form uses the library
+// default capacity (FFI aimux_init_recording_ring_default) and returns nil.
+func TestInitRecordingRingDefaultNoArg(t *testing.T) {
+	if err := InitRecordingRing(); err != nil {
+		t.Fatalf("expected success for no-arg default, got: %v", err)
+	}
+	// Reset global recorder state so this doesn't leak into other tests.
+	RecordingStop()
+}
