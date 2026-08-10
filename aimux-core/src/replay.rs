@@ -40,8 +40,13 @@ pub trait ReplayMatcher: Send + Sync {
 
 /// 精确匹配:provider/model_id 相同,且 prompt + 影响响应的可重放选项
 /// (temperature/max_output_tokens/seed/response_format/tools/tool_choice)
-/// 规范相同才命中。运行时字段(call_id/abort_signal/recording_context)与脱敏
-/// 字段(headers/provider_options/body_overrides)不参与比较。
+/// 以及 headers/provider_options/body_overrides 规范相同才命中。运行时字段
+/// (call_id/abort_signal/recording_context)不参与比较。
+///
+/// headers/provider_options/body_overrides 用**脱敏感知比较**:录制侧这些
+/// 字段经 [`recording::redact_json`](crate::recording::redact_json) 脱敏
+/// (敏感键值→`"[REDACTED]"`),脱敏值视为通配,匹配任意显式请求值;非脱敏
+/// 部分仍精确比较。规则见 [`redaction_aware_eq`]。
 pub struct ExactMatcher {
     provider: String,
     model_id: String,
@@ -68,7 +73,7 @@ impl ReplayMatcher for ExactMatcher {
             .find(|r| {
                 r.provider.provider == self.provider
                     && r.provider.model_id == self.model_id
-                    && canonical_recording_key(r) == needle
+                    && canonical_keys_match(&canonical_recording_key(r), &needle)
             })
             .ok_or_else(|| {
                 AiMuxError::InvalidArgument("mock replay: no exact matching recording".into())
@@ -79,9 +84,10 @@ impl ReplayMatcher for ExactMatcher {
 /// `CallOptions` 中影响响应、可重放选项的规范键(ExactMatcher 用)。
 ///
 /// 含 prompt + temperature/max_output_tokens/seed/response_format/tools/
-/// tool_choice;排除运行时字段(call_id/abort_signal/recording_context)与脱敏
-/// 字段(headers/provider_options/body_overrides)。序列化为 `Value` 后比较,
-/// 等价于"稳定规范哈希"但无碰撞风险。
+/// tool_choice + headers/provider_options/body_overrides;排除运行时字段
+/// (call_id/abort_signal/recording_context)。序列化为 `Value` 后比较,
+/// 等价于"稳定规范哈希"但无碰撞风险。headers/provider_options/body_overrides
+/// 在比较时走脱敏感知语义(见 [`canonical_keys_match`])。
 fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     serde_json::json!({
         "prompt": serde_json::to_value(&opts.prompt).unwrap_or_default(),
@@ -91,6 +97,9 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
         "response_format": serde_json::to_value(&opts.response_format).unwrap_or_default(),
         "tools": serde_json::to_value(&opts.tools).unwrap_or_default(),
         "tool_choice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
+        "headers": serde_json::to_value(&opts.headers).unwrap_or_default(),
+        "provider_options": serde_json::to_value(&opts.provider_options).unwrap_or_default(),
+        "body_overrides": serde_json::to_value(&opts.body_overrides).unwrap_or_default(),
     })
 }
 
@@ -109,6 +118,80 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
             .get("tool_choice")
             .cloned()
             .unwrap_or_else(|| serde_json::to_value(ToolChoice::default()).unwrap_or_default()),
+        "headers": o.get("headers").cloned().unwrap_or_default(),
+        "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
+        "body_overrides": o.get("body_overrides").cloned().unwrap_or_default(),
+    })
+}
+
+/// 脱敏感知比较(用于 headers/provider_options/body_overrides)。
+///
+/// 录制侧这些字段经 [`recording::redact_json`](crate::recording::redact_json)
+/// 脱敏:敏感键(authorization/api-key/apikey/key/token/cookie/...)的**值**
+/// 被替换为字符串 `"[REDACTED]"`(键名保留)。比较规则(**保守原则——宁可 miss
+/// 不可误 hit**):
+/// - 录制值为 `"[REDACTED]"` → 视为通配,匹配任意**显式(非 null)**请求值
+///   (脱敏后无法恢复原值,只能放行);请求值为 null/缺省则不匹配(录制侧曾有
+///   值,请求侧缺失 → 视为差异);
+/// - 录制值为 null/缺省 → 请求值也必须为 null/缺省;
+/// - 否则精确比较(含结构:对象键集一致、数组长度一致,避免多/缺键伪命中)。
+///
+/// 注意:通配**仅对录制侧** `"[REDACTED]"` 生效——请求侧恰好等于 `"[REDACTED]"`
+/// 的字面值不触发通配(仍走精确比较),因为只有录制脱敏路径会产生该哨兵。
+fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Value) -> bool {
+    // 1. 录制侧脱敏通配:匹配任意显式(非 null)请求值。
+    if rec.as_str() == Some("[REDACTED]") {
+        return !req.is_null();
+    }
+    // 2. null/缺省:双侧须同为 null。
+    if rec.is_null() || req.is_null() {
+        return rec.is_null() && req.is_null();
+    }
+    // 3. 结构化精确比较(递归,使嵌套脱敏值同样通配)。
+    match (rec, req) {
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            if a.len() != b.len() {
+                return false; // 多/缺键 → miss(保守)
+            }
+            a.iter().all(|(k, rv)| {
+                b.get(k)
+                    .map(|qv| redaction_aware_eq(rv, qv))
+                    .unwrap_or(false)
+            })
+        }
+        (serde_json::Value::Array(a), serde_json::Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| redaction_aware_eq(x, y))
+        }
+        (x, y) => x == y,
+    }
+}
+
+/// 比较规范键:headers/provider_options/body_overrides 用脱敏感知比较
+/// (录制侧可能已脱敏);其余字段(prompt/temperature/...)精确比较。
+///
+/// 注意:`max_output_tokens` 等含 "token" 子串的字段在录制侧也会被
+/// `redact_json` 脱敏(无关的录制侧副作用)。这些字段**不**走通配——若录制值
+/// 被脱敏为 `"[REDACTED]"` 而请求值为数值,精确比较会 miss(保守:宁可 miss
+/// 不可误 hit,因为 max_output_tokens 影响响应,通配会引入伪命中)。
+fn canonical_keys_match(rec_key: &serde_json::Value, call_key: &serde_json::Value) -> bool {
+    const REDACTED_FIELDS: [&str; 3] = ["headers", "provider_options", "body_overrides"];
+    let (ro, co) = match (rec_key.as_object(), call_key.as_object()) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return rec_key == call_key,
+    };
+    if ro.len() != co.len() {
+        return false;
+    }
+    ro.iter().all(|(k, rv)| {
+        co.get(k)
+            .map(|qv| {
+                if REDACTED_FIELDS.contains(&k.as_str()) {
+                    redaction_aware_eq(rv, qv)
+                } else {
+                    rv == qv
+                }
+            })
+            .unwrap_or(false)
     })
 }
 
@@ -824,6 +907,140 @@ mod tests {
         let mut req2 = sample_options("ping", Some(0.7));
         req2.max_output_tokens = Some(128);
         assert!(matcher.r#match(&req2, &recs).is_ok());
+    }
+
+    #[test]
+    fn exact_matcher_different_headers_misses() {
+        // A8:headers 纳入规范键——非脱敏头值不同 → miss。
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        let mut call = sample_options("ping", Some(0.7));
+        call.headers = Some([("x-custom".into(), "a".into())].into_iter().collect());
+        rec.input.options = serde_json::to_value(&call).unwrap();
+        let recs = [rec];
+        let matcher = ExactMatcher::new("openai", "gpt-4o");
+
+        // x-custom 值不同 → miss。
+        let mut req = sample_options("ping", Some(0.7));
+        req.headers = Some([("x-custom".into(), "b".into())].into_iter().collect());
+        assert!(matcher.r#match(&req, &recs).is_err());
+
+        // 完全一致 → hit(对照)。
+        let mut req2 = sample_options("ping", Some(0.7));
+        req2.headers = Some([("x-custom".into(), "a".into())].into_iter().collect());
+        assert!(matcher.r#match(&req2, &recs).is_ok());
+
+        // 请求多一个头 → miss(保守:键集不一致)。
+        let mut req3 = sample_options("ping", Some(0.7));
+        req3.headers = Some(
+            [
+                ("x-custom".into(), "a".into()),
+                ("x-extra".into(), "z".into()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(matcher.r#match(&req3, &recs).is_err());
+    }
+
+    #[test]
+    fn exact_matcher_different_provider_options_misses() {
+        // A8:provider_options 纳入规范键——非脱敏值不同 → miss。
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        let mut call = sample_options("ping", Some(0.7));
+        call.provider_options = Some(
+            [("openai".into(), serde_json::json!({ "foo": 1 }))]
+                .into_iter()
+                .collect(),
+        );
+        rec.input.options = serde_json::to_value(&call).unwrap();
+        let recs = [rec];
+        let matcher = ExactMatcher::new("openai", "gpt-4o");
+
+        // foo 值不同 → miss。
+        let mut req = sample_options("ping", Some(0.7));
+        req.provider_options = Some(
+            [("openai".into(), serde_json::json!({ "foo": 2 }))]
+                .into_iter()
+                .collect(),
+        );
+        assert!(matcher.r#match(&req, &recs).is_err());
+
+        // 完全一致 → hit(对照)。
+        let mut req2 = sample_options("ping", Some(0.7));
+        req2.provider_options = Some(
+            [("openai".into(), serde_json::json!({ "foo": 1 }))]
+                .into_iter()
+                .collect(),
+        );
+        assert!(matcher.r#match(&req2, &recs).is_ok());
+    }
+
+    #[test]
+    fn exact_matcher_redacted_values_match_any() {
+        // A8:录制侧 headers 经 redact_json 脱敏(authorization→"[REDACTED]");
+        // 脱敏值视为通配,匹配任意显式请求值。
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        let mut call = sample_options("ping", Some(0.7));
+        call.headers = Some(
+            [
+                ("authorization".into(), "sk-secret".into()),
+                ("content-type".into(), "application/json".into()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        // 模拟录制侧 headers 脱敏。真实路径 `redact_json` 会递归脱敏整个 options,
+        // 但 `max_output_tokens` 含 "token" 子串也会被脱敏(无关的录制侧副作用,
+        // 非 A8 范围);此处仅脱敏 headers 以隔离测试 headers 的脱敏匹配语义。
+        let mut opts_val = serde_json::to_value(&call).unwrap();
+        if let Some(h) = opts_val.get_mut("headers") {
+            *h = crate::recording::redact_json(h.clone());
+        }
+        rec.input.options = opts_val;
+        // 录制侧 authorization 已脱敏,content-type 保留。
+        assert_eq!(
+            rec.input.options["headers"]["authorization"],
+            serde_json::json!("[REDACTED]")
+        );
+        let recs = [rec];
+        let matcher = ExactMatcher::new("openai", "gpt-4o");
+
+        // 请求 authorization 用任意值 → 通配命中(content-type 一致)。
+        let mut req = sample_options("ping", Some(0.7));
+        req.headers = Some(
+            [
+                ("authorization".into(), "sk-other".into()),
+                ("content-type".into(), "application/json".into()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(matcher.r#match(&req, &recs).is_ok());
+
+        // content-type(非脱敏)不同 → miss(精确比较生效)。
+        let mut req2 = sample_options("ping", Some(0.7));
+        req2.headers = Some(
+            [
+                ("authorization".into(), "sk-other".into()),
+                ("content-type".into(), "text/plain".into()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert!(matcher.r#match(&req2, &recs).is_err());
+
+        // 请求缺 authorization(录制侧有)→ miss(保守:键集不一致)。
+        let mut req3 = sample_options("ping", Some(0.7));
+        req3.headers = Some(
+            [("content-type".into(), "application/json".into())]
+                .into_iter()
+                .collect(),
+        );
+        assert!(matcher.r#match(&req3, &recs).is_err());
+
+        // 请求 headers 为 None(录制侧有脱敏 headers)→ miss(保守)。
+        let req4 = sample_options("ping", Some(0.7));
+        assert!(matcher.r#match(&req4, &recs).is_err());
     }
 
     #[test]
