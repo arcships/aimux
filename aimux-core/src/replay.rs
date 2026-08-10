@@ -1550,8 +1550,7 @@ mod tests {
         // A7:非 OpenAI chat.completions body(无 choices[0].message)→ Unsupported,
         // 不再把整 body 降级为文本 + warning。
         let mut rec = openai_recording("t1", "ping", "x", "stop");
-        rec.exchanges[0].response.as_mut().unwrap().body =
-            Some("{\"foo\":\"bar\"}".to_string()); // 非 chat.completions
+        rec.exchanges[0].response.as_mut().unwrap().body = Some("{\"foo\":\"bar\"}".to_string()); // 非 chat.completions
         let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
         let rt = tokio::runtime::Runtime::new().unwrap();
         let err = rt.block_on(async {
@@ -1567,9 +1566,8 @@ mod tests {
     fn non_openai_stream_returns_unsupported() {
         // A7:非 OpenAI SSE(无任何 choices 数组事件)→ Unsupported,不按行 Raw 降级。
         let mut rec = openai_recording("t1", "ping", "x", "stop");
-        rec.exchanges[0].response.as_mut().unwrap().body = Some(
-            "event: message_start\ndata: {\"type\":\"message_start\"}\n\n".to_string(),
-        );
+        rec.exchanges[0].response.as_mut().unwrap().body =
+            Some("event: message_start\ndata: {\"type\":\"message_start\"}\n\n".to_string());
         rec.exchanges[0].response.as_mut().unwrap().stream_chunks = Some(1);
         let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1626,10 +1624,7 @@ mod tests {
         assert_eq!(tool_call_id, "call_abc");
         assert_eq!(tool_name, "get_weather");
         assert_eq!(input, &serde_json::json!({ "city": "SF" }));
-        assert_eq!(
-            result.finish_reason.unified,
-            FinishReasonUnified::ToolCalls
-        );
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
     #[test]
@@ -1682,11 +1677,8 @@ mod tests {
                 {"index": 0, "function": {"arguments": "{\"city\":\"SF\"}"}}
             ]}}]
         });
-        let chunk3 =
-            serde_json::json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]});
-        let sse = format!(
-            "data: {chunk1}\n\ndata: {chunk2}\n\ndata: {chunk3}\n\ndata: [DONE]\n\n"
-        );
+        let chunk3 = serde_json::json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]});
+        let sse = format!("data: {chunk1}\n\ndata: {chunk2}\n\ndata: {chunk3}\n\ndata: [DONE]\n\n");
         let mut rec = openai_recording("t1", "ping", "x", "stop");
         rec.exchanges[0].response.as_mut().unwrap().body = Some(sse);
         rec.exchanges[0].response.as_mut().unwrap().stream_chunks = Some(4);
@@ -1725,7 +1717,11 @@ mod tests {
             .collect();
         assert_eq!(deltas, vec!["{\"city\":\"SF\"}"]);
         // ToolInputEnd + ToolCall(finish_reason 触发)。
-        assert!(parts.iter().any(|p| matches!(p, StreamPart::ToolInputEnd { .. })));
+        assert!(
+            parts
+                .iter()
+                .any(|p| matches!(p, StreamPart::ToolInputEnd { .. }))
+        );
         let calls: Vec<_> = parts
             .iter()
             .filter_map(|p| match p {
