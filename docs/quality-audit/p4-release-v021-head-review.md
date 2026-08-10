@@ -618,6 +618,48 @@
 
 ### 14.4 PR
 
-- 分支：`fix/audit-rounds-1-4`（24 commits, c0fceba..HEAD）
+- 分支：`fix/audit-rounds-1-4`（25 commits, c0fceba..HEAD，含 audit 回填 cd12b77）
 - PR 标题：`fix: address audit rounds 1-4 findings (blockers, matcher, recording, trace, providers, bindings)`
-- 未包含（新 backlog）：T3 Flutter 真增量流式、C4-8 流式 replay 完整字段（tool_calls/reasoning）、F2-F8 性能项、R4-4/5 trajectory 索引化、D7 之外的表单/README 微调、T13 半信封（已含）、C5 owned_by 语义（涉及公开类型，单独立项）。
+- 未包含（新 backlog）：T3 Flutter 真增量流式、**A7 非 OpenAI 降级、C4-4 非流式 tool_calls、C4-8 流式完整字段、C4-9 last_response**（核验后已补修，见 §15）、**N3-4 catalogue sync CLI**、F2-F8 性能项、R4-4/5 trajectory 索引化、C5 owned_by 语义（涉及公开类型，单独立项）、预存 native 测试失败（需重建 .so）。---
+
+## 15. gpt-sol 核验记录（2026-08-10，PR #92 修订轮）
+
+> 用户要求用 gpt-sol 对 PR #92 进行核验。4 个 gpt-5.6-sol agent 分区核验（Vern 核心正确性 / Soren providers+FFI+release / Lila bindings / Echo 文档+覆盖度+健康度），
+> 全部只读。核验结论汇总 + 修订执行记录如下。
+
+### 15.1 核验结论（原始提交，24 commits）
+
+**核验通过（修复到位）：** B1/N3、A1/A2/A11、A5/A6、B1-trace、C4-1、C4-2、F1、A3/A4/N4/C4-6/C4-7/N11、C2、B3、Python(B2/T5/D6)、Go(D7)、Swift(T10/R4-2)、Flutter(T9/T11/T12)、docs(R5/R7/R8/R10/N3-1)、R4-1 误报结论（Soren 独立确认成立；注意其结论只对被测构造函数集合成立，不能外推）。
+- Java/Kotlin T6 主竞态：**已修**（读锁覆盖校验→FFI 全窗口，写锁内原子 close），但留下两个设计风险（见 15.2）。
+
+| # | 核验发现（gpt-sol） | 严重级 | 修订动作 |
+|---|---|---|---|
+| V1 | A8 仍漏比 headers/provider_options/body_overrides | major | **已修**：`e62694d` 纳入三字段 + 脱敏通配比较（`[REDACTED]` 通配任意显式值，保守 miss 不误 hit） |
+| V2 | A9 部分：默认 `new()` 仍静默降级 disabled recorder | medium | 接受为工程取舍（`try_new`/`try_flush` 已提供显式路径）；记 backlog：FFI 入口改走 try_new |
+| V3 | A7/C4-4/C4-8/C4-9 replay 完整性完全未修（本轮派修遗漏） | major | **已修**：`f6d5f3c`（无 OpenAI 降级→Unsupported、非流 tool_calls、流式状态机 tool_calls/metadata/usage-only、last_response 2xx 过滤） |
+| V4 | M1b 漏网：vertex/anthropic_aws 仍硬编码 default retry | major | **已修**：`4e7128a` |
+| V5 | M2b 失真：xAI provider→model 丢 api_key_source；open_responses 硬编码 none | major | **已修**：`ee8f844`（XAIConfig Clone 保留全量；open_responses 检查 headers 闭包认证键） |
+| V6 | Java/Kotlin 流式包装"全量缓冲后才消费"伪流式 | major | 与小/大 T3 同类，收录 backlog（真增量需原生异步桥） |
+| V7 | Java/Kotlin 流式回调内关 close() 自死锁 | major | 文档已警示；backlog：回调线程隔离或 reentrant 设计 |
+| V8 | CI：Rust core fmt 门禁失败 | blocker | **已修**：`062be08` cargo fmt 全量 |
+| V9 | CI：Node index.js drift（0.3.0 版本串） | blocker | **已修**：`76783dc` napi 重生成 |
+| V10 | §14.4 backlog 漏标 N3-4 与 A7/C4-4/C4-9 | minor | **已修**：本节文档更新 |
+| V11 | Go 测试 SIGSEGV（既有）、Java streaming SIGSEGV（既有，native 库） | major(既有) | 非本 PR 引入（worktree 原始代码复现）；backlog：重建 .so 后复测 |
+| V12 | `redact_json` 的 contains("token") 误脱敏 `max_output_tokens`（Peter 新发现） | minor | **新发现**：ExactMatcher 保守 miss 不误 hit；backlog：recording.rs 排除已知 option 键 |
+
+### 15.2 修订后 PR 状态
+
+- 分支：`fix/audit-rounds-1-4`（31 commits，c0fceba..HEAD）
+- 新增提交：`062be08` fmt、`76783dc` node 重生成、`e62694d` A8、`4e7128a` M1b 补、`ee8f844` M2b 补、`f6d5f3c` replay 完整性、`cd12b77`+本节 docs
+- 本地验证：`cargo test --workspace` 全绿 + `cargo clippy --workspace --all-targets -- -D warnings` 零警告
+- CI 状态：修订后重新触发中（fmt/drift 两个失败根因已消除）
+
+### 15.3 遗留 backlog（核验后修订版，完整清单）
+
+- T3 Flutter 真增量流式；V6/V7 JVM 流式伪流式 + 回调 close 死锁（设计项）
+- V2 FFI 录制入口改走 `try_new`；V12 redact_json 排除已知 option 键
+- F2-F8 性能项；R4-4/5 trajectory 索引化 + step 语义
+- C5 owned_by 语义（公开类型变更，单独 PR）
+- N3-4 RFC-0027 P3 catalogue sync CLI
+- 预存 native 测试失败（Go streaming SIGSEGV、Java streaming SIGSEGV 等）：重建 target/release/.so 后复测归因
+- C4-10 trace 非法 hash 静默 0（nit）
