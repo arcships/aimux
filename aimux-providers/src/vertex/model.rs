@@ -41,6 +41,8 @@ pub struct VertexConfig {
     pub auth: VertexAuth,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    pub retry_config: RetryConfig,
 }
 
 /// A Google Vertex AI language model.
@@ -155,6 +157,10 @@ impl LanguageModel for VertexModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_timed(
             HttpRequest {
@@ -167,7 +173,7 @@ impl LanguageModel for VertexModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
@@ -228,6 +234,10 @@ impl LanguageModel for VertexModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options);
         let headers = self.build_headers(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
 
         let resp = send_stream_timed(
             HttpRequest {
@@ -240,7 +250,7 @@ impl LanguageModel for VertexModel {
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
+            retry_config,
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )

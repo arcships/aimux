@@ -32,6 +32,8 @@ pub struct AnthropicAwsConfig {
     pub workspace_id: Option<String>,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
+    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    pub retry_config: RetryConfig,
 }
 
 /// An Anthropic-AWS language model (e.g. `claude-sonnet-4-20250514`).
@@ -156,9 +158,13 @@ impl LanguageModel for AnthropicAwsModel {
         let body = build_request_body(&self.model_id, options, false)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
         anthropic_generate_core(
             &endpoint,
-            RetryConfig::default(),
+            retry_config,
             body,
             Vec::new(),
             build_headers,
@@ -174,9 +180,13 @@ impl LanguageModel for AnthropicAwsModel {
         let body = build_request_body(&self.model_id, options, true)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
+        let retry_config = crate::openai::model::resolve_retry_config(
+            &self.config.retry_config,
+            options.max_retries,
+        );
         anthropic_stream_core(
             &endpoint,
-            RetryConfig::default(),
+            retry_config,
             body,
             Vec::new(),
             build_headers,

@@ -23,6 +23,8 @@ use aimux_core::types::FinishReasonUnified;
 
 use aimux_providers::anthropic_aws::{AnthropicAwsAuth, AnthropicAwsConfig, AnthropicAwsModel};
 
+use aimux_provider_utils::RetryConfig;
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn test_prompt() -> LanguageModelPrompt {
@@ -46,6 +48,7 @@ fn make_model(server: &MockServer) -> AnthropicAwsModel {
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
             api_key_source: None,
+            retry_config: RetryConfig::default(),
         },
     )
 }
@@ -407,6 +410,7 @@ async fn anthropic_aws_sigv4_auth() {
             api_version: "2023-06-01".to_string(),
             workspace_id: None,
             api_key_source: None,
+            retry_config: RetryConfig::default(),
         },
     );
 
