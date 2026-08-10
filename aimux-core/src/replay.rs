@@ -24,7 +24,7 @@ use crate::options::{CallOptions, ToolChoice};
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
-use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
+use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 // ── 匹配策略 ────────────────────────────────────────────────────────────────
 
@@ -443,13 +443,26 @@ impl LanguageModel for MockReplayModel {
 
 // ── 从录制重建结果(OpenAI chat.completions MVP)──────────────────────────
 
-/// 取录制中最后一次有响应的 exchange。
+/// 取录制中最后一次**成功** exchange 的响应(finalized + 无 error + 2xx)。
+///
+/// C4-9:旧实现 `find_map(|e| e.response.as_ref())` 会选中有响应但失败的
+/// attempt(非 2xx / 带 error / 未终结),把错误响应当成功回放。这里只选
+/// `finalized && error.is_none() && status 2xx` 的响应;无合法响应时返回
+/// 明确错误(不降级到任意 attempt)。
 fn last_response(rec: &Recording) -> Result<&crate::recording::ResponseRecord, AiMuxError> {
-    rec.exchanges
-        .iter()
-        .rev()
-        .find_map(|e| e.response.as_ref())
-        .ok_or_else(|| AiMuxError::InvalidArgument("mock replay: recording has no response".into()))
+    for e in rec.exchanges.iter().rev() {
+        if !e.finalized || e.error.is_some() {
+            continue;
+        }
+        if let Some(resp) = e.response.as_ref()
+            && (200..300).contains(&resp.status)
+        {
+            return Ok(resp);
+        }
+    }
+    Err(AiMuxError::InvalidArgument(
+        "mock replay: recording has no successful (2xx, finalized, error-free) response".into(),
+    ))
 }
 
 /// 解析 finish_reason 字符串为 unified 枚举。
@@ -512,10 +525,22 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
     })
 }
 
+/// 解析 OpenAI tool_call `arguments`(JSON 字符串)为 `Value`。
+///
+/// 非法 JSON → 回退为 `Value::String(raw)`,**不返回错误**:与 openai provider
+/// 正向解析一致(`serde_json::from_str(args).unwrap_or_else(|_| Value::String(args))`)。
+/// 部分流式拼接偶发非完整 JSON,provider 侧同样容忍——回放须与正向解析同语义,
+/// 否则同一录制在真实调用与回放间行为分叉。
+fn parse_tool_arguments(args: &str) -> serde_json::Value {
+    serde_json::from_str(args).unwrap_or_else(|_| serde_json::Value::String(args.to_string()))
+}
+
 /// 重建非流式结果。
 ///
-/// 支持 OpenAI `chat.completions` 格式(`choices[0].message.content` /
-/// `finish_reason` / `usage`);其他格式把整个 body 作为纯文本 + Warning。
+/// 仅支持 OpenAI `chat.completions` 格式:`choices[0].message` 的 `content`
+/// (文本)+ `tool_calls`(C4-4,`content:null + tool_calls:[...]` 不得返回空);
+/// 以及 `finish_reason` / `usage` / `id` / `model`。非 OpenAI 格式(无
+/// `choices[0].message`)返回 [`AiMuxError::Unsupported`](A7),不再降级为文本。
 fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError> {
     let resp = last_response(rec)?;
     let body = resp
@@ -525,31 +550,58 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
     let v: serde_json::Value =
         serde_json::from_str(body).map_err(|e| AiMuxError::Json(format!("mock replay: {e}")))?;
 
-    let mut warnings = Vec::new();
-    let content = if let Some(text) = v["choices"][0]["message"]["content"].as_str() {
-        if text.is_empty() {
-            Vec::new()
-        } else {
-            vec![GenerateContent::Text {
-                text: text.to_string(),
-                provider_metadata: None,
-            }]
-        }
-    } else if v.get("choices").is_some() {
-        Vec::new()
-    } else {
-        // 非 OpenAI 格式:降级为纯文本 + warning(记录诊断用)。
-        warnings.push(Warning::Unsupported {
-            feature: "mock replay format".to_string(),
-            details: Some(
-                "response is not an OpenAI chat.completions body; returned as text".into(),
-            ),
-        });
-        vec![GenerateContent::Text {
-            text: body.to_string(),
+    // A7:必须有 choices[0].message 才算 OpenAI chat.completions;否则 Unsupported。
+    let message = v
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|choice| choice.get("message"))
+        .ok_or_else(|| {
+            AiMuxError::Unsupported(
+                "mock replay: response is not an OpenAI chat.completions body (no choices[0].message)"
+                    .into(),
+            )
+        })?;
+
+    // C4-4:content(null/空可) + tool_calls。content 为空但 tool_calls 存在时
+    // 不得返回空 content。
+    let mut content = Vec::new();
+    if let Some(text) = message.get("content").and_then(|c| c.as_str())
+        && !text.is_empty()
+    {
+        content.push(GenerateContent::Text {
+            text: text.to_string(),
             provider_metadata: None,
-        }]
-    };
+        });
+    }
+    if let Some(tool_calls) = message.get("tool_calls").and_then(|t| t.as_array()) {
+        for tc in tool_calls {
+            let tool_call_id = tc
+                .get("id")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let function = tc.get("function").cloned().unwrap_or_default();
+            let tool_name = function
+                .get("name")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let args_str = function
+                .get("arguments")
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let input = parse_tool_arguments(args_str);
+            content.push(GenerateContent::ToolCall {
+                tool_call_id,
+                tool_name,
+                input,
+                provider_executed: None,
+                dynamic: None,
+                thought_signature: None,
+                provider_metadata: None,
+            });
+        }
+    }
 
     let raw_finish = v["choices"][0]["finish_reason"]
         .as_str()
@@ -560,7 +612,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         content,
         finish_reason: FinishReason { unified, raw },
         usage: parse_usage(&v)?,
-        warnings,
+        warnings: Vec::new(),
         provider_metadata: None,
         response: ResponseMetadata {
             id: v["id"].as_str().map(|s| s.to_string()),
@@ -572,10 +624,26 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
     })
 }
 
-/// 重建流式结果:OpenAI SSE body 逐行 → `StreamPart`。
+/// 流式 tool_call 累加器(按 OpenAI `index` 稳定累积)。
+struct ToolCallAccumulator {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+/// 重建流式结果:OpenAI SSE body → `StreamPart`(镜像 openai provider 状态机)。
 ///
-/// `data: {json}` → TextDelta(delta.content)/Finish;`data: [DONE]` → Finish;
-/// 其他行忽略。非 OpenAI 格式按行 Raw 降级。
+/// 支持(C4-8):
+/// - `delta.content` → TextStart/TextDelta/TextEnd;
+/// - `delta.reasoning_content`/`reasoning` → Reasoning*(优先 reasoning_content);
+/// - `delta.tool_calls` → 按 `index` 稳定累积,ToolInputStart/Delta + (finish 或
+///   流末)ToolInputEnd + ToolCall;`arguments` 非法 JSON 回退为字符串(与正向
+///   解析一致,见 [`parse_tool_arguments`]);
+/// - 首帧 `id`/`model` → ResponseMetadata(与 provider 一致);
+/// - usage-only 末帧(`choices:[]` + `usage`)→ 累积到 Finish.usage。
+///
+/// `data: [DONE]` 结束。**A7**:若整段 body 未出现任何 `choices` 数组事件(非
+/// OpenAI SSE),返回 [`AiMuxError::Unsupported`],不再按行 Raw 降级成功。
 fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
     let resp = last_response(rec)?;
     let body = resp
@@ -584,9 +652,19 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
         .ok_or_else(|| AiMuxError::InvalidArgument("mock replay: response has no body".into()))?;
 
     let mut parts: Vec<Result<StreamPart, AiMuxError>> = Vec::new();
-    let id = "mock-replay".to_string();
     parts.push(Ok(StreamPart::StreamStart { warnings: vec![] }));
 
+    let text_id = "0".to_string();
+    let reasoning_id = "reasoning-0".to_string();
+    let mut text_started = false;
+    let mut reasoning_started = false;
+    let mut response_meta_emitted = false;
+    let mut final_usage = Usage::default();
+    let mut final_finish: Option<FinishReason> = None;
+    // tool_call 按 OpenAI `index` 稳定累积;`tool_order` 保插入顺序(确定性 emit)。
+    let mut tool_calls: std::collections::HashMap<usize, ToolCallAccumulator> =
+        std::collections::HashMap::new();
+    let mut tool_order: Vec<usize> = Vec::new();
     let mut saw_openai = false;
     for block in body.split("\n\n") {
         let line = block.trim();
@@ -597,43 +675,235 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else {
             continue;
         };
-        if let Some(delta) = v["choices"][0]["delta"]["content"].as_str()
-            && !delta.is_empty()
-        {
+
+        // OpenAI chat.completions chunk 标志:`choices` 数组(可空,如 usage-only 末帧)。
+        let choices_arr = v.get("choices").and_then(|c| c.as_array());
+        if choices_arr.is_some() {
             saw_openai = true;
-            parts.push(Ok(StreamPart::TextDelta {
-                id: id.clone(),
-                delta: delta.to_string(),
-                provider_metadata: None,
+        }
+
+        // 首帧 id/model → ResponseMetadata(与 openai provider 一致)。
+        if !response_meta_emitted
+            && (v.get("id").and_then(|x| x.as_str()).is_some()
+                || v.get("model").and_then(|x| x.as_str()).is_some())
+        {
+            response_meta_emitted = true;
+            parts.push(Ok(StreamPart::ResponseMetadata {
+                id: v["id"].as_str().map(|s| s.to_string()),
+                timestamp: None,
+                model_id: v["model"].as_str().map(|s| s.to_string()),
             }));
         }
-        if let Some(fr) = v["choices"][0]["finish_reason"].as_str() {
-            saw_openai = true;
-            let (unified, raw) = parse_finish(Some(fr));
-            parts.push(Ok(StreamPart::Finish {
-                finish_reason: FinishReason { unified, raw },
-                usage: parse_usage(&v)?,
+
+        // usage(含 usage-only 末帧 choices:[]+usage)→ 累积到 Finish.usage。
+        // 跳过显式 null(避免把已累积的 usage 清空,与 provider 一致)。
+        if v.get("usage").is_some_and(|u| !u.is_null()) {
+            final_usage = parse_usage(&v)?;
+        }
+
+        if let Some(choices) = choices_arr {
+            for choice in choices {
+                let delta = &choice["delta"];
+
+                // Reasoning delta(优先 reasoning_content,与 provider 一致)。
+                let reasoning_delta = delta
+                    .get("reasoning_content")
+                    .and_then(|x| x.as_str())
+                    .or_else(|| delta.get("reasoning").and_then(|x| x.as_str()));
+                if let Some(reasoning) = reasoning_delta
+                    && !reasoning.is_empty()
+                {
+                    if !reasoning_started {
+                        reasoning_started = true;
+                        parts.push(Ok(StreamPart::ReasoningStart {
+                            id: reasoning_id.clone(),
+                            provider_metadata: None,
+                        }));
+                    }
+                    parts.push(Ok(StreamPart::ReasoningDelta {
+                        id: reasoning_id.clone(),
+                        delta: reasoning.to_string(),
+                        provider_metadata: None,
+                    }));
+                }
+
+                // Text delta:文本前结束 reasoning(与 provider 一致)。
+                if let Some(content) = delta.get("content").and_then(|x| x.as_str())
+                    && !content.is_empty()
+                {
+                    if reasoning_started {
+                        parts.push(Ok(StreamPart::ReasoningEnd {
+                            id: reasoning_id.clone(),
+                            provider_metadata: None,
+                        }));
+                        reasoning_started = false;
+                    }
+                    if !text_started {
+                        text_started = true;
+                        parts.push(Ok(StreamPart::TextStart {
+                            id: text_id.clone(),
+                            provider_metadata: None,
+                        }));
+                    }
+                    parts.push(Ok(StreamPart::TextDelta {
+                        id: text_id.clone(),
+                        delta: content.to_string(),
+                        provider_metadata: None,
+                    }));
+                }
+
+                // Tool-call deltas(按 index 累积):tool_calls 前结束 reasoning。
+                if let Some(tcs) = delta.get("tool_calls").and_then(|t| t.as_array()) {
+                    if reasoning_started {
+                        parts.push(Ok(StreamPart::ReasoningEnd {
+                            id: reasoning_id.clone(),
+                            provider_metadata: None,
+                        }));
+                        reasoning_started = false;
+                    }
+                    for dtc in tcs {
+                        let idx = dtc
+                            .get("index")
+                            .and_then(|x| x.as_u64())
+                            .map(|n| n as usize)
+                            .unwrap_or(0);
+                        let func = dtc.get("function").cloned().unwrap_or_default();
+                        let is_new = !tool_calls.contains_key(&idx);
+                        if is_new {
+                            let id = dtc
+                                .get("id")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            let name = func
+                                .get("name")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            tool_calls.insert(
+                                idx,
+                                ToolCallAccumulator {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                    arguments: String::new(),
+                                },
+                            );
+                            tool_order.push(idx);
+                            parts.push(Ok(StreamPart::ToolInputStart {
+                                id,
+                                tool_name: name,
+                                provider_executed: None,
+                                dynamic: None,
+                                title: None,
+                                provider_metadata: None,
+                            }));
+                        }
+                        // 参数 delta:新 tool_call 跳过空 args(与 provider 一致);
+                        // 续传总是 emit(即使空)。
+                        if let Some(args) = func.get("arguments").and_then(|x| x.as_str())
+                            && (!is_new || !args.is_empty())
+                            && let Some(acc) = tool_calls.get_mut(&idx)
+                        {
+                            acc.arguments.push_str(args);
+                            parts.push(Ok(StreamPart::ToolInputDelta {
+                                id: acc.id.clone(),
+                                delta: args.to_string(),
+                                provider_metadata: None,
+                            }));
+                        }
+                    }
+                }
+
+                // finish_reason:结束 reasoning/text/tool_calls,捕获 finish。
+                if let Some(fr) = choice.get("finish_reason").and_then(|x| x.as_str()) {
+                    if reasoning_started {
+                        parts.push(Ok(StreamPart::ReasoningEnd {
+                            id: reasoning_id.clone(),
+                            provider_metadata: None,
+                        }));
+                        reasoning_started = false;
+                    }
+                    if text_started {
+                        parts.push(Ok(StreamPart::TextEnd {
+                            id: text_id.clone(),
+                            provider_metadata: None,
+                        }));
+                        text_started = false;
+                    }
+                    for &i in &tool_order {
+                        if let Some(acc) = tool_calls.get(&i) {
+                            parts.push(Ok(StreamPart::ToolInputEnd {
+                                id: acc.id.clone(),
+                                provider_metadata: None,
+                            }));
+                            let input = parse_tool_arguments(&acc.arguments);
+                            parts.push(Ok(StreamPart::ToolCall {
+                                tool_call_id: acc.id.clone(),
+                                tool_name: acc.name.clone(),
+                                input,
+                                provider_executed: None,
+                                dynamic: None,
+                                thought_signature: None,
+                                provider_metadata: None,
+                            }));
+                        }
+                    }
+                    tool_calls.clear();
+                    tool_order.clear();
+                    let (unified, raw) = parse_finish(Some(fr));
+                    final_finish = Some(FinishReason { unified, raw });
+                }
+            }
+        }
+    }
+
+    // 收尾:结束未关闭的 reasoning/text/tool_calls(未见 finish_reason 时)。
+    if reasoning_started {
+        parts.push(Ok(StreamPart::ReasoningEnd {
+            id: reasoning_id,
+            provider_metadata: None,
+        }));
+    }
+    if text_started {
+        parts.push(Ok(StreamPart::TextEnd {
+            id: text_id,
+            provider_metadata: None,
+        }));
+    }
+    for &i in &tool_order {
+        if let Some(acc) = tool_calls.get(&i) {
+            parts.push(Ok(StreamPart::ToolInputEnd {
+                id: acc.id.clone(),
+                provider_metadata: None,
+            }));
+            let input = parse_tool_arguments(&acc.arguments);
+            parts.push(Ok(StreamPart::ToolCall {
+                tool_call_id: acc.id.clone(),
+                tool_name: acc.name.clone(),
+                input,
+                provider_executed: None,
+                dynamic: None,
+                thought_signature: None,
                 provider_metadata: None,
             }));
         }
     }
 
-    // 没解析出 OpenAI 结构:非 OpenAI SSE 格式按行 Raw 降级。
-    if !saw_openai && parts.len() == 1 {
-        for line in body.lines() {
-            parts.push(Ok(StreamPart::Raw {
-                raw_value: serde_json::Value::String(line.to_string()),
-            }));
-        }
-        parts.push(Ok(StreamPart::Finish {
-            finish_reason: FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            },
-            usage: Usage::default(),
-            provider_metadata: None,
-        }));
+    // A7:未解析出任何 OpenAI 结构 → 非OpenAI SSE,返回 Unsupported(不降级 Raw)。
+    if !saw_openai {
+        return Err(AiMuxError::Unsupported(
+            "mock replay: response is not an OpenAI chat.completions SSE stream".into(),
+        ));
     }
+
+    parts.push(Ok(StreamPart::Finish {
+        finish_reason: final_finish.unwrap_or(FinishReason {
+            unified: FinishReasonUnified::Stop,
+            raw: None,
+        }),
+        usage: final_usage,
+        provider_metadata: None,
+    }));
 
     Ok(StreamResult {
         stream: Box::pin(futures::stream::iter(parts)),
@@ -1276,9 +1546,65 @@ mod tests {
     }
 
     #[test]
-    fn non_openai_body_falls_back_to_text_with_warning() {
+    fn non_openai_body_returns_unsupported() {
+        // A7:非 OpenAI chat.completions body(无 choices[0].message)→ Unsupported,
+        // 不再把整 body 降级为文本 + warning。
         let mut rec = openai_recording("t1", "ping", "x", "stop");
-        rec.exchanges[0].response.as_mut().unwrap().body = Some("{\"foo\":\"bar\"}".to_string()); // 非 chat.completions
+        rec.exchanges[0].response.as_mut().unwrap().body =
+            Some("{\"foo\":\"bar\"}".to_string()); // 非 chat.completions
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt.block_on(async {
+            model
+                .do_generate(&sample_options("ping", None))
+                .await
+                .unwrap_err()
+        });
+        assert!(matches!(err, AiMuxError::Unsupported(_)), "{err}");
+    }
+
+    #[test]
+    fn non_openai_stream_returns_unsupported() {
+        // A7:非 OpenAI SSE(无任何 choices 数组事件)→ Unsupported,不按行 Raw 降级。
+        let mut rec = openai_recording("t1", "ping", "x", "stop");
+        rec.exchanges[0].response.as_mut().unwrap().body = Some(
+            "event: message_start\ndata: {\"type\":\"message_start\"}\n\n".to_string(),
+        );
+        rec.exchanges[0].response.as_mut().unwrap().stream_chunks = Some(1);
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt.block_on(async {
+            model
+                .do_stream(&sample_options("ping", None))
+                .await
+                .unwrap_err()
+        });
+        assert!(matches!(err, AiMuxError::Unsupported(_)), "{err}");
+    }
+
+    #[test]
+    fn mock_model_rebuilds_tool_calls_from_openai_body() {
+        // C4-4:content null + tool_calls 不得返回空 content;解析 id/name/arguments。
+        let mut rec = openai_recording("t1", "ping", "x", "tool_calls");
+        let body = serde_json::json!({
+            "id": "chatcmpl-mock",
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_abc",
+                        "type": "function",
+                        "function": { "name": "get_weather", "arguments": "{\"city\":\"SF\"}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": { "prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8 }
+        });
+        rec.exchanges[0].response.as_mut().unwrap().body = Some(body.to_string());
         let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(async {
@@ -1287,12 +1613,260 @@ mod tests {
                 .await
                 .unwrap()
         });
-        // 整 body 作为文本 + warning。
-        assert!(!result.warnings.is_empty());
+        assert_eq!(result.content.len(), 1);
+        let Some(GenerateContent::ToolCall {
+            tool_call_id,
+            tool_name,
+            input,
+            ..
+        }) = result.content.first()
+        else {
+            panic!("expected ToolCall, got {:?}", result.content);
+        };
+        assert_eq!(tool_call_id, "call_abc");
+        assert_eq!(tool_name, "get_weather");
+        assert_eq!(input, &serde_json::json!({ "city": "SF" }));
+        assert_eq!(
+            result.finish_reason.unified,
+            FinishReasonUnified::ToolCalls
+        );
+    }
+
+    #[test]
+    fn mock_model_tool_call_bad_json_arguments_falls_back_to_string() {
+        // C4-4:arguments 非法 JSON → 回退为字符串值(与 openai provider 正向解析一致)。
+        let mut rec = openai_recording("t1", "ping", "x", "tool_calls");
+        let body = serde_json::json!({
+            "id": "chatcmpl-mock",
+            "model": "gpt-4o",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": { "name": "f", "arguments": "not-json{" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        });
+        rec.exchanges[0].response.as_mut().unwrap().body = Some(body.to_string());
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(async {
+            model
+                .do_generate(&sample_options("ping", None))
+                .await
+                .unwrap()
+        });
+        let Some(GenerateContent::ToolCall { input, .. }) = result.content.first() else {
+            panic!("expected ToolCall");
+        };
+        assert_eq!(input, &serde_json::json!("not-json{"));
+    }
+
+    #[test]
+    fn mock_model_rebuilds_stream_tool_calls() {
+        // C4-8:流式 tool_calls 按 index 累积 → ToolInputStart/Delta/End + ToolCall。
+        let chunk1 = serde_json::json!({
+            "id": "chatcmpl-1", "model": "gpt-4o",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": [
+                {"index": 0, "id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": ""}}
+            ]}}]
+        });
+        let chunk2 = serde_json::json!({
+            "choices": [{"index": 0, "delta": {"tool_calls": [
+                {"index": 0, "function": {"arguments": "{\"city\":\"SF\"}"}}
+            ]}}]
+        });
+        let chunk3 =
+            serde_json::json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]});
+        let sse = format!(
+            "data: {chunk1}\n\ndata: {chunk2}\n\ndata: {chunk3}\n\ndata: [DONE]\n\n"
+        );
+        let mut rec = openai_recording("t1", "ping", "x", "stop");
+        rec.exchanges[0].response.as_mut().unwrap().body = Some(sse);
+        rec.exchanges[0].response.as_mut().unwrap().stream_chunks = Some(4);
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let parts: Vec<StreamPart> = rt.block_on(async {
+            model
+                .do_stream(&sample_options("ping", None))
+                .await
+                .unwrap()
+                .stream
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .map(|p| p.unwrap())
+                .collect()
+        });
+        // 首帧 id/model → ResponseMetadata。
+        assert!(parts.iter().any(|p| matches!(
+            p,
+            StreamPart::ResponseMetadata { id, model_id, .. }
+                if id.as_deref() == Some("chatcmpl-1") && model_id.as_deref() == Some("gpt-4o")
+        )));
+        // ToolInputStart。
+        assert!(parts.iter().any(|p| matches!(
+            p,
+            StreamPart::ToolInputStart { tool_name, .. } if tool_name == "get_weather"
+        )));
+        // ToolInputDelta(初始空 args 跳过;仅续传 emit)。
+        let deltas: Vec<String> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::ToolInputDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, vec!["{\"city\":\"SF\"}"]);
+        // ToolInputEnd + ToolCall(finish_reason 触发)。
+        assert!(parts.iter().any(|p| matches!(p, StreamPart::ToolInputEnd { .. })));
+        let calls: Vec<_> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::ToolCall {
+                    tool_call_id,
+                    tool_name,
+                    input,
+                    ..
+                } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "call_1");
+        assert_eq!(calls[0].1, "get_weather");
+        assert_eq!(calls[0].2, serde_json::json!({"city":"SF"}));
+        // finish_reason tool_calls。
+        assert!(parts.iter().any(|p| matches!(
+            p,
+            StreamPart::Finish { finish_reason, .. }
+                if finish_reason.unified == FinishReasonUnified::ToolCalls
+        )));
+    }
+
+    #[test]
+    fn mock_model_rebuilds_stream_metadata_and_usage() {
+        // C4-8:首帧 id/model → ResponseMetadata;usage-only 末帧(choices:[]+usage)
+        // → 累积到 Finish.usage。
+        let chunk1 = serde_json::json!({
+            "id": "chatcmpl-2", "model": "gpt-4o",
+            "choices": [{"index": 0, "delta": {"content": "hi"}}]
+        });
+        let chunk2 = serde_json::json!({
+            "id": "chatcmpl-2", "choices": [],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 2, "total_tokens": 9}
+        });
+        let sse = format!("data: {chunk1}\n\ndata: {chunk2}\n\ndata: [DONE]\n\n");
+        let mut rec = openai_recording("t1", "ping", "x", "stop");
+        rec.exchanges[0].response.as_mut().unwrap().body = Some(sse);
+        rec.exchanges[0].response.as_mut().unwrap().stream_chunks = Some(3);
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let parts: Vec<StreamPart> = rt.block_on(async {
+            model
+                .do_stream(&sample_options("ping", None))
+                .await
+                .unwrap()
+                .stream
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .map(|p| p.unwrap())
+                .collect()
+        });
+        assert!(parts.iter().any(|p| matches!(
+            p,
+            StreamPart::ResponseMetadata { id, model_id, .. }
+                if id.as_deref() == Some("chatcmpl-2") && model_id.as_deref() == Some("gpt-4o")
+        )));
+        let deltas: Vec<String> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::TextDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, vec!["hi"]);
+        let finish = parts
+            .iter()
+            .find_map(|p| match p {
+                StreamPart::Finish { usage, .. } => Some(usage.clone()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(finish.input_tokens.total, Some(7));
+        assert_eq!(finish.output_tokens.total, Some(2));
+    }
+
+    #[test]
+    fn last_response_skips_failed_attempt() {
+        // C4-9:第 0 次 attempt 非 2xx(失败),第 1 次 2xx(成功)→ 选第 1 次。
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        rec.exchanges[0].response.as_mut().unwrap().status = 500;
+        rec.exchanges[0].attempt = 0;
+        let success_body = serde_json::json!({
+            "id": "chatcmpl-ok", "model": "gpt-4o",
+            "choices": [{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}],
+            "usage": {"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}
+        });
+        rec.exchanges.push(HttpExchange {
+            attempt: 1,
+            request: HttpRecord {
+                method: "post".into(),
+                url: "https://api.openai.com/v1/chat/completions".into(),
+                headers: vec![],
+                body: Some("{}".into()),
+            },
+            response: Some(ResponseRecord {
+                status: 200,
+                headers: vec![],
+                body: Some(success_body.to_string()),
+                stream_chunks: None,
+                ttfb_ms: None,
+            }),
+            timing: TimingRecord {
+                latency_ms: 10,
+                ttfb_ms: None,
+            },
+            error: None,
+            finalized: true,
+        });
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(async {
+            model
+                .do_generate(&sample_options("ping", None))
+                .await
+                .unwrap()
+        });
         let Some(GenerateContent::Text { text, .. }) = result.content.first() else {
             panic!("expected text");
         };
-        assert!(text.contains("foo"));
+        assert_eq!(text, "pong");
+        // 证明取的是第 1 次(id=chatcmpl-ok),而非失败的 exchange[0](id=chatcmpl-mock)。
+        assert_eq!(result.response.id.as_deref(), Some("chatcmpl-ok"));
+    }
+
+    #[test]
+    fn last_response_no_successful_response_errors() {
+        // C4-9:唯一 attempt 非 2xx → 无合法响应 → 明确错误(不降级)。
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        rec.exchanges[0].response.as_mut().unwrap().status = 500;
+        let model = MockReplayModel::new("openai", "gpt-4o", vec![rec]);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt.block_on(async {
+            model
+                .do_generate(&sample_options("ping", None))
+                .await
+                .unwrap_err()
+        });
+        assert!(err.to_string().contains("no successful"), "{err}");
     }
 
     #[test]
