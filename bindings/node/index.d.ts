@@ -299,9 +299,9 @@ export declare function initRecording(dir: string): void
  *
  * `cap` 可省略:省略时使用库默认容量(等价于 FFI `aimux_init_recording_ring_default()`;
  * 本绑定直接依赖 aimux-core 而非 aimux-ffi,故调用等价 core API `RingRecorder::default()`)。
- * 显式传 `cap == 0` 保持现行 no-op 行为(不启动录制),`cap > 0` 启动指定容量的有界 ring。
+ * 显式传 `cap == 0` 抛错(与其余语言一致),`cap > 0` 启动指定容量的有界 ring。
  */
-export declare function initRecordingRing(cap?: number | undefined | null): void
+export declare function initRecordingRing(cap?: number | undefined | null): AimuxResult<undefined>
 
 /**
  * Enable/disable the global session inferer (RFC-0024, opt-in, off by
