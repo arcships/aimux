@@ -1051,7 +1051,7 @@
   {
     "name": "moonshotai_cn",
     "display": "Moonshot AI (China)",
-    "base_url": "https://api.moonshot.cn/anthropic/v1（Anthropic",
+    "base_url": "https://api.moonshot.cn/anthropic/v1",
     "env_var": "MOONSHOT_API_KEY",
     "profile": {}
   },
@@ -1560,7 +1560,7 @@
   {
     "name": "the_grid_ai",
     "display": "The Grid AI",
-    "base_url": "https://thegrid.ai/docs",
+    "base_url": "https://api.thegrid.ai/v1",
     "env_var": "THEGRIDAI_API_KEY",
     "profile": {}
   },
@@ -1721,7 +1721,7 @@
   {
     "name": "xpersona",
     "display": "Xpersona",
-    "base_url": "/v1",
+    "base_url": "https://www.xpersona.co/v1",
     "env_var": "XPERSONA_API_KEY",
     "profile": {}
   },
@@ -1770,7 +1770,7 @@
   {
     "name": "zhipuai_coding_plan",
     "display": "Zhipu AI Coding Plan",
-    "base_url": "https://docs.bigmodel.cn/cn/coding-plan/quick-start",
+    "base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
     "env_var": "ZHIPU_API_KEY",
     "profile": {}
   }

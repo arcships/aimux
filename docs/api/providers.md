@@ -3,7 +3,7 @@
 > **GENERATED** by `scripts/gen_providers_doc.py` — do not edit by hand.
 > Regenerate with: `python scripts/gen_providers_doc.py`
 
-**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **76 non-registry providers** (construct via the typed factories listed below).
+**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **78 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 251
 
@@ -158,7 +158,7 @@
 | `model_oracle_ai` | Model Oracle AI | `MODEL_ORACLE_API_KEY` | `https://api.modeloracle.com/api/v1` |
 | `modelscope` | ModelScope | `MODELSCOPE_API_KEY` | `https://api-inference.modelscope.cn/v1` |
 | `moonshotai` | Moonshot AI | `MOONSHOT_API_KEY` | `https://api.moonshot.cn/v1` |
-| `moonshotai_cn` | Moonshot AI (China) | `MOONSHOT_API_KEY` | `https://api.moonshot.cn/anthropic/v1（Anthropic` |
+| `moonshotai_cn` | Moonshot AI (China) | `MOONSHOT_API_KEY` | `https://api.moonshot.cn/anthropic/v1` |
 | `morph` | Morph LLM | `MORPH_API_KEY` | `https://api.morphllm.com/v1` |
 | `nanogpt` | NanoGPT | `NANOGPT_API_KEY` | `https://api.nanogpt.com/v1` |
 | `ncompass` | Ncompass | `NCOMPASS_API_KEY` | `https://api.ncompass.tech/v1` |
@@ -229,7 +229,7 @@
 | `tencent_token_plan_hy_personal` | 腾讯云 Token Plan / Hy Token Plan（个人版） | `TENCENT_TOKEN_PLAN_API_KEY` | `https://api.lkeap.cloud.tencent.com/plan/v3` |
 | `tencent_tokenhub` | Tencent TokenHub | `TENCENT_TOKENHUB_API_KEY` | `https://tokenhub.tencentmaas.com/v1` |
 | `tensormesh` | Tensormesh | `YOUR_API_KEY` | `https://serverless.tensormesh.ai` |
-| `the_grid_ai` | The Grid AI | `THEGRIDAI_API_KEY` | `https://thegrid.ai/docs` |
+| `the_grid_ai` | The Grid AI | `THEGRIDAI_API_KEY` | `https://api.thegrid.ai/v1` |
 | `thinkingmachines` | Thinking Machines | `TINKER_API_KEY` | `https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1` |
 | `tinfoil` | Tinfoil | `TINFOIL_API_KEY` | `https://inference.tinfoil.sh/v1` |
 | `togetherai` | Together AI | `TOGETHER_API_KEY` | `https://api.together.xyz/v1` |
@@ -252,14 +252,14 @@
 | `xiaomi_token_plan_cn` | Xiaomi Token Plan (China) | `MIMO_API_KEY` | `https://token-plan-cn.xiaomimimo.com/v1` |
 | `xiaomi_token_plan_sgp` | Xiaomi Token Plan (Singapore) | `MIMO_API_KEY` | `https://token-plan-sgp.xiaomimimo.com/v1` |
 | `xiaomimimo` | Xiaomi MiMo | `XIAOMI_API_KEY` | `https://mimo.xiaomi.com/v1` |
-| `xpersona` | Xpersona | `XPERSONA_API_KEY` | `/v1` |
+| `xpersona` | Xpersona | `XPERSONA_API_KEY` | `https://www.xpersona.co/v1` |
 | `xunfei` | Xunfei | `XUNFEI_API_PASSWORD` | `https://spark-api-open.xf-yun.com/v1` |
 | `zai` | Zai | `ZAI_API_KEY` | `https://api.z.ai/api/paas/v4` |
 | `zai_coding_plan` | Z.AI Coding Plan | `ZHIPU_API_KEY` | `https://api.z.ai/api/anthropic` |
 | `zeldoc` | Zeldoc | `ZELDOC_API_KEY` | `https://api.zeldoc.ai/v1` |
 | `zenmux` | ZenMux | `ZENMUX_API_KEY` | `https://zenmux.ai/api/v1` |
 | `zhipu_v4` | ZhipuV4 | `ZHIPU_API_KEY` | `https://open.bigmodel.cn/api/paas/v4` |
-| `zhipuai_coding_plan` | Zhipu AI Coding Plan | `ZHIPU_API_KEY` | `https://docs.bigmodel.cn/cn/coding-plan/quick-start` |
+| `zhipuai_coding_plan` | Zhipu AI Coding Plan | `ZHIPU_API_KEY` | `https://open.bigmodel.cn/api/coding/paas/v4` |
 
 ## Typed factories (non-registry)
 
@@ -269,6 +269,8 @@ These providers are **not** name-addressable: `provider("anthropic", ...)` fails
 
 | module | typed entry points |
 |--------|--------------------|
+| `replay` | — |
+| `catalogue` | `Catalogue` |
 | `anthropic` | `AnthropicConfig` / `AnthropicProvider` |
 | `anthropic_aws` | `AnthropicAwsConfig` / `AnthropicAwsProvider` |
 | `azure` | `AzureConfig` / `AzureProvider` |

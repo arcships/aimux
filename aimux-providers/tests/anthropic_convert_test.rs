@@ -1,4 +1,6 @@
-﻿//! Rust port of the Anthropic provider pure-function tests.
+﻿// Panic convert wrappers are #[deprecated]; these tests still use them.
+#![allow(deprecated)]
+//! Rust port of the Anthropic provider pure-function tests.
 //!
 //! Translated from the Vercel AI SDK TypeScript tests:
 //! - `packages/anthropic/src/convert-anthropic-usage.test.ts` (15 cases)

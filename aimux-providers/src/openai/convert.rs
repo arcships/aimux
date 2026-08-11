@@ -198,6 +198,19 @@ fn prepare_tools_groq(
 // ── Message conversion ──────────────────────────────────────────────────────
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array.
+///
+/// Panics on conversion failure. Production paths use the fallible variant
+/// [`convert_prompt_to_openai_messages_with_mode_fallible`]; this panic
+/// wrapper exists only for integration tests under `tests/`. It is
+/// `#[doc(hidden)]` and `#[deprecated]` so it neither appears on the public
+/// API surface nor can be pulled in by accident (release uses
+/// `panic = "abort"`, so reaching a panic here via FFI would kill the host
+/// process).
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.1",
+    note = "panics on failure; use convert_prompt_to_openai_messages_with_mode_fallible instead (issue #90 R1)"
+)]
 pub fn convert_prompt_to_openai_messages(prompt: &LanguageModelPrompt) -> Vec<Value> {
     convert_prompt_to_openai_messages_with_mode_fallible(prompt, SystemMessageMode::System)
         .expect("convert_prompt_to_openai_messages: conversion failed")
@@ -214,6 +227,19 @@ pub fn convert_prompt_to_openai_messages_with_mode_fallible(
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
 /// message mode.
+///
+/// Panics on conversion failure. Production paths use the fallible variant
+/// [`convert_prompt_to_openai_messages_with_mode_fallible`]; this panic
+/// wrapper exists only for integration tests under `tests/`. It is
+/// `#[doc(hidden)]` and `#[deprecated]` so it neither appears on the public
+/// API surface nor can be pulled in by accident (release uses
+/// `panic = "abort"`, so reaching a panic here via FFI would kill the host
+/// process).
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.1",
+    note = "panics on failure; use convert_prompt_to_openai_messages_with_mode_fallible instead (issue #90 R1)"
+)]
 pub fn convert_prompt_to_openai_messages_with_mode(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,

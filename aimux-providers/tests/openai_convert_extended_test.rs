@@ -1,4 +1,6 @@
-//! Extended OpenAI convert tests ??covers the previously-missing TS cases.
+// Panic convert wrappers are #[deprecated]; these tests still use them.
+#![allow(deprecated)]
+//! Extended OpenAI convert tests — covers the previously-missing TS cases.
 //!
 //! Sources:
 //! - `convert-to-openai-chat-messages.test.ts` (25 previously missing cases)

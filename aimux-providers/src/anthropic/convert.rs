@@ -235,6 +235,18 @@ pub fn convert_prompt_to_anthropic_full_fallible(
 }
 
 /// Convert a prompt into the full Anthropic shape.
+///
+/// Panics on conversion failure. Production paths use the fallible variant
+/// [`convert_prompt_to_anthropic_full_fallible`]; this panic wrapper exists
+/// only for integration tests under `tests/`. It is `#[doc(hidden)]` and
+/// `#[deprecated]` so it neither appears on the public API surface nor can be
+/// pulled in by accident (release uses `panic = "abort"`, so reaching a panic
+/// here via FFI would kill the host process).
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.1",
+    note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
+)]
 pub fn convert_prompt_to_anthropic_full(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
@@ -251,6 +263,11 @@ pub fn convert_prompt_to_anthropic_full(
 /// messages that map to the same effective Anthropic role (`user`/`tool` →
 /// `user`, `assistant` → `assistant`) are merged into a single message, matching
 /// the SDK behaviour.
+#[doc(hidden)]
+#[deprecated(
+    since = "0.2.1",
+    note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
+)]
 pub fn convert_prompt_to_anthropic(
     prompt: &LanguageModelPrompt,
 ) -> (Option<Vec<Value>>, Vec<Value>) {
