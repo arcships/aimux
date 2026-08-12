@@ -694,6 +694,16 @@ fn init_logging(level: &str) {
     aimux_providers::init_logging(level);
 }
 
+/// Register external OpenAI-compatible providers from a JSON config string
+/// (RFC-0020). Entries override same-named built-ins or add new ones.
+///
+/// `config_json` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
+/// Raises `AimuxError` on invalid JSON or validation failure.
+#[pyfunction]
+fn register_providers(config_json: &str) -> PyResult<()> {
+    aimux_providers::load_providers_from_json(config_json).map_err(|e| to_py_err(&e))
+}
+
 /// Register the global session store (RFC-0024). Replaces any previous one.
 /// Until called, calls are not grouped and the query functions return empty
 /// results.
@@ -829,6 +839,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(recording_stop, m)?)?;
     m.add_function(wrap_pyfunction!(recording_flush, m)?)?;
     m.add_function(wrap_pyfunction!(mock_replay, m)?)?;
+    m.add_function(wrap_pyfunction!(register_providers, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;

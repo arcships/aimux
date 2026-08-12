@@ -105,4 +105,27 @@ public final class Aimux {
     public static void recordingFlush() {
         AimuxFFI.INSTANCE.aimux_recording_flush();
     }
+
+    /**
+     * Register external OpenAI-compatible providers from a JSON config string
+     * (RFC-0020).
+     *
+     * <p>{@code configJson} is {@code { "providers": [ { "name", "base_url", ... } ] }}.
+     * Entries override same-named built-ins or add new ones. Like
+     * {@link #initRecording}, this mutates process-global registry state.
+     *
+     * <p>The C entry point returns an {@code int} (1 = success, 0 = failure)
+     * rather than a handle, so the rc is checked inline (no
+     * {@code AimuxResult.extractHandle}).
+     *
+     * @param configJson Provider registry config JSON.
+     * @throws AimuxException if the C call fails (rc == 0).
+     */
+    public static void registerProviders(String configJson) {
+        AimuxCError err = AimuxResult.newError();
+        int rc = AimuxFFI.INSTANCE.aimux_register_providers(configJson, err);
+        if (rc == 0) {
+            throw AimuxException.fromC(err, "registerProviders");
+        }
+    }
 }

@@ -305,6 +305,21 @@ func MockReplay(recordingsJsonl string) (*Model, error) {
 	return wrapHandleU64(h, &cerr)
 }
 
+// RegisterProviders registers external OpenAI-compatible providers from a JSON
+// config string (RFC-0020). Entries override same-named built-ins or add new
+// ones. configJSON shape: { "providers": [ { "name", "base_url", ... } ] }.
+func RegisterProviders(configJSON string) error {
+	cJSON := C.CString(configJSON)
+	defer C.free(unsafe.Pointer(cJSON))
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
+	rc := C.aimux_register_providers(cJSON, &cerr)
+	if rc == 0 {
+		return errorFromC(&cerr)
+	}
+	return nil
+}
+
 // Anthropic creates an Anthropic model instance, panicking on failure.
 func Anthropic(apiKey, modelID string) *Model {
 	return mustNew(NewAnthropic(apiKey, modelID))

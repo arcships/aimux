@@ -2598,6 +2598,24 @@ pub extern "C" fn aimux_recording_flush() -> i32 {
     0
 }
 
+/// Register external OpenAI-compatible providers from a JSON config string
+/// (RFC-0020). `config_json` is `{ "providers": [ { "name": ..., "base_url":
+/// ..., ... }, ... ] }`. Entries override same-named built-ins or add new
+/// ones. Returns 1 on success, 0 on failure (with `err` filled).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_register_providers(
+    config_json: *const c_char,
+    err: *mut CAimuxError,
+) -> i32 {
+    let Some(json) = cstr_to_string(config_json) else {
+        return unsafe { fail_invalid_args(err) };
+    };
+    match aimux_providers::load_providers_from_json(&json) {
+        Ok(()) => 1,
+        Err(e) => unsafe { fail_ai(err, &e) },
+    }
+}
+
 /// Create a mock replay model from recorded JSONL (RFC-0023 P3). `recordings`
 /// is one `Recording` JSON per line. Returns non-zero handle or 0
 /// (the handle works with `aimux_generate_text` /

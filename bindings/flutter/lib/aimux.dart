@@ -103,6 +103,10 @@ typedef _MockReplayC = Uint64 Function(
     Pointer<Utf8> recordingsJsonl, Pointer<AimuxCError> err);
 typedef _MockReplayDart = int Function(
     Pointer<Utf8> recordingsJsonl, Pointer<AimuxCError> err);
+typedef _RegisterProvidersC = Int32 Function(
+    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+typedef _RegisterProvidersDart = int Function(
+    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 
 // Multi-arg constructor C signatures (bedrock/vertex/azure).
 typedef _FourStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
@@ -244,6 +248,8 @@ final class _AimuxFFI {
           'aimux_recording_flush');
   late final mockReplayNew = _lib
       .lookupFunction<_MockReplayC, _MockReplayDart>('aimux_mock_replay_new');
+  late final registerProviders = _lib.lookupFunction<_RegisterProvidersC,
+      _RegisterProvidersDart>('aimux_register_providers');
 }
 
 /// Process-wide FFI table. Lazily created on first use; shared by every
@@ -877,4 +883,22 @@ Model mockReplay(String recordingsJsonl) {
     });
   });
   return Model._(handle);
+}
+
+/// Register external OpenAI-compatible providers from a JSON config string
+/// (RFC-0020).
+///
+/// `configJSON` is `{ "providers": [ { "name", "base_url", ... } ] }`. Entries
+/// override same-named built-ins or add new ones. Like `initRecording`, this
+/// mutates process-global registry state.
+///
+/// The C entry point returns an `int` (1 = success, 0 = failure) rather than a
+/// handle. `takeHandle` throws on 0 and passes non-zero through unchanged, so
+/// it doubles as the rc check here (rc=1 → no throw; rc=0 → throw from `err`).
+void registerProviders(String configJSON) {
+  withAimuxCError((err) {
+    return withUtf8(configJSON, (ptr) {
+      return takeHandle(_ffi.registerProviders(ptr, err), err);
+    });
+  });
 }

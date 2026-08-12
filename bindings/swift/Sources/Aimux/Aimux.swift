@@ -506,6 +506,26 @@ public final class Model: @unchecked Sendable {
         return Model(handle: handle)
     }
 
+    /// Register external OpenAI-compatible providers from a JSON config string
+    /// (RFC-0020).
+    ///
+    /// `configJSON` is `{ "providers": [ { "name", "base_url", ... } ] }`.
+    /// Entries override same-named built-ins or add new ones. Like
+    /// `initRecording`, this mutates process-global registry state.
+    ///
+    /// Unlike `mockReplay`/`wrapHandle`, the C entry point returns an `int`
+    /// success code (1 = ok, 0 = failure) rather than a `uint64_t` handle, so
+    /// the err check is inlined here instead of routing through `wrapHandle`.
+    ///
+    /// - Parameter configJSON: Provider registry config JSON.
+    /// - Throws: `AimuxError` when the C call fails (rc == 0).
+    public static func registerProviders(_ configJSON: String) throws {
+        var err = CAimuxError()
+        aimux_error_clear(&err)
+        let rc = aimux_register_providers(configJSON, &err)
+        if rc == 0 { throw AimuxError.fromC(err) }
+    }
+
     // ── Provider handles (RFC-0027) ──────────────────────────────────────────
 
     /// Create a **provider handle** for a registry-backed provider (RFC-0027).

@@ -17,7 +17,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -38,20 +38,40 @@ struct RegistryEntry {
     base_url: String,
     env_var: String,
     #[serde(default)]
-    profile: RegistryProfile,
+    profile: ProviderProfile,
 }
 
-/// Profile differences expressed as data (non-default fields only in JSON).
-#[derive(Debug, Clone, Default, Deserialize)]
-struct RegistryProfile {
+/// Provider capability profile, expressed as data (non-default fields only
+/// in the registry JSON).
+///
+/// Shared between the built-in registry and the runtime overlay layer
+/// (RFC-0020). The `Default` impl and the per-field
+/// `#[serde(default = "default_true")]` both yield `true` for the three
+/// `supports_*` flags, matching the OpenAI-compatible baseline — so a
+/// profile that is omitted entirely (or present but with individual fields
+/// missing) stays at full capability.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ProviderProfile {
     #[serde(default = "default_true")]
-    supports_top_k: bool,
+    pub supports_top_k: bool,
     #[serde(default = "default_true")]
-    supports_tools: bool,
+    pub supports_tools: bool,
     #[serde(default = "default_true")]
-    supports_response_format: bool,
-    stream_usage_key: Option<String>,
-    max_tokens_key: Option<String>,
+    pub supports_response_format: bool,
+    pub stream_usage_key: Option<String>,
+    pub max_tokens_key: Option<String>,
+}
+
+impl Default for ProviderProfile {
+    fn default() -> Self {
+        Self {
+            supports_top_k: true,
+            supports_tools: true,
+            supports_response_format: true,
+            stream_usage_key: None,
+            max_tokens_key: None,
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -120,13 +140,17 @@ pub struct ProviderOptions {
     pub body_overrides: Option<Value>,
 }
 
-/// Build a language model for a built-in provider by name.
+/// Build a language model for a provider by name.
+///
+/// Lookup order: runtime overlay (RFC-0020 [`register_provider`]) → built-in
+/// registry → [`AiMuxError::UnknownProvider`].
 ///
 /// - `api_key = None` reads the provider's env var from the registry entry
-///   (replaces the retired `XxxConfig::from_env()`).
-/// - `options` overrides individual fields of the registry entry
+///   (or the external entry's `env_var` / `api_key` field).
+/// - `options` overrides individual fields of the resolved entry
 ///   (replaces the retired `with_base_url` etc.).
-/// - Unknown names return [`AiMuxError::UnknownProvider`] with the full list.
+/// - Unknown names return [`AiMuxError::UnknownProvider`] listing the built-in
+///   providers (overlay-registered names are not enumerated).
 pub fn provider(
     name: impl AsRef<str>,
     api_key: Option<String>,
@@ -137,7 +161,191 @@ pub fn provider(
     p.language_model(model_id)
 }
 
-/// Build a **provider handle** for a built-in provider by name (RFC-0027).
+// ── Runtime overlay layer (RFC-0020) ─────────────────────────────────────────
+
+/// A provider entry registered at runtime via [`register_provider`] /
+/// [`load_providers_from_json`]. Overrides a same-named built-in entry (whole
+/// replacement, not deep merge) or adds a new one.
+///
+/// Only OpenAI-compatible providers can be registered this way — native
+/// protocols (anthropic/google/bedrock…) are code implementations and cannot
+/// be described by config data.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExternalProviderEntry {
+    /// Provider name used for `provider("name", ...)` lookup. Required.
+    pub name: String,
+    /// Human-readable name. Defaults to `name` if absent.
+    pub display: Option<String>,
+    /// API base URL. Required, must be a valid `http(s)://` URL.
+    pub base_url: String,
+    /// Env var name to read the API key from. Optional.
+    pub env_var: Option<String>,
+    /// `"env:VAR_NAME"` reference (recommended) or a literal key string
+    /// (supported but discouraged). Optional.
+    pub api_key: Option<String>,
+    /// Protocol kind. Only `"openai_compat"` is accepted; other values error.
+    #[serde(default = "default_openai_compat")]
+    pub protocol: String,
+    /// Provider capability profile. All fields optional, defaults to full().
+    #[serde(default)]
+    pub profile: ProviderProfile,
+    // --- Fields equivalent to ProviderOptions (provider-level config) ---
+    /// Extra headers merged into every request.
+    pub headers: Option<HashMap<String, String>>,
+    /// OpenAI organization ID (`OpenAI-Organization` header).
+    pub organization: Option<String>,
+    /// OpenAI project ID (`OpenAI-Project` header).
+    pub project: Option<String>,
+    /// Retry count override; `Some(0)` disables retries.
+    pub max_retries: Option<u32>,
+    /// Request-body overrides (deep-merged; RFC-0017 phase 1).
+    pub body_overrides: Option<Value>,
+    /// Free-form note for the user; the library ignores this.
+    pub comment: Option<String>,
+}
+
+fn default_openai_compat() -> String {
+    "openai_compat".to_string()
+}
+
+#[derive(Deserialize)]
+struct ProvidersConfig {
+    providers: Vec<ExternalProviderEntry>,
+}
+
+static OVERLAYS: OnceLock<RwLock<HashMap<String, ExternalProviderEntry>>> = OnceLock::new();
+
+fn overlays() -> &'static RwLock<HashMap<String, ExternalProviderEntry>> {
+    OVERLAYS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// Test-only helper: remove a name from the overlay so tests are hermetic.
+#[cfg(test)]
+pub(crate) fn clear_overlay(name: &str) {
+    overlays().write().unwrap().remove(name);
+}
+
+/// Register (or replace) an external provider entry.
+///
+/// Validation failures (empty name, non-`http(s)://` base_url, unsupported
+/// protocol) return [`AiMuxError::InvalidArgument`] — they never panic.
+pub fn register_provider(entry: ExternalProviderEntry) -> Result<(), AiMuxError> {
+    validate_external_entry(&entry)?;
+    let mut overlays = overlays().write().unwrap();
+    overlays.insert(entry.name.clone(), entry);
+    Ok(())
+}
+
+/// Whether `name` was registered at runtime via [`register_provider`] /
+/// [`load_providers_from_json`] (RFC-0020 overlay). Used by the replay path
+/// to recognize externally-registered OpenAI-compatible providers.
+pub fn is_external_provider(name: &str) -> bool {
+    overlays().read().unwrap().contains_key(name)
+}
+
+/// Load and register multiple external providers from a JSON string
+/// (`{ "providers": [ ... ] }`). Useful for binding-layer pass-through.
+pub fn load_providers_from_json(json: &str) -> Result<(), AiMuxError> {
+    let config: ProvidersConfig = serde_json::from_str(json)
+        .map_err(|e| AiMuxError::Json(format!("failed to parse external providers config: {e}")))?;
+    for entry in config.providers {
+        register_provider(entry)?;
+    }
+    Ok(())
+}
+
+/// Validate an external entry before inserting it into the overlay.
+fn validate_external_entry(entry: &ExternalProviderEntry) -> Result<(), AiMuxError> {
+    if entry.name.trim().is_empty() {
+        return Err(AiMuxError::InvalidArgument(
+            "external provider entry missing `name`".into(),
+        ));
+    }
+    if entry.base_url.trim().is_empty() {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "external provider '{}' missing `base_url`",
+            entry.name
+        )));
+    }
+    if !(entry.base_url.starts_with("https://") || entry.base_url.starts_with("http://")) {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "external provider '{}' base_url must start with http(s)://, got {:?}",
+            entry.name, entry.base_url
+        )));
+    }
+    if entry.protocol != "openai_compat" {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "external provider '{}' has unsupported protocol {:?}; only \"openai_compat\" is supported",
+            entry.name, entry.protocol
+        )));
+    }
+    Ok(())
+}
+
+// ── Unified lookup (built-in registry + overlay layer) ──────────────────────
+
+/// A resolved provider entry — the common shape both the built-in registry
+/// and the runtime overlay produce, so the downstream construction logic
+/// (placeholder check, key resolution, config build) is shared.
+struct ResolvedEntry {
+    name: String,
+    display: String,
+    base_url: String,
+    env_var: String,
+    profile: ProviderProfile,
+    /// Entry-level api_key (external entries only). `"env:VAR"` references are
+    /// resolved at lookup time; literal strings are used as-is. Built-in
+    /// registry entries always have `None` here.
+    api_key: Option<String>,
+    /// Provider-level config carried by external entries (None for built-ins,
+    /// which rely on ProviderOptions for per-call overrides).
+    headers: Option<HashMap<String, String>>,
+    organization: Option<String>,
+    project: Option<String>,
+    max_retries: Option<u32>,
+    body_overrides: Option<Value>,
+}
+
+impl ResolvedEntry {
+    /// Resolve a built-in [`RegistryEntry`] into the common shape.
+    fn from_registry(entry: &RegistryEntry) -> Self {
+        Self {
+            name: entry.name.clone(),
+            display: entry.display.clone(),
+            base_url: entry.base_url.clone(),
+            env_var: entry.env_var.clone(),
+            profile: entry.profile.clone(),
+            api_key: None,
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+        }
+    }
+
+    /// Resolve an [`ExternalProviderEntry`] into the common shape.
+    fn from_external(entry: &ExternalProviderEntry) -> Self {
+        Self {
+            name: entry.name.clone(),
+            display: entry.display.clone().unwrap_or_else(|| entry.name.clone()),
+            base_url: entry.base_url.clone(),
+            env_var: entry.env_var.clone().unwrap_or_default(),
+            profile: entry.profile.clone(),
+            api_key: entry.api_key.clone(),
+            headers: entry.headers.clone(),
+            organization: entry.organization.clone(),
+            project: entry.project.clone(),
+            max_retries: entry.max_retries,
+            body_overrides: entry.body_overrides.clone(),
+        }
+    }
+}
+
+/// Build a **provider handle** for a built-in or externally-registered provider
+/// by name (RFC-0027 + RFC-0020 overlay).
+///
+/// Lookup order: runtime overlay (RFC-0020) → built-in registry → UnknownProvider.
 ///
 /// Unlike [`provider`] (which binds to a single `model_id` and returns a
 /// `LanguageModel`), this returns the [`Provider`] itself, so callers can call
@@ -151,47 +359,92 @@ pub fn provider_handle(
     options: Option<ProviderOptions>,
 ) -> Result<Box<dyn Provider>, AiMuxError> {
     let name = name.as_ref();
-    let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {
-        AiMuxError::UnknownProvider(format!(
-            "unknown provider '{name}' — available providers: {}",
-            ProviderName::all_names()
-        ))
-    })?;
 
-    // Reject registry base_urls that still carry unexpanded placeholders
+    // 1. Runtime overlay (RFC-0020) — registered entries take precedence.
+    let resolved = if let Some(ext) = overlays().read().unwrap().get(name) {
+        ResolvedEntry::from_external(ext)
+    } else {
+        // 2. Built-in registry.
+        let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {
+            AiMuxError::UnknownProvider(format!(
+                "unknown provider '{name}' — available providers: {}",
+                ProviderName::all_names()
+            ))
+        })?;
+        ResolvedEntry::from_registry(entry)
+    };
+
+    // Reject base_urls that still carry unexpanded placeholders
     // (e.g. cloudflare's `{CLOUDFLARE_ACCOUNT_ID}`, snowflake's
     // `<account-identifier>`). These entries are intentionally templated —
     // the caller MUST supply a concrete base_url via ProviderOptions.
     let base_url_overridden = options.as_ref().is_some_and(|o| o.base_url.is_some());
-    if !base_url_overridden && base_url_has_placeholder(&entry.base_url) {
+    if !base_url_overridden && base_url_has_placeholder(&resolved.base_url) {
         return Err(AiMuxError::InvalidArgument(format!(
             "provider '{name}' has a templated base_url {:?} with an unexpanded \
              placeholder; pass a concrete `base_url` via ProviderOptions to use it",
-            entry.base_url
+            resolved.base_url
         )));
     }
 
-    // api_key 来源标注(回放重建用):显式传 key → explicit;否则 env。
-    let source: Option<String> = if api_key.is_some() {
-        Some("explicit".to_string())
-    } else {
-        Some(format!("env:{}", entry.env_var))
-    };
+    // Resolve the api key. Priority: explicit parameter > entry-level api_key
+    // (supports "env:VAR" references) > entry env_var (read from environment).
+    let (key, source) = resolve_key(&resolved, api_key)?;
 
-    let key = match api_key {
-        Some(key) => key,
-        None => aimux_provider_utils::load_api_key(None, &entry.env_var, &entry.display)?,
-    };
-
-    let mut config = build_provider_config(entry, key, options);
-    // api_key 来源标注(回放重建用):explicit/env 在 provider() 已解析。
+    let mut config = build_resolved_config(&resolved, key, options);
     config = config.with_api_key_source(source.as_deref());
     Ok(Box::new(OpenAIProvider::new(config)))
 }
 
-/// Resolve the registry entry + options into a fully-wired `OpenAIConfig`.
-fn build_provider_config(
-    entry: &RegistryEntry,
+/// Resolve the api key for a [`ResolvedEntry`]. Returns `(key, source)` where
+/// `source` is the origin tag for RFC-0023 replay reconstruction.
+///
+/// Priority: explicit `api_key` parameter > entry-level `api_key` field
+/// (supports `"env:VAR"` references, resolved against the environment) >
+/// entry `env_var` (read from the environment via [`load_api_key`]).
+fn resolve_key(
+    entry: &ResolvedEntry,
+    api_key: Option<String>,
+) -> Result<(String, Option<String>), AiMuxError> {
+    if let Some(key) = api_key {
+        return Ok((key, Some("explicit".to_string())));
+    }
+    if let Some(entry_key) = &entry.api_key
+        && !entry_key.is_empty()
+    {
+        // Entry-level key: "env:VAR" → read env; otherwise treat as literal.
+        if let Some(var) = entry_key.strip_prefix("env:") {
+            if var.is_empty() {
+                return Err(AiMuxError::InvalidArgument(format!(
+                    "external provider '{}' has malformed api_key reference {:?} (empty var name)",
+                    entry.name, entry_key
+                )));
+            }
+            let val = std::env::var(var).map_err(|_| {
+                AiMuxError::Auth(format!(
+                    "external provider '{}' references env var `{var}` via api_key, but it is not set",
+                    entry.name
+                ))
+            })?;
+            return Ok((val, Some(format!("env:{var}"))));
+        }
+        return Ok((entry_key.clone(), Some("explicit".to_string())));
+    }
+    if entry.env_var.is_empty() {
+        return Err(AiMuxError::Auth(format!(
+            "provider '{}' has no api_key parameter, entry-level api_key, or env_var to read from",
+            entry.name
+        )));
+    }
+    let key = aimux_provider_utils::load_api_key(None, &entry.env_var, &entry.display)?;
+    Ok((key, Some(format!("env:{}", entry.env_var))))
+}
+
+/// Resolve a [`ResolvedEntry`] + per-call [`ProviderOptions`] into a fully-wired
+/// `OpenAIConfig`. Provider-level config from the entry (headers/org/project/
+/// retries/body_overrides) is applied first; per-call options override them.
+fn build_resolved_config(
+    entry: &ResolvedEntry,
     key: String,
     options: Option<ProviderOptions>,
 ) -> OpenAIConfig {
@@ -200,6 +453,27 @@ fn build_provider_config(
         .with_provider(entry.name.clone())
         .with_profile(profile_from_registry(&entry.profile));
 
+    // Provider-level config (from the entry, built-in or external).
+    if let Some(headers) = &entry.headers {
+        config = config.with_headers(headers.clone());
+    }
+    if let Some(org) = &entry.organization {
+        config = config.with_org_id(org.clone());
+    }
+    if let Some(project) = &entry.project {
+        config = config.with_project(project.clone());
+    }
+    if let Some(max_retries) = entry.max_retries {
+        config = config.with_retry_config(RetryConfig {
+            max_retries,
+            ..RetryConfig::default()
+        });
+    }
+    if let Some(overrides) = &entry.body_overrides {
+        config = config.with_body_overrides(overrides.clone());
+    }
+
+    // Per-call ProviderOptions override on top.
     if let Some(opts) = options {
         if let Some(url) = opts.base_url {
             config = config.with_base_url(url);
@@ -226,12 +500,12 @@ fn build_provider_config(
     config
 }
 
-/// Translate a registry profile into the runtime profile.
+/// Translate a provider profile into the runtime profile.
 ///
 /// `stream_usage_key` / `max_tokens_key` are `&'static str` in
 /// `OpenAICompatProfile`; the registry strings are leaked once at first use
 /// (bounded: at most one string per field per entry).
-fn profile_from_registry(p: &RegistryProfile) -> OpenAICompatProfile {
+fn profile_from_registry(p: &ProviderProfile) -> OpenAICompatProfile {
     OpenAICompatProfile {
         supports_top_k: p.supports_top_k,
         supports_tools: p.supports_tools,
@@ -475,5 +749,308 @@ mod tests {
                 .unwrap_or_else(|_| panic!("registry name {name} missing from ProviderName"));
             assert_eq!(variant.as_str(), *name);
         }
+    }
+
+    // ── RFC-0020: external provider overlay ────────────────────────────────
+
+    #[test]
+    fn register_and_lookup_external_provider() {
+        clear_overlay("test-relay-new");
+        register_provider(ExternalProviderEntry {
+            name: "test-relay-new".into(),
+            display: Some("Test Relay".into()),
+            base_url: "https://relay.test.example/v1".into(),
+            env_var: Some("TEST_RELAY_KEY".into()),
+            api_key: Some("dummy-key".into()),
+            protocol: "openai_compat".into(),
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap();
+        let model = provider("test-relay-new", None, "test-model", None).unwrap();
+        assert_eq!(model.provider(), "test-relay-new");
+        clear_overlay("test-relay-new");
+    }
+
+    #[test]
+    fn external_provider_overrides_builtin() {
+        // Register an overlay for the built-in "groq" name with a different
+        // base_url; provider() must resolve to the overlay, not the registry.
+        clear_overlay("groq"); // hermetic start (other tests may use "groq")
+        register_provider(ExternalProviderEntry {
+            name: "groq".into(),
+            display: Some("Groq Override".into()),
+            base_url: "https://my-groq-relay.example/v1".into(),
+            env_var: Some("GROQ_API_KEY".into()),
+            api_key: Some("dummy".into()),
+            protocol: "openai_compat".into(),
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap();
+        // Actually call provider() (not just read the overlay map) to verify
+        // the lookup path routes to the overlay. The registry entry for groq
+        // has base_url "https://api.groq.com/openai/v1"; the overlay's is
+        // different, so config_snapshot().base_url tells us which path ran.
+        let model = provider("groq", None, "llama-3.3-70b", None).unwrap();
+        let snap = model.config_snapshot();
+        assert_eq!(
+            snap.base_url.as_deref(),
+            Some("https://my-groq-relay.example/v1"),
+            "provider() must resolve via the overlay, not the built-in registry"
+        );
+        clear_overlay("groq");
+    }
+
+    #[test]
+    fn load_providers_from_json_parses_and_registers() {
+        clear_overlay("test-json-1");
+        clear_overlay("test-json-2");
+        let json = r#"{
+            "providers": [
+                {
+                    "name": "test-json-1",
+                    "base_url": "https://a.test/v1",
+                    "api_key": "dummy"
+                },
+                {
+                    "name": "test-json-2",
+                    "base_url": "https://b.test/v1",
+                    "env_var": "TEST_JSON_2_KEY"
+                }
+            ]
+        }"#;
+        load_providers_from_json(json).unwrap();
+        assert!(overlays().read().unwrap().contains_key("test-json-1"));
+        assert!(overlays().read().unwrap().contains_key("test-json-2"));
+        clear_overlay("test-json-1");
+        clear_overlay("test-json-2");
+    }
+
+    #[test]
+    fn register_provider_rejects_bad_base_url() {
+        clear_overlay("test-bad-url");
+        let err = register_provider(ExternalProviderEntry {
+            name: "test-bad-url".into(),
+            base_url: "ftp://nope".into(),
+            env_var: None,
+            api_key: None,
+            protocol: "openai_compat".into(),
+            display: None,
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap_err();
+        assert!(
+            matches!(err, AiMuxError::InvalidArgument(ref m) if m.contains("http(s)://")),
+            "expected InvalidArgument about scheme, got {err:?}"
+        );
+        clear_overlay("test-bad-url");
+    }
+
+    #[test]
+    fn register_provider_rejects_bad_protocol() {
+        clear_overlay("test-bad-proto");
+        let err = register_provider(ExternalProviderEntry {
+            name: "test-bad-proto".into(),
+            base_url: "https://ok.example/v1".into(),
+            protocol: "anthropic".into(),
+            env_var: None,
+            api_key: None,
+            display: None,
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap_err();
+        assert!(
+            matches!(err, AiMuxError::InvalidArgument(ref m) if m.contains("openai_compat")),
+            "expected InvalidArgument about protocol, got {err:?}"
+        );
+        clear_overlay("test-bad-proto");
+    }
+
+    #[test]
+    fn register_provider_rejects_empty_name() {
+        let err = register_provider(ExternalProviderEntry {
+            name: "  ".into(),
+            base_url: "https://ok.example/v1".into(),
+            protocol: "openai_compat".into(),
+            env_var: None,
+            api_key: None,
+            display: None,
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap_err();
+        assert!(
+            matches!(err, AiMuxError::InvalidArgument(ref m) if m.contains("name")),
+            "expected InvalidArgument about name, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn external_provider_profile_applied() {
+        clear_overlay("test-profile");
+        register_provider(ExternalProviderEntry {
+            name: "test-profile".into(),
+            base_url: "https://profile.test/v1".into(),
+            api_key: Some("dummy".into()),
+            protocol: "openai_compat".into(),
+            profile: ProviderProfile {
+                supports_top_k: false,
+                supports_tools: false,
+                supports_response_format: true,
+                stream_usage_key: Some("x_custom".into()),
+                max_tokens_key: Some("max_completion_tokens".into()),
+            },
+            env_var: None,
+            display: None,
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap();
+        let entry = overlays()
+            .read()
+            .unwrap()
+            .get("test-profile")
+            .unwrap()
+            .clone();
+        let p = profile_from_registry(&entry.profile);
+        assert!(!p.supports_top_k);
+        assert!(!p.supports_tools);
+        assert_eq!(p.stream_usage_key, Some("x_custom"));
+        assert_eq!(p.max_tokens_key, Some("max_completion_tokens"));
+        clear_overlay("test-profile");
+    }
+
+    #[test]
+    fn external_provider_profile_defaults_to_full() {
+        // When `profile` is omitted entirely from the JSON, the entry must
+        // still default to the OpenAI-compatible baseline (all three
+        // supports_* = true). Regression guard: the derive(Default) on
+        // ProviderProfile was previously yielding false for these.
+        clear_overlay("test-default-profile");
+        load_providers_from_json(r#"{ "providers": [ { "name": "test-default-profile", "base_url": "https://x.test/v1", "api_key": "dummy" } ] }"#)
+            .unwrap();
+        let entry = overlays()
+            .read()
+            .unwrap()
+            .get("test-default-profile")
+            .unwrap()
+            .clone();
+        let p = profile_from_registry(&entry.profile);
+        assert!(
+            p.supports_top_k,
+            "omitted profile → supports_top_k must be true"
+        );
+        assert!(
+            p.supports_tools,
+            "omitted profile → supports_tools must be true"
+        );
+        assert!(
+            p.supports_response_format,
+            "omitted profile → supports_response_format must be true"
+        );
+        clear_overlay("test-default-profile");
+    }
+
+    #[test]
+    fn external_provider_env_var_api_key_resolves() {
+        // entry-level api_key = "env:VAR" must read the env var at lookup time.
+        clear_overlay("test-envkey");
+        // SAFETY: test-only; no other thread is reading this var concurrently.
+        unsafe { std::env::set_var("AIMUX_TEST_OVERLAY_KEY", "secret-from-env") };
+        register_provider(ExternalProviderEntry {
+            name: "test-envkey".into(),
+            base_url: "https://envkey.test/v1".into(),
+            api_key: Some("env:AIMUX_TEST_OVERLAY_KEY".into()),
+            protocol: "openai_compat".into(),
+            env_var: None,
+            display: None,
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap();
+        // provider() with api_key=None must resolve via the "env:" reference.
+        let model = provider("test-envkey", None, "m", None).unwrap();
+        assert_eq!(model.provider(), "test-envkey");
+        // SAFETY: test-only cleanup.
+        unsafe { std::env::remove_var("AIMUX_TEST_OVERLAY_KEY") };
+        clear_overlay("test-envkey");
+    }
+
+    #[test]
+    fn external_provider_env_var_api_key_missing_env_fails() {
+        clear_overlay("test-envkey-missing");
+        // SAFETY: test-only cleanup.
+        unsafe { std::env::remove_var("AIMUX_TEST_OVERLAY_MISSING") };
+        register_provider(ExternalProviderEntry {
+            name: "test-envkey-missing".into(),
+            base_url: "https://missing.test/v1".into(),
+            api_key: Some("env:AIMUX_TEST_OVERLAY_MISSING".into()),
+            protocol: "openai_compat".into(),
+            env_var: None,
+            display: None,
+            profile: ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap();
+        let err = match provider("test-envkey-missing", None, "m", None) {
+            Ok(_) => panic!("missing env var must fail"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(err, AiMuxError::Auth(ref m) if m.contains("AIMUX_TEST_OVERLAY_MISSING")),
+            "expected Auth error naming the env var, got {err:?}"
+        );
+        clear_overlay("test-envkey-missing");
+    }
+
+    #[test]
+    fn load_providers_from_json_rejects_invalid_json() {
+        let err = load_providers_from_json("not json at all").unwrap_err();
+        assert!(
+            matches!(err, AiMuxError::Json(ref m) if m.contains("parse")),
+            "expected Json error for malformed input, got {err:?}"
+        );
     }
 }
