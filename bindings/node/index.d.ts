@@ -267,7 +267,7 @@ export declare function getModelSpecs(sourceUrl?: string | undefined | null): Pr
  *
  * Google speaks the native `generateContent` protocol (not OpenAI-compatible),
  * so it is **not** registry-backed — `provider("google", ...)` fails with
- * `UnknownProvider`. This factory is the only entry point.
+ * `NoSuchProvider`. This factory is the only entry point.
  */
 export declare function google(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<AimuxResult<Model>>
 

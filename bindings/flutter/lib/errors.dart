@@ -17,56 +17,50 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Error code constants (match AimuxErrorCode in aimux-error.h — append-only)
+// Error code constants (match AimuxErrorCode in aimux-error.h)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Machine-readable codes. Values match C `AimuxErrorCode` / Go `Code`.
+/// 14 variant codes, numbered consecutively 1–14. Every HTTP-shaped failure
+/// arrives as [apiCall], classified
+/// by [AimuxException.status] (401 auth, 404 model, 429 rate limit;
+/// no status = transport failure).
 abstract final class AimuxErrorCode {
   static const int ok = 0;
   static const int unknown = 1;
-  static const int provider = 2;
-  static const int http = 3;
-  static const int json = 4;
-  static const int stream = 5;
-  static const int tool = 6;
-  static const int invalidArgument = 7;
-  static const int invalidPrompt = 8;
-  static const int rateLimited = 9;
-  static const int auth = 10;
-  static const int tokenExpired = 11;
-  static const int modelNotFound = 12;
-  static const int unsupported = 13;
-  static const int noSuchModel = 14;
-  static const int unknownProvider = 15;
-  static const int apiCall = 16;
-  static const int timeout = 17;
-  static const int aborted = 18;
-  static const int other = 19;
+  static const int jsonParse = 2;
+  static const int invalidResponseData = 3;
+  static const int tool = 4;
+  static const int invalidArgument = 5;
+  static const int invalidPrompt = 6;
+  static const int tokenExpired = 7;
+  static const int unsupportedFunctionality = 8;
+  static const int noSuchModel = 9;
+  static const int noSuchProvider = 10;
+  static const int apiCall = 11;
+  static const int timeout = 12;
+  static const int aborted = 13;
+  static const int other = 14;
 
   static const Map<int, String> _names = {
     ok: 'OK',
     unknown: 'Unknown',
-    provider: 'Provider',
-    http: 'Http',
-    json: 'Json',
-    stream: 'Stream',
+    jsonParse: 'JsonParse',
+    invalidResponseData: 'InvalidResponseData',
     tool: 'Tool',
     invalidArgument: 'InvalidArgument',
     invalidPrompt: 'InvalidPrompt',
-    rateLimited: 'RateLimited',
-    auth: 'Auth',
     tokenExpired: 'TokenExpired',
-    modelNotFound: 'ModelNotFound',
-    unsupported: 'Unsupported',
+    unsupportedFunctionality: 'UnsupportedFunctionality',
     noSuchModel: 'NoSuchModel',
-    unknownProvider: 'UnknownProvider',
+    noSuchProvider: 'NoSuchProvider',
     apiCall: 'ApiCall',
     timeout: 'Timeout',
     aborted: 'Aborted',
     other: 'Other',
   };
 
-  /// Core `error_type()` name (e.g. `"Auth"`, `"RateLimited"`).
+  /// Core `error_type()` name.
   static String name(int code) => _names[code] ?? 'Code($code)';
 }
 
@@ -225,7 +219,8 @@ int construct2(
 /// Base class for all aimux engine / binding failures.
 ///
 /// Catch this for any structured failure; use subclasses for specific handling
-/// (`on RateLimitedError`, `on AuthenticationError`, …).
+/// (`on APICallError`, `on AimuxTimeoutError`, …). HTTP-shaped failures are all
+/// [APICallError] — branch on [status] (401 auth, 404 model, 429 rate limit).
 ///
 /// Fields mirror C `AimuxError` / core helpers:
 /// - [code]: kind ([AimuxErrorCode])
@@ -294,34 +289,16 @@ class AimuxException implements Exception {
     String? errorValue,
   }) {
     switch (code) {
-      case AimuxErrorCode.provider:
-        return ProviderError(message, status: status, retryMs: retryMs, errorValue: errorValue);
-      case AimuxErrorCode.http:
-        return HttpError(message, status: status, retryMs: retryMs, errorValue: errorValue);
-      case AimuxErrorCode.json:
-        return JsonError(message, status: status, retryMs: retryMs, errorValue: errorValue);
-      case AimuxErrorCode.stream:
-        return StreamError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+      case AimuxErrorCode.jsonParse:
+        return JSONParseError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+      case AimuxErrorCode.invalidResponseData:
+        return InvalidResponseDataError(message, status: status, retryMs: retryMs, errorValue: errorValue);
       case AimuxErrorCode.tool:
         return ToolError(message, status: status, retryMs: retryMs, errorValue: errorValue);
       case AimuxErrorCode.invalidArgument:
         return InvalidArgumentError(message, status: status, retryMs: retryMs, errorValue: errorValue);
       case AimuxErrorCode.invalidPrompt:
         return InvalidPromptError(message, status: status, retryMs: retryMs, errorValue: errorValue);
-      case AimuxErrorCode.rateLimited:
-        return RateLimitedError(
-          message,
-          status: status == -1 ? 429 : status,
-          retryMs: retryMs,
-          errorValue: errorValue,
-        );
-      case AimuxErrorCode.auth:
-        return AuthenticationError(
-          message,
-          status: status == -1 ? 401 : status,
-          retryMs: retryMs,
-          errorValue: errorValue,
-        );
       case AimuxErrorCode.tokenExpired:
         return TokenExpiredError(
           message,
@@ -329,19 +306,12 @@ class AimuxException implements Exception {
           retryMs: retryMs,
           errorValue: errorValue,
         );
-      case AimuxErrorCode.modelNotFound:
-        return ModelNotFoundError(
-          message,
-          status: status == -1 ? 404 : status,
-          retryMs: retryMs,
-          errorValue: errorValue,
-        );
-      case AimuxErrorCode.unsupported:
-        return AimuxUnsupportedError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+      case AimuxErrorCode.unsupportedFunctionality:
+        return UnsupportedFunctionalityError(message, status: status, retryMs: retryMs, errorValue: errorValue);
       case AimuxErrorCode.noSuchModel:
         return NoSuchModelError(message, status: status, retryMs: retryMs, errorValue: errorValue);
-      case AimuxErrorCode.unknownProvider:
-        return UnknownProviderError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+      case AimuxErrorCode.noSuchProvider:
+        return NoSuchProviderError(message, status: status, retryMs: retryMs, errorValue: errorValue);
       case AimuxErrorCode.apiCall:
         return APICallError(message, status: status, retryMs: retryMs, errorValue: errorValue);
       case AimuxErrorCode.timeout:
@@ -370,7 +340,7 @@ class AimuxException implements Exception {
   String toString() => '$runtimeType: $message';
 }
 
-// ── Concrete subclasses (one per AimuxErrorCode 1..19) ──────────────────────
+// ── Concrete subclasses (one per live AimuxErrorCode) ───────────────────────
 
 /// Unclassified / unknown failure (C `AIMUX_E_UNKNOWN`).
 class UnknownError extends AimuxException {
@@ -378,28 +348,17 @@ class UnknownError extends AimuxException {
       : super(code: AimuxErrorCode.unknown);
 }
 
-/// Provider-layer failure.
-class ProviderError extends AimuxException {
-  ProviderError(super.message, {super.status, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.provider);
-}
-
-/// HTTP transport failure.
-class HttpError extends AimuxException {
-  HttpError(super.message, {super.status, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.http);
-}
-
 /// JSON parse / serialize failure.
-class JsonError extends AimuxException {
-  JsonError(super.message, {super.status, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.json);
+class JSONParseError extends AimuxException {
+  JSONParseError(super.message, {super.status, super.retryMs, super.errorValue})
+      : super(code: AimuxErrorCode.jsonParse);
 }
 
-/// Streaming failure.
-class StreamError extends AimuxException {
-  StreamError(super.message, {super.status, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.stream);
+/// Invalid / malformed response data (streaming or decode failure).
+class InvalidResponseDataError extends AimuxException {
+  InvalidResponseDataError(super.message,
+      {super.status, super.retryMs, super.errorValue})
+      : super(code: AimuxErrorCode.invalidResponseData);
 }
 
 /// Tool-related failure.
@@ -420,36 +379,17 @@ class InvalidPromptError extends AimuxException {
       : super(code: AimuxErrorCode.invalidPrompt);
 }
 
-/// Rate limited (HTTP 429). See [AimuxException.retryMs].
-class RateLimitedError extends AimuxException {
-  RateLimitedError(super.message, {super.status = 429, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.rateLimited);
-}
-
-/// Auth / bad API key (HTTP 401). Named after OpenAI/Anthropic
-/// `AuthenticationError`.
-class AuthenticationError extends AimuxException {
-  AuthenticationError(super.message, {super.status = 401, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.auth);
-}
-
 /// Access token expired.
 class TokenExpiredError extends AimuxException {
   TokenExpiredError(super.message, {super.status = 401, super.retryMs, super.errorValue})
       : super(code: AimuxErrorCode.tokenExpired);
 }
 
-/// Model not found (HTTP 404).
-class ModelNotFoundError extends AimuxException {
-  ModelNotFoundError(super.message, {super.status = 404, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.modelNotFound);
-}
-
-/// Unsupported functionality. (Prefixed to avoid shadowing dart:core
-/// `UnsupportedError`.)
-class AimuxUnsupportedError extends AimuxException {
-  AimuxUnsupportedError(super.message, {super.status, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.unsupported);
+/// Unsupported functionality.
+class UnsupportedFunctionalityError extends AimuxException {
+  UnsupportedFunctionalityError(super.message,
+      {super.status, super.retryMs, super.errorValue})
+      : super(code: AimuxErrorCode.unsupportedFunctionality);
 }
 
 /// No such model in registry / catalogue.
@@ -458,13 +398,16 @@ class NoSuchModelError extends AimuxException {
       : super(code: AimuxErrorCode.noSuchModel);
 }
 
-/// Unknown provider name.
-class UnknownProviderError extends AimuxException {
-  UnknownProviderError(super.message, {super.status, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.unknownProvider);
+/// No such provider name.
+class NoSuchProviderError extends AimuxException {
+  NoSuchProviderError(super.message,
+      {super.status, super.retryMs, super.errorValue})
+      : super(code: AimuxErrorCode.noSuchProvider);
 }
 
-/// Provider API call failed (AI SDK `APICallError` analogue).
+/// Provider API call failed (AI SDK `APICallError` analogue) — every
+/// HTTP-shaped failure. [status] is the classification (401 auth, 404 model,
+/// 429 rate limit + [retryMs]); `-1` means no response arrived (transport).
 class APICallError extends AimuxException {
   APICallError(super.message, {super.status, super.retryMs, super.errorValue})
       : super(code: AimuxErrorCode.apiCall);

@@ -5,67 +5,56 @@ import (
 )
 
 // Code is the machine-readable aimux error kind. Values match
-// aimux-ffi AimuxErrorCode (append-only; 2..19 = core AiMuxError variants).
+// aimux-ffi AimuxErrorCode (1..14 = core AiMuxError variants).
+//
+// Every HTTP-shaped failure arrives as CodeAPICall, classified by Status
+// (401 auth, 404 model, 429 rate limit; no status = transport failure).
 type Code int
 
 const (
-	CodeOK              Code = 0
-	CodeUnknown         Code = 1
-	CodeProvider        Code = 2
-	CodeHTTP            Code = 3
-	CodeJSON            Code = 4
-	CodeStream          Code = 5
-	CodeTool            Code = 6
-	CodeInvalidArgument Code = 7
-	CodeInvalidPrompt   Code = 8
-	CodeRateLimited     Code = 9
-	CodeAuth            Code = 10
-	CodeTokenExpired    Code = 11
-	CodeModelNotFound   Code = 12
-	CodeUnsupported     Code = 13
-	CodeNoSuchModel     Code = 14
-	CodeUnknownProvider Code = 15
-	CodeAPICall         Code = 16
-	CodeTimeout         Code = 17
-	CodeAborted         Code = 18
-	CodeOther           Code = 19
+	CodeOK                       Code = 0
+	CodeUnknown                  Code = 1
+	CodeJSONParse                Code = 2
+	CodeInvalidResponseData      Code = 3
+	CodeTool                     Code = 4
+	CodeInvalidArgument          Code = 5
+	CodeInvalidPrompt            Code = 6
+	CodeTokenExpired             Code = 7
+	CodeUnsupportedFunctionality Code = 8
+	CodeNoSuchModel              Code = 9
+	CodeNoSuchProvider           Code = 10
+	CodeAPICall                  Code = 11
+	CodeTimeout                  Code = 12
+	CodeAborted                  Code = 13
+	CodeOther                    Code = 14
 )
 
-// String returns the core error_type name (e.g. "Auth", "RateLimited").
+// String returns the core error_type name (e.g. "ApiCall", "TokenExpired").
+// Unmapped codes render as "Code(n)".
 func (c Code) String() string {
 	switch c {
 	case CodeOK:
 		return "OK"
 	case CodeUnknown:
 		return "Unknown"
-	case CodeProvider:
-		return "Provider"
-	case CodeHTTP:
-		return "Http"
-	case CodeJSON:
-		return "Json"
-	case CodeStream:
-		return "Stream"
+	case CodeJSONParse:
+		return "JsonParse"
+	case CodeInvalidResponseData:
+		return "InvalidResponseData"
 	case CodeTool:
 		return "Tool"
 	case CodeInvalidArgument:
 		return "InvalidArgument"
 	case CodeInvalidPrompt:
 		return "InvalidPrompt"
-	case CodeRateLimited:
-		return "RateLimited"
-	case CodeAuth:
-		return "Auth"
 	case CodeTokenExpired:
 		return "TokenExpired"
-	case CodeModelNotFound:
-		return "ModelNotFound"
-	case CodeUnsupported:
-		return "Unsupported"
+	case CodeUnsupportedFunctionality:
+		return "UnsupportedFunctionality"
 	case CodeNoSuchModel:
 		return "NoSuchModel"
-	case CodeUnknownProvider:
-		return "UnknownProvider"
+	case CodeNoSuchProvider:
+		return "NoSuchProvider"
 	case CodeAPICall:
 		return "ApiCall"
 	case CodeTimeout:
@@ -88,18 +77,20 @@ func (c Code) String() string {
 //	var e *aimux.Error
 //	if errors.As(err, &e) {
 //	    // e.Code, e.Status, e.RetryMs, e.Message
+//	    // e.Code == aimux.CodeAPICall && e.Status == 429 → rate limited
 //	}
 //
 // Fields mirror aimux-ffi AimuxError / core helpers:
-//   - Code: kind (Auth, RateLimited, …)
-//   - Status: HTTP status, or -1
+//   - Code: kind (ApiCall, TokenExpired, …)
+//   - Status: HTTP status, or -1 — the classification for CodeAPICall
+//     (401 auth, 404 model, 429 rate limit)
 //   - RetryMs: rate-limit hint, or -1 (0 = retry now)
 //   - Message: human-readable text
 type Error struct {
 	Code    Code
 	Message string
 	Status  int   // HTTP status or -1
-	RetryMs int64 // RateLimited hint or -1; 0 = retry immediately
+	RetryMs int64 // retry hint or -1; 0 = retry immediately
 	// ErrorValue is the lossless machine-readable source error:
 	// externally-tagged aimux-core AiMuxError JSON; empty for failures
 	// synthesized at the FFI boundary.
@@ -122,23 +113,13 @@ func newError(code Code, message string) *Error {
 	return &Error{Code: code, Message: message, Status: -1, RetryMs: -1}
 }
 
-// defaultStatus applies the well-known HTTP status defaults that
-// Kotlin/Flutter/Node use when the C ABI reports status == -1 (no concrete
-// HTTP status): RateLimited→429, Auth/TokenExpired→401, ModelNotFound→404.
-// Other kinds keep the raw status (including -1). Mirrors
-// bindings/kotlin Errors.kt createByCode and bindings/flutter errors.dart.
+// defaultStatus fills the status TokenExpired carries by contract (401) when
+// the C ABI reports -1. CodeAPICall statuses are observed, never invented: a
+// missing status there means no response arrived (transport failure), so it
+// stays -1.
 func defaultStatus(code Code, status int) int {
-	if status != -1 {
-		return status
-	}
-	switch code {
-	case CodeRateLimited:
-		return 429
-	case CodeAuth, CodeTokenExpired:
+	if status == -1 && code == CodeTokenExpired {
 		return 401
-	case CodeModelNotFound:
-		return 404
-	default:
-		return status
 	}
+	return status
 }

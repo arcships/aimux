@@ -45,14 +45,14 @@ class ModelTest {
     }
 
     @Test
-    fun `generateText maps a JSON parse failure to JsonError`() {
+    fun `generateText maps a JSON parse failure to JSONParseError`() {
         Model.openai("sk-test-fake-key", "gpt-4o-mini").use { model ->
-            // Prompt JSON parse failures are AIMUX_E_JSON (code 4), not Other.
+            // Prompt JSON parse failures are AIMUX_E_JSON_PARSE (code 2), not Other.
             // Also exercises the real free-path: the FFI-allocated message is
             // read and freed by throwFromC.
             assertThatThrownBy {
                 model.generateText("{invalid json}")
-            }.isInstanceOf(JsonError::class.java)
+            }.isInstanceOf(JSONParseError::class.java)
         }
     }
 
@@ -84,9 +84,9 @@ class ModelTest {
         // AiMuxError JSON. throwFromC frees both C strings after mapping.
         assertThatThrownBy {
             Model.provider("definitely-not-a-provider", apiKey = "k", modelId = "m")
-        }.isInstanceOf(UnknownProviderError::class.java)
+        }.isInstanceOf(NoSuchProviderError::class.java)
             .satisfies({ ex ->
-                assertThat((ex as AimuxException).errorValue).contains("UnknownProvider")
+                assertThat((ex as AimuxException).errorValue).contains("NoSuchProvider")
             })
     }
 

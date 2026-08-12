@@ -9,10 +9,9 @@ import {
   mockReplay,
   streamText,
   AimuxError,
-  HttpError,
+  APICallError,
   InvalidArgumentError,
-  RateLimitedError,
-  UnknownProviderError,
+  NoSuchProviderError,
 } from '../src/index.ts'
 
 test('sync native failure throws a typed AimuxError subclass', (t) => {
@@ -33,8 +32,8 @@ test('async native failure throws a typed AimuxError subclass', async (t) => {
     provider('definitely-not-a-provider', null, 'some-model'),
   )) as AimuxError
   t.true(err instanceof AimuxError)
-  t.true(err instanceof UnknownProviderError)
-  t.is(err.code, 'UnknownProvider')
+  t.true(err instanceof NoSuchProviderError)
+  t.is(err.code, 'NoSuchProvider')
 })
 
 test('errorValue carries the raw serde JSON of the core AiMuxError', async (t) => {
@@ -42,9 +41,9 @@ test('errorValue carries the raw serde JSON of the core AiMuxError', async (t) =
     provider('definitely-not-a-provider', null, 'some-model'),
   )) as AimuxError
   t.is(typeof err.errorValue, 'string')
-  t.true(err.errorValue!.includes('UnknownProvider'))
+  t.true(err.errorValue!.includes('NoSuchProvider'))
   const parsed = JSON.parse(err.errorValue!)
-  t.deepEqual(Object.keys(parsed), ['UnknownProvider'])
+  t.deepEqual(Object.keys(parsed), ['NoSuchProvider'])
 })
 
 test('stream error path yields a typed AimuxError', async (t) => {
@@ -69,13 +68,13 @@ test('instanceof narrows to the specific subclass only', async (t) => {
   const err = (await t.throwsAsync(() =>
     provider('definitely-not-a-provider', null, 'some-model'),
   )) as AimuxError
-  t.true(err instanceof UnknownProviderError)
-  t.false(err instanceof HttpError)
+  t.true(err instanceof NoSuchProviderError)
+  t.false(err instanceof APICallError)
   t.false(err instanceof InvalidArgumentError)
 
-  // Direct construction applies per-code status defaults.
-  const rl = new RateLimitedError('slow down')
+  // Direct construction carries the given status through.
+  const rl = new APICallError('slow down', 429, 1500)
   t.is(rl.status, 429)
-  t.is(rl.code, 'RateLimited')
-  t.is(rl.name, 'RateLimitedError')
+  t.is(rl.code, 'ApiCall')
+  t.is(rl.name, 'APICallError')
 })

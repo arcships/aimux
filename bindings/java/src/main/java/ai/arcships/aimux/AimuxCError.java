@@ -32,7 +32,7 @@ public class AimuxCError extends Structure {
 
     /**
      * Callee-allocated NUL-terminated UTF-8 externally-tagged AiMuxError JSON
-     * (e.g. {@code {"RateLimited":{"retry_after_ms":1500,"message":"..."}}}),
+     * (e.g. {@code {"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}}),
      * or null for FFI-synthesized failures (bad args, invalid handles).
      */
     public Pointer error_value;

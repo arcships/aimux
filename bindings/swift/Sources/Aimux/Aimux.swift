@@ -52,35 +52,35 @@ func ffiStringCall(
 
 /// Structured aimux failure type (Swift `Error`).
 ///
-/// Maps 1:1 from aimux-ffi `AimuxErrorCode` / core `AiMuxError` variants, plus
-/// binding-local cases (`invalidHandle`, `serializationError`).
+/// Maps 1:1 from the 13 core `AiMuxError` variants, plus binding-local cases
+/// (`invalidHandle`, `serializationError`). Every HTTP-shaped failure is
+/// `.apiCall` (`AIMUX_E_API_CALL`).
 ///
 /// ```swift
 /// do {
 ///     let result = try model.generateText(prompt: "\"hi\"")
 /// } catch let e as AimuxError {
 ///     print(e.message, e.status, e.retryMs)
-///     if case .rateLimited = e { /* back off */ }
+///     // Classification is the status field: 429 → rate limited (e.retryMs),
+///     // 401 → auth, 404 → model not found.
+///     if case .apiCall = e, e.status == 429 { /* back off */ }
 /// }
 /// ```
 public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatable, Sendable {
     /// Local: model/provider handle is 0 or already released.
     case invalidHandle
 
-    case provider(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case http(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case json(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case stream(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case jsonParse(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case invalidResponseData(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case tool(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case invalidArgument(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case invalidPrompt(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case rateLimited(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case authentication(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case tokenExpired(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case modelNotFound(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case unsupported(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case unsupportedFunctionality(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case noSuchModel(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case unknownProvider(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case noSuchProvider(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    /// Every HTTP-shaped failure: read `status` to classify (401 auth,
+    /// 404 model, 429 rate limit; `nil` status = transport failure).
     case apiCall(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case timeout(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case aborted(message: String, status: Int, retryMs: Int64, errorValue: String?)
@@ -98,20 +98,15 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         switch self {
         case .invalidHandle, .serializationError:
             return nil
-        case .provider(let m, let s, let r, let v),
-             .http(let m, let s, let r, let v),
-             .json(let m, let s, let r, let v),
-             .stream(let m, let s, let r, let v),
+        case .jsonParse(let m, let s, let r, let v),
+             .invalidResponseData(let m, let s, let r, let v),
              .tool(let m, let s, let r, let v),
              .invalidArgument(let m, let s, let r, let v),
              .invalidPrompt(let m, let s, let r, let v),
-             .rateLimited(let m, let s, let r, let v),
-             .authentication(let m, let s, let r, let v),
              .tokenExpired(let m, let s, let r, let v),
-             .modelNotFound(let m, let s, let r, let v),
-             .unsupported(let m, let s, let r, let v),
+             .unsupportedFunctionality(let m, let s, let r, let v),
              .noSuchModel(let m, let s, let r, let v),
-             .unknownProvider(let m, let s, let r, let v),
+             .noSuchProvider(let m, let s, let r, let v),
              .apiCall(let m, let s, let r, let v),
              .timeout(let m, let s, let r, let v),
              .aborted(let m, let s, let r, let v),
@@ -143,7 +138,7 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
 
     /// Raw lossless machine-readable form of the source error: the
     /// externally-tagged JSON of aimux-core's `AiMuxError`, e.g.
-    /// `{"RateLimited":{"retry_after_ms":1500,"message":"..."}}`.
+    /// `{"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}`.
     /// `nil` for failures synthesized at the FFI boundary (bad argument,
     /// invalid handle) and for the binding-local cases.
     public var errorValue: String? {
@@ -185,35 +180,25 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         let message = rawMsg.isEmpty ? "aimux: operation failed" : rawMsg
 
         switch e.code {
-        case AIMUX_E_PROVIDER:
-            return .provider(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_HTTP:
-            return .http(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_JSON:
-            return .json(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_STREAM:
-            return .stream(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_JSON_PARSE:
+            return .jsonParse(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_INVALID_RESPONSE_DATA:
+            return .invalidResponseData(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_TOOL:
             return .tool(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_INVALID_ARGUMENT:
             return .invalidArgument(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_INVALID_PROMPT:
             return .invalidPrompt(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_RATE_LIMITED:
-            // Status defaults mirror Kotlin/Flutter/Node when C reports -1.
-            return .rateLimited(message: message, status: status == -1 ? 429 : status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_AUTH:
-            return .authentication(message: message, status: status == -1 ? 401 : status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_TOKEN_EXPIRED:
+            // TokenExpired is definitionally an observed 401 (RFC-0018).
             return .tokenExpired(message: message, status: status == -1 ? 401 : status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_MODEL_NOT_FOUND:
-            return .modelNotFound(message: message, status: status == -1 ? 404 : status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_UNSUPPORTED:
-            return .unsupported(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_UNSUPPORTED_FUNCTIONALITY:
+            return .unsupportedFunctionality(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_NO_SUCH_MODEL:
             return .noSuchModel(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
-        case AIMUX_E_UNKNOWN_PROVIDER:
-            return .unknownProvider(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+        case AIMUX_E_NO_SUCH_PROVIDER:
+            return .noSuchProvider(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_API_CALL:
             return .apiCall(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
         case AIMUX_E_TIMEOUT:

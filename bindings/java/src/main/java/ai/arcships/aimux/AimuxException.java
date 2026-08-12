@@ -10,16 +10,15 @@ package ai.arcships.aimux;
  * <pre>{@code
  * try {
  *     model.generateText("\"hi\"");
- * } catch (RateLimitedError e) {
- *     // e.getRetryMs(), e.getStatusCode() == 429
- * } catch (AuthenticationError e) {
- *     // e.getStatusCode() == 401
+ * } catch (APICallError e) {
+ *     // Classification is the status field (AI SDK APICallError.statusCode):
+ *     // 429 → rate limited (e.getRetryMs()), 401 → auth, 404 → model
  * } catch (AimuxException e) {
  *     // any engine / binding failure
  * }
  * }</pre>
  *
- * <p>Every instance carries {@link #getCode()} (C {@code AimuxErrorCode} 0–19),
+ * <p>Every instance carries {@link #getCode()} (C {@code AimuxErrorCode} 0–14),
  * {@link #getStatusCode()} (HTTP or {@code -1}), and {@link #getRetryMs()} (hint
  * or {@code -1}; {@code 0} = retry now). Message text comes from the C layer.
  *
@@ -30,35 +29,31 @@ public class AimuxException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
-    // ── AimuxErrorCode (aimux-error.h) — append-only, never renumber ─────────
+    // ── AimuxErrorCode (aimux-error.h) ──────────────────────────────────────
+    // 14 variant codes (0–14); every HTTP-shaped failure arrives as AIMUX_E_API_CALL.
 
     public static final int AIMUX_OK = 0;
     public static final int AIMUX_E_UNKNOWN = 1;
-    public static final int AIMUX_E_PROVIDER = 2;
-    public static final int AIMUX_E_HTTP = 3;
-    public static final int AIMUX_E_JSON = 4;
-    public static final int AIMUX_E_STREAM = 5;
-    public static final int AIMUX_E_TOOL = 6;
-    public static final int AIMUX_E_INVALID_ARGUMENT = 7;
-    public static final int AIMUX_E_INVALID_PROMPT = 8;
-    public static final int AIMUX_E_RATE_LIMITED = 9;
-    public static final int AIMUX_E_AUTH = 10;
-    public static final int AIMUX_E_TOKEN_EXPIRED = 11;
-    public static final int AIMUX_E_MODEL_NOT_FOUND = 12;
-    public static final int AIMUX_E_UNSUPPORTED = 13;
-    public static final int AIMUX_E_NO_SUCH_MODEL = 14;
-    public static final int AIMUX_E_UNKNOWN_PROVIDER = 15;
-    public static final int AIMUX_E_API_CALL = 16;
-    public static final int AIMUX_E_TIMEOUT = 17;
-    public static final int AIMUX_E_ABORTED = 18;
-    public static final int AIMUX_E_OTHER = 19;
+    public static final int AIMUX_E_JSON_PARSE = 2;
+    public static final int AIMUX_E_INVALID_RESPONSE_DATA = 3;
+    public static final int AIMUX_E_TOOL = 4;
+    public static final int AIMUX_E_INVALID_ARGUMENT = 5;
+    public static final int AIMUX_E_INVALID_PROMPT = 6;
+    public static final int AIMUX_E_TOKEN_EXPIRED = 7;
+    public static final int AIMUX_E_UNSUPPORTED_FUNCTIONALITY = 8;
+    public static final int AIMUX_E_NO_SUCH_MODEL = 9;
+    public static final int AIMUX_E_NO_SUCH_PROVIDER = 10;
+    public static final int AIMUX_E_API_CALL = 11;
+    public static final int AIMUX_E_TIMEOUT = 12;
+    public static final int AIMUX_E_ABORTED = 13;
+    public static final int AIMUX_E_OTHER = 14;
 
     private final int code;
     private final int status;
     private final long retryMs;
 
     // Set once by the fromC construction path; null for local / synthesized
-    // failures. Not a constructor param so the 18 subclass constructors keep
+    // failures. Not a constructor param so the 13 subclass constructors keep
     // their public signatures.
     private String errorValue;
 
@@ -90,7 +85,7 @@ public class AimuxException extends RuntimeException {
 
     // ── Accessors ───────────────────────────────────────────────────────────
 
-    /** C {@code AimuxErrorCode} value (0–19). */
+    /** C {@code AimuxErrorCode} value (0–14). */
     public int getCode() {
         return code;
     }
@@ -107,7 +102,7 @@ public class AimuxException extends RuntimeException {
 
     /**
      * Raw externally-tagged AiMuxError JSON from the engine (e.g.
-     * {@code {"RateLimited":{"retry_after_ms":1500,"message":"..."}}}), or
+     * {@code {"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}}), or
      * {@code null} for FFI-synthesized failures (bad args, invalid handles)
      * and local (non-FFI) failures. The binding does no parsing.
      */
@@ -179,34 +174,24 @@ public class AimuxException extends RuntimeException {
 
     private static AimuxException createByCode(int code, String message, int status, long retryMs) {
         switch (code) {
-            case AIMUX_E_PROVIDER:
-                return new ProviderError(message, status, retryMs);
-            case AIMUX_E_HTTP:
-                return new HttpError(message, status, retryMs);
-            case AIMUX_E_JSON:
-                return new JsonError(message, status, retryMs);
-            case AIMUX_E_STREAM:
-                return new StreamError(message, status, retryMs);
+            case AIMUX_E_JSON_PARSE:
+                return new JSONParseError(message, status, retryMs);
+            case AIMUX_E_INVALID_RESPONSE_DATA:
+                return new InvalidResponseDataError(message, status, retryMs);
             case AIMUX_E_TOOL:
                 return new ToolError(message, status, retryMs);
             case AIMUX_E_INVALID_ARGUMENT:
                 return new InvalidArgumentError(message, status, retryMs);
             case AIMUX_E_INVALID_PROMPT:
                 return new InvalidPromptError(message, status, retryMs);
-            case AIMUX_E_RATE_LIMITED:
-                return new RateLimitedError(message, status, retryMs);
-            case AIMUX_E_AUTH:
-                return new AuthenticationError(message, status, retryMs);
             case AIMUX_E_TOKEN_EXPIRED:
                 return new TokenExpiredError(message, status, retryMs);
-            case AIMUX_E_MODEL_NOT_FOUND:
-                return new ModelNotFoundError(message, status, retryMs);
-            case AIMUX_E_UNSUPPORTED:
-                return new UnsupportedError(message, status, retryMs);
+            case AIMUX_E_UNSUPPORTED_FUNCTIONALITY:
+                return new UnsupportedFunctionalityError(message, status, retryMs);
             case AIMUX_E_NO_SUCH_MODEL:
                 return new NoSuchModelError(message, status, retryMs);
-            case AIMUX_E_UNKNOWN_PROVIDER:
-                return new UnknownProviderError(message, status, retryMs);
+            case AIMUX_E_NO_SUCH_PROVIDER:
+                return new NoSuchProviderError(message, status, retryMs);
             case AIMUX_E_API_CALL:
                 return new APICallError(message, status, retryMs);
             case AIMUX_E_TIMEOUT:
@@ -222,42 +207,55 @@ public class AimuxException extends RuntimeException {
         }
     }
 
-    /** Core {@code error_type()} names, indexed by the dense code values 0–19. */
-    private static final String[] NAMES = {
-        "OK", "Unknown", "Provider", "Http", "Json", "Stream", "Tool",
-        "InvalidArgument", "InvalidPrompt", "RateLimited", "Auth", "TokenExpired",
-        "ModelNotFound", "Unsupported", "NoSuchModel", "UnknownProvider",
-        "ApiCall", "Timeout", "Aborted", "Other",
-    };
-
     /** Core {@code error_type()} name for a code (diagnostics / empty messages). */
     public static String codeName(int code) {
-        return (code >= 0 && code < NAMES.length) ? NAMES[code] : "Code(" + code + ")";
+        switch (code) {
+            case AIMUX_OK:
+                return "OK";
+            case AIMUX_E_UNKNOWN:
+                return "Unknown";
+            case AIMUX_E_JSON_PARSE:
+                return "JsonParse";
+            case AIMUX_E_INVALID_RESPONSE_DATA:
+                return "InvalidResponseData";
+            case AIMUX_E_TOOL:
+                return "Tool";
+            case AIMUX_E_INVALID_ARGUMENT:
+                return "InvalidArgument";
+            case AIMUX_E_INVALID_PROMPT:
+                return "InvalidPrompt";
+            case AIMUX_E_TOKEN_EXPIRED:
+                return "TokenExpired";
+            case AIMUX_E_UNSUPPORTED_FUNCTIONALITY:
+                return "UnsupportedFunctionality";
+            case AIMUX_E_NO_SUCH_MODEL:
+                return "NoSuchModel";
+            case AIMUX_E_NO_SUCH_PROVIDER:
+                return "NoSuchProvider";
+            case AIMUX_E_API_CALL:
+                return "ApiCall";
+            case AIMUX_E_TIMEOUT:
+                return "Timeout";
+            case AIMUX_E_ABORTED:
+                return "Aborted";
+            case AIMUX_E_OTHER:
+                return "Other";
+            default:
+                return "Code(" + code + ")";
+        }
     }
 
     // ── Subclasses (mirror Node error.ts / Python hierarchy) ────────────────
 
-    public static class ProviderError extends AimuxException {
-        public ProviderError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_PROVIDER, status, retryMs);
+    public static class JSONParseError extends AimuxException {
+        public JSONParseError(String message, int status, long retryMs) {
+            super(message, AIMUX_E_JSON_PARSE, status, retryMs);
         }
     }
 
-    public static class HttpError extends AimuxException {
-        public HttpError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_HTTP, status, retryMs);
-        }
-    }
-
-    public static class JsonError extends AimuxException {
-        public JsonError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_JSON, status, retryMs);
-        }
-    }
-
-    public static class StreamError extends AimuxException {
-        public StreamError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_STREAM, status, retryMs);
+    public static class InvalidResponseDataError extends AimuxException {
+        public InvalidResponseDataError(String message, int status, long retryMs) {
+            super(message, AIMUX_E_INVALID_RESPONSE_DATA, status, retryMs);
         }
     }
 
@@ -279,34 +277,15 @@ public class AimuxException extends RuntimeException {
         }
     }
 
-    public static class RateLimitedError extends AimuxException {
-        public RateLimitedError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_RATE_LIMITED, status == -1 ? 429 : status, retryMs);
-        }
-    }
-
-    /** Auth / bad API key (HTTP 401). Named after OpenAI {@code AuthenticationError}. */
-    public static class AuthenticationError extends AimuxException {
-        public AuthenticationError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_AUTH, status == -1 ? 401 : status, retryMs);
-        }
-    }
-
     public static class TokenExpiredError extends AimuxException {
         public TokenExpiredError(String message, int status, long retryMs) {
             super(message, AIMUX_E_TOKEN_EXPIRED, status == -1 ? 401 : status, retryMs);
         }
     }
 
-    public static class ModelNotFoundError extends AimuxException {
-        public ModelNotFoundError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_MODEL_NOT_FOUND, status == -1 ? 404 : status, retryMs);
-        }
-    }
-
-    public static class UnsupportedError extends AimuxException {
-        public UnsupportedError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_UNSUPPORTED, status, retryMs);
+    public static class UnsupportedFunctionalityError extends AimuxException {
+        public UnsupportedFunctionalityError(String message, int status, long retryMs) {
+            super(message, AIMUX_E_UNSUPPORTED_FUNCTIONALITY, status, retryMs);
         }
     }
 
@@ -316,13 +295,17 @@ public class AimuxException extends RuntimeException {
         }
     }
 
-    public static class UnknownProviderError extends AimuxException {
-        public UnknownProviderError(String message, int status, long retryMs) {
-            super(message, AIMUX_E_UNKNOWN_PROVIDER, status, retryMs);
+    public static class NoSuchProviderError extends AimuxException {
+        public NoSuchProviderError(String message, int status, long retryMs) {
+            super(message, AIMUX_E_NO_SUCH_PROVIDER, status, retryMs);
         }
     }
 
-    /** Provider HTTP / API call failure (AI SDK {@code APICallError} analogue). */
+    /**
+     * Every HTTP-shaped failure (AI SDK {@code APICallError} analogue): provider
+     * errors, transport failures, 401 auth, 404 model, 429 rate limit. Classify
+     * with {@link #getStatusCode()}; a transport failure reports {@code -1}.
+     */
     public static class APICallError extends AimuxException {
         public APICallError(String message, int status, long retryMs) {
             super(message, AIMUX_E_API_CALL, status, retryMs);
