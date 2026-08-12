@@ -4,6 +4,12 @@
 
 ## 当前计划
 
+### Structured error business semantics（ready）
+
+执行计划：[structured-error-business-semantics.md](structured-error-business-semantics.md)
+
+范围：完成 structured-error branch 的业务分类、共享 HTTP 解析与重试、provider 2xx in-band 错误审计、轮询 timeout/abort；不做绑定兼容扩展。
+
 ### RFC-0017 阶段 2：退役 RequestBodyOverride + 完全用户定义（in progress）
 
 设计：[RFC-0017 §2.3/§2.5/§3](../../rfc/0017-provider-config-dx.md)

@@ -57,7 +57,8 @@ try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
 ```
 
 `deepseek(apiKey, modelId)` remains as a shortcut (registry-backed).
-Unknown names throw an error listing the available providers.
+Unknown names throw `NoSuchProviderError` naming the requested provider
+(valid names come from the generated `ProviderName` constants).
 
 ## Errors
 
@@ -67,15 +68,14 @@ Engine and binding failures throw an **`AimuxException` subclass hierarchy**
 ```text
 RuntimeException
  └── AimuxException
-      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── JSONParseError / InvalidResponseDataError
+      ├── ToolError
       ├── InvalidArgumentError / InvalidPromptError
-      ├── RateLimitedError          // status 429, retryMs
-      ├── AuthenticationError       // status 401
-      ├── TokenExpiredError
-      ├── ModelNotFoundError / NoSuchModelError
-      ├── UnsupportedError / UnknownProviderError
-      ├── APICallError / TimeoutError
-      ├── RequestAbortedError
+      ├── TokenExpiredError          // 401, refresh and retry
+      ├── UnsupportedFunctionalityError
+      ├── NoSuchModelError / NoSuchProviderError
+      ├── APICallError               // every HTTP-shaped failure; classify on getStatusCode()
+      ├── TimeoutError / RequestAbortedError
       └── OtherError
 ```
 
@@ -84,28 +84,29 @@ Every instance has:
 | Field | Meaning |
 |-------|---------|
 | `getMessage()` | human-readable text from C |
-| `getCode()` | `AimuxErrorCode` value 0–19 (matches `aimux-error.h`) |
-| `getStatus()` | HTTP status, or `-1` |
+| `getCode()` | `AimuxErrorCode` value 0–14 (matches `aimux-error.h`) |
+| `getStatusCode()` | HTTP status, or `-1` |
 | `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
 
 Transport: fallible C calls take a trailing `AimuxError *err` and return
 `0` / `NULL` on failure. The Java binding maps that into the hierarchy via
 `AimuxException.fromC(AimuxCError)` — **not** JSON error envelopes on the
 main path. Subclasses are nested under `AimuxException` (e.g.
-`AimuxException.RateLimitedError`).
+`AimuxException.APICallError`).
 
 ```java
 import ai.arcships.aimux.AimuxException;
-import ai.arcships.aimux.AimuxException.AuthenticationError;
-import ai.arcships.aimux.AimuxException.RateLimitedError;
+import ai.arcships.aimux.AimuxException.APICallError;
+import ai.arcships.aimux.AimuxException.TokenExpiredError;
 import ai.arcships.aimux.Model;
 
 try (Model model = Model.openai("sk-...", "gpt-4o")) {
     model.generateText("\"hi\"");
-} catch (RateLimitedError e) {
-    // e.getRetryMs(), e.getStatus() == 429
-} catch (AuthenticationError e) {
-    // e.getStatus() == 401
+} catch (TokenExpiredError e) {
+    // 401 — refresh the token and retry
+} catch (APICallError e) {
+    // Classify on status: 429 → rate limited (e.getRetryMs()),
+    // 401 → auth, 404 → model; -1 → transport failure
 } catch (AimuxException e) {
     // any engine / binding failure
 }

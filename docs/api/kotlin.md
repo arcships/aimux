@@ -47,27 +47,29 @@ Model.provider(name = "groq", apiKey = "sk-...", modelId = "llama-3.3-70b").use 
 }
 ```
 
-Unknown names throw an error listing the available providers.
+Unknown names throw `NoSuchProviderError` naming the requested provider
+(valid names come from the generated `ProviderName` constants).
 
 ## Errors
 
-Engine and binding failures throw an **`AimuxException` open hierarchy**
-(Java-interop friendly; not sealed-only). Transport is Rust → C `AimuxError`
-→ `AimuxException.fromC` — **not** a JSON error envelope on the primary path.
+Engine and binding failures throw an **`AimuxException` sealed hierarchy**
+(exhaustive `when` in Kotlin; Java callers can still `catch (AimuxException e)`).
+Transport is Rust → C `AimuxError` → `AimuxException.fromC` — **not** a JSON
+error envelope on the primary path.
 
 ```text
 RuntimeException
- └── AimuxException          // code, status, retryMs
-      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+ └── AimuxException          // code, status, retryMs, errorValue
+      ├── JSONParseError / InvalidResponseDataError
+      ├── ToolError
       ├── InvalidArgumentError / InvalidPromptError
-      ├── RateLimitedError          // status 429, retryMs
-      ├── AuthenticationError       // status 401
-      ├── TokenExpiredError
-      ├── ModelNotFoundError / NoSuchModelError
-      ├── UnsupportedError / UnknownProviderError
-      ├── APICallError / TimeoutError
-      ├── RequestAbortedError
-      └── OtherError
+      ├── TokenExpiredError          // 401, refresh and retry
+      ├── UnsupportedFunctionalityError
+      ├── NoSuchModelError / NoSuchProviderError
+      ├── APICallError               // every HTTP-shaped failure; classify on status
+      ├── TimeoutError / RequestAbortedError
+      ├── OtherError
+      └── UnknownAimuxError          // unrecognized / future code, raw code preserved
 ```
 
 ```kotlin
@@ -75,10 +77,11 @@ import ai.arcships.aimux.*
 
 try {
     model.generateText("\"hi\"")
-} catch (e: RateLimitedError) {
-    // e.retryMs, e.status
-} catch (e: AuthenticationError) {
-    // e.status often 401
+} catch (e: TokenExpiredError) {
+    // 401 — refresh the token and retry
+} catch (e: APICallError) {
+    // Classify on status: 429 → rate limited (e.retryMs),
+    // 401 → auth, 404 → model not found, -1 → transport failure
 } catch (e: AimuxException) {
     // e.code (AIMUX_E_*), e.status, e.retryMs
 }
@@ -86,7 +89,7 @@ try {
 
 | Field | Meaning |
 |-------|---------|
-| `code` | `AIMUX_E_*` matching C `AimuxErrorCode` (2..19 = core variants) |
+| `code` | `AIMUX_E_*` matching C `AimuxErrorCode` (1..14; core variants are 2..14) |
 | `status` | HTTP status when known; otherwise `-1` |
 | `retryMs` | Rate-limit hint in ms; `-1` if none; `0` = retry immediately |
 

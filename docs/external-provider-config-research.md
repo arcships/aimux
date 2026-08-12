@@ -31,7 +31,7 @@
 
 [provider.rs:119-168](../aimux-providers/src/provider.rs#L119-L168) 是唯一名字驱动入口:
 
-1. `registry().iter().find(|e| e.name == name)`——找不到即 `UnknownProvider`([provider.rs:126-131](../aimux-providers/src/provider.rs#L126-L131))。
+1. `registry().iter().find(|e| e.name == name)`——找不到即 `NoSuchProvider`([provider.rs:126-131](../aimux-providers/src/provider.rs#L126-L131))。
 2. api_key 为 `None` 时读条目的 `env_var`([provider.rs:133-136](../aimux-providers/src/provider.rs#L133-L136))。
 3. 用条目数据初始化 `OpenAIConfig`(base_url / provider / profile),再叠加 `ProviderOptions` 覆盖([provider.rs:138-165](../aimux-providers/src/provider.rs#L138-L165))。
 4. `OpenAIProvider::new(config).language_model(model_id)` → `Box<dyn LanguageModel>`([provider.rs:167](../aimux-providers/src/provider.rs#L167))。

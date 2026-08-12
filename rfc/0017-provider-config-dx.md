@@ -355,7 +355,7 @@ await generateText(model, prompt, {
 3. **统一入口**(各语言一致):
    - `provider(name: ProviderName, api_key: Option<String>, model_id, config?)` — 名字 → 查 JSON → 构造;`api_key=None` 时自动读 JSON 条目的 env_var(替代旧 `from_env()`)
    - config 可覆盖 JSON 条目字段(base_url/headers/maxRetries/bodyOverrides 等,替代旧 `with_base_url`)
-   - 未知名字 → 明确错误:"unknown provider 'xxx',可用列表见 ProviderName"
+   - 未知名字 → 明确错误:`NoSuchProvider { provider_id }`,显示 "No such provider: xxx";可用名字通过生成的 `ProviderName` 发现,错误载荷不携带 250 个名字
 4. **`createProvider(config)`**(各语言):用户用基础类(`OpenAIConfig`/`OpenAIProvider`)手工构造自己的薄封装——**与内置表无关**的纯用户侧 API;用于自定义 relay / 内置表外厂商
 5. 边界特例(§2.6):认证流程特殊者(GigaChat/copilot)标记 unsupported 或后续 auth 钩子;伪兼容(coze/zai_coding_plan)修正分类
 6. 校验:启动时对 registry JSON 做 schema 校验(必填字段/base_url 合法性)
@@ -377,7 +377,7 @@ await generateText(model, prompt, {
 - [x] `ProviderName` 类型生成正确且被测试锁定(250 名字与 JSON 一致,`provider_name_roundtrip` 测试)
 - [x] 用户覆盖内置条目生效(`ProviderOptions.base_url` 等;Rust `base_url_override_is_applied` + Node/Python/Go/C 的 config 参数)
 - [x] `createProvider` 等价能力:基础类 `OpenAIConfig`/`OpenAIProvider` 保留 + 各绑定 config 参数覆盖(Rust/Node/Python/Go/C 均实现)
-- [x] 未知名字报错含可用列表(Node/Python 冒烟验证)
+- [x] 未知名字报错指明所请求的 provider(`NoSuchProvider { provider_id }`);可用列表由生成的 `ProviderName` 提供,不进错误载荷(Node/Python 冒烟验证)
 - [x] 7 处 registry base_url 错误通过数据修正落地(stage2-004 完成)
 
 **实施状态(2026-08-02)**:✅ 完成——registry JSON 唯一数据源;250 壳类型退役(发布一天零成本);`provider(name)` 入口 + `ProviderName` 派生类型(Rust enum/TS union);C ABI `aimux_provider_new`/`aimux_provider_from_env`;8 语言绑定统一入口;全量测试 2769 绿;Node/Python E2E 冒烟通过。

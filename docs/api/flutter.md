@@ -64,7 +64,8 @@ final model2 = Model.provider('groq', 'llama-3.3-70b', apiKey: 'sk-...');
 model2.close();
 ```
 
-Unknown names throw an error listing the available providers.
+Unknown names throw `NoSuchProviderError` (payload: the provider id); valid
+names come from the generated `ProviderName` constants.
 
 ## Errors
 
@@ -75,14 +76,14 @@ Engine and binding failures throw an **`AimuxException` subclass hierarchy**
 Exception (implements)
  └── AimuxException
       ├── UnknownError
-      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── JSONParseError / InvalidResponseDataError
+      ├── ToolError
       ├── InvalidArgumentError / InvalidPromptError
-      ├── RateLimitedError          // status 429, retryMs
-      ├── AuthenticationError       // status 401
-      ├── TokenExpiredError
-      ├── ModelNotFoundError / NoSuchModelError
-      ├── UnsupportedError / UnknownProviderError
-      ├── APICallError / TimeoutError
+      ├── TokenExpiredError         // status 401
+      ├── UnsupportedFunctionalityError
+      ├── NoSuchModelError / NoSuchProviderError
+      ├── APICallError              // every HTTP-shaped failure; branch on status
+      ├── AimuxTimeoutError
       ├── RequestAbortedError
       └── OtherError
 ```
@@ -99,10 +100,12 @@ import 'package:aimux/aimux.dart'; // exports errors.dart
 
 try {
   final result = model.generateText('hi');
-} on RateLimitedError catch (e) {
-  // e.retryMs, e.status == 429
-} on AuthenticationError catch (e) {
-  // e.status == 401
+} on APICallError catch (e) {
+  if (e.status == 429) {
+    // rate limited; e.retryMs is the hint
+  } else if (e.status == 401) {
+    // auth failure
+  }
 } on AimuxException catch (e) {
   // any engine / binding failure
 }

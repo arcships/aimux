@@ -34,11 +34,15 @@ result, err := model.GenerateText(`"hi"`, "")
 if err != nil {
     if e, ok := errors.AsType[*aimux.Error](err); ok {
         // e.Code, e.Message, e.Status, e.RetryMs
-        switch e.Code {
-        case aimux.CodeRateLimited:
-            // e.RetryMs may be a delay hint
-        case aimux.CodeAuth:
-            // e.Status often 401
+        if e.Code == aimux.CodeAPICall { // every HTTP-shaped failure
+            switch e.Status {
+            case 429:
+                // rate limited; e.RetryMs may be a delay hint
+            case 401:
+                // auth failure
+            case 404:
+                // model not found
+            }
         }
     }
     return err
@@ -47,7 +51,7 @@ if err != nil {
 
 | Field | Meaning |
 |-------|---------|
-| `Code` | kind (`CodeAuth`, `CodeRateLimited`, …; matches C `AimuxErrorCode`) |
+| `Code` | kind (`CodeAPICall`, `CodeTokenExpired`, …; matches C `AimuxErrorCode`) |
 | `Message` | human-readable text |
 | `Status` | HTTP status, or `-1` |
 | `RetryMs` | rate-limit hint, or `-1` (`0` = retry now) |
