@@ -140,12 +140,17 @@ type GenerateResult struct {
 // GenerateTextResult is the typed result of a GenerateText call.
 // Mirrors Kotlin GenerateTextResult (Types.kt:878-886).
 type GenerateTextResult struct {
-	Text         string            `json:"text"`
-	ToolCalls    []ToolCall        `json:"tool_calls,omitempty"`
-	FinishReason FinishReason      `json:"finish_reason,omitempty"`
-	Usage        Usage             `json:"usage,omitempty"`
-	Warnings     []json.RawMessage `json:"warnings,omitempty"`
-	Raw          GenerateResult    `json:"raw"`
+	Text             string            `json:"text"`
+	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
+	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
+	Usage            Usage             `json:"usage,omitempty"`
+	Warnings         []json.RawMessage `json:"warnings,omitempty"`
+	Raw              GenerateResult    `json:"raw"`
+	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
+	ReasoningText    string            `json:"reasoning_text,omitempty"`
+	Sources          []json.RawMessage `json:"sources,omitempty"`
+	Files            []json.RawMessage `json:"files,omitempty"`
+	ResponseMessages []ModelMessage    `json:"response_messages,omitempty"`
 }
 
 // ParseGenerateTextResult parses the JSON string returned by Model.GenerateText
