@@ -21,7 +21,7 @@ pub trait Provider: Send + Sync {
     /// `Unsupported` error. Only providers that actually expose a language
     /// model override it (issue M9).
     fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
-        Err(AiMuxError::Unsupported(format!(
+        Err(AiMuxError::UnsupportedFunctionality(format!(
             "provider '{}' does not provide language models",
             self.name()
         )))
@@ -35,7 +35,7 @@ pub trait Provider: Send + Sync {
     /// with model specs (context length, capabilities, reasoning portrait),
     /// call `get_model_specs` separately and merge in the host (RFC-0027).
     ///
-    /// Default returns [`AiMuxError::Unsupported`] — providers that expose a
+    /// Default returns [`AiMuxError::UnsupportedFunctionality`] — providers that expose a
     /// model-list endpoint override this.
     ///
     /// Implemented as a `Pin<Box<Future>>` (rather than `#[async_trait]`) so that
@@ -46,7 +46,7 @@ pub trait Provider: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<RuntimeModel>, AiMuxError>> + Send + '_>> {
         let name = self.name().to_string();
         Box::pin(async move {
-            Err(AiMuxError::Unsupported(format!(
+            Err(AiMuxError::UnsupportedFunctionality(format!(
                 "list_models not implemented for provider '{name}'"
             )))
         })

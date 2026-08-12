@@ -6,7 +6,7 @@
 //!
 //! This is the only non-chat model type with an optional streaming method,
 //! [`TranscriptionModel::do_stream`]. The default implementation returns
-//! [`AiMuxError::Unsupported`]; providers override it as needed.
+//! [`AiMuxError::UnsupportedFunctionality`]; providers override it as needed.
 
 use std::pin::Pin;
 
@@ -290,14 +290,14 @@ pub trait TranscriptionModel: Send + Sync {
 
     /// Stream a transcript for live audio.
     ///
-    /// Default implementation returns [`AiMuxError::Unsupported`]; providers
+    /// Default implementation returns [`AiMuxError::UnsupportedFunctionality`]; providers
     /// override it as needed. This mirrors the optional `doStream?` in the TS
     /// spec.
     async fn do_stream(
         &self,
         _options: TranscriptionStreamOptions,
     ) -> Result<TranscriptionStreamResult, AiMuxError> {
-        Err(AiMuxError::Unsupported(format!(
+        Err(AiMuxError::UnsupportedFunctionality(format!(
             "transcription streaming is not supported by provider `{}`",
             self.provider()
         )))

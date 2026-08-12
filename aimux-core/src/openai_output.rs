@@ -1545,7 +1545,10 @@ mod tests {
                 provider_metadata: None,
             }),
             Ok(StreamPart::Error {
-                error: AiMuxError::Provider("something went wrong".to_string()),
+                error: AiMuxError::ApiCall(crate::error::ApiCallError {
+                    message: "something went wrong".to_string(),
+                    ..Default::default()
+                }),
             }),
         ];
 
