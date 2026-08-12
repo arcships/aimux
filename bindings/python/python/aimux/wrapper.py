@@ -876,6 +876,14 @@ class GenerateTextResult(BaseModel):
     usage: Usage
     warnings: List[Warning]
     raw: GenerateResult
+    # M7: top-level aggregation fields.
+    # reasoning/sources/files use weak types (Dict) — use raw.content for
+    # full typing; response_messages reuses ModelMessage for next-turn prompt.
+    reasoning: List[Dict[str, Any]] = Field(default_factory=list)
+    reasoning_text: str = ""
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    files: List[Dict[str, Any]] = Field(default_factory=list)
+    response_messages: List[ModelMessage] = Field(default_factory=list)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

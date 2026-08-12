@@ -2622,18 +2622,31 @@ public final class Types {
         @JsonProperty("usage") private Usage usage = new Usage();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("raw") private GenerateResult raw = new GenerateResult();
+        @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
+        @JsonProperty("reasoning_text") private String reasoningText = "";
+        @JsonProperty("sources") private List<JsonNode> sources = new ArrayList<>();
+        @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
+        @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
 
         @JsonCreator
         GenerateTextResult() {}
 
         private GenerateTextResult(String text, List<ToolCall> toolCalls, FinishReason finishReason, Usage usage,
-                                   List<JsonNode> warnings, GenerateResult raw) {
+                                   List<JsonNode> warnings, GenerateResult raw,
+                                   List<JsonNode> reasoning, String reasoningText,
+                                   List<JsonNode> sources, List<JsonNode> files,
+                                   List<ModelMessage> responseMessages) {
             this.text = text;
             this.toolCalls = toolCalls;
             this.finishReason = finishReason;
             this.usage = usage;
             this.warnings = warnings;
             this.raw = raw;
+            this.reasoning = reasoning;
+            this.reasoningText = reasoningText;
+            this.sources = sources;
+            this.files = files;
+            this.responseMessages = responseMessages;
         }
 
         public String getText() { return text; }
@@ -2642,6 +2655,11 @@ public final class Types {
         public Usage getUsage() { return usage; }
         public List<JsonNode> getWarnings() { return warnings; }
         public GenerateResult getRaw() { return raw; }
+        public List<JsonNode> getReasoning() { return reasoning; }
+        public String getReasoningText() { return reasoningText; }
+        public List<JsonNode> getSources() { return sources; }
+        public List<JsonNode> getFiles() { return files; }
+        public List<ModelMessage> getResponseMessages() { return responseMessages; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -2652,6 +2670,11 @@ public final class Types {
             private Usage usage = new Usage();
             private List<JsonNode> warnings = new ArrayList<>();
             private GenerateResult raw = new GenerateResult();
+            private List<JsonNode> reasoning = new ArrayList<>();
+            private String reasoningText = "";
+            private List<JsonNode> sources = new ArrayList<>();
+            private List<JsonNode> files = new ArrayList<>();
+            private List<ModelMessage> responseMessages = new ArrayList<>();
 
             public Builder text(String v) { this.text = v; return this; }
             public Builder toolCalls(List<ToolCall> v) { this.toolCalls = v; return this; }
@@ -2659,9 +2682,15 @@ public final class Types {
             public Builder usage(Usage v) { this.usage = v; return this; }
             public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
             public Builder raw(GenerateResult v) { this.raw = v; return this; }
+            public Builder reasoning(List<JsonNode> v) { this.reasoning = v; return this; }
+            public Builder reasoningText(String v) { this.reasoningText = v; return this; }
+            public Builder sources(List<JsonNode> v) { this.sources = v; return this; }
+            public Builder files(List<JsonNode> v) { this.files = v; return this; }
+            public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
 
             public GenerateTextResult build() {
-                return new GenerateTextResult(text, toolCalls, finishReason, usage, warnings, raw);
+                return new GenerateTextResult(text, toolCalls, finishReason, usage, warnings, raw,
+                    reasoning, reasoningText, sources, files, responseMessages);
             }
         }
 
@@ -2675,12 +2704,18 @@ public final class Types {
                 && Objects.equals(finishReason, that.finishReason)
                 && Objects.equals(usage, that.usage)
                 && Objects.equals(warnings, that.warnings)
-                && Objects.equals(raw, that.raw);
+                && Objects.equals(raw, that.raw)
+                && Objects.equals(reasoning, that.reasoning)
+                && Objects.equals(reasoningText, that.reasoningText)
+                && Objects.equals(sources, that.sources)
+                && Objects.equals(files, that.files)
+                && Objects.equals(responseMessages, that.responseMessages);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(text, toolCalls, finishReason, usage, warnings, raw);
+            return Objects.hash(text, toolCalls, finishReason, usage, warnings, raw,
+                reasoning, reasoningText, sources, files, responseMessages);
         }
     }
 

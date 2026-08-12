@@ -913,6 +913,12 @@ data class GenerateTextResult(
     val usage: Usage = Usage(),
     val warnings: List<JsonElement> = emptyList(),
     val raw: GenerateResult = GenerateResult(),
+    // M7: top-level aggregation fields
+    val reasoning: List<JsonElement> = emptyList(),
+    @SerialName("reasoning_text") val reasoningText: String = "",
+    val sources: List<JsonElement> = emptyList(),
+    val files: List<JsonElement> = emptyList(),
+    @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

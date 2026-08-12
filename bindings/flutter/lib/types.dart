@@ -586,6 +586,14 @@ class GenerateTextResult {
   final Usage usage;
   final List<Map<String, dynamic>> warnings;
   final GenerateResult raw;
+  // M7: top-level aggregation fields
+  final List<Map<String, dynamic>> reasoning;
+  @JsonKey(name: 'reasoning_text')
+  final String reasoningText;
+  final List<Map<String, dynamic>> sources;
+  final List<Map<String, dynamic>> files;
+  @JsonKey(name: 'response_messages')
+  final List<ModelMessage> responseMessages;
 
   GenerateTextResult({
     required this.text,
@@ -594,6 +602,11 @@ class GenerateTextResult {
     required this.usage,
     this.warnings = const [],
     required this.raw,
+    this.reasoning = const [],
+    this.reasoningText = '',
+    this.sources = const [],
+    this.files = const [],
+    this.responseMessages = const [],
   });
 
   factory GenerateTextResult.fromJson(Map<String, dynamic> json) =>

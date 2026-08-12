@@ -118,6 +118,23 @@ GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
               .toList() ??
           const [],
       raw: GenerateResult.fromJson(json['raw'] as Map<String, dynamic>),
+      reasoning: (json['reasoning'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          const [],
+      reasoningText: json['reasoning_text'] as String? ?? '',
+      sources: (json['sources'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          const [],
+      files: (json['files'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          const [],
+      responseMessages: (json['response_messages'] as List<dynamic>?)
+              ?.map((e) => ModelMessage.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
 
 Map<String, dynamic> _$GenerateTextResultToJson(GenerateTextResult instance) =>
@@ -128,6 +145,11 @@ Map<String, dynamic> _$GenerateTextResultToJson(GenerateTextResult instance) =>
       'usage': instance.usage,
       'warnings': instance.warnings,
       'raw': instance.raw,
+      'reasoning': instance.reasoning,
+      'reasoning_text': instance.reasoningText,
+      'sources': instance.sources,
+      'files': instance.files,
+      'response_messages': instance.responseMessages,
     };
 
 TimeoutConfiguration _$TimeoutConfigurationFromJson(
