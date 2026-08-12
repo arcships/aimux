@@ -156,6 +156,9 @@ internal interface AimuxFFI : Library {
 
     // Register external providers from JSON config (RFC-0020). Returns 1 on success, 0 on failure.
     fun aimux_register_providers(configJson: String, err: AimuxCError?): Int
+
+    // Set the global proxy configuration (M6, RFC-0016). Returns 1 on success, 0 on failure.
+    fun aimux_init_proxy(configJson: String, err: AimuxCError?): Int
 }
 
 internal object FFI {
@@ -656,6 +659,23 @@ class Model internal constructor(handle: Long) : Closeable {
         fun registerProviders(configJson: String) {
             val err = AimuxCError()
             val rc = FFI.lib.aimux_register_providers(configJson, err)
+            if (rc == 0) throwFromC(err)
+        }
+
+        /**
+         * Set the global proxy configuration (M6, RFC-0016). Must be called
+         * before the first `generateText` / `streamText` call; a no-op if the
+         * shared HTTP client is already initialised.
+         *
+         * The C entry point returns an `int` (1 = success, 0 = failure).
+         *
+         * @param configJson ProxyConfig JSON (`http_url`, `https_url`,
+         *   `all_url`, `no_proxy` — all optional).
+         * @throws AimuxException if the C call fails (rc == 0).
+         */
+        fun initProxy(configJson: String) {
+            val err = AimuxCError()
+            val rc = FFI.lib.aimux_init_proxy(configJson, err)
             if (rc == 0) throwFromC(err)
         }
     }

@@ -594,6 +594,19 @@ class GenerateTextResult {
   final List<Map<String, dynamic>> files;
   @JsonKey(name: 'response_messages')
   final List<ModelMessage> responseMessages;
+  /// Raw provider-specific finish reason string (M12, e.g. "stop", "end_turn").
+  @JsonKey(name: 'raw_finish_reason')
+  final String? rawFinishReason;
+  /// Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
+  /// raw.provider_metadata for top-level convenience. Weak type.
+  @JsonKey(name: 'provider_metadata')
+  final Map<String, dynamic>? providerMetadata;
+  /// Response metadata (id, timestamp, model_id). Mirrored from raw.response.
+  final ResponseMetadata response;
+  /// Total token usage across all steps. In single-step mode (aimux's
+  /// default), equals usage. Provided for AI SDK parity.
+  @JsonKey(name: 'total_usage')
+  final Usage totalUsage;
 
   GenerateTextResult({
     required this.text,
@@ -607,11 +620,113 @@ class GenerateTextResult {
     this.sources = const [],
     this.files = const [],
     this.responseMessages = const [],
+    this.rawFinishReason,
+    this.providerMetadata,
+    required this.response,
+    required this.totalUsage,
   });
 
   factory GenerateTextResult.fromJson(Map<String, dynamic> json) =>
       _$GenerateTextResultFromJson(json);
   Map<String, dynamic> toJson() => _$GenerateTextResultToJson(this);
+}
+
+/// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
+/// convenience fields from the underlying `generate_text` call.
+///
+/// Mirrors `GenerateObjectResult.ts`. `object` is an arbitrary JSON value
+/// (weak type — `Map<String, dynamic>` / primitive).
+@JsonSerializable()
+class GenerateObjectResult {
+  /// The parsed JSON object returned by the model (arbitrary JSON, weak type).
+  final Object? object;
+  @JsonKey(name: 'finish_reason')
+  final FinishReason finishReason;
+  @JsonKey(name: 'raw_finish_reason')
+  final String? rawFinishReason;
+  final Usage usage;
+  final List<Map<String, dynamic>> warnings;
+  /// Concatenated reasoning text (if the model produced reasoning/thinking).
+  final String? reasoning;
+  /// Provider-specific metadata (e.g. Anthropic cache info). Weak type.
+  @JsonKey(name: 'provider_metadata')
+  final Map<String, dynamic>? providerMetadata;
+  /// Response metadata (id, timestamp, model_id).
+  final ResponseMetadata response;
+  final GenerateTextResult raw;
+
+  GenerateObjectResult({
+    this.object,
+    required this.finishReason,
+    this.rawFinishReason,
+    required this.usage,
+    this.warnings = const [],
+    this.reasoning,
+    this.providerMetadata,
+    required this.response,
+    required this.raw,
+  });
+
+  factory GenerateObjectResult.fromJson(Map<String, dynamic> json) =>
+      _$GenerateObjectResultFromJson(json);
+  Map<String, dynamic> toJson() => _$GenerateObjectResultToJson(this);
+}
+
+/// Aggregated result of `stream_text().consume()` (M11). Mirrors
+/// `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
+/// has no `GenerateResult` equivalent).
+///
+/// Mirrors `StreamTextResultAggregated.ts`. reasoning/sources/files use weak
+/// types (`Map<String, dynamic>`) — same strategy as `GenerateTextResult`.
+@JsonSerializable()
+class StreamTextResultAggregated {
+  final String text;
+  // reasoning/sources/files use weak types — same strategy as GenerateTextResult.
+  final List<Map<String, dynamic>> reasoning;
+  @JsonKey(name: 'reasoning_text')
+  final String reasoningText;
+  @JsonKey(name: 'tool_calls')
+  final List<ToolCall> toolCalls;
+  final List<Map<String, dynamic>> sources;
+  final List<Map<String, dynamic>> files;
+  @JsonKey(name: 'finish_reason')
+  final FinishReason finishReason;
+  @JsonKey(name: 'raw_finish_reason')
+  final String? rawFinishReason;
+  final Usage usage;
+  /// Total token usage across all steps. In single-step mode (aimux's
+  /// default), equals usage. Provided for AI SDK parity.
+  @JsonKey(name: 'total_usage')
+  final Usage totalUsage;
+  final List<Map<String, dynamic>> warnings;
+  /// Provider-specific metadata from the Finish chunk. Weak type.
+  @JsonKey(name: 'provider_metadata')
+  final Map<String, dynamic>? providerMetadata;
+  /// Response metadata (id, timestamp, model_id) if emitted by the stream.
+  final ResponseMetadata? response;
+  @JsonKey(name: 'response_messages')
+  final List<ModelMessage> responseMessages;
+
+  StreamTextResultAggregated({
+    this.text = '',
+    this.reasoning = const [],
+    this.reasoningText = '',
+    this.toolCalls = const [],
+    this.sources = const [],
+    this.files = const [],
+    required this.finishReason,
+    this.rawFinishReason,
+    required this.usage,
+    required this.totalUsage,
+    this.warnings = const [],
+    this.providerMetadata,
+    this.response,
+    this.responseMessages = const [],
+  });
+
+  factory StreamTextResultAggregated.fromJson(Map<String, dynamic> json) =>
+      _$StreamTextResultAggregatedFromJson(json);
+  Map<String, dynamic> toJson() => _$StreamTextResultAggregatedToJson(this);
 }
 
 /// Per-call timeout configuration. Mirrors `TimeoutConfiguration.ts`.

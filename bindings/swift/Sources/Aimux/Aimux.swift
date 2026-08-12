@@ -511,6 +511,23 @@ public final class Model: @unchecked Sendable {
         if rc == 0 { throw AimuxError.fromC(err) }
     }
 
+    /// Set the global proxy configuration (M6, RFC-0016). Must be called before
+    /// the first `generateText` / `streamText` call; a no-op (returns without
+    /// error) if the shared HTTP client is already initialised.
+    ///
+    /// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
+    /// (all fields optional; omitting all is equivalent to relying on the
+    /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` env vars).
+    ///
+    /// - Parameter configJSON: ProxyConfig JSON.
+    /// - Throws: `AimuxError` when the C call fails (rc == 0).
+    public static func initProxy(_ configJSON: String) throws {
+        var err = CAimuxError()
+        aimux_error_clear(&err)
+        let rc = aimux_init_proxy(configJSON, &err)
+        if rc == 0 { throw AimuxError.fromC(err) }
+    }
+
     // ── Provider handles (RFC-0027) ──────────────────────────────────────────
 
     /// Create a **provider handle** for a registry-backed provider (RFC-0027).

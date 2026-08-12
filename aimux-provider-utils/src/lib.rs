@@ -17,9 +17,9 @@ pub mod url;
 pub use api_key::load_api_key;
 pub use headers::with_user_agent_suffix;
 pub use http::{
-    HttpBody, HttpMethod, HttpRequest, HttpResponse, HttpStreamResponse, PoolConfig,
-    RequestTimeout, TimeoutConfig, send, send_stream, send_stream_timed, send_timed, shared_client,
-    shared_streaming_client, sleep_or_abort,
+    HttpBody, HttpMethod, HttpRequest, HttpResponse, HttpStreamResponse, PoolConfig, ProxyConfig,
+    RequestTimeout, TimeoutConfig, init_proxy, send, send_stream, send_stream_timed, send_timed,
+    shared_client, shared_streaming_client, sleep_or_abort,
 };
 pub use logging::{body_logging_enabled, init_logging, redact_body};
 pub use multipart::{MultipartForm, media_type_to_extension};

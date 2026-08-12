@@ -151,6 +151,55 @@ type GenerateTextResult struct {
 	Sources          []json.RawMessage `json:"sources,omitempty"`
 	Files            []json.RawMessage `json:"files,omitempty"`
 	ResponseMessages []ModelMessage    `json:"response_messages,omitempty"`
+	// RawFinishReason is the raw provider-specific finish reason string (M12).
+	RawFinishReason *string `json:"raw_finish_reason,omitempty"`
+	// ProviderMetadata is provider-specific metadata (e.g. Anthropic cache info).
+	// Mirrored from raw.provider_metadata for top-level convenience. Weak type
+	// (json.RawMessage) — same strategy as GenerateResult.ProviderMetadata.
+	ProviderMetadata json.RawMessage `json:"provider_metadata,omitempty"`
+	// Response is the response metadata (id, timestamp, model_id), mirrored from
+	// raw.response for top-level convenience.
+	Response ResponseMetadata `json:"response,omitempty"`
+	// TotalUsage is total token usage across all steps. In single-step mode
+	// (aimux's default), equals Usage. Provided for AI SDK parity.
+	TotalUsage Usage `json:"total_usage,omitempty"`
+}
+
+// GenerateObjectResult is the typed result of a GenerateObject call (M12).
+// Mirrors Rust GenerateObjectResult. `object` is an arbitrary JSON value
+// (weak type — json.RawMessage) and `raw` is the full GenerateTextResult.
+type GenerateObjectResult struct {
+	Object           json.RawMessage    `json:"object,omitempty"`
+	FinishReason     FinishReason       `json:"finish_reason,omitempty"`
+	RawFinishReason  *string            `json:"raw_finish_reason,omitempty"`
+	Usage            Usage              `json:"usage,omitempty"`
+	Warnings         []json.RawMessage  `json:"warnings,omitempty"`
+	Reasoning        *string            `json:"reasoning,omitempty"`
+	ProviderMetadata json.RawMessage    `json:"provider_metadata,omitempty"`
+	Response         ResponseMetadata   `json:"response,omitempty"`
+	Raw              GenerateTextResult `json:"raw"`
+}
+
+// StreamTextResultAggregated is the aggregated result of stream_text (M11).
+// Mirrors Rust StreamTextResultAggregated. reasoning/sources/files use weak
+// types (json.RawMessage) — same strategy as GenerateTextResult.
+type StreamTextResultAggregated struct {
+	Text             string            `json:"text"`
+	Reasoning        []json.RawMessage `json:"reasoning,omitempty"`
+	ReasoningText    string            `json:"reasoning_text,omitempty"`
+	ToolCalls        []ToolCall        `json:"tool_calls,omitempty"`
+	Sources          []json.RawMessage `json:"sources,omitempty"`
+	Files            []json.RawMessage `json:"files,omitempty"`
+	FinishReason     FinishReason      `json:"finish_reason,omitempty"`
+	RawFinishReason  *string           `json:"raw_finish_reason,omitempty"`
+	Usage            Usage             `json:"usage,omitempty"`
+	TotalUsage       Usage             `json:"total_usage,omitempty"`
+	Warnings         []json.RawMessage `json:"warnings,omitempty"`
+	ProviderMetadata json.RawMessage   `json:"provider_metadata,omitempty"`
+	// Response is the response metadata (id, timestamp, model_id) if emitted by
+	// the stream. Nullable (streaming may have none).
+	Response         *ResponseMetadata `json:"response,omitempty"`
+	ResponseMessages []ModelMessage    `json:"response_messages,omitempty"`
 }
 
 // ParseGenerateTextResult parses the JSON string returned by Model.GenerateText

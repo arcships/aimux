@@ -242,4 +242,7 @@ public interface AimuxFFI extends Library {
 
     /** Register external OpenAI-compatible providers from JSON config (RFC-0020). Returns 1 on success, 0 on failure (fills {@code err}). */
     int aimux_register_providers(String configJson, AimuxCError err);
+
+    /** Set the global proxy configuration (M6, RFC-0016). Returns 1 on success, 0 on failure (fills {@code err}). */
+    int aimux_init_proxy(String configJson, AimuxCError err);
 }

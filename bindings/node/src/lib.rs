@@ -591,6 +591,33 @@ pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
     })())
 }
 
+/// Set the global proxy configuration (M6, RFC-0016). Must be called before
+/// the first `generateText` / `streamText` call; a no-op if the shared HTTP
+/// client is already initialised (the shared client is lazily built on first
+/// use and locked for the process lifetime).
+///
+/// `configJson` shape: `{ "http_url": "...", "https_url": "...", "all_url":
+/// "...", "no_proxy": "..." }` (all fields optional; omitting all is equivalent
+/// to relying on the `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`
+/// env vars).
+///
+/// Throws on invalid JSON.
+#[napi]
+pub fn init_proxy(config_json: String) -> error::AimuxResult<()> {
+    AimuxResult((|| -> error::MResult<()> {
+        let config: aimux_provider_utils::ProxyConfig = serde_json::from_str(&config_json)
+            .map_err(|e| {
+                MappedError::from(&AiMuxError::InvalidArgument(format!(
+                    "invalid proxy config JSON: {e}"
+                )))
+            })?;
+        // `init_proxy` returns false when the shared client is already up; treat
+        // that as success (idempotent) so callers don't reason about ordering.
+        let _ = aimux_provider_utils::init_proxy(config);
+        Ok(())
+    })())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Recording + mock replay (RFC-0023)
 // ─────────────────────────────────────────────────────────────────────────────

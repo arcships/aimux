@@ -54,6 +54,8 @@ __all__ = [
     "TextContentPart",
     "GenerateTextOptions",
     "GenerateTextResult",
+    "GenerateObjectResult",
+    "StreamTextResultAggregated",
     "GenerateResult",
     # functions
     "generate_text",
@@ -120,8 +122,8 @@ class TokenUsage(BaseModel):
 class Usage(BaseModel):
     """Token usage statistics (Rust ``Usage``)."""
 
-    input_tokens: TokenUsage
-    output_tokens: TokenUsage
+    input_tokens: TokenUsage = Field(default_factory=TokenUsage)
+    output_tokens: TokenUsage = Field(default_factory=TokenUsage)
     raw: Optional[Any] = None
 
 
@@ -883,6 +885,66 @@ class GenerateTextResult(BaseModel):
     reasoning_text: str = ""
     sources: List[Dict[str, Any]] = Field(default_factory=list)
     files: List[Dict[str, Any]] = Field(default_factory=list)
+    response_messages: List[ModelMessage] = Field(default_factory=list)
+    # M12: raw provider-specific finish reason string (e.g. "stop", "end_turn").
+    raw_finish_reason: Optional[str] = None
+    # Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
+    # raw.provider_metadata for top-level convenience. Weak type (Dict).
+    provider_metadata: Optional[Dict[str, Any]] = None
+    # Response metadata (id, timestamp, model_id). Mirrored from raw.response.
+    response: ResponseMetadata = Field(default_factory=ResponseMetadata)
+    # Total token usage across all steps. In single-step mode (aimux's
+    # default), equals usage. Provided for AI SDK parity.
+    total_usage: Usage = Field(default_factory=Usage)
+
+
+class GenerateObjectResult(BaseModel):
+    """Result of ``generate_object`` (user-facing, M12, Rust
+    ``GenerateObjectResult``). The parsed JSON object plus convenience fields
+    from the underlying ``generate_text`` call.
+    """
+
+    # `object` is an arbitrary JSON value — weak type (Any).
+    object: Any
+    finish_reason: FinishReason
+    raw_finish_reason: Optional[str] = None
+    usage: Usage
+    warnings: List[Warning] = Field(default_factory=list)
+    # Concatenated reasoning text (if the model produced reasoning/thinking).
+    reasoning: Optional[str] = None
+    # Provider-specific metadata (e.g. Anthropic cache info). Weak type (Dict).
+    provider_metadata: Optional[Dict[str, Any]] = None
+    # Response metadata (id, timestamp, model_id).
+    response: ResponseMetadata = Field(default_factory=ResponseMetadata)
+    raw: GenerateTextResult
+
+
+class StreamTextResultAggregated(BaseModel):
+    """Aggregated result of ``stream_text().consume()`` (M11, Rust
+    ``StreamTextResultAggregated``). Mirrors ``GenerateTextResult``'s
+    user-facing fields (without ``raw``, since streaming has no
+    ``GenerateResult`` equivalent).
+    """
+
+    text: str = ""
+    # reasoning/sources/files use weak types (Dict) — same strategy as
+    # GenerateTextResult.
+    reasoning: List[Dict[str, Any]] = Field(default_factory=list)
+    reasoning_text: str = ""
+    tool_calls: List[ToolCall] = Field(default_factory=list)
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    files: List[Dict[str, Any]] = Field(default_factory=list)
+    finish_reason: FinishReason
+    raw_finish_reason: Optional[str] = None
+    usage: Usage = Usage()
+    # Total token usage across all steps. In single-step mode (aimux's
+    # default), equals usage. Provided for AI SDK parity.
+    total_usage: Usage = Field(default_factory=Usage)
+    warnings: List[Warning] = Field(default_factory=list)
+    # Provider-specific metadata from the Finish chunk. Weak type (Dict).
+    provider_metadata: Optional[Dict[str, Any]] = None
+    # Response metadata (id, timestamp, model_id) if emitted by the stream.
+    response: Optional[ResponseMetadata] = None
     response_messages: List[ModelMessage] = Field(default_factory=list)
 
 

@@ -23,6 +23,7 @@ use std::time::{Duration, Instant, SystemTime};
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream, StreamExt};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 use aimux_core::AiMuxError;
 use aimux_core::ApiCallError;
@@ -93,6 +94,43 @@ impl TimeoutConfig {
     }
 }
 
+/// Proxy configuration (M6, RFC-0016). All fields optional; when all `None`,
+/// behaviour is unchanged (relies on reqwest's automatic `HTTP_PROXY` /
+/// `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` env var support).
+///
+/// Set via [`init_proxy`] **before** the first `generate_text` / `stream_text`
+/// call (the shared client is lazily initialised on first use and locked for
+/// the process lifetime).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProxyConfig {
+    /// HTTP proxy URL (e.g. `"http://proxy:8080"`).
+    pub http_url: Option<String>,
+    /// HTTPS proxy URL.
+    pub https_url: Option<String>,
+    /// Proxy URL for all protocols (applied if `http_url` / `https_url` are unset).
+    pub all_url: Option<String>,
+    /// No-proxy whitelist: comma-separated host patterns to bypass the proxy
+    /// (e.g. `"localhost,127.0.0.1,.internal.team"`). Mirrors reqwest's `NoProxy::from_string`.
+    pub no_proxy: Option<String>,
+}
+
+/// Global proxy config, read once when the shared client is first built.
+static GLOBAL_PROXY: OnceLock<ProxyConfig> = OnceLock::new();
+
+/// Set the global proxy configuration (M6). Must be called before the first
+/// `generate_text` / `stream_text` call; a no-op if the shared client is
+/// already initialised (returns `false`).
+///
+/// `Default::default()` (all `None`) resets to env-proxy-only behaviour.
+pub fn init_proxy(config: ProxyConfig) -> bool {
+    GLOBAL_PROXY.set(config).is_ok()
+}
+
+/// Read the global proxy config (or a default if unset).
+fn global_proxy() -> ProxyConfig {
+    GLOBAL_PROXY.get().cloned().unwrap_or_default()
+}
+
 /// 全局共享的 reqwest::Client（非流式，带 30s 整体超时）。
 static SHARED: OnceLock<Client> = OnceLock::new();
 
@@ -103,16 +141,28 @@ static SHARED_STREAMING: OnceLock<Client> = OnceLock::new();
 ///
 /// 返回 `&'static Client`——provider **拿引用即用**，不持有、不 clone、不传参。
 pub fn shared_client() -> &'static Client {
-    SHARED.get_or_init(|| build_client(PoolConfig::default(), TimeoutConfig::default()))
+    SHARED.get_or_init(|| {
+        build_client(
+            PoolConfig::default(),
+            TimeoutConfig::default(),
+            global_proxy(),
+        )
+    })
 }
 
 /// 获取（或惰性初始化）流式共享 reqwest Client（无整体超时，流式用）。
 pub fn shared_streaming_client() -> &'static Client {
-    SHARED_STREAMING.get_or_init(|| build_client(PoolConfig::default(), TimeoutConfig::streaming()))
+    SHARED_STREAMING.get_or_init(|| {
+        build_client(
+            PoolConfig::default(),
+            TimeoutConfig::streaming(),
+            global_proxy(),
+        )
+    })
 }
 
 /// 用给定配置构建一个 reqwest Client。
-fn build_client(pool: PoolConfig, timeout: TimeoutConfig) -> Client {
+fn build_client(pool: PoolConfig, timeout: TimeoutConfig, proxy: ProxyConfig) -> Client {
     let mut b = Client::builder()
         .connect_timeout(Duration::from_millis(timeout.connect_timeout_ms))
         .pool_max_idle_per_host(pool.max_idle_per_host)
@@ -123,7 +173,40 @@ fn build_client(pool: PoolConfig, timeout: TimeoutConfig) -> Client {
     if timeout.response_timeout_ms > 0 {
         b = b.timeout(Duration::from_millis(timeout.response_timeout_ms));
     }
+    b = apply_proxy(b, &proxy);
     b.build().expect("shared reqwest Client build failed")
+}
+
+/// Apply proxy configuration to a reqwest client builder (by-value chain).
+fn apply_proxy(b: reqwest::ClientBuilder, proxy: &ProxyConfig) -> reqwest::ClientBuilder {
+    use reqwest::Proxy as ReqwestProxy;
+    // Determine effective proxy URLs (all_url is a fallback).
+    let http = proxy.http_url.as_deref().or(proxy.all_url.as_deref());
+    let https = proxy.https_url.as_deref().or(proxy.all_url.as_deref());
+    let mut b = b;
+    if let Some(url) = http
+        && let Ok(p) = ReqwestProxy::http(url)
+    {
+        b = apply_no_proxy(b, p, &proxy.no_proxy);
+    }
+    if let Some(url) = https
+        && let Ok(p) = ReqwestProxy::https(url)
+    {
+        b = apply_no_proxy(b, p, &proxy.no_proxy);
+    }
+    b
+}
+
+/// Attach a no-proxy whitelist to a proxy if configured, then register it.
+fn apply_no_proxy(
+    b: reqwest::ClientBuilder,
+    proxy: reqwest::Proxy,
+    no_proxy: &Option<String>,
+) -> reqwest::ClientBuilder {
+    match no_proxy.as_deref().map(reqwest::NoProxy::from_string) {
+        Some(Some(np)) => b.proxy(proxy.no_proxy(Some(np))),
+        _ => b.proxy(proxy),
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

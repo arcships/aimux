@@ -919,6 +919,71 @@ data class GenerateTextResult(
     val sources: List<JsonElement> = emptyList(),
     val files: List<JsonElement> = emptyList(),
     @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
+    // M12: raw provider-specific finish reason string.
+    @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
+    // Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
+    // raw.provider_metadata for top-level convenience. Weak type (JsonElement?).
+    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    // Response metadata (id, timestamp, model_id). Mirrored from raw.response.
+    val response: ResponseMetadata = ResponseMetadata(),
+    // Total token usage across all steps. In single-step mode (aimux's
+    // default), equals usage. Provided for AI SDK parity.
+    @SerialName("total_usage") val totalUsage: Usage = Usage(),
+)
+
+/**
+ * Result of `generate_object` (user-facing, M12). The parsed JSON object plus
+ * convenience fields from the underlying `generate_text` call.
+ *
+ * Mirrors `GenerateObjectResult.ts`. `object` is a [JsonElement] (arbitrary
+ * JSON value, weak type).
+ */
+@Serializable
+data class GenerateObjectResult(
+    // `object` is an arbitrary JSON value — weak type (JsonElement).
+    val `object`: JsonElement,
+    @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
+    @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
+    val usage: Usage = Usage(),
+    val warnings: List<JsonElement> = emptyList(),
+    // Concatenated reasoning text (if the model produced reasoning/thinking).
+    val reasoning: String? = null,
+    // Provider-specific metadata (e.g. Anthropic cache info). Weak type.
+    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    // Response metadata (id, timestamp, model_id).
+    val response: ResponseMetadata = ResponseMetadata(),
+    val raw: GenerateTextResult = GenerateTextResult(),
+)
+
+/**
+ * Aggregated result of `stream_text().consume()` (M11). Mirrors
+ * `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
+ * has no `GenerateResult` equivalent).
+ *
+ * Mirrors `StreamTextResultAggregated.ts`. reasoning/sources/files use weak
+ * types (JsonElement) — same strategy as [GenerateTextResult].
+ */
+@Serializable
+data class StreamTextResultAggregated(
+    val text: String = "",
+    // reasoning/sources/files use weak types (JsonElement).
+    val reasoning: List<JsonElement> = emptyList(),
+    @SerialName("reasoning_text") val reasoningText: String = "",
+    @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
+    val sources: List<JsonElement> = emptyList(),
+    val files: List<JsonElement> = emptyList(),
+    @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
+    @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
+    val usage: Usage = Usage(),
+    // Total token usage across all steps. In single-step mode (aimux's
+    // default), equals usage. Provided for AI SDK parity.
+    @SerialName("total_usage") val totalUsage: Usage = Usage(),
+    val warnings: List<JsonElement> = emptyList(),
+    // Provider-specific metadata from the Finish chunk. Weak type.
+    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    // Response metadata (id, timestamp, model_id) if emitted by the stream.
+    val response: ResponseMetadata? = null,
+    @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

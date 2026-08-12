@@ -24,6 +24,7 @@ use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
 use crate::result::{
     FilePart, GenerateContent, GenerateResult, ReasoningPart, SourcePart, StreamResult,
+    StreamTextResultAggregated,
 };
 use crate::stream_part::StreamPart;
 use crate::tool::Tool;
@@ -152,6 +153,51 @@ pub struct GenerateTextResult {
     /// (solves the multi-turn "manually build assistant message" footgun).
     #[serde(default)]
     pub response_messages: Vec<ModelMessage>,
+    /// The raw provider-specific finish reason string (e.g. "stop",
+    /// "end_turn", "safety"). Useful when `finish_reason.unified` is `Other`.
+    #[serde(default)]
+    pub raw_finish_reason: Option<String>,
+    /// Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
+    /// `raw.provider_metadata` for top-level convenience.
+    #[serde(default)]
+    pub provider_metadata: Option<Value>,
+    /// Response metadata (id, timestamp, model_id). Mirrored from
+    /// `raw.response` for top-level convenience.
+    #[serde(default)]
+    pub response: crate::types::ResponseMetadata,
+    /// Total token usage across all steps. In single-step mode (aimux's
+    /// default), `total_usage` equals `usage`. Provided for AI SDK parity.
+    #[serde(default)]
+    pub total_usage: Usage,
+}
+
+/// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
+/// convenience fields from the underlying `generate_text` call.
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct GenerateObjectResult {
+    /// The parsed JSON object returned by the model.
+    pub object: Value,
+    /// Why generation stopped.
+    pub finish_reason: FinishReason,
+    /// Raw provider-specific finish reason string.
+    #[serde(default)]
+    pub raw_finish_reason: Option<String>,
+    /// Token usage.
+    pub usage: Usage,
+    /// Warnings from the provider.
+    pub warnings: Vec<Warning>,
+    /// Concatenated reasoning text (if the model produced reasoning/thinking).
+    #[serde(default)]
+    pub reasoning: Option<String>,
+    /// Provider-specific metadata (e.g. Anthropic cache info).
+    #[serde(default)]
+    pub provider_metadata: Option<Value>,
+    /// Response metadata (id, timestamp, model_id).
+    #[serde(default)]
+    pub response: crate::types::ResponseMetadata,
+    /// The full `generate_text` result (for advanced use).
+    pub raw: GenerateTextResult,
 }
 
 /// Result of `stream_text` (user-facing).
@@ -189,6 +235,173 @@ impl StreamTextResult {
             }
         }
         Ok(result)
+    }
+
+    /// Consume the full stream and return an aggregated result (M11).
+    ///
+    /// Unlike [`text`](Self::text) (which returns only the concatenated text),
+    /// this collects reasoning, tool calls, sources, files, usage, finish
+    /// reason, and builds `response_messages` for the next turn.
+    pub async fn consume(self) -> Result<StreamTextResultAggregated, AiMuxError> {
+        use futures::StreamExt;
+
+        let mut text = String::new();
+        let mut reasoning: Vec<ReasoningPart> = Vec::new();
+        let mut reasoning_text_buf = String::new();
+        let mut tool_calls: Vec<crate::tool::ToolCall> = Vec::new();
+        let mut sources: Vec<SourcePart> = Vec::new();
+        let mut files: Vec<FilePart> = Vec::new();
+        let mut warnings: Vec<Warning> = Vec::new();
+        let mut finish_reason = FinishReason {
+            unified: crate::types::FinishReasonUnified::Stop,
+            raw: None,
+        };
+        let mut raw_finish_reason: Option<String> = None;
+        let mut usage = Usage::default();
+        let mut finish_provider_metadata: Option<Value> = None;
+        let mut response_content_parts: Vec<ContentPart> = Vec::new();
+
+        let mut stream = self.stream;
+        while let Some(part) = stream.next().await {
+            match part? {
+                StreamPart::TextDelta { delta, .. } => {
+                    text.push_str(&delta);
+                    // Accumulate for response_messages lazily (see Finish below).
+                }
+                StreamPart::ReasoningDelta { delta, .. } => {
+                    reasoning_text_buf.push_str(&delta);
+                }
+                StreamPart::ReasoningEnd {
+                    provider_metadata, ..
+                } => {
+                    if !reasoning_text_buf.is_empty() {
+                        reasoning.push(ReasoningPart {
+                            text: reasoning_text_buf.clone(),
+                        });
+                        // Push reasoning into response_messages too — it carries
+                        // the thinking-block signature (provider_metadata) which
+                        // must be echoed back for extended-thinking multi-turn.
+                        let signature = extract_reasoning_signature(provider_metadata.as_ref());
+                        response_content_parts.push(ContentPart::Reasoning {
+                            text: reasoning_text_buf.clone(),
+                            signature,
+                            provider_options: provider_metadata,
+                        });
+                        reasoning_text_buf.clear();
+                    }
+                }
+                StreamPart::ToolCall {
+                    tool_call_id,
+                    tool_name,
+                    input,
+                    thought_signature,
+                    ..
+                } => {
+                    tool_calls.push(crate::tool::ToolCall {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: tool_name.clone(),
+                        input: input.clone(),
+                        provider_executed: None,
+                        dynamic: None,
+                        thought_signature: thought_signature.clone(),
+                    });
+                    response_content_parts.push(ContentPart::ToolCall {
+                        tool_call_id,
+                        tool_name,
+                        input,
+                        thought_signature,
+                        provider_options: None,
+                    });
+                }
+                StreamPart::Source {
+                    id,
+                    source_type,
+                    url,
+                    title,
+                    ..
+                } => {
+                    sources.push(SourcePart {
+                        id,
+                        source_type,
+                        url,
+                        title,
+                    });
+                }
+                StreamPart::File {
+                    data, media_type, ..
+                } => {
+                    files.push(FilePart { data, media_type });
+                }
+                StreamPart::StreamStart { warnings: w, .. } => {
+                    warnings = w;
+                }
+                StreamPart::Finish {
+                    finish_reason: fr,
+                    usage: u,
+                    provider_metadata: pm,
+                } => {
+                    // Flush any pending reasoning delta before finishing.
+                    if !reasoning_text_buf.is_empty() {
+                        reasoning.push(ReasoningPart {
+                            text: reasoning_text_buf.clone(),
+                        });
+                        response_content_parts.push(ContentPart::Reasoning {
+                            text: reasoning_text_buf.clone(),
+                            signature: None,
+                            provider_options: None,
+                        });
+                        reasoning_text_buf.clear();
+                    }
+                    raw_finish_reason = fr.raw.clone();
+                    finish_reason = fr;
+                    usage = u.clone();
+                    finish_provider_metadata = pm;
+                    break;
+                }
+                StreamPart::Error { error } => return Err(error),
+                _ => {}
+            }
+        }
+
+        // Append the accumulated text as a single ContentPart (after reasoning,
+        // matching the provider's stream order: reasoning → text → tool calls).
+        if !text.is_empty() {
+            response_content_parts.push(ContentPart::Text {
+                text: text.clone(),
+                provider_options: None,
+            });
+        }
+        let response_messages = if response_content_parts.is_empty() {
+            Vec::new()
+        } else {
+            vec![ModelMessage {
+                role: Role::Assistant,
+                content: MessageContent::Parts(response_content_parts),
+            }]
+        };
+
+        let reasoning_text = reasoning
+            .iter()
+            .map(|r| r.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
+
+        Ok(StreamTextResultAggregated {
+            text,
+            reasoning,
+            reasoning_text,
+            tool_calls,
+            sources,
+            files,
+            finish_reason,
+            raw_finish_reason,
+            total_usage: usage.clone(),
+            usage,
+            warnings,
+            provider_metadata: finish_provider_metadata,
+            response: None, // streams don't carry ResponseMetadata in Finish
+            response_messages,
+        })
     }
 }
 
@@ -399,11 +612,17 @@ pub async fn generate_text(
         content: MessageContent::Parts(response_content_parts),
     }];
 
+    // Extract fields before moving `result` into `raw`.
+    let raw_finish_reason = result.finish_reason.raw.clone();
+    let provider_metadata = result.provider_metadata.clone();
+    let response = result.response.clone();
+    let usage = result.usage.clone();
+
     Ok(GenerateTextResult {
         text,
         tool_calls,
         finish_reason: result.finish_reason.clone(),
-        usage: result.usage.clone(),
+        usage: usage.clone(),
         warnings: result.warnings.clone(),
         raw: result,
         reasoning,
@@ -411,6 +630,80 @@ pub async fn generate_text(
         sources,
         files,
         response_messages,
+        raw_finish_reason,
+        provider_metadata,
+        response,
+        total_usage: usage,
+    })
+}
+
+/// Generate a structured JSON object (M12). Uses `generate_text` with
+/// `response_format: Json`, then parses the model output into a JSON value.
+///
+/// The schema is passed via `options.response_format = ResponseFormat::Json {
+/// schema: Some(schema), .. }`. JSON repair (`fix_json`) is applied before
+/// parsing to handle truncated or slightly malformed model output. No schema
+/// validation is performed (weak validation — relies on the model following
+/// the schema; use retries for robustness).
+///
+/// # Example
+/// ```
+/// # use aimux_core::prelude::*;
+/// # use aimux_core::options::ResponseFormat;
+/// # async fn example(model: &dyn aimux_core::LanguageModel) -> Result<(), aimux_core::error::AiMuxError> {
+/// let result = generate_object(
+///     model,
+///     "Extract: John is 25 years old.",
+///     GenerateTextOptions {
+///         response_format: Some(ResponseFormat::Json {
+///             schema: Some(serde_json::json!({
+///                 "type": "object",
+///                 "properties": { "name": { "type": "string" }, "age": { "type": "number" } },
+///                 "required": ["name", "age"]
+///             })),
+///             name: None,
+///             description: None,
+///         }),
+///         ..Default::default()
+///     },
+/// ).await?;
+/// assert_eq!(result.object["name"], "John");
+/// # Ok(())
+/// # }
+/// ```
+pub async fn generate_object(
+    model: &dyn LanguageModel,
+    prompt: impl Into<ModelPrompt>,
+    options: GenerateTextOptions,
+) -> Result<GenerateObjectResult, AiMuxError> {
+    let text_result = generate_text(model, prompt, options).await?;
+    let repaired = crate::json_repair::fix_json(&text_result.text);
+    let object: Value = serde_json::from_str(&repaired).map_err(|e| {
+        AiMuxError::Json(format!(
+            "generateObject: model output is not valid JSON after repair: {e}"
+        ))
+    })?;
+    let raw_finish_reason = text_result.raw_finish_reason.clone();
+    let finish_reason = text_result.finish_reason.clone();
+    let usage = text_result.usage.clone();
+    let warnings = text_result.warnings.clone();
+    let reasoning = if text_result.reasoning_text.is_empty() {
+        None
+    } else {
+        Some(text_result.reasoning_text.clone())
+    };
+    let provider_metadata = text_result.raw.provider_metadata.clone();
+    let response = text_result.raw.response.clone();
+    Ok(GenerateObjectResult {
+        object,
+        finish_reason,
+        raw_finish_reason,
+        usage,
+        warnings,
+        reasoning,
+        provider_metadata,
+        response,
+        raw: text_result,
     })
 }
 

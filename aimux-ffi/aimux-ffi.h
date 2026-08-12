@@ -545,6 +545,13 @@ int aimux_recording_flush(void);
    Returns 1 on success, 0 on failure (fills *err). */
 int aimux_register_providers(const char *config_json, AimuxError *err);
 
+/* Set the global proxy configuration (M6, RFC-0016). Must be called before the
+   first generate_text / stream_text call; a no-op (returns 1) if the shared
+   HTTP client is already initialised. config_json is a serialized ProxyConfig:
+   { "http_url", "https_url", "all_url", "no_proxy" } (all optional).
+   Returns 1 on success, 0 on failure (fills *err). */
+int aimux_init_proxy(const char *config_json, AimuxError *err);
+
 /* Create a mock replay model from recorded JSONL (one Recording per line).
    Returns handle > 0 or 0 on failure (fills *err); the handle works with
    aimux_generate_text / aimux_stream_text (no real API sent); caller frees

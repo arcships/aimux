@@ -2606,6 +2606,33 @@ pub extern "C" fn aimux_register_providers(
     }
 }
 
+/// Set the global proxy configuration (M6, RFC-0016). Must be called before
+/// the first `aimux_generate_text` / `aimux_stream_text` call; a no-op (returns
+/// 1) if the shared HTTP client is already initialised.
+///
+/// `config_json` is a serialized `ProxyConfig`:
+/// `{ "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy":
+/// "..." }` (all fields optional; omitting all is equivalent to relying on the
+/// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` env vars).
+///
+/// Returns 1 on success (including the already-initialised no-op), 0 on
+/// failure (with `err` filled): null/invalid pointer or malformed JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_init_proxy(config_json: *const c_char, err: *mut CAimuxError) -> i32 {
+    let Some(json) = cstr_to_string(config_json) else {
+        return unsafe { fail_invalid_args(err) };
+    };
+    let config: aimux_provider_utils::ProxyConfig = match serde_json::from_str(&json) {
+        Ok(c) => c,
+        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
+    };
+    // `init_proxy` returns false when the shared client is already up; treat
+    // that as success (idempotent) so callers don't need to reason about
+    // ordering races.
+    let _ = aimux_provider_utils::init_proxy(config);
+    1
+}
+
 /// Create a mock replay model from recorded JSONL (RFC-0023 P3). `recordings`
 /// is one `Recording` JSON per line. Returns non-zero handle or 0
 /// (the handle works with `aimux_generate_text` /

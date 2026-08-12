@@ -902,6 +902,17 @@ public struct GenerateTextResult: Codable, Equatable {
     public var files: [JSONValue]
     /// Assistant messages ready to append for the next turn (M7).
     public var responseMessages: [ModelMessage]
+    /// Raw provider-specific finish reason string (M12, e.g. "stop", "end_turn").
+    public var rawFinishReason: String?
+    /// Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
+    /// `raw.provider_metadata` for top-level convenience. Weak type.
+    public var providerMetadata: JSONValue?
+    /// Response metadata (id, timestamp, model_id). Mirrored from `raw.response`
+    /// for top-level convenience.
+    public var response: ResponseMetadata
+    /// Total token usage across all steps. In single-step mode (aimux's
+    /// default), equals `usage`. Provided for AI SDK parity.
+    public var totalUsage: Usage
 
     enum CodingKeys: String, CodingKey {
         case text
@@ -912,17 +923,146 @@ public struct GenerateTextResult: Codable, Equatable {
         case reasoningText = "reasoning_text"
         case sources, files
         case responseMessages = "response_messages"
+        case rawFinishReason = "raw_finish_reason"
+        case providerMetadata = "provider_metadata"
+        case response
+        case totalUsage = "total_usage"
     }
 
     public init(text: String, toolCalls: [ToolCall], finishReason: FinishReason,
                 usage: Usage, warnings: [Warning] = [], raw: GenerateResult,
                 reasoning: [JSONValue] = [], reasoningText: String = "",
                 sources: [JSONValue] = [], files: [JSONValue] = [],
-                responseMessages: [ModelMessage] = []) {
+                responseMessages: [ModelMessage] = [],
+                rawFinishReason: String? = nil,
+                providerMetadata: JSONValue? = nil,
+                response: ResponseMetadata = ResponseMetadata(),
+                totalUsage: Usage = Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage())) {
         self.text = text; self.toolCalls = toolCalls; self.finishReason = finishReason
         self.usage = usage; self.warnings = warnings; self.raw = raw
         self.reasoning = reasoning; self.reasoningText = reasoningText
         self.sources = sources; self.files = files
+        self.responseMessages = responseMessages
+        self.rawFinishReason = rawFinishReason
+        self.providerMetadata = providerMetadata
+        self.response = response
+        self.totalUsage = totalUsage
+    }
+}
+
+/// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
+/// convenience fields from the underlying `generate_text` call.
+public struct GenerateObjectResult: Codable, Equatable {
+    /// The parsed JSON object returned by the model (arbitrary JSON, weak type).
+    public var object: JSONValue
+    /// Why generation stopped.
+    public var finishReason: FinishReason
+    /// Raw provider-specific finish reason string.
+    public var rawFinishReason: String?
+    /// Token usage.
+    public var usage: Usage
+    /// Warnings from the provider.
+    public var warnings: [Warning]
+    /// Concatenated reasoning text (if the model produced reasoning/thinking).
+    public var reasoning: String?
+    /// Provider-specific metadata (e.g. Anthropic cache info). Weak type.
+    public var providerMetadata: JSONValue?
+    /// Response metadata (id, timestamp, model_id).
+    public var response: ResponseMetadata
+    /// The full `generate_text` result (for advanced use).
+    public var raw: GenerateTextResult
+
+    enum CodingKeys: String, CodingKey {
+        case object
+        case finishReason = "finish_reason"
+        case rawFinishReason = "raw_finish_reason"
+        case usage, warnings
+        case reasoning
+        case providerMetadata = "provider_metadata"
+        case response, raw
+    }
+
+    public init(object: JSONValue, finishReason: FinishReason,
+                rawFinishReason: String? = nil,
+                usage: Usage = Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage()),
+                warnings: [Warning] = [],
+                reasoning: String? = nil,
+                providerMetadata: JSONValue? = nil,
+                response: ResponseMetadata = ResponseMetadata(),
+                raw: GenerateTextResult) {
+        self.object = object; self.finishReason = finishReason
+        self.rawFinishReason = rawFinishReason; self.usage = usage
+        self.warnings = warnings; self.reasoning = reasoning
+        self.providerMetadata = providerMetadata; self.response = response
+        self.raw = raw
+    }
+}
+
+/// Aggregated result of `stream_text().consume()` (M11). Mirrors
+/// `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
+/// has no `GenerateResult` equivalent).
+public struct StreamTextResultAggregated: Codable, Equatable {
+    /// The generated text (concatenated `TextDelta`).
+    public var text: String
+    /// Reasoning / thinking segments. Weak type.
+    public var reasoning: [JSONValue]
+    /// Concatenated reasoning text.
+    public var reasoningText: String
+    /// Tool calls requested by the model.
+    public var toolCalls: [ToolCall]
+    /// Sources / citations. Weak type.
+    public var sources: [JSONValue]
+    /// Files generated by the model. Weak type.
+    public var files: [JSONValue]
+    /// Why generation stopped.
+    public var finishReason: FinishReason
+    /// Raw provider-specific finish reason string.
+    public var rawFinishReason: String?
+    /// Token usage.
+    public var usage: Usage
+    /// Total token usage across all steps. In single-step mode (aimux's
+    /// default), equals `usage`. Provided for AI SDK parity.
+    public var totalUsage: Usage
+    /// Warnings from the provider.
+    public var warnings: [Warning]
+    /// Provider-specific metadata from the Finish chunk. Weak type.
+    public var providerMetadata: JSONValue?
+    /// Response metadata (id, timestamp, model_id) if emitted by the stream.
+    public var response: ResponseMetadata?
+    /// Assistant messages ready to append for the next turn.
+    public var responseMessages: [ModelMessage]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case reasoning
+        case reasoningText = "reasoning_text"
+        case toolCalls = "tool_calls"
+        case sources, files
+        case finishReason = "finish_reason"
+        case rawFinishReason = "raw_finish_reason"
+        case usage
+        case totalUsage = "total_usage"
+        case warnings
+        case providerMetadata = "provider_metadata"
+        case response
+        case responseMessages = "response_messages"
+    }
+
+    public init(text: String = "", reasoning: [JSONValue] = [],
+                reasoningText: String = "", toolCalls: [ToolCall] = [],
+                sources: [JSONValue] = [], files: [JSONValue] = [],
+                finishReason: FinishReason, rawFinishReason: String? = nil,
+                usage: Usage = Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage()),
+                totalUsage: Usage = Usage(inputTokens: TokenUsage(), outputTokens: TokenUsage()),
+                warnings: [Warning] = [],
+                providerMetadata: JSONValue? = nil,
+                response: ResponseMetadata? = nil,
+                responseMessages: [ModelMessage] = []) {
+        self.text = text; self.reasoning = reasoning; self.reasoningText = reasoningText
+        self.toolCalls = toolCalls; self.sources = sources; self.files = files
+        self.finishReason = finishReason; self.rawFinishReason = rawFinishReason
+        self.usage = usage; self.totalUsage = totalUsage; self.warnings = warnings
+        self.providerMetadata = providerMetadata; self.response = response
         self.responseMessages = responseMessages
     }
 }

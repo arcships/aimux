@@ -128,4 +128,23 @@ public final class Aimux {
             throw AimuxException.fromC(err, "registerProviders");
         }
     }
+
+    /**
+     * Set the global proxy configuration (M6, RFC-0016). Must be called before
+     * the first {@code generateText} / {@code streamText} call; a no-op if the
+     * shared HTTP client is already initialised.
+     *
+     * <p>The C entry point returns an {@code int} (1 = success, 0 = failure).
+     *
+     * @param configJson ProxyConfig JSON ({@code "http_url"}, {@code "https_url"},
+     *                   {@code "all_url"}, {@code "no_proxy"} — all optional).
+     * @throws AimuxException if the C call fails (rc == 0).
+     */
+    public static void initProxy(String configJson) {
+        AimuxCError err = AimuxResult.newError();
+        int rc = AimuxFFI.INSTANCE.aimux_init_proxy(configJson, err);
+        if (rc == 0) {
+            throw AimuxException.fromC(err, "initProxy");
+        }
+    }
 }
