@@ -12,10 +12,11 @@ import com.sun.jna.Structure;
  * with {@code aimux_free_string}). On success {@code *err} is left untouched.
  *
  * <p>Field layout matches the 40-byte C struct: {@code code}, {@code status},
- * {@code retry_ms}, {@code message}, {@code error_value}, {@code reserved0}
- * (one reserved pointer slot for future ABI extension; always zero).
+ * {@code retry_ms}, {@code message}, {@code error_value}, {@code retryable},
+ * {@code reserved} (the last two 32-bit ints split what was one reserved
+ * pointer slot; {@code reserved} is always zero).
  */
-@Structure.FieldOrder({"code", "status", "retry_ms", "message", "error_value", "reserved0"})
+@Structure.FieldOrder({"code", "status", "retry_ms", "message", "error_value", "retryable", "reserved"})
 public class AimuxCError extends Structure {
 
     /** {@link AimuxException} code constant (0 = OK). */
@@ -37,8 +38,17 @@ public class AimuxCError extends Structure {
      */
     public Pointer error_value;
 
+    /**
+     * The engine's retry verdict: {@code 1} when retrying may help, {@code 0}
+     * when it will not. Written by the callee on every failure, and <em>not</em>
+     * derivable from {@link #status}: a statusless API-call failure is a
+     * retryable transport error when the request went out, and a non-retryable
+     * missing API key when it never did.
+     */
+    public int retryable;
+
     /** Reserved for future ABI extension; always zero. */
-    public Pointer reserved0;
+    public int reserved;
 
     public AimuxCError() {
         super();
@@ -54,7 +64,8 @@ public class AimuxCError extends Structure {
         retry_ms = -1L;
         message = null;
         error_value = null;
-        reserved0 = null;
+        retryable = 0;
+        reserved = 0;
     }
 
     /**

@@ -20,6 +20,7 @@ public:
     AimuxException(const std::string &context, AimuxError &e)
         : std::runtime_error(context + ": " + (e.message ? e.message : "failed")),
           code_(e.code), status_(e.status), retry_ms_(e.retry_ms),
+          retryable_(e.retryable != 0),
           error_value_(e.error_value ? e.error_value : "") {
         aimux_free_string(e.message);
         aimux_free_string(e.error_value);
@@ -34,6 +35,10 @@ public:
     AimuxErrorCode code() const { return code_; }
     int status() const { return status_; }
     int64_t retryMs() const { return retry_ms_; }
+    /** The callee's verdict: true when retrying may help. Not derivable from
+     *  status() — a transport failure and a missing API key both report -1
+     *  and disagree here. */
+    bool retryable() const { return retryable_; }
     /** Lossless AiMuxError JSON, or "" for FFI-synthesized failures. */
     const std::string &errorValue() const { return error_value_; }
 
@@ -41,6 +46,7 @@ private:
     AimuxErrorCode code_ = AIMUX_E_UNKNOWN;
     int status_ = -1;
     int64_t retry_ms_ = -1;
+    bool retryable_ = false;
     std::string error_value_;
 };
 
@@ -164,14 +170,16 @@ int main() {
 
     } catch (const AimuxException &e) {
         std::cerr << "Error: " << e.what() << "\n";
-        // HTTP-shaped failures are all AIMUX_E_API_CALL; status is the classification.
-        if (e.code() == AIMUX_E_API_CALL && e.status() == 429) {
-            // retryMs() is -1 when the 429 carried no retry-after header —
-            // fall back to your own exponential backoff.
+        // Whether to retry is the callee's verdict, not a guess from status:
+        // a statusless failure is a transport blip (retryable) or a missing
+        // API key (not), and both report status() == -1.
+        if (e.retryable()) {
+            // retryMs() is -1 when no retry-after hint arrived — fall back to
+            // your own exponential backoff.
             if (e.retryMs() >= 0) {
-                std::cerr << "rate limited, retry_ms=" << e.retryMs() << "\n";
+                std::cerr << "retryable, retry_ms=" << e.retryMs() << "\n";
             } else {
-                std::cerr << "rate limited, no retry-after hint, back off exponentially\n";
+                std::cerr << "retryable, no retry-after hint, back off exponentially\n";
             }
         }
         return 1;

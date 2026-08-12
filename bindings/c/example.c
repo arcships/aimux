@@ -12,11 +12,12 @@
 #include "aimux-error.h"
 #include "aimux-ffi.h"
 
-// Print the failure, then release e->message (owned by the caller).
-static void report(const char *what, AimuxError *e) {
+// Print the failure, release e->message (owned by the caller), and hand back
+// the callee's retry verdict: 1 when retrying may help, 0 when it will not.
+static int report(const char *what, AimuxError *e) {
     if (!e || e->code == AIMUX_OK) {
         fprintf(stderr, "%s: failed\n", what);
-        return;
+        return 0;
     }
     switch (e->code) {
     // Every HTTP-shaped failure arrives as AIMUX_E_API_CALL; classify on status.
@@ -41,8 +42,10 @@ static void report(const char *what, AimuxError *e) {
         } else {
             // status == -1: no HTTP response was ever observed — a missing API
             // key, an error built without a request, or a transport failure.
-            // Says nothing about whether a retry would help.
-            fprintf(stderr, "%s: no HTTP response: %s\n", what, e->message);
+            // Which one it was is e->retryable, never the status: those shapes
+            // both report -1 and disagree about whether a retry helps.
+            fprintf(stderr, "%s: no HTTP response (%s): %s\n", what,
+                    e->retryable ? "retryable" : "not retryable", e->message);
         }
         break;
     case AIMUX_E_TOKEN_EXPIRED:
@@ -56,6 +59,7 @@ static void report(const char *what, AimuxError *e) {
     aimux_free_string(e->error_value);
     e->message = NULL;
     e->error_value = NULL;
+    return e->retryable;
 }
 
 static void on_part(const char *json, void *stream_ctx) {
@@ -89,9 +93,14 @@ int main(void) {
     // 2. Generate text (non-streaming) — failure: result == NULL
     const char *prompt = "\"Explain Rust ownership in one sentence.\"";
     char *result = aimux_generate_text(handle, prompt, NULL, &err);
-    if (!result) {
-        report("generate_text", &err);
-    } else {
+    if (!result && report("generate_text", &err)) {
+        // Retry on the callee's verdict, not on the status sentinel.
+        result = aimux_generate_text(handle, prompt, NULL, &err);
+        if (!result) {
+            report("generate_text (retry)", &err);
+        }
+    }
+    if (result) {
         printf("Result: %s\n", result);
         aimux_free_string(result);
     }

@@ -66,11 +66,19 @@ typedef struct AimuxError {
     char *message;
     char *error_value;
     /**
+     * 1 when retrying may help, 0 when it will not — the core's retry
+     * verdict, stored at construction. Do NOT infer it from `status`: a
+     * statusless AIMUX_E_API_CALL is a transport failure (retryable) when the
+     * request went out, and a missing API key (not retryable) when it never
+     * did. The callee always writes this field.
+     */
+    int retryable;
+    /**
      * Reserved for future ABI extension. Must be zero; the callee zeroes it
      * on failure. The struct size is part of the caller-allocated ABI and
-     * can never change — this slot is the only room left to grow.
+     * can never change — this is the room left to grow.
      */
-    void *reserved[1];
+    int reserved;
 } AimuxError;
 
 /**
@@ -87,7 +95,8 @@ static inline void aimux_error_clear(AimuxError *e) {
     e->retry_ms = -1;
     e->message = 0;
     e->error_value = 0;
-    e->reserved[0] = 0;
+    e->retryable = 0;
+    e->reserved = 0;
 }
 
 #ifdef __cplusplus

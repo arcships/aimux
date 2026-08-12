@@ -62,24 +62,43 @@ final class AimuxTests: XCTestCase {
     func testApiCallClassifiesByStatus() {
         let rateLimited = AimuxError.apiCall(
             message: "API call error: HTTP 429: slow down",
-            status: 429, retryMs: 1500, errorValue: nil
+            status: 429, retryMs: 1500, retryable: true, errorValue: nil
         )
         XCTAssertEqual(rateLimited.status, 429)
         XCTAssertEqual(rateLimited.retryMs, 1500)
+        XCTAssertTrue(rateLimited.retryable)
 
         let auth = AimuxError.apiCall(
             message: "API call error: HTTP 401: invalid api key",
-            status: 401, retryMs: -1, errorValue: nil
+            status: 401, retryMs: -1, retryable: false, errorValue: nil
         )
         XCTAssertEqual(auth.status, 401)
         XCTAssertNil(auth.retryMs)
+        XCTAssertFalse(auth.retryable)
 
         // Transport failure: no response, so no status.
         let transport = AimuxError.apiCall(
             message: "API call error: connection reset",
-            status: -1, retryMs: -1, errorValue: nil
+            status: -1, retryMs: -1, retryable: true, errorValue: nil
         )
         XCTAssertNil(transport.status)
+    }
+
+    /// `retryable` is not derivable from `status`: both of these report no
+    /// status and disagree about whether a retry is worth attempting.
+    func testRetryableIsNotDerivableFromStatus() {
+        let transport = AimuxError.apiCall(
+            message: "API call error: connection reset",
+            status: -1, retryMs: -1, retryable: true, errorValue: nil
+        )
+        let missingKey = AimuxError.apiCall(
+            message: "API call error: missing api key",
+            status: -1, retryMs: -1, retryable: false, errorValue: nil
+        )
+        XCTAssertNil(transport.status)
+        XCTAssertNil(missingKey.status)
+        XCTAssertTrue(transport.retryable)
+        XCTAssertFalse(missingKey.retryable)
     }
 
     /// End to end: a 401 from the provider surfaces as `.apiCall` with the

@@ -143,12 +143,14 @@ void main() {
         err.ref.code = AimuxErrorCode.apiCall;
         err.ref.status = 429;
         err.ref.retryMs = 1500;
+        err.ref.retryable = 1;
         err.ref.message = 'API call error: HTTP 429: slow down'.toNativeUtf8();
         err.ref.errorValue = json.toNativeUtf8();
       });
       expect(e, isA<APICallError>());
       expect(e.status, 429);
       expect(e.retryMs, 1500);
+      expect(e.retryable, isTrue);
       expect(e.errorValue, json);
     });
 
@@ -161,6 +163,7 @@ void main() {
       });
       expect(e, isA<APICallError>());
       expect(e.status, 401);
+      expect(e.retryable, isFalse);
       expect(e.message, contains('HTTP 401'));
     });
 
@@ -175,6 +178,24 @@ void main() {
       expect(e, isA<NoSuchModelError>());
       expect(e.status, -1);
       expect(e.errorValue, json);
+    });
+
+    test('retryable crosses the ABI and status cannot stand in', () {
+      // Both report status == -1 and disagree — never infer one from the other.
+      final transport = fromFilled((err) {
+        err.ref.code = AimuxErrorCode.apiCall;
+        err.ref.message = 'API call error: connection reset'.toNativeUtf8();
+        err.ref.retryable = 1;
+      });
+      expect(transport.status, -1);
+      expect(transport.retryable, isTrue);
+
+      final noKey = fromFilled((err) {
+        err.ref.code = AimuxErrorCode.apiCall;
+        err.ref.message = 'API call error: missing api key'.toNativeUtf8();
+      });
+      expect(noKey.status, -1);
+      expect(noKey.retryable, isFalse);
     });
 
     test('OK code becomes UnknownError with fallback message', () {
@@ -229,6 +250,8 @@ void main() {
       expect(err.ref.retryMs, -1);
       expect(err.ref.message, nullptr);
       expect(err.ref.errorValue, nullptr);
+      expect(err.ref.retryable, 0);
+      expect(err.ref.reserved, 0);
       return 42;
     });
     expect(result, 42);

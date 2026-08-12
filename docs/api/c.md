@@ -54,7 +54,8 @@ Every fallible call takes a trailing `AimuxError *err` (may be `NULL`).
 | Failure + `err == NULL` | Still fails; no details (caller discarded them) |
 | Success | Use the return value; `*err` is **not touched** |
 
-The struct is 40 bytes (five fields plus one reserved pointer slot for future ABI extension); on failure `message` is allocated by aimux and the
+The struct is 40 bytes (six fields plus a 4-byte reserved slot for future ABI
+extension); on failure `message` is allocated by aimux and the
 caller **must release it with `aimux_free_string`** after reading. Initialize
 with `aimux_error_clear` (or `= {0}`) before first use.
 
@@ -65,9 +66,16 @@ typedef struct AimuxError {
     int64_t retry_ms;      /* ApiCall retry hint (retry_after_ms), or -1; 0 = retry now */
     char *message;         /* owned; free with aimux_free_string */
     char *error_value;     /* owned; lossless AiMuxError JSON, or NULL */
-    void *reserved[1];     /* future ABI room; always zero */
+    int retryable;         /* 1 = retrying may help, 0 = it will not */
+    int reserved;          /* future ABI room; always zero */
 } AimuxError;
 ```
+
+Branch on `retryable`, never on the `status` sentinel: a transport failure and
+a missing API key both report `status == -1` and disagree about whether a retry
+would help. `retry_ms` is a *hint* that rides along — it is `-1` whenever the
+response carried no `retry-after` header, including on a retryable status, so
+fall back to your own exponential backoff when it is negative.
 
 `error_value` carries the machine-readable source error — the
 externally-tagged JSON of aimux-core's `AiMuxError`, e.g.

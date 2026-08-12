@@ -412,7 +412,7 @@ async fn fetch_text(url: &str) -> Result<String, AiMuxError> {
             status_code: Some(status),
             message: format!("get_model_specs: fetch {url}"),
             response_body: resp.text().await.ok().filter(|b| !b.is_empty()),
-            is_retryable: status == 429 || status >= 500,
+            is_retryable: matches!(status, 408 | 409 | 429) || status >= 500,
             ..Default::default()
         }));
     }

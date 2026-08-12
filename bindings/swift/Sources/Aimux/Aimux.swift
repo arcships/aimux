@@ -64,31 +64,34 @@ func ffiStringCall(
 ///     // Classification is the status field: 429 → rate limited (e.retryMs),
 ///     // 401 → auth, 404 → model not found.
 ///     if case .apiCall = e, e.status == 429 { /* back off */ }
+///     // Whether a retry is worth it is `e.retryable`, never the status.
+///     if e.retryable { /* retry */ }
 /// }
 /// ```
 public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatable, Sendable {
     /// Local: model/provider handle is 0 or already released.
     case invalidHandle
 
-    case jsonParse(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case invalidResponseData(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case tool(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case invalidArgument(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case invalidPrompt(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case tokenExpired(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case unsupportedFunctionality(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case noSuchModel(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case noSuchProvider(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case jsonParse(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case invalidResponseData(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case tool(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case invalidArgument(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case invalidPrompt(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case tokenExpired(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case unsupportedFunctionality(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case noSuchModel(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case noSuchProvider(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
     /// Every HTTP-shaped failure: read `status` to classify (401 auth,
     /// 404 model, 429 rate limit). A `nil` status means no HTTP response was
     /// ever observed — a missing API key, an error built without a request, or
-    /// a transport failure — and says nothing about whether a retry would help.
-    case apiCall(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case timeout(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case aborted(message: String, status: Int, retryMs: Int64, errorValue: String?)
-    case other(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    /// a transport failure; read `retryable` to tell those apart, `status`
+    /// cannot.
+    case apiCall(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case timeout(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case aborted(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
+    case other(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
     /// `AIMUX_E_UNKNOWN` or an unexpected/future code.
-    case unknown(message: String, status: Int, retryMs: Int64, errorValue: String?)
+    case unknown(message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)
 
     /// Binding-local encode/decode failure (not produced by the C ABI).
     case serializationError(String)
@@ -96,25 +99,25 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     // MARK: Accessors
 
     /// The C-derived payload, or `nil` for the binding-local cases.
-    private var payload: (message: String, status: Int, retryMs: Int64, errorValue: String?)? {
+    private var payload: (message: String, status: Int, retryMs: Int64, retryable: Bool, errorValue: String?)? {
         switch self {
         case .invalidHandle, .serializationError:
             return nil
-        case .jsonParse(let m, let s, let r, let v),
-             .invalidResponseData(let m, let s, let r, let v),
-             .tool(let m, let s, let r, let v),
-             .invalidArgument(let m, let s, let r, let v),
-             .invalidPrompt(let m, let s, let r, let v),
-             .tokenExpired(let m, let s, let r, let v),
-             .unsupportedFunctionality(let m, let s, let r, let v),
-             .noSuchModel(let m, let s, let r, let v),
-             .noSuchProvider(let m, let s, let r, let v),
-             .apiCall(let m, let s, let r, let v),
-             .timeout(let m, let s, let r, let v),
-             .aborted(let m, let s, let r, let v),
-             .other(let m, let s, let r, let v),
-             .unknown(let m, let s, let r, let v):
-            return (m, s, r, v)
+        case .jsonParse(let m, let s, let r, let t, let v),
+             .invalidResponseData(let m, let s, let r, let t, let v),
+             .tool(let m, let s, let r, let t, let v),
+             .invalidArgument(let m, let s, let r, let t, let v),
+             .invalidPrompt(let m, let s, let r, let t, let v),
+             .tokenExpired(let m, let s, let r, let t, let v),
+             .unsupportedFunctionality(let m, let s, let r, let t, let v),
+             .noSuchModel(let m, let s, let r, let t, let v),
+             .noSuchProvider(let m, let s, let r, let t, let v),
+             .apiCall(let m, let s, let r, let t, let v),
+             .timeout(let m, let s, let r, let t, let v),
+             .aborted(let m, let s, let r, let t, let v),
+             .other(let m, let s, let r, let t, let v),
+             .unknown(let m, let s, let r, let t, let v):
+            return (m, s, r, t, v)
         }
     }
 
@@ -136,6 +139,15 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     public var retryMs: Int64? {
         guard let payload, payload.retryMs >= 0 else { return nil }
         return payload.retryMs
+    }
+
+    /// Whether retrying may help — the engine's verdict, carried across the C
+    /// ABI. Not derivable from `status`: a transport failure (request went
+    /// out, connection reset) and a missing API key (request never went out)
+    /// both report no status and disagree here. `false` for the
+    /// binding-local cases.
+    public var retryable: Bool {
+        payload?.retryable ?? false
     }
 
     /// Raw lossless machine-readable form of the source error: the
@@ -179,38 +191,39 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         }
         let status = Int(e.status)
         let retryMs = e.retry_ms
+        let retryable = e.retryable != 0
         let message = rawMsg.isEmpty ? "aimux: operation failed" : rawMsg
 
         switch e.code {
         case AIMUX_E_JSON_PARSE:
-            return .jsonParse(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .jsonParse(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_INVALID_RESPONSE_DATA:
-            return .invalidResponseData(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .invalidResponseData(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_TOOL:
-            return .tool(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .tool(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_INVALID_ARGUMENT:
-            return .invalidArgument(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .invalidArgument(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_INVALID_PROMPT:
-            return .invalidPrompt(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .invalidPrompt(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_TOKEN_EXPIRED:
             // TokenExpired is definitionally an observed 401 (RFC-0018).
-            return .tokenExpired(message: message, status: status == -1 ? 401 : status, retryMs: retryMs, errorValue: errorValue)
+            return .tokenExpired(message: message, status: status == -1 ? 401 : status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_UNSUPPORTED_FUNCTIONALITY:
-            return .unsupportedFunctionality(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .unsupportedFunctionality(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_NO_SUCH_MODEL:
-            return .noSuchModel(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .noSuchModel(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_NO_SUCH_PROVIDER:
-            return .noSuchProvider(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .noSuchProvider(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_API_CALL:
-            return .apiCall(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .apiCall(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_TIMEOUT:
-            return .timeout(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .timeout(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_ABORTED:
-            return .aborted(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .aborted(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         case AIMUX_E_OTHER:
-            return .other(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .other(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         default:
-            return .unknown(message: message, status: status, retryMs: retryMs, errorValue: errorValue)
+            return .unknown(message: message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue)
         }
     }
 }
@@ -463,6 +476,7 @@ public final class Model: @unchecked Sendable {
                 message: "aimux: initRecordingRing requires cap > 0 (got \(cap ?? 0))",
                 status: -1,
                 retryMs: -1,
+                retryable: false,
                 errorValue: nil
             )
         }
@@ -738,7 +752,8 @@ public final class Model: @unchecked Sendable {
             onError(e)
         } catch {
             // withCError only throws AimuxError.
-            onError(.unknown(message: "\(error)", status: -1, retryMs: -1, errorValue: nil))
+            onError(.unknown(message: "\(error)", status: -1, retryMs: -1, retryable: false,
+                             errorValue: nil))
         }
     }
 

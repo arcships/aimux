@@ -6,7 +6,8 @@ import com.sun.jna.Structure
 /**
  * JNA mirror of C `AimuxError` (aimux-error.h): 40 bytes
  * (int32 code, int32 status, int64 retry_ms, char *message, char *error_value,
- * and one reserved pointer slot for future ABI extension — always zero).
+ * int32 retryable, int32 reserved — the last two split what was one reserved
+ * pointer slot; `reserved` is always zero).
  *
  * Pass as the trailing `err` argument to fallible FFI calls. On failure the
  * callee fills every field and allocates [message] (NUL-terminated UTF-8) and,
@@ -17,12 +18,22 @@ import com.sun.jna.Structure
  * is left untouched. Check the function return first (0 / NULL), then read
  * this. Field defaults mirror `aimux_error_clear`.
  */
-@Structure.FieldOrder("code", "status", "retry_ms", "message", "error_value", "reserved0")
+@Structure.FieldOrder("code", "status", "retry_ms", "message", "error_value", "retryable", "reserved")
 open class AimuxCError : Structure() {
     @JvmField var code: Int = 0
     @JvmField var status: Int = -1
     @JvmField var retry_ms: Long = -1
     @JvmField var message: Pointer? = null
     @JvmField var error_value: Pointer? = null
-    @JvmField var reserved0: Pointer? = null
+
+    /**
+     * The core's retry verdict: 1 when retrying may help, 0 when it will not.
+     * Never infer it from [status] — a statusless API-call failure is a
+     * retryable transport error when the request went out, and a non-retryable
+     * missing API key when it never did.
+     */
+    @JvmField var retryable: Int = 0
+
+    /** Reserved for future ABI extension; always zero. */
+    @JvmField var reserved: Int = 0
 }

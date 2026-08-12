@@ -55,6 +55,15 @@ sealed class AimuxException(
      * was synthesized at the FFI boundary (bad argument, invalid handle).
      */
     val errorValue: String? = null,
+    /**
+     * The engine's retry verdict: true when retrying may help.
+     *
+     * Not derivable from [status] — two failures can both report -1 and
+     * disagree: a transport failure (the request went out, the connection was
+     * reset) is retryable, a missing API key (the request never went out) is
+     * not. False for failures synthesized at the FFI boundary.
+     */
+    val retryable: Boolean = false,
 ) : RuntimeException(message, cause) {
 
     companion object {
@@ -78,7 +87,14 @@ sealed class AimuxException(
                     "aimux: ${codeName(code)}"
                 }
             }
-            return createByCode(code, msg, err.status, err.retry_ms, errorValue = err.error_value?.getString(0, "UTF-8"))
+            return createByCode(
+                code,
+                msg,
+                err.status,
+                err.retry_ms,
+                errorValue = err.error_value?.getString(0, "UTF-8"),
+                retryable = err.retryable != 0,
+            )
         }
 
         /**
@@ -95,28 +111,30 @@ sealed class AimuxException(
             retryMs: Long = -1,
             cause: Throwable? = null,
             errorValue: String? = null,
+            retryable: Boolean = false,
         ): AimuxException = when (code) {
-            AIMUX_E_JSON_PARSE -> JSONParseError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_INVALID_RESPONSE_DATA -> InvalidResponseDataError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_TOOL -> ToolError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_INVALID_ARGUMENT -> InvalidArgumentError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_INVALID_PROMPT -> InvalidPromptError(message, status, retryMs, cause, errorValue)
+            AIMUX_E_JSON_PARSE -> JSONParseError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_INVALID_RESPONSE_DATA -> InvalidResponseDataError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_TOOL -> ToolError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_INVALID_ARGUMENT -> InvalidArgumentError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_INVALID_PROMPT -> InvalidPromptError(message, status, retryMs, cause, errorValue, retryable)
             AIMUX_E_TOKEN_EXPIRED -> TokenExpiredError(
                 message,
                 status = if (status == -1) 401 else status,
                 retryMs = retryMs,
                 cause = cause,
                 errorValue = errorValue,
+                retryable = retryable,
             )
-            AIMUX_E_UNSUPPORTED_FUNCTIONALITY -> UnsupportedFunctionalityError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_NO_SUCH_MODEL -> NoSuchModelError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_NO_SUCH_PROVIDER -> NoSuchProviderError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_API_CALL -> APICallError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_TIMEOUT -> TimeoutError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_ABORTED -> RequestAbortedError(message, status, retryMs, cause, errorValue)
-            AIMUX_E_OTHER -> OtherError(message, status, retryMs, cause, errorValue)
-            AIMUX_OK -> OtherError(message.ifEmpty { "aimux: operation failed" }, status, retryMs, cause, errorValue)
-            else -> UnknownAimuxError(message, code, status, retryMs, cause, errorValue)
+            AIMUX_E_UNSUPPORTED_FUNCTIONALITY -> UnsupportedFunctionalityError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_NO_SUCH_MODEL -> NoSuchModelError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_NO_SUCH_PROVIDER -> NoSuchProviderError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_API_CALL -> APICallError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_TIMEOUT -> TimeoutError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_ABORTED -> RequestAbortedError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_E_OTHER -> OtherError(message, status, retryMs, cause, errorValue, retryable)
+            AIMUX_OK -> OtherError(message.ifEmpty { "aimux: operation failed" }, status, retryMs, cause, errorValue, retryable)
+            else -> UnknownAimuxError(message, code, status, retryMs, cause, errorValue, retryable)
         }
 
         /** Core / C code → short name. */
@@ -148,7 +166,8 @@ class JSONParseError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_JSON_PARSE, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_JSON_PARSE, status, retryMs, cause, errorValue, retryable)
 
 class InvalidResponseDataError(
     message: String,
@@ -156,7 +175,8 @@ class InvalidResponseDataError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_INVALID_RESPONSE_DATA, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_INVALID_RESPONSE_DATA, status, retryMs, cause, errorValue, retryable)
 
 class ToolError(
     message: String,
@@ -164,7 +184,8 @@ class ToolError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_TOOL, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_TOOL, status, retryMs, cause, errorValue, retryable)
 
 class InvalidArgumentError(
     message: String,
@@ -172,7 +193,8 @@ class InvalidArgumentError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_INVALID_ARGUMENT, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_INVALID_ARGUMENT, status, retryMs, cause, errorValue, retryable)
 
 class InvalidPromptError(
     message: String,
@@ -180,7 +202,8 @@ class InvalidPromptError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_INVALID_PROMPT, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_INVALID_PROMPT, status, retryMs, cause, errorValue, retryable)
 
 /** Access token expired and must be refreshed (HTTP 401, but retry-after-refresh). */
 class TokenExpiredError(
@@ -189,7 +212,8 @@ class TokenExpiredError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_TOKEN_EXPIRED, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_TOKEN_EXPIRED, status, retryMs, cause, errorValue, retryable)
 
 class UnsupportedFunctionalityError(
     message: String,
@@ -197,7 +221,8 @@ class UnsupportedFunctionalityError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_UNSUPPORTED_FUNCTIONALITY, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_UNSUPPORTED_FUNCTIONALITY, status, retryMs, cause, errorValue, retryable)
 
 class NoSuchModelError(
     message: String,
@@ -205,7 +230,8 @@ class NoSuchModelError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_NO_SUCH_MODEL, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_NO_SUCH_MODEL, status, retryMs, cause, errorValue, retryable)
 
 class NoSuchProviderError(
     message: String,
@@ -213,7 +239,8 @@ class NoSuchProviderError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_NO_SUCH_PROVIDER, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_NO_SUCH_PROVIDER, status, retryMs, cause, errorValue, retryable)
 
 /**
  * Every HTTP-shaped provider failure (AI SDK `APICallError` analogue).
@@ -221,7 +248,8 @@ class NoSuchProviderError(
  * Classification is [status], not the class: 401 auth, 404 model not found,
  * 429 rate limited (with [retryMs]); -1 means no HTTP response was ever
  * observed — a missing API key, an error built without a request, or a
- * transport failure — and says nothing about whether a retry would help.
+ * transport failure — and says nothing about whether a retry would help: read
+ * [retryable] for that, never the status sentinel.
  * The full detail — `provider_code`, `response_body`, `request_id`,
  * `is_retryable` — is in [errorValue].
  */
@@ -231,7 +259,8 @@ class APICallError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_API_CALL, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_API_CALL, status, retryMs, cause, errorValue, retryable)
 
 class TimeoutError(
     message: String,
@@ -239,7 +268,8 @@ class TimeoutError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_TIMEOUT, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_TIMEOUT, status, retryMs, cause, errorValue, retryable)
 
 /** Request aborted (not a Java interruption). */
 class RequestAbortedError(
@@ -248,7 +278,8 @@ class RequestAbortedError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_ABORTED, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_ABORTED, status, retryMs, cause, errorValue, retryable)
 
 class OtherError(
     message: String,
@@ -256,7 +287,8 @@ class OtherError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, AIMUX_E_OTHER, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, AIMUX_E_OTHER, status, retryMs, cause, errorValue, retryable)
 
 /** `AIMUX_E_UNKNOWN` or an unrecognized / future code; preserves the raw [code]. */
 class UnknownAimuxError(
@@ -266,4 +298,5 @@ class UnknownAimuxError(
     retryMs: Long = -1,
     cause: Throwable? = null,
     errorValue: String? = null,
-) : AimuxException(message, code, status, retryMs, cause, errorValue)
+    retryable: Boolean = false,
+) : AimuxException(message, code, status, retryMs, cause, errorValue, retryable)

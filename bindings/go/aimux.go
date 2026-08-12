@@ -1170,6 +1170,7 @@ func errorFromC(e *C.AimuxError) error {
 		Message:    msg,
 		Status:     status,
 		RetryMs:    int64(e.retry_ms),
+		Retryable:  e.retryable != 0,
 		ErrorValue: errValue,
 	}
 }

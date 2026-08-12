@@ -30,7 +30,8 @@ fn clear_err() -> CAimuxError {
         retry_ms: -1,
         message: ptr::null_mut(),
         error_value: std::ptr::null_mut(),
-        reserved: [std::ptr::null_mut(); 1],
+        retryable: 0,
+        reserved: 0,
     }
 }
 
@@ -208,13 +209,15 @@ fn success_leaves_err_untouched() {
         retry_ms: 7,
         message: ptr::null_mut(),
         error_value: std::ptr::null_mut(),
-        reserved: [std::ptr::null_mut(); 1],
+        retryable: 1,
+        reserved: 0,
     };
     let h = aimux_openai_new(c("sk-test").as_ptr(), c("gpt-4o-mini").as_ptr(), &mut err);
     assert_ne!(h, 0);
     assert_eq!(err.code, AIMUX_E_OTHER, "success must not write err.code");
     assert_eq!(err.status, 42);
     assert_eq!(err.retry_ms, 7);
+    assert_eq!(err.retryable, 1, "success must not write err.retryable");
     assert!(err.message.is_null());
     aimux_drop_handle(h);
 }

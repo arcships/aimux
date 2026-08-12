@@ -136,3 +136,29 @@ func TestDefaultStatus(t *testing.T) {
 		}
 	}
 }
+
+// Retryable crosses the ABI as its own field. Two ApiCall failures both report
+// Status -1 and disagree about retrying, so Status cannot stand in for it.
+func TestRetryableIsNotDerivedFromStatus(t *testing.T) {
+	transport := &Error{
+		Code:      CodeAPICall,
+		Message:   "API call error: connection reset",
+		Status:    -1,
+		RetryMs:   -1,
+		Retryable: true, // request went out
+	}
+	missingKey := &Error{
+		Code:    CodeAPICall,
+		Message: "API call error: missing api key",
+		Status:  -1,
+		RetryMs: -1,
+	} // request never went out; Retryable stays false
+
+	if transport.Status != -1 || missingKey.Status != -1 {
+		t.Fatalf("both must carry Status -1: got %d / %d", transport.Status, missingKey.Status)
+	}
+	if !transport.Retryable || missingKey.Retryable {
+		t.Fatalf("Retryable: transport=%v missingKey=%v; want true / false",
+			transport.Retryable, missingKey.Retryable)
+	}
+}

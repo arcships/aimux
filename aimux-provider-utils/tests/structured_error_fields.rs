@@ -234,6 +234,52 @@ fn retry_policy_includes_408_and_409() {
     assert!(!parse_provider_error(400, "", &DEFAULT_ERROR_STRUCTURE).is_retryable());
 }
 
+/// A `Retry-After` header is honoured on every retryable status, not on 429
+/// alone — RFC 7231 defines it for 503 too, and the AI SDK's backoff reads it
+/// for any retryable failure. A non-retryable status still takes no hint.
+#[tokio::test]
+async fn retry_after_is_read_on_every_retryable_status() {
+    use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn hint_for(status: u16) -> Option<i64> {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(status).insert_header("retry-after-ms", "1500"))
+            .mount(&server)
+            .await;
+
+        let request = HttpRequest {
+            method: HttpMethod::Post,
+            url: server.uri(),
+            headers: vec![],
+            body: HttpBody::Json(serde_json::json!({})),
+            abort_signal: None,
+            call_id: None,
+            recording_context: None,
+        };
+        let no_retry = RetryConfig {
+            max_retries: 0,
+            ..RetryConfig::default()
+        };
+        send(request, no_retry, &DEFAULT_ERROR_STRUCTURE)
+            .await
+            .unwrap_err()
+            .retry_after_hint()
+    }
+
+    for status in [503u16, 408, 429] {
+        assert_eq!(
+            hint_for(status).await,
+            Some(1500),
+            "status {status} advertised a retry hint and it must survive"
+        );
+    }
+    // 400 is not retryable, so the header is not taken as provider data.
+    assert_eq!(hint_for(400).await, None);
+}
+
 /// §9.1 shared non-2xx regression, through the real HTTP loop: every non-2xx
 /// goes through the provider error parser (extracted message/code + raw body
 /// survive), the observed request id is attached to the same detail, and a

@@ -37,7 +37,10 @@ status_code: number | null,
  */
 provider_code: string | null, 
 /**
- * The provider's message, verbatim. No status prefix.
+ * The failure's own text, without a status prefix — `Display` adds
+ * that. Usually the provider's words as extracted from the body; on a
+ * transport failure, or a body the extractor could not read, it is
+ * ours. `response_body` is the lossless evidence either way.
  */
 message: string, 
 /**
@@ -52,9 +55,13 @@ response_body: string | null,
  */
 request_id: string | null, 
 /**
- * Retry hint in milliseconds, distilled from the `retry-after-ms` /
- * `retry-after` response headers on a 429. The classification lives in
- * `status_code`; this is the matching action input.
+ * Retry hint in milliseconds, when the provider advertised one. Two
+ * sources: the `retry-after-ms` / `retry-after` response headers on any
+ * retryable status (RFC 7231 defines `Retry-After` for 503 as well as
+ * 429), and the `retry_after_ms` / `retry_after` members of a JSON error
+ * payload, which arrive on whatever status that payload came with. The
+ * classification lives in `status_code`; this is the matching action
+ * input, and it is never fabricated locally.
  */
 retry_after_ms: number | null, 
 /**

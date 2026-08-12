@@ -78,7 +78,7 @@ func (c Code) String() string {
 //
 //	var e *aimux.Error
 //	if errors.As(err, &e) {
-//	    // e.Code, e.Status, e.RetryMs, e.Message
+//	    // e.Code, e.Status, e.RetryMs, e.Retryable, e.Message
 //	    // e.Code == aimux.CodeAPICall && e.Status == 429 → rate limited
 //	}
 //
@@ -87,12 +87,20 @@ func (c Code) String() string {
 //   - Status: HTTP status, or -1 — the classification for CodeAPICall
 //     (401 auth, 404 model, 429 rate limit)
 //   - RetryMs: rate-limit hint, or -1 (0 = retry now)
+//   - Retryable: the core's retry verdict, carried across the ABI
 //   - Message: human-readable text
 type Error struct {
 	Code    Code
 	Message string
 	Status  int   // HTTP status or -1
 	RetryMs int64 // retry hint or -1; 0 = retry immediately
+	// Retryable is the core's verdict on whether retrying may help. It
+	// rides the ABI as its own field and is never derived from Status: a
+	// transport failure (request went out, connection reset) is retryable
+	// and a missing API key (request never went out) is not, yet both
+	// report Status -1. False for failures synthesized at the FFI
+	// boundary (bad argument, unparseable JSON).
+	Retryable bool
 	// ErrorValue is the lossless machine-readable source error:
 	// externally-tagged aimux-core AiMuxError JSON; empty for failures
 	// synthesized at the FFI boundary.

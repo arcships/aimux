@@ -38,7 +38,10 @@ pub struct ApiCallError {
     /// status. Our normalized take on `APICallError.data`.
     #[serde(default)]
     pub provider_code: Option<String>,
-    /// The provider's message, verbatim. No status prefix.
+    /// The failure's own text, without a status prefix — `Display` adds
+    /// that. Usually the provider's words as extracted from the body; on a
+    /// transport failure, or a body the extractor could not read, it is
+    /// ours. `response_body` is the lossless evidence either way.
     pub message: String,
     /// The raw response body, verbatim (`APICallError.responseBody`) — the
     /// lossless evidence when `message`/`provider_code` are extractions.
@@ -49,9 +52,13 @@ pub struct ApiCallError {
     /// response header when one was sent. Filled by the shared HTTP layer.
     #[serde(default)]
     pub request_id: Option<String>,
-    /// Retry hint in milliseconds, distilled from the `retry-after-ms` /
-    /// `retry-after` response headers on a 429. The classification lives in
-    /// `status_code`; this is the matching action input.
+    /// Retry hint in milliseconds, when the provider advertised one. Two
+    /// sources: the `retry-after-ms` / `retry-after` response headers on any
+    /// retryable status (RFC 7231 defines `Retry-After` for 503 as well as
+    /// 429), and the `retry_after_ms` / `retry_after` members of a JSON error
+    /// payload, which arrive on whatever status that payload came with. The
+    /// classification lives in `status_code`; this is the matching action
+    /// input, and it is never fabricated locally.
     #[serde(default)]
     #[ts(type = "number | null")]
     pub retry_after_ms: Option<u64>,
@@ -125,6 +132,14 @@ pub enum AiMuxError {
     /// Registry-level "model id does not resolve" (the AI SDK's
     /// `NoSuchModelError { modelId, modelType }`). Pre-HTTP: the upstream API
     /// was never called, so there is no status.
+    ///
+    /// **Reserved — nothing constructs this yet.** `provider(name, key,
+    /// model_id)` does not validate the model id against the catalogue, so an
+    /// unknown model reaches the wire and comes back as an `ApiCall` 404. The
+    /// variant and its bindings exist so that resolution, when it lands, has a
+    /// shape to report; until then, do not branch on it expecting coverage of
+    /// mistyped model ids. Contrast [`AiMuxError::NoSuchProvider`], which
+    /// `provider()` does raise.
     #[error("no such model: {model_id}")]
     NoSuchModel {
         model_id: String,
@@ -180,10 +195,10 @@ impl AiMuxError {
     }
 
     /// Returns the retry-after delay hint (in milliseconds) carried by this
-    /// error, if any — distilled from the `retry-after-ms` / `retry-after`
-    /// response headers into [`ApiCallError::retry_after_ms`]. Returns `None`
-    /// for errors that don't advertise a delay, in which case the retry
-    /// strategy falls back to exponential backoff.
+    /// error, if any — whatever reached [`ApiCallError::retry_after_ms`],
+    /// from either the response headers or a JSON error payload. Returns
+    /// `None` for errors that don't advertise a delay, in which case the
+    /// retry strategy falls back to exponential backoff.
     ///
     /// Mirrors the header-consulting behaviour of
     /// `retryWithExponentialBackoffRespectingRetryHeaders` in the TS SDK.

@@ -1304,10 +1304,12 @@ async fn send_with_retry_raw(
                     .find_map(|k| resp.headers().get(*k))
                     .and_then(|v| v.to_str().ok())
                     .map(str::to_owned);
-                // Retry hint: stored only for 429 (current core contract).
-                // Missing/invalid/negative header → None; never fabricate a
-                // local fallback as provider data (RFC-0009 §4.2).
-                let retry_after_ms = (status_code == 429)
+                // Retry hint: read for every retryable status, not 429
+                // alone — RFC 7231 defines Retry-After for 503 too, and the
+                // AI SDK's backoff consults the header on any retryable
+                // failure. Missing/invalid/negative header → None; never
+                // fabricate a local fallback as provider data (RFC-0009 §4.2).
+                let retry_after_ms = (matches!(status_code, 408 | 409 | 429) || status_code >= 500)
                     .then(|| {
                         parse_retry_after(
                             resp.headers()

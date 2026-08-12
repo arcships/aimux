@@ -14,7 +14,7 @@ class AimuxExceptionTest {
     @Test
     void cErrorStructIs40Bytes() {
         // Mirrors the C AimuxError layout:
-        // int32 + int32 + int64 + char* + char* + void*[1].
+        // int32 + int32 + int64 + char* + char* + int32 + int32.
         assertThat(new AimuxCError().size()).isEqualTo(40);
     }
 
@@ -153,6 +153,31 @@ class AimuxExceptionTest {
         AimuxCError err = filled(AimuxException.AIMUX_E_API_CALL, 429, 1500L, "slow down", json);
         AimuxException e = AimuxException.fromC(err);
         assertThat(e.getErrorValue()).isEqualTo(json);
+    }
+
+    @Test
+    void retryableCrossesTheAbiAndStatusCannotStandIn() {
+        // Same status (-1), opposite verdicts: the request went out and the
+        // connection dropped vs. it never went out at all.
+        AimuxCError transport = filled(
+            AimuxException.AIMUX_E_API_CALL, -1, -1L, "connection reset");
+        transport.retryable = 1;
+        AimuxException retryable = AimuxException.fromC(transport);
+
+        AimuxCError noKey = filled(
+            AimuxException.AIMUX_E_API_CALL, -1, -1L, "missing api key");
+        AimuxException fatal = AimuxException.fromC(noKey);
+
+        assertThat(retryable.getStatusCode()).isEqualTo(fatal.getStatusCode());
+        assertThat(retryable.isRetryable()).isTrue();
+        assertThat(fatal.isRetryable()).isFalse();
+    }
+
+    @Test
+    void retryableIsFalseForLocalFailures() {
+        assertThat(AimuxException.of(AimuxException.AIMUX_E_INVALID_ARGUMENT, "bad arg")
+            .isRetryable()).isFalse();
+        assertThat(AimuxException.fromC(null).isRetryable()).isFalse();
     }
 
     @Test

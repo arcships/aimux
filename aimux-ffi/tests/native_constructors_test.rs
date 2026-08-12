@@ -27,7 +27,8 @@ fn clear_err() -> CAimuxError {
         retry_ms: -1,
         message: std::ptr::null_mut(),
         error_value: std::ptr::null_mut(),
-        reserved: [std::ptr::null_mut(); 1],
+        retryable: 0,
+        reserved: 0,
     }
 }
 

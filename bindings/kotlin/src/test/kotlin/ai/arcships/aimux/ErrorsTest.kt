@@ -105,6 +105,23 @@ class ErrorsTest {
         assertThat(ex.status).isEqualTo(401)
     }
 
+    /** Same status (-1), opposite verdicts: status cannot stand in for retryable. */
+    @Test
+    fun `fromC carries the retry verdict that status cannot express`() {
+        val transport = AimuxCError()
+        transport.code = AIMUX_E_API_CALL
+        transport.retryable = 1 // request went out, connection reset
+        val retryable = AimuxException.fromC(transport)
+
+        val noKey = AimuxCError()
+        noKey.code = AIMUX_E_API_CALL // missing api key: request never went out
+        val fatal = AimuxException.fromC(noKey)
+
+        assertThat(retryable.status).isEqualTo(fatal.status)
+        assertThat(retryable.retryable).isTrue()
+        assertThat(fatal.retryable).isFalse()
+    }
+
     @Test
     fun `fromC preserves unrecognized codes`() {
         val err = AimuxCError()

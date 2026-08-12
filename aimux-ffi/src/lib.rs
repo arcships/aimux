@@ -332,7 +332,11 @@ pub struct CAimuxError {
     pub retry_ms: i64,
     pub message: *mut c_char,
     pub error_value: *mut c_char,
-    pub reserved: [*mut c_void; 1],
+    /// `1` when retrying may help, `0` when it will not — the core's
+    /// `AiMuxError::is_retryable()`. Do not infer this from `status`: a
+    /// statusless `ApiCall` may be either.
+    pub retryable: i32,
+    pub reserved: i32,
 }
 
 fn aimux_error_code(err: &AiMuxError) -> i32 {
@@ -354,7 +358,14 @@ fn aimux_error_code(err: &AiMuxError) -> i32 {
 }
 
 /// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fill_error(err: *mut CAimuxError, code: i32, status: i32, retry_ms: i64, msg: &str) {
+unsafe fn fill_error(
+    err: *mut CAimuxError,
+    code: i32,
+    status: i32,
+    retry_ms: i64,
+    retryable: bool,
+    msg: &str,
+) {
     if err.is_null() {
         return;
     }
@@ -364,7 +375,8 @@ unsafe fn fill_error(err: *mut CAimuxError, code: i32, status: i32, retry_ms: i6
     e.retry_ms = retry_ms;
     e.message = into_cstring_raw(msg.to_string());
     e.error_value = std::ptr::null_mut();
-    e.reserved = [std::ptr::null_mut(); 1];
+    e.retryable = i32::from(retryable);
+    e.reserved = 0;
 }
 
 /// # Safety: `err` null or writable `CAimuxError`.
@@ -373,7 +385,7 @@ unsafe fn fill_from_aimux(err: *mut CAimuxError, ae: &AiMuxError) {
     let status = ae.status_code().map(|s| s as i32).unwrap_or(-1);
     let retry_ms = ae.retry_after_hint().unwrap_or(-1);
     let msg = ae.to_string();
-    unsafe { fill_error(err, code, status, retry_ms, &msg) };
+    unsafe { fill_error(err, code, status, retry_ms, ae.is_retryable(), &msg) };
     if err.is_null() {
         return;
     }
@@ -414,7 +426,9 @@ unsafe fn fail<T: Sentinel>(
     retry_ms: i64,
     msg: &str,
 ) -> T {
-    unsafe { fill_error(err, code, status, retry_ms, msg) };
+    // Boundary-synthesized failures (bad argument, unparseable JSON) are
+    // never retryable — same verdict the core gives every non-ApiCall variant.
+    unsafe { fill_error(err, code, status, retry_ms, false, msg) };
     T::sentinel()
 }
 
@@ -581,7 +595,7 @@ fn normalize_config_json(config_json: *const c_char, err: *mut CAimuxError) -> O
     }
     match cstr_to_string(config_json) {
         None => unsafe {
-            fill_error(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, INVALID_ARGS);
+            fill_error(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, false, INVALID_ARGS);
             None
         },
         Some(s) if s.trim().is_empty() || s.trim() == "null" => Some(String::from("{}")),
@@ -2914,6 +2928,43 @@ mod tests {
         assert_eq!(std::mem::size_of::<CAimuxError>(), 40);
     }
 
+    /// The retry verdict crosses the ABI as a field. It is not derivable from
+    /// `status`: both cases below report -1, and they disagree.
+    #[test]
+    fn retryable_crosses_the_abi_and_status_cannot_stand_in() {
+        let mut c = CAimuxError {
+            code: AIMUX_OK,
+            status: 0,
+            retry_ms: 0,
+            message: std::ptr::null_mut(),
+            error_value: std::ptr::null_mut(),
+            retryable: 0,
+            reserved: 0,
+        };
+
+        let transport = AiMuxError::ApiCall(ApiCallError {
+            message: "connection reset".into(),
+            is_retryable: true,
+            ..Default::default()
+        });
+        unsafe { fill_from_aimux(&mut c, &transport) };
+        assert_eq!(c.status, -1);
+        assert_eq!(c.retryable, 1);
+        assert_eq!(c.reserved, 0);
+
+        let no_key = AiMuxError::ApiCall(ApiCallError {
+            message: "no api key".into(),
+            ..Default::default()
+        });
+        unsafe { fill_from_aimux(&mut c, &no_key) };
+        assert_eq!(c.status, -1, "same sentinel as the transport failure");
+        assert_eq!(c.retryable, 0, "but the opposite verdict");
+
+        // Non-ApiCall variants are never retryable.
+        unsafe { fill_from_aimux(&mut c, &AiMuxError::InvalidArgument("bad".into())) };
+        assert_eq!(c.retryable, 0);
+    }
+
     /// Pin the full 13-variant → code mapping and the status/retry derivation.
     #[test]
     fn error_code_mapping_covers_all_variants() {
@@ -2970,7 +3021,8 @@ mod tests {
             retry_ms: 0,
             message: std::ptr::null_mut(),
             error_value: std::ptr::null_mut(),
-            reserved: [std::ptr::null_mut(); 1],
+            retryable: 0,
+            reserved: 0,
         };
         // A 429 is an ApiCall error; code is AIMUX_E_API_CALL and the
         // classification/hint cross the ABI as status/retry_ms.
@@ -3004,9 +3056,10 @@ mod tests {
             retry_ms: -1,
             message: std::ptr::null_mut(),
             error_value: std::ptr::null_mut(),
-            reserved: [std::ptr::null_mut(); 1],
+            retryable: 0,
+            reserved: 0,
         };
-        unsafe { fill_error(&mut c, AIMUX_E_OTHER, -1, -1, "a\0b") };
+        unsafe { fill_error(&mut c, AIMUX_E_OTHER, -1, -1, false, "a\0b") };
         let m = unsafe { CStr::from_ptr(c.message) }.to_str().unwrap();
         assert_eq!(m, "a\u{FFFD}b");
         unsafe { aimux_free_string(c.message) };
@@ -3197,7 +3250,8 @@ mod tests {
             retry_ms: 0,
             message: std::ptr::null_mut(),
             error_value: std::ptr::null_mut(),
-            reserved: [std::ptr::null_mut(); 1],
+            retryable: 0,
+            reserved: 0,
         }
     }
 

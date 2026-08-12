@@ -73,8 +73,8 @@ abstract final class AimuxErrorCode {
 ///
 /// Layout must match `aimux-error.h` / Rust `CAimuxError` (`#[repr(C)]`):
 /// `code:i32`, `status:i32`, `retry_ms:i64`, `message:char*`,
-/// `error_value:char*`, plus one reserved pointer slot for future ABI
-/// extension (always zero).
+/// `error_value:char*`, `retryable:i32`, plus an `i32` reserved slot for
+/// future ABI extension (always zero).
 ///
 /// On failure the callee allocates [message] and optionally [errorValue]
 /// (lossless externally-tagged core `AiMuxError` JSON; NULL for
@@ -95,7 +95,11 @@ final class AimuxCError extends Struct {
 
   external Pointer<Utf8> errorValue;
 
-  external Pointer<Void> reserved0;
+  @Int32()
+  external int retryable;
+
+  @Int32()
+  external int reserved;
 }
 
 /// Reset [err] to OK / no hint / no message (mirrors `aimux_error_clear`).
@@ -105,7 +109,8 @@ void clearAimuxCError(Pointer<AimuxCError> err) {
   err.ref.retryMs = -1;
   err.ref.message = nullptr;
   err.ref.errorValue = nullptr;
-  err.ref.reserved0 = nullptr;
+  err.ref.retryable = 0;
+  err.ref.reserved = 0;
 }
 
 /// Allocate a cleared [AimuxCError], run [fn], free the engine-allocated
@@ -227,6 +232,7 @@ int construct2(
 /// - [code]: kind ([AimuxErrorCode])
 /// - [status]: HTTP status, or `-1`
 /// - [retryMs]: rate-limit hint, or `-1` (`0` = retry now)
+/// - [retryable]: whether retrying may help
 /// - [message]: human-readable text
 /// - [errorValue]: raw lossless core-error JSON, or `null`
 class AimuxException implements Exception {
@@ -242,6 +248,12 @@ class AimuxException implements Exception {
   /// Rate-limit hint in ms; `-1` if none; `0` means retry immediately.
   final int retryMs;
 
+  /// Whether retrying may help — the engine's verdict, carried across the C
+  /// ABI. Not derivable from [status]: a transport failure (request went out,
+  /// connection reset) and a missing API key (request never went out) both
+  /// report `status == -1` and disagree here.
+  final bool retryable;
+
   /// Raw lossless core-error JSON (externally-tagged `AiMuxError`), or `null`
   /// when absent (e.g. FFI-synthesized failures). No parsing is done.
   final String? errorValue;
@@ -251,6 +263,7 @@ class AimuxException implements Exception {
     this.code = AimuxErrorCode.other,
     this.status = -1,
     this.retryMs = -1,
+    this.retryable = false,
     this.errorValue,
   });
 
@@ -276,6 +289,7 @@ class AimuxException implements Exception {
       message,
       status: e.status,
       retryMs: e.retryMs,
+      retryable: e.retryable != 0,
       errorValue:
           e.errorValue == nullptr ? null : e.errorValue.toDartString(),
     );
@@ -287,48 +301,51 @@ class AimuxException implements Exception {
     String message, {
     int status = -1,
     int retryMs = -1,
+    bool retryable = false,
     String? errorValue,
   }) {
     switch (code) {
       case AimuxErrorCode.jsonParse:
-        return JSONParseError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return JSONParseError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.invalidResponseData:
-        return InvalidResponseDataError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return InvalidResponseDataError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.tool:
-        return ToolError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return ToolError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.invalidArgument:
-        return InvalidArgumentError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return InvalidArgumentError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.invalidPrompt:
-        return InvalidPromptError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return InvalidPromptError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.tokenExpired:
         return TokenExpiredError(
           message,
           status: status == -1 ? 401 : status,
           retryMs: retryMs,
+          retryable: retryable,
           errorValue: errorValue,
         );
       case AimuxErrorCode.unsupportedFunctionality:
-        return UnsupportedFunctionalityError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return UnsupportedFunctionalityError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.noSuchModel:
-        return NoSuchModelError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return NoSuchModelError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.noSuchProvider:
-        return NoSuchProviderError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return NoSuchProviderError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.apiCall:
-        return APICallError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return APICallError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.timeout:
-        return AimuxTimeoutError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return AimuxTimeoutError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.aborted:
-        return RequestAbortedError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return RequestAbortedError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.other:
-        return OtherError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return OtherError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       case AimuxErrorCode.unknown:
-        return UnknownError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return UnknownError(message, status: status, retryMs: retryMs, retryable: retryable, errorValue: errorValue);
       default:
         return AimuxException(
           message,
           code: code,
           status: status,
           retryMs: retryMs,
+          retryable: retryable,
           errorValue: errorValue,
         );
     }
@@ -345,64 +362,64 @@ class AimuxException implements Exception {
 
 /// Unclassified / unknown failure (C `AIMUX_E_UNKNOWN`).
 class UnknownError extends AimuxException {
-  UnknownError(super.message, {super.status, super.retryMs, super.errorValue})
+  UnknownError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.unknown);
 }
 
 /// JSON parse / serialize failure.
 class JSONParseError extends AimuxException {
-  JSONParseError(super.message, {super.status, super.retryMs, super.errorValue})
+  JSONParseError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.jsonParse);
 }
 
 /// Invalid / malformed response data (streaming or decode failure).
 class InvalidResponseDataError extends AimuxException {
   InvalidResponseDataError(super.message,
-      {super.status, super.retryMs, super.errorValue})
+      {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.invalidResponseData);
 }
 
 /// Tool-related failure.
 class ToolError extends AimuxException {
-  ToolError(super.message, {super.status, super.retryMs, super.errorValue})
+  ToolError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.tool);
 }
 
 /// Invalid argument (null args, invalid or expired handles, …).
 class InvalidArgumentError extends AimuxException {
-  InvalidArgumentError(super.message, {super.status, super.retryMs, super.errorValue})
+  InvalidArgumentError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.invalidArgument);
 }
 
 /// Invalid prompt.
 class InvalidPromptError extends AimuxException {
-  InvalidPromptError(super.message, {super.status, super.retryMs, super.errorValue})
+  InvalidPromptError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.invalidPrompt);
 }
 
 /// Access token expired.
 class TokenExpiredError extends AimuxException {
-  TokenExpiredError(super.message, {super.status = 401, super.retryMs, super.errorValue})
+  TokenExpiredError(super.message, {super.status = 401, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.tokenExpired);
 }
 
 /// Unsupported functionality.
 class UnsupportedFunctionalityError extends AimuxException {
   UnsupportedFunctionalityError(super.message,
-      {super.status, super.retryMs, super.errorValue})
+      {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.unsupportedFunctionality);
 }
 
 /// No such model in registry / catalogue.
 class NoSuchModelError extends AimuxException {
-  NoSuchModelError(super.message, {super.status, super.retryMs, super.errorValue})
+  NoSuchModelError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.noSuchModel);
 }
 
 /// No such provider name.
 class NoSuchProviderError extends AimuxException {
   NoSuchProviderError(super.message,
-      {super.status, super.retryMs, super.errorValue})
+      {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.noSuchProvider);
 }
 
@@ -410,27 +427,28 @@ class NoSuchProviderError extends AimuxException {
 /// HTTP-shaped failure. [status] is the classification (401 auth, 404 model,
 /// 429 rate limit + [retryMs]); `-1` means no HTTP response was ever observed
 /// — a missing API key, an error built without a request, or a transport
-/// failure — and says nothing about whether a retry would help.
+/// failure. Read [retryable] to decide on a retry; [status] cannot tell those
+/// two apart.
 class APICallError extends AimuxException {
-  APICallError(super.message, {super.status, super.retryMs, super.errorValue})
+  APICallError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.apiCall);
 }
 
 /// Request timed out. (Prefixed to avoid shadowing dart:async
 /// `TimeoutError`.)
 class AimuxTimeoutError extends AimuxException {
-  AimuxTimeoutError(super.message, {super.status, super.retryMs, super.errorValue})
+  AimuxTimeoutError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.timeout);
 }
 
 /// Request aborted (not DOM `AbortError`).
 class RequestAbortedError extends AimuxException {
-  RequestAbortedError(super.message, {super.status, super.retryMs, super.errorValue})
+  RequestAbortedError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.aborted);
 }
 
 /// Unclassified failure (`AIMUX_E_OTHER`).
 class OtherError extends AimuxException {
-  OtherError(super.message, {super.status, super.retryMs, super.errorValue})
+  OtherError(super.message, {super.status, super.retryMs, super.retryable, super.errorValue})
       : super(code: AimuxErrorCode.other);
 }

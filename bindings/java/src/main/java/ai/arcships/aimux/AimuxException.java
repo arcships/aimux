@@ -19,8 +19,9 @@ package ai.arcships.aimux;
  * }</pre>
  *
  * <p>Every instance carries {@link #getCode()} (C {@code AimuxErrorCode} 0–14),
- * {@link #getStatusCode()} (HTTP or {@code -1}), and {@link #getRetryMs()} (hint
- * or {@code -1}; {@code 0} = retry now). Message text comes from the C layer.
+ * {@link #getStatusCode()} (HTTP or {@code -1}), {@link #getRetryMs()} (hint
+ * or {@code -1}; {@code 0} = retry now) and {@link #isRetryable()}. Message
+ * text comes from the C layer.
  *
  * <p>Message-only constructors default {@code status=-1}, {@code retryMs=-1} for
  * backward compatibility with typed-layer decode failures.
@@ -56,6 +57,9 @@ public class AimuxException extends RuntimeException {
     // failures. Not a constructor param so the 13 subclass constructors keep
     // their public signatures.
     private String errorValue;
+
+    // Same deal: set once by fromC, false for local / synthesized failures.
+    private boolean retryable;
 
     // ── Constructors ────────────────────────────────────────────────────────
 
@@ -110,6 +114,19 @@ public class AimuxException extends RuntimeException {
         return errorValue;
     }
 
+    /**
+     * The engine's retry verdict: {@code true} when retrying may help.
+     *
+     * <p>Not derivable from {@link #getStatusCode()} — two failures can both
+     * report {@code -1} and disagree: a transport failure (the request went out,
+     * the connection was reset) is retryable, a missing API key (the request
+     * never went out) is not. {@code false} for local (non-FFI) failures and
+     * for failures synthesized at the FFI boundary.
+     */
+    public boolean isRetryable() {
+        return retryable;
+    }
+
     // ── Factories ───────────────────────────────────────────────────────────
 
     /**
@@ -131,6 +148,7 @@ public class AimuxException extends RuntimeException {
         long retryMs;
         String msg;
         String errorValue = null;
+        boolean retryable = false;
         if (e == null) {
             code = AIMUX_E_OTHER;
             status = -1;
@@ -145,6 +163,7 @@ public class AimuxException extends RuntimeException {
             retryMs = e.retry_ms;
             msg = e.takeMessage();
             errorValue = e.takeErrorValue();
+            retryable = e.retryable != 0;
             if (msg.isEmpty()) {
                 msg = "aimux: " + codeName(e.code);
             }
@@ -154,6 +173,7 @@ public class AimuxException extends RuntimeException {
         }
         AimuxException ex = createByCode(code, msg, status, retryMs);
         ex.errorValue = errorValue;
+        ex.retryable = retryable;
         return ex;
     }
 
@@ -306,7 +326,8 @@ public class AimuxException extends RuntimeException {
      * errors, transport failures, 401 auth, 404 model, 429 rate limit. Classify
      * with {@link #getStatusCode()}; {@code -1} means no HTTP response was ever
      * observed — a missing API key, an error built without a request, or a
-     * transport failure — and says nothing about whether a retry would help.
+     * transport failure — and says nothing about whether a retry would help:
+     * read {@link #isRetryable()} for that, never the status sentinel.
      */
     public static class APICallError extends AimuxException {
         public APICallError(String message, int status, long retryMs) {
