@@ -239,4 +239,7 @@ public interface AimuxFFI extends Library {
 
     /** Create a mock replay model from recorded JSONL. Handle &gt; 0 on success, 0 on failure. */
     long aimux_mock_replay_new(String recordingsJsonl, AimuxCError err);
+
+    /** Register external OpenAI-compatible providers from JSON config (RFC-0020). Returns 1 on success, 0 on failure (fills {@code err}). */
+    int aimux_register_providers(String configJson, AimuxCError err);
 }

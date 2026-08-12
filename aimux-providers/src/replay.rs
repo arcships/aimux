@@ -111,6 +111,10 @@ fn is_openai_compatible_provider(name: &str) -> bool {
     if crate::provider::provider_registry_entry(name).is_some() {
         return true;
     }
+    // Externally-registered providers via the RFC-0020 overlay.
+    if crate::provider::is_external_provider(name) {
+        return true;
+    }
     // Local / self-hosted inference servers that wrap `OpenAIProvider`.
     // Keep in sync with the thin-wrapper modules (each sets `with_provider`).
     const THIN_WRAPPERS: &[&str] = &[
@@ -282,6 +286,51 @@ mod tests {
         let err = rebuild_provider(&p, Some("sk")).err().unwrap();
         assert!(matches!(err, AiMuxError::Unsupported(_)), "{err}");
         assert!(err.to_string().contains("replay_with_model"), "{err}");
+    }
+
+    #[test]
+    fn external_overlay_provider_is_replayable() {
+        // RFC-0020 overlay: a provider registered at runtime must be
+        // recognized by the replay path (is_openai_compatible_provider),
+        // otherwise rebuild_provider returns Unsupported and replay silently
+        // fails for newly-registered external providers.
+        let name = "test-replay-overlay";
+        crate::provider::register_provider(crate::provider::ExternalProviderEntry {
+            name: name.into(),
+            display: None,
+            base_url: "https://relay.test.example/v1".into(),
+            env_var: None,
+            api_key: Some("dummy".into()),
+            protocol: "openai_compat".into(),
+            profile: crate::provider::ProviderProfile::default(),
+            headers: None,
+            organization: None,
+            project: None,
+            max_retries: None,
+            body_overrides: None,
+            comment: None,
+        })
+        .unwrap();
+        assert!(
+            is_openai_compatible_provider(name),
+            "external overlay provider must be replay-recognizable"
+        );
+        // rebuild_provider should succeed (not Unsupported) for the overlay name.
+        let p = ProviderRecord {
+            provider: name.into(),
+            model_id: "m".into(),
+            base_url: Some("https://relay.test.example/v1".into()),
+            api_key_source: "explicit".into(),
+            profile: None,
+            provider_options: None,
+        };
+        let result = rebuild_provider(&p, Some("dummy"));
+        assert!(
+            result.is_ok(),
+            "rebuild_provider should accept overlay name"
+        );
+        // Clean up the overlay so other tests are unaffected.
+        crate::provider::clear_overlay(name);
     }
 
     #[test]

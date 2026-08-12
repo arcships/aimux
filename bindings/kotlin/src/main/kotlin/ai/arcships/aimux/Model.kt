@@ -153,6 +153,9 @@ internal interface AimuxFFI : Library {
     fun aimux_recording_stop(): Int
     fun aimux_recording_flush(): Int
     fun aimux_mock_replay_new(recordingsJsonl: String, err: AimuxCError?): Long
+
+    // Register external providers from JSON config (RFC-0020). Returns 1 on success, 0 on failure.
+    fun aimux_register_providers(configJson: String, err: AimuxCError?): Int
 }
 
 internal object FFI {
@@ -635,6 +638,26 @@ class Model internal constructor(handle: Long) : Closeable {
             Model(withCErrorHandle { err ->
                 FFI.lib.aimux_mock_replay_new(recordingsJsonl, err)
             })
+
+        /**
+         * Register external OpenAI-compatible providers from a JSON config string
+         * (RFC-0020).
+         *
+         * `configJson` is `{ "providers": [ { "name", "base_url", ... } ] }`.
+         * Entries override same-named built-ins or add new ones. Like
+         * `initRecording`, this mutates process-global registry state.
+         *
+         * The C entry point returns an `int` (1 = success, 0 = failure) rather
+         * than a handle, so the rc is checked inline and `throwFromC` is called
+         * directly (no `extractHandle`).
+         *
+         * @throws AimuxException if the C call fails (rc == 0).
+         */
+        fun registerProviders(configJson: String) {
+            val err = AimuxCError()
+            val rc = FFI.lib.aimux_register_providers(configJson, err)
+            if (rc == 0) throwFromC(err)
+        }
     }
 }
 

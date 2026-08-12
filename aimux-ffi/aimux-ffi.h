@@ -539,6 +539,12 @@ int aimux_recording_stop(void);
    ring recorder). Returns 0. */
 int aimux_recording_flush(void);
 
+/* Register external OpenAI-compatible providers from a JSON config string
+   (RFC-0020). config_json is { "providers": [ { "name", "base_url", ... } ] }.
+   Entries override same-named built-ins or add new ones.
+   Returns 1 on success, 0 on failure (fills *err). */
+int aimux_register_providers(const char *config_json, AimuxError *err);
+
 /* Create a mock replay model from recorded JSONL (one Recording per line).
    Returns handle > 0 or 0 on failure (fills *err); the handle works with
    aimux_generate_text / aimux_stream_text (no real API sent); caller frees

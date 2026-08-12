@@ -390,6 +390,16 @@ export declare function recordingFlush(): void
 export declare function recordingStop(): void
 
 /**
+ * Register external OpenAI-compatible providers from a JSON config string
+ * (RFC-0020). Entries override same-named built-ins or add new ones.
+ *
+ * `configJson` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
+ * Throws on invalid JSON or validation failure (bad base_url scheme, empty
+ * name, unsupported protocol).
+ */
+export declare function registerProviders(configJson: string): AimuxResult<undefined>
+
+/**
  * Query: all calls of a session (RFC-0024), as a JSON-serialized
  * `SessionCall[]` (ordered by step). Empty array if the session is unknown
  * or no store is registered.

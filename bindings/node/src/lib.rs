@@ -574,6 +574,24 @@ pub fn init_session_infer(enabled: bool) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// External provider config (RFC-0020)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Register external OpenAI-compatible providers from a JSON config string
+/// (RFC-0020). Entries override same-named built-ins or add new ones.
+///
+/// `configJson` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
+/// Throws on invalid JSON or validation failure (bad base_url scheme, empty
+/// name, unsupported protocol).
+#[napi]
+pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
+    AimuxResult((|| -> error::MResult<()> {
+        aimux_providers::load_providers_from_json(&config_json)
+            .map_err(|e| crate::error::MappedError::from(&e))
+    })())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Recording + mock replay (RFC-0023)
 // ─────────────────────────────────────────────────────────────────────────────
 

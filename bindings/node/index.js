@@ -743,6 +743,7 @@ module.exports.openaiTranscription = nativeBinding.openaiTranscription
 module.exports.provider = nativeBinding.provider
 module.exports.recordingFlush = nativeBinding.recordingFlush
 module.exports.recordingStop = nativeBinding.recordingStop
+module.exports.registerProviders = nativeBinding.registerProviders
 module.exports.sessionCalls = nativeBinding.sessionCalls
 module.exports.tavilySearch = nativeBinding.tavilySearch
 module.exports.vertex = nativeBinding.vertex
