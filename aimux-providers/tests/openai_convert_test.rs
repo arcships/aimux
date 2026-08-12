@@ -1,4 +1,6 @@
-﻿//! Rust translations of the AI SDK OpenAI provider pure-function tests.
+﻿// Panic convert wrappers are #[deprecated]; these tests still use them.
+#![allow(deprecated)]
+//! Rust translations of the AI SDK OpenAI provider pure-function tests.
 //!
 //! Sources (TS → Rust):
 //! - `packages/openai/src/chat/convert-to-openai-chat-messages.test.ts`

@@ -92,6 +92,17 @@ fn registry() -> &'static [RegistryEntry] {
     })
 }
 
+/// Detect unexpanded placeholder syntax in a registry `base_url`.
+///
+/// Templated entries (cloudflare, neon, snowflake, oci, ...) carry account- or
+/// region-scoped placeholders that the caller must fill in via
+/// [`ProviderOptions::base_url`]. Recognized forms: `{VAR}` (covers `${var}`
+/// too) and `<host>`. If a new placeholder form is introduced in the
+/// registry, extend this function.
+fn base_url_has_placeholder(base_url: &str) -> bool {
+    base_url.contains('{') || base_url.contains('<')
+}
+
 /// Per-call construction options for [`provider`] (overrides the registry entry).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProviderOptions {
@@ -146,6 +157,19 @@ pub fn provider_handle(
             ProviderName::all_names()
         ))
     })?;
+
+    // Reject registry base_urls that still carry unexpanded placeholders
+    // (e.g. cloudflare's `{CLOUDFLARE_ACCOUNT_ID}`, snowflake's
+    // `<account-identifier>`). These entries are intentionally templated —
+    // the caller MUST supply a concrete base_url via ProviderOptions.
+    let base_url_overridden = options.as_ref().is_some_and(|o| o.base_url.is_some());
+    if !base_url_overridden && base_url_has_placeholder(&entry.base_url) {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "provider '{name}' has a templated base_url {:?} with an unexpanded \
+             placeholder; pass a concrete `base_url` via ProviderOptions to use it",
+            entry.base_url
+        )));
+    }
 
     // api_key 来源标注(回放重建用):显式传 key → explicit;否则 env。
     let source: Option<String> = if api_key.is_some() {
@@ -330,6 +354,92 @@ mod tests {
             assert!(!e.base_url.is_empty());
             assert!(!e.env_var.is_empty());
         }
+    }
+
+    #[test]
+    fn registry_no_corrupt_base_urls() {
+        // Issue #90 R2: no registry base_url may carry non-ASCII pollution
+        // or be a non-URL fragment. Templated placeholders (cloudflare/neon/
+        // snowflake/oci) are allowed but rejected at construct time — see
+        // provider_handle's base_url_has_placeholder check.
+        for e in registry() {
+            assert!(
+                e.base_url.starts_with("https://") || e.base_url.starts_with("http://"),
+                "registry entry '{}' has a non-URL base_url: {:?}",
+                e.name,
+                e.base_url
+            );
+            assert!(
+                e.base_url.is_ascii(),
+                "registry entry '{}' base_url has non-ASCII chars: {:?}",
+                e.name,
+                e.base_url
+            );
+        }
+    }
+
+    #[test]
+    fn registry_fixed_base_urls_are_correct() {
+        // Issue #90 R2: pin the corrected base_urls for entries that were
+        // broken (regression guard against reverting to the old bad values).
+        let by_name: std::collections::HashMap<&str, &str> = registry()
+            .iter()
+            .map(|e| (e.name.as_str(), e.base_url.as_str()))
+            .collect();
+        assert_eq!(
+            by_name.get("xpersona").copied(),
+            Some("https://www.xpersona.co/v1"),
+            "xpersona base_url was '/v1' (truncated); must be the full URL"
+        );
+        assert_eq!(
+            by_name.get("moonshotai_cn").copied(),
+            Some("https://api.moonshot.cn/anthropic/v1"),
+            "moonshotai_cn base_url had a leaked '（Anthropic' annotation suffix"
+        );
+        assert_eq!(
+            by_name.get("zhipuai_coding_plan").copied(),
+            Some("https://open.bigmodel.cn/api/coding/paas/v4"),
+            "zhipuai_coding_plan base_url was a docs page, not the API endpoint"
+        );
+        assert_eq!(
+            by_name.get("the_grid_ai").copied(),
+            Some("https://api.thegrid.ai/v1"),
+            "the_grid_ai base_url was a docs page, not the API endpoint"
+        );
+    }
+
+    #[test]
+    fn provider_rejects_templated_base_url_without_override() {
+        // Both placeholder forms must be rejected without an override:
+        // cloudflare uses `{CLOUDFLARE_ACCOUNT_ID}`, snowflake uses
+        // `<account-identifier>` — exercise both so `base_url_has_placeholder`
+        // can't silently lose one form.
+        for name in ["cloudflare", "snowflake"] {
+            let err = match provider(name, Some("dummy".into()), "m", None) {
+                Ok(_) => panic!("templated base_url for '{name}' without override must fail"),
+                Err(e) => e,
+            };
+            assert!(
+                matches!(err, AiMuxError::InvalidArgument(_)),
+                "expected InvalidArgument for '{name}' templated base_url, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_accepts_templated_base_url_with_override() {
+        // With a concrete base_url override, the templated entry must construct
+        // fine (key is dummy; we only assert it gets past validation).
+        let res = provider(
+            "cloudflare",
+            Some("dummy".into()),
+            "m",
+            Some(ProviderOptions {
+                base_url: Some("https://example.com/v1".into()),
+                ..Default::default()
+            }),
+        );
+        assert!(res.is_ok(), "override should bypass placeholder check");
     }
 
     #[test]

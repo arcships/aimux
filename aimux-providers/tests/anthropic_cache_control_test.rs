@@ -1,4 +1,6 @@
-﻿//! Rust port of the Anthropic `cache_control` tests.
+﻿// Panic convert wrappers are #[deprecated]; these tests still use them.
+#![allow(deprecated)]
+//! Rust port of the Anthropic `cache_control` tests.
 //!
 //! Translated from the Vercel AI SDK TypeScript test suites:
 //! - `packages/anthropic/src/convert-to-anthropic-prompt.test.ts`

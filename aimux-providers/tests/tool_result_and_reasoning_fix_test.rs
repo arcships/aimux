@@ -1,3 +1,5 @@
+// Panic convert wrappers are #[deprecated]; these tests still use them.
+#![allow(deprecated)]
 //! Regression tests for two issues reported against aimux 0.1.1 when driving
 //! OpenAI-compatible thinking models (e.g. DeepSeek `deepseek-v4-flash`) in
 //! multi-turn tool-call conversations:

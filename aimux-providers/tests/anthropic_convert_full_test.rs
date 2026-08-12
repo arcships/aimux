@@ -1,4 +1,6 @@
-﻿//! Rust port of the remaining `convert-to-anthropic-prompt.test.ts` cases that
+﻿// Panic convert wrappers are #[deprecated]; these tests still use them.
+#![allow(deprecated)]
+//! Rust port of the remaining `convert-to-anthropic-prompt.test.ts` cases that
 //! exercise features now supported by the Rust data model: mid-conversation
 //! system messages, trailing-whitespace trimming, reasoning/thinking parts, URL
 //! & base64 file parts, PDF beta, top-level media-type detection, and
