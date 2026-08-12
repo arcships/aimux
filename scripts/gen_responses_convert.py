@@ -1,25 +1,34 @@
 #!/usr/bin/env python3
 """Generate `openai/responses/responses_convert.rs` (RFC-0012 §3.5 shared framework).
 
-Extracts the byte-identical non-streaming parser and streaming SSE reducer from
-`openai/responses/mod.rs` (which Azure duplicates verbatim) into a shared module,
-so OpenAI and Azure call one implementation. The bodies are copied verbatim from
-the OpenAI source to guarantee zero behavioral drift; only module-qualified or
-caller-local identifiers that must resolve differently in the new module are
-rewritten:
-  - `convert::parse_usage`        -> `parse_usage`          (imported here)
-  - `provider_key_stream`          -> `provider_key`          (the param)
-  - `request_result.warnings`     -> `request_warnings`      (the param)
-The `event_iter` declaration lives *inside* the `stream!` block in the source
-(lines 414-415), so it is captured along with `first_event`/`sse_stream` — it is
-NOT pre-declared here.
+This was a ONE-TIME extraction script: it copied the byte-identical
+non-streaming parser and streaming SSE reducer out of a pre-extraction
+`openai/responses/mod.rs` (which Azure duplicated verbatim) into the shared
+module. That extraction has been applied and the bodies no longer exist in
+`mod.rs` — `responses_convert.rs` is now the hand-maintained source of truth
+(it has since gained `status`/`raw_body` parameters for §2.2 in-band 2xx error
+classification, which no pre-extraction source ever contained).
+
+Re-running therefore fails with a clear error unless you point it at a
+pre-extraction source tree via AIMUX_SRC_ROOT or argv[1]. Identifier rewrites
+applied to the verbatim bodies:
+  - `convert::parse_usage`     -> `parse_usage`     (imported here)
+  - `provider_key_stream`      -> `provider_key`    (the param)
+  - `request_result.warnings`  -> `request_warnings` (the param)
 """
 
+import os
+import sys
 from pathlib import Path
 
-REPO = Path("/media/eric8810/fast-deliver/code/aimux")
+# Repo root: overridable for a historical/pre-extraction checkout; defaults to
+# the repo containing this script.
+REPO = Path(os.environ.get("AIMUX_SRC_ROOT", sys.argv[1] if len(sys.argv) > 1 else Path(__file__).resolve().parents[1]))
 SRC = REPO / "aimux-providers/src/openai/responses/mod.rs"
 OUT = REPO / "aimux-providers/src/openai/responses/responses_convert.rs"
+
+if not SRC.is_file():
+    sys.exit(f"error: source file not found: {SRC}")
 
 lines = SRC.read_text(encoding="utf-8").splitlines(keepends=True)
 
@@ -31,7 +40,15 @@ def find(marker: str, after: int = 0) -> int:
     for i in range(after, len(lines)):
         if lines[i].strip() == marker:
             return i + 1
-    raise ValueError(f"marker not found: {marker!r}")
+    sys.exit(
+        f"error: extraction marker not found in {SRC}: {marker!r}\n"
+        "The RFC-0012 §3.5 extraction has already been applied — mod.rs no\n"
+        "longer contains the parser/reducer bodies, and the checked-in\n"
+        "responses_convert.rs is hand-maintained (it now threads the observed\n"
+        "HTTP status and raw body, which the pre-extraction source lacked).\n"
+        "Edit responses_convert.rs directly; only re-run this script against a\n"
+        "pre-extraction checkout (AIMUX_SRC_ROOT=<path> or argv[1])."
+    )
 
 
 # do_generate core: from the "Top-level error field" comment through the `})`
@@ -74,20 +91,20 @@ def reindent(block: str, from_n: int, to_n: int) -> str:
     return "".join(out)
 
 
-HEADER = """\ufeff//! Shared Responses API framework (RFC-0012 \u00a73.5).
+HEADER = """//! Shared Responses API framework (RFC-0012 §3.5).
 //!
 //! Vendors whose Responses implementations speak the OpenAI wire format
 //! (currently OpenAI and Azure OpenAI) share this module for the parts that are
 //! byte-identical across them:
-//! - non-streaming output parsing \u2014 [`build_responses_generate_result`],
-//! - the streaming SSE event reducer \u2014 [`build_responses_event_stream`],
-//! - common HTTP header list construction \u2014 [`build_header_list`].
+//! - non-streaming output parsing — [`build_responses_generate_result`],
+//! - the streaming SSE event reducer — [`build_responses_event_stream`],
+//! - common HTTP header list construction — [`build_header_list`].
 //!
 //! Vendors with genuinely different protocols (xAI, HuggingFace, the generic
 //! `open_responses` provider) keep their own request/streaming logic and reuse
 //! only the small shared helpers where they are byte-identical. Per the RFC,
 //! genuinely different streaming loops are **not** force-merged into one
-//! function \u2014 only the shared framework is extracted.
+//! function — only the shared framework is extracted.
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -96,6 +113,7 @@ use futures::{Stream, StreamExt};
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
@@ -132,10 +150,13 @@ pub fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, Stri
 /// array of `message`/`function_call`/`custom_tool_call`/`reasoning` items,
 /// `incomplete_details`, `usage`, provider metadata with `responseId` /
 /// `reasoningContext` / `serviceTier`). Vendor callers supply the parsed `data`,
-/// the request `body`/`response_headers` to attach, and the provider-metadata
-/// namespace `provider_key` ("openai" / "azure").
+/// the observed HTTP `status` and full `raw_body` (evidence for in-band 2xx
+/// errors), the request `body`/`response_headers` to attach, and the
+/// provider-metadata namespace `provider_key` ("openai" / "azure").
 pub fn build_responses_generate_result(
     data: &Value,
+    status: u16,
+    raw_body: &str,
     request_warnings: Vec<Warning>,
     provider_key: String,
     body: Value,
@@ -158,7 +179,7 @@ struct OngoingToolCall {
 /// A reasoning item being streamed (tracked by `item_id`).
 struct ReasoningState {
     encrypted_content: Option<String>,
-    /// summary_index \u2192 status.
+    /// summary_index → status.
     summary_parts: HashMap<usize, SummaryStatus>,
 }
 
@@ -177,12 +198,14 @@ enum SummaryStatus {
 /// `function_call_arguments.delta`, `custom_tool_call_input.delta`,
 /// `reasoning_summary_part.added/done` and `reasoning_summary_text.delta`).
 ///
-/// The caller performs the HTTP send (`send_stream`) and hands the peeked
-/// `first_event` plus the remainder `sse_stream` to this reducer; an early
-/// `error` / `response.failed` surfaces as a clean `Err` here.
+/// The caller performs the HTTP send (`send_stream`) and hands the observed
+/// HTTP `status` plus the peeked `first_event` and remainder `sse_stream` to
+/// this reducer; an early `error` / `response.failed` surfaces as a clean
+/// `Err` here.
 pub fn build_responses_event_stream<S>(
     first_event: Option<Result<SseEvent, SseError>>,
     sse_stream: S,
+    status: u16,
     provider_key: String,
     warnings: Vec<Warning>,
     store_flag: bool,
@@ -207,7 +230,21 @@ where
                         .and_then(|v| v.as_str())
                 })
                 .unwrap_or("Responses API stream error");
-            return Err(AiMuxError::Provider(message.to_string()));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                // Mid-stream provider failure arrives on a successful HTTP
+                // response: keep the observed 2xx status (§2.2).
+                status_code: Some(status),
+                provider_code: val
+                    .get("response")
+                    .and_then(|r| r.get("error"))
+                    .or_else(|| val.get("error"))
+                    .and_then(|e| e.get("type").or_else(|| e.get("code")))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                message: message.to_string(),
+                response_body: Some(event.data.clone()),
+                ..Default::default()
+            }));
         }
     }
 

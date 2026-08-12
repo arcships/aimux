@@ -405,7 +405,7 @@ fn convert_image_part(
 ) -> Result<Value, AiMuxError> {
     let top_level = get_top_level_media_type(media_type);
     if top_level != "image" {
-        return Err(AiMuxError::Unsupported(format!(
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
             "file part media type {}",
             media_type
         )));

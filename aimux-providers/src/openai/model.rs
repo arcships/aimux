@@ -20,7 +20,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
+use aimux_provider_utils::response::{DEFAULT_ERROR_STRUCTURE, parse_stream_error};
 use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
 };
@@ -316,16 +316,14 @@ pub async fn execute_generate(
 
     // Parse the raw body once: the `Value` keeps the provider's original
     // fields (incl. vendor-specific usage fields) for `Usage.raw` (M10).
-    let response_value: Value =
-        serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
-    let data: ChatCompletionResponse = serde_json::from_value(response_value.clone())
-        .map_err(|e| AiMuxError::Json(e.to_string()))?;
+    let response_value: Value = serde_json::from_slice(&resp.body)?;
+    let data: ChatCompletionResponse = serde_json::from_value(response_value.clone())?;
 
     let choice = data
         .choices
         .into_iter()
         .next()
-        .ok_or_else(|| AiMuxError::Provider("no choices in response".to_string()))?;
+        .ok_or_else(|| AiMuxError::InvalidResponseData("no choices in response".to_string()))?;
 
     // Build content array.
     let mut content = Vec::new();
@@ -483,7 +481,7 @@ pub async fn execute_stream(
         && let Ok(val) = serde_json::from_str::<Value>(&event.data)
         && let Some(err_obj) = val.get("error")
     {
-        return Err(stream_error_to_ai_error(err_obj));
+        return Err(parse_stream_error(err_obj));
     }
 
     // Capture the provider's stream usage key before entering the async stream
@@ -536,9 +534,7 @@ pub async fn execute_stream(
                         Ok(v) => v,
                         Err(e) => {
                             // Unparsable chunk — emit Error, then finish.
-                            yield Ok(StreamPart::Error {
-                                error: AiMuxError::Json(e.to_string()),
-                            });
+                            yield Ok(StreamPart::Error { error: e.into() });
                             stream_errored = true;
                             break;
                         }
@@ -556,7 +552,7 @@ pub async fn execute_stream(
                     // Check for mid-stream error.
                     if let Some(err_obj) = parsed.get("error") {
                         yield Ok(StreamPart::Error {
-                            error: stream_error_to_ai_error(err_obj),
+                            error: parse_stream_error(err_obj),
                         });
                         stream_errored = true;
                         break;
@@ -581,9 +577,7 @@ pub async fn execute_stream(
                     let chunk: StreamChunk = match serde_json::from_value(parsed) {
                         Ok(c) => c,
                         Err(e) => {
-                            yield Ok(StreamPart::Error {
-                                error: AiMuxError::Json(e.to_string()),
-                            });
+                            yield Ok(StreamPart::Error { error: e.into() });
                             stream_errored = true;
                             break;
                         }
@@ -769,7 +763,7 @@ pub async fn execute_stream(
                 }
                 Err(e) => {
                     yield Ok(StreamPart::Error {
-                        error: AiMuxError::Stream(e.to_string()),
+                        error: AiMuxError::InvalidResponseData(e.to_string()),
                     });
                     stream_errored = true;
                     break;
@@ -908,8 +902,7 @@ pub async fn execute_list_models(
     )
     .await?;
 
-    let parsed: ModelsListResponse = serde_json::from_slice(&resp.body)
-        .map_err(|e| AiMuxError::Json(format!("list_models: parse response: {e}")))?;
+    let parsed: ModelsListResponse = serde_json::from_slice(&resp.body)?;
 
     Ok(parsed
         .data
@@ -920,32 +913,4 @@ pub async fn execute_list_models(
             created: m.created,
         })
         .collect())
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Convert an OpenAI stream-error JSON object into an `AiMuxError`.
-///
-/// The `code` field (when present) is used as the HTTP status code; `null`
-/// defaults to 500 (server error, retryable). This mirrors the TS behaviour
-/// where early stream errors reject the `doStream` promise with a status code.
-fn stream_error_to_ai_error(err_obj: &Value) -> AiMuxError {
-    let message = err_obj
-        .get("message")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Unknown stream error")
-        .to_string();
-
-    let code = err_obj.get("code").and_then(|v| v.as_u64()).unwrap_or(500);
-    let status = code as u16;
-
-    match status {
-        401 => AiMuxError::Auth(message.clone()),
-        429 => AiMuxError::RateLimited {
-            retry_after_ms: 1000,
-            message,
-        },
-        404 => AiMuxError::ModelNotFound(message),
-        _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),
-    }
 }

@@ -28,7 +28,6 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
-use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -1275,7 +1274,7 @@ async fn tool_empty_description_omitted() {
 // ── doStream: error handling ─────────────────────────────────────────────────
 
 /// TS: "should handle throttlingException error" (stream) — a 429 stream
-/// response maps to `AiMuxError::RateLimited`.
+/// response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn stream_throttling_error() {
     let server = MockServer::start().await;
@@ -1294,7 +1293,7 @@ async fn stream_throttling_error() {
     let model = make_model(&server);
     let result = model.do_stream(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::RateLimited { .. })),
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
 }

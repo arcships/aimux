@@ -20,7 +20,8 @@ use aimux_core::transcription_model::{
 };
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
+    without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -230,8 +231,7 @@ impl TranscriptionModel for FalTranscriptionModel {
         )
         .await?;
 
-        let job: FalJobResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let job: FalJobResponse = serde_json::from_slice(&resp.body)?;
 
         // Poll for result.
         let raw_body: Value;
@@ -259,24 +259,33 @@ impl TranscriptionModel for FalTranscriptionModel {
             .await
             {
                 Ok(resp) => resp,
-                Err(AiMuxError::ModelNotFound(_)) => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                Err(AiMuxError::ApiCall(ref d)) if d.status_code == Some(404) => {
+                    sleep_or_abort(
+                        std::time::Duration::from_millis(100),
+                        options.abort_signal.as_ref(),
+                    )
+                    .await?;
                     continue;
                 }
-                Err(AiMuxError::Provider(msg)) if msg.starts_with("HTTP 400") => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                // The queue answers 400 until the job registers; read the status
+                // from the field rather than sniffing the message text.
+                Err(AiMuxError::ApiCall(d)) if d.status_code == Some(400) => {
+                    sleep_or_abort(
+                        std::time::Duration::from_millis(100),
+                        options.abort_signal.as_ref(),
+                    )
+                    .await?;
                     continue;
                 }
                 Err(e) => return Err(e),
             };
 
             response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
+            raw_body = serde_json::from_slice(&resp.body)?;
             break;
         }
 
-        let parsed: FalTranscriptionResponse = serde_json::from_value(raw_body.clone())
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: FalTranscriptionResponse = serde_json::from_value(raw_body.clone())?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .chunks
@@ -514,8 +523,7 @@ impl ImageModel for FalImageModel {
         .await?;
 
         let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
+        let rb: Value = serde_json::from_slice(&resp.body)?;
 
         let target_images: Vec<Value> = if let Some(i) = rb.get("images").and_then(|v| v.as_array())
         {
@@ -745,8 +753,7 @@ impl VideoModel for FalVideoModel {
         )
         .await?;
 
-        let job: FalJobResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let job: FalJobResponse = serde_json::from_slice(&resp.body)?;
 
         // Poll.
         let raw_body: Value;
@@ -772,19 +779,29 @@ impl VideoModel for FalVideoModel {
             .await
             {
                 Ok(resp) => resp,
-                Err(AiMuxError::ModelNotFound(_)) => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                Err(AiMuxError::ApiCall(ref d)) if d.status_code == Some(404) => {
+                    sleep_or_abort(
+                        std::time::Duration::from_millis(100),
+                        options.abort_signal.as_ref(),
+                    )
+                    .await?;
                     continue;
                 }
-                Err(AiMuxError::Provider(msg)) if msg.starts_with("HTTP 400") => {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                // The queue answers 400 until the job registers; read the status
+                // from the field rather than sniffing the message text.
+                Err(AiMuxError::ApiCall(d)) if d.status_code == Some(400) => {
+                    sleep_or_abort(
+                        std::time::Duration::from_millis(100),
+                        options.abort_signal.as_ref(),
+                    )
+                    .await?;
                     continue;
                 }
                 Err(e) => return Err(e),
             };
 
             response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
+            raw_body = serde_json::from_slice(&resp.body)?;
             break;
         }
 
@@ -804,7 +821,9 @@ impl VideoModel for FalVideoModel {
                 media_type: "video/mp4".to_string(),
             }]
         } else {
-            vec![]
+            return Err(AiMuxError::InvalidResponseData(
+                "Fal video result missing video URL".to_string(),
+            ));
         };
 
         Ok(VideoResult {

@@ -487,7 +487,7 @@ async fn codex_refresh_never_retries() {
     )
     .await
     .expect_err("429 must fail");
-    assert!(matches!(err, AiMuxError::RateLimited { .. }));
+    assert!(matches!(err, ref e if e.status_code() == Some(429)));
 }
 
 #[tokio::test]
@@ -510,6 +510,6 @@ async fn codex_refresh_rejects_bad_grant() {
     .await
     .expect_err("400 must fail");
     // parse_provider_error maps non-401/403 4xx to Provider (not retryable).
-    assert!(matches!(err, AiMuxError::Provider(_)));
+    assert!(matches!(err, AiMuxError::ApiCall(_)));
     assert!(!err.is_retryable());
 }

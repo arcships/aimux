@@ -162,7 +162,7 @@ async fn should_reject_streaming_model_for_non_streaming() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        AiMuxError::Unsupported(msg) => assert!(msg.contains("ink-2")),
+        AiMuxError::UnsupportedFunctionality(msg) => assert!(msg.contains("ink-2")),
         e => panic!("expected Unsupported, got: {e:?}"),
     }
 }

@@ -19,12 +19,9 @@
 //! error JSON body (or, for the stream cases, an SSE body whose first/mid
 //! chunk is an error JSON) and asserts the resulting `AiMuxError` variant.
 //!
-//! Status → variant mapping (mirrors `parse_provider_error`):
-//!   401 → `AiMuxError::Auth`
-//!   429 → `AiMuxError::RateLimited`
-//!   404 → `AiMuxError::ModelNotFound`
-//!   500 / 529 / other → `AiMuxError::ApiCall` (5xx, via send_with_retry;
-//!     retryable) or `AiMuxError::Provider` (other non-retryable 4xx)
+//! Status → error mapping (mirrors `parse_provider_error`): every status
+//! yields `AiMuxError::ApiCall` with the observed code in `status_code`;
+//! 408/409/429/5xx are stored retryable (`is_retryable`), other 4xx are not.
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
@@ -111,7 +108,7 @@ mod openai_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Auth(ref m)) if m == "Incorrect API key provided"),
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Incorrect API key provided"),
             "expected Auth error, got {result:?}"
         );
     }
@@ -135,7 +132,7 @@ mod openai_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::RateLimited { .. })),
+            matches!(result, Err(ref e) if e.status_code() == Some(429)),
             "expected RateLimited error, got {result:?}"
         );
     }
@@ -159,9 +156,9 @@ mod openai_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::ModelNotFound(ref m))
-                if m == "The model 'gpt-4o' does not exist"),
-            "expected ModelNotFound error, got {result:?}"
+            matches!(result, Err(AiMuxError::ApiCall(ref m))
+                if m.status_code == Some(404) && m.message == "The model 'gpt-4o' does not exist"),
+            "expected a 404 provider error, got {result:?}"
         );
     }
 
@@ -184,8 +181,7 @@ mod openai_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::ApiCall(ref m))
-                if m.contains("The server had an error processing your request.")),
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.to_string().contains("The server had an error processing your request.")),
             "expected ApiCall error for 5xx, got {result:?}"
         );
     }
@@ -212,7 +208,7 @@ mod openai_generate_errors {
         // 429 → RateLimited; the nested message is carried but RateLimited
         // only exposes retry_after_ms, so we just assert the variant.
         assert!(
-            matches!(result, Err(AiMuxError::RateLimited { .. })),
+            matches!(result, Err(ref e) if e.status_code() == Some(429)),
             "expected RateLimited for OpenRouter 429, got {result:?}"
         );
     }
@@ -257,7 +253,7 @@ mod openai_stream_errors {
 
         let result = model(&server).do_stream(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::ApiCall(_))),
+            matches!(result, Err(ref e) if e.status_code().is_some_and(|s| s >= 500)),
             "expected ApiCall error for 5xx, got {result:?}"
         );
     }
@@ -289,8 +285,7 @@ mod openai_stream_errors {
 
         let result = model(&server).do_stream(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Provider(ref m))
-                if m.contains("The server had an error processing your request.")),
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.to_string().contains("The server had an error processing your request.")),
             "expected Provider error from first-chunk stream error, got {result:?}"
         );
     }
@@ -334,8 +329,8 @@ mod openai_stream_errors {
 
         assert!(
             parts.iter().any(|p| matches!(p,
-                StreamPart::Error { error: AiMuxError::Provider(m) }
-                if m.contains("stream failed after output"))),
+                StreamPart::Error { error: AiMuxError::ApiCall(m) }
+                if m.message.contains("stream failed after output"))),
             "expected a StreamPart::Error carrying 'stream failed after output', got {parts:?}"
         );
     }
@@ -360,7 +355,7 @@ mod anthropic_generate_errors {
         AnthropicProvider::new(config).model("claude-3-haiku-20240307")
     }
 
-    /// Anthropic 401 → Auth. Anthropic body shape:
+    /// Anthropic 401 → `ApiCall` (401). Anthropic body shape:
     /// `{"type":"error","error":{"type":"authentication_error","message":"..."}}`.
     #[tokio::test]
     async fn status_401_maps_to_auth() {
@@ -379,7 +374,7 @@ mod anthropic_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::Auth(ref m)) if m == "invalid x-api-key"),
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "invalid x-api-key"),
             "expected Auth error, got {result:?}"
         );
     }
@@ -402,7 +397,7 @@ mod anthropic_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::RateLimited { .. })),
+            matches!(result, Err(ref e) if e.status_code() == Some(429)),
             "expected RateLimited error, got {result:?}"
         );
     }
@@ -425,9 +420,9 @@ mod anthropic_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::ModelNotFound(ref m))
-                if m == "model: claude-3-haiku-20240307"),
-            "expected ModelNotFound error, got {result:?}"
+            matches!(result, Err(AiMuxError::ApiCall(ref m))
+                if m.status_code == Some(404) && m.message == "model: claude-3-haiku-20240307"),
+            "expected a 404 provider error, got {result:?}"
         );
     }
 
@@ -449,7 +444,7 @@ mod anthropic_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.contains("Internal server error")),
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.to_string().contains("Internal server error")),
             "expected ApiCall error for 5xx, got {result:?}"
         );
     }
@@ -470,7 +465,7 @@ mod anthropic_generate_errors {
 
         let result = model(&server).do_generate(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.contains("Overloaded")),
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.to_string().contains("Overloaded")),
             "expected ApiCall error carrying 'Overloaded', got {result:?}"
         );
     }
@@ -484,7 +479,7 @@ mod anthropic_generate_errors {
         let body = r#"{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"}}"#;
         let err = parse_provider_error(529, body, &DEFAULT_ERROR_STRUCTURE);
         assert!(
-            matches!(err, AiMuxError::Provider(ref m) if m.contains("Overloaded")),
+            matches!(err, AiMuxError::ApiCall(ref m) if m.message.contains("Overloaded")),
             "expected Provider carrying 'Overloaded', got {err:?}"
         );
     }
@@ -523,7 +518,7 @@ mod anthropic_stream_errors {
 
         let result = model(&server).do_stream(&options()).await;
         assert!(
-            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.contains("Overloaded")),
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.to_string().contains("Overloaded")),
             "expected ApiCall error carrying 'Overloaded', got {result:?}"
         );
     }
@@ -556,7 +551,7 @@ mod anthropic_stream_errors {
         let parts = collect_stream(stream).await;
         assert!(
             parts.iter().any(|p| matches!(p,
-                StreamPart::Error { error: AiMuxError::Provider(m) } if m == "Overloaded")),
+                StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")),
             "expected a StreamPart::Error carrying 'Overloaded', got {parts:?}"
         );
     }
@@ -600,7 +595,7 @@ mod anthropic_stream_errors {
 
         assert!(
             parts.iter().any(|p| matches!(p,
-                StreamPart::Error { error: AiMuxError::Provider(m) } if m == "Overloaded")),
+                StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")),
             "expected a StreamPart::Error carrying 'Overloaded', got {parts:?}"
         );
     }
@@ -630,7 +625,7 @@ mod anthropic_stream_errors {
         let parts = collect_stream(stream).await;
         assert!(
             parts.iter().any(|p| matches!(p,
-                StreamPart::Error { error: AiMuxError::Provider(m) } if m == "test error")),
+                StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "test error")),
             "expected a StreamPart::Error carrying 'test error', got {parts:?}"
         );
     }
@@ -653,7 +648,7 @@ mod error_structure_parsing {
         let err = parse_provider_error(429, body, &DEFAULT_ERROR_STRUCTURE);
         // 429 → RateLimited (variant only; message is not carried on the
         // RateLimited variant in the Rust error model).
-        assert!(matches!(err, AiMuxError::RateLimited { .. }));
+        assert!(matches!(err, ref e if e.status_code() == Some(429)));
     }
 
     /// TS openai-error.test.ts: OpenRouter nests a stringified JSON object
@@ -669,7 +664,7 @@ mod error_structure_parsing {
         let err = parse_provider_error(500, &body, &DEFAULT_ERROR_STRUCTURE);
         // 500 → Provider; the (stringified) nested JSON is the message.
         assert!(
-            matches!(err, AiMuxError::Provider(ref m) if m.contains("RESOURCE_EXHAUSTED")),
+            matches!(err, AiMuxError::ApiCall(ref m) if m.message.contains("RESOURCE_EXHAUSTED")),
             "expected Provider carrying the OpenRouter nested message, got {err:?}"
         );
     }
@@ -682,7 +677,7 @@ mod error_structure_parsing {
         let body = r#"{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"}}"#;
         let err = parse_provider_error(529, body, &DEFAULT_ERROR_STRUCTURE);
         assert!(
-            matches!(err, AiMuxError::Provider(ref m) if m.contains("Overloaded")),
+            matches!(err, AiMuxError::ApiCall(ref m) if m.message.contains("Overloaded")),
             "expected Provider carrying 'Overloaded', got {err:?}"
         );
     }

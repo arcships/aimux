@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
@@ -19,7 +20,8 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
+    without_trailing_slash,
 };
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
@@ -289,13 +291,14 @@ impl ImageModel for BlackForestLabsImageModel {
             &DEFAULT_ERROR_STRUCTURE,
         )
         .await?;
-        let submit_body: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
+        let submit_body: Value = serde_json::from_slice(&resp.body)?;
 
         let poll_url = submit_body
             .get("polling_url")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AiMuxError::Provider("missing polling_url in BFL response".into()))?
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData("missing polling_url in BFL response".to_string())
+            })?
             .to_string();
         let request_id = submit_body
             .get("id")
@@ -315,7 +318,7 @@ impl ImageModel for BlackForestLabsImageModel {
         let max_attempts = (poll_timeout / poll_interval.max(1)) as usize;
 
         let mut poll_url_with_id = url::Url::parse(&poll_url)
-            .map_err(|e| AiMuxError::Provider(format!("invalid poll URL: {e}")))?;
+            .map_err(|e| AiMuxError::InvalidResponseData(format!("invalid BFL poll URL: {e}")))?;
         if poll_url_with_id
             .query_pairs()
             .find(|(k, _)| k == "id")
@@ -348,8 +351,7 @@ impl ImageModel for BlackForestLabsImageModel {
                 &DEFAULT_ERROR_STRUCTURE,
             )
             .await?;
-            let pv: Value = serde_json::from_slice(&pr.body)
-                .map_err(|e| AiMuxError::Provider(format!("invalid poll JSON: {e}")))?;
+            let pv: Value = serde_json::from_slice(&pr.body)?;
 
             let poll_status = pv
                 .get("status")
@@ -367,18 +369,33 @@ impl ImageModel for BlackForestLabsImageModel {
                     result_end_time = result.get("end_time").cloned();
                     result_duration = result.get("duration").cloned();
                 }
+                if image_url.is_none() {
+                    return Err(AiMuxError::InvalidResponseData(
+                        "BFL poll reported Ready without result.sample".to_string(),
+                    ));
+                }
                 break;
             }
             if poll_status == "Error" || poll_status == "Failed" {
-                return Err(AiMuxError::Provider(
-                    "Black Forest Labs generation failed.".into(),
-                ));
+                return Err(AiMuxError::ApiCall(ApiCallError {
+                    status_code: Some(pr.status),
+                    provider_code: Some(poll_status.to_string()),
+                    message: "Black Forest Labs generation failed.".into(),
+                    response_body: Some(String::from_utf8_lossy(&pr.body).into_owned()),
+                    ..Default::default()
+                }));
             }
-            tokio::time::sleep(std::time::Duration::from_millis(poll_interval)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(poll_interval),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
         }
 
         let image_url = image_url.ok_or_else(|| {
-            AiMuxError::Provider("Black Forest Labs generation timed out.".into())
+            AiMuxError::Timeout(format!(
+                "blackForestLabs task {request_id} polling timed out after {poll_timeout}ms"
+            ))
         })?;
 
         // Download image

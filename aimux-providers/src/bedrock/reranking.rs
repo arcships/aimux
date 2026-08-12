@@ -219,10 +219,7 @@ impl RerankingModel for BedrockRerankingModel {
 
         let raw_body: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
-        let data: BedrockRerankingResponse =
-            serde_json::from_value(raw_body.clone()).map_err(|e| {
-                AiMuxError::Provider(format!("failed to parse reranking response: {e}"))
-            })?;
+        let data: BedrockRerankingResponse = serde_json::from_value(raw_body.clone())?;
 
         let ranking: Vec<RerankingRank> = data
             .results

@@ -192,8 +192,7 @@ impl SearchModel for TavilySearchModel {
         .await?;
         let response_headers = resp.headers;
 
-        let parsed: TavilyResponse = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("Failed to parse Tavily response: {e}")))?;
+        let parsed: TavilyResponse = serde_json::from_slice(&resp.body)?;
 
         Ok(SearchResult {
             results: map_results(parsed.results),

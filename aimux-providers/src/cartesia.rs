@@ -686,7 +686,7 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
         if is_streaming_transcription_model_id(&self.model_id) {
-            return Err(AiMuxError::Unsupported(format!(
+            return Err(AiMuxError::UnsupportedFunctionality(format!(
                 "non-streaming transcription with {}",
                 self.model_id
             )));
@@ -765,8 +765,7 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
 
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: CartesiaTranscriptionResponse = serde_json::from_value(raw_body.clone())
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: CartesiaTranscriptionResponse = serde_json::from_value(raw_body.clone())?;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .words

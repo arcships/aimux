@@ -235,12 +235,9 @@ impl SearchModel for LinkupSearchModel {
         // Capture response headers.
         let response_headers = resp.headers;
 
-        let raw_body: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_body: Value = serde_json::from_slice(&resp.body)?;
 
-        let data: LinkupResponse = serde_json::from_value(raw_body.clone()).map_err(|e| {
-            AiMuxError::Provider(format!("failed to parse linkup search response: {e}"))
-        })?;
+        let data: LinkupResponse = serde_json::from_value(raw_body.clone())?;
 
         // Prefer `results` (searchResults); fall back to `sources`
         // (sourcedAnswer), which also carries an `answer`.

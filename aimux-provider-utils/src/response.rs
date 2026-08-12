@@ -1,6 +1,6 @@
-﻿//! Response handling helpers.
+//! Response handling helpers.
 
-use aimux_core::AiMuxError;
+use aimux_core::{AiMuxError, ApiCallError};
 
 /// Provider error structure (allows each provider to define its own error JSON shape).
 pub struct ErrorStructure {
@@ -18,20 +18,15 @@ pub const DEFAULT_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
 
 /// Parse an HTTP error response into an `AiMuxError`.
 ///
-/// - 401 → `Auth`
-/// - 429 → `RateLimited` (retry-after in ms, default 1000)
-/// - 404 → `ModelNotFound`
-/// - other (incl. 403 and 5xx) → `Provider`
-///
-/// 403 is intentionally *not* mapped to `Auth`: a 403 is a permission/quota
-/// failure, which most providers surface as a provider error, not an
-/// authentication failure (only 401 means "bad credentials"). 5xx likewise
-/// surfaces here as `Provider`; the shared HTTP layer's retry loop still tags
-/// 5xx as `ApiCall` internally for retry decisions — providers re-map that to
-/// `Provider` via [`api_call_to_provider_error`].
+/// Every status becomes an `ApiCall` error; the classification is the
+/// `status_code` field (401 auth, 404 model, 429 rate limit, …), read by the
+/// caller the way the AI SDK reads `APICallError.statusCode`.
+/// Retryability (408/409/429/5xx) is stored in `is_retryable` at
+/// construction, as the AI SDK stores `APICallError.isRetryable`.
 pub fn parse_provider_error(status: u16, body: &str, structure: &ErrorStructure) -> AiMuxError {
-    let mut message = format!("HTTP {}", status);
-    let mut _error_type = String::new();
+    // Empty: `ApiCallError`'s Display shows the status on its own.
+    let mut message = String::new();
+    let mut provider_code = None;
 
     if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
         // Try to extract message.
@@ -66,54 +61,103 @@ pub fn parse_provider_error(status: u16, body: &str, structure: &ErrorStructure)
             }
         }
         if let Some(t) = current.as_str() {
-            _error_type = t.to_string();
+            provider_code = Some(t.to_string());
         }
     } else if !body.is_empty() {
         message = body.to_string();
     }
 
+    // Raw evidence (`APICallError.responseBody`): the AI SDK keeps the body on
+    // every error branch — parsed, unparseable or empty — so consumers never
+    // have to ask whether it is there. Same here: whenever a body arrived, it
+    // is kept verbatim, even when `message` is that same body.
+    let response_body = (!body.is_empty()).then(|| body.to_string());
+    error_for_status(status, provider_code, message, None, response_body)
+}
+
+/// Build the `ApiCall` error for a failed HTTP response.
+///
+/// There is no status → variant mapping any more: the classification *is*
+/// the `status_code` field, read by consumers exactly as the AI SDK reads
+/// `APICallError.statusCode`. The retry hint is stored only when the provider
+/// actually sent one (`retry-after-ms`/`retry-after`) — no fallback is
+/// fabricated; a hint-less 429 gets the retry loop's exponential backoff.
+pub fn error_for_status(
+    status: u16,
+    provider_code: Option<String>,
+    message: String,
+    retry_after_ms: Option<u64>,
+    response_body: Option<String>,
+) -> AiMuxError {
+    AiMuxError::ApiCall(ApiCallError {
+        status_code: Some(status),
+        provider_code,
+        message,
+        response_body,
+        retry_after_ms,
+        // Stored at construction (`APICallError.isRetryable`), aligned with
+        // the AI SDK response policy: 408/409/429/5xx retry, other 4xx don't
+        // (RFC-0016 alignment goal).
+        is_retryable: matches!(status, 408 | 409 | 429) || status >= 500,
+        ..Default::default()
+    })
+}
+
+/// Convert a stream-error JSON object (the `{"message","type","code",…}` payload
+/// carried by an SSE `error` event) into an `AiMuxError`.
+///
+/// Shares [`error_for_status`] with [`parse_provider_error`], so the same status
+/// yields the same variant — and the same retryability — on both paths (M3).
+///
+/// `code` is a *machine-readable provider code*: OpenAI-shaped payloads put a
+/// string there (`"rate_limit_exceeded"`), Google-shaped ones an HTTP status.
+/// Only a number in the HTTP range is read as a status; a string code lands in
+/// `provider_code`. Reading a string `code` as a status was the M3 bug, and so
+/// was defaulting a missing one to 500 — a mid-stream error arrives on a
+/// *successful* response, so "no status" is the truth.
+pub fn parse_stream_error(err_obj: &serde_json::Value) -> AiMuxError {
+    let str_field = |k: &str| {
+        err_obj
+            .get(k)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    };
+    let message = str_field("message").unwrap_or_else(|| "Unknown stream error".to_string());
+    let code = err_obj.get("code");
+    let status = code
+        .and_then(|v| v.as_u64())
+        .filter(|c| (100..=599).contains(c))
+        .map(|c| c as u16);
+    let provider_code = code
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| str_field("type"));
+    // Retry hint from the payload when the provider sends one (ms wins over
+    // whole seconds); absent means absent — nothing is fabricated.
+    let retry_after_ms = err_obj
+        .get("retry_after_ms")
+        .and_then(|v| v.as_u64())
+        .or_else(|| {
+            err_obj
+                .get("retry_after")
+                .and_then(|v| v.as_u64())
+                .map(|s| s * 1000)
+        });
+
     match status {
-        401 => AiMuxError::Auth(message),
-        429 => AiMuxError::RateLimited {
-            retry_after_ms: 1000,
-            message: format!("HTTP 429: {}", message),
-        },
-        404 => AiMuxError::ModelNotFound(message),
-        _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),
-    }
-}
-
-/// Re-map a shared-HTTP-layer 5xx error (`ApiCall`) into a `Provider` error.
-///
-/// `send_with_retry_raw` returns 5xx responses as [`AiMuxError::ApiCall`] so
-/// the retry/backoff machinery (and the `http_send_test` retry contract) keep
-/// working. Providers whose contract surfaces 5xx as a *provider* error
-/// (recraft, google, vertex) wrap the `send` / `send_stream` result with this
-/// so callers see `Provider` rather than `ApiCall`.
-///
-/// Non-`ApiCall` errors (4xx via `parse_provider_error`, network `Http`,
-/// `RateLimited`, …) pass through unchanged.
-pub fn api_call_to_provider_error(error: AiMuxError) -> AiMuxError {
-    match error {
-        AiMuxError::ApiCall(message) => AiMuxError::Provider(message),
-        other => other,
-    }
-}
-
-/// Re-map an HTTP 403 `Provider` error back to `Auth`.
-///
-/// `parse_provider_error` maps 403 → `Provider` (a permission/quota failure is a
-/// provider error for most providers). Amazon Polly, however, treats 403
-/// (`AccessDeniedException`) as an authentication/authorization failure, so it
-/// re-maps 403 back to `Auth` with this helper. Detection uses the `"HTTP 403: "`
-/// prefix that `parse_provider_error`'s default arm stamps onto every
-/// status-bearing provider message.
-pub fn provider_403_to_auth(error: AiMuxError) -> AiMuxError {
-    const PREFIX: &str = "HTTP 403: ";
-    match error {
-        AiMuxError::Provider(ref message) if message.starts_with(PREFIX) => {
-            AiMuxError::Auth(message[PREFIX.len()..].to_string())
-        }
-        other => other,
+        Some(status) => error_for_status(
+            status,
+            provider_code,
+            message,
+            retry_after_ms,
+            Some(err_obj.to_string()),
+        ),
+        None => AiMuxError::ApiCall(ApiCallError {
+            provider_code,
+            message,
+            response_body: Some(err_obj.to_string()),
+            retry_after_ms,
+            ..Default::default()
+        }),
     }
 }

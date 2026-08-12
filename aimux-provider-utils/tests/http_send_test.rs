@@ -109,6 +109,33 @@ async fn retries_on_500_then_succeeds() {
     assert_eq!(resp.status, 200);
 }
 
+/// §9.2: 408/409 now enter the shared retry loop (AI SDK response policy);
+/// one integration case is enough — status-policy unit coverage in
+/// structured_error_fields handles 409.
+#[tokio::test]
+async fn retries_on_408_then_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(408).set_body_string("Request Timeout"))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/v1/chat", server.uri());
+    let resp = send(json_post(&url), fast_config(), &DEFAULT_ERROR_STRUCTURE)
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status, 200);
+}
+
 #[tokio::test]
 async fn does_not_retry_on_401() {
     let server = MockServer::start().await;
@@ -126,7 +153,10 @@ async fn does_not_retry_on_401() {
         .await
         .unwrap_err();
 
-    assert!(matches!(err, AiMuxError::Auth(_)), "got {err:?}");
+    assert!(
+        matches!(err, AiMuxError::ApiCall(ref d) if d.status_code == Some(401)),
+        "got {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -146,7 +176,10 @@ async fn does_not_retry_on_404() {
         .await
         .unwrap_err();
 
-    assert!(matches!(err, AiMuxError::ModelNotFound(_)), "got {err:?}");
+    assert!(
+        matches!(err, AiMuxError::ApiCall(ref d) if d.status_code == Some(404)),
+        "got {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -164,7 +197,10 @@ async fn exhausts_retries_on_persistent_429() {
         .await
         .unwrap_err();
 
-    assert!(matches!(err, AiMuxError::RateLimited { .. }), "got {err:?}");
+    assert!(
+        matches!(err, AiMuxError::ApiCall(ref d) if d.status_code == Some(429)),
+        "got {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -182,7 +218,10 @@ async fn exhausts_retries_on_persistent_500() {
         .await
         .unwrap_err();
 
-    assert!(matches!(err, AiMuxError::ApiCall(_)), "got {err:?}");
+    assert!(
+        matches!(err, AiMuxError::ApiCall(ref d) if d.status_code == Some(503)),
+        "got {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -559,16 +598,16 @@ async fn truncates_large_error_body_with_marker() {
         .unwrap_err();
 
     match err {
-        AiMuxError::RateLimited { message, .. } => {
+        AiMuxError::ApiCall(detail) => {
             assert!(
-                message.contains("(truncated"),
+                detail.message.contains("(truncated"),
                 "large error body must be marked as truncated, got len={}",
-                message.len()
+                detail.message.len()
             );
             assert!(
-                message.len() < 70 * 1024,
+                detail.message.len() < 70 * 1024,
                 "truncated message must stay bounded, got {} bytes",
-                message.len()
+                detail.message.len()
             );
         }
         other => panic!("expected RateLimited, got {other:?}"),

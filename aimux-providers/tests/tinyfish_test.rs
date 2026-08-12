@@ -190,7 +190,7 @@ async fn status_401_maps_to_auth_error() {
 
     let result = model.do_search(&opts("rust", Some(10))).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(ref m)) if m == "Invalid API key."),
+        matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Invalid API key."),
         "expected Auth error, got {result:?}"
     );
 }
@@ -209,7 +209,7 @@ fn language_model_returns_unsupported_error() {
     let config = TinyfishConfig::new(API_KEY);
     let provider = TinyfishProvider::new(config);
     match provider.language_model("tinyfish-search") {
-        Err(AiMuxError::Unsupported(msg)) => {
+        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
             assert!(
                 msg.contains("provider 'tinyfish' does not provide language models"),
                 "unexpected message: {msg}"

@@ -122,8 +122,7 @@ impl EmbeddingModel for VoyageEmbeddingModel {
 
         let response_headers: HashMap<String, String> = resp.headers.clone();
 
-        let raw_value: Value = serde_json::from_slice::<Value>(&resp.body)
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_value: Value = serde_json::from_slice::<Value>(&resp.body)?;
 
         // Extract embeddings: sort data by index, then map to embedding arrays.
         let embeddings: Vec<Vec<f32>> = raw_value

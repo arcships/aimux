@@ -552,7 +552,7 @@ async fn should_stream_text_deltas() {
 // Errors & config validation
 // ════════════════════════════════════════════════════════════════════════════
 
-/// A 401 response maps to `AiMuxError::Auth`.
+/// A 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
 #[tokio::test]
 async fn should_return_auth_error_on_401() {
     let server = MockServer::start().await;
@@ -574,7 +574,10 @@ async fn should_return_auth_error_on_401() {
         .do_generate(&default_options(test_prompt()))
         .await
         .expect_err("401 should error");
-    assert!(matches!(err, AiMuxError::Auth(_)));
+    assert!(
+        matches!(err, ref e if e.status_code() == Some(401)),
+        "{err:?}"
+    );
 }
 
 /// Constructing a provider without `resource_name` or `base_url` is rejected.
@@ -602,7 +605,7 @@ async fn should_error_when_no_auth_configured() {
         .do_generate(&default_options(test_prompt()))
         .await
         .expect_err("no auth should error");
-    assert!(matches!(err, AiMuxError::Auth(_)));
+    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err:?}");
 
     // No request should have hit the server.
     let requests = server.received_requests().await.unwrap();
@@ -887,7 +890,7 @@ async fn should_map_length_finish_reason() {
     assert_eq!(result.finish_reason.raw.as_deref(), Some("length"));
 }
 
-/// TS: a 429 response maps to `AiMuxError::RateLimited`.
+/// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn should_return_rate_limited_on_429() {
     let server = MockServer::start().await;
@@ -909,5 +912,5 @@ async fn should_return_rate_limited_on_429() {
         .do_generate(&default_options(test_prompt()))
         .await
         .expect_err("429 should error");
-    assert!(matches!(err, AiMuxError::RateLimited { .. }));
+    assert!(matches!(err, ref e if e.status_code() == Some(429)));
 }

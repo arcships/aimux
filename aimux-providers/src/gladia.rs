@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
@@ -23,7 +23,7 @@ use aimux_core::transcription_model::{
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key,
-    media_type_to_extension, send, without_trailing_slash,
+    media_type_to_extension, send, sleep_or_abort, without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -214,8 +214,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         )
         .await?;
 
-        let upload: GladiaUploadResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let upload: GladiaUploadResponse = serde_json::from_slice(&resp.body)?;
 
         // Step 2: Initiate transcription.
         let mut body = Map::new();
@@ -252,14 +251,17 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         )
         .await?;
 
-        let init: GladiaInitResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let init: GladiaInitResponse = serde_json::from_slice(&resp.body)?;
 
         // Step 3: Poll for result.
         let mut raw_body: Value;
         let mut response_headers: HashMap<String, String>;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(100),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
 
             let resp = send(
                 HttpRequest {
@@ -281,13 +283,14 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             .await?;
 
             response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-            let parsed: GladiaResultResponse = serde_json::from_value(raw_body.clone())
-                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            raw_body = serde_json::from_slice(&resp.body)?;
+            let parsed: GladiaResultResponse = serde_json::from_value(raw_body.clone())?;
 
             if parsed.status == "done" {
                 let result = parsed.result.ok_or_else(|| {
-                    AiMuxError::Provider("Transcription result is empty".to_string())
+                    AiMuxError::InvalidResponseData(
+                        "Gladia transcription completed without a result".to_string(),
+                    )
                 })?;
 
                 let segments: Vec<TranscriptionSegment> = result
@@ -329,7 +332,13 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             }
 
             if parsed.status == "error" {
-                return Err(AiMuxError::Provider("Transcription job failed".to_string()));
+                return Err(AiMuxError::ApiCall(ApiCallError {
+                    status_code: Some(resp.status),
+                    provider_code: Some(parsed.status.clone()),
+                    message: "Transcription job failed".to_string(),
+                    response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                    ..Default::default()
+                }));
             }
         }
     }

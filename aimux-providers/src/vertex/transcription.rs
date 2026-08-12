@@ -268,8 +268,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
 
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: GoogleVertexResponse = serde_json::from_value(raw_body.clone())
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: GoogleVertexResponse = serde_json::from_value(raw_body.clone())?;
 
         let results = parsed.results.unwrap_or_default();
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
@@ -16,7 +16,8 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
+    without_trailing_slash,
 };
 
 /// Configuration for the Replicate provider.
@@ -275,8 +276,7 @@ impl ImageModel for ReplicateImageModel {
         .await?;
 
         let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
+        let rb: Value = serde_json::from_slice(&resp.body)?;
 
         // Extract output (string or array of strings)
         let urls: Vec<String> = match &rb["output"] {
@@ -431,19 +431,24 @@ impl VideoModel for ReplicateVideoModel {
         )
         .await?;
 
-        let prediction: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let prediction: Value = serde_json::from_slice(&resp.body)?;
         let prediction_id = prediction
             .get("id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AiMuxError::Provider("Replicate prediction missing id".to_string()))?
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData("Replicate prediction missing id".to_string())
+            })?
             .to_string();
 
         // Poll for completion.
         let mut raw_body: Value;
         let mut response_headers: HashMap<String, String>;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(100),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
 
             let resp = send(
                 HttpRequest {
@@ -462,29 +467,34 @@ impl VideoModel for ReplicateVideoModel {
             .await?;
 
             response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
+            raw_body = serde_json::from_slice(&resp.body)?;
             let status_str = raw_body
                 .get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if status_str == "succeeded" || status_str == "failed" {
-                if status_str == "failed" {
-                    return Err(AiMuxError::Provider(
-                        "Replicate prediction failed".to_string(),
-                    ));
+            match status_str {
+                "succeeded" => break,
+                "failed" | "canceled" => {
+                    return Err(AiMuxError::ApiCall(ApiCallError {
+                        status_code: Some(resp.status),
+                        provider_code: Some(status_str.to_string()),
+                        message: format!("Replicate prediction {status_str}"),
+                        response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                        ..Default::default()
+                    }));
                 }
-                break;
+                _ => {}
             }
         }
 
         // Extract video from output.
-        let videos: Vec<VideoData> = if let Some(output) = raw_body.get("output") {
-            if let Some(url) = output.as_str() {
+        let videos: Vec<VideoData> =
+            if let Some(url) = raw_body.get("output").and_then(|v| v.as_str()) {
                 vec![VideoData::Url {
                     url: url.to_string(),
                     media_type: "video/mp4".to_string(),
                 }]
-            } else if let Some(arr) = output.as_array() {
+            } else if let Some(arr) = raw_body.get("output").and_then(|v| v.as_array()) {
                 arr.iter()
                     .filter_map(|v| {
                         v.as_str().map(|url| VideoData::Url {
@@ -495,10 +505,12 @@ impl VideoModel for ReplicateVideoModel {
                     .collect()
             } else {
                 vec![]
-            }
-        } else {
-            vec![]
-        };
+            };
+        if videos.is_empty() {
+            return Err(AiMuxError::InvalidResponseData(
+                "Replicate prediction succeeded without a usable output URL".to_string(),
+            ));
+        }
 
         Ok(VideoResult {
             videos,

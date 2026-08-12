@@ -15,7 +15,6 @@ use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
-use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -608,7 +607,7 @@ async fn vertex_stream_response_headers() {
     assert_eq!(headers.get("test-header"), Some(&"test-value".to_string()));
 }
 
-/// TS: a 429 response maps to `AiMuxError::RateLimited`.
+/// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn vertex_generate_rate_limit() {
     let server = MockServer::start().await;
@@ -622,7 +621,7 @@ async fn vertex_generate_rate_limit() {
     let model = make_model(&server);
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::RateLimited { .. })),
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
 }

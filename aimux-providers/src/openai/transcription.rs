@@ -12,7 +12,7 @@
 //!
 //! Realtime transcription models (`gpt-realtime-whisper*`) stream over
 //! WebSocket and do not support the REST endpoint; `do_generate` returns
-//! [`AiMuxError::Unsupported`] for those model IDs. Streaming (`do_stream`)
+//! [`AiMuxError::UnsupportedFunctionality`] for those model IDs. Streaming (`do_stream`)
 //! is not implemented in the Rust port.
 
 use std::collections::HashMap;
@@ -268,7 +268,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
         if is_realtime_transcription_model_id(&self.model_id) {
-            return Err(AiMuxError::Unsupported(format!(
+            return Err(AiMuxError::UnsupportedFunctionality(format!(
                 "non-streaming transcription with {}",
                 self.model_id
             )));
@@ -356,8 +356,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: OpenAITranscriptionResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: OpenAITranscriptionResponse = serde_json::from_slice(&resp.body)?;
 
         // Map language name to ISO 639-1 code.
         let language = parsed

@@ -20,14 +20,14 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
+use aimux_provider_utils::response::ErrorStructure;
 use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
 };
@@ -200,8 +200,7 @@ impl LanguageModel for VertexAnthropicModel {
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
-        .await
-        .map_err(api_call_to_provider_error)?;
+        .await?;
 
         let data: AnthropicResponse =
             serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
@@ -491,7 +490,12 @@ impl LanguageModel for VertexAnthropicModel {
                             Ok(StreamEvent::MessageStop) => break,
                             Ok(StreamEvent::Error { error }) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Provider(error.message),
+                                    error: AiMuxError::ApiCall(ApiCallError {
+                                        provider_code: error.error_type,
+                                        message: error.message,
+                                        response_body: Some(sse_event.data.clone()),
+                                        ..Default::default()
+                                    }),
                                 });
                                 return;
                             }
@@ -500,7 +504,7 @@ impl LanguageModel for VertexAnthropicModel {
                     }
                     Err(e) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         return;
                     }

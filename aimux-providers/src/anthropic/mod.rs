@@ -317,8 +317,7 @@ impl Provider for AnthropicProvider {
                 #[serde(default)]
                 display_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(format!("anthropic list_models: parse: {e}")))?;
+            let parsed: Resp = serde_json::from_slice(&resp.body)?;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()

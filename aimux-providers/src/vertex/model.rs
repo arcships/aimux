@@ -184,11 +184,9 @@ impl LanguageModel for VertexModel {
         let data: GenerateContentResponse =
             serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
-        let candidate = data
-            .candidates
-            .into_iter()
-            .next()
-            .ok_or_else(|| AiMuxError::Provider("no candidates in response".to_string()))?;
+        let candidate = data.candidates.into_iter().next().ok_or_else(|| {
+            AiMuxError::InvalidResponseData("no candidates in response".to_string())
+        })?;
 
         let (content, has_tool_calls) = extract_content_from_candidate(&candidate);
 
@@ -282,7 +280,7 @@ impl LanguageModel for VertexModel {
                             Ok(v) => v,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
+                                    error: AiMuxError::from(e),
                                 });
                                 stream_errored = true;
                                 break;
@@ -293,7 +291,7 @@ impl LanguageModel for VertexModel {
                             Ok(c) => c,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
+                                    error: AiMuxError::from(e),
                                 });
                                 stream_errored = true;
                                 break;
@@ -397,7 +395,7 @@ impl LanguageModel for VertexModel {
                     }
                     Err(e) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         stream_errored = true;
                         break;

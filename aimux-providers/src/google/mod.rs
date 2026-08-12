@@ -196,8 +196,7 @@ impl Provider for GoogleProvider {
                 #[serde(default)]
                 display_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(format!("google list_models: parse: {e}")))?;
+            let parsed: Resp = serde_json::from_slice(&resp.body)?;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .models
                 .into_iter()

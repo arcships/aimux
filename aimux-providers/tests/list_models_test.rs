@@ -174,7 +174,7 @@ async fn list_models_malformed_response() {
     let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
     let provider = OpenAIProvider::new(config);
     let err = provider.list_models().await.unwrap_err();
-    assert!(matches!(err, aimux_core::AiMuxError::Json(_)));
+    assert!(matches!(err, aimux_core::AiMuxError::JsonParse(_)));
 }
 
 #[tokio::test]
@@ -217,7 +217,7 @@ async fn list_models_http_error() {
 #[test]
 fn provider_handle_unknown_name() {
     match aimux_providers::provider_handle("no-such-provider", Some("k".into()), None) {
-        Err(e) => assert!(matches!(e, aimux_core::AiMuxError::UnknownProvider(_))),
+        Err(e) => assert!(matches!(e, aimux_core::AiMuxError::NoSuchProvider { .. })),
         Ok(_) => panic!("unknown provider should fail"),
     }
 }
@@ -234,11 +234,16 @@ async fn unsupported_provider_returns_unsupported() {
             _model_id: &str,
         ) -> Result<Box<dyn aimux_core::language_model::LanguageModel>, aimux_core::AiMuxError>
         {
-            Err(aimux_core::AiMuxError::Unsupported("none".into()))
+            Err(aimux_core::AiMuxError::UnsupportedFunctionality(
+                "none".into(),
+            ))
         }
     }
     let err = StubProvider.list_models().await.unwrap_err();
-    assert!(matches!(err, aimux_core::AiMuxError::Unsupported(_)));
+    assert!(matches!(
+        err,
+        aimux_core::AiMuxError::UnsupportedFunctionality(_)
+    ));
 }
 
 #[test]
@@ -260,7 +265,7 @@ fn catalogue_normalize_and_lookup() {
 #[test]
 fn parse_anya2a_missing_providers_key() {
     let err = catalogue::parse_anya2a_all(&serde_json::json!({"updated_at":"0"})).unwrap_err();
-    assert!(matches!(err, aimux_core::AiMuxError::Json(_)));
+    assert!(matches!(err, aimux_core::AiMuxError::JsonParse(_)));
 }
 
 #[test]

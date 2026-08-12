@@ -103,8 +103,7 @@ fn is_infrastructure_error(e: &aimux_core::error::AiMuxError) -> bool {
     use aimux_core::error::AiMuxError;
     match e {
         // wiremock returns 404 when no Mock matches the request path/method.
-        AiMuxError::ModelNotFound(msg) => msg.contains("404"),
-        AiMuxError::Http(msg) => msg.contains("404"),
+        AiMuxError::ApiCall(d) => d.status_code == Some(404),
         _ => false,
     }
 }

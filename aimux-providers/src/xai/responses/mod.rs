@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
@@ -124,15 +124,23 @@ impl LanguageModel for XaiResponsesModel {
 
         let response_headers = resp.headers;
 
-        let raw_value: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
+        let raw_value: Value = serde_json::from_slice(&resp.body)?;
 
         // Check for 200-status error.
         if let Some(error_msg) = raw_value.get("error").and_then(|v| v.as_str()) {
-            return Err(AiMuxError::ApiCall(error_msg.to_string()));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                status_code: Some(resp.status),
+                provider_code: raw_value
+                    .get("code")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                message: error_msg.to_string(),
+                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                ..Default::default()
+            }));
         }
 
-        let data: types::XaiResponsesResponse = serde_json::from_value(raw_value.clone())
-            .map_err(|e| AiMuxError::Http(format!("failed to parse response: {}", e)))?;
+        let data: types::XaiResponsesResponse = serde_json::from_value(raw_value.clone())?;
 
         let mut content: Vec<GenerateContent> = Vec::new();
         let mut has_function_call = false;
@@ -410,13 +418,21 @@ impl LanguageModel for XaiResponsesModel {
                     buf.extend_from_slice(&bytes);
                 }
             }
-            if let Ok(val) = serde_json::from_slice::<Value>(&buf)
-                && let Some(err_msg) = val.get("error").and_then(|v| v.as_str())
-            {
-                return Err(AiMuxError::ApiCall(err_msg.to_string()));
+            let val: Value = serde_json::from_slice(&buf)?;
+            if let Some(err_msg) = val.get("error").and_then(|v| v.as_str()) {
+                return Err(AiMuxError::ApiCall(ApiCallError {
+                    status_code: Some(resp.status),
+                    provider_code: val
+                        .get("code")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    message: err_msg.to_string(),
+                    response_body: Some(String::from_utf8_lossy(&buf).into_owned()),
+                    ..Default::default()
+                }));
             }
-            return Err(AiMuxError::Provider(
-                "Expected SSE stream but got JSON response".to_string(),
+            return Err(AiMuxError::InvalidResponseData(
+                "expected SSE stream but got JSON response without an error object".to_string(),
             ));
         }
 
@@ -455,7 +471,7 @@ impl LanguageModel for XaiResponsesModel {
                             Ok(v) => v,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
+                                    error: AiMuxError::from(e),
                                 });
                                 break;
                             }
@@ -650,7 +666,12 @@ impl LanguageModel for XaiResponsesModel {
                         if event_type == "error" {
                             let message = parsed.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::ApiCall(message.to_string()),
+                                error: AiMuxError::ApiCall(ApiCallError {
+                                    provider_code: parsed.get("code").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    message: message.to_string(),
+                                    response_body: Some(sse_event.data.clone()),
+                                    ..Default::default()
+                                }),
                             });
                             continue;
                         }
@@ -922,7 +943,7 @@ impl LanguageModel for XaiResponsesModel {
                     }
                     Err(e) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         break;
                     }

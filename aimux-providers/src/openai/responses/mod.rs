@@ -139,13 +139,15 @@ impl LanguageModel for OpenAIResponsesModel {
         )
         .await?;
 
+        let status = resp.status;
         let response_headers = resp.headers;
 
-        let data: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let data: Value = serde_json::from_slice(&resp.body)?;
 
         responses_convert::build_responses_generate_result(
             &data,
+            status,
+            &String::from_utf8_lossy(&resp.body),
             request_result.warnings,
             provider_key,
             body,
@@ -187,6 +189,7 @@ impl LanguageModel for OpenAIResponsesModel {
         )
         .await?;
 
+        let status = resp.status;
         let response_headers = resp.headers;
 
         let mut sse_stream = SseStream::new(resp.body);
@@ -194,6 +197,7 @@ impl LanguageModel for OpenAIResponsesModel {
         let stream = responses_convert::build_responses_event_stream(
             first_event,
             sse_stream,
+            status,
             provider_key,
             warnings,
             store_flag,

@@ -200,8 +200,8 @@ async fn should_map_401_to_auth_error() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        AiMuxError::Auth(msg) => {
-            assert_eq!(msg, "unauthorized");
+        ref e @ AiMuxError::ApiCall(_) if e.status_code() == Some(401) => {
+            assert!(e.to_string().contains("unauthorized"));
         }
         e => panic!("expected Auth error, got: {e:?}"),
     }

@@ -154,8 +154,7 @@ impl Provider for CohereProvider {
                 #[serde(default)]
                 endpoints: Option<Vec<String>>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(format!("cohere list_models: parse: {e}")))?;
+            let parsed: Resp = serde_json::from_slice(&resp.body)?;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .models
                 .into_iter()

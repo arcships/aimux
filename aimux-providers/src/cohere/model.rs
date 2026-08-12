@@ -152,8 +152,7 @@ impl LanguageModel for CohereModel {
         .await?;
 
         let response_headers = resp.headers;
-        let data: ChatResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let data: ChatResponse = serde_json::from_slice(&resp.body)?;
 
         // Build content array.
         let mut content = Vec::new();
@@ -309,7 +308,7 @@ impl LanguageModel for CohereModel {
                             Err(e) => {
                                 // Unparsable chunk — emit Error.
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
+                                    error: AiMuxError::from(e),
                                 });
                                 stream_errored = true;
                                 break;
@@ -523,7 +522,7 @@ impl LanguageModel for CohereModel {
                     }
                     Err(e) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         stream_errored = true;
                         break;

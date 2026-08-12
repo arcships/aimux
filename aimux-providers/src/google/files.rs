@@ -20,13 +20,13 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
 use aimux_core::shared::FileBytes;
 use aimux_core::types::Warning;
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, sleep_or_abort};
 
 use super::GoogleConfig;
 
@@ -203,14 +203,22 @@ impl Files for GoogleFiles {
             &GOOGLE_ERROR_STRUCTURE,
         )
         .await
-        .map_err(|e| AiMuxError::Provider(format!("Failed to initiate resumable upload: {e}")))?;
+        .map_err(|e| match e {
+            AiMuxError::ApiCall(d) => AiMuxError::ApiCall(ApiCallError {
+                message: format!("Failed to initiate resumable upload: {}", d.message),
+                ..d
+            }),
+            e => e,
+        })?;
 
         let upload_url = init_resp
             .headers
             .get("x-goog-upload-url")
             .cloned()
             .ok_or_else(|| {
-                AiMuxError::Provider("No upload URL returned from initiation request".to_string())
+                AiMuxError::InvalidResponseData(
+                    "No upload URL returned from initiation request".to_string(),
+                )
             })?;
 
         // Step 2: Upload file data.
@@ -237,10 +245,16 @@ impl Files for GoogleFiles {
             &GOOGLE_ERROR_STRUCTURE,
         )
         .await
-        .map_err(|e| AiMuxError::Provider(format!("Failed to upload file data: {e}")))?;
+        .map_err(|e| match e {
+            AiMuxError::ApiCall(d) => AiMuxError::ApiCall(ApiCallError {
+                message: format!("Failed to upload file data: {}", d.message),
+                ..d
+            }),
+            e => e,
+        })?;
 
-        let upload_result: UploadResponse = serde_json::from_slice(&upload_resp.body)
-            .map_err(|e| AiMuxError::Http(e.to_string()))?;
+        let upload_result: UploadResponse =
+            serde_json::from_slice(&upload_resp.body).map_err(AiMuxError::from)?;
 
         let mut file = upload_result.file;
 
@@ -253,20 +267,24 @@ impl Files for GoogleFiles {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
+        // Seed evidence from the upload response so a file that is already
+        // FAILED (never polled) still carries the observed status + raw body.
+        let mut last_poll_body: Option<String> =
+            Some(String::from_utf8_lossy(&upload_resp.body).into_owned());
+        let mut last_poll_status: Option<u16> = Some(upload_resp.status);
         while file.state == "PROCESSING" {
             if start_time.elapsed() > Duration::from_millis(poll_timeout_ms) {
-                return Err(AiMuxError::Provider(format!(
-                    "File processing timed out after {}ms",
-                    poll_timeout_ms
+                return Err(AiMuxError::Timeout(format!(
+                    "Google file upload polling for {} timed out after {}ms",
+                    file.name, poll_timeout_ms
                 )));
             }
 
-            tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
-            if let Some(signal) = &options.abort_signal
-                && signal.is_aborted()
-            {
-                return Err(AiMuxError::Other("file upload polling aborted".to_string()));
-            }
+            sleep_or_abort(
+                Duration::from_millis(poll_interval_ms),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
 
             let poll_url = format!("{}/{}", self.config.base_url, file.name);
 
@@ -287,14 +305,20 @@ impl Files for GoogleFiles {
             .await?;
 
             file = serde_json::from_slice::<GoogleFileResource>(&poll_resp.body)
-                .map_err(|e| AiMuxError::Http(e.to_string()))?;
+                .map_err(AiMuxError::from)?;
+            last_poll_body = Some(String::from_utf8_lossy(&poll_resp.body).into_owned());
+            last_poll_status = Some(poll_resp.status);
         }
 
         if file.state == "FAILED" {
-            return Err(AiMuxError::Provider(format!(
-                "File processing failed for {}",
-                file.name
-            )));
+            // Provider-declared job failure inside a 2xx envelope: stays ApiCall.
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                status_code: last_poll_status,
+                provider_code: Some("FAILED".to_string()),
+                message: format!("File processing failed for {}", file.name),
+                response_body: last_poll_body,
+                ..Default::default()
+            }));
         }
 
         // Build provider metadata.

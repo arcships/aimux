@@ -584,7 +584,7 @@ fn route_file_bytes(
             }
             Ok(block)
         }
-        _ => Err(AiMuxError::Unsupported(format!(
+        _ => Err(AiMuxError::UnsupportedFunctionality(format!(
             "media type: {}",
             full_media_type
         ))),
@@ -629,7 +629,7 @@ fn route_file_base64(
             }
             Ok(block)
         }
-        _ => Err(AiMuxError::Unsupported(format!(
+        _ => Err(AiMuxError::UnsupportedFunctionality(format!(
             "media type: {}",
             full_media_type
         ))),
@@ -654,7 +654,7 @@ fn route_file_url(
         "text" if media_type == "text/plain" => {
             Ok(json!({ "type": "document", "source": { "type": "url", "url": url } }))
         }
-        _ => Err(AiMuxError::Unsupported(format!(
+        _ => Err(AiMuxError::UnsupportedFunctionality(format!(
             "media type: {}",
             media_type
         ))),
@@ -721,7 +721,7 @@ fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiM
     let top = top_level_media_type(media_type);
     match detect_media_type(bytes, top) {
         Some(detected) => Ok(detected.to_string()),
-        None => Err(AiMuxError::Unsupported(format!(
+        None => Err(AiMuxError::UnsupportedFunctionality(format!(
             "file of media type \"{}\" must specify subtype since it could not be auto-detected",
             media_type
         ))),
@@ -1530,7 +1530,7 @@ fn append_anthropic_container(
                 {
                     Some(id) => id.clone(),
                     None => {
-                        return Err(AiMuxError::Unsupported(format!(
+                        return Err(AiMuxError::UnsupportedFunctionality(format!(
                             "skill provider reference is missing the 'anthropic' key: {}",
                             skill
                         )));

@@ -714,12 +714,9 @@ async fn should_handle_auth_error() {
     let result = model.do_generate(&default_options(test_prompt())).await;
 
     assert!(result.is_err());
-    match result.unwrap_err() {
-        aimux_core::error::AiMuxError::Auth(msg) => {
-            assert!(msg.contains("Invalid API key"));
-        }
-        other => panic!("expected Auth error, got {:?}", other),
-    }
+    let err = result.unwrap_err();
+    assert_eq!(err.status_code(), Some(401), "got {err:?}");
+    assert!(err.to_string().contains("Invalid API key"));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1275,7 +1272,7 @@ async fn should_send_default_request_body_shape() {
     assert!(body.get("stream").is_none());
 }
 
-/// TS: a 429 response maps to `AiMuxError::RateLimited`.
+/// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn should_handle_rate_limit_error() {
     let server = MockServer::start().await;
@@ -1294,15 +1291,12 @@ async fn should_handle_rate_limit_error() {
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(
-            result,
-            Err(aimux_core::error::AiMuxError::RateLimited { .. })
-        ),
-        "expected RateLimited, got {result:?}"
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
+        "expected a 429, got {result:?}"
     );
 }
 
-/// TS: a 404 response maps to `AiMuxError::ModelNotFound`.
+/// TS: a 404 response maps to `AiMuxError::ApiCall` (404 in `status_code`).
 #[tokio::test]
 async fn should_handle_model_not_found_error() {
     let server = MockServer::start().await;
@@ -1321,7 +1315,7 @@ async fn should_handle_model_not_found_error() {
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(aimux_core::error::AiMuxError::ModelNotFound(_))),
+        matches!(result, Err(ref e) if e.status_code() == Some(404)),
         "expected ModelNotFound, got {result:?}"
     );
 }
@@ -1526,7 +1520,7 @@ async fn should_stream_response_metadata() {
     assert_eq!(model_id.as_deref(), Some("mistral-small-latest"));
 }
 
-/// TS: a 429 HTTP response surfaces as `AiMuxError::RateLimited` from
+/// TS: a 429 HTTP response surfaces as `AiMuxError::ApiCall` (429 in `status_code`) from
 /// `do_stream` (the stream is never opened).
 #[tokio::test]
 async fn should_stream_rate_limit_error() {
@@ -1546,11 +1540,8 @@ async fn should_stream_rate_limit_error() {
 
     let result = model.do_stream(&default_options(test_prompt())).await;
     assert!(
-        matches!(
-            result,
-            Err(aimux_core::error::AiMuxError::RateLimited { .. })
-        ),
-        "expected RateLimited, got {result:?}"
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
+        "expected a 429, got {result:?}"
     );
 }
 
@@ -1578,11 +1569,9 @@ async fn should_stream_error_in_chunk() {
     assert!(
         parts.iter().any(|p| matches!(
             p,
-            StreamPart::Error {
-                error: aimux_core::error::AiMuxError::RateLimited { .. }
-            }
+            StreamPart::Error { error } if error.status_code() == Some(429)
         )),
-        "expected a RateLimited stream error, got {parts:?}"
+        "expected a 429 stream error, got {parts:?}"
     );
 }
 

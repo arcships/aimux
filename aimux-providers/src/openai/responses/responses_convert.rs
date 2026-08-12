@@ -20,6 +20,7 @@ use futures::{Stream, StreamExt};
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
@@ -58,10 +59,13 @@ pub fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, Stri
 /// array of `message`/`function_call`/`custom_tool_call`/`reasoning` items,
 /// `incomplete_details`, `usage`, provider metadata with `responseId` /
 /// `reasoningContext` / `serviceTier`). Vendor callers supply the parsed `data`,
-/// the request `body`/`response_headers` to attach, and the provider-metadata
-/// namespace `provider_key` ("openai" / "azure").
+/// the observed HTTP `status` and full `raw_body` (evidence for in-band 2xx
+/// errors), the request `body`/`response_headers` to attach, and the
+/// provider-metadata namespace `provider_key` ("openai" / "azure").
 pub fn build_responses_generate_result(
     data: &Value,
+    status: u16,
+    raw_body: &str,
     request_warnings: Vec<Warning>,
     provider_key: String,
     body: Value,
@@ -75,7 +79,20 @@ pub fn build_responses_generate_result(
             .get("message")
             .and_then(|v| v.as_str())
             .unwrap_or("Responses API error");
-        return Err(AiMuxError::Provider(message.to_string()));
+        let provider_code = err_obj
+            .get("type")
+            .or_else(|| err_obj.get("code"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        return Err(AiMuxError::ApiCall(ApiCallError {
+            // Provider-declared in-band failure: keep the observed 2xx
+            // envelope status and the full raw body (§2.2).
+            status_code: Some(status),
+            provider_code,
+            message: message.to_string(),
+            response_body: Some(raw_body.to_string()),
+            ..Default::default()
+        }));
     }
 
     let output = data.get("output").and_then(|v| v.as_array());
@@ -85,7 +102,8 @@ pub fn build_responses_generate_result(
             .and_then(|d| d.get("reason"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        AiMuxError::Provider(if detail.is_empty() {
+        // A success response that cannot yield a usable result (§2.2).
+        AiMuxError::InvalidResponseData(if detail.is_empty() {
             "Responses API returned no output".to_string()
         } else {
             format!("Responses API returned no output ({})", detail)
@@ -306,6 +324,7 @@ enum SummaryStatus {
 pub fn build_responses_event_stream<S>(
     first_event: Option<Result<SseEvent, SseError>>,
     sse_stream: S,
+    status: u16,
     provider_key: String,
     warnings: Vec<Warning>,
     store_flag: bool,
@@ -330,7 +349,21 @@ where
                         .and_then(|v| v.as_str())
                 })
                 .unwrap_or("Responses API stream error");
-            return Err(AiMuxError::Provider(message.to_string()));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                // Mid-stream provider failure arrives on a successful HTTP
+                // response: keep the observed 2xx status (§2.2).
+                status_code: Some(status),
+                provider_code: val
+                    .get("response")
+                    .and_then(|r| r.get("error"))
+                    .or_else(|| val.get("error"))
+                    .and_then(|e| e.get("type").or_else(|| e.get("code")))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                message: message.to_string(),
+                response_body: Some(event.data.clone()),
+                ..Default::default()
+            }));
         }
     }
 
@@ -367,7 +400,7 @@ where
                         Ok(v) => v,
                         Err(e) => {
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::Json(e.to_string()),
+                                error: AiMuxError::JsonParse(e.to_string()),
                             });
                             stream_errored = true;
                             break;
@@ -806,7 +839,17 @@ where
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("Responses API stream failed");
                                     yield Ok(StreamPart::Error {
-                                        error: AiMuxError::Provider(message.to_string()),
+                                        error: AiMuxError::ApiCall(ApiCallError {
+                                            status_code: Some(status),
+                                            provider_code: resp_obj
+                                                .get("error")
+                                                .and_then(|e| e.get("type").or_else(|| e.get("code")))
+                                                .and_then(|v| v.as_str())
+                                                .map(|s| s.to_string()),
+                                            message: message.to_string(),
+                                            response_body: Some(sse_event.data.clone()),
+                                            ..Default::default()
+                                        }),
                                     });
                                 }
                             }
@@ -825,7 +868,17 @@ where
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("Responses API stream error");
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::Provider(message.to_string()),
+                                error: AiMuxError::ApiCall(ApiCallError {
+                                    status_code: Some(status),
+                                    provider_code: parsed
+                                        .get("error")
+                                        .and_then(|e| e.get("type").or_else(|| e.get("code")))
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string()),
+                                    message: message.to_string(),
+                                    response_body: Some(sse_event.data.clone()),
+                                    ..Default::default()
+                                }),
                             });
                         }
 
@@ -839,7 +892,7 @@ where
                 }
                 Err(e) => {
                     yield Ok(StreamPart::Error {
-                        error: AiMuxError::Stream(e.to_string()),
+                        error: AiMuxError::InvalidResponseData(e.to_string()),
                     });
                     stream_errored = true;
                     break;

@@ -121,8 +121,7 @@ impl EmbeddingModel for CohereEmbeddingModel {
 
         let response_headers = resp.headers;
 
-        let raw_value: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_value: Value = serde_json::from_slice(&resp.body)?;
 
         // Extract embeddings: response.embeddings.float
         let embeddings: Vec<Vec<f32>> = raw_value

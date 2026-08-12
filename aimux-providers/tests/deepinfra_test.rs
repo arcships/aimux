@@ -25,7 +25,6 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
-use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -262,7 +261,7 @@ async fn request_body_and_usage() {
     assert_eq!(body["model"], "meta-llama/Meta-Llama-3-70B-Instruct");
 }
 
-/// TS: a 401 response maps to `AiMuxError::Auth`.
+/// TS: a 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
 #[tokio::test]
 async fn status_401_maps_to_auth_error() {
     let server = MockServer::start().await;
@@ -278,7 +277,7 @@ async fn status_401_maps_to_auth_error() {
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(_))),
+        matches!(result, Err(ref e) if e.status_code() == Some(401)),
         "expected Auth error, got {result:?}"
     );
 }

@@ -6,14 +6,14 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{ErrorStructure, api_call_to_provider_error};
+use aimux_provider_utils::response::{ErrorStructure, error_for_status};
 use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
@@ -146,19 +146,16 @@ impl LanguageModel for GoogleModel {
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
-        .await
-        .map_err(api_call_to_provider_error)?;
+        .await?;
 
         let response_headers = resp.headers;
 
         let data: GenerateContentResponse =
             serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
-        let candidate = data
-            .candidates
-            .into_iter()
-            .next()
-            .ok_or_else(|| AiMuxError::Provider("no candidates in response".to_string()))?;
+        let candidate = data.candidates.into_iter().next().ok_or_else(|| {
+            AiMuxError::InvalidResponseData("no candidates in response".to_string())
+        })?;
 
         let (content, has_tool_calls) = extract_content_from_candidate(&candidate);
 
@@ -229,8 +226,7 @@ impl LanguageModel for GoogleModel {
             &GOOGLE_ERROR_STRUCTURE,
             options.timeout.map(Into::into),
         )
-        .await
-        .map_err(api_call_to_provider_error)?;
+        .await?;
 
         let response_headers = resp.headers;
 
@@ -278,7 +274,7 @@ impl LanguageModel for GoogleModel {
                             Ok(v) => v,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
+                                    error: AiMuxError::from(e),
                                 });
                                 stream_errored = true;
                                 break;
@@ -292,7 +288,7 @@ impl LanguageModel for GoogleModel {
                             Ok(c) => c,
                             Err(e) => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
+                                    error: AiMuxError::from(e),
                                 });
                                 stream_errored = true;
                                 break;
@@ -537,7 +533,7 @@ impl LanguageModel for GoogleModel {
                     }
                     Err(e) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         stream_errored = true;
                         break;
@@ -702,19 +698,29 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
 #[allow(dead_code)]
 fn parse_google_error_body(body: &str) -> AiMuxError {
     if let Ok(env) = serde_json::from_str::<GoogleErrorEnvelope>(body) {
-        let code = env.error.code.unwrap_or(500) as u16;
         let msg = env.error.message;
-        return match code {
-            401 => AiMuxError::Auth(msg),
-            429 => AiMuxError::RateLimited {
-                retry_after_ms: 1000,
+        let provider_code = env.error.status;
+        return match env.error.code {
+            Some(code) => error_for_status(
+                code as u16,
+                provider_code,
+                msg,
+                None,
+                Some(body.to_string()),
+            ),
+            None => AiMuxError::ApiCall(ApiCallError {
+                provider_code,
                 message: msg,
-            },
-            404 => AiMuxError::ModelNotFound(msg),
-            _ => AiMuxError::Provider(format!("HTTP {}: {}", code, msg)),
+                response_body: Some(body.to_string()),
+                ..Default::default()
+            }),
         };
     }
-    AiMuxError::Provider(body.to_string())
+    AiMuxError::ApiCall(ApiCallError {
+        message: body.to_string(),
+        response_body: Some(body.to_string()),
+        ..Default::default()
+    })
 }
 
 // Suppress unused warning for GoogleUsageMetadata (re-exported via convert).

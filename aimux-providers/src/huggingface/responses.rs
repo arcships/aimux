@@ -23,6 +23,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
@@ -122,8 +123,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
 
         let response_headers = resp.headers;
 
-        let response: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let response: Value = serde_json::from_slice(&resp.body)?;
 
         // Check for an error field in the response body.
         if let Some(error) = response.get("error")
@@ -133,7 +133,17 @@ impl LanguageModel for HuggingFaceResponsesModel {
                 .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown error");
-            return Err(AiMuxError::ApiCall(message.to_string()));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                status_code: Some(resp.status),
+                provider_code: error
+                    .get("code")
+                    .or_else(|| error.get("type"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                message: message.to_string(),
+                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                ..Default::default()
+            }));
         }
 
         let content = build_generate_content(&response);
@@ -225,9 +235,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                     unified: FinishReasonUnified::Error,
                                     raw: None,
                                 };
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
-                                });
+                                yield Ok(StreamPart::Error { error: e.into() });
                                 stream_errored = true;
                                 continue;
                             }
@@ -476,7 +484,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                             raw: None,
                         };
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         stream_errored = true;
                     }
@@ -697,7 +705,7 @@ pub fn convert_to_huggingface_responses_messages(
                             parts.push(convert_file_part_url(media_type, url)?);
                         }
                         ContentPart::FileReference { .. } => {
-                            return Err(AiMuxError::Unsupported(
+                            return Err(AiMuxError::UnsupportedFunctionality(
                                 "file parts with provider references".into(),
                             ));
                         }
@@ -770,7 +778,7 @@ fn convert_file_part_base64(media_type: &str, data: &str) -> Result<Value, AiMux
             "image_url": format!("data:{};base64,{}", full_type, data)
         }))
     } else {
-        Err(AiMuxError::Unsupported(format!(
+        Err(AiMuxError::UnsupportedFunctionality(format!(
             "file part media type {}",
             media_type
         )))
@@ -786,7 +794,7 @@ fn convert_file_part_url(media_type: &str, url: &str) -> Result<Value, AiMuxErro
             "image_url": url
         }))
     } else {
-        Err(AiMuxError::Unsupported(format!(
+        Err(AiMuxError::UnsupportedFunctionality(format!(
             "file part media type {}",
             media_type
         )))
@@ -833,7 +841,7 @@ fn resolve_full_media_type_base64(media_type: &str, data: &str) -> Result<String
         return Ok(detected);
     }
 
-    Err(AiMuxError::Unsupported(format!(
+    Err(AiMuxError::UnsupportedFunctionality(format!(
         "file of media type \"{}\" must specify subtype since it could not be auto-detected",
         media_type
     )))

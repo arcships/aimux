@@ -209,7 +209,7 @@ async fn status_401_maps_to_auth_error() {
     let model = make_model(&server);
     let result = model.do_generate(&options(PROMPT)).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(ref m)) if m == "Invalid API key"),
+        matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Invalid API key"),
         "expected Auth error, got {result:?}"
     );
 }
@@ -228,7 +228,7 @@ async fn status_500_maps_to_provider_error() {
     let model = make_model(&server);
     let result = model.do_generate(&options(PROMPT)).await;
     assert!(
-        matches!(result, Err(AiMuxError::Provider(_))),
+        matches!(result, Err(AiMuxError::ApiCall(_))),
         "expected Provider error, got {result:?}"
     );
 }
@@ -251,7 +251,7 @@ fn language_model_returns_unsupported_error() {
     let provider = RecraftProvider::new(config);
     let result = provider.language_model("recraftv3");
     assert!(
-        matches!(result, Err(AiMuxError::Unsupported(_))),
+        matches!(result, Err(AiMuxError::UnsupportedFunctionality(_))),
         "expected Unsupported error"
     );
 }

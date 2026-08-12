@@ -212,8 +212,7 @@ impl VertexImageModel {
         )
         .await?;
         let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
+        let rb: Value = serde_json::from_slice(&resp.body)?;
 
         let images: Vec<String> = rb
             .get("predictions")
@@ -270,12 +269,12 @@ impl VertexImageModel {
     ) -> Result<ImageResult, AiMuxError> {
         let mut warnings = Vec::new();
         if options.mask.is_some() {
-            return Err(AiMuxError::Unsupported(
+            return Err(AiMuxError::UnsupportedFunctionality(
                 "Gemini image models do not support mask-based image editing.".into(),
             ));
         }
         if options.n > 1 {
-            return Err(AiMuxError::Unsupported("Gemini image models do not support generating a set number of images per call. Use n=1 or omit the n parameter.".into()));
+            return Err(AiMuxError::UnsupportedFunctionality("Gemini image models do not support generating a set number of images per call. Use n=1 or omit the n parameter.".into()));
         }
         if options.size.is_some() {
             warnings.push(Warning::Unsupported {
@@ -295,7 +294,7 @@ impl VertexImageModel {
             for file in files {
                 match file {
                     ImageFile::Url { url } => {
-                        return Err(AiMuxError::Unsupported(format!(
+                        return Err(AiMuxError::UnsupportedFunctionality(format!(
                             "URL-based input images with media type \"image/*\" are not passed as inline bytes. URL: {url}"
                         )));
                     }
@@ -358,8 +357,7 @@ impl VertexImageModel {
         )
         .await?;
         let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
+        let rb: Value = serde_json::from_slice(&resp.body)?;
 
         let mut images: Vec<String> = Vec::new();
         if let Some(candidates) = rb.get("candidates").and_then(|c| c.as_array()) {

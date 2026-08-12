@@ -147,8 +147,7 @@ impl Files for AnthropicFiles {
         .await?;
 
         let data: AnthropicFilesResponse =
-            serde_json::from_slice::<AnthropicFilesResponse>(&resp.body)
-                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            serde_json::from_slice::<AnthropicFilesResponse>(&resp.body)?;
 
         // Build provider metadata.
         let mut metadata = serde_json::Map::new();

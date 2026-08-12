@@ -309,7 +309,7 @@ async fn vertex_anthropic_stream_text() {
 // Error handling
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Test: a 401 response maps to `AiMuxError::Auth`.
+/// Test: a 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
 #[tokio::test]
 async fn vertex_anthropic_generate_auth_error() {
     let server = MockServer::start().await;
@@ -329,12 +329,12 @@ async fn vertex_anthropic_generate_auth_error() {
     let model = make_model(&server);
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(_))),
+        matches!(result, Err(ref e) if e.status_code() == Some(401)),
         "expected Auth, got {result:?}"
     );
 }
 
-/// Test: a generic HTTP error (500) maps to `AiMuxError::Provider`.
+/// Test: a generic HTTP error (500) maps to `AiMuxError::ApiCall`.
 #[tokio::test]
 async fn vertex_anthropic_generate_provider_error() {
     let server = MockServer::start().await;
@@ -354,7 +354,7 @@ async fn vertex_anthropic_generate_provider_error() {
     let model = make_model(&server);
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::Provider(_))),
+        matches!(result, Err(AiMuxError::ApiCall(_))),
         "expected Provider, got {result:?}"
     );
 }

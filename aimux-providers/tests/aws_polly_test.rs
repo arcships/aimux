@@ -337,7 +337,7 @@ async fn response_carries_metadata() {
 // Error mapping
 // ════════════════════════════════════════════════════════════════════════════
 
-/// A 401 response maps to an `Auth` error.
+/// A 401 response maps to `ApiCall` (401 in `status_code`).
 #[tokio::test]
 async fn error_401_maps_to_auth_error() {
     let server = MockServer::start().await;
@@ -360,7 +360,7 @@ async fn error_401_maps_to_auth_error() {
         .expect_err("expected an error for 401");
 
     assert!(
-        matches!(err, aimux_core::AiMuxError::Auth(_)),
+        matches!(err, ref e if e.status_code() == Some(401)),
         "expected Auth error for 401, got: {:?}",
         err
     );
@@ -372,9 +372,9 @@ async fn error_401_maps_to_auth_error() {
     );
 }
 
-/// A 403 response maps to an `Auth` error.
+/// A 403 response keeps its observed status in the field.
 #[tokio::test]
-async fn error_403_maps_to_auth_error() {
+async fn error_403_keeps_the_observed_status() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/speech"))
@@ -393,13 +393,13 @@ async fn error_403_maps_to_auth_error() {
         .expect_err("expected an error for 403");
 
     assert!(
-        matches!(err, aimux_core::AiMuxError::Auth(_)),
-        "expected Auth error for 403, got: {:?}",
+        matches!(err, ref e if e.status_code() == Some(403)),
+        "expected a 403 provider error, got: {:?}",
         err
     );
 }
 
-/// A 404 response maps to a `ModelNotFound` error.
+/// A 404 response maps to `ApiCall` (404 in `status_code`).
 #[tokio::test]
 async fn error_404_maps_to_model_not_found() {
     let server = MockServer::start().await;
@@ -421,7 +421,7 @@ async fn error_404_maps_to_model_not_found() {
         .expect_err("expected an error for 404");
 
     assert!(
-        matches!(err, aimux_core::AiMuxError::ModelNotFound(_)),
+        matches!(err, ref e if e.status_code() == Some(404)),
         "expected ModelNotFound error for 404, got: {:?}",
         err
     );

@@ -1858,8 +1858,8 @@ mod auth {
         let result = model.do_generate(&default_options(test_prompt())).await;
         assert!(result.is_err());
         match result {
-            Err(aimux_core::error::AiMuxError::Auth(_)) => {}
-            Err(e) => panic!("expected Auth error, got {:?}", e),
+            Err(ref e) if e.status_code() == Some(401) => {}
+            Err(e) => panic!("expected a 401, got {:?}", e),
             Ok(_) => panic!("expected error, got Ok"),
         }
     }

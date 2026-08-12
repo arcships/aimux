@@ -23,7 +23,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::ErrorStructure;
+use aimux_provider_utils::response::{ErrorStructure, parse_stream_error};
 use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
 use aimux_stream::SseStream;
 
@@ -255,14 +255,12 @@ impl LanguageModel for MistralModel {
         .await?;
 
         let response_headers = resp.headers;
-        let data: ChatCompletionResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let data: ChatCompletionResponse = serde_json::from_slice(&resp.body)?;
 
-        let choice = data
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| AiMuxError::Provider("no choices in response".to_string()))?;
+        let choice =
+            data.choices.into_iter().next().ok_or_else(|| {
+                AiMuxError::InvalidResponseData("no choices in response".to_string())
+            })?;
 
         // Build content array.
         let mut content = Vec::new();
@@ -358,7 +356,7 @@ impl LanguageModel for MistralModel {
             && let Ok(val) = serde_json::from_str::<Value>(&event.data)
             && let Some(err_obj) = val.get("error")
         {
-            return Err(stream_error_to_ai_error(err_obj));
+            return Err(parse_stream_error(err_obj));
         }
 
         let stream = async_stream::stream! {
@@ -391,9 +389,7 @@ impl LanguageModel for MistralModel {
                         let parsed: Value = match serde_json::from_str(&sse_event.data) {
                             Ok(v) => v,
                             Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
-                                });
+                                yield Ok(StreamPart::Error { error: e.into() });
                                 stream_errored = true;
                                 break;
                             }
@@ -401,7 +397,7 @@ impl LanguageModel for MistralModel {
 
                         if let Some(err_obj) = parsed.get("error") {
                             yield Ok(StreamPart::Error {
-                                error: stream_error_to_ai_error(err_obj),
+                                error: parse_stream_error(err_obj),
                             });
                             stream_errored = true;
                             break;
@@ -410,9 +406,7 @@ impl LanguageModel for MistralModel {
                         let chunk: StreamChunk = match serde_json::from_value(parsed) {
                             Ok(c) => c,
                             Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
-                                });
+                                yield Ok(StreamPart::Error { error: e.into() });
                                 stream_errored = true;
                                 break;
                             }
@@ -569,7 +563,7 @@ impl LanguageModel for MistralModel {
                     }
                     Err(e) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         stream_errored = true;
                         break;
@@ -618,29 +612,6 @@ impl LanguageModel for MistralModel {
             request_body: Some(body),
             response_headers: Some(response_headers),
         })
-    }
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-fn stream_error_to_ai_error(err_obj: &Value) -> AiMuxError {
-    let message = err_obj
-        .get("message")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Unknown stream error")
-        .to_string();
-
-    let code = err_obj.get("code").and_then(|v| v.as_u64()).unwrap_or(500);
-    let status = code as u16;
-
-    match status {
-        401 => AiMuxError::Auth(message),
-        429 => AiMuxError::RateLimited {
-            retry_after_ms: 1000,
-            message,
-        },
-        404 => AiMuxError::ModelNotFound(message),
-        _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),
     }
 }
 

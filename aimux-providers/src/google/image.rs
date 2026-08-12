@@ -108,7 +108,7 @@ impl GoogleImageModel {
         if let Some(ref files) = options.files
             && !files.is_empty()
         {
-            return Err(AiMuxError::Unsupported(
+            return Err(AiMuxError::UnsupportedFunctionality(
                 "Google Gemini API does not support image editing with Imagen models. \
                      Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities."
                     .to_string(),
@@ -116,7 +116,7 @@ impl GoogleImageModel {
         }
 
         if options.mask.is_some() {
-            return Err(AiMuxError::Unsupported(
+            return Err(AiMuxError::UnsupportedFunctionality(
                 "Google Gemini API does not support image editing with masks. \
                  Use Google Vertex AI (@ai-sdk/google-vertex) for image editing capabilities."
                     .to_string(),
@@ -191,8 +191,7 @@ impl GoogleImageModel {
 
         let response_headers = resp.headers;
 
-        let response_body: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
+        let response_body: Value = serde_json::from_slice(&resp.body)?;
 
         let images = extract_imagen_images(&response_body);
         let provider_metadata = extract_imagen_metadata(&response_body);
@@ -220,14 +219,14 @@ impl GoogleImageModel {
 
         // Gemini does not support mask-based inpainting
         if options.mask.is_some() {
-            return Err(AiMuxError::Unsupported(
+            return Err(AiMuxError::UnsupportedFunctionality(
                 "Gemini image models do not support mask-based image editing.".to_string(),
             ));
         }
 
         // Gemini does not support generating multiple images per call via n parameter
         if options.n > 1 {
-            return Err(AiMuxError::Unsupported(
+            return Err(AiMuxError::UnsupportedFunctionality(
                 "Gemini image models do not support generating a set number of images per call. \
                  Use n=1 or omit the n parameter."
                     .to_string(),
@@ -256,7 +255,7 @@ impl GoogleImageModel {
             for file in files {
                 match file {
                     ImageFile::Url { url } => {
-                        return Err(AiMuxError::Unsupported(format!(
+                        return Err(AiMuxError::UnsupportedFunctionality(format!(
                             "URL-based input images with media type \"image/*\" are not passed as \
                              inline bytes. URL: {url}"
                         )));
@@ -344,8 +343,7 @@ impl GoogleImageModel {
 
         let response_headers = resp.headers;
 
-        let response_body: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON response: {e}")))?;
+        let response_body: Value = serde_json::from_slice(&resp.body)?;
 
         let (images, provider_metadata, usage) = extract_gemini_result(&response_body);
 

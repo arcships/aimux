@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use futures::StreamExt;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::shared::AbortSignal;
 use aimux_core::stream_part::StreamPart;
@@ -66,7 +67,7 @@ fn build_anthropic_request(
 ) -> Result<HttpRequest, AiMuxError> {
     // Serialize once; the Bytes path sends these exact bytes and the closure
     // signs over them, guaranteeing signature/body agreement.
-    let body_bytes = serde_json::to_vec(body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+    let body_bytes = serde_json::to_vec(body).map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
     let headers = build_headers(&body_bytes, endpoint)?;
 
     let http_body = match body_encoding {
@@ -172,8 +173,7 @@ pub(crate) async fn anthropic_generate_core(
     )?;
     let resp = send_timed(request, retry_config, &DEFAULT_ERROR_STRUCTURE, timeout).await?;
 
-    let data: AnthropicResponse =
-        serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+    let data: AnthropicResponse = serde_json::from_slice(&resp.body)?;
 
     let content = parse_anthropic_content(&data.content);
 
@@ -484,7 +484,12 @@ pub(crate) async fn anthropic_stream_core(
                             // stop the stream, mirroring the TS "forward error
                             // chunks" / "forward overloaded error" behaviour.
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::Provider(error.message),
+                                error: AiMuxError::ApiCall(ApiCallError {
+                                    provider_code: error.error_type,
+                                    message: error.message,
+                                    response_body: Some(sse_event.data.clone()),
+                                    ..Default::default()
+                                }),
                             });
                             return;
                         }
@@ -493,7 +498,7 @@ pub(crate) async fn anthropic_stream_core(
                 }
                 Err(e) => {
                     yield Ok(StreamPart::Error {
-                        error: AiMuxError::Stream(e.to_string()),
+                        error: AiMuxError::InvalidResponseData(e.to_string()),
                     });
                     return;
                 }

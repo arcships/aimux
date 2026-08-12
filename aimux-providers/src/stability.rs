@@ -278,13 +278,13 @@ impl ImageModel for StabilityImageModel {
         // The image is returned either as raw binary (Accept: image/*) or as
         // base64 inside a JSON body (Accept: application/json).
         let image_bytes = if response_content_type.starts_with("application/json") {
-            let v: Value =
-                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let v: Value = serde_json::from_slice(&resp.body)?;
             let b64 = v.get("image").and_then(|i| i.as_str()).ok_or_else(|| {
-                AiMuxError::Provider("Stability response missing `image` field".into())
+                AiMuxError::InvalidResponseData("Stability response missing `image` field".into())
             })?;
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                .map_err(|e| AiMuxError::Provider(format!("invalid base64 image: {e}")))?
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
+                |e| AiMuxError::InvalidResponseData(format!("invalid base64 image: {e}")),
+            )?
         } else {
             resp.body.to_vec()
         };

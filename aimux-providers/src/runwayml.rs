@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
 use aimux_core::video_model::{
@@ -25,7 +25,8 @@ use aimux_core::video_model::{
 };
 use aimux_provider_utils::response::ErrorStructure;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
+    without_trailing_slash,
 };
 
 const PROVIDER_NAME: &str = "runwayml";
@@ -258,8 +259,7 @@ impl VideoModel for RunwaymlVideoModel {
         )
         .await?;
 
-        let task: RunwaymlTaskCreationResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let task: RunwaymlTaskCreationResponse = serde_json::from_slice(&resp.body)?;
         let task_id = task.id;
 
         // Poll for completion.
@@ -272,13 +272,13 @@ impl VideoModel for RunwaymlVideoModel {
 
         loop {
             if tokio::time::Instant::now() >= deadline {
-                return Err(AiMuxError::Provider(format!(
-                    "{PROVIDER_NAME} task {task_id} timed out after {:?}",
+                return Err(AiMuxError::Timeout(format!(
+                    "{PROVIDER_NAME} task {task_id} polling timed out after {:?}",
                     self.config.timeout
                 )));
             }
 
-            tokio::time::sleep(self.config.poll_interval).await;
+            sleep_or_abort(self.config.poll_interval, options.abort_signal.as_ref()).await?;
 
             let resp = send(
                 HttpRequest {
@@ -298,19 +298,32 @@ impl VideoModel for RunwaymlVideoModel {
 
             response_headers = resp.headers;
 
-            let task_details: RunwaymlTaskDetailsResponse =
-                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let task_details: RunwaymlTaskDetailsResponse = serde_json::from_slice(&resp.body)?;
 
             let status_str = task_details.status.clone().unwrap_or_default();
             match status_str.as_str() {
                 "SUCCEEDED" => {
-                    final_output = task_details.output.unwrap_or_default();
+                    final_output =
+                        task_details
+                            .output
+                            .filter(|o| !o.is_empty())
+                            .ok_or_else(|| {
+                                AiMuxError::InvalidResponseData(format!(
+                                    "{PROVIDER_NAME} task {task_id} succeeded without output"
+                                ))
+                            })?;
                     break;
                 }
                 "FAILED" | "CANCELLED" => {
-                    return Err(AiMuxError::Provider(format!(
-                        "{PROVIDER_NAME} task {task_id} failed with status {status_str}"
-                    )));
+                    return Err(AiMuxError::ApiCall(ApiCallError {
+                        status_code: Some(resp.status),
+                        provider_code: Some(status_str.clone()),
+                        message: format!(
+                            "{PROVIDER_NAME} task {task_id} failed with status {status_str}"
+                        ),
+                        response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                        ..Default::default()
+                    }));
                 }
                 // PENDING / THROTTLED / RUNNING / unknown — keep polling.
                 _ => continue,

@@ -30,11 +30,13 @@ fn status_code_error_uses_status_text_for_non_json_body() {
     // The TS handler sets `message` to `response.statusText` ("Not Found") and
     // `responseBody` to the body text. Rust's `parse_provider_error` uses the
     // body text as the message when it isn't JSON matching the error
-    // structure; a 404 maps to `ModelNotFound`.
+    // structure; a 404 maps to `ApiCall` (404).
     let body = "Error message";
     let err = parse_provider_error(404, body, &DEFAULT_ERROR_STRUCTURE);
 
-    assert!(matches!(err, AiMuxError::ModelNotFound(ref m) if m == "Error message"));
+    assert!(
+        matches!(err, AiMuxError::ApiCall(ref m) if m.status_code == Some(404) && m.message == "Error message")
+    );
 }
 
 #[test]
@@ -42,7 +44,7 @@ fn status_code_500_maps_to_provider_error() {
     // A 5xx-style status maps to the generic `Provider` variant.
     let body = "Internal Server Error";
     let err = parse_provider_error(500, body, &DEFAULT_ERROR_STRUCTURE);
-    assert!(matches!(err, AiMuxError::Provider(_)));
+    assert!(matches!(err, AiMuxError::ApiCall(_)));
 }
 
 // ---------------------------------------------------------------------------
@@ -54,10 +56,10 @@ fn json_error_response_extracts_message_from_default_structure() {
     // TS: createJsonErrorResponseHandler parses the body JSON and maps
     // `error.message` into the APICallError message. Rust's
     // `parse_provider_error` with the default structure (`["error","message"]`)
-    // does the same; a 429 maps to `RateLimited`.
+    // does the same; a 429 maps to `ApiCall` (429).
     let body = r#"{"error":{"message":"Rate limit reached for requests","type":"requests"}}"#;
     let err = parse_provider_error(429, body, &DEFAULT_ERROR_STRUCTURE);
-    assert!(matches!(err, AiMuxError::RateLimited { .. }));
+    assert!(matches!(err, AiMuxError::ApiCall(ref d) if d.status_code == Some(429)));
 }
 
 #[test]
@@ -71,31 +73,39 @@ fn json_error_response_extracts_message_from_custom_structure() {
     };
     let body = r#"{"error":{"msg":"boom","kind":"failure"}}"#;
     let err = parse_provider_error(500, body, &structure);
-    assert!(matches!(err, AiMuxError::Provider(ref m) if m == "HTTP 500: boom"));
+    let AiMuxError::ApiCall(ref detail) = err else {
+        panic!("expected ApiCall, got {err:?}")
+    };
+    assert_eq!(detail.message, "boom");
+    assert_eq!(err.to_string(), "API call error: HTTP 500: boom");
 }
 
 #[test]
 fn empty_body_falls_back_to_http_status_message() {
     // TS: when the response body is empty, the handler uses `response.statusText`
-    // as the message. Rust's `parse_provider_error` initialises `message` to
-    // `"HTTP {status}"` when the body is empty / non-JSON; the `Provider` arm
-    // then wraps it as `"HTTP {status}: {message}"`.
+    // as the message. Here there is no body text at all, so the status carried in
+    // `ApiCallError` is the whole of what Display has to show.
     let err = parse_provider_error(503, "", &DEFAULT_ERROR_STRUCTURE);
-    assert!(matches!(err, AiMuxError::Provider(ref m) if m.contains("503")));
+    assert_eq!(err.status_code(), Some(503));
+    assert!(err.to_string().contains("503"), "{err}");
 }
 
 #[test]
 fn non_json_body_is_used_as_the_message() {
     // A non-empty, non-JSON body is used verbatim as the message.
     let err = parse_provider_error(401, "plain text problem", &DEFAULT_ERROR_STRUCTURE);
-    assert!(matches!(err, AiMuxError::Auth(ref m) if m == "plain text problem"));
+    assert!(
+        matches!(err, AiMuxError::ApiCall(ref m) if m.status_code == Some(401) && m.message == "plain text problem")
+    );
 }
 
 #[test]
 fn auth_status_maps_to_auth_variant() {
     let body = r#"{"error":{"message":"Invalid API key","type":"auth"}}"#;
     let err = parse_provider_error(401, body, &DEFAULT_ERROR_STRUCTURE);
-    assert!(matches!(err, AiMuxError::Auth(ref m) if m == "Invalid API key"));
+    assert!(
+        matches!(err, AiMuxError::ApiCall(ref m) if m.status_code == Some(401) && m.message == "Invalid API key")
+    );
 }
 
 // ---------------------------------------------------------------------------

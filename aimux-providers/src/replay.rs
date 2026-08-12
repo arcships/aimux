@@ -38,7 +38,7 @@ pub fn rebuild_provider(
     api_key: Option<&str>,
 ) -> Result<Box<dyn LanguageModel>, AiMuxError> {
     if !is_openai_compatible_provider(&p.provider) {
-        return Err(AiMuxError::Unsupported(format!(
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
             "mock replay: rebuild_provider covers only the OpenAI-compatible family \
              (recorded provider '{}'); pass a model instance to replay_with_model",
             p.provider
@@ -170,7 +170,7 @@ fn resolve_api_key(p: &ProviderRecord, api_key: Option<&str>) -> Result<String, 
     let source = p.api_key_source.trim();
     if let Some(var) = source.strip_prefix("env:") {
         return std::env::var(var).map_err(|_| {
-            AiMuxError::Auth(format!(
+            AiMuxError::InvalidArgument(format!(
                 "mock replay: env var '{var}' not set (needed to rebuild provider '{}')",
                 p.provider
             ))
@@ -179,17 +179,17 @@ fn resolve_api_key(p: &ProviderRecord, api_key: Option<&str>) -> Result<String, 
     match source {
         // 录制不存明文(隐私强制),调用方必须补 key。
         "explicit" => api_key.map(str::to_string).ok_or_else(|| {
-            AiMuxError::Auth(
+            AiMuxError::InvalidArgument(
                 "mock replay: recording uses an explicit api key (not stored); \
                  pass api_key to rebuild_provider"
-                    .into(),
+                    .to_string(),
             )
         }),
         // 本地模型无需 key。
         "none" => Ok("not-needed".to_string()),
         // "unknown"(默认快照)或空:用调用方给的 key,否则报错兜底。
         _ => api_key.map(str::to_string).ok_or_else(|| {
-            AiMuxError::Auth(format!(
+            AiMuxError::InvalidArgument(format!(
                 "mock replay: no api key source for provider '{}' (api_key_source={:?}); \
                  pass api_key or provide a model instance to replay_with_model",
                 p.provider, p.api_key_source
@@ -226,7 +226,7 @@ mod tests {
     fn explicit_key_missing_errors() {
         let p = openai_record("explicit", "gpt-4o");
         let err = rebuild_provider(&p, None).err().unwrap();
-        assert!(matches!(err, AiMuxError::Auth(_)), "{err}");
+        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
         assert!(err.to_string().contains("explicit"), "{err}");
     }
 
@@ -244,7 +244,7 @@ mod tests {
         unsafe { std::env::remove_var("AIMUX_REPLAY_TEST_MISSING") };
         let p = openai_record("env:AIMUX_REPLAY_TEST_MISSING", "gpt-4o");
         let err = rebuild_provider(&p, None).err().unwrap();
-        assert!(matches!(err, AiMuxError::Auth(_)), "{err}");
+        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
         assert!(
             err.to_string().contains("AIMUX_REPLAY_TEST_MISSING"),
             "{err}"
@@ -270,7 +270,7 @@ mod tests {
     fn unknown_source_without_key_errors() {
         let p = openai_record("unknown", "gpt-4o");
         let err = rebuild_provider(&p, None).err().unwrap();
-        assert!(matches!(err, AiMuxError::Auth(_)), "{err}");
+        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
     }
 
     #[test]
@@ -284,7 +284,10 @@ mod tests {
             provider_options: None,
         };
         let err = rebuild_provider(&p, Some("sk")).err().unwrap();
-        assert!(matches!(err, AiMuxError::Unsupported(_)), "{err}");
+        assert!(
+            matches!(err, AiMuxError::UnsupportedFunctionality(_)),
+            "{err}"
+        );
         assert!(err.to_string().contains("replay_with_model"), "{err}");
     }
 

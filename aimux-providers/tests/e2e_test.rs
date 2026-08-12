@@ -176,7 +176,7 @@ async fn e2e_openai_error_401() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        matches!(err, aimux_core::AiMuxError::Auth(_)),
+        matches!(err, ref e if e.status_code() == Some(401)),
         "expected Auth error, got {:?}",
         err
     );
@@ -288,7 +288,7 @@ async fn e2e_anthropic_error_429() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        matches!(err, aimux_core::AiMuxError::RateLimited { .. }),
+        matches!(err, ref e if e.status_code() == Some(429)),
         "expected RateLimited error, got {:?}",
         err
     );

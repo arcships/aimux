@@ -148,7 +148,7 @@ async fn status_403_maps_to_provider_error() {
 
     let result = model.do_search(&opts("rust language")).await;
     assert!(
-        matches!(result, Err(AiMuxError::Provider(ref m)) if m.contains("403")),
+        matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.to_string().contains("403")),
         "expected Provider error, got {result:?}"
     );
 }
@@ -167,7 +167,7 @@ async fn status_401_maps_to_auth_error() {
 
     let result = model.do_search(&opts("rust language")).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(_))),
+        matches!(result, Err(ref e) if e.status_code() == Some(401)),
         "expected Auth error, got {result:?}"
     );
 }
@@ -186,7 +186,7 @@ fn language_model_returns_unsupported_error() {
     let config = SearxngConfig::new("http://localhost:8080");
     let provider = SearxngProvider::new(config);
     match provider.language_model("searxng-search") {
-        Err(AiMuxError::Unsupported(msg)) => {
+        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
             assert!(
                 msg.contains("provider 'searxng' does not provide language models"),
                 "unexpected message: {msg}"
