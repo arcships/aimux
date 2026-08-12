@@ -465,6 +465,33 @@ unsafe fn fail_invalid_handle<T: Sentinel>(err: *mut CAimuxError, what: &str) ->
     }
 }
 
+/// Invoke a stream callback (`on_part`/`on_done`) while catching any panic.
+///
+/// A panic inside a `extern "C" fn` callback would unwind across the FFI
+/// boundary, which is undefined behavior (issue #64). This wrapper catches
+/// the panic and converts it to a structured `AiMuxError::Other` so the host
+/// process is not killed (release builds use `panic = "abort"`, but
+/// dev/debug builds still unwind).
+///
+/// `AssertUnwindSafe` is required because the callback receives raw pointers
+/// (`*const c_char`/`*mut c_void`) that are not `UnwindSafe`; this is sound
+/// because we abort the stream on any panic rather than continuing.
+fn invoke_stream_callback(callback_name: &str, f: impl FnOnce()) -> Result<(), AiMuxError> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(()) => Ok(()),
+        Err(payload) => {
+            let msg = payload
+                .downcast_ref::<&'static str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("<non-string panic>");
+            Err(AiMuxError::Other(format!(
+                "stream callback '{callback_name}' panicked: {msg}"
+            )))
+        }
+    }
+}
+
 /// Build (key, model_id) from two C strings; None if either is null/invalid.
 ///
 /// # Safety
@@ -1509,13 +1536,17 @@ fn stream_text_as_openai_with_signal(
                             let json =
                                 serde_json::to_string(&chunk).unwrap_or_else(|_| "{}".to_string());
                             if let Ok(cstr) = CString::new(json) {
-                                on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
+                                invoke_stream_callback("on_part", || {
+                                    on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
+                                })?;
                             }
                         }
                         Err(e) => return Err(e),
                     }
                 }
-                on_done(stream_ctx as *mut c_void);
+                invoke_stream_callback("on_done", || {
+                    on_done(stream_ctx as *mut c_void);
+                })?;
                 Ok(())
             }
             Err(e) => Err(e),
@@ -1603,13 +1634,17 @@ fn stream_text_with_signal(
                             let json =
                                 serde_json::to_string(&part).unwrap_or_else(|_| "{}".to_string());
                             if let Ok(cstr) = CString::new(json) {
-                                on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
+                                invoke_stream_callback("on_part", || {
+                                    on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
+                                })?;
                             }
                         }
                         Err(e) => return Err(e),
                     }
                 }
-                on_done(stream_ctx as *mut c_void);
+                invoke_stream_callback("on_done", || {
+                    on_done(stream_ctx as *mut c_void);
+                })?;
                 Ok(())
             }
             Err(e) => Err(e),
@@ -2702,5 +2737,110 @@ mod tests {
         let m = unsafe { CStr::from_ptr(c.message) }.to_str().unwrap();
         assert_eq!(m, "a\u{FFFD}b");
         unsafe { aimux_free_string(c.message) };
+    }
+
+    // ── invoke_stream_callback (issue #64: FFI panic guard) ───────────────────
+
+    #[test]
+    fn stream_callback_ok_passthrough() {
+        // A callback that returns normally must pass through as Ok.
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let called_clone = called.clone();
+        let result = invoke_stream_callback("on_part", || {
+            called_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        assert!(result.is_ok());
+        assert_eq!(
+            called.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "callback must have been invoked"
+        );
+    }
+
+    #[test]
+    fn stream_callback_catches_str_panic() {
+        // A panic with a &'static str payload must be caught and converted.
+        let result = invoke_stream_callback("on_part", || {
+            panic!("callback explosion");
+        });
+        match result {
+            Err(AiMuxError::Other(msg)) => {
+                assert!(
+                    msg.contains("on_part"),
+                    "message should name the callback: {msg}"
+                );
+                assert!(
+                    msg.contains("callback explosion"),
+                    "message should include the panic payload: {msg}"
+                );
+            }
+            other => panic!("expected AiMuxError::Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_callback_catches_string_panic() {
+        // A panic with a String payload must also be caught.
+        let result = invoke_stream_callback("on_done", || {
+            panic!("{}", "dynamic boom".to_string());
+        });
+        match result {
+            Err(AiMuxError::Other(msg)) => {
+                assert!(
+                    msg.contains("on_done"),
+                    "message should name the callback: {msg}"
+                );
+                assert!(
+                    msg.contains("dynamic boom"),
+                    "message should include the panic payload: {msg}"
+                );
+            }
+            other => panic!("expected AiMuxError::Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_callback_catches_non_string_panic() {
+        // A panic with a non-string payload (e.g. a struct) must still be
+        // caught — the message falls back to the placeholder.
+        let result = invoke_stream_callback("on_part", || {
+            std::panic::panic_any(42i32);
+        });
+        match result {
+            Err(AiMuxError::Other(msg)) => {
+                assert!(
+                    msg.contains("on_part"),
+                    "message should name the callback: {msg}"
+                );
+                assert!(
+                    msg.contains("<non-string panic>"),
+                    "non-string payload should use placeholder: {msg}"
+                );
+            }
+            other => panic!("expected AiMuxError::Other, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_callback_catches_on_done_panic() {
+        // Symmetric coverage for the on_done callback path (the other panic
+        // tests exercise on_part). The guard is identical, but this pins the
+        // on_done name in the error message.
+        let result = invoke_stream_callback("on_done", || {
+            panic!("done callback failed");
+        });
+        match result {
+            Err(AiMuxError::Other(msg)) => {
+                assert!(
+                    msg.contains("on_done"),
+                    "message should name the callback: {msg}"
+                );
+                assert!(
+                    msg.contains("done callback failed"),
+                    "message should include the panic payload: {msg}"
+                );
+            }
+            other => panic!("expected AiMuxError::Other, got {other:?}"),
+        }
     }
 }
