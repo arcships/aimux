@@ -98,7 +98,12 @@ Error
       └── OtherError
 ```
 
-Every instance has `message`, `status` (HTTP or `-1`), and `retryMs` (hint or `-1`).
+Every instance has `message`, `code`, `status` (HTTP or `-1`) and `errorValue`.
+Payload fields belong to the class that carries them: `APICallError` adds
+`retryMs` / `retryable` / `providerCode` / `providerMessage` /
+`responseBody` / `requestId`,
+`NoSuchModelError` adds `modelId` / `modelType`, `NoSuchProviderError` adds
+`providerId`.
 
 ```typescript
 import { generateText, AimuxError, APICallError } from 'aimux'

@@ -106,7 +106,7 @@ try (Model model = Model.openai("sk-...", "gpt-4o")) {
     // 401 — refresh the token and retry
 } catch (APICallError e) {
     // Classify on status: 429 → rate limited (e.getRetryMs()),
-    // 401 → auth, 404 → model; -1 → transport failure
+    // 401 → auth, 404 → model; -1 → no HTTP response observed
 } catch (AimuxException e) {
     // any engine / binding failure
 }

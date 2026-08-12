@@ -20,16 +20,11 @@
 export class AimuxError extends Error {
   /** Core variant name, e.g. `'InvalidArgument'`. */
   readonly code: string
+  /**
+   * HTTP status when the error carries one — the observed status on
+   * `APICallError`, `401` on `TokenExpiredError` — otherwise `-1`.
+   */
   readonly status: number
-  readonly retryMs: number
-  /** Stored retry verdict (`APICallError.isRetryable` analogue). */
-  readonly retryable: boolean
-  /** Provider's machine-readable error code (e.g. `'rate_limit_exceeded'`). */
-  readonly providerCode?: string
-  /** Raw error response body, verbatim (AI SDK `APICallError.responseBody`). */
-  readonly responseBody?: string
-  /** Provider-assigned request id (`x-request-id` / `request-id` header). */
-  readonly requestId?: string
   /**
    * Lossless externally-tagged serde JSON of the core `AiMuxError`,
    * e.g. `'{"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}'`.
@@ -37,13 +32,11 @@ export class AimuxError extends Error {
    */
   readonly errorValue?: string
 
-  constructor(message: string, status: number = -1, retryMs: number = -1, retryable: boolean = false) {
+  constructor(message: string, status: number = -1) {
     super(message)
     this.name = new.target.name
     this.code = CODE_BY_NAME.get(this.name) ?? 'Other'
     this.status = status
-    this.retryMs = retryMs
-    this.retryable = retryable
     Object.setPrototypeOf(this, new.target.prototype)
     const capture = (Error as { captureStackTrace?: (t: object, ctor: unknown) => void })
       .captureStackTrace
@@ -56,58 +49,40 @@ export class AimuxError extends Error {
       return err
     }
 
+    const props = (err instanceof Error ? err : {}) as Record<string, unknown>
+    const str = (key: string): string | undefined =>
+      typeof props[key] === 'string' ? (props[key] as string) : undefined
+
     let message = String(err)
     let code = 'Other'
     let status = -1
     let retryMs = -1
     let retryable = false
-    let providerCode: string | undefined
-    let responseBody: string | undefined
-    let requestId: string | undefined
-    let errorValue: string | undefined
 
     if (err instanceof Error) {
       message = err.message
-      const any = err as Error & {
-        code?: unknown
-        status?: unknown
-        retryMs?: unknown
-        retryable?: unknown
-        providerCode?: unknown
-        responseBody?: unknown
-        requestId?: unknown
-        errorValue?: unknown
-      }
-
-      if (typeof any.status === 'number') status = any.status
-      if (typeof any.retryMs === 'number') retryMs = any.retryMs
-      if (typeof any.retryable === 'boolean') retryable = any.retryable
-      if (typeof any.providerCode === 'string') providerCode = any.providerCode
-      if (typeof any.responseBody === 'string') responseBody = any.responseBody
-      if (typeof any.requestId === 'string') requestId = any.requestId
-      if (typeof any.errorValue === 'string') errorValue = any.errorValue
-
-      if (typeof any.code === 'string' && any.code.length > 0) {
-        code = any.code
-      } else if (typeof any.name === 'string') {
-        // Native sets name to e.g. "APICallError"
-        code = CODE_BY_NAME.get(any.name) ?? 'Other'
-      }
+      if (typeof props.status === 'number') status = props.status
+      if (typeof props.retryMs === 'number') retryMs = props.retryMs
+      if (typeof props.retryable === 'boolean') retryable = props.retryable
+      // Native sets `name` to the subclass, e.g. "APICallError".
+      code = str('code') || CODE_BY_NAME.get(err.name) || 'Other'
     }
 
     const wrapped = createByCode(code, message, status, retryMs, retryable)
-    if (providerCode !== undefined) {
-      ;(wrapped as { providerCode?: string }).providerCode = providerCode
+    // Each payload belongs to the one variant the core fills it for.
+    if (wrapped instanceof APICallError) {
+      assign(wrapped, {
+        providerCode: str('providerCode'),
+        providerMessage: str('providerMessage'),
+        responseBody: str('responseBody'),
+        requestId: str('requestId'),
+      })
+    } else if (wrapped instanceof NoSuchModelError) {
+      assign(wrapped, { modelId: str('modelId'), modelType: str('modelType') })
+    } else if (wrapped instanceof NoSuchProviderError) {
+      assign(wrapped, { providerId: str('providerId') })
     }
-    if (responseBody !== undefined) {
-      ;(wrapped as { responseBody?: string }).responseBody = responseBody
-    }
-    if (requestId !== undefined) {
-      ;(wrapped as { requestId?: string }).requestId = requestId
-    }
-    if (errorValue !== undefined) {
-      ;(wrapped as { errorValue?: string }).errorValue = errorValue
-    }
+    assign(wrapped, { errorValue: str('errorValue') })
     if (err instanceof Error) {
       ;(wrapped as Error & { cause?: unknown }).cause = err
     }
@@ -115,7 +90,49 @@ export class AimuxError extends Error {
   }
 }
 
-export class APICallError extends AimuxError {}
+/** Set the fields that are present; they are `readonly` to callers only. */
+function assign(target: object, fields: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) (target as Record<string, unknown>)[key] = value
+  }
+}
+
+/**
+ * A call that reached (or tried to reach) the provider. Classification is
+ * `status`; everything below is what that exchange produced, and lives on this
+ * class alone — the core fills these for no other variant (AI SDK likewise
+ * keeps `isRetryable` / `responseBody` / `data` on `APICallError`).
+ */
+export class APICallError extends AimuxError {
+  /** Rate-limit hint in ms; `-1` if none; `0` means retry immediately. */
+  readonly retryMs: number
+  /** Stored retry verdict (AI SDK `APICallError.isRetryable`). */
+  readonly retryable: boolean
+  /** Provider's machine-readable error code (e.g. `'rate_limit_exceeded'`). */
+  readonly providerCode?: string
+  /**
+   * The failure's own text, without the composed prefix: `message` reads
+   * `'API call error: HTTP 429: slow down'`, this reads `'slow down'`.
+   * Usually the provider's words; on a transport failure or a body the
+   * extractor could not read, it is ours. `responseBody` is the evidence.
+   */
+  readonly providerMessage?: string
+  /** Raw error response body, verbatim (AI SDK `APICallError.responseBody`). */
+  readonly responseBody?: string
+  /** Provider-assigned request id (`x-request-id` / `request-id` header). */
+  readonly requestId?: string
+
+  constructor(
+    message: string,
+    status: number = -1,
+    retryMs: number = -1,
+    retryable: boolean = false,
+  ) {
+    super(message, status)
+    this.retryMs = retryMs
+    this.retryable = retryable
+  }
+}
 export class JSONParseError extends AimuxError {}
 export class InvalidResponseDataError extends AimuxError {}
 export class ToolError extends AimuxError {}
@@ -123,18 +140,23 @@ export class InvalidArgumentError extends AimuxError {}
 export class InvalidPromptError extends AimuxError {}
 export class TokenExpiredError extends AimuxError {}
 export class UnsupportedFunctionalityError extends AimuxError {}
-export class NoSuchModelError extends AimuxError {}
-export class NoSuchProviderError extends AimuxError {}
+/** Registry lookup failed for a model id (AI SDK `NoSuchModelError`). */
+export class NoSuchModelError extends AimuxError {
+  /** The model id that did not resolve. */
+  readonly modelId?: string
+  /** Kind of model requested (`'languageModel'`, `'imageModel'`, …). */
+  readonly modelType?: string
+}
+/** Registry lookup failed for a provider name (AI SDK `NoSuchProviderError`). */
+export class NoSuchProviderError extends AimuxError {
+  /** The provider name that did not resolve. */
+  readonly providerId?: string
+}
 export class TimeoutError extends AimuxError {}
 /** Request aborted (not DOM `AbortError`). */
 export class RequestAbortedError extends AimuxError {
-  constructor(
-    message: string = 'request aborted',
-    status: number = -1,
-    retryMs: number = -1,
-    retryable: boolean = false,
-  ) {
-    super(message, status, retryMs, retryable)
+  constructor(message: string = 'request aborted', status: number = -1) {
+    super(message, status)
   }
 }
 export class OtherError extends AimuxError {}

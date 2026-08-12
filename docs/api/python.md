@@ -331,10 +331,15 @@ Exception
       └── OtherError
 ```
 
-Instances carry `status` (HTTP status or `None`), `retry_ms` (hint or `None`),
-and `error_value: str | None` — the raw externally-tagged AiMuxError JSON
-(e.g. `'{"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}'`), the
+Instances carry `status` (HTTP status or `None`) and `error_value: str | None`
+— the raw externally-tagged AiMuxError JSON (e.g.
+`'{"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}'`), the
 machine-readable companion to `str(e)`.
+
+Payload attributes belong to the class that carries them, and are absent on the
+others: `APICallError` has `retry_ms` / `retryable` / `provider_code` /
+`provider_message` / `response_body` / `request_id`, `NoSuchModelError` has `model_id` /
+`model_type`, `NoSuchProviderError` has `provider_id`.
 
 ```python
 from aimux import (

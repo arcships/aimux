@@ -34,7 +34,7 @@ const val AIMUX_E_OTHER: Int = 14
  *     model.generateText("\"hi\"")
  * } catch (e: APICallError) {
  *     // Classification is the status field: 429 → rate limited (e.retryMs),
- *     // 401 → auth, 404 → model not found, -1 → transport failure
+ *     // 401 → auth, 404 → model not found, -1 → no HTTP response observed
  * } catch (e: AimuxException) {
  *     // e.code, e.status, e.retryMs
  * }
@@ -219,7 +219,9 @@ class NoSuchProviderError(
  * Every HTTP-shaped provider failure (AI SDK `APICallError` analogue).
  *
  * Classification is [status], not the class: 401 auth, 404 model not found,
- * 429 rate limited (with [retryMs]); a transport failure has no status (-1).
+ * 429 rate limited (with [retryMs]); -1 means no HTTP response was ever
+ * observed — a missing API key, an error built without a request, or a
+ * transport failure — and says nothing about whether a retry would help.
  * The full detail — `provider_code`, `response_body`, `request_id`,
  * `is_retryable` — is in [errorValue].
  */

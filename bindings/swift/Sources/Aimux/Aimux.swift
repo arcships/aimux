@@ -80,7 +80,9 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     case noSuchModel(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case noSuchProvider(message: String, status: Int, retryMs: Int64, errorValue: String?)
     /// Every HTTP-shaped failure: read `status` to classify (401 auth,
-    /// 404 model, 429 rate limit; `nil` status = transport failure).
+    /// 404 model, 429 rate limit). A `nil` status means no HTTP response was
+    /// ever observed — a missing API key, an error built without a request, or
+    /// a transport failure — and says nothing about whether a retry would help.
     case apiCall(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case timeout(message: String, status: Int, retryMs: Int64, errorValue: String?)
     case aborted(message: String, status: Int, retryMs: Int64, errorValue: String?)

@@ -81,7 +81,7 @@ try {
     // 401 — refresh the token and retry
 } catch (e: APICallError) {
     // Classify on status: 429 → rate limited (e.retryMs),
-    // 401 → auth, 404 → model not found, -1 → transport failure
+    // 401 → auth, 404 → model not found, -1 → no HTTP response observed
 } catch (e: AimuxException) {
     // e.code (AIMUX_E_*), e.status, e.retryMs
 }

@@ -54,7 +54,7 @@ Every fallible call takes a trailing `AimuxError *err` (may be `NULL`).
 | Failure + `err == NULL` | Still fails; no details (caller discarded them) |
 | Success | Use the return value; `*err` is **not touched** |
 
-The struct is 40 bytes (four fields plus two reserved pointer slots for future ABI extension); on failure `message` is allocated by aimux and the
+The struct is 40 bytes (five fields plus one reserved pointer slot for future ABI extension); on failure `message` is allocated by aimux and the
 caller **must release it with `aimux_free_string`** after reading. Initialize
 with `aimux_error_clear` (or `= {0}`) before first use.
 
@@ -79,8 +79,11 @@ Internal panics abort the process (the workspace builds with `panic=abort`).
 
 Codes: `AIMUX_OK`, `AIMUX_E_UNKNOWN`, plus **13** values mirroring
 `aimux-core::AiMuxError` (`AIMUX_E_JSON_PARSE=2` … `AIMUX_E_OTHER=14`,
-numbered consecutively). The enum is
-append-only; always handle `default` / `AIMUX_E_UNKNOWN`.
+numbered consecutively). The values are **not** append-only — they were
+renumbered once already (the range used to be 2..19 with gaps and other
+names), so a consumer built against an older header misreads every code:
+recompile against the current `aimux-error.h` rather than pinning the numbers.
+Always handle `default` / `AIMUX_E_UNKNOWN`.
 
 ### Quick start
 
@@ -119,7 +122,8 @@ if (!handle) {
     case AIMUX_E_API_CALL:
         /* every HTTP-shaped failure; classify on err.status */
         if (err.status == 429) {
-            /* rate limited — use err.retry_ms */
+            /* rate limited — use err.retry_ms only if >= 0 (the
+               headers may carry no hint), else your own backoff */
         } else if (err.status == 401) {
             fprintf(stderr, "auth HTTP 401: %s\n", err.message);
         }

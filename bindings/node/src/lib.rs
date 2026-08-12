@@ -712,17 +712,9 @@ pub fn init_recording_ring(cap: Option<u32>) -> error::AimuxResult<()> {
             Ok(())
         }
         // 显式 cap == 0:拒绝(与 Kotlin/Java/Python 一致)。
-        Some(0) => Err(crate::error::MappedError {
-            code: "InvalidArgument".to_string(),
-            message: "initRecordingRing: cap must be > 0".to_string(),
-            status: -1,
-            retry_ms: -1,
-            retryable: false,
-            provider_code: None,
-            request_id: None,
-            response_body: None,
-            error_value: None,
-        }),
+        Some(0) => Err(MappedError::from(&AiMuxError::InvalidArgument(
+            "initRecordingRing: cap must be > 0".into(),
+        ))),
         // 显式 cap > 0:指定容量的有界 ring。
         Some(c) => {
             aimux_core::recording::init_recording(Some(std::sync::Arc::new(

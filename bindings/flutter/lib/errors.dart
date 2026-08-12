@@ -24,7 +24,8 @@ import 'package:ffi/ffi.dart';
 /// 14 variant codes, numbered consecutively 1–14. Every HTTP-shaped failure
 /// arrives as [apiCall], classified
 /// by [AimuxException.status] (401 auth, 404 model, 429 rate limit;
-/// no status = transport failure).
+/// -1 = no HTTP response was ever observed — a missing API key, an error
+/// built without a request, or a transport failure).
 abstract final class AimuxErrorCode {
   static const int ok = 0;
   static const int unknown = 1;
@@ -407,7 +408,9 @@ class NoSuchProviderError extends AimuxException {
 
 /// Provider API call failed (AI SDK `APICallError` analogue) — every
 /// HTTP-shaped failure. [status] is the classification (401 auth, 404 model,
-/// 429 rate limit + [retryMs]); `-1` means no response arrived (transport).
+/// 429 rate limit + [retryMs]); `-1` means no HTTP response was ever observed
+/// — a missing API key, an error built without a request, or a transport
+/// failure — and says nothing about whether a retry would help.
 class APICallError extends AimuxException {
   APICallError(super.message, {super.status, super.retryMs, super.errorValue})
       : super(code: AimuxErrorCode.apiCall);

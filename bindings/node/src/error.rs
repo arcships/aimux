@@ -27,10 +27,18 @@ pub struct MappedError {
     pub retryable: bool,
     /// Provider's machine-readable error code (`ApiCallError::provider_code`).
     pub provider_code: Option<String>,
+    /// The provider's message verbatim (`ApiCallError::message`). `message`
+    /// above is the composed `"API call error: HTTP 429: …"` form.
+    pub provider_message: Option<String>,
     /// Provider-assigned request id (`ApiCallError::request_id`).
     pub request_id: Option<String>,
     /// Raw response body, verbatim (`ApiCallError::response_body`).
     pub response_body: Option<String>,
+    /// Registry lookup subject: `NoSuchModel::model_id` / `model_type`.
+    pub model_id: Option<String>,
+    pub model_type: Option<String>,
+    /// Registry lookup subject: `NoSuchProvider::provider_id`.
+    pub provider_id: Option<String>,
     /// Lossless externally-tagged serde JSON of the source `AiMuxError`
     /// (e.g. `{"ApiCall":{...}}`); `None` if serialization failed.
     pub error_value: Option<String>,
@@ -63,6 +71,16 @@ impl From<&AiMuxError> for MappedError {
             AiMuxError::Aborted => "Aborted",
             AiMuxError::Other(_) => "Other",
         };
+        let (model_id, model_type) = match e {
+            AiMuxError::NoSuchModel {
+                model_id,
+                model_type,
+            } => (
+                Some(model_id.clone()),
+                (!model_type.is_empty()).then(|| model_type.clone()),
+            ),
+            _ => (None, None),
+        };
         Self {
             code: code.to_string(),
             message: e.to_string(),
@@ -70,8 +88,17 @@ impl From<&AiMuxError> for MappedError {
             retry_ms: e.retry_after_hint().unwrap_or(-1),
             retryable: e.is_retryable(),
             provider_code: detail.and_then(|d| d.provider_code.clone()),
+            provider_message: detail
+                .map(|d| d.message.clone())
+                .filter(|m| !m.is_empty()),
             request_id: detail.and_then(|d| d.request_id.clone()),
             response_body: detail.and_then(|d| d.response_body.clone()),
+            model_id,
+            model_type,
+            provider_id: match e {
+                AiMuxError::NoSuchProvider { provider_id } => Some(provider_id.clone()),
+                _ => None,
+            },
             error_value: serde_json::to_string(e).ok(),
         }
     }
@@ -141,11 +168,23 @@ pub(crate) fn create_throwable(env: &Env, m: &MappedError) -> NapiResult<Error> 
     if let Some(pc) = &m.provider_code {
         obj.set("providerCode", pc.as_str())?;
     }
+    if let Some(pm) = &m.provider_message {
+        obj.set("providerMessage", pm.as_str())?;
+    }
     if let Some(rid) = &m.request_id {
         obj.set("requestId", rid.as_str())?;
     }
     if let Some(rb) = &m.response_body {
         obj.set("responseBody", rb.as_str())?;
+    }
+    if let Some(id) = &m.model_id {
+        obj.set("modelId", id.as_str())?;
+    }
+    if let Some(t) = &m.model_type {
+        obj.set("modelType", t.as_str())?;
+    }
+    if let Some(id) = &m.provider_id {
+        obj.set("providerId", id.as_str())?;
     }
     if let Some(ev) = &m.error_value {
         obj.set("errorValue", ev.as_str())?;

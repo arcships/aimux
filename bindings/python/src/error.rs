@@ -83,28 +83,41 @@ fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
         AiMuxError::Aborted => py.get_type_bound::<RequestAbortedError>(),
         AiMuxError::Other(_) => py.get_type_bound::<OtherError>(),
     };
-    let detail = match e {
-        AiMuxError::ApiCall(d) => Some(d),
-        _ => None,
-    };
     let inst = typ.call1((e.to_string(),))?;
-    // None when the core has no value (openai/anthropic convention: int | None).
+    // Carried by ApiCall (observed) and TokenExpired (401 by contract); None
+    // elsewhere, per the openai/anthropic convention of `int | None`.
     inst.setattr("status", e.status_code().map(i32::from))?;
-    inst.setattr("retry_ms", e.retry_after_hint())?;
-    inst.setattr("retryable", e.is_retryable())?;
-    // Structured fields from `ApiCallError` (AI SDK `APICallError` analogues).
-    inst.setattr(
-        "provider_code",
-        detail.and_then(|d| d.provider_code.as_deref()),
-    )?;
-    inst.setattr(
-        "response_body",
-        detail.and_then(|d| d.response_body.as_deref()),
-    )?;
-    inst.setattr(
-        "request_id",
-        detail.and_then(|d| d.request_id.as_deref()),
-    )?;
+    // Everything below belongs to the one variant the core fills it for —
+    // absent, not None-valued, on the others (AI SDK likewise keeps
+    // isRetryable / responseBody on APICallError alone).
+    match e {
+        AiMuxError::ApiCall(d) => {
+            inst.setattr("retry_ms", e.retry_after_hint())?;
+            inst.setattr("retryable", d.is_retryable)?;
+            inst.setattr("provider_code", d.provider_code.as_deref())?;
+            // str(e) is the composed "API call error: HTTP 429: …"; this is
+            // the failure's own text. Usually the provider's words — ours on
+            // a transport failure or an unreadable body (response_body is
+            // the evidence either way).
+            inst.setattr(
+                "provider_message",
+                (!d.message.is_empty()).then_some(d.message.as_str()),
+            )?;
+            inst.setattr("response_body", d.response_body.as_deref())?;
+            inst.setattr("request_id", d.request_id.as_deref())?;
+        }
+        AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        } => {
+            inst.setattr("model_id", model_id.as_str())?;
+            inst.setattr("model_type", (!model_type.is_empty()).then_some(model_type.as_str()))?;
+        }
+        AiMuxError::NoSuchProvider { provider_id } => {
+            inst.setattr("provider_id", provider_id.as_str())?;
+        }
+        _ => {}
+    }
     // Lossless externally-tagged JSON of the source error (parity with C ABI).
     inst.setattr("error_value", serde_json::to_string(e).ok())?;
     Ok(PyErr::from_value_bound(inst))

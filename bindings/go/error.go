@@ -8,7 +8,9 @@ import (
 // aimux-ffi AimuxErrorCode (1..14 = core AiMuxError variants).
 //
 // Every HTTP-shaped failure arrives as CodeAPICall, classified by Status
-// (401 auth, 404 model, 429 rate limit; no status = transport failure).
+// (401 auth, 404 model, 429 rate limit; Status -1 = no HTTP response was ever
+// observed — a missing API key, an error built without a request, or a
+// transport failure — which says nothing about whether a retry would help).
 type Code int
 
 const (
@@ -115,8 +117,9 @@ func newError(code Code, message string) *Error {
 
 // defaultStatus fills the status TokenExpired carries by contract (401) when
 // the C ABI reports -1. CodeAPICall statuses are observed, never invented: a
-// missing status there means no response arrived (transport failure), so it
-// stays -1.
+// missing status there means no HTTP response was ever observed (a missing API
+// key, an error built without a request, or a transport failure), so it stays
+// -1.
 func defaultStatus(code Code, status int) int {
 	if status == -1 && code == CodeTokenExpired {
 		return 401

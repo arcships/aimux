@@ -31,7 +31,7 @@ def test_provider_creates_registry_model():
 
 
 def test_provider_unknown_name_raises():
-    """provider() rejects unknown names with the available list."""
+    """provider() rejects unknown names, naming the one that did not resolve."""
     from aimux import provider
 
     with pytest.raises(Exception, match="no-such-provider"):

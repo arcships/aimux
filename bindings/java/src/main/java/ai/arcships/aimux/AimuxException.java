@@ -304,7 +304,9 @@ public class AimuxException extends RuntimeException {
     /**
      * Every HTTP-shaped failure (AI SDK {@code APICallError} analogue): provider
      * errors, transport failures, 401 auth, 404 model, 429 rate limit. Classify
-     * with {@link #getStatusCode()}; a transport failure reports {@code -1}.
+     * with {@link #getStatusCode()}; {@code -1} means no HTTP response was ever
+     * observed — a missing API key, an error built without a request, or a
+     * transport failure — and says nothing about whether a retry would help.
      */
     public static class APICallError extends AimuxException {
         public APICallError(String message, int status, long retryMs) {

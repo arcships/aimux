@@ -1162,8 +1162,8 @@ func errorFromC(e *C.AimuxError) error {
 		e.error_value = nil
 	}
 	// TokenExpired carries a 401 by contract even if C reports -1; every
-	// other status is the observed one (ApiCall without a status = transport
-	// failure, no response). See bindings/node src/error.ts.
+	// other status is the observed one (ApiCall without a status = no HTTP
+	// response was observed). See bindings/node src/error.ts.
 	status := defaultStatus(Code(e.code), int(e.status))
 	return &Error{
 		Code:       Code(e.code),
@@ -1176,7 +1176,7 @@ func errorFromC(e *C.AimuxError) error {
 
 // ffiString runs an FFI call returning an aimux-allocated C string, mapping
 // the NULL-sentinel failure path through errorFromC. It clears *cerr up front
-// (cheap at 24 bytes) as defense against callees that fail without writing it.
+// (cheap at 40 bytes) as defense against callees that fail without writing it.
 func ffiString(call func(cerr *C.AimuxError) *C.char) (string, error) {
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)

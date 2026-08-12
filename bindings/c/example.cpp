@@ -166,7 +166,13 @@ int main() {
         std::cerr << "Error: " << e.what() << "\n";
         // HTTP-shaped failures are all AIMUX_E_API_CALL; status is the classification.
         if (e.code() == AIMUX_E_API_CALL && e.status() == 429) {
-            std::cerr << "rate limited, retry_ms=" << e.retryMs() << "\n";
+            // retryMs() is -1 when the 429 carried no retry-after header —
+            // fall back to your own exponential backoff.
+            if (e.retryMs() >= 0) {
+                std::cerr << "rate limited, retry_ms=" << e.retryMs() << "\n";
+            } else {
+                std::cerr << "rate limited, no retry-after hint, back off exponentially\n";
+            }
         }
         return 1;
     } catch (const std::exception &e) {
