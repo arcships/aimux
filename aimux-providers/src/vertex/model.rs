@@ -23,7 +23,9 @@ use aimux_provider_utils::{
 };
 use aimux_stream::SseStream;
 
-use crate::google::convert::{build_request_body, convert_usage, parse_finish_reason};
+use crate::google::convert::{
+    build_request_body, convert_usage, extract_sources, parse_finish_reason,
+};
 use crate::google::types::{Candidate, GenerateContentResponse, GoogleUsageMetadata, StreamChunk};
 
 use super::VertexAuth;
@@ -208,6 +210,9 @@ impl LanguageModel for VertexModel {
         let provider_metadata = Some(serde_json::json!({
             "googleVertex": {
                 "promptFeedback": data.prompt_feedback,
+                "groundingMetadata": candidate.grounding_metadata,
+                "urlContextMetadata": candidate.url_context_metadata,
+                "safetyRatings": candidate.safety_ratings,
                 "usageMetadata": data.usage_metadata,
                 "finishMessage": candidate.finish_message,
             }
@@ -274,6 +279,20 @@ impl LanguageModel for VertexModel {
             let mut response_metadata_emitted = false;
             let mut stream_errored = false;
 
+            // Provider-metadata accumulators (mirrors TS lastGroundingMetadata /
+            // lastUrlContextMetadata + the finishReason-chunk snapshot).
+            let mut last_grounding_metadata: Option<Value> = None;
+            let mut last_url_context_metadata: Option<Value> = None;
+            let mut last_prompt_feedback: Option<Value> = None;
+            let mut last_safety_ratings: Option<Value> = None;
+            let mut last_finish_message: Option<Value> = None;
+            let mut last_usage_metadata_value: Option<Value> = None;
+
+            // Source dedup across chunks (url sources only).
+            let mut emitted_source_urls: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut source_id = 0usize;
+
             while let Some(event) = sse_stream.next().await {
                 if stream_errored {
                     break;
@@ -314,6 +333,11 @@ impl LanguageModel for VertexModel {
 
                         if let Some(usage) = &chunk.usage_metadata {
                             final_usage = convert_usage(usage);
+                            last_usage_metadata_value =
+                                serde_json::to_value(usage).ok();
+                        }
+                        if let Some(pf) = &chunk.prompt_feedback {
+                            last_prompt_feedback = Some(pf.clone());
                         }
 
                         let Some(candidates) = chunk.candidates else {
@@ -322,6 +346,37 @@ impl LanguageModel for VertexModel {
                         let Some(candidate) = candidates.into_iter().next() else {
                             continue;
                         };
+
+                        if let Some(gm) = &candidate.grounding_metadata {
+                            last_grounding_metadata = Some(gm.clone());
+                        }
+                        if let Some(ucm) = &candidate.url_context_metadata {
+                            last_url_context_metadata = Some(ucm.clone());
+                        }
+
+                        // Extract url sources from this chunk's grounding metadata
+                        // (deduplicated across chunks; document sources are not
+                        // emitted in the stream, matching TS / google provider).
+                        let chunk_sources =
+                            extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
+                        for src in chunk_sources {
+                            if let GenerateContent::Source {
+                                url: Some(url),
+                                source_type,
+                                id,
+                                title,
+                                provider_metadata: None,
+                            } = src
+                                && emitted_source_urls.insert(url.clone()) {
+                                    yield Ok(StreamPart::Source {
+                                        id,
+                                        source_type,
+                                        url: Some(url),
+                                        title,
+                                        provider_metadata: None,
+                                    });
+                                }
+                        }
 
                         if let Some(parts) =
                             candidate.content.as_ref().and_then(|c| c.parts.as_ref())
@@ -393,6 +448,14 @@ impl LanguageModel for VertexModel {
                             if let Some(id) = text_id.take() {
                                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                             }
+                            // Snapshot the finishReason-chunk metadata.
+                            if let Some(sr) = &candidate.safety_ratings {
+                                last_safety_ratings =
+                                    Some(serde_json::to_value(sr).unwrap_or(Value::Null));
+                            }
+                            if let Some(fm) = &candidate.finish_message {
+                                last_finish_message = Some(json!(fm));
+                            }
                             final_finish_reason =
                                 Some(parse_finish_reason(reason, has_tool_calls));
                         }
@@ -411,7 +474,19 @@ impl LanguageModel for VertexModel {
                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
 
-            let provider_metadata = Some(serde_json::json!({ "googleVertex": {} }));
+            let provider_metadata_block = serde_json::json!({
+                "promptFeedback": last_prompt_feedback,
+                "groundingMetadata": last_grounding_metadata,
+                "urlContextMetadata": last_url_context_metadata,
+                "safetyRatings": last_safety_ratings,
+                "usageMetadata": last_usage_metadata_value,
+                "finishMessage": last_finish_message,
+            });
+            let vertex_metadata = provider_metadata_block.clone();
+            let provider_metadata = Some(serde_json::json!({
+                "googleVertex": provider_metadata_block,
+                "vertex": vertex_metadata,
+            }));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
@@ -444,47 +519,52 @@ impl LanguageModel for VertexModel {
 fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
     let mut has_tool_calls = false;
+    let mut source_id = 0usize;
 
-    let Some(parts) = candidate.content.as_ref().and_then(|c| c.parts.as_ref()) else {
-        return (content, has_tool_calls);
-    };
+    let parts = candidate.content.as_ref().and_then(|c| c.parts.as_ref());
 
-    for part in parts {
-        if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-            if !text.is_empty() {
-                content.push(GenerateContent::Text {
-                    text: text.to_string(),
+    if let Some(parts) = parts {
+        for part in parts {
+            if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    content.push(GenerateContent::Text {
+                        text: text.to_string(),
+                        provider_metadata: None,
+                    });
+                }
+            } else if let Some(fc) = part.get("functionCall") {
+                let name = fc
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let id = fc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let input = fc.get("args").cloned().unwrap_or(json!({}));
+                let thought_signature = part
+                    .get("thoughtSignature")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                content.push(GenerateContent::ToolCall {
+                    tool_call_id: id,
+                    tool_name: name,
+                    input,
+                    provider_executed: None,
+                    dynamic: None,
+                    thought_signature,
                     provider_metadata: None,
                 });
+                has_tool_calls = true;
             }
-        } else if let Some(fc) = part.get("functionCall") {
-            let name = fc
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let id = fc
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let input = fc.get("args").cloned().unwrap_or(json!({}));
-            let thought_signature = part
-                .get("thoughtSignature")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            content.push(GenerateContent::ToolCall {
-                tool_call_id: id,
-                tool_name: name,
-                input,
-                provider_executed: None,
-                dynamic: None,
-                thought_signature,
-                provider_metadata: None,
-            });
-            has_tool_calls = true;
         }
     }
+
+    // Sources are appended after the parts (mirrors TS / google provider).
+    let mut sources = extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
+    content.append(&mut sources);
 
     (content, has_tool_calls)
 }
