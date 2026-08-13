@@ -892,6 +892,87 @@ fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
     })
 }
 
+/// Create a RouterModel (RFC-0021) over the given child models. The returned
+/// model routes each call to one child and falls back across the rest on error
+/// (per config_json). `models` must be non-empty.
+///
+/// `config_json` (optional): {"router": "rule"|"weighted", "weights": [...],
+/// "fallback": "on_error"|"none", "provider_name", "model_id"}.
+#[pyfunction]
+#[pyo3(signature = (models, config_json=None))]
+fn router(models: Vec<PyRef<Model>>, config_json: Option<&str>) -> PyResult<Model> {
+    if models.is_empty() {
+        return Err(to_py_err(&AiMuxError::InvalidArgument(
+            "router: models must be non-empty".into(),
+        )));
+    }
+    let children: Vec<Arc<dyn LanguageModel>> = models.iter().map(|m| m.inner.clone()).collect();
+    let cfg: RouterFfiConfig = match config_json {
+        Some(json) => serde_json::from_str(json).map_err(|e| {
+            to_py_err(&AiMuxError::JsonParse(format!("router config_json: {e}")))
+        })?,
+        None => RouterFfiConfig::default(),
+    };
+    let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
+        Some("weighted") => {
+            let weights = cfg.weights.unwrap_or_else(|| vec![1.0; children.len()]);
+            Box::new(aimux_core::router::WeightedRouter::new(weights))
+        }
+        _ => Box::new(aimux_core::router::RuleRouter),
+    };
+    let fallback = if cfg.fallback.as_deref() == Some("none") {
+        aimux_core::router::FallbackPolicy::None
+    } else {
+        aimux_core::router::FallbackPolicy::OnError
+    };
+    let router_cfg = aimux_core::router::RouterConfig {
+        provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
+        model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
+    };
+    let model = aimux_core::router::RouterModel::new(children, router, fallback, router_cfg);
+    Ok(Model {
+        inner: Arc::new(model),
+        trace_store: None,
+    })
+}
+
+/// Create a MoaModel (RFC-0022) over reference models + one aggregator.
+/// References fan out in parallel, then the aggregator synthesizes a final
+/// answer. `references` may be empty (runs aggregator only).
+///
+/// `config_json` (optional) is a serialized MoaConfig.
+#[pyfunction]
+#[pyo3(signature = (references, aggregator, config_json=None))]
+fn moa(
+    references: Vec<PyRef<Model>>,
+    aggregator: PyRef<Model>,
+    config_json: Option<&str>,
+) -> PyResult<Model> {
+    let refs: Vec<Arc<dyn LanguageModel>> =
+        references.iter().map(|m| m.inner.clone()).collect();
+    let cfg: aimux_core::moa::MoaConfig = match config_json {
+        Some(json) => serde_json::from_str(json).map_err(|e| {
+            to_py_err(&AiMuxError::JsonParse(format!("moa config_json: {e}")))
+        })?,
+        None => aimux_core::moa::MoaConfig::default(),
+    };
+    let model = aimux_core::moa::MoaModel::new(refs, aggregator.inner.clone(), cfg);
+    Ok(Model {
+        inner: Arc::new(model),
+        trace_store: None,
+    })
+}
+
+/// Lenient router config (mirrors the FFI-side shape; all fields optional).
+#[derive(Default, serde::Deserialize)]
+struct RouterFfiConfig {
+    router: Option<String>,
+    weights: Option<Vec<f64>>,
+    fallback: Option<String>,
+    provider_name: Option<String>,
+    model_id: Option<String>,
+}
+
 #[pymodule]
 fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::error::register(m)?;
@@ -907,6 +988,8 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(recording_stop, m)?)?;
     m.add_function(wrap_pyfunction!(recording_flush, m)?)?;
     m.add_function(wrap_pyfunction!(mock_replay, m)?)?;
+    m.add_function(wrap_pyfunction!(router, m)?)?;
+    m.add_function(wrap_pyfunction!(moa, m)?)?;
     m.add_function(wrap_pyfunction!(register_providers, m)?)?;
     m.add_function(wrap_pyfunction!(init_proxy, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;

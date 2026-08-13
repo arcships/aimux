@@ -50,6 +50,7 @@
 #ifndef AIMUX_FFI_H
 #define AIMUX_FFI_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "aimux-error.h"
@@ -571,6 +572,36 @@ int aimux_init_proxy(const char *config_json, AimuxError *err);
    aimux_generate_text / aimux_stream_text (no real API sent); caller frees
    with aimux_free_string. */
 uint64_t aimux_mock_replay_new(const char *recordings_jsonl, AimuxError *err);
+
+/* ── Composite models (RFC-0021 / RFC-0022) ─────────────────────────── */
+
+/* Create a RouterModel (RFC-0021) over the given child-model handles. The
+   returned handle is itself a model handle (works with aimux_generate_text /
+   aimux_stream_text); release with aimux_drop_handle.
+
+   handles: array of `len` existing model handles (e.g. from aimux_openai_new).
+   Unknown handles are silently dropped; the call only fails if all are
+   unknown (or len == 0). config_json selects the router + fallback policy:
+   { "router": "rule"|"weighted", "weights": [..], "fallback": "on_error"|"none",
+     "provider_name": "router", "model_id": "router" } — all optional; defaults
+   are rule / on_error / "router" / "router".
+   Returns handle > 0 or 0 on failure (fills *err). */
+uint64_t aimux_router_new(const uint64_t *handles, size_t len,
+                          const char *config_json, AimuxError *err);
+
+/* Create a MoaModel (RFC-0022) over reference handles + one aggregator handle.
+   The returned handle is a model handle (works with aimux_generate_text /
+   aimux_stream_text); release with aimux_drop_handle.
+
+   reference_handles: array of `ref_len` existing handles (may be NULL/0 —
+   MoaModel then runs just the aggregator). aggregator: a single existing
+   handle (must be valid). Unknown reference handles are dropped; an unknown
+   aggregator handle fails. config_json is a serialized MoaConfig (all fields
+   optional): { "provider_name", "model_id", "aggregator_instructions",
+   "strip_reference_tools", "fail_mode": "best_effort"|"fail_fast" }.
+   Returns handle > 0 or 0 on failure (fills *err). */
+uint64_t aimux_moa_new(const uint64_t *reference_handles, size_t ref_len,
+                       uint64_t aggregator, const char *config_json, AimuxError *err);
 
 #ifdef __cplusplus
 } /* extern "C" */

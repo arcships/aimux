@@ -63,7 +63,7 @@ pub enum MoaFailMode {
     FailFast,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct MoaConfig {
     pub provider_name: String,            // 默认 "moa"
     pub model_id: String,                 // 默认 "moa"
@@ -72,6 +72,19 @@ pub struct MoaConfig {
     /// reference 是否去掉 tools/tool_choice(Hermes:reference 不带 tool schema 保便宜)。默认 true。
     pub strip_reference_tools: bool,
     pub fail_mode: MoaFailMode,
+}
+
+// 手写 Default：strip_reference_tools 必须默认 true（derive(Default) 会给 false，与文档矛盾）。
+impl Default for MoaConfig {
+    fn default() -> Self {
+        Self {
+            provider_name: "moa".into(),
+            model_id: "moa".into(),
+            aggregator_instructions: None,
+            strip_reference_tools: true,
+            fail_mode: MoaFailMode::BestEffort,
+        }
+    }
 }
 ```
 
@@ -310,13 +323,16 @@ async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxEr
 
 ---
 
-## 9. Open Questions
+## 9. Resolved Questions (2026-08-13)
 
-1. **`provider()`/`model_id()` 返回值**:返回固定 `"moa"` 还是透传 aggregator?建议返回 `"moa"`,`provider_metadata` 补 aggregator + reference 信息(tracing span 可读)。
-2. **reference 输出是否带 reasoning**:薄版只取 `Text`,丢弃 `Reasoning`。若 aggregator 想看 reference 思考链,需另开配置。默认丢弃。
-3. **多轮聚合(多 layer)**:薄版单层。若要,可嵌套 MoaModel(天然支持),但 usage/warning 累加嵌套需测。不做。
-4. **reference 数量上限**:无硬上限,但 prompt 膨胀 + 成本倍增。文档建议 2-4 个 reference(Hermes 默认 2 个)。
-5. **`reference_max_tokens`**(Hermes 的 advisor token cap):薄版不做内置 cap,用户可 per-reference 设 `max_output_tokens`。是否内置待反馈。
+1. **`provider()`/`model_id()` 返回值**:返回固定 `"moa"`,`provider_metadata` 补 aggregator + reference 信息。
+2. **reference 输出是否带 reasoning**:默认只取 `Text`，丢弃 `Reasoning`/`ToolCall`/`Source`。
+3. **多轮聚合(多 layer)**:不做。可嵌套 MoaModel（天然支持），但 usage/warning 嵌套累加需测。
+4. **reference 数量上限**:无硬上限，文档建议 2-4 个 reference（Hermes 默认 2 个）。
+5. **`reference_max_tokens`**:薄版不做内置 cap，用户可 per-reference 设 `max_output_tokens`。
+6. **usage 结构化拆分**:顶层 `usage` 是所有 reference + aggregator 的累加总和。明细拆分放 `provider_metadata.composite_usage`，**统一结构**为 `{ "participants": [{ "role": "ref-0"|"ref-1"|...|"aggregator", "model": "model-id", "usage": Usage }], "total": Usage }`，与 RFC-0021 的 RouterModel 场景共用同一 schema（role 不同但结构一致）。
+7. **`config_snapshot` 聚合策略（修订）**:同 RFC-0021 Resolved Question 6。MoaModel **不伪造自己的 config_snapshot**，P1 使用默认 `ProviderRecord::minimal("moa", "moa")`。子模型级别的 nested 录制是 RFC-0023 的增强（见 RFC-0021 §9 "RFC-0023 录制层的 nested 设计"），P1 不实现。
+8. **`run_references_nonstream` helper**:RFC 草案里 `do_stream` 调用了此函数但未定义签名。P1 实施时提取为 `fn run_references_nonstream(&self, options: &CallOptions) -> Result<(Vec<(String, String)>, Usage, Vec<Warning>), AiMuxError>`，`do_generate` 和 `do_stream` 共用。返回 `(reference_texts, accumulated_usage, warnings)`。
 
 ---
 

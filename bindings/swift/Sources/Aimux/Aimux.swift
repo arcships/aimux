@@ -491,6 +491,71 @@ public final class Model: @unchecked Sendable {
         return Model(handle: handle)
     }
 
+    // ── Composite models (RFC-0021 / RFC-0022) ──────────────────────────────
+
+    /// Create a RouterModel (RFC-0021) over the given child models. The
+    /// returned model routes each call to one child and falls back across the
+    /// rest on error (per `configJson`).
+    ///
+    /// - Parameters:
+    ///   - models: child models (must be non-empty).
+    ///   - configJson: optional config: `{"router": "rule"|"weighted",
+    ///     "weights": [...], "fallback": "on_error"|"none", "provider_name",
+    ///     "model_id"}`.
+    /// - Returns: a new RouterModel wrapping the children.
+    public static func router(
+        _ models: [Model],
+        configJson: String? = nil
+    ) throws -> Model {
+        guard !models.isEmpty else {
+            throw AimuxError.invalidArgument(
+                message: "router: models must be non-empty",
+                status: -1,
+                retryMs: -1,
+                errorValue: nil
+            )
+        }
+        let handles = models.map { $0.handle }
+        let handle = try handles.withUnsafeBufferPointer { buf -> UInt64 in
+            try wrapHandle { err in
+                aimux_router_new(buf.baseAddress, buf.count, configJson, err)
+            }
+        }
+        return Model(handle: handle)
+    }
+
+    /// Create a MoaModel (RFC-0022) over reference models + one aggregator.
+    /// References fan out in parallel, then the aggregator synthesizes a final
+    /// answer.
+    ///
+    /// - Parameters:
+    ///   - references: reference models (may be empty — runs aggregator only).
+    ///   - aggregator: the aggregator model.
+    ///   - configJson: optional MoaConfig.
+    /// - Returns: a new MoaModel.
+    public static func moa(
+        references: [Model],
+        aggregator: Model,
+        configJson: String? = nil
+    ) throws -> Model {
+        let agg = aggregator.handle
+        // Empty references: pass a NULL base address + 0 length.
+        let handle: UInt64
+        if references.isEmpty {
+            handle = try wrapHandle { err in
+                aimux_moa_new(nil, 0, agg, configJson, err)
+            }
+        } else {
+            let refHandles = references.map { $0.handle }
+            handle = try refHandles.withUnsafeBufferPointer { buf -> UInt64 in
+                try wrapHandle { err in
+                    aimux_moa_new(buf.baseAddress, buf.count, agg, configJson, err)
+                }
+            }
+        }
+        return Model(handle: handle)
+    }
+
     /// Register external OpenAI-compatible providers from a JSON config string
     /// (RFC-0020).
     ///

@@ -2756,6 +2756,140 @@ pub extern "C" fn aimux_mock_replay_new(
     intern_model(Arc::new(model))
 }
 
+/// Create a `RouterModel` (RFC-0021) over the given child-model handles. The
+/// returned handle is itself a model handle (works with `aimux_generate_text` /
+/// `aimux_stream_text`); free it with `aimux_drop_handle`.
+///
+/// `handles` is an array of `len` existing model handles (e.g. returned by
+/// `aimux_openai_new`). `config_json` selects the router + fallback policy:
+/// `{ "router": "rule" | "weighted", "weights": [..], "fallback": "on_error" |
+/// "none", "provider_name": "router", "model_id": "router" }`. All keys are
+/// optional; defaults are `rule` / `on_error` / `"router"` / `"router"`.
+///
+/// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
+/// pointer, bad JSON, zero-length `handles`, or an unknown child handle
+/// (which is dropped from the child list — the call only fails if **all**
+/// handles are unknown).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_router_new(
+    handles: *const u64,
+    len: usize,
+    config_json: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
+    if handles.is_null() || len == 0 {
+        return unsafe { fail_invalid_args(err) };
+    }
+    let handle_slice = unsafe { std::slice::from_raw_parts(handles, len) };
+    let mut models: Vec<Arc<dyn aimux_core::LanguageModel>> = Vec::with_capacity(len);
+    for &h in handle_slice {
+        if let Some(m) = get_model(h) {
+            models.push(m);
+        }
+    }
+    if models.is_empty() {
+        return unsafe { fail_other(err, "router: no valid child handles") };
+    }
+    let config_json = if config_json.is_null() {
+        String::from("{}")
+    } else {
+        match cstr_to_string(config_json) {
+            Some(s) => s,
+            None => return unsafe { fail_invalid_args(err) },
+        }
+    };
+    let cfg: RouterFfiConfig = match serde_json::from_str::<RouterFfiConfig>(&config_json) {
+        Ok(c) => c,
+        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
+    };
+    let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
+        Some("weighted") => {
+            let weights = cfg.weights.unwrap_or_else(|| vec![1.0; models.len()]);
+            Box::new(aimux_core::router::WeightedRouter::new(weights))
+        }
+        // "rule", None, and any unknown value fall back to RuleRouter (safest
+        // default: child 0 + ordered fallback).
+        _ => Box::new(aimux_core::router::RuleRouter),
+    };
+    let fallback = if cfg.fallback.as_deref() == Some("none") {
+        aimux_core::router::FallbackPolicy::None
+    } else {
+        aimux_core::router::FallbackPolicy::OnError
+    };
+    let router_cfg = aimux_core::router::RouterConfig {
+        provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
+        model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
+    };
+    let model = aimux_core::router::RouterModel::new(models, router, fallback, router_cfg);
+    intern_model(Arc::new(model))
+}
+
+/// Create a `MoaModel` (RFC-0022) over the given reference handles + one
+/// aggregator handle. The returned handle is a model handle (works with
+/// `aimux_generate_text` / `aimux_stream_text`); free it with
+/// `aimux_drop_handle`.
+///
+/// `reference_handles` is an array of `ref_len` existing model handles (may be
+/// 0 — MoaModel then degrades to running just the aggregator). `aggregator`
+/// is a single existing model handle. `config_json` is a serialized `MoaConfig`
+/// (all fields optional): `{ "provider_name": "moa", "model_id": "moa",
+/// "aggregator_instructions": null, "strip_reference_tools": true,
+/// "fail_mode": "best_effort" | "fail_fast" }`.
+///
+/// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
+/// pointer, bad JSON, an unknown aggregator handle, or all-unknown references
+/// (references may be empty; aggregator may not).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_moa_new(
+    reference_handles: *const u64,
+    ref_len: usize,
+    aggregator: u64,
+    config_json: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
+    let Some(aggregator_model) = get_model(aggregator) else {
+        return unsafe { fail_other(err, "moa: invalid aggregator handle") };
+    };
+    let references: Vec<Arc<dyn aimux_core::LanguageModel>> = if reference_handles.is_null()
+        || ref_len == 0
+    {
+        Vec::new()
+    } else {
+        let slice = unsafe { std::slice::from_raw_parts(reference_handles, ref_len) };
+        let mut v = Vec::with_capacity(ref_len);
+        for &h in slice {
+            if let Some(m) = get_model(h) {
+                v.push(m);
+            }
+        }
+        v
+    };
+    let config_json = if config_json.is_null() {
+        String::from("{}")
+    } else {
+        match cstr_to_string(config_json) {
+            Some(s) => s,
+            None => return unsafe { fail_invalid_args(err) },
+        }
+    };
+    let cfg: aimux_core::moa::MoaConfig = match serde_json::from_str(&config_json) {
+        Ok(c) => c,
+        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
+    };
+    let model = aimux_core::moa::MoaModel::new(references, aggregator_model, cfg);
+    intern_model(Arc::new(model))
+}
+
+/// FFI-side router config (lenient: all fields optional).
+#[derive(Default, serde::Deserialize)]
+struct RouterFfiConfig {
+    router: Option<String>,
+    weights: Option<Vec<f64>>,
+    fallback: Option<String>,
+    provider_name: Option<String>,
+    model_id: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use aimux_core::ApiCallError;
@@ -2968,5 +3102,151 @@ mod tests {
             }
             other => panic!("expected AiMuxError::Other, got {other:?}"),
         }
+    }
+
+    /// A tiny mock model for composite-FFI tests (returns fixed text).
+    struct MockText {
+        provider: &'static str,
+        model_id: &'static str,
+        text: &'static str,
+    }
+    #[async_trait::async_trait]
+    impl aimux_core::LanguageModel for MockText {
+        fn provider(&self) -> &str {
+            self.provider
+        }
+        fn model_id(&self) -> &str {
+            self.model_id
+        }
+        async fn do_generate(
+            &self,
+            _options: &aimux_core::options::CallOptions,
+        ) -> Result<aimux_core::result::GenerateResult, AiMuxError> {
+            Ok(aimux_core::result::GenerateResult {
+                content: vec![aimux_core::result::GenerateContent::Text {
+                    text: self.text.into(),
+                    provider_metadata: None,
+                }],
+                finish_reason: aimux_core::types::FinishReason {
+                    unified: aimux_core::types::FinishReasonUnified::Stop,
+                    raw: None,
+                },
+                usage: aimux_core::types::Usage::default(),
+                warnings: vec![],
+                provider_metadata: None,
+                response: aimux_core::types::ResponseMetadata {
+                    model_id: Some(self.model_id.into()),
+                    ..Default::default()
+                },
+                request_body: None,
+                response_headers: None,
+            })
+        }
+        async fn do_stream(
+            &self,
+            _options: &aimux_core::options::CallOptions,
+        ) -> Result<aimux_core::result::StreamResult, AiMuxError> {
+            unimplemented!()
+        }
+    }
+
+    fn mock_handle(provider: &'static str, model_id: &'static str, text: &'static str) -> u64 {
+        intern_model(Arc::new(MockText {
+            provider,
+            model_id,
+            text,
+        }))
+    }
+
+    #[test]
+    fn router_new_builds_router_model() {
+        let handles = [
+            mock_handle("mock", "primary", "primary-out"),
+            mock_handle("mock", "backup", "backup-out"),
+        ];
+        let h = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), std::ptr::null_mut());
+        assert!(h != 0, "router handle must be non-zero");
+        // Confirm it resolves to a model.
+        let model = get_model(h).expect("router handle resolves");
+        assert_eq!(model.provider(), "router");
+        assert_eq!(model.model_id(), "router");
+    }
+
+    fn zero_err() -> CAimuxError {
+        CAimuxError {
+            code: AIMUX_OK,
+            status: 0,
+            retry_ms: 0,
+            message: std::ptr::null_mut(),
+            error_value: std::ptr::null_mut(),
+            reserved: [std::ptr::null_mut(); 1],
+        }
+    }
+
+    #[test]
+    fn router_new_rejects_empty_handles() {
+        let mut err = zero_err();
+        let h = aimux_router_new(std::ptr::null(), 0, std::ptr::null(), &mut err);
+        assert_eq!(h, 0);
+        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn router_new_rejects_bad_json() {
+        let handles = [mock_handle("mock", "m", "x")];
+        let bad = std::ffi::CString::new("{not json").unwrap();
+        let mut err = zero_err();
+        let h = aimux_router_new(
+            handles.as_ptr(),
+            handles.len(),
+            bad.as_ptr(),
+            &mut err,
+        );
+        assert_eq!(h, 0);
+        assert_eq!(err.code, AIMUX_E_JSON_PARSE);
+    }
+
+    #[test]
+    fn moa_new_builds_moa_model() {
+        let refs = [
+            mock_handle("mock", "ref-a", "A"),
+            mock_handle("mock", "ref-b", "B"),
+        ];
+        let agg = mock_handle("mock", "aggregator", "agg");
+        let h = aimux_moa_new(refs.as_ptr(), refs.len(), agg, std::ptr::null(), std::ptr::null_mut());
+        assert!(h != 0, "moa handle must be non-zero");
+        let model = get_model(h).expect("moa handle resolves");
+        assert_eq!(model.provider(), "moa");
+        assert_eq!(model.model_id(), "moa");
+    }
+
+    #[test]
+    fn moa_new_rejects_bad_aggregator() {
+        let refs = [mock_handle("mock", "ref-a", "A")];
+        let mut err = zero_err();
+        // aggregator handle 999999 does not exist.
+        let h = aimux_moa_new(
+            refs.as_ptr(),
+            refs.len(),
+            999_999,
+            std::ptr::null(),
+            &mut err,
+        );
+        assert_eq!(h, 0);
+        assert_eq!(err.code, AIMUX_E_OTHER);
+    }
+
+    #[test]
+    fn moa_new_allows_zero_references() {
+        // 0 references is valid (degrades to aggregator-only).
+        let agg = mock_handle("mock", "aggregator", "agg");
+        let h = aimux_moa_new(
+            std::ptr::null(),
+            0,
+            agg,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
+        assert!(h != 0, "moa with 0 references should succeed");
     }
 }

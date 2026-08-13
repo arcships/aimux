@@ -326,12 +326,23 @@ impl Router for RoutellmRouter {
 
 ---
 
-## 9. Open Questions
+## 9. Resolved Questions (2026-08-13)
 
-1. **`provider()`/`model_id()` 返回值**:返回固定 `"router"` 还是透传被选模型?返回固定值让 tracing span 统一,但丢失下游信息。建议返回 `"router"`,`provider_metadata` 补被选模型信息。
-2. **LLM 分类器的成本归属**:分类调用消耗 token,需在 `Usage` 明确归属。建议归到 RouterModel 的总 usage(已含分类器调用)。
-3. **能力声明系统是否前置**:薄版路由靠用户配置;若要做"自动按能力过滤",需补能力数据工程(从 litellm `supports_vision` 补全)。本 RFC 不做,留后续。
-4. **fallback 与 retry 的交互**:RouterModel fallback 时,每个子模型的 `max_retries` 仍生效(单 provider 内 retry 先跑完,再 fallback 下一个)。需文档明确语义。
+1. **`provider()`/`model_id()` 返回值**:返回固定 `"router"`,`provider_metadata` 补被选模型信息。
+2. **LLM 分类器的成本归属**:分类器消耗的 token **累加进总 usage**（用 `add_usage` helper）。顶层 `usage` 是累加总和；明细拆分放 `provider_metadata.composite_usage`，**统一结构**为 `{ "participants": [{ "role": "classifier"|"selected", "model": "model-id", "usage": Usage }], "total": Usage }`，与 RFC-0022 的 MoA 场景共用同一 schema（role 不同但结构一致）。
+3. **能力声明系统**:不做，留后续。
+4. **fallback 与 retry 的交互**:每个子模型的 `max_retries` 仍生效（单 provider 内 retry 先跑完，再 fallback 下一个）。
+5. **`WeightedRouter` 方向语义**:**weight 高 = 优先级高 = 选 max**。用户想按成本选（低成本优先）传倒数或负数即可。
+6. **`config_snapshot` 聚合策略（修订）**:Composite model **不伪造自己的 config_snapshot**。P1 使用默认 `ProviderRecord::minimal("router", "router")`。真正的录制/回放对 composite 的支持是 **RFC-0023 录制层的 nested 设计**（见下），不是 composite 自身要解决的。
+
+### RFC-0023 录制层的 nested 设计（follow-up note）
+
+Composite model 的子模型是真正发 HTTP 请求的实体。录制应该记的是**每个子模型的实际调用**，而非 composite 的虚拟快照。设计方向：
+
+- **`TraceLayer` 装饰位置**：对 RouterModel，外层录制足够（它只调一个子模型，委托是透明的）。对 MoaModel，若需要看每个 reference 的调用详情，应在**子模型级别**装饰 TraceLayer，用同一 `call_id`/`trace_id` 关联。
+- **trace 关联**：composite 的 `do_generate`/`do_stream` 持有 `CallOptions.call_id`（已有字段）。子模型调用复用同一 `call_id`（或加 `step` 字段区分 reference 0/1/2/aggregator），录制层按 `call_id` 聚合成树形调用链。
+- **不扩展 `ProviderRecord`**：不加 `children` 字段。每个子模型的录制是独立的 `TraceRecord`，通过 `call_id` 关联，不是嵌套结构。这与现有录制架构（扁平 jsonl + call_id 关联）一致。
+- **P1 不实现**：nested 录制是 RFC-0023 的增强，不阻塞 composite model 的 P1。P1 落地后 composite 调用会被录制（外层 trace），但子模型级别的明细录制需要后续在 TraceLayer 侧补。
 
 ---
 
