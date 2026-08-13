@@ -28,7 +28,11 @@ use crate::result::{GenerateResult, StreamResult};
 /// learned routing is intentionally out of core (see RFC-0021 §6.1).
 pub trait Router: Send + Sync {
     /// Choose a child-model index. `Err` means "no child can serve this prompt".
-    fn route(&self, prompt: &LanguageModelPrompt, models: &[ChildModel]) -> Result<usize, AiMuxError>;
+    fn route(
+        &self,
+        prompt: &LanguageModelPrompt,
+        models: &[ChildModel],
+    ) -> Result<usize, AiMuxError>;
 }
 
 /// Static-priority router: always pick child 0 (the primary); fallback walks the
@@ -36,7 +40,11 @@ pub trait Router: Send + Sync {
 pub struct RuleRouter;
 
 impl Router for RuleRouter {
-    fn route(&self, _prompt: &LanguageModelPrompt, models: &[ChildModel]) -> Result<usize, AiMuxError> {
+    fn route(
+        &self,
+        _prompt: &LanguageModelPrompt,
+        models: &[ChildModel],
+    ) -> Result<usize, AiMuxError> {
         if models.is_empty() {
             return Err(AiMuxError::Other("router: no models configured".into()));
         }
@@ -63,7 +71,11 @@ impl WeightedRouter {
 }
 
 impl Router for WeightedRouter {
-    fn route(&self, _prompt: &LanguageModelPrompt, models: &[ChildModel]) -> Result<usize, AiMuxError> {
+    fn route(
+        &self,
+        _prompt: &LanguageModelPrompt,
+        models: &[ChildModel],
+    ) -> Result<usize, AiMuxError> {
         if models.is_empty() {
             return Err(AiMuxError::Other("router: no models configured".into()));
         }

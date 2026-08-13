@@ -114,15 +114,15 @@ typedef _InitProxyDart = int Function(
     Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 
 // Composite models (RFC-0021 / RFC-0022). Take a pointer to an array of
-// handles + a length, plus an optional JSON config.
+// handles + a length, plus an optional JSON config (nullptr = defaults).
 typedef _RouterNewC = Uint64 Function(Pointer<Uint64> handles, IntPtr len,
     Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 typedef _RouterNewDart = int Function(
-    Pointer<Uint64> handles, int len, Pointer<Utf8>? configJson, Pointer<AimuxCError> err);
+    Pointer<Uint64> handles, int len, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 typedef _MoaNewC = Uint64 Function(Pointer<Uint64> referenceHandles, IntPtr refLen,
     Uint64 aggregator, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 typedef _MoaNewDart = int Function(Pointer<Uint64> referenceHandles, int refLen,
-    int aggregator, Pointer<Utf8>? configJson, Pointer<AimuxCError> err);
+    int aggregator, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 
 // Multi-arg constructor C signatures (bedrock/vertex/azure).
 typedef _FourStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
@@ -1037,14 +1037,14 @@ Model router(List<Model> models, {String? configJson}) {
     final ptr = calloc<Uint64>(handles.length);
     try {
       ptr.asTypedList(handles.length).setAll(0, handles);
-      Pointer<Utf8>? cfgPtr;
+      Pointer<Utf8> cfgPtr = nullptr;
       if (configJson != null) {
         cfgPtr = configJson.toNativeUtf8();
       }
       try {
         return takeHandle(_ffi.routerNew(ptr, handles.length, cfgPtr, err), err);
       } finally {
-        if (cfgPtr != null) {
+        if (cfgPtr != nullptr) {
           calloc.free(cfgPtr);
         }
       }
@@ -1074,7 +1074,7 @@ Model moa(List<Model> references, Model aggregator, {String? configJson}) {
         final handles = references.map((m) => m._requireHandle()).toList();
         refPtr.asTypedList(references.length).setAll(0, handles);
       }
-      Pointer<Utf8>? cfgPtr;
+      Pointer<Utf8> cfgPtr = nullptr;
       if (configJson != null) {
         cfgPtr = configJson.toNativeUtf8();
       }
@@ -1083,7 +1083,7 @@ Model moa(List<Model> references, Model aggregator, {String? configJson}) {
             _ffi.moaNew(refPtr, references.length, aggregatorHandle, cfgPtr, err),
             err);
       } finally {
-        if (cfgPtr != null) {
+        if (cfgPtr != nullptr) {
           calloc.free(cfgPtr);
         }
       }

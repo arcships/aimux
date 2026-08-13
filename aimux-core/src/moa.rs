@@ -152,9 +152,7 @@ impl MoaModel {
             }
         }
         if texts.is_empty() {
-            return Err(AiMuxError::Other(
-                "moa: all reference models failed".into(),
-            ));
+            return Err(AiMuxError::Other("moa: all reference models failed".into()));
         }
         Ok((texts, usage, warnings))
     }
@@ -253,9 +251,7 @@ mod tests {
     use crate::message::Role;
     use crate::result::GenerateContent;
     use crate::stream_part::StreamPart;
-    use crate::types::{
-        FinishReason, FinishReasonUnified, TokenUsage,
-    };
+    use crate::types::{FinishReason, FinishReasonUnified, TokenUsage};
     use async_trait::async_trait;
     use futures::stream;
     use std::sync::Arc;
@@ -361,7 +357,10 @@ mod tests {
 
     #[tokio::test]
     async fn generate_fans_out_and_aggregates() {
-        let refs = vec![mk("ref-a", "A says hi", false, 10), mk("ref-b", "B says hi", false, 20)];
+        let refs = vec![
+            mk("ref-a", "A says hi", false, 10),
+            mk("ref-b", "B says hi", false, 20),
+        ];
         let agg = mk("aggregator", "aggregated answer", false, 5);
         let moa = MoaModel::new(refs, agg, MoaConfig::default());
 
@@ -517,10 +516,7 @@ mod tests {
         fn model_id(&self) -> &str {
             "agg-err"
         }
-        async fn do_generate(
-            &self,
-            _options: &CallOptions,
-        ) -> Result<GenerateResult, AiMuxError> {
+        async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
             unimplemented!()
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -570,7 +566,10 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(saw_error, "expected the aggregator transport error to be relayed");
+        assert!(
+            saw_error,
+            "expected the aggregator transport error to be relayed"
+        );
         assert!(
             !text.contains("should-not-see"),
             "parts after the terminal Err must not be forwarded; got: {text}"

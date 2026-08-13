@@ -110,11 +110,11 @@ public class Model implements Closeable {
 
     /** Package-private handle read for composite-model factories (router/moa). */
     long handle() {
-        readLock.lock();
+        lock.readLock().lock();
         try {
             return requireHandleLocked();
         } finally {
-            readLock.unlock();
+            lock.readLock().unlock();
         }
     }
 

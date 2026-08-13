@@ -2850,20 +2850,19 @@ pub extern "C" fn aimux_moa_new(
     let Some(aggregator_model) = get_model(aggregator) else {
         return unsafe { fail_other(err, "moa: invalid aggregator handle") };
     };
-    let references: Vec<Arc<dyn aimux_core::LanguageModel>> = if reference_handles.is_null()
-        || ref_len == 0
-    {
-        Vec::new()
-    } else {
-        let slice = unsafe { std::slice::from_raw_parts(reference_handles, ref_len) };
-        let mut v = Vec::with_capacity(ref_len);
-        for &h in slice {
-            if let Some(m) = get_model(h) {
-                v.push(m);
+    let references: Vec<Arc<dyn aimux_core::LanguageModel>> =
+        if reference_handles.is_null() || ref_len == 0 {
+            Vec::new()
+        } else {
+            let slice = unsafe { std::slice::from_raw_parts(reference_handles, ref_len) };
+            let mut v = Vec::with_capacity(ref_len);
+            for &h in slice {
+                if let Some(m) = get_model(h) {
+                    v.push(m);
+                }
             }
-        }
-        v
-    };
+            v
+        };
     let config_json = if config_json.is_null() {
         String::from("{}")
     } else {
@@ -3164,7 +3163,12 @@ mod tests {
             mock_handle("mock", "primary", "primary-out"),
             mock_handle("mock", "backup", "backup-out"),
         ];
-        let h = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), std::ptr::null_mut());
+        let h = aimux_router_new(
+            handles.as_ptr(),
+            handles.len(),
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
         assert!(h != 0, "router handle must be non-zero");
         // Confirm it resolves to a model.
         let model = get_model(h).expect("router handle resolves");
@@ -3196,12 +3200,7 @@ mod tests {
         let handles = [mock_handle("mock", "m", "x")];
         let bad = std::ffi::CString::new("{not json").unwrap();
         let mut err = zero_err();
-        let h = aimux_router_new(
-            handles.as_ptr(),
-            handles.len(),
-            bad.as_ptr(),
-            &mut err,
-        );
+        let h = aimux_router_new(handles.as_ptr(), handles.len(), bad.as_ptr(), &mut err);
         assert_eq!(h, 0);
         assert_eq!(err.code, AIMUX_E_JSON_PARSE);
     }
@@ -3213,7 +3212,13 @@ mod tests {
             mock_handle("mock", "ref-b", "B"),
         ];
         let agg = mock_handle("mock", "aggregator", "agg");
-        let h = aimux_moa_new(refs.as_ptr(), refs.len(), agg, std::ptr::null(), std::ptr::null_mut());
+        let h = aimux_moa_new(
+            refs.as_ptr(),
+            refs.len(),
+            agg,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
         assert!(h != 0, "moa handle must be non-zero");
         let model = get_model(h).expect("moa handle resolves");
         assert_eq!(model.provider(), "moa");
