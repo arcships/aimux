@@ -4,10 +4,12 @@ import type { FinishReason } from "./FinishReason";
 import type { GenerateResult } from "./GenerateResult";
 import type { ModelMessage } from "./ModelMessage";
 import type { ReasoningPart } from "./ReasoningPart";
+import type { ResponseMetadata } from "./ResponseMetadata";
 import type { SourcePart } from "./SourcePart";
 import type { ToolCall } from "./ToolCall";
 import type { Usage } from "./Usage";
 import type { Warning } from "./Warning";
+import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
  * Result of `generate_text` (user-facing).
@@ -57,4 +59,24 @@ files: Array<FilePart>,
  * Assistant messages ready to append to the prompt for the next turn
  * (solves the multi-turn "manually build assistant message" footgun).
  */
-response_messages: Array<ModelMessage>, };
+response_messages: Array<ModelMessage>, 
+/**
+ * The raw provider-specific finish reason string (e.g. "stop",
+ * "end_turn", "safety"). Useful when `finish_reason.unified` is `Other`.
+ */
+raw_finish_reason: string | null, 
+/**
+ * Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
+ * `raw.provider_metadata` for top-level convenience.
+ */
+provider_metadata: JsonValue | null, 
+/**
+ * Response metadata (id, timestamp, model_id). Mirrored from
+ * `raw.response` for top-level convenience.
+ */
+response: ResponseMetadata, 
+/**
+ * Total token usage across all steps. In single-step mode (aimux's
+ * default), `total_usage` equals `usage`. Provided for AI SDK parity.
+ */
+total_usage: Usage, };

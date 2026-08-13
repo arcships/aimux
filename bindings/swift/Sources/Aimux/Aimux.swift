@@ -511,6 +511,23 @@ public final class Model: @unchecked Sendable {
         if rc == 0 { throw AimuxError.fromC(err) }
     }
 
+    /// Set the global proxy configuration (M6, RFC-0016). Must be called before
+    /// the first `generateText` / `streamText` call; a no-op (returns without
+    /// error) if the shared HTTP client is already initialised.
+    ///
+    /// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
+    /// (all fields optional; omitting all is equivalent to relying on the
+    /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` env vars).
+    ///
+    /// - Parameter configJSON: ProxyConfig JSON.
+    /// - Throws: `AimuxError` when the C call fails (rc == 0).
+    public static func initProxy(_ configJSON: String) throws {
+        var err = CAimuxError()
+        aimux_error_clear(&err)
+        let rc = aimux_init_proxy(configJSON, &err)
+        if rc == 0 { throw AimuxError.fromC(err) }
+    }
+
     // ── Provider handles (RFC-0027) ──────────────────────────────────────────
 
     /// Create a **provider handle** for a registry-backed provider (RFC-0027).
@@ -536,6 +553,35 @@ public final class Model: @unchecked Sendable {
     /// - Returns: The JSON-serialized GenerateTextResult.
     public func generateText(prompt: String, options: String? = nil) throws -> String {
         try ffiStringCall { aimux_generate_text(handle, prompt, options, $0) }
+    }
+
+    /// Generate a structured JSON object (M12, RFC-0016).
+    ///
+    /// Same signature as `generateText`; returns a JSON-serialized
+    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
+    /// via `options` for schema control; the engine applies JSON repair
+    /// before parsing.
+    ///
+    /// - Parameters:
+    ///   - prompt: A prompt string or messages array (serialized as JSON).
+    ///   - options: Optional GenerateTextOptions (serialized as JSON).
+    /// - Returns: The JSON-serialized GenerateObjectResult.
+    public func generateObject(prompt: String, options: String? = nil) throws -> String {
+        try ffiStringCall { aimux_generate_object(handle, prompt, options, $0) }
+    }
+
+    /// Consume a stream to completion and return the aggregated result
+    /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
+    ///
+    /// Same signature as `generateText`; returns a JSON-serialized
+    /// `StreamTextResultAggregated`.
+    ///
+    /// - Parameters:
+    ///   - prompt: A prompt string or messages array (serialized as JSON).
+    ///   - options: Optional GenerateTextOptions (serialized as JSON).
+    /// - Returns: The JSON-serialized StreamTextResultAggregated.
+    public func consumeStreamText(prompt: String, options: String? = nil) throws -> String {
+        try ffiStringCall { aimux_consume_stream_text(handle, prompt, options, $0) }
     }
 
     /// Generate text (non-streaming) with OpenAI Chat Completions output.

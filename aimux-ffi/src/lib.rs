@@ -43,7 +43,8 @@ use serde::de::DeserializeOwned;
 
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+    GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
+    stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -1216,6 +1217,83 @@ pub extern "C" fn aimux_generate_text(
         err,
         async move { generate_text(&*model, prompt, opts).await },
     )
+}
+
+/// Generate a structured JSON object from the model (M12, RFC-0016).
+///
+/// Same signature as [`aimux_generate_text`]; returns a JSON string — the
+/// serialized `GenerateObjectResult`, or NULL on failure (fills `*err`).
+/// The caller passes `response_format: { "Json": { ... } }` via `opts_json`
+/// to control the schema; the function applies JSON repair before parsing.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_generate_object(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => return unsafe { fail_invalid_handle(err, "model") },
+    };
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
+        },
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
+        }
+    };
+    let opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
+        },
+        None => GenerateTextOptions::default(),
+    };
+    run_and_serialize(
+        err,
+        async move { generate_object(&*model, prompt, opts).await },
+    )
+}
+
+/// Consume a stream to completion and return the aggregated result (M11,
+/// RFC-0016). Synchronous — blocks until the stream finishes.
+///
+/// Same signature as [`aimux_generate_text`]; returns a JSON string — the
+/// serialized `StreamTextResultAggregated`, or NULL on failure (fills `*err`).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_consume_stream_text(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => return unsafe { fail_invalid_handle(err, "model") },
+    };
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
+        },
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
+        }
+    };
+    let opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
+        },
+        None => GenerateTextOptions::default(),
+    };
+    run_and_serialize(err, async move {
+        let stream_result = stream_text(&*model, prompt, opts).await?;
+        stream_result.consume().await
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2604,6 +2682,33 @@ pub extern "C" fn aimux_register_providers(
         Ok(()) => 1,
         Err(e) => unsafe { fail_ai(err, &e) },
     }
+}
+
+/// Set the global proxy configuration (M6, RFC-0016). Must be called before
+/// the first `aimux_generate_text` / `aimux_stream_text` call; a no-op (returns
+/// 1) if the shared HTTP client is already initialised.
+///
+/// `config_json` is a serialized `ProxyConfig`:
+/// `{ "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy":
+/// "..." }` (all fields optional; omitting all is equivalent to relying on the
+/// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` env vars).
+///
+/// Returns 1 on success (including the already-initialised no-op), 0 on
+/// failure (with `err` filled): null/invalid pointer or malformed JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_init_proxy(config_json: *const c_char, err: *mut CAimuxError) -> i32 {
+    let Some(json) = cstr_to_string(config_json) else {
+        return unsafe { fail_invalid_args(err) };
+    };
+    let config: aimux_provider_utils::ProxyConfig = match serde_json::from_str(&json) {
+        Ok(c) => c,
+        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
+    };
+    // `init_proxy` returns false when the shared client is already up; treat
+    // that as success (idempotent) so callers don't need to reason about
+    // ordering races.
+    let _ = aimux_provider_utils::init_proxy(config);
+    1
 }
 
 /// Create a mock replay model from recorded JSONL (RFC-0023 P3). `recordings`

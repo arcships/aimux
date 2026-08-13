@@ -103,6 +103,114 @@ public class TypedModel implements Closeable {
         }
     }
 
+    // ── generateObject (M12, RFC-0016) ────────────────────────────────────
+
+    /**
+     * Generate a structured JSON object from a simple string prompt (M12).
+     *
+     * @param prompt Plain text prompt.
+     * @return Decoded {@link Types.GenerateObjectResult}.
+     */
+    public Types.GenerateObjectResult generateObject(String prompt) {
+        return generateObject(prompt, null);
+    }
+
+    /**
+     * Generate a structured JSON object from a simple string prompt (M12).
+     *
+     * @param prompt  Plain text prompt.
+     * @param options Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Decoded {@link Types.GenerateObjectResult}.
+     */
+    public Types.GenerateObjectResult generateObject(String prompt, Types.GenerateTextOptions options) {
+        return decodeObjectResult(raw.generateObject(encode(prompt), encodeOptions(options)));
+    }
+
+    /**
+     * Generate a structured JSON object from a multi-role message list (M12).
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @return Decoded {@link Types.GenerateObjectResult}.
+     */
+    public Types.GenerateObjectResult generateObject(List<Types.ModelMessage> messages) {
+        return generateObject(messages, null);
+    }
+
+    /**
+     * Generate a structured JSON object from a multi-role message list (M12).
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @param options  Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Decoded {@link Types.GenerateObjectResult}.
+     */
+    public Types.GenerateObjectResult generateObject(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
+        return decodeObjectResult(raw.generateObject(encode(messages), encodeOptions(options)));
+    }
+
+    private Types.GenerateObjectResult decodeObjectResult(String resultJson) {
+        try {
+            return Types.AimuxJson.MAPPER.readValue(resultJson, Types.GenerateObjectResult.class);
+        } catch (IOException e) {
+            throw new AimuxException("failed to decode GenerateObjectResult: " + e.getMessage(), e);
+        }
+    }
+
+    // ── consumeStreamText (M11, RFC-0016) ─────────────────────────────────
+
+    /**
+     * Consume a stream to completion from a simple string prompt and return
+     * the aggregated result (M11).
+     *
+     * @param prompt Plain text prompt.
+     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     */
+    public Types.StreamTextResultAggregated consumeStreamText(String prompt) {
+        return consumeStreamText(prompt, null);
+    }
+
+    /**
+     * Consume a stream to completion from a simple string prompt and return
+     * the aggregated result (M11).
+     *
+     * @param prompt  Plain text prompt.
+     * @param options Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     */
+    public Types.StreamTextResultAggregated consumeStreamText(String prompt, Types.GenerateTextOptions options) {
+        return decodeAggregated(raw.consumeStreamText(encode(prompt), encodeOptions(options)));
+    }
+
+    /**
+     * Consume a stream to completion from a multi-role message list and
+     * return the aggregated result (M11).
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     */
+    public Types.StreamTextResultAggregated consumeStreamText(List<Types.ModelMessage> messages) {
+        return consumeStreamText(messages, null);
+    }
+
+    /**
+     * Consume a stream to completion from a multi-role message list and
+     * return the aggregated result (M11).
+     *
+     * @param messages Conversation as a list of {@link Types.ModelMessage}s.
+     * @param options  Optional typed {@link Types.GenerateTextOptions}, or {@code null}.
+     * @return Decoded {@link Types.StreamTextResultAggregated}.
+     */
+    public Types.StreamTextResultAggregated consumeStreamText(List<Types.ModelMessage> messages, Types.GenerateTextOptions options) {
+        return decodeAggregated(raw.consumeStreamText(encode(messages), encodeOptions(options)));
+    }
+
+    private Types.StreamTextResultAggregated decodeAggregated(String resultJson) {
+        try {
+            return Types.AimuxJson.MAPPER.readValue(resultJson, Types.StreamTextResultAggregated.class);
+        } catch (IOException e) {
+            throw new AimuxException("failed to decode StreamTextResultAggregated: " + e.getMessage(), e);
+        }
+    }
+
     // ── streamText (callback version) ─────────────────────────────────────
 
     /**

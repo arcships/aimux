@@ -104,6 +104,23 @@ export declare class Model {
    */
   generateText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
   /**
+   * Generate a structured JSON object from the model (M12, RFC-0016).
+   *
+   * Same signature as [`Model::generate_text`]; returns a JSON-serialized
+   * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
+   * via `options` for schema control; the function applies JSON repair
+   * before parsing.
+   */
+  generateObject(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
+  /**
+   * Consume a stream to completion and return the aggregated result
+   * (M11, RFC-0016).
+   *
+   * Drives `streamText` to completion and returns a JSON-serialized
+   * `StreamTextResultAggregated` (the fully-consumed stream summary).
+   */
+  consumeStreamText(prompt: string, options?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
+  /**
    * Stream text from the model.
    *
    * Returns an `AsyncGenerator<string>` yielding `StreamPart` JSON strings.
@@ -287,6 +304,21 @@ export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: s
  * 日志输出到 stderr。
  */
 export declare function initLogging(level: string): void
+
+/**
+ * Set the global proxy configuration (M6, RFC-0016). Must be called before
+ * the first `generateText` / `streamText` call; a no-op if the shared HTTP
+ * client is already initialised (the shared client is lazily built on first
+ * use and locked for the process lifetime).
+ *
+ * `configJson` shape: `{ "http_url": "...", "https_url": "...", "all_url":
+ * "...", "no_proxy": "..." }` (all fields optional; omitting all is equivalent
+ * to relying on the `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`
+ * env vars).
+ *
+ * Throws on invalid JSON.
+ */
+export declare function initProxy(configJson: string): AimuxResult<undefined>
 
 /**
  * 启动录制(RFC-0023 P1/P2):把完整 `Recording` 写 JSONL 到 `{dir}/recordings.jsonl`

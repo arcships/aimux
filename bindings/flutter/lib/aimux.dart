@@ -108,6 +108,11 @@ typedef _RegisterProvidersC = Int32 Function(
 typedef _RegisterProvidersDart = int Function(
     Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 
+typedef _InitProxyC = Int32 Function(
+    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+typedef _InitProxyDart = int Function(
+    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+
 // Multi-arg constructor C signatures (bedrock/vertex/azure).
 typedef _FourStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
     Pointer<Utf8>, Pointer<AimuxCError>);
@@ -212,6 +217,10 @@ final class _AimuxFFI {
           'aimux_get_model_specs');
   late final generateText = _lib
       .lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_text');
+  late final generateObject = _lib
+      .lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_object');
+  late final consumeStreamText = _lib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
+      'aimux_consume_stream_text');
   late final streamText =
       _lib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text');
   late final generateTextAsOpenAI = _lib
@@ -250,6 +259,8 @@ final class _AimuxFFI {
       .lookupFunction<_MockReplayC, _MockReplayDart>('aimux_mock_replay_new');
   late final registerProviders = _lib.lookupFunction<_RegisterProvidersC,
       _RegisterProvidersDart>('aimux_register_providers');
+  late final initProxy = _lib
+      .lookupFunction<_InitProxyC, _InitProxyDart>('aimux_init_proxy');
 }
 
 /// Process-wide FFI table. Lazily created on first use; shared by every
@@ -486,6 +497,73 @@ class Model implements Finalizable {
         try {
           final resultPtr =
               _ffi.generateText(_handle, promptPtr, optsPtr, err);
+          return takeString(resultPtr, err);
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
+    });
+
+    return jsonDecode(resultStr) as Map<String, dynamic>;
+  }
+
+  /// Generate a structured JSON object (M12, RFC-0016).
+  ///
+  /// Same signature as [generateText]; returns the parsed
+  /// GenerateObjectResult as a Map. Pass `response_format: { "Json": { ... } }`
+  /// via [options] for schema control; the engine applies JSON repair before
+  /// parsing.
+  ///
+  /// [prompt] — a string or a list of message maps.
+  /// [options] — optional generation options map.
+  /// Throws [AimuxException] on engine failure.
+  Map<String, dynamic> generateObject(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) {
+    _checkOpen();
+    final promptJson = _promptToJson(prompt);
+    final optsJson = options != null ? jsonEncode(options) : null;
+
+    final resultStr = withAimuxCError((err) {
+      return withUtf8(promptJson, (promptPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final resultPtr =
+              _ffi.generateObject(_handle, promptPtr, optsPtr, err);
+          return takeString(resultPtr, err);
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
+    });
+
+    return jsonDecode(resultStr) as Map<String, dynamic>;
+  }
+
+  /// Consume a stream to completion and return the aggregated result
+  /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
+  ///
+  /// Same signature as [generateText]; returns the parsed
+  /// StreamTextResultAggregated as a Map.
+  ///
+  /// [prompt] — a string or a list of message maps.
+  /// [options] — optional generation options map.
+  /// Throws [AimuxException] on engine failure.
+  Map<String, dynamic> consumeStreamText(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) {
+    _checkOpen();
+    final promptJson = _promptToJson(prompt);
+    final optsJson = options != null ? jsonEncode(options) : null;
+
+    final resultStr = withAimuxCError((err) {
+      return withUtf8(promptJson, (promptPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final resultPtr =
+              _ffi.consumeStreamText(_handle, promptPtr, optsPtr, err);
           return takeString(resultPtr, err);
         } finally {
           if (optsPtr != nullptr) calloc.free(optsPtr);
@@ -899,6 +977,24 @@ void registerProviders(String configJSON) {
   withAimuxCError((err) {
     return withUtf8(configJSON, (ptr) {
       return takeHandle(_ffi.registerProviders(ptr, err), err);
+    });
+  });
+}
+
+/// Set the global proxy configuration (M6, RFC-0016). Must be called before
+/// the first `generateText` / `streamText` call; a no-op if the shared HTTP
+/// client is already initialised.
+///
+/// The C entry point returns an `int` (1 = success, 0 = failure). `takeHandle`
+/// throws on 0 and passes non-zero through unchanged, so it doubles as the rc
+/// check here (rc=1 → no throw; rc=0 → throw from `err`).
+///
+/// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
+/// (all fields optional).
+void initProxy(String configJSON) {
+  withAimuxCError((err) {
+    return withUtf8(configJSON, (ptr) {
+      return takeHandle(_ffi.initProxy(ptr, err), err);
     });
   });
 }

@@ -2627,6 +2627,10 @@ public final class Types {
         @JsonProperty("sources") private List<JsonNode> sources = new ArrayList<>();
         @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
         @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
+        @JsonProperty("raw_finish_reason") private String rawFinishReason;
+        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
+        @JsonProperty("total_usage") private Usage totalUsage = new Usage();
 
         @JsonCreator
         GenerateTextResult() {}
@@ -2635,7 +2639,8 @@ public final class Types {
                                    List<JsonNode> warnings, GenerateResult raw,
                                    List<JsonNode> reasoning, String reasoningText,
                                    List<JsonNode> sources, List<JsonNode> files,
-                                   List<ModelMessage> responseMessages) {
+                                   List<ModelMessage> responseMessages, String rawFinishReason,
+                                   JsonNode providerMetadata, ResponseMetadata response, Usage totalUsage) {
             this.text = text;
             this.toolCalls = toolCalls;
             this.finishReason = finishReason;
@@ -2647,6 +2652,10 @@ public final class Types {
             this.sources = sources;
             this.files = files;
             this.responseMessages = responseMessages;
+            this.rawFinishReason = rawFinishReason;
+            this.providerMetadata = providerMetadata;
+            this.response = response;
+            this.totalUsage = totalUsage;
         }
 
         public String getText() { return text; }
@@ -2660,6 +2669,10 @@ public final class Types {
         public List<JsonNode> getSources() { return sources; }
         public List<JsonNode> getFiles() { return files; }
         public List<ModelMessage> getResponseMessages() { return responseMessages; }
+        public String getRawFinishReason() { return rawFinishReason; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
+        public ResponseMetadata getResponse() { return response; }
+        public Usage getTotalUsage() { return totalUsage; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -2675,6 +2688,10 @@ public final class Types {
             private List<JsonNode> sources = new ArrayList<>();
             private List<JsonNode> files = new ArrayList<>();
             private List<ModelMessage> responseMessages = new ArrayList<>();
+            private String rawFinishReason;
+            private JsonNode providerMetadata;
+            private ResponseMetadata response = new ResponseMetadata();
+            private Usage totalUsage = new Usage();
 
             public Builder text(String v) { this.text = v; return this; }
             public Builder toolCalls(List<ToolCall> v) { this.toolCalls = v; return this; }
@@ -2687,10 +2704,15 @@ public final class Types {
             public Builder sources(List<JsonNode> v) { this.sources = v; return this; }
             public Builder files(List<JsonNode> v) { this.files = v; return this; }
             public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
+            public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
+            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+            public Builder response(ResponseMetadata v) { this.response = v; return this; }
+            public Builder totalUsage(Usage v) { this.totalUsage = v; return this; }
 
             public GenerateTextResult build() {
                 return new GenerateTextResult(text, toolCalls, finishReason, usage, warnings, raw,
-                    reasoning, reasoningText, sources, files, responseMessages);
+                    reasoning, reasoningText, sources, files, responseMessages, rawFinishReason,
+                    providerMetadata, response, totalUsage);
             }
         }
 
@@ -2709,13 +2731,249 @@ public final class Types {
                 && Objects.equals(reasoningText, that.reasoningText)
                 && Objects.equals(sources, that.sources)
                 && Objects.equals(files, that.files)
-                && Objects.equals(responseMessages, that.responseMessages);
+                && Objects.equals(responseMessages, that.responseMessages)
+                && Objects.equals(rawFinishReason, that.rawFinishReason)
+                && Objects.equals(providerMetadata, that.providerMetadata)
+                && Objects.equals(response, that.response)
+                && Objects.equals(totalUsage, that.totalUsage);
         }
 
         @Override
         public int hashCode() {
             return Objects.hash(text, toolCalls, finishReason, usage, warnings, raw,
-                reasoning, reasoningText, sources, files, responseMessages);
+                reasoning, reasoningText, sources, files, responseMessages, rawFinishReason,
+                providerMetadata, response, totalUsage);
+        }
+    }
+
+    /**
+     * Result of {@code generate_object} (user-facing, M12). The parsed JSON
+     * object plus convenience fields from the underlying {@code generate_text}
+     * call.
+     *
+     * Mirrors {@code GenerateObjectResult.ts}. {@code object} is a
+     * {@link JsonNode} (arbitrary JSON value, weak type).
+     */
+    public static class GenerateObjectResult {
+        @JsonProperty("object") private JsonNode object = emptyObject();
+        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
+        @JsonProperty("raw_finish_reason") private String rawFinishReason;
+        @JsonProperty("usage") private Usage usage = new Usage();
+        @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
+        @JsonProperty("reasoning") private String reasoning;
+        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("response") private ResponseMetadata response = new ResponseMetadata();
+        @JsonProperty("raw") private GenerateTextResult raw = new GenerateTextResult();
+
+        @JsonCreator
+        GenerateObjectResult() {}
+
+        private GenerateObjectResult(JsonNode object, FinishReason finishReason, String rawFinishReason,
+                                     Usage usage, List<JsonNode> warnings, String reasoning,
+                                     JsonNode providerMetadata, ResponseMetadata response,
+                                     GenerateTextResult raw) {
+            this.object = object;
+            this.finishReason = finishReason;
+            this.rawFinishReason = rawFinishReason;
+            this.usage = usage;
+            this.warnings = warnings;
+            this.reasoning = reasoning;
+            this.providerMetadata = providerMetadata;
+            this.response = response;
+            this.raw = raw;
+        }
+
+        public JsonNode getObject() { return object; }
+        public FinishReason getFinishReason() { return finishReason; }
+        public String getRawFinishReason() { return rawFinishReason; }
+        public Usage getUsage() { return usage; }
+        public List<JsonNode> getWarnings() { return warnings; }
+        public String getReasoning() { return reasoning; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
+        public ResponseMetadata getResponse() { return response; }
+        public GenerateTextResult getRaw() { return raw; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private JsonNode object = emptyObject();
+            private FinishReason finishReason = new FinishReason();
+            private String rawFinishReason;
+            private Usage usage = new Usage();
+            private List<JsonNode> warnings = new ArrayList<>();
+            private String reasoning;
+            private JsonNode providerMetadata;
+            private ResponseMetadata response = new ResponseMetadata();
+            private GenerateTextResult raw = new GenerateTextResult();
+
+            public Builder object(JsonNode v) { this.object = v; return this; }
+            public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
+            public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
+            public Builder usage(Usage v) { this.usage = v; return this; }
+            public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
+            public Builder reasoning(String v) { this.reasoning = v; return this; }
+            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+            public Builder response(ResponseMetadata v) { this.response = v; return this; }
+            public Builder raw(GenerateTextResult v) { this.raw = v; return this; }
+
+            public GenerateObjectResult build() {
+                return new GenerateObjectResult(object, finishReason, rawFinishReason, usage, warnings,
+                    reasoning, providerMetadata, response, raw);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GenerateObjectResult)) return false;
+            GenerateObjectResult that = (GenerateObjectResult) o;
+            return Objects.equals(object, that.object)
+                && Objects.equals(finishReason, that.finishReason)
+                && Objects.equals(rawFinishReason, that.rawFinishReason)
+                && Objects.equals(usage, that.usage)
+                && Objects.equals(warnings, that.warnings)
+                && Objects.equals(reasoning, that.reasoning)
+                && Objects.equals(providerMetadata, that.providerMetadata)
+                && Objects.equals(response, that.response)
+                && Objects.equals(raw, that.raw);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(object, finishReason, rawFinishReason, usage, warnings,
+                reasoning, providerMetadata, response, raw);
+        }
+    }
+
+    /**
+     * Aggregated result of {@code stream_text().consume()} (M11). Mirrors
+     * {@code GenerateTextResult}'s user-facing fields (without {@code raw},
+     * since streaming has no {@code GenerateResult} equivalent).
+     *
+     * Mirrors {@code StreamTextResultAggregated.ts}. reasoning/sources/files use
+     * weak types ({@link JsonNode}) — same strategy as {@link GenerateTextResult}.
+     */
+    public static class StreamTextResultAggregated {
+        @JsonProperty("text") private String text = "";
+        @JsonProperty("reasoning") private List<JsonNode> reasoning = new ArrayList<>();
+        @JsonProperty("reasoning_text") private String reasoningText = "";
+        @JsonProperty("tool_calls") private List<ToolCall> toolCalls = new ArrayList<>();
+        @JsonProperty("sources") private List<JsonNode> sources = new ArrayList<>();
+        @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
+        @JsonProperty("finish_reason") private FinishReason finishReason = new FinishReason();
+        @JsonProperty("raw_finish_reason") private String rawFinishReason;
+        @JsonProperty("usage") private Usage usage = new Usage();
+        @JsonProperty("total_usage") private Usage totalUsage = new Usage();
+        @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
+        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("response") private ResponseMetadata response;
+        @JsonProperty("response_messages") private List<ModelMessage> responseMessages = new ArrayList<>();
+
+        @JsonCreator
+        StreamTextResultAggregated() {}
+
+        private StreamTextResultAggregated(String text, List<JsonNode> reasoning, String reasoningText,
+                                           List<ToolCall> toolCalls, List<JsonNode> sources, List<JsonNode> files,
+                                           FinishReason finishReason, String rawFinishReason, Usage usage,
+                                           Usage totalUsage, List<JsonNode> warnings, JsonNode providerMetadata,
+                                           ResponseMetadata response, List<ModelMessage> responseMessages) {
+            this.text = text;
+            this.reasoning = reasoning;
+            this.reasoningText = reasoningText;
+            this.toolCalls = toolCalls;
+            this.sources = sources;
+            this.files = files;
+            this.finishReason = finishReason;
+            this.rawFinishReason = rawFinishReason;
+            this.usage = usage;
+            this.totalUsage = totalUsage;
+            this.warnings = warnings;
+            this.providerMetadata = providerMetadata;
+            this.response = response;
+            this.responseMessages = responseMessages;
+        }
+
+        public String getText() { return text; }
+        public List<JsonNode> getReasoning() { return reasoning; }
+        public String getReasoningText() { return reasoningText; }
+        public List<ToolCall> getToolCalls() { return toolCalls; }
+        public List<JsonNode> getSources() { return sources; }
+        public List<JsonNode> getFiles() { return files; }
+        public FinishReason getFinishReason() { return finishReason; }
+        public String getRawFinishReason() { return rawFinishReason; }
+        public Usage getUsage() { return usage; }
+        public Usage getTotalUsage() { return totalUsage; }
+        public List<JsonNode> getWarnings() { return warnings; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
+        public ResponseMetadata getResponse() { return response; }
+        public List<ModelMessage> getResponseMessages() { return responseMessages; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String text = "";
+            private List<JsonNode> reasoning = new ArrayList<>();
+            private String reasoningText = "";
+            private List<ToolCall> toolCalls = new ArrayList<>();
+            private List<JsonNode> sources = new ArrayList<>();
+            private List<JsonNode> files = new ArrayList<>();
+            private FinishReason finishReason = new FinishReason();
+            private String rawFinishReason;
+            private Usage usage = new Usage();
+            private Usage totalUsage = new Usage();
+            private List<JsonNode> warnings = new ArrayList<>();
+            private JsonNode providerMetadata;
+            private ResponseMetadata response;
+            private List<ModelMessage> responseMessages = new ArrayList<>();
+
+            public Builder text(String v) { this.text = v; return this; }
+            public Builder reasoning(List<JsonNode> v) { this.reasoning = v; return this; }
+            public Builder reasoningText(String v) { this.reasoningText = v; return this; }
+            public Builder toolCalls(List<ToolCall> v) { this.toolCalls = v; return this; }
+            public Builder sources(List<JsonNode> v) { this.sources = v; return this; }
+            public Builder files(List<JsonNode> v) { this.files = v; return this; }
+            public Builder finishReason(FinishReason v) { this.finishReason = v; return this; }
+            public Builder rawFinishReason(String v) { this.rawFinishReason = v; return this; }
+            public Builder usage(Usage v) { this.usage = v; return this; }
+            public Builder totalUsage(Usage v) { this.totalUsage = v; return this; }
+            public Builder warnings(List<JsonNode> v) { this.warnings = v; return this; }
+            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+            public Builder response(ResponseMetadata v) { this.response = v; return this; }
+            public Builder responseMessages(List<ModelMessage> v) { this.responseMessages = v; return this; }
+
+            public StreamTextResultAggregated build() {
+                return new StreamTextResultAggregated(text, reasoning, reasoningText, toolCalls,
+                    sources, files, finishReason, rawFinishReason, usage, totalUsage, warnings,
+                    providerMetadata, response, responseMessages);
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof StreamTextResultAggregated)) return false;
+            StreamTextResultAggregated that = (StreamTextResultAggregated) o;
+            return Objects.equals(text, that.text)
+                && Objects.equals(reasoning, that.reasoning)
+                && Objects.equals(reasoningText, that.reasoningText)
+                && Objects.equals(toolCalls, that.toolCalls)
+                && Objects.equals(sources, that.sources)
+                && Objects.equals(files, that.files)
+                && Objects.equals(finishReason, that.finishReason)
+                && Objects.equals(rawFinishReason, that.rawFinishReason)
+                && Objects.equals(usage, that.usage)
+                && Objects.equals(totalUsage, that.totalUsage)
+                && Objects.equals(warnings, that.warnings)
+                && Objects.equals(providerMetadata, that.providerMetadata)
+                && Objects.equals(response, that.response)
+                && Objects.equals(responseMessages, that.responseMessages);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(text, reasoning, reasoningText, toolCalls, sources, files,
+                finishReason, rawFinishReason, usage, totalUsage, warnings, providerMetadata,
+                response, responseMessages);
         }
     }
 

@@ -64,6 +64,47 @@ func (m *Model) Generate(prompt any, opts *GenerateTextOptions) (*GenerateTextRe
 	return ParseGenerateTextResult(resultJSON)
 }
 
+// GenerateObj is the typed object-generation method (M12, RFC-0016).
+//
+// Same signature as Generate; returns a typed *GenerateObjectResult. Pass
+// response_format: { "Json": { ... } } via opts for schema control; the
+// engine applies JSON repair before parsing.
+func (m *Model) GenerateObj(prompt any, opts *GenerateTextOptions) (*GenerateObjectResult, error) {
+	promptJSON, err := marshalPrompt(prompt)
+	if err != nil {
+		return nil, err
+	}
+	optsJSON, err := MarshalOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	resultJSON, err := m.GenerateObject(promptJSON, optsJSON)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGenerateObjectResult(resultJSON)
+}
+
+// ConsumeStream is the typed stream-aggregation method (M11, RFC-0016).
+//
+// Drives stream_text to completion and returns the aggregated
+// *StreamTextResultAggregated (the fully-consumed stream summary).
+func (m *Model) ConsumeStream(prompt any, opts *GenerateTextOptions) (*StreamTextResultAggregated, error) {
+	promptJSON, err := marshalPrompt(prompt)
+	if err != nil {
+		return nil, err
+	}
+	optsJSON, err := MarshalOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	resultJSON, err := m.ConsumeStreamText(promptJSON, optsJSON)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamTextResultAggregated(resultJSON)
+}
+
 // TypedStream is a handle to an in-progress typed stream.
 // Consume parts via Parts(); each part is a parsed *StreamPart.
 type TypedStream struct {

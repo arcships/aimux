@@ -362,6 +362,69 @@ public class Model implements Closeable {
     }
 
     /**
+     * Generate a structured JSON object (M12, RFC-0016).
+     *
+     * <p>Same signature as {@link #generateText}; returns a JSON-serialized
+     * {@code GenerateObjectResult}. Pass {@code response_format: { "Json": { ... } }}
+     * via {@code optsJson} for schema control; the engine applies JSON repair
+     * before parsing.
+     *
+     * @param promptJson JSON prompt string (bare value or {@code {"prompt": ...}}).
+     * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
+     * @return JSON-serialized GenerateObjectResult.
+     * @throws AimuxException on engine / transport failure.
+     */
+    public String generateObject(String promptJson, String optsJson) {
+        lock.readLock().lock();
+        try {
+            long h = requireHandleLocked();
+            AimuxCError err = AimuxResult.newError();
+            return AimuxResult.extractString(
+                AimuxFFI.INSTANCE.aimux_generate_object(h, promptJson, optsJson, err),
+                err,
+                "generate_object");
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /** Generate a structured JSON object with default options. */
+    public String generateObject(String promptJson) {
+        return generateObject(promptJson, null);
+    }
+
+    /**
+     * Consume a stream to completion and return the aggregated result
+     * (M11, RFC-0016). Synchronous (blocks until the stream finishes).
+     *
+     * <p>Same signature as {@link #generateText}; returns a JSON-serialized
+     * {@code StreamTextResultAggregated}.
+     *
+     * @param promptJson JSON prompt string (bare value or {@code {"prompt": ...}}).
+     * @param optsJson   Optional JSON-serialized options, or {@code null} for defaults.
+     * @return JSON-serialized StreamTextResultAggregated.
+     * @throws AimuxException on engine / transport failure.
+     */
+    public String consumeStreamText(String promptJson, String optsJson) {
+        lock.readLock().lock();
+        try {
+            long h = requireHandleLocked();
+            AimuxCError err = AimuxResult.newError();
+            return AimuxResult.extractString(
+                AimuxFFI.INSTANCE.aimux_consume_stream_text(h, promptJson, optsJson, err),
+                err,
+                "consume_stream_text");
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /** Consume a stream to completion with default options. */
+    public String consumeStreamText(String promptJson) {
+        return consumeStreamText(promptJson, null);
+    }
+
+    /**
      * Stream text from the model. Blocks the calling thread until the stream
      * completes (same contract as the Kotlin/Go bindings).
      *

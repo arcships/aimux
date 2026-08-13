@@ -49,6 +49,7 @@ from .aimux import (
     recording_flush,
     mock_replay,
     register_providers,
+    init_proxy,
     EmbeddingModel,
     SpeechModel,
     ImageModel,
@@ -111,6 +112,7 @@ __all__ = [
     "recording_flush",
     "mock_replay",
     "register_providers",
+    "init_proxy",
     "EmbeddingModel",
     "SpeechModel",
     "ImageModel",
@@ -131,6 +133,8 @@ __all__ = [
     "google_video",
     "tavily_search",
     "generate_text",
+    "generate_object",
+    "consume_stream_text",
     "stream_text",
     "generate_text_as_openai",
     "stream_text_as_openai",
@@ -236,6 +240,57 @@ def generate_text(
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
     result_json = model.generate_text(prompt_json, opts_json)
+    return json.loads(result_json)
+
+
+def generate_object(
+    model: Model,
+    prompt: Union[str, List[Dict[str, Any]]],
+    options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Generate a structured JSON object from the model (M12, RFC-0016).
+
+    Same signature as ``generate_text``. Pass
+    ``response_format: {"Json": {...}}`` via options for schema control; the
+    function applies JSON repair before parsing.
+
+    Args:
+        model: A model instance from openai(), anthropic(), etc.
+        prompt: A string or a list of message dicts.
+        options: Optional generation options (incl. response_format).
+
+    Returns:
+        Dict with keys: object, finish_reason, raw_finish_reason, usage,
+        warnings, reasoning, provider_metadata, response, raw.
+    """
+    prompt_json = _prompt_to_json(prompt)
+    opts_json = _opts_to_json(options)
+    result_json = model.generate_object(prompt_json, opts_json)
+    return json.loads(result_json)
+
+
+def consume_stream_text(
+    model: Model,
+    prompt: Union[str, List[Dict[str, Any]]],
+    options: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Consume a stream to completion and return the aggregated result
+    (M11, RFC-0016).
+
+    Drives ``stream_text`` to completion and returns the aggregated
+    ``StreamTextResultAggregated`` dict (the fully-consumed stream summary).
+
+    Args:
+        model: A model instance from openai(), anthropic(), etc.
+        prompt: A string or a list of message dicts.
+        options: Optional generation options.
+
+    Returns:
+        Dict with the aggregated stream result.
+    """
+    prompt_json = _prompt_to_json(prompt)
+    opts_json = _opts_to_json(options)
+    result_json = model.consume_stream_text(prompt_json, opts_json)
     return json.loads(result_json)
 
 

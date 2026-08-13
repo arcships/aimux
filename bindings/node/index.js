@@ -727,6 +727,7 @@ module.exports.googleEmbedding = nativeBinding.googleEmbedding
 module.exports.googleImage = nativeBinding.googleImage
 module.exports.googleVideo = nativeBinding.googleVideo
 module.exports.initLogging = nativeBinding.initLogging
+module.exports.initProxy = nativeBinding.initProxy
 module.exports.initRecording = nativeBinding.initRecording
 module.exports.initRecordingRing = nativeBinding.initRecordingRing
 module.exports.initSessionInfer = nativeBinding.initSessionInfer

@@ -320,6 +320,23 @@ func RegisterProviders(configJSON string) error {
 	return nil
 }
 
+// InitProxy sets the global proxy configuration (M6, RFC-0016). Must be called
+// before the first GenerateText / StreamText call; a no-op if the shared HTTP
+// client is already initialised. configJSON shape:
+// { "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy": "..." }
+// (all fields optional).
+func InitProxy(configJSON string) error {
+	cJSON := C.CString(configJSON)
+	defer C.free(unsafe.Pointer(cJSON))
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
+	rc := C.aimux_init_proxy(cJSON, &cerr)
+	if rc == 0 {
+		return errorFromC(&cerr)
+	}
+	return nil
+}
+
 // Anthropic creates an Anthropic model instance, panicking on failure.
 func Anthropic(apiKey, modelID string) *Model {
 	return mustNew(NewAnthropic(apiKey, modelID))
@@ -669,6 +686,60 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 
 	return ffiString(func(cerr *C.AimuxError) *C.char {
 		return C.aimux_generate_text(C.uint64_t(handle), cPrompt, cOpts, cerr)
+	})
+}
+
+// GenerateObject generates a structured JSON object (M12, RFC-0016).
+//
+// Same signature as GenerateText; returns the JSON-serialized
+// GenerateObjectResult. Pass response_format: { "Json": { ... } } via
+// optsJson for schema control; the function applies JSON repair before
+// parsing.
+func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
+	handle, release, err := m.acquireHandle()
+	if err != nil {
+		return "", err
+	}
+	defer release()
+
+	cPrompt := C.CString(promptJson)
+	defer C.free(unsafe.Pointer(cPrompt))
+
+	var cOpts *C.char
+	if optsJson != "" {
+		cOpts = C.CString(optsJson)
+		defer C.free(unsafe.Pointer(cOpts))
+	}
+
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return C.aimux_generate_object(C.uint64_t(handle), cPrompt, cOpts, cerr)
+	})
+}
+
+// ConsumeStreamText consumes a stream to completion and returns the
+// aggregated result (M11, RFC-0016). Synchronous (blocks until the stream
+// finishes).
+//
+// Same signature as GenerateText; returns the JSON-serialized
+// StreamTextResultAggregated.
+func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
+	handle, release, err := m.acquireHandle()
+	if err != nil {
+		return "", err
+	}
+	defer release()
+
+	cPrompt := C.CString(promptJson)
+	defer C.free(unsafe.Pointer(cPrompt))
+
+	var cOpts *C.char
+	if optsJson != "" {
+		cOpts = C.CString(optsJson)
+		defer C.free(unsafe.Pointer(cOpts))
+	}
+
+	return ffiString(func(cerr *C.AimuxError) *C.char {
+		return C.aimux_consume_stream_text(C.uint64_t(handle), cPrompt, cOpts, cerr)
 	})
 }
 

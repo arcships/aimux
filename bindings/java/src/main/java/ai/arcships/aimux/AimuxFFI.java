@@ -113,6 +113,12 @@ public interface AimuxFFI extends Library {
     /** @return JSON result string (caller MUST free with {@link #aimux_free_string}); NULL on failure. */
     Pointer aimux_generate_text(long handle, String promptJson, String optsJson, AimuxCError err);
 
+    /** @return JSON GenerateObjectResult string (caller MUST free); NULL on failure. */
+    Pointer aimux_generate_object(long handle, String promptJson, String optsJson, AimuxCError err);
+
+    /** @return JSON StreamTextResultAggregated string (caller MUST free); NULL on failure. */
+    Pointer aimux_consume_stream_text(long handle, String promptJson, String optsJson, AimuxCError err);
+
     /**
      * Push streaming with callbacks; blocks until the stream ends.
      * @return non-zero on success; 0 on failure (details in {@code err}).
@@ -242,4 +248,7 @@ public interface AimuxFFI extends Library {
 
     /** Register external OpenAI-compatible providers from JSON config (RFC-0020). Returns 1 on success, 0 on failure (fills {@code err}). */
     int aimux_register_providers(String configJson, AimuxCError err);
+
+    /** Set the global proxy configuration (M6, RFC-0016). Returns 1 on success, 0 on failure (fills {@code err}). */
+    int aimux_init_proxy(String configJson, AimuxCError err);
 }

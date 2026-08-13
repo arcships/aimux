@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 aimux-core = { path = "../../aimux-core" }
 aimux-providers = { path = "../../aimux-providers" }
+aimux-provider-utils = { path = "../../aimux-provider-utils" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }

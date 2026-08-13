@@ -54,8 +54,9 @@ pub mod prelude {
     pub use crate::error::{AiMuxError, ApiCallError};
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
     pub use crate::generate::{
-        GenerateTextOptions, GenerateTextResult, StreamTextResult, generate_text,
-        generate_text_as_openai, stream_text, stream_text_as_openai,
+        GenerateObjectResult, GenerateTextOptions, GenerateTextResult, StreamTextResult,
+        generate_object, generate_text, generate_text_as_openai, stream_text,
+        stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult};
     pub use crate::language_model::LanguageModel;

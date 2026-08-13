@@ -16,7 +16,8 @@ use std::sync::Arc;
 use crate::error::to_py_err;
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+    GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
+    stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -137,6 +138,52 @@ impl Model {
 
         let rt = runtime();
         let result = rt.block_on(async move { generate_text(&*self.inner, prompt, opts).await });
+
+        match result {
+            Ok(r) => serde_json::to_string(&r)
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
+        }
+    }
+
+    /// Generate a structured JSON object from the model (M12, RFC-0016).
+    ///
+    /// prompt_json: JSON string (bare prompt or {"prompt": ...})
+    /// opts_json: optional JSON-serialized GenerateTextOptions
+    /// Returns JSON-serialized GenerateObjectResult. Pass
+    /// `response_format: { "Json": { ... } }` via opts_json for schema
+    /// control; the function applies JSON repair before parsing.
+    #[pyo3(signature = (prompt_json, opts_json=None))]
+    fn generate_object(&self, prompt_json: &str, opts_json: Option<&str>) -> PyResult<String> {
+        let prompt = parse_prompt(prompt_json)?;
+        let opts = parse_opts(opts_json)?;
+
+        let rt = runtime();
+        let result = rt.block_on(async move { generate_object(&*self.inner, prompt, opts).await });
+
+        match result {
+            Ok(r) => serde_json::to_string(&r)
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Err(e) => Err(to_py_err(&e)),
+        }
+    }
+
+    /// Consume a stream to completion and return the aggregated result
+    /// (M11, RFC-0016).
+    ///
+    /// prompt_json: JSON string (bare prompt or {"prompt": ...})
+    /// opts_json: optional JSON-serialized GenerateTextOptions
+    /// Returns JSON-serialized StreamTextResultAggregated.
+    #[pyo3(signature = (prompt_json, opts_json=None))]
+    fn consume_stream_text(&self, prompt_json: &str, opts_json: Option<&str>) -> PyResult<String> {
+        let prompt = parse_prompt(prompt_json)?;
+        let opts = parse_opts(opts_json)?;
+
+        let rt = runtime();
+        let result = rt.block_on(async move {
+            let stream_result = stream_text(&*self.inner, prompt, opts).await?;
+            stream_result.consume().await
+        });
 
         match result {
             Ok(r) => serde_json::to_string(&r)
@@ -704,6 +751,27 @@ fn register_providers(config_json: &str) -> PyResult<()> {
     aimux_providers::load_providers_from_json(config_json).map_err(|e| to_py_err(&e))
 }
 
+/// Set the global proxy configuration (M6, RFC-0016). Must be called before the
+/// first `generate_text` / `stream_text` call; a no-op if the shared HTTP
+/// client is already initialised.
+///
+/// `config_json` shape: `{ "http_url": "...", "https_url": "...", "all_url":
+/// "...", "no_proxy": "..." }` (all fields optional). Raises `AimuxError` on
+/// invalid JSON.
+#[pyfunction]
+fn init_proxy(config: &str) -> PyResult<()> {
+    let proxy_config: aimux_provider_utils::ProxyConfig =
+        serde_json::from_str(config).map_err(|e| {
+            to_py_err(&AiMuxError::InvalidArgument(format!(
+                "invalid proxy config JSON: {e}"
+            )))
+        })?;
+    // `init_proxy` returns false when the shared client is already up; treat
+    // that as success (idempotent).
+    let _ = aimux_provider_utils::init_proxy(proxy_config);
+    Ok(())
+}
+
 /// Register the global session store (RFC-0024). Replaces any previous one.
 /// Until called, calls are not grouped and the query functions return empty
 /// results.
@@ -840,6 +908,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(recording_flush, m)?)?;
     m.add_function(wrap_pyfunction!(mock_replay, m)?)?;
     m.add_function(wrap_pyfunction!(register_providers, m)?)?;
+    m.add_function(wrap_pyfunction!(init_proxy, m)?)?;
     m.add_function(wrap_pyfunction!(openai, m)?)?;
     m.add_function(wrap_pyfunction!(anthropic, m)?)?;
     m.add_function(wrap_pyfunction!(deepseek, m)?)?;
