@@ -167,8 +167,7 @@ impl ImageModel for OpenAIImageModel {
             )
             .await?;
 
-            let val: Value =
-                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let val: Value = serde_json::from_slice(&resp.body)?;
             (val, resp.headers, None)
         } else {
             // ── Generation path: JSON body ──
@@ -191,8 +190,7 @@ impl ImageModel for OpenAIImageModel {
             )
             .await?;
 
-            let val: Value =
-                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let val: Value = serde_json::from_slice(&resp.body)?;
             (val, resp.headers, Some(Value::Object(body)))
         };
 

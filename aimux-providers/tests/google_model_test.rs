@@ -1476,10 +1476,8 @@ mod error_handling {
             .await
             .expect_err("should error");
 
-        match err {
-            AiMuxError::Auth(msg) => assert_eq!(msg, "API key not valid."),
-            other => panic!("expected Auth, got {:?}", other),
-        }
+        assert_eq!(err.status_code(), Some(401), "got {err:?}");
+        assert!(err.to_string().contains("API key not valid."));
     }
 
     // ── should surface 404 as ModelNotFound ───────────────────────────────────
@@ -1510,12 +1508,8 @@ mod error_handling {
             .await
             .expect_err("should error");
 
-        match err {
-            AiMuxError::ModelNotFound(msg) => {
-                assert!(msg.contains("not found"), "msg was: {}", msg)
-            }
-            other => panic!("expected ModelNotFound, got {:?}", other),
-        }
+        assert_eq!(err.status_code(), Some(404), "got {err:?}");
+        assert!(err.to_string().contains("not found"));
     }
 
     // ── should surface 429 as RateLimited ─────────────────────────────────────
@@ -1546,7 +1540,7 @@ mod error_handling {
             .await
             .expect_err("should error");
 
-        assert!(matches!(err, AiMuxError::RateLimited { .. }));
+        assert!(matches!(err, ref e if e.status_code() == Some(429)));
     }
 
     // ── should surface 500 as Provider ────────────────────────────────────────
@@ -1578,7 +1572,7 @@ mod error_handling {
             .expect_err("should error");
 
         match err {
-            AiMuxError::Provider(msg) => assert!(msg.contains("Internal error")),
+            AiMuxError::ApiCall(d) => assert!(d.to_string().contains("Internal error")),
             other => panic!("expected Provider, got {:?}", other),
         }
     }
@@ -1606,7 +1600,7 @@ mod error_handling {
             .await
             .expect_err("should error");
 
-        assert!(matches!(err, AiMuxError::Auth(_)));
+        assert!(matches!(err, ref e if e.status_code() == Some(401)));
     }
 
     // ── should surface 400 as Provider ───────────────────────────────────────
@@ -1629,7 +1623,8 @@ mod error_handling {
             .await
             .expect_err("should error");
         match err {
-            AiMuxError::Provider(msg) => {
+            AiMuxError::ApiCall(msg_d) => {
+                let msg = msg_d.to_string();
                 assert!(msg.contains("Invalid request"), "msg was: {}", msg)
             }
             other => panic!("expected Provider, got {:?}", other),
@@ -1656,7 +1651,8 @@ mod error_handling {
             .await
             .expect_err("should error");
         match err {
-            AiMuxError::Provider(msg) => {
+            AiMuxError::ApiCall(msg_d) => {
+                let msg = msg_d.to_string();
                 assert!(msg.contains("Permission denied"), "msg was: {}", msg)
             }
             other => panic!("expected Provider, got {:?}", other),
@@ -1686,7 +1682,8 @@ mod error_handling {
             .await
             .expect_err("should error");
         match err {
-            AiMuxError::Provider(msg) => {
+            AiMuxError::ApiCall(msg_d) => {
+                let msg = msg_d.to_string();
                 assert!(msg.contains("Internal error"), "msg was: {}", msg)
             }
             other => panic!("expected Provider, got {:?}", other),
@@ -1715,7 +1712,7 @@ mod error_handling {
             .do_stream(&default_options(test_prompt()))
             .await
             .expect_err("should error");
-        assert!(matches!(err, AiMuxError::ModelNotFound(_)));
+        assert!(matches!(err, ref e if e.status_code() == Some(404)));
     }
 }
 // ════════════════════════════════════════════════════════════════════════════

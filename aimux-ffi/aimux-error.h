@@ -4,7 +4,7 @@
  * Transport: fallible calls use return-value sentinels (0 / NULL) for success
  * or failure. Optional details go through AimuxError *err (NULL = discard).
  *
- * Modeling: flat error codes (18 AiMuxError variants + OK + UNKNOWN) and one
+ * Modeling: flat error codes (13 AiMuxError variants + OK + UNKNOWN) and one
  * plain 40-byte struct. Check the function return value first; only then read
  * *err. On failure the callee overwrites every field and allocates `message`;
  * the caller owns it and must release it with aimux_free_string(). On success
@@ -21,31 +21,26 @@ extern "C" {
 #endif
 
 /**
- * Machine-readable codes. Append-only: never renumber existing values.
- * AIMUX_OK / AIMUX_E_UNKNOWN are C-side sentinels; 2..19 mirror aimux-core's
- * 18 AiMuxError variants in declaration order.
+ * Machine-readable codes. Values 2..14 map to aimux-core's 13 current
+ * AiMuxError variants, numbered consecutively; 1 (UNKNOWN) is the
+ * FFI-only fallback for errors with no core variant.
  */
 typedef enum AimuxErrorCode {
     AIMUX_OK = 0,
     AIMUX_E_UNKNOWN = 1,
-    AIMUX_E_PROVIDER = 2,
-    AIMUX_E_HTTP = 3,
-    AIMUX_E_JSON = 4,
-    AIMUX_E_STREAM = 5,
-    AIMUX_E_TOOL = 6,
-    AIMUX_E_INVALID_ARGUMENT = 7,
-    AIMUX_E_INVALID_PROMPT = 8,
-    AIMUX_E_RATE_LIMITED = 9,
-    AIMUX_E_AUTH = 10,
-    AIMUX_E_TOKEN_EXPIRED = 11,
-    AIMUX_E_MODEL_NOT_FOUND = 12,
-    AIMUX_E_UNSUPPORTED = 13,
-    AIMUX_E_NO_SUCH_MODEL = 14,
-    AIMUX_E_UNKNOWN_PROVIDER = 15,
-    AIMUX_E_API_CALL = 16,
-    AIMUX_E_TIMEOUT = 17,
-    AIMUX_E_ABORTED = 18,
-    AIMUX_E_OTHER = 19
+    AIMUX_E_JSON_PARSE = 2,
+    AIMUX_E_INVALID_RESPONSE_DATA = 3,
+    AIMUX_E_TOOL = 4,
+    AIMUX_E_INVALID_ARGUMENT = 5,
+    AIMUX_E_INVALID_PROMPT = 6,
+    AIMUX_E_TOKEN_EXPIRED = 7,
+    AIMUX_E_UNSUPPORTED_FUNCTIONALITY = 8,
+    AIMUX_E_NO_SUCH_MODEL = 9,
+    AIMUX_E_NO_SUCH_PROVIDER = 10,
+    AIMUX_E_API_CALL = 11,
+    AIMUX_E_TIMEOUT = 12,
+    AIMUX_E_ABORTED = 13,
+    AIMUX_E_OTHER = 14
 } AimuxErrorCode;
 
 /**
@@ -54,10 +49,10 @@ typedef enum AimuxErrorCode {
  *
  * On failure: code != AIMUX_OK; message is a non-empty NUL-terminated UTF-8
  * string allocated by aimux — release it with aimux_free_string(). status is
- * the HTTP status or -1; retry_ms is the RateLimited hint or -1 (0 = retry
+ * the HTTP status or -1; retry_ms is the retry hint or -1 (0 = retry
  * now). error_value is the lossless machine-readable form of the source
  * error — the externally-tagged JSON of aimux-core's AiMuxError, e.g.
- * {"RateLimited":{"retry_after_ms":1500,"message":"..."}} — or NULL when the
+ * {"ApiCall":{"status_code":401,"message":"..."}} — or NULL when the
  * failure was synthesized at the FFI boundary (bad argument, invalid handle)
  * and has no core error value. Release it with aimux_free_string() too.
  *

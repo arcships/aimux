@@ -1,6 +1,6 @@
 //! Map `aimux_core::AiMuxError` into a real JS `Error` with properties.
 //!
-//! Native sets `name` to the subclass (`AuthenticationError`, …), plus
+//! Native sets `name` to the subclass (`APICallError`, …), plus
 //! `message` / `status` / `retryMs`. The TS layer (`error.ts`) rehydrates into
 //! the matching class so callers use `instanceof`.
 //!
@@ -23,8 +23,16 @@ pub struct MappedError {
     pub message: String,
     pub status: i32,
     pub retry_ms: i64,
+    /// Stored retry verdict (`ApiCallError::is_retryable`).
+    pub retryable: bool,
+    /// Provider's machine-readable error code (`ApiCallError::provider_code`).
+    pub provider_code: Option<String>,
+    /// Provider-assigned request id (`ApiCallError::request_id`).
+    pub request_id: Option<String>,
+    /// Raw response body, verbatim (`ApiCallError::response_body`).
+    pub response_body: Option<String>,
     /// Lossless externally-tagged serde JSON of the source `AiMuxError`
-    /// (e.g. `{"RateLimited":{...}}`); `None` if serialization failed.
+    /// (e.g. `{"ApiCall":{...}}`); `None` if serialization failed.
     pub error_value: Option<String>,
 }
 
@@ -36,11 +44,34 @@ impl std::fmt::Display for MappedError {
 
 impl From<&AiMuxError> for MappedError {
     fn from(e: &AiMuxError) -> Self {
+        let detail = match e {
+            AiMuxError::ApiCall(d) => Some(d),
+            _ => None,
+        };
+        let code = match e {
+            AiMuxError::ApiCall(_) => "ApiCall",
+            AiMuxError::JsonParse(_) => "JsonParse",
+            AiMuxError::InvalidResponseData(_) => "InvalidResponseData",
+            AiMuxError::Tool(_) => "Tool",
+            AiMuxError::InvalidArgument(_) => "InvalidArgument",
+            AiMuxError::InvalidPrompt(_) => "InvalidPrompt",
+            AiMuxError::TokenExpired(_) => "TokenExpired",
+            AiMuxError::UnsupportedFunctionality(_) => "UnsupportedFunctionality",
+            AiMuxError::NoSuchModel { .. } => "NoSuchModel",
+            AiMuxError::NoSuchProvider { .. } => "NoSuchProvider",
+            AiMuxError::Timeout(_) => "Timeout",
+            AiMuxError::Aborted => "Aborted",
+            AiMuxError::Other(_) => "Other",
+        };
         Self {
-            code: e.error_type().to_string(),
+            code: code.to_string(),
             message: e.to_string(),
             status: e.status_code().map(i32::from).unwrap_or(-1),
             retry_ms: e.retry_after_hint().unwrap_or(-1),
+            retryable: e.is_retryable(),
+            provider_code: detail.and_then(|d| d.provider_code.clone()),
+            request_id: detail.and_then(|d| d.request_id.clone()),
+            response_body: detail.and_then(|d| d.response_body.clone()),
             error_value: serde_json::to_string(e).ok(),
         }
     }
@@ -49,21 +80,16 @@ impl From<&AiMuxError> for MappedError {
 /// JS `Error.name` for each core variant (matches `bindings/node/src/error.ts`).
 fn error_class_name(code: &str) -> &'static str {
     match code {
-        "Provider" => "ProviderError",
-        "Http" => "HttpError",
-        "Json" => "JsonError",
-        "Stream" => "StreamError",
+        "ApiCall" => "APICallError",
+        "JsonParse" => "JSONParseError",
+        "InvalidResponseData" => "InvalidResponseDataError",
         "Tool" => "ToolError",
         "InvalidArgument" => "InvalidArgumentError",
         "InvalidPrompt" => "InvalidPromptError",
-        "RateLimited" => "RateLimitedError",
-        "Auth" => "AuthenticationError",
         "TokenExpired" => "TokenExpiredError",
-        "ModelNotFound" => "ModelNotFoundError",
-        "Unsupported" => "UnsupportedError",
+        "UnsupportedFunctionality" => "UnsupportedFunctionalityError",
         "NoSuchModel" => "NoSuchModelError",
-        "UnknownProvider" => "UnknownProviderError",
-        "ApiCall" => "APICallError",
+        "NoSuchProvider" => "NoSuchProviderError",
         "Timeout" => "TimeoutError",
         "Aborted" => "RequestAbortedError",
         "Other" => "OtherError",
@@ -107,10 +133,20 @@ pub(crate) fn create_throwable(env: &Env, m: &MappedError) -> NapiResult<Error> 
     )?;
 
     let mut obj = Object::from_raw(env_raw, js_error);
-    // Class name for TS rehydrate (`AuthenticationError`, `RateLimitedError`, …).
+    // Class name for TS rehydrate (`APICallError`, `TokenExpiredError`, …).
     obj.set("name", error_class_name(&m.code))?;
     obj.set("status", m.status)?;
     obj.set("retryMs", m.retry_ms)?;
+    obj.set("retryable", m.retryable)?;
+    if let Some(pc) = &m.provider_code {
+        obj.set("providerCode", pc.as_str())?;
+    }
+    if let Some(rid) = &m.request_id {
+        obj.set("requestId", rid.as_str())?;
+    }
+    if let Some(rb) = &m.response_body {
+        obj.set("responseBody", rb.as_str())?;
+    }
     if let Some(ev) = &m.error_value {
         obj.set("errorValue", ev.as_str())?;
     }

@@ -62,7 +62,7 @@ with `aimux_error_clear` (or `= {0}`) before first use.
 typedef struct AimuxError {
     AimuxErrorCode code;   /* switch on this */
     int status;            /* HTTP status, or -1 */
-    int64_t retry_ms;      /* RateLimited hint, or -1; 0 = retry now */
+    int64_t retry_ms;      /* ApiCall retry hint (retry_after_ms), or -1; 0 = retry now */
     char *message;         /* owned; free with aimux_free_string */
     char *error_value;     /* owned; lossless AiMuxError JSON, or NULL */
     void *reserved[1];     /* future ABI room; always zero */
@@ -71,14 +71,15 @@ typedef struct AimuxError {
 
 `error_value` carries the machine-readable source error — the
 externally-tagged JSON of aimux-core's `AiMuxError`, e.g.
-`{"RateLimited":{"retry_after_ms":1500,"message":"quota"}}`. It is NULL when
+`{"ApiCall":{"status_code":429,"retry_after_ms":1500,"message":"quota"}}`. It is NULL when
 the failure was synthesized at the FFI boundary (bad argument, invalid
 handle). Free it with `aimux_free_string` like `message`.
 
 Internal panics abort the process (the workspace builds with `panic=abort`).
 
-Codes: `AIMUX_OK`, `AIMUX_E_UNKNOWN`, plus **18** values mirroring
-`aimux-core::AiMuxError` (`AIMUX_E_PROVIDER` … `AIMUX_E_OTHER`). The enum is
+Codes: `AIMUX_OK`, `AIMUX_E_UNKNOWN`, plus **13** values mirroring
+`aimux-core::AiMuxError` (`AIMUX_E_JSON_PARSE=2` … `AIMUX_E_OTHER=14`,
+numbered consecutively). The enum is
 append-only; always handle `default` / `AIMUX_E_UNKNOWN`.
 
 ### Quick start
@@ -115,11 +116,16 @@ aimux_drop_handle(handle);
 ```c
 if (!handle) {
     switch (err.code) {
-    case AIMUX_E_RATE_LIMITED:
-        /* use err.retry_ms */
+    case AIMUX_E_API_CALL:
+        /* every HTTP-shaped failure; classify on err.status */
+        if (err.status == 429) {
+            /* rate limited — use err.retry_ms */
+        } else if (err.status == 401) {
+            fprintf(stderr, "auth HTTP 401: %s\n", err.message);
+        }
         break;
-    case AIMUX_E_AUTH:
-        fprintf(stderr, "auth HTTP %d: %s\n", err.status, err.message);
+    case AIMUX_E_TOKEN_EXPIRED:
+        fprintf(stderr, "token expired (HTTP %d): %s\n", err.status, err.message);
         break;
     default:
         fprintf(stderr, "%s\n", err.message);

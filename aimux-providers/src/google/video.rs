@@ -13,14 +13,14 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::shared::Warning;
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoResponse, VideoResult,
 };
 
 use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send, sleep_or_abort};
 
 use super::GoogleConfig;
 
@@ -134,13 +134,14 @@ impl VideoModel for GoogleVideoModel {
         )
         .await?;
 
-        let predict_response: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let predict_response: Value = serde_json::from_slice(&resp.body)?;
         let operation_name = predict_response
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                AiMuxError::Provider("Google video prediction missing operation name".to_string())
+                AiMuxError::InvalidResponseData(
+                    "Google video prediction missing operation name".to_string(),
+                )
             })?
             .to_string();
 
@@ -148,7 +149,11 @@ impl VideoModel for GoogleVideoModel {
         let mut raw_body: Value;
         let mut response_headers: HashMap<String, String>;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(100),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
 
             let poll_url = self.operation_url(&operation_name);
             let resp = send(
@@ -168,16 +173,27 @@ impl VideoModel for GoogleVideoModel {
             .await?;
 
             response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-            if raw_body.get("done").and_then(|v| v.as_bool()) == Some(true) {
-                break;
-            }
+            raw_body = serde_json::from_slice(&resp.body)?;
+            // Check the in-band error first: a terminal response may carry both
+            // done:true and an error object (provider-declared failure).
             if let Some(err) = raw_body.get("error") {
                 let msg = err
                     .get("message")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown error");
-                return Err(AiMuxError::Provider(msg.to_string()));
+                return Err(AiMuxError::ApiCall(ApiCallError {
+                    status_code: Some(resp.status),
+                    provider_code: err
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    message: msg.to_string(),
+                    response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                    ..Default::default()
+                }));
+            }
+            if raw_body.get("done").and_then(|v| v.as_bool()) == Some(true) {
+                break;
             }
         }
 
@@ -200,6 +216,12 @@ impl VideoModel for GoogleVideoModel {
                     .collect()
             })
             .unwrap_or_default();
+
+        if videos.is_empty() {
+            return Err(AiMuxError::InvalidResponseData(
+                "Google video operation completed without any video output".to_string(),
+            ));
+        }
 
         Ok(VideoResult {
             videos,

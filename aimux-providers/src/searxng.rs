@@ -15,6 +15,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::provider::Provider;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
@@ -155,8 +156,12 @@ impl SearchModel for SearxngSearchModel {
             })
             .unwrap_or_default();
 
-        let mut url = url::Url::parse(&self.endpoint())
-            .map_err(|e| AiMuxError::Provider(format!("invalid searxng endpoint: {e}")))?;
+        let mut url = url::Url::parse(&self.endpoint()).map_err(|e| {
+            AiMuxError::ApiCall(ApiCallError {
+                message: format!("invalid searxng endpoint: {e}"),
+                ..Default::default()
+            })
+        })?;
         url.query_pairs_mut()
             .append_pair("q", &options.query)
             .append_pair("format", "json");
@@ -178,12 +183,9 @@ impl SearchModel for SearxngSearchModel {
         .await?;
         let response_headers = resp.headers;
 
-        let raw_body: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_body: Value = serde_json::from_slice(&resp.body)?;
 
-        let data: SearxngResponse = serde_json::from_value(raw_body.clone()).map_err(|e| {
-            AiMuxError::Provider(format!("failed to parse searxng search response: {e}"))
-        })?;
+        let data: SearxngResponse = serde_json::from_value(raw_body.clone())?;
 
         Ok(SearchResult {
             results: map_results(data.results),

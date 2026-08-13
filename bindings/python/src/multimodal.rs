@@ -63,7 +63,7 @@ impl EmbeddingModel {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -90,7 +90,7 @@ impl SpeechModel {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -117,7 +117,7 @@ impl ImageModel {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -164,7 +164,7 @@ impl TranscriptionModel {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -213,7 +213,7 @@ impl RerankingModel {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -240,7 +240,7 @@ impl VideoModel {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -275,7 +275,7 @@ impl SearchModel {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -324,7 +324,7 @@ impl Files {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }

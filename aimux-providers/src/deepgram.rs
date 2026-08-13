@@ -299,8 +299,7 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
 
         let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
 
-        let parsed: DeepgramResponse = serde_json::from_value(raw_body.clone())
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let parsed: DeepgramResponse = serde_json::from_value(raw_body.clone())?;
 
         let channel = parsed
             .results

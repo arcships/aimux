@@ -15,6 +15,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
@@ -23,7 +24,7 @@ use aimux_core::transcription_model::{
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key,
-    media_type_to_extension, send, without_trailing_slash,
+    media_type_to_extension, send, sleep_or_abort, without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -216,24 +217,33 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         )
         .await?;
 
-        let submit_response: RevaiJobResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let submit_response: RevaiJobResponse = serde_json::from_slice(&resp.body)?;
 
         if submit_response.status.as_deref() == Some("failed") {
-            return Err(AiMuxError::Provider(
-                "Failed to submit transcription job to Rev.ai".to_string(),
-            ));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                status_code: Some(resp.status),
+                provider_code: Some("failed".to_string()),
+                message: "Failed to submit transcription job to Rev.ai".to_string(),
+                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                ..Default::default()
+            }));
         }
 
         let job_id = submit_response.id.ok_or_else(|| {
-            AiMuxError::Provider("Rev.ai job submission did not return an id".to_string())
+            AiMuxError::InvalidResponseData(
+                "Rev.ai job submission did not return an id".to_string(),
+            )
         })?;
         let submission_language = submit_response.language;
 
         // Poll for completion.
         let job_status: RevaiJobResponse;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(100),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
 
             let resp = send(
                 HttpRequest {
@@ -254,15 +264,20 @@ impl TranscriptionModel for RevaiTranscriptionModel {
             )
             .await?;
 
-            let poll: RevaiJobResponse =
-                serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+            let poll: RevaiJobResponse = serde_json::from_slice(&resp.body)?;
 
             if poll.status.as_deref() == Some("transcribed") {
                 job_status = poll;
                 break;
             }
             if poll.status.as_deref() == Some("failed") {
-                return Err(AiMuxError::Provider("Transcription job failed".to_string()));
+                return Err(AiMuxError::ApiCall(ApiCallError {
+                    status_code: Some(resp.status),
+                    provider_code: Some("failed".to_string()),
+                    message: "Transcription job failed".to_string(),
+                    response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                    ..Default::default()
+                }));
             }
         }
         let _ = job_status;
@@ -288,9 +303,8 @@ impl TranscriptionModel for RevaiTranscriptionModel {
         .await?;
 
         let response_headers = resp.headers;
-        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-        let parsed: RevaiTranscriptResponse = serde_json::from_value(raw_body.clone())
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_body: Value = serde_json::from_slice(&resp.body)?;
+        let parsed: RevaiTranscriptResponse = serde_json::from_value(raw_body.clone())?;
 
         // Process monologues to extract segments and text.
         let mut segments: Vec<TranscriptionSegment> = Vec::new();

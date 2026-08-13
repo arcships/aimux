@@ -55,8 +55,7 @@ let model = provider_from_env("groq", "llama-3.3-70b", None)?;
 ```
 
 `ProviderName` is generated from `provider_registry.json` (250 variants, `as_str`/
-`from_str`/`ALL`). Unknown names fail with `AiMuxError::UnknownProvider` listing
-the available providers.
+`from_str`/`ALL`). Unknown names fail with `AiMuxError::NoSuchProvider { provider_id }`.
 
 ## Text Generation
 

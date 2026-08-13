@@ -78,13 +78,13 @@ impl DataforseoConfig {
     /// Create from the `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` environment variables.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let login = std::env::var("DATAFORSEO_LOGIN").map_err(|_| {
-            AiMuxError::Auth(
+            AiMuxError::InvalidArgument(
                 "No DataForSEO login found. Please set the `DATAFORSEO_LOGIN` environment variable."
                     .to_string(),
             )
         })?;
         let password = std::env::var("DATAFORSEO_PASSWORD").map_err(|_| {
-            AiMuxError::Auth(
+            AiMuxError::InvalidArgument(
                 "No DataForSEO password found. Please set the `DATAFORSEO_PASSWORD` environment variable."
                     .to_string(),
             )
@@ -272,11 +272,9 @@ impl SearchModel for DataforseoSearchModel {
         // Capture response headers.
         let response_headers = resp.headers;
 
-        let raw_body: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_body: Value = serde_json::from_slice(&resp.body)?;
 
-        let data: DataforseoResponse = serde_json::from_value(raw_body.clone())
-            .map_err(|e| AiMuxError::Provider(format!("failed to parse search response: {e}")))?;
+        let data: DataforseoResponse = serde_json::from_value(raw_body.clone())?;
 
         // Flatten tasks[].result[].organic[] preserving provider order.
         let results: Vec<SearchResultItem> = data

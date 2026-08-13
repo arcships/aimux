@@ -287,15 +287,14 @@ impl Provider for AzureProvider {
                     headers.push(("api-key".to_string(), key.clone()));
                 }
                 Some(AzureAuth::TokenProvider(tp)) => {
-                    let token = tp
-                        .get_token()
-                        .await
-                        .map_err(|e| AiMuxError::Auth(format!("azure token provider: {e}")))?;
+                    let token = tp.get_token().await.map_err(|e| {
+                        AiMuxError::InvalidArgument(format!("azure token provider: {e}"))
+                    })?;
                     headers.push(("Authorization".to_string(), format!("Bearer {token}")));
                 }
                 None => {
-                    return Err(AiMuxError::Auth(
-                        "azure list_models: no auth configured".into(),
+                    return Err(AiMuxError::InvalidArgument(
+                        "azure list_models: no auth configured".to_string(),
                     ));
                 }
             }
@@ -333,8 +332,7 @@ impl Provider for AzureProvider {
                 #[serde(default, rename = "modelName")]
                 model_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(format!("azure list_models: parse: {e}")))?;
+            let parsed: Resp = serde_json::from_slice(&resp.body)?;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()
@@ -421,7 +419,7 @@ impl AzureModel {
                 headers.insert("Authorization".to_string(), format!("Bearer {}", token));
             }
             None => {
-                return Err(AiMuxError::Auth(
+                return Err(AiMuxError::InvalidArgument(
                     "Azure OpenAI has no authentication configured. \
                      Provide an `api_key` or a `token_provider`."
                         .to_string(),

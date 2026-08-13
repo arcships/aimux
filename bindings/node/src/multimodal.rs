@@ -65,7 +65,7 @@ impl EmbeddingModel {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r
@@ -109,7 +109,7 @@ impl SpeechModel {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r
@@ -150,7 +150,7 @@ impl ImageModel {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r
@@ -207,7 +207,7 @@ impl TranscriptionModel {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r
@@ -268,7 +268,7 @@ impl RerankingModel {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r
@@ -309,7 +309,7 @@ impl VideoModel {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r
@@ -360,7 +360,7 @@ impl SearchModel {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r
@@ -418,7 +418,7 @@ impl Files {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
             }
             .await;
             __r

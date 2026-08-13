@@ -12,13 +12,15 @@ use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
+    without_trailing_slash,
 };
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
@@ -306,13 +308,14 @@ impl ImageModel for LumaImageModel {
         )
         .await?;
         let rh = resp.headers;
-        let submit_body: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
+        let submit_body: Value = serde_json::from_slice(&resp.body)?;
 
         let generation_id = submit_body
             .get("id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AiMuxError::Provider("missing id in Luma response".into()))?
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData("missing id in Luma response".to_string())
+            })?
             .to_string();
 
         // Poll for completion
@@ -333,8 +336,7 @@ impl ImageModel for LumaImageModel {
                 &DEFAULT_ERROR_STRUCTURE,
             )
             .await?;
-            let pv: Value = serde_json::from_slice(&pr.body)
-                .map_err(|e| AiMuxError::Provider(format!("invalid poll JSON: {e}")))?;
+            let pv: Value = serde_json::from_slice(&pr.body)?;
 
             let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
             if state == "completed" {
@@ -343,18 +345,33 @@ impl ImageModel for LumaImageModel {
                     .and_then(|a| a.get("image"))
                     .and_then(|v| v.as_str())
                     .map(String::from);
+                if image_url.is_none() {
+                    return Err(AiMuxError::InvalidResponseData(format!(
+                        "Luma generation {generation_id} completed without assets.image"
+                    )));
+                }
                 break;
             }
             if state == "failed" {
-                return Err(AiMuxError::Provider("Image generation failed.".into()));
+                return Err(AiMuxError::ApiCall(ApiCallError {
+                    status_code: Some(pr.status),
+                    provider_code: Some(state.to_string()),
+                    message: "Image generation failed.".into(),
+                    response_body: Some(String::from_utf8_lossy(&pr.body).into_owned()),
+                    ..Default::default()
+                }));
             }
-            tokio::time::sleep(std::time::Duration::from_millis(poll_interval)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(poll_interval),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
         }
 
         let image_url = image_url.ok_or_else(|| {
-            AiMuxError::Provider(format!(
-                "Image generation timed out after {} attempts.",
-                max_poll_attempts
+            AiMuxError::Timeout(format!(
+                "luma generation {generation_id} polling timed out after {max_poll_attempts} attempts ({}ms)",
+                max_poll_attempts * poll_interval
             ))
         })?;
 

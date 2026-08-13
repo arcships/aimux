@@ -15,6 +15,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
@@ -22,7 +23,8 @@ use aimux_core::transcription_model::{
 };
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
+    without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -210,8 +212,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         )
         .await?;
 
-        let upload: AssemblyAIUploadResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let upload: AssemblyAIUploadResponse = serde_json::from_slice(&resp.body)?;
 
         // Step 2: Submit transcript request.
         let mut body = Map::new();
@@ -258,14 +259,17 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
         )
         .await?;
 
-        let submit: AssemblyAISubmitResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let submit: AssemblyAISubmitResponse = serde_json::from_slice(&resp.body)?;
 
         // Step 3: Poll for completion.
         let mut raw_body: Value;
         let mut response_headers: HashMap<String, String>;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(100),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
 
             let resp = send(
                 HttpRequest {
@@ -285,9 +289,8 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
 
             response_headers = resp.headers;
 
-            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-            let parsed: AssemblyAITranscriptResponse = serde_json::from_value(raw_body.clone())
-                .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            raw_body = serde_json::from_slice(&resp.body)?;
+            let parsed: AssemblyAITranscriptResponse = serde_json::from_value(raw_body.clone())?;
 
             if parsed.status == "completed" {
                 // Build segments from words (timestamps are in milliseconds).
@@ -394,10 +397,16 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
             }
 
             if parsed.status == "error" {
-                return Err(AiMuxError::Provider(format!(
-                    "Transcription failed: {}",
-                    parsed.error.unwrap_or_else(|| "Unknown error".to_string())
-                )));
+                return Err(AiMuxError::ApiCall(ApiCallError {
+                    status_code: Some(resp.status),
+                    provider_code: Some("error".to_string()),
+                    message: format!(
+                        "Transcription failed: {}",
+                        parsed.error.unwrap_or_else(|| "Unknown error".to_string())
+                    ),
+                    response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                    ..Default::default()
+                }));
             }
         }
     }

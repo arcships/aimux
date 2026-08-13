@@ -19,13 +19,13 @@ pub use headers::with_user_agent_suffix;
 pub use http::{
     HttpBody, HttpMethod, HttpRequest, HttpResponse, HttpStreamResponse, PoolConfig,
     RequestTimeout, TimeoutConfig, send, send_stream, send_stream_timed, send_timed, shared_client,
-    shared_streaming_client,
+    shared_streaming_client, sleep_or_abort,
 };
 pub use logging::{body_logging_enabled, init_logging, redact_body};
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use response::{
-    DEFAULT_ERROR_STRUCTURE, ErrorStructure, api_call_to_provider_error, parse_provider_error,
-    provider_403_to_auth,
+    DEFAULT_ERROR_STRUCTURE, ErrorStructure, error_for_status, parse_provider_error,
+    parse_stream_error,
 };
 pub use retry::{
     RetryConfig, get_retry_delay_ms, get_retry_delay_ms_with_jitter, parse_retry_after,

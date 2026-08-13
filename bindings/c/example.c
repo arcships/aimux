@@ -19,17 +19,24 @@ static void report(const char *what, AimuxError *e) {
         return;
     }
     switch (e->code) {
-    case AIMUX_E_RATE_LIMITED:
-        fprintf(stderr, "%s: rate limited, retry in %lldms: %s\n", what,
-                (long long)e->retry_ms, e->message);
-        break;
-    case AIMUX_E_AUTH:
-    case AIMUX_E_TOKEN_EXPIRED:
-        if (e->status >= 0) {
-            fprintf(stderr, "%s: auth (HTTP %d): %s\n", what, e->status, e->message);
+    // Every HTTP-shaped failure arrives as AIMUX_E_API_CALL; classify on status.
+    case AIMUX_E_API_CALL:
+        if (e->status == 429) {
+            fprintf(stderr, "%s: rate limited, retry in %lldms: %s\n", what,
+                    (long long)e->retry_ms, e->message);
+        } else if (e->status == 401) {
+            fprintf(stderr, "%s: auth (HTTP 401): %s\n", what, e->message);
+        } else if (e->status == 404) {
+            fprintf(stderr, "%s: model not found (HTTP 404): %s\n", what, e->message);
+        } else if (e->status >= 0) {
+            fprintf(stderr, "%s: HTTP %d: %s\n", what, e->status, e->message);
         } else {
-            fprintf(stderr, "%s: auth: %s\n", what, e->message);
+            // No status: transport failure, retryable.
+            fprintf(stderr, "%s: transport: %s\n", what, e->message);
         }
+        break;
+    case AIMUX_E_TOKEN_EXPIRED:
+        fprintf(stderr, "%s: token expired (HTTP %d): %s\n", what, e->status, e->message);
         break;
     default:
         fprintf(stderr, "%s: %s\n", what, e->message);

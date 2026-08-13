@@ -302,24 +302,19 @@ fn into_cstring_raw(s: String) -> *mut c_char {
 
 pub const AIMUX_OK: i32 = 0;
 pub const AIMUX_E_UNKNOWN: i32 = 1;
-pub const AIMUX_E_PROVIDER: i32 = 2;
-pub const AIMUX_E_HTTP: i32 = 3;
-pub const AIMUX_E_JSON: i32 = 4;
-pub const AIMUX_E_STREAM: i32 = 5;
-pub const AIMUX_E_TOOL: i32 = 6;
-pub const AIMUX_E_INVALID_ARGUMENT: i32 = 7;
-pub const AIMUX_E_INVALID_PROMPT: i32 = 8;
-pub const AIMUX_E_RATE_LIMITED: i32 = 9;
-pub const AIMUX_E_AUTH: i32 = 10;
-pub const AIMUX_E_TOKEN_EXPIRED: i32 = 11;
-pub const AIMUX_E_MODEL_NOT_FOUND: i32 = 12;
-pub const AIMUX_E_UNSUPPORTED: i32 = 13;
-pub const AIMUX_E_NO_SUCH_MODEL: i32 = 14;
-pub const AIMUX_E_UNKNOWN_PROVIDER: i32 = 15;
-pub const AIMUX_E_API_CALL: i32 = 16;
-pub const AIMUX_E_TIMEOUT: i32 = 17;
-pub const AIMUX_E_ABORTED: i32 = 18;
-pub const AIMUX_E_OTHER: i32 = 19;
+pub const AIMUX_E_JSON_PARSE: i32 = 2;
+pub const AIMUX_E_INVALID_RESPONSE_DATA: i32 = 3;
+pub const AIMUX_E_TOOL: i32 = 4;
+pub const AIMUX_E_INVALID_ARGUMENT: i32 = 5;
+pub const AIMUX_E_INVALID_PROMPT: i32 = 6;
+pub const AIMUX_E_TOKEN_EXPIRED: i32 = 7;
+pub const AIMUX_E_UNSUPPORTED_FUNCTIONALITY: i32 = 8;
+pub const AIMUX_E_NO_SUCH_MODEL: i32 = 9;
+pub const AIMUX_E_NO_SUCH_PROVIDER: i32 = 10;
+pub const AIMUX_E_API_CALL: i32 = 11;
+pub const AIMUX_E_TIMEOUT: i32 = 12;
+pub const AIMUX_E_ABORTED: i32 = 13;
+pub const AIMUX_E_OTHER: i32 = 14;
 
 /// Layout must match `aimux-error.h` `AimuxError` (40 bytes).
 ///
@@ -341,21 +336,16 @@ pub struct CAimuxError {
 
 fn aimux_error_code(err: &AiMuxError) -> i32 {
     match err {
-        AiMuxError::Provider(_) => AIMUX_E_PROVIDER,
-        AiMuxError::Http(_) => AIMUX_E_HTTP,
-        AiMuxError::Json(_) => AIMUX_E_JSON,
-        AiMuxError::Stream(_) => AIMUX_E_STREAM,
+        AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
+        AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
+        AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
         AiMuxError::Tool(_) => AIMUX_E_TOOL,
         AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
         AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
-        AiMuxError::RateLimited { .. } => AIMUX_E_RATE_LIMITED,
-        AiMuxError::Auth(_) => AIMUX_E_AUTH,
         AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
-        AiMuxError::ModelNotFound(_) => AIMUX_E_MODEL_NOT_FOUND,
-        AiMuxError::Unsupported(_) => AIMUX_E_UNSUPPORTED,
-        AiMuxError::NoSuchModel(_) => AIMUX_E_NO_SUCH_MODEL,
-        AiMuxError::UnknownProvider(_) => AIMUX_E_UNKNOWN_PROVIDER,
-        AiMuxError::ApiCall(_) => AIMUX_E_API_CALL,
+        AiMuxError::UnsupportedFunctionality(_) => AIMUX_E_UNSUPPORTED_FUNCTIONALITY,
+        AiMuxError::NoSuchModel { .. } => AIMUX_E_NO_SUCH_MODEL,
+        AiMuxError::NoSuchProvider { .. } => AIMUX_E_NO_SUCH_PROVIDER,
         AiMuxError::Timeout(_) => AIMUX_E_TIMEOUT,
         AiMuxError::Aborted => AIMUX_E_ABORTED,
         AiMuxError::Other(_) => AIMUX_E_OTHER,
@@ -447,7 +437,7 @@ unsafe fn fail_other<T: Sentinel>(err: *mut CAimuxError, msg: impl std::fmt::Dis
 ///
 /// # Safety: `err` null or writable `CAimuxError`.
 unsafe fn fail_json<T: Sentinel>(err: *mut CAimuxError, msg: impl std::fmt::Display) -> T {
-    unsafe { fail(err, AIMUX_E_JSON, -1, -1, &msg.to_string()) }
+    unsafe { fail(err, AIMUX_E_JSON_PARSE, -1, -1, &msg.to_string()) }
 }
 
 /// Failure for an invalid, expired, or wrong-typed handle.
@@ -544,7 +534,7 @@ fn parse_base_url(base_url: *const c_char) -> Option<String> {
 }
 
 /// Parse a JSON C-string argument into `T`. A null/invalid pointer maps to
-/// `AIMUX_E_INVALID_ARGUMENT`; a JSON parse failure maps to `AIMUX_E_JSON`.
+/// `AIMUX_E_INVALID_ARGUMENT`; a JSON parse failure maps to `AIMUX_E_JSON_PARSE`.
 fn parse_json_arg<T: DeserializeOwned>(
     json: *const c_char,
     name: &str,
@@ -553,7 +543,7 @@ fn parse_json_arg<T: DeserializeOwned>(
         Some(s) => s,
         None => return Err((AIMUX_E_INVALID_ARGUMENT, format!("invalid {name}"))),
     };
-    serde_json::from_str::<T>(&s).map_err(|e| (AIMUX_E_JSON, format!("invalid {name}: {e}")))
+    serde_json::from_str::<T>(&s).map_err(|e| (AIMUX_E_JSON_PARSE, format!("invalid {name}: {e}")))
 }
 
 /// Fail with the (code, message) pair produced by [`parse_json_arg`].
@@ -572,7 +562,7 @@ fn parse_provider_options(
         Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
             serde_json::from_str::<ProviderOptions>(&s)
                 .map(Some)
-                .map_err(|e| (AIMUX_E_JSON, format!("invalid config_json: {e}")))
+                .map_err(|e| (AIMUX_E_JSON_PARSE, format!("invalid config_json: {e}")))
         }
         _ => Ok(None),
     }
@@ -2663,6 +2653,8 @@ pub extern "C" fn aimux_mock_replay_new(
 
 #[cfg(test)]
 mod tests {
+    use aimux_core::ApiCallError;
+
     use super::*;
 
     #[test]
@@ -2670,38 +2662,47 @@ mod tests {
         assert_eq!(std::mem::size_of::<CAimuxError>(), 40);
     }
 
-    /// Pin the full 18-variant → code mapping and the status/retry derivation.
+    /// Pin the full 13-variant → code mapping and the status/retry derivation.
     #[test]
     fn error_code_mapping_covers_all_variants() {
         let s = |t: &str| t.to_string();
         let cases: Vec<(AiMuxError, i32)> = vec![
-            (AiMuxError::Provider(s("x")), AIMUX_E_PROVIDER),
-            (AiMuxError::Http(s("x")), AIMUX_E_HTTP),
-            (AiMuxError::Json(s("x")), AIMUX_E_JSON),
-            (AiMuxError::Stream(s("x")), AIMUX_E_STREAM),
+            (
+                AiMuxError::ApiCall(ApiCallError {
+                    message: s("x"),
+                    ..Default::default()
+                }),
+                AIMUX_E_API_CALL,
+            ),
+            (AiMuxError::JsonParse(s("x")), AIMUX_E_JSON_PARSE),
+            (
+                AiMuxError::InvalidResponseData(s("x")),
+                AIMUX_E_INVALID_RESPONSE_DATA,
+            ),
             (AiMuxError::Tool(s("x")), AIMUX_E_TOOL),
             (
                 AiMuxError::InvalidArgument(s("x")),
                 AIMUX_E_INVALID_ARGUMENT,
             ),
             (AiMuxError::InvalidPrompt(s("x")), AIMUX_E_INVALID_PROMPT),
-            (
-                AiMuxError::RateLimited {
-                    retry_after_ms: 1500,
-                    message: s("slow down"),
-                },
-                AIMUX_E_RATE_LIMITED,
-            ),
-            (AiMuxError::Auth(s("x")), AIMUX_E_AUTH),
             (AiMuxError::TokenExpired(s("x")), AIMUX_E_TOKEN_EXPIRED),
-            (AiMuxError::ModelNotFound(s("x")), AIMUX_E_MODEL_NOT_FOUND),
-            (AiMuxError::Unsupported(s("x")), AIMUX_E_UNSUPPORTED),
-            (AiMuxError::NoSuchModel(s("x")), AIMUX_E_NO_SUCH_MODEL),
             (
-                AiMuxError::UnknownProvider(s("x")),
-                AIMUX_E_UNKNOWN_PROVIDER,
+                AiMuxError::UnsupportedFunctionality(s("x")),
+                AIMUX_E_UNSUPPORTED_FUNCTIONALITY,
             ),
-            (AiMuxError::ApiCall(s("x")), AIMUX_E_API_CALL),
+            (
+                AiMuxError::NoSuchModel {
+                    model_id: s("x"),
+                    model_type: String::new(),
+                },
+                AIMUX_E_NO_SUCH_MODEL,
+            ),
+            (
+                AiMuxError::NoSuchProvider {
+                    provider_id: s("x"),
+                },
+                AIMUX_E_NO_SUCH_PROVIDER,
+            ),
             (AiMuxError::Timeout(s("x")), AIMUX_E_TIMEOUT),
             (AiMuxError::Aborted, AIMUX_E_ABORTED),
             (AiMuxError::Other(s("x")), AIMUX_E_OTHER),
@@ -2719,12 +2720,16 @@ mod tests {
             error_value: std::ptr::null_mut(),
             reserved: [std::ptr::null_mut(); 1],
         };
-        let rl = AiMuxError::RateLimited {
-            retry_after_ms: 1500,
+        // A 429 is an ApiCall error; code is AIMUX_E_API_CALL and the
+        // classification/hint cross the ABI as status/retry_ms.
+        let rl = AiMuxError::ApiCall(ApiCallError {
+            status_code: Some(429),
             message: "slow down".into(),
-        };
+            retry_after_ms: Some(1500),
+            ..Default::default()
+        });
         unsafe { fill_from_aimux(&mut c, &rl) };
-        assert_eq!(c.code, AIMUX_E_RATE_LIMITED);
+        assert_eq!(c.code, AIMUX_E_API_CALL);
         assert_eq!(c.status, 429);
         assert_eq!(c.retry_ms, 1500);
         let m = unsafe { CStr::from_ptr(c.message) }.to_str().unwrap();
@@ -2732,10 +2737,8 @@ mod tests {
         // error_value round-trips to the exact source enum value.
         let v = unsafe { CStr::from_ptr(c.error_value) }.to_str().unwrap();
         let back: AiMuxError = serde_json::from_str(v).unwrap();
-        assert!(
-            matches!(back, AiMuxError::RateLimited { retry_after_ms: 1500, ref message } if message == "slow down"),
-            "{v}"
-        );
+        assert_eq!(back.retry_after_hint(), Some(1500), "{v}");
+        assert_eq!(back.status_code(), Some(429), "{v}");
         unsafe { aimux_free_string(c.message) };
         unsafe { aimux_free_string(c.error_value) };
     }

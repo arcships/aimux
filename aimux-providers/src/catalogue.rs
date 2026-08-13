@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use aimux_core::AiMuxError;
+use aimux_core::ApiCallError;
 use aimux_core::model_catalogue::{
     CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
     ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility,
@@ -121,7 +122,7 @@ pub async fn get_model_specs(source_url: Option<&str>) -> Result<Catalogue, AiMu
     let url = source_url.unwrap_or(DEFAULT_ANYA2A_URL);
     let body = fetch_text(url).await?;
     let raw: Value = serde_json::from_str(&body)
-        .map_err(|e| AiMuxError::Json(format!("get_model_specs: invalid source JSON: {e}")))?;
+        .map_err(|e| AiMuxError::JsonParse(format!("get_model_specs: invalid source JSON: {e}")))?;
     parse_anya2a_all(&raw)
 }
 
@@ -130,7 +131,9 @@ pub fn parse_anya2a_all(json: &Value) -> Result<Catalogue, AiMuxError> {
     let providers = json
         .get("providers")
         .and_then(|v| v.as_object())
-        .ok_or_else(|| AiMuxError::Json("anya2a all.json missing 'providers' object".into()))?;
+        .ok_or_else(|| {
+            AiMuxError::JsonParse("anya2a all.json missing 'providers' object".into())
+        })?;
     let updated_at = json
         .get("updated_at")
         .and_then(|v| v.as_str())
@@ -389,21 +392,37 @@ async fn fetch_text(url: &str) -> Result<String, AiMuxError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
-        .map_err(|e| AiMuxError::Http(format!("get_model_specs: build client: {e}")))?;
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| AiMuxError::Http(format!("get_model_specs: fetch {url}: {e}")))?;
+        .map_err(|e| {
+            AiMuxError::ApiCall(ApiCallError {
+                message: format!("get_model_specs: build client: {e}"),
+                is_retryable: true,
+                ..Default::default()
+            })
+        })?;
+    let resp = client.get(url).send().await.map_err(|e| {
+        AiMuxError::ApiCall(ApiCallError {
+            message: format!("get_model_specs: fetch {url}: {e}"),
+            is_retryable: true,
+            ..Default::default()
+        })
+    })?;
     if !resp.status().is_success() {
-        return Err(AiMuxError::Provider(format!(
-            "get_model_specs: fetch {url} returned {}",
-            resp.status()
-        )));
+        let status = resp.status().as_u16();
+        return Err(AiMuxError::ApiCall(ApiCallError {
+            status_code: Some(status),
+            message: format!("get_model_specs: fetch {url}"),
+            response_body: resp.text().await.ok().filter(|b| !b.is_empty()),
+            is_retryable: status == 429 || status >= 500,
+            ..Default::default()
+        }));
     }
-    resp.text()
-        .await
-        .map_err(|e| AiMuxError::Http(format!("get_model_specs: read body: {e}")))
+    resp.text().await.map_err(|e| {
+        AiMuxError::ApiCall(ApiCallError {
+            message: format!("get_model_specs: read body: {e}"),
+            is_retryable: true,
+            ..Default::default()
+        })
+    })
 }
 
 #[cfg(test)]
@@ -522,7 +541,7 @@ mod tests {
     fn missing_providers_key_is_error() {
         let raw = json!({"updated_at": "0"});
         let err = parse_anya2a_all(&raw).unwrap_err();
-        assert!(matches!(err, AiMuxError::Json(_)));
+        assert!(matches!(err, AiMuxError::JsonParse(_)));
     }
 
     #[test]

@@ -621,7 +621,7 @@ mod do_generate {
 
     // ── error status codes ──────────────────────────────────────────────────
 
-    /// 401 → `AiMuxError::Auth`.
+    /// 401 → `AiMuxError::ApiCall` (401 in `status_code`).
     #[tokio::test]
     async fn should_return_auth_error_on_401() {
         let server = MockServer::start().await;
@@ -636,10 +636,10 @@ mod do_generate {
             .do_generate(&default_options(test_prompt()))
             .await
             .expect_err("401 should error");
-        assert!(matches!(err, aimux_core::AiMuxError::Auth(_)));
+        assert!(matches!(err, ref e if e.status_code() == Some(401)));
     }
 
-    /// 429 → `AiMuxError::RateLimited`.
+    /// 429 → `AiMuxError::ApiCall` (429 in `status_code`).
     #[tokio::test]
     async fn should_return_rate_limited_on_429() {
         let server = MockServer::start().await;
@@ -654,10 +654,10 @@ mod do_generate {
             .do_generate(&default_options(test_prompt()))
             .await
             .expect_err("429 should error");
-        assert!(matches!(err, aimux_core::AiMuxError::RateLimited { .. }));
+        assert!(matches!(err, ref e if e.status_code() == Some(429)));
     }
 
-    /// 404 → `AiMuxError::ModelNotFound`.
+    /// 404 → `AiMuxError::ApiCall` (404 in `status_code`).
     #[tokio::test]
     async fn should_return_model_not_found_on_404() {
         let server = MockServer::start().await;
@@ -672,10 +672,10 @@ mod do_generate {
             .do_generate(&default_options(test_prompt()))
             .await
             .expect_err("404 should error");
-        assert!(matches!(err, aimux_core::AiMuxError::ModelNotFound(_)));
+        assert!(matches!(err, ref e if e.status_code() == Some(404)));
     }
 
-    /// 500 → `AiMuxError::Provider`.
+    /// 500 → `AiMuxError::ApiCall`.
     #[tokio::test]
     async fn should_return_provider_error_on_500() {
         let server = MockServer::start().await;
@@ -690,7 +690,7 @@ mod do_generate {
             .do_generate(&default_options(test_prompt()))
             .await
             .expect_err("500 should error");
-        assert!(matches!(err, aimux_core::AiMuxError::ApiCall(_)));
+        assert!(matches!(err, ref e if e.status_code().is_some_and(|s| s >= 500)));
     }
 
     // ── request body options ────────────────────────────────────────────────
@@ -1401,7 +1401,7 @@ mod do_stream {
 
     // ── pre-stream HTTP errors ──────────────────────────────────────────────
 
-    /// 401 before streaming → `AiMuxError::Auth` (no stream is produced).
+    /// 401 before streaming → `AiMuxError::ApiCall` (401 in `status_code`) (no stream is produced).
     #[tokio::test]
     async fn should_return_auth_error_on_401_before_streaming() {
         let server = MockServer::start().await;
@@ -1416,10 +1416,10 @@ mod do_stream {
             .do_stream(&default_options(test_prompt()))
             .await
             .expect_err("401 should error before streaming");
-        assert!(matches!(err, aimux_core::AiMuxError::Auth(_)));
+        assert!(matches!(err, ref e if e.status_code() == Some(401)));
     }
 
-    /// 500 before streaming → `AiMuxError::ApiCall`.
+    /// 500 before streaming → `Provider` with a 5xx status.
     #[tokio::test]
     async fn should_return_provider_error_on_500_before_streaming() {
         let server = MockServer::start().await;
@@ -1434,7 +1434,7 @@ mod do_stream {
             .do_stream(&default_options(test_prompt()))
             .await
             .expect_err("500 should error before streaming");
-        assert!(matches!(err, aimux_core::AiMuxError::ApiCall(_)));
+        assert!(matches!(err, ref e if e.status_code().is_some_and(|s| s >= 500)));
     }
 
     // ── in-stream error event ───────────────────────────────────────────────

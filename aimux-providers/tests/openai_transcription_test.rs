@@ -14,7 +14,7 @@
 //! The TS `doStream` tests use a mock WebSocket which is not practical to
 //! translate to Rust (the Rust port does not implement realtime WebSocket
 //! streaming). Those tests are omitted; the `do_stream` trait default returns
-//! `AiMuxError::Unsupported`.
+//! `AiMuxError::UnsupportedFunctionality`.
 
 use std::collections::HashMap;
 
@@ -153,7 +153,7 @@ async fn should_reject_gpt_realtime_whisper_for_non_streaming() {
 
     assert!(result.is_err());
     match result.unwrap_err() {
-        AiMuxError::Unsupported(msg) => {
+        AiMuxError::UnsupportedFunctionality(msg) => {
             assert!(msg.contains("gpt-realtime-whisper"));
         }
         e => panic!("expected Unsupported error, got: {e:?}"),

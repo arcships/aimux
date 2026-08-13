@@ -47,7 +47,7 @@ static OVERLAYS: Lazy<RwLock<HashMap<String, ExternalProviderEntry>>> =
 // provider() 查找改为:
 // 1. OVERLAYS.read().get(name) → 命中则用外部条目组装 OpenAIConfig
 // 2. registry().iter().find(|e| e.name == name) → 走内置路径(不变)
-// 3. 未命中 → UnknownProvider
+// 3. 未命中 → NoSuchProvider
 ```
 
 内置 registry 仍是 `include_str!` 编译期嵌入(`OnceLock<Vec<RegistryEntry>>` 不变);覆盖层只承载外部新增/覆盖条目。外部名字不属于编译期 `ProviderName` 枚举,走字符串路径——`provider()` 本就接受 `&str`,无需改签名。
@@ -189,7 +189,7 @@ pub fn provider(
     }
     // 2. 内置 registry(原逻辑不变)
     let entry = registry().iter().find(|e| e.name == name)
-        .ok_or_else(|| AiMuxError::UnknownProvider(...))?;
+        .ok_or_else(|| AiMuxError::NoSuchProvider(...))?;
     build_from_registry_entry(entry, api_key, model_id, options)
 }
 

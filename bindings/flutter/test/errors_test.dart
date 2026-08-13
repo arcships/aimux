@@ -28,44 +28,70 @@ AimuxException fromFilled(void Function(Pointer<AimuxCError> err) fill) {
 
 void main() {
   group('AimuxException.fromCode', () {
-    test('dispatches RateLimitedError with default status 429', () {
+    test('rate limiting arrives as APICallError with status 429', () {
       final e = AimuxException.fromCode(
-        AimuxErrorCode.rateLimited,
-        'slow down',
+        AimuxErrorCode.apiCall,
+        'API call error: HTTP 429: slow down',
+        status: 429,
         retryMs: 1500,
       );
-      expect(e, isA<RateLimitedError>());
-      expect(e.message, 'slow down');
-      expect(e.code, AimuxErrorCode.rateLimited);
+      expect(e, isA<APICallError>());
+      expect(e.message, 'API call error: HTTP 429: slow down');
+      expect(e.code, AimuxErrorCode.apiCall);
       expect(e.status, 429);
       expect(e.retryMs, 1500);
-      expect(e.toString(), contains('RateLimitedError'));
+      expect(e.toString(), contains('APICallError'));
     });
 
-    test('dispatches AuthenticationError with default status 401', () {
-      final e = AimuxException.fromCode(AimuxErrorCode.auth, 'bad key');
-      expect(e, isA<AuthenticationError>());
+    test('auth failure arrives as APICallError with status 401', () {
+      final e = AimuxException.fromCode(
+        AimuxErrorCode.apiCall,
+        'API call error: HTTP 401: bad key',
+        status: 401,
+      );
+      expect(e, isA<APICallError>());
       expect(e.status, 401);
-      expect(e.codeName, 'Auth');
+      expect(e.codeName, 'ApiCall');
+    });
+
+    test('model-not-found arrives as APICallError with status 404', () {
+      final e = AimuxException.fromCode(
+        AimuxErrorCode.apiCall,
+        'API call error: HTTP 404: no such model',
+        status: 404,
+      );
+      expect(e, isA<APICallError>());
+      expect(e.status, 404);
+    });
+
+    test('transport failure is an APICallError with no status', () {
+      final e = AimuxException.fromCode(
+        AimuxErrorCode.apiCall,
+        'API call error: connection reset',
+      );
+      expect(e, isA<APICallError>());
+      expect(e.status, -1);
+      expect(e.retryMs, -1);
+    });
+
+    test('TokenExpiredError keeps its 401 contract', () {
+      final e = AimuxException.fromCode(AimuxErrorCode.tokenExpired, 'expired');
+      expect(e, isA<TokenExpiredError>());
+      expect(e.status, 401);
     });
 
     test('dispatches all known subclasses', () {
       final cases = <int, Type>{
         AimuxErrorCode.unknown: UnknownError,
-        AimuxErrorCode.provider: ProviderError,
-        AimuxErrorCode.http: HttpError,
-        AimuxErrorCode.json: JsonError,
-        AimuxErrorCode.stream: StreamError,
+        AimuxErrorCode.jsonParse: JSONParseError,
+        AimuxErrorCode.invalidResponseData: InvalidResponseDataError,
         AimuxErrorCode.tool: ToolError,
         AimuxErrorCode.invalidArgument: InvalidArgumentError,
         AimuxErrorCode.invalidPrompt: InvalidPromptError,
-        AimuxErrorCode.rateLimited: RateLimitedError,
-        AimuxErrorCode.auth: AuthenticationError,
         AimuxErrorCode.tokenExpired: TokenExpiredError,
-        AimuxErrorCode.modelNotFound: ModelNotFoundError,
-        AimuxErrorCode.unsupported: AimuxUnsupportedError,
+        AimuxErrorCode.unsupportedFunctionality: UnsupportedFunctionalityError,
         AimuxErrorCode.noSuchModel: NoSuchModelError,
-        AimuxErrorCode.unknownProvider: UnknownProviderError,
+        AimuxErrorCode.noSuchProvider: NoSuchProviderError,
         AimuxErrorCode.apiCall: APICallError,
         AimuxErrorCode.timeout: AimuxTimeoutError,
         AimuxErrorCode.aborted: RequestAbortedError,
@@ -109,6 +135,48 @@ void main() {
       expect(e.errorValue, json);
     });
 
+    test('429 arrives as APICallError with status, hint and ApiCall JSON', () {
+      const json = '{"ApiCall":{"status_code":429,"provider_code":'
+          '"rate_limit_exceeded","message":"slow down","retry_after_ms":1500,'
+          '"is_retryable":true}}';
+      final e = fromFilled((err) {
+        err.ref.code = AimuxErrorCode.apiCall;
+        err.ref.status = 429;
+        err.ref.retryMs = 1500;
+        err.ref.message = 'API call error: HTTP 429: slow down'.toNativeUtf8();
+        err.ref.errorValue = json.toNativeUtf8();
+      });
+      expect(e, isA<APICallError>());
+      expect(e.status, 429);
+      expect(e.retryMs, 1500);
+      expect(e.errorValue, json);
+    });
+
+    test('401 arrives as APICallError with status 401', () {
+      final e = fromFilled((err) {
+        err.ref.code = AimuxErrorCode.apiCall;
+        err.ref.status = 401;
+        err.ref.message =
+            'API call error: HTTP 401: invalid api key'.toNativeUtf8();
+      });
+      expect(e, isA<APICallError>());
+      expect(e.status, 401);
+      expect(e.message, contains('HTTP 401'));
+    });
+
+    test('NoSuchModel carries its struct payload JSON', () {
+      const json =
+          '{"NoSuchModel":{"model_id":"gpt-9","model_type":"languageModel"}}';
+      final e = fromFilled((err) {
+        err.ref.code = AimuxErrorCode.noSuchModel;
+        err.ref.message = 'no such model: gpt-9'.toNativeUtf8();
+        err.ref.errorValue = json.toNativeUtf8();
+      });
+      expect(e, isA<NoSuchModelError>());
+      expect(e.status, -1);
+      expect(e.errorValue, json);
+    });
+
     test('OK code becomes UnknownError with fallback message', () {
       // cleared = OK / null message
       final e = fromFilled((_) {});
@@ -126,11 +194,25 @@ void main() {
   });
 
   group('AimuxErrorCode.name', () {
-    test('covers append-only table', () {
+    test('covers the code table', () {
       expect(AimuxErrorCode.name(AimuxErrorCode.ok), 'OK');
-      expect(AimuxErrorCode.name(AimuxErrorCode.rateLimited), 'RateLimited');
-      expect(AimuxErrorCode.name(AimuxErrorCode.auth), 'Auth');
+      expect(AimuxErrorCode.name(AimuxErrorCode.apiCall), 'ApiCall');
       expect(AimuxErrorCode.name(AimuxErrorCode.other), 'Other');
+    });
+
+    test('codes are consecutive and named', () {
+      expect(AimuxErrorCode.jsonParse, 2);
+      expect(AimuxErrorCode.name(AimuxErrorCode.jsonParse), 'JsonParse');
+      expect(AimuxErrorCode.invalidResponseData, 3);
+      expect(AimuxErrorCode.name(AimuxErrorCode.invalidResponseData),
+          'InvalidResponseData');
+      expect(AimuxErrorCode.unsupportedFunctionality, 8);
+      expect(AimuxErrorCode.name(AimuxErrorCode.unsupportedFunctionality),
+          'UnsupportedFunctionality');
+      expect(AimuxErrorCode.noSuchProvider, 10);
+      expect(AimuxErrorCode.name(AimuxErrorCode.noSuchProvider),
+          'NoSuchProvider');
+      expect(AimuxErrorCode.other, 14);
     });
   });
 

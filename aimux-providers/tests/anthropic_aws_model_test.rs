@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Anthropic-AWS (Claude Platform on AWS) provider.
+//! Wiremock tests for the Anthropic-AWS (Claude Platform on AWS) provider.
 //!
 //! Tests cover:
 //! - Non-streaming text generation (Anthropic Messages API JSON response)
@@ -426,8 +426,6 @@ async fn anthropic_aws_sigv4_auth() {
 // Additional cases — finish reasons, settings, usage, headers, errors.
 // ═════════════════════════════════════════════════════════════════════════════
 
-use aimux_core::error::AiMuxError;
-
 /// TS: max_tokens stop reason → Length
 #[tokio::test]
 async fn anthropic_aws_generate_finish_reason_max_tokens() {
@@ -507,7 +505,7 @@ async fn anthropic_aws_generate_settings() {
     assert_eq!(body["stop_sequences"], json!(["END"]));
 }
 
-/// TS: a 401 response maps to `AiMuxError::Auth`.
+/// TS: a 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
 #[tokio::test]
 async fn anthropic_aws_generate_auth_error() {
     let server = MockServer::start().await;
@@ -521,12 +519,12 @@ async fn anthropic_aws_generate_auth_error() {
     let model = make_model(&server);
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(_))),
+        matches!(result, Err(ref e) if e.status_code() == Some(401)),
         "expected Auth, got {result:?}"
     );
 }
 
-/// TS: a 429 response maps to `AiMuxError::RateLimited`.
+/// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn anthropic_aws_generate_rate_limit_error() {
     let server = MockServer::start().await;
@@ -540,7 +538,7 @@ async fn anthropic_aws_generate_rate_limit_error() {
     let model = make_model(&server);
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::RateLimited { .. })),
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
 }

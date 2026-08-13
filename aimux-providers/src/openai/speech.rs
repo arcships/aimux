@@ -109,7 +109,7 @@ impl SpeechModel for OpenAISpeechModel {
         )
         .await?;
 
-        // send() returns Ok only for 2xx responses; non-2xx (incl. 429/5xx
+        // send() returns Ok only for 2xx responses; non-2xx (incl. 408/409/429/5xx
         // after exhausting retries) is mapped to an AiMuxError internally.
         let response_headers = resp.headers;
 

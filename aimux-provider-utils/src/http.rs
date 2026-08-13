@@ -11,7 +11,7 @@
 //!   各处的 `Client::new()`。
 //! - **超时**：非流式带 30s 整体超时；流式禁用整体超时（LLM 流式时长取决于
 //!   生成长度，固定超时会误杀长生成，RFC-0009 §4.3）。
-//! - **retry**：429/5xx 重试 + Full Jitter 退避（RFC-0009 §4.2）。retry 是本
+//! - **retry**：408/409/429/5xx 重试 + Full Jitter 退避（RFC-0009 §4.2）。retry 是本
 //!   模块内部逻辑——provider 不感知重试发生。
 
 use std::collections::HashMap;
@@ -25,6 +25,7 @@ use futures::stream::{BoxStream, Stream, StreamExt};
 use reqwest::Client;
 
 use aimux_core::AiMuxError;
+use aimux_core::ApiCallError;
 use aimux_core::options::TimeoutConfiguration;
 use aimux_core::shared::AbortSignal;
 
@@ -236,10 +237,10 @@ pub struct HttpStreamResponse {
 /// 发送非流式请求，带 retry。内部用 `shared_client()`（30s 整体超时）。
 ///
 /// retry 策略（RFC-0009 §4.2）：
-/// - 网络错误 → `AiMuxError::Http`（可重试）
-/// - 429 → 读 `retry-after` / `retry-after-ms` header，`AiMuxError::RateLimited`（可重试）
-/// - 5xx → `AiMuxError::ApiCall`（可重试）
-/// - 其他 4xx → `parse_provider_error`，**立即返回不重试**
+/// - 网络错误 → `ApiCall`（`is_retryable: true`,无 status——传输失败,可重试）
+/// - 所有非 2xx → `parse_provider_error`；429 另读 `retry-after` /
+///   `retry-after-ms` header 存入 `retry_after_ms` 字段（缺失即 `None`）
+/// - 408/409/429/5xx 可重试；其他 4xx **立即返回不重试**
 ///
 /// 退避用 Full Jitter（`delay ∈ [0, base)`），防并发 429 惊群。
 pub async fn send(
@@ -269,7 +270,7 @@ pub async fn send(
                 b = bytes => b.map_err(|e| {
                     record_failed_exchange(&request, attempt, started.elapsed().as_millis() as u64, &e.to_string(), None);
                     record_transport_closed(&request);
-                    AiMuxError::Http(e.to_string())
+                    AiMuxError::ApiCall(ApiCallError { message: e.to_string(), is_retryable: true, ..Default::default() })
                 })?,
             }
         }
@@ -282,7 +283,11 @@ pub async fn send(
                 None,
             );
             record_transport_closed(&request);
-            AiMuxError::Http(e.to_string())
+            AiMuxError::ApiCall(ApiCallError {
+                message: e.to_string(),
+                is_retryable: true,
+                ..Default::default()
+            })
         })?,
     };
 
@@ -414,10 +419,29 @@ pub async fn send_stream(
         None
     };
 
+    // Provider request id, captured from the connect-phase headers: mid-stream
+    // transport errors are built after `resp` is consumed, so the header must
+    // be read now (`x-request-id` wins over `request-id`, as in the
+    // non-streaming path).
+    let request_id = ["x-request-id", "request-id"].iter().find_map(|k| {
+        headers
+            .iter()
+            .find(|(h, _)| h.eq_ignore_ascii_case(k))
+            .map(|(_, v)| v.clone())
+    });
     let body = ObservedByteStream {
         inner: resp
             .bytes_stream()
-            .map(|item| item.map_err(|e| AiMuxError::Http(e.to_string())))
+            .map(move |item| {
+                item.map_err(|e| {
+                    AiMuxError::ApiCall(ApiCallError {
+                        message: e.to_string(),
+                        request_id: request_id.clone(),
+                        is_retryable: true,
+                        ..Default::default()
+                    })
+                })
+            })
             .boxed(),
         started: false,
         start: started,
@@ -860,9 +884,37 @@ impl Stream for TimeoutBodyStream {
 // retry 核心
 // ════════════════════════════════════════════════════════════════════════════
 
+/// Sleep that stays responsive to cancellation (RFC-0016 §7.6 R2/R4, §7.7).
+///
+/// Contract:
+/// - an already-aborted signal fails immediately (no sleep);
+/// - abort wins over the sleep when both are ready (`biased` select);
+/// - `None` signal behaves exactly like `tokio::time::sleep`;
+/// - cancellation is exactly [`AiMuxError::Aborted`].
+///
+/// Shared by the retry backoff here and by provider polling waits.
+pub async fn sleep_or_abort(
+    duration: Duration,
+    signal: Option<&AbortSignal>,
+) -> Result<(), AiMuxError> {
+    match signal {
+        Some(signal) => {
+            tokio::select! {
+                biased;
+                _ = signal.cancelled() => Err(AiMuxError::Aborted),
+                _ = tokio::time::sleep(duration) => Ok(()),
+            }
+        }
+        None => {
+            tokio::time::sleep(duration).await;
+            Ok(())
+        }
+    }
+}
+
 /// Read an error-response body honoring abort (RFC-0016 review S2).
 ///
-/// Body reads for 429/5xx/other failures are awaited before the next retry
+/// Body reads for non-2xx failures are awaited before the next retry
 /// decision; without this, an abort during the read would be ignored until
 /// the next attempt.
 ///
@@ -1162,60 +1214,53 @@ async fn send_with_retry_raw(
                 if resp.status().is_success() {
                     return Ok((resp, attempt));
                 }
-                // 429: 读 retry-after headers（在消费 body 之前）。
-                if status_code == 429 {
-                    let hint = parse_retry_after(
-                        resp.headers()
-                            .get("retry-after-ms")
-                            .and_then(|v| v.to_str().ok()),
-                        resp.headers()
-                            .get("retry-after")
-                            .and_then(|v| v.to_str().ok()),
-                        SystemTime::now(),
-                    );
-                    // 已收到合法 HTTP 响应:结构化录制 status/headers/body(A5),
-                    // 同时保留 error 字符串用于诊断。headers 必须在 read_error_body
-                    // 消费 resp 之前采集。
-                    let resp_headers = redacted_response_headers(resp.headers());
-                    // Keep the provider's rate-limit body (e.g. "quota
-                    // exceeded" vs "too many requests") so consumers can tell
-                    // the two apart (issue M6).
-                    let body = read_error_body(resp, request).await?;
-                    record_failed_exchange(
-                        request,
-                        attempt,
-                        latency_ms,
-                        &format!("HTTP {status_code}: {body}"),
-                        Some(error_response_record(status_code, resp_headers, &body)),
-                    );
-                    last_error = AiMuxError::RateLimited {
-                        retry_after_ms: hint.unwrap_or(1000).max(0) as u64,
-                        message: format!("HTTP {status_code}: {}", body),
-                    };
-                } else if resp.status().is_server_error() {
-                    // 5xx: 可重试。
-                    let resp_headers = redacted_response_headers(resp.headers());
-                    let body = read_error_body(resp, request).await?;
-                    record_failed_exchange(
-                        request,
-                        attempt,
-                        latency_ms,
-                        &format!("HTTP {status_code}: {body}"),
-                        Some(error_response_record(status_code, resp_headers, &body)),
-                    );
-                    last_error = AiMuxError::ApiCall(format!("HTTP {}: {}", status_code, body));
+                // Facts read from the response *before* the body consumes it:
+                // request id, retry hint, redacted headers for recording.
+                let request_id = ["x-request-id", "request-id"]
+                    .iter()
+                    .find_map(|k| resp.headers().get(*k))
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned);
+                // Retry hint: stored only for 429 (current core contract).
+                // Missing/invalid/negative header → None; never fabricate a
+                // local fallback as provider data (RFC-0009 §4.2).
+                let retry_after_ms = (status_code == 429)
+                    .then(|| {
+                        parse_retry_after(
+                            resp.headers()
+                                .get("retry-after-ms")
+                                .and_then(|v| v.to_str().ok()),
+                            resp.headers()
+                                .get("retry-after")
+                                .and_then(|v| v.to_str().ok()),
+                            SystemTime::now(),
+                        )
+                    })
+                    .flatten()
+                    .and_then(|ms| u64::try_from(ms).ok());
+                let resp_headers = redacted_response_headers(resp.headers());
+                let body = read_error_body(resp, request).await?;
+                // Every non-2xx goes through the provider error parser so
+                // extracted message/provider_code/raw body survive; the
+                // observed request id and real retry hint are attached to the
+                // same detail (no rebuilt error losing parsed fields).
+                let mut err = parse_provider_error(status_code, &body, error_structure);
+                if let AiMuxError::ApiCall(d) = &mut err {
+                    d.request_id = request_id;
+                    d.retry_after_ms = retry_after_ms;
+                }
+                record_failed_exchange(
+                    request,
+                    attempt,
+                    latency_ms,
+                    &err.to_string(),
+                    Some(error_response_record(status_code, resp_headers, &body)),
+                );
+                if err.is_retryable() {
+                    // 408/409/429/5xx: flow into the shared backoff below.
+                    last_error = err;
                 } else {
-                    // 非 4xx 非 5xx：不可重试，立即返回。
-                    let resp_headers = redacted_response_headers(resp.headers());
-                    let body = read_error_body(resp, request).await?;
-                    let err = parse_provider_error(status_code, &body, error_structure);
-                    record_failed_exchange(
-                        request,
-                        attempt,
-                        latency_ms,
-                        &err.to_string(),
-                        Some(error_response_record(status_code, resp_headers, &body)),
-                    );
+                    // Ordinary 4xx: return after one attempt.
                     return Err(err);
                 }
             }
@@ -1259,16 +1304,7 @@ async fn send_with_retry_raw(
         // window (e.g. a large Retry-After) must not be delayed until the
         // next attempt.
         let delay = Duration::from_millis(delay_ms.max(0) as u64);
-        match &request.abort_signal {
-            Some(signal) => {
-                tokio::select! {
-                    biased;
-                    _ = signal.cancelled() => return Err(AiMuxError::Aborted),
-                    _ = tokio::time::sleep(delay) => {}
-                }
-            }
-            None => tokio::time::sleep(delay).await,
-        }
+        sleep_or_abort(delay, request.abort_signal.as_ref()).await?;
         exponential_delay_ms =
             exponential_delay_ms.saturating_mul(retry_config.backoff_factor as i64);
     }
@@ -1308,13 +1344,19 @@ async fn send_request(
         tokio::select! {
             biased;
             _ = signal.cancelled() => Err(AiMuxError::Aborted),
-            result = response => result.map_err(|e| AiMuxError::Http(e.to_string())),
+            result = response => result.map_err(|e| AiMuxError::ApiCall(ApiCallError { message: e.to_string(), is_retryable: true, ..Default::default() })),
         }
     } else {
         build_request_builder(client, request)?
             .send()
             .await
-            .map_err(|e| AiMuxError::Http(e.to_string()))
+            .map_err(|e| {
+                AiMuxError::ApiCall(ApiCallError {
+                    message: e.to_string(),
+                    is_retryable: true,
+                    ..Default::default()
+                })
+            })
     }
 }
 
@@ -1399,21 +1441,16 @@ fn request_body_size(request: &HttpRequest) -> u64 {
 /// `AiMuxError` 变体的短名（日志 reason 字段用）。
 fn error_variant(e: &AiMuxError) -> &'static str {
     match e {
-        AiMuxError::Provider(_) => "provider",
-        AiMuxError::Http(_) => "http",
-        AiMuxError::Json(_) => "json",
-        AiMuxError::Stream(_) => "stream",
+        AiMuxError::ApiCall(_) => "api_call",
+        AiMuxError::JsonParse(_) => "json_parse",
+        AiMuxError::InvalidResponseData(_) => "invalid_response_data",
         AiMuxError::Tool(_) => "tool",
         AiMuxError::InvalidArgument(_) => "invalid_argument",
         AiMuxError::InvalidPrompt(_) => "invalid_prompt",
-        AiMuxError::RateLimited { .. } => "rate_limited",
-        AiMuxError::Auth(_) => "auth",
         AiMuxError::TokenExpired(_) => "token_expired",
-        AiMuxError::ModelNotFound(_) => "model_not_found",
-        AiMuxError::Unsupported(_) => "unsupported",
-        AiMuxError::NoSuchModel(_) => "no_such_model",
-        AiMuxError::UnknownProvider(_) => "unknown_provider",
-        AiMuxError::ApiCall(_) => "api_call",
+        AiMuxError::UnsupportedFunctionality(_) => "unsupported_functionality",
+        AiMuxError::NoSuchModel { .. } => "no_such_model",
+        AiMuxError::NoSuchProvider { .. } => "no_such_provider",
         AiMuxError::Timeout(_) => "timeout",
         AiMuxError::Aborted => "aborted",
         AiMuxError::Other(_) => "other",

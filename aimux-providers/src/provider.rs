@@ -28,7 +28,6 @@ use aimux_core::provider::Provider;
 use aimux_provider_utils::RetryConfig;
 
 use crate::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider};
-use crate::provider_name::ProviderName;
 
 /// One entry of `provider-registry.json` (registry slice).
 #[derive(Debug, Clone, Deserialize)]
@@ -143,14 +142,15 @@ pub struct ProviderOptions {
 /// Build a language model for a provider by name.
 ///
 /// Lookup order: runtime overlay (RFC-0020 [`register_provider`]) → built-in
-/// registry → [`AiMuxError::UnknownProvider`].
+/// registry → [`AiMuxError::NoSuchProvider`].
 ///
 /// - `api_key = None` reads the provider's env var from the registry entry
 ///   (or the external entry's `env_var` / `api_key` field).
 /// - `options` overrides individual fields of the resolved entry
 ///   (replaces the retired `with_base_url` etc.).
-/// - Unknown names return [`AiMuxError::UnknownProvider`] listing the built-in
-///   providers (overlay-registered names are not enumerated).
+/// - Unknown names return [`AiMuxError::NoSuchProvider`] naming the requested
+///   provider; built-in names are enumerated by the generated `ProviderName`
+///   (overlay-registered names are not).
 pub fn provider(
     name: impl AsRef<str>,
     api_key: Option<String>,
@@ -246,8 +246,9 @@ pub fn is_external_provider(name: &str) -> bool {
 /// Load and register multiple external providers from a JSON string
 /// (`{ "providers": [ ... ] }`). Useful for binding-layer pass-through.
 pub fn load_providers_from_json(json: &str) -> Result<(), AiMuxError> {
-    let config: ProvidersConfig = serde_json::from_str(json)
-        .map_err(|e| AiMuxError::Json(format!("failed to parse external providers config: {e}")))?;
+    let config: ProvidersConfig = serde_json::from_str(json).map_err(|e| {
+        AiMuxError::JsonParse(format!("failed to parse external providers config: {e}"))
+    })?;
     for entry in config.providers {
         register_provider(entry)?;
     }
@@ -345,7 +346,7 @@ impl ResolvedEntry {
 /// Build a **provider handle** for a built-in or externally-registered provider
 /// by name (RFC-0027 + RFC-0020 overlay).
 ///
-/// Lookup order: runtime overlay (RFC-0020) → built-in registry → UnknownProvider.
+/// Lookup order: runtime overlay (RFC-0020) → built-in registry → NoSuchProvider.
 ///
 /// Unlike [`provider`] (which binds to a single `model_id` and returns a
 /// `LanguageModel`), this returns the [`Provider`] itself, so callers can call
@@ -366,10 +367,12 @@ pub fn provider_handle(
     } else {
         // 2. Built-in registry.
         let entry = registry().iter().find(|e| e.name == name).ok_or_else(|| {
-            AiMuxError::UnknownProvider(format!(
-                "unknown provider '{name}' — available providers: {}",
-                ProviderName::all_names()
-            ))
+            AiMuxError::NoSuchProvider {
+                // Display derives from the id alone; valid names are discoverable
+                // via the generated `ProviderName` — listing 250 names here would
+                // ride along in every error, across the C ABI.
+                provider_id: name.to_string(),
+            }
         })?;
         ResolvedEntry::from_registry(entry)
     };
@@ -421,7 +424,7 @@ fn resolve_key(
                 )));
             }
             let val = std::env::var(var).map_err(|_| {
-                AiMuxError::Auth(format!(
+                AiMuxError::InvalidArgument(format!(
                     "external provider '{}' references env var `{var}` via api_key, but it is not set",
                     entry.name
                 ))
@@ -431,7 +434,7 @@ fn resolve_key(
         return Ok((entry_key.clone(), Some("explicit".to_string())));
     }
     if entry.env_var.is_empty() {
-        return Err(AiMuxError::Auth(format!(
+        return Err(AiMuxError::InvalidArgument(format!(
             "provider '{}' has no api_key parameter, entry-level api_key, or env_var to read from",
             entry.name
         )));
@@ -543,6 +546,7 @@ pub fn provider_registry_entry(name: &str) -> Option<OpenAICompatProfile> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::provider_name::ProviderName;
 
     #[test]
     fn provider_builds_groq_model() {
@@ -591,20 +595,21 @@ mod tests {
     }
 
     #[test]
-    fn provider_unknown_name_lists_available() {
+    fn provider_unknown_name_reports_provider_id() {
         let err = match provider("no-such-provider", Some("k".into()), "m", None) {
             Ok(_) => panic!("unknown name must fail"),
             Err(e) => e,
         };
         match err {
-            AiMuxError::UnknownProvider(msg) => {
-                assert!(msg.contains("no-such-provider"));
-                assert!(
-                    msg.contains("groq"),
-                    "error should list available providers"
-                );
+            AiMuxError::NoSuchProvider { ref provider_id } => {
+                assert_eq!(provider_id, "no-such-provider");
+                // Display derives from the single stored fact.
+                assert_eq!(err.to_string(), "No such provider: no-such-provider");
+                // The 250 names stay out of the error — they ride the C ABI.
+                let text = err.to_string();
+                assert!(!text.contains("groq"), "must not list the registry: {text}");
             }
-            other => panic!("expected UnknownProvider, got {other:?}"),
+            other => panic!("expected NoSuchProvider, got {other:?}"),
         }
     }
 
@@ -1039,8 +1044,8 @@ mod tests {
             Err(e) => e,
         };
         assert!(
-            matches!(err, AiMuxError::Auth(ref m) if m.contains("AIMUX_TEST_OVERLAY_MISSING")),
-            "expected Auth error naming the env var, got {err:?}"
+            matches!(err, AiMuxError::InvalidArgument(ref m) if m.contains("AIMUX_TEST_OVERLAY_MISSING")),
+            "expected InvalidArgument naming the env var, got {err:?}"
         );
         clear_overlay("test-envkey-missing");
     }
@@ -1049,8 +1054,8 @@ mod tests {
     fn load_providers_from_json_rejects_invalid_json() {
         let err = load_providers_from_json("not json at all").unwrap_err();
         assert!(
-            matches!(err, AiMuxError::Json(ref m) if m.contains("parse")),
-            "expected Json error for malformed input, got {err:?}"
+            matches!(err, AiMuxError::JsonParse(ref m) if m.contains("parse")),
+            "expected JsonParse for malformed input, got {err:?}"
         );
     }
 }

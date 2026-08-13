@@ -127,7 +127,7 @@ impl Model {
                 None => Default::default(),
             };
             serde_json::to_string(&store.aggregate(&filter))
-                .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
         })())
     }
 
@@ -145,7 +145,7 @@ impl Model {
                 .session_chain(&session_id)
                 .ok_or_else(|| MappedError::from(&AiMuxError::Other("unknown session".into())))?;
             serde_json::to_string(&view)
-                .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
         })())
     }
 
@@ -162,7 +162,7 @@ impl Model {
             };
             let stats = store.session_cache_trajectory(&session_id);
             serde_json::to_string(&stats)
-                .map_err(|e| MappedError::from(&AiMuxError::Json(format!("serialize: {e}"))))
+                .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
         })())
     }
 
@@ -217,7 +217,7 @@ impl Model {
                     .map_err(|e| MappedError::from(&e))?;
 
                 serde_json::to_string(&result).map_err(|e| {
-                    MappedError::from(&AiMuxError::Json(format!("serialize result: {e}")))
+                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
                 })
             }
             .await;
@@ -328,7 +328,7 @@ impl Model {
                     .map_err(|e| MappedError::from(&e))?;
 
                 serde_json::to_string(&result).map_err(|e| {
-                    MappedError::from(&AiMuxError::Json(format!("serialize result: {e}")))
+                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
                 })
             }
             .await;
@@ -625,6 +625,10 @@ pub fn init_recording_ring(cap: Option<u32>) -> error::AimuxResult<()> {
             message: "initRecordingRing: cap must be > 0".to_string(),
             status: -1,
             retry_ms: -1,
+            retryable: false,
+            provider_code: None,
+            request_id: None,
+            response_body: None,
             error_value: None,
         }),
         // 显式 cap > 0:指定容量的有界 ring。
@@ -696,7 +700,7 @@ pub fn session_calls(session_id: String) -> AimuxResult<String> {
     AimuxResult((|| -> crate::error::MResult<String> {
         let calls = aimux_core::session::session_calls(&session_id);
         serde_json::to_string(&calls).map_err(|e| {
-            MappedError::from(&AiMuxError::Json(format!("serialize sessionCalls: {e}")))
+            MappedError::from(&AiMuxError::JsonParse(format!("serialize sessionCalls: {e}")))
         })
     })())
 }
@@ -707,7 +711,7 @@ pub fn list_sessions() -> AimuxResult<String> {
     AimuxResult((|| -> crate::error::MResult<String> {
         let views = aimux_core::session::list_sessions();
         serde_json::to_string(&views).map_err(|e| {
-            MappedError::from(&AiMuxError::Json(format!("serialize listSessions: {e}")))
+            MappedError::from(&AiMuxError::JsonParse(format!("serialize listSessions: {e}")))
         })
     })())
 }
@@ -831,7 +835,7 @@ pub async fn deepseek(
 ///
 /// Google speaks the native `generateContent` protocol (not OpenAI-compatible),
 /// so it is **not** registry-backed — `provider("google", ...)` fails with
-/// `UnknownProvider`. This factory is the only entry point.
+/// `NoSuchProvider`. This factory is the only entry point.
 #[napi]
 pub async fn google(
     api_key: String,
@@ -1220,7 +1224,7 @@ impl ProviderHandle {
                     .await
                     .map_err(|e| MappedError::from(&e))?;
                 serde_json::to_string(&models).map_err(|e| {
-                    MappedError::from(&AiMuxError::Json(format!("serialize list_models: {e}")))
+                    MappedError::from(&AiMuxError::JsonParse(format!("serialize list_models: {e}")))
                 })
             }
             .await;
@@ -1292,7 +1296,7 @@ pub async fn get_model_specs(source_url: Option<String>) -> AimuxResult<String> 
                 .await
                 .map_err(|e| MappedError::from(&e))?;
             serde_json::to_string(&cat).map_err(|e| {
-                MappedError::from(&AiMuxError::Json(format!("serialize catalogue: {e}")))
+                MappedError::from(&AiMuxError::JsonParse(format!("serialize catalogue: {e}")))
             })
         }
         .await;
@@ -1348,7 +1352,7 @@ fn provider_options_from_config(
 
 fn parse_prompt(json: &str) -> MResult<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| MappedError::from(&AiMuxError::Json(format!("invalid prompt JSON: {e}"))))?;
+        .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("invalid prompt JSON: {e}"))))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -1356,7 +1360,7 @@ fn parse_prompt(json: &str) -> MResult<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| MappedError::from(&AiMuxError::Json(format!("invalid prompt: {e}"))))
+        .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("invalid prompt: {e}"))))
 }
 
 fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
@@ -1368,7 +1372,7 @@ fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
                 return Ok(GenerateTextOptions::default());
             }
             serde_json::from_str(s).map_err(|e| {
-                MappedError::from(&AiMuxError::Json(format!("invalid options JSON: {e}")))
+                MappedError::from(&AiMuxError::JsonParse(format!("invalid options JSON: {e}")))
             })
         }
     }

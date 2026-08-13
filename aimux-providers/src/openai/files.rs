@@ -180,8 +180,7 @@ impl Files for OpenAIFiles {
         )
         .await?;
 
-        let data: OpenAIFilesResponse = serde_json::from_slice::<OpenAIFilesResponse>(&resp.body)
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let data: OpenAIFilesResponse = serde_json::from_slice::<OpenAIFilesResponse>(&resp.body)?;
 
         // Build provider metadata.
         let mut metadata = serde_json::Map::new();

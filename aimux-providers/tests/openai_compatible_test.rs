@@ -8,7 +8,7 @@
 //!
 //! 1. `do_generate` returns text content.
 //! 2. `do_stream` returns text deltas.
-//! 3. A 401 response maps to `AiMuxError::Auth`.
+//! 3. A 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
 //! 4. The request is sent to the correct base URL path (`/chat/completions`)
 //!    and carries the `Authorization: Bearer <key>` header.
 //!
@@ -228,7 +228,7 @@ macro_rules! openai_compatible_tests {
                 }
             }
 
-            // ── 3. 401 maps to Auth error ───────────────────────────────────
+            // ── 3. 401 maps to `ApiCall` (401) ───────────────────────────────────
 
             #[tokio::test]
             async fn status_401_maps_to_auth_error() {
@@ -252,8 +252,8 @@ macro_rules! openai_compatible_tests {
 
                 let result = model.do_generate(&default_options(test_prompt())).await;
                 assert!(
-                    matches!(result, Err(AiMuxError::Auth(ref m))
-                        if m == "Incorrect API key provided"),
+                    matches!(result, Err(AiMuxError::ApiCall(ref m))
+                        if m.status_code == Some(401) && m.message == "Incorrect API key provided"),
                     "expected Auth error, got {result:?}"
                 );
             }
@@ -405,7 +405,7 @@ macro_rules! openai_compatible_tests {
                 }
             }
 
-            // ── 3. 401 maps to Auth error ───────────────────────────────────
+            // ── 3. 401 maps to `ApiCall` (401) ───────────────────────────────────
 
             #[tokio::test]
             async fn status_401_maps_to_auth_error() {
@@ -429,8 +429,8 @@ macro_rules! openai_compatible_tests {
 
                 let result = model.do_generate(&default_options(test_prompt())).await;
                 assert!(
-                    matches!(result, Err(AiMuxError::Auth(ref m))
-                        if m == "Incorrect API key provided"),
+                    matches!(result, Err(AiMuxError::ApiCall(ref m))
+                        if m.status_code == Some(401) && m.message == "Incorrect API key provided"),
                     "expected Auth error, got {result:?}"
                 );
             }
@@ -920,7 +920,7 @@ async fn groq_extracts_usage() {
     assert_eq!(result.usage.output_tokens.total, Some(8));
 }
 
-/// TS: a 429 response maps to `AiMuxError::RateLimited`.
+/// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn deepseek_rate_limit_maps_to_rate_limited() {
     let server = MockServer::start().await;
@@ -945,7 +945,7 @@ async fn deepseek_rate_limit_maps_to_rate_limited() {
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::RateLimited { .. })),
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
 }

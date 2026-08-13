@@ -3,6 +3,7 @@
 // Run scripts/gen_ts_types.py to regenerate after Rust type changes.
 
 export type * from './types/AiMuxError'
+export type * from './types/ApiCallError'
 export type * from './types/AspectRatio'
 export type * from './types/AudioChunk'
 export type * from './types/AudioData'

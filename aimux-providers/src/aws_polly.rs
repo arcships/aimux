@@ -27,7 +27,7 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::{ErrorStructure, provider_403_to_auth};
+use aimux_provider_utils::response::{ErrorStructure, error_for_status};
 use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
 
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
@@ -232,7 +232,7 @@ impl SpeechModel for AwsPollySpeechModel {
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request(options, &self.model_id);
         let body_str = serde_json::to_string(&Value::Object(body.clone()))
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            .map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
         let url = self.endpoint();
 
         // SigV4 sign the request. User-supplied extra headers are included in
@@ -270,8 +270,7 @@ impl SpeechModel for AwsPollySpeechModel {
             RetryConfig::default(),
             &AWS_ERROR_STRUCTURE,
         )
-        .await
-        .map_err(provider_403_to_auth)?;
+        .await?;
 
         let response_headers = resp.headers;
 
@@ -469,7 +468,7 @@ fn parse_polly_provider_options(
 ///
 /// AWS errors are JSON objects of the form
 /// `{"__type": "...", "message": "..."}`. Authentication failures surface as
-/// HTTP 401 or 403; both are mapped to [`AiMuxError::Auth`].
+/// HTTP 401 or 403; both surface as [`AiMuxError::ApiCall`] with the status in `status_code`.
 ///
 /// Live requests no longer call this — the shared http layer (`send`) maps
 /// non-2xx responses itself via [`AWS_ERROR_STRUCTURE`]. Retained (and
@@ -478,15 +477,10 @@ fn parse_polly_provider_options(
 #[allow(dead_code)]
 fn parse_polly_error(status: u16, body: &str) -> AiMuxError {
     let message = extract_aws_error_message(body);
-    match status {
-        401 | 403 => AiMuxError::Auth(message),
-        429 => AiMuxError::RateLimited {
-            retry_after_ms: 1000,
-            message,
-        },
-        404 => AiMuxError::ModelNotFound(message),
-        _ => AiMuxError::Provider(format!("HTTP {}: {}", status, message)),
-    }
+    let provider_code = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("__type").and_then(|t| t.as_str()).map(String::from));
+    error_for_status(status, provider_code, message, None, Some(body.to_string()))
 }
 
 /// Extract a human-readable message from an AWS error JSON body.
@@ -552,13 +546,13 @@ mod tests {
     fn parse_error_maps_401_to_auth() {
         let body = r#"{"__type":"UnrecognizedClientException","message":"The security token included in the request is invalid."}"#;
         let err = parse_polly_error(401, body);
-        assert!(matches!(err, AiMuxError::Auth(_)));
+        assert!(matches!(err, ref e if e.status_code() == Some(401)));
     }
 
     #[test]
-    fn parse_error_maps_403_to_auth() {
+    fn parse_error_keeps_the_observed_403() {
         let body = r#"{"__type":"AccessDeniedException","message":"User is not authorized."}"#;
         let err = parse_polly_error(403, body);
-        assert!(matches!(err, AiMuxError::Auth(_)));
+        assert_eq!(err.status_code(), Some(403));
     }
 }

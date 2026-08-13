@@ -1305,7 +1305,8 @@ mod do_stream {
 
         assert!(result.is_err(), "do_stream should return Err");
         match result.unwrap_err() {
-            AiMuxError::Provider(msg) => {
+            AiMuxError::ApiCall(msg_d) => {
+                let msg = msg_d.to_string();
                 assert!(msg.contains("The server had an error processing your request."));
             }
             other => panic!("expected Provider error, got {:?}", other),
@@ -1335,7 +1336,8 @@ mod do_stream {
 
         assert!(result.is_err(), "do_stream should return Err");
         match result.unwrap_err() {
-            AiMuxError::Provider(msg) => {
+            AiMuxError::ApiCall(msg_d) => {
+                let msg = msg_d.to_string();
                 assert!(msg.contains("bad request"));
                 assert!(msg.contains("400"));
             }

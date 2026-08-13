@@ -164,8 +164,9 @@ int main() {
 
     } catch (const AimuxException &e) {
         std::cerr << "Error: " << e.what() << "\n";
-        if (e.code() == AIMUX_E_RATE_LIMITED) {
-            std::cerr << "retry_ms=" << e.retryMs() << "\n";
+        // HTTP-shaped failures are all AIMUX_E_API_CALL; status is the classification.
+        if (e.code() == AIMUX_E_API_CALL && e.status() == 429) {
+            std::cerr << "rate limited, retry_ms=" << e.retryMs() << "\n";
         }
         return 1;
     } catch (const std::exception &e) {

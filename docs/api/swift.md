@@ -48,7 +48,8 @@ let result = try model.generateText(prompt: "\"Hello\"")
 let model2 = try Aimux.provider(name: "groq", apiKey: "sk-...", modelId: "llama-3.3-70b")
 ```
 
-Unknown names throw an error listing the available providers.
+Unknown names throw `.noSuchProvider` (payload: the provider id); valid names
+come from the generated `ProviderName` enum.
 
 ## Text Generation
 
@@ -103,25 +104,20 @@ struct is converted with `AimuxError.fromC(_:)`.
 
 | Case | C code | Notes |
 |------|--------|--------|
-| `.provider` | `AIMUX_E_PROVIDER` | Provider-layer failure |
-| `.http` | `AIMUX_E_HTTP` | HTTP transport |
-| `.json` | `AIMUX_E_JSON` | JSON parse/serialize |
-| `.stream` | `AIMUX_E_STREAM` | Streaming failure |
-| `.tool` | `AIMUX_E_TOOL` | Tool-related failure |
-| `.invalidArgument` | `AIMUX_E_INVALID_ARGUMENT` | Bad argument |
-| `.invalidPrompt` | `AIMUX_E_INVALID_PROMPT` | Bad prompt JSON |
-| `.rateLimited` | `AIMUX_E_RATE_LIMITED` | HTTP 429; check `retryMs` |
-| `.authentication` | `AIMUX_E_AUTH` | Auth failure |
-| `.tokenExpired` | `AIMUX_E_TOKEN_EXPIRED` | Expired token |
-| `.modelNotFound` | `AIMUX_E_MODEL_NOT_FOUND` | HTTP 404 model |
-| `.unsupported` | `AIMUX_E_UNSUPPORTED` | Unsupported feature |
-| `.noSuchModel` | `AIMUX_E_NO_SUCH_MODEL` | Registry miss |
-| `.unknownProvider` | `AIMUX_E_UNKNOWN_PROVIDER` | Unknown provider name |
-| `.apiCall` | `AIMUX_E_API_CALL` | Provider API call failed |
-| `.timeout` | `AIMUX_E_TIMEOUT` | Request timed out |
-| `.aborted` | `AIMUX_E_ABORTED` | Request aborted |
-| `.other` | `AIMUX_E_OTHER` | Unclassified core error |
-| `.unknown` | `AIMUX_E_UNKNOWN` / unexpected | Future or empty err |
+| `.jsonParse` | `AIMUX_E_JSON_PARSE` (2) | JSON parse/serialize |
+| `.invalidResponseData` | `AIMUX_E_INVALID_RESPONSE_DATA` (3) | Malformed response / stream data |
+| `.tool` | `AIMUX_E_TOOL` (4) | Tool-related failure |
+| `.invalidArgument` | `AIMUX_E_INVALID_ARGUMENT` (5) | Bad argument |
+| `.invalidPrompt` | `AIMUX_E_INVALID_PROMPT` (6) | Bad prompt JSON |
+| `.tokenExpired` | `AIMUX_E_TOKEN_EXPIRED` (7) | Expired token; `status` 401 |
+| `.unsupportedFunctionality` | `AIMUX_E_UNSUPPORTED_FUNCTIONALITY` (8) | Unsupported feature |
+| `.noSuchModel` | `AIMUX_E_NO_SUCH_MODEL` (9) | Registry miss |
+| `.noSuchProvider` | `AIMUX_E_NO_SUCH_PROVIDER` (10) | Unknown provider id |
+| `.apiCall` | `AIMUX_E_API_CALL` (11) | Every HTTP-shaped failure; branch on `status` (401 auth, 404 model, 429 rate limit) |
+| `.timeout` | `AIMUX_E_TIMEOUT` (12) | Request timed out |
+| `.aborted` | `AIMUX_E_ABORTED` (13) | Request aborted |
+| `.other` | `AIMUX_E_OTHER` (14) | Unclassified core error |
+| `.unknown` | `AIMUX_E_UNKNOWN` (1) / unexpected | Future or empty err |
 | `.invalidHandle` | *(local)* | Zero / freed handle |
 | `.serializationError` | *(local)* | Binding encode/decode |
 
@@ -133,8 +129,8 @@ do {
     _ = try model.generateText(prompt: "\"hi\"")
 } catch let e as AimuxError {
     print(e.message, e.status, e.retryMs)
-    if case .rateLimited(_, _, let retryMs) = e, retryMs >= 0 {
-        // back off
+    if case .apiCall = e, e.status == 429, e.retryMs >= 0 {
+        // rate limited — back off
     }
 }
 ```

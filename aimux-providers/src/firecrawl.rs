@@ -190,9 +190,7 @@ impl SearchModel for FirecrawlSearchModel {
         .await?;
         let response_headers = resp.headers;
 
-        let parsed: FirecrawlResponse = serde_json::from_slice(&resp.body).map_err(|e| {
-            AiMuxError::Provider(format!("Failed to parse Firecrawl response: {e}"))
-        })?;
+        let parsed: FirecrawlResponse = serde_json::from_slice(&resp.body)?;
 
         Ok(SearchResult {
             results: map_results(parsed.data.web),

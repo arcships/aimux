@@ -125,12 +125,11 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
         )
         .await?;
 
-        // `send` retries 429/5xx and returns an error for non-2xx, so an `Ok`
+        // `send` retries 408/409/429/5xx and returns an error for non-2xx, so an `Ok`
         // response here is guaranteed to be 2xx — no manual is_success() check.
         let response_headers = resp.headers;
 
-        let raw_value: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw_value: Value = serde_json::from_slice(&resp.body)?;
 
         // Extract embeddings: response.data[].embedding
         // The embedding field can be a JSON array of floats (default) or a

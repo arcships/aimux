@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
@@ -276,7 +276,7 @@ impl ImageModel for BedrockImageModel {
         }
 
         let body_str = serde_json::to_string(&Value::Object(args))
-            .map_err(|e| AiMuxError::Json(e.to_string()))?;
+            .map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
@@ -296,8 +296,7 @@ impl ImageModel for BedrockImageModel {
         )
         .await?;
         let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("invalid JSON: {e}")))?;
+        let rb: Value = serde_json::from_slice(&resp.body)?;
 
         // Handle moderated/blocked requests
         if let Some(s) = rb.get("status").and_then(|v| v.as_str())
@@ -315,10 +314,13 @@ impl ImageModel for BedrockImageModel {
                         .join(", ")
                 })
                 .unwrap_or_else(|| "Unknown".into());
-            return Err(AiMuxError::Provider(format!(
-                "Amazon Bedrock request was moderated: {}",
-                reasons_str
-            )));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                status_code: Some(resp.status),
+                provider_code: Some(s.to_string()),
+                message: format!("Amazon Bedrock request was moderated: {}", reasons_str),
+                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                ..Default::default()
+            }));
         }
 
         let images: Vec<String> = rb
@@ -331,7 +333,7 @@ impl ImageModel for BedrockImageModel {
             })
             .unwrap_or_default();
         if images.is_empty() {
-            return Err(AiMuxError::Provider(
+            return Err(AiMuxError::InvalidResponseData(
                 "Amazon Bedrock returned no images.".into(),
             ));
         }

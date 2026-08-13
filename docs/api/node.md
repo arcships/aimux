@@ -87,14 +87,13 @@ Engine and binding failures throw an **`AimuxError` subclass hierarchy**
 ```text
 Error
  └── AimuxError
-      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── APICallError              // every HTTP-shaped failure; classify on status
+      ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
-      ├── RateLimitedError          // status 429, retryMs
-      ├── AuthenticationError       // status 401
       ├── TokenExpiredError
-      ├── ModelNotFoundError / NoSuchModelError
-      ├── UnsupportedError / UnknownProviderError
-      ├── APICallError / TimeoutError
+      ├── UnsupportedFunctionalityError
+      ├── NoSuchModelError / NoSuchProviderError
+      ├── TimeoutError
       ├── RequestAbortedError
       └── OtherError
 ```
@@ -102,15 +101,20 @@ Error
 Every instance has `message`, `status` (HTTP or `-1`), and `retryMs` (hint or `-1`).
 
 ```typescript
-import { generateText, AimuxError, RateLimitedError, AuthenticationError } from 'aimux'
+import { generateText, AimuxError, APICallError } from 'aimux'
 
 try {
   await generateText(model, 'hi')
 } catch (e) {
-  if (e instanceof RateLimitedError) {
-    // e.retryMs, e.status === 429
-  } else if (e instanceof AuthenticationError) {
-    // e.status === 401
+  if (e instanceof APICallError) {
+    // classify on status (AI SDK APICallError.statusCode):
+    if (e.status === 429) {
+      // rate limited — e.retryMs
+    } else if (e.status === 401) {
+      // auth failure
+    } else if (e.status === 404) {
+      // model not found
+    }
   } else if (e instanceof AimuxError) {
     // any engine / binding failure
   }

@@ -6,10 +6,11 @@
 //! ```python
 //! try:
 //!     generate_text(model, "hi")
-//! except RateLimitError as e:
-//!     ...  # e.retry_ms, e.status
-//! except AuthenticationError as e:
-//!     ...
+//! except APICallError as e:
+//!     if e.status == 429:      # classification is the status field,
+//!         ...                  # exactly like AI SDK APICallError.statusCode
+//!     elif e.status == 401:
+//!         ...
 //! except AimuxError:
 //!     ...  # any engine / binding failure
 //! ```
@@ -23,30 +24,21 @@ use pyo3::types::PyAnyMethods;
 // Base — catch-all for any aimux failure.
 create_exception!(aimux, AimuxError, PyException, "Engine or binding failure");
 
-create_exception!(aimux, ProviderError, AimuxError, "Provider-layer failure");
-create_exception!(aimux, HttpError, AimuxError, "HTTP transport failure");
-create_exception!(aimux, JsonError, AimuxError, "JSON parse/serialize failure");
-create_exception!(aimux, StreamError, AimuxError, "Streaming failure");
+create_exception!(aimux, APICallError, AimuxError, "API call failure");
+create_exception!(aimux, JSONParseError, AimuxError, "JSON parse/serialize failure");
+create_exception!(
+    aimux,
+    InvalidResponseDataError,
+    AimuxError,
+    "Invalid response data"
+);
 create_exception!(aimux, ToolError, AimuxError, "Tool-related failure");
 create_exception!(aimux, InvalidArgumentError, AimuxError, "Invalid argument");
 create_exception!(aimux, InvalidPromptError, AimuxError, "Invalid prompt");
-create_exception!(aimux, RateLimitError, AimuxError, "Rate limited (HTTP 429)");
-create_exception!(
-    aimux,
-    AuthenticationError,
-    AimuxError,
-    "Authentication failed (HTTP 401)"
-);
 create_exception!(aimux, TokenExpiredError, AimuxError, "Access token expired");
 create_exception!(
     aimux,
-    ModelNotFoundError,
-    AimuxError,
-    "Model not found (HTTP 404)"
-);
-create_exception!(
-    aimux,
-    UnsupportedError,
+    UnsupportedFunctionalityError,
     AimuxError,
     "Unsupported functionality"
 );
@@ -58,11 +50,10 @@ create_exception!(
 );
 create_exception!(
     aimux,
-    UnknownProviderError,
+    NoSuchProviderError,
     AimuxError,
-    "Unknown provider name"
+    "No such provider in registry"
 );
-create_exception!(aimux, APICallError, AimuxError, "Provider API call failed");
 create_exception!(aimux, APITimeoutError, AimuxError, "Request timed out");
 create_exception!(aimux, RequestAbortedError, AimuxError, "Request aborted");
 create_exception!(aimux, OtherError, AimuxError, "Unclassified failure");
@@ -76,29 +67,44 @@ pub(crate) fn to_py_err(e: &AiMuxError) -> PyErr {
 
 fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
     let typ = match e {
-        AiMuxError::Provider(_) => py.get_type_bound::<ProviderError>(),
-        AiMuxError::Http(_) => py.get_type_bound::<HttpError>(),
-        AiMuxError::Json(_) => py.get_type_bound::<JsonError>(),
-        AiMuxError::Stream(_) => py.get_type_bound::<StreamError>(),
+        AiMuxError::ApiCall(_) => py.get_type_bound::<APICallError>(),
+        AiMuxError::JsonParse(_) => py.get_type_bound::<JSONParseError>(),
+        AiMuxError::InvalidResponseData(_) => py.get_type_bound::<InvalidResponseDataError>(),
         AiMuxError::Tool(_) => py.get_type_bound::<ToolError>(),
         AiMuxError::InvalidArgument(_) => py.get_type_bound::<InvalidArgumentError>(),
         AiMuxError::InvalidPrompt(_) => py.get_type_bound::<InvalidPromptError>(),
-        AiMuxError::RateLimited { .. } => py.get_type_bound::<RateLimitError>(),
-        AiMuxError::Auth(_) => py.get_type_bound::<AuthenticationError>(),
         AiMuxError::TokenExpired(_) => py.get_type_bound::<TokenExpiredError>(),
-        AiMuxError::ModelNotFound(_) => py.get_type_bound::<ModelNotFoundError>(),
-        AiMuxError::Unsupported(_) => py.get_type_bound::<UnsupportedError>(),
-        AiMuxError::NoSuchModel(_) => py.get_type_bound::<NoSuchModelError>(),
-        AiMuxError::UnknownProvider(_) => py.get_type_bound::<UnknownProviderError>(),
-        AiMuxError::ApiCall(_) => py.get_type_bound::<APICallError>(),
+        AiMuxError::UnsupportedFunctionality(_) => {
+            py.get_type_bound::<UnsupportedFunctionalityError>()
+        }
+        AiMuxError::NoSuchModel { .. } => py.get_type_bound::<NoSuchModelError>(),
+        AiMuxError::NoSuchProvider { .. } => py.get_type_bound::<NoSuchProviderError>(),
         AiMuxError::Timeout(_) => py.get_type_bound::<APITimeoutError>(),
         AiMuxError::Aborted => py.get_type_bound::<RequestAbortedError>(),
         AiMuxError::Other(_) => py.get_type_bound::<OtherError>(),
+    };
+    let detail = match e {
+        AiMuxError::ApiCall(d) => Some(d),
+        _ => None,
     };
     let inst = typ.call1((e.to_string(),))?;
     // None when the core has no value (openai/anthropic convention: int | None).
     inst.setattr("status", e.status_code().map(i32::from))?;
     inst.setattr("retry_ms", e.retry_after_hint())?;
+    inst.setattr("retryable", e.is_retryable())?;
+    // Structured fields from `ApiCallError` (AI SDK `APICallError` analogues).
+    inst.setattr(
+        "provider_code",
+        detail.and_then(|d| d.provider_code.as_deref()),
+    )?;
+    inst.setattr(
+        "response_body",
+        detail.and_then(|d| d.response_body.as_deref()),
+    )?;
+    inst.setattr(
+        "request_id",
+        detail.and_then(|d| d.request_id.as_deref()),
+    )?;
     // Lossless externally-tagged JSON of the source error (parity with C ABI).
     inst.setattr("error_value", serde_json::to_string(e).ok())?;
     Ok(PyErr::from_value_bound(inst))
@@ -108,10 +114,12 @@ fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
 pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
     m.add("AimuxError", py.get_type_bound::<AimuxError>())?;
-    m.add("ProviderError", py.get_type_bound::<ProviderError>())?;
-    m.add("HttpError", py.get_type_bound::<HttpError>())?;
-    m.add("JsonError", py.get_type_bound::<JsonError>())?;
-    m.add("StreamError", py.get_type_bound::<StreamError>())?;
+    m.add("APICallError", py.get_type_bound::<APICallError>())?;
+    m.add("JSONParseError", py.get_type_bound::<JSONParseError>())?;
+    m.add(
+        "InvalidResponseDataError",
+        py.get_type_bound::<InvalidResponseDataError>(),
+    )?;
     m.add("ToolError", py.get_type_bound::<ToolError>())?;
     m.add(
         "InvalidArgumentError",
@@ -121,26 +129,19 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "InvalidPromptError",
         py.get_type_bound::<InvalidPromptError>(),
     )?;
-    m.add("RateLimitError", py.get_type_bound::<RateLimitError>())?;
-    m.add(
-        "AuthenticationError",
-        py.get_type_bound::<AuthenticationError>(),
-    )?;
     m.add(
         "TokenExpiredError",
         py.get_type_bound::<TokenExpiredError>(),
     )?;
     m.add(
-        "ModelNotFoundError",
-        py.get_type_bound::<ModelNotFoundError>(),
+        "UnsupportedFunctionalityError",
+        py.get_type_bound::<UnsupportedFunctionalityError>(),
     )?;
-    m.add("UnsupportedError", py.get_type_bound::<UnsupportedError>())?;
     m.add("NoSuchModelError", py.get_type_bound::<NoSuchModelError>())?;
     m.add(
-        "UnknownProviderError",
-        py.get_type_bound::<UnknownProviderError>(),
+        "NoSuchProviderError",
+        py.get_type_bound::<NoSuchProviderError>(),
     )?;
-    m.add("APICallError", py.get_type_bound::<APICallError>())?;
     m.add("APITimeoutError", py.get_type_bound::<APITimeoutError>())?;
     m.add(
         "RequestAbortedError",

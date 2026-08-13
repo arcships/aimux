@@ -10,10 +10,10 @@ use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aimux_ffi::{
-    AIMUX_E_INVALID_ARGUMENT, AIMUX_E_JSON, AIMUX_E_OTHER, AIMUX_E_UNKNOWN_PROVIDER, AIMUX_OK,
-    CAimuxError, aimux_abort_signal_abort, aimux_abort_signal_drop, aimux_abort_signal_new,
-    aimux_azure_new, aimux_cohere_reranking_new, aimux_drop_handle, aimux_free_string,
-    aimux_generate_text, aimux_google_image_new, aimux_google_video_new,
+    AIMUX_E_INVALID_ARGUMENT, AIMUX_E_JSON_PARSE, AIMUX_E_NO_SUCH_PROVIDER, AIMUX_E_OTHER,
+    AIMUX_OK, CAimuxError, aimux_abort_signal_abort, aimux_abort_signal_drop,
+    aimux_abort_signal_new, aimux_azure_new, aimux_cohere_reranking_new, aimux_drop_handle,
+    aimux_free_string, aimux_generate_text, aimux_google_image_new, aimux_google_video_new,
     aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new,
     aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new, aimux_stream_text,
     aimux_tavily_search_new,
@@ -92,7 +92,7 @@ fn generate_text_invalid_prompt_json_carries_serde_detail() {
         m.starts_with("invalid prompt_json:") || m.contains("invalid prompt"),
         "expected serde detail in message, got: {m}"
     );
-    assert_eq!(err.code, AIMUX_E_JSON, "parse failures map to Json");
+    assert_eq!(err.code, AIMUX_E_JSON_PARSE, "parse failures map to Json");
     free_err(&mut err);
     aimux_drop_handle(h);
 }
@@ -136,7 +136,7 @@ fn stream_text_invalid_prompt_returns_zero_and_fills_err() {
         &mut err,
     );
     assert_eq!(rc, 0, "stream must return 0 on failure");
-    assert_eq!(err.code, AIMUX_E_JSON);
+    assert_eq!(err.code, AIMUX_E_JSON_PARSE);
     assert!(!msg(&err).is_empty());
     free_err(&mut err);
     aimux_drop_handle(h);
@@ -155,7 +155,7 @@ fn unknown_provider_fills_unknown_provider_code() {
         &mut err,
     );
     expect_fail_u64(h, &err);
-    assert_eq!(err.code, AIMUX_E_UNKNOWN_PROVIDER);
+    assert_eq!(err.code, AIMUX_E_NO_SUCH_PROVIDER);
     free_err(&mut err);
 }
 
@@ -179,7 +179,7 @@ fn invalid_config_json_reports_error() {
         &mut err,
     );
     expect_fail_u64(h, &err);
-    assert_eq!(err.code, AIMUX_E_JSON);
+    assert_eq!(err.code, AIMUX_E_JSON_PARSE);
     free_err(&mut err);
 }
 

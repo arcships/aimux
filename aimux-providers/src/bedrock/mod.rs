@@ -267,7 +267,7 @@ impl Provider for BedrockProvider {
                     sigv4::sign_request(creds, "bedrock", "GET", &url, "", &[])
                 }
                 BedrockAuth::BearerToken(_) => {
-                    return Err(AiMuxError::Unsupported(
+                    return Err(AiMuxError::UnsupportedFunctionality(
                         "list_models via BearerToken not supported for Bedrock; use SigV4 credentials".into(),
                     ));
                 }
@@ -306,8 +306,7 @@ impl Provider for BedrockProvider {
                 #[serde(default, rename = "modelName")]
                 name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(format!("bedrock list_models: parse: {e}")))?;
+            let parsed: Resp = serde_json::from_slice(&resp.body)?;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .summaries
                 .into_iter()

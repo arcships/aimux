@@ -878,7 +878,7 @@ mod json_accumulator_tests {
                 ..Default::default()
             }])
             .unwrap_err();
-        assert!(matches!(err, AiMuxError::Json(_)));
+        assert!(matches!(err, AiMuxError::JsonParse(_)));
     }
 
     /// Regression (audit round 3, A1): an oversized **intermediate** index
@@ -895,7 +895,7 @@ mod json_accumulator_tests {
                 ..Default::default()
             }])
             .unwrap_err();
-        assert!(matches!(err, AiMuxError::Json(_)));
+        assert!(matches!(err, AiMuxError::JsonParse(_)));
 
         // Error atomicity: the rejected arg must not leave partially-built
         // containers (`a: []`) behind — a subsequent valid write lands cleanly.
@@ -921,7 +921,7 @@ mod json_accumulator_tests {
                 ..Default::default()
             }])
             .unwrap_err();
-        assert!(matches!(err, AiMuxError::Json(_)));
+        assert!(matches!(err, AiMuxError::JsonParse(_)));
     }
 
     #[test]

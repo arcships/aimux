@@ -185,7 +185,7 @@ impl GoogleJsonAccumulator {
     /// Process a batch of partial args, returning the structured object and
     /// the JSON text delta for this call.
     ///
-    /// Returns [`AiMuxError::Json`] when a partial-arg path conflicts with the
+    /// Returns [`AiMuxError::JsonParse`] when a partial-arg path conflicts with the
     /// already-accumulated structure (e.g. `$.a` was a string, then `$.a[0]`
     /// arrives). `partialArgs` is provider-controlled input, so such conflicts
     /// must not panic.
@@ -445,7 +445,7 @@ const MAX_PARTIAL_ARG_DEPTH: usize = 64;
 
 /// Set a value at a nested path, creating intermediate objects or arrays.
 ///
-/// Returns [`AiMuxError::Json`] instead of panicking when the incoming path
+/// Returns [`AiMuxError::JsonParse`] instead of panicking when the incoming path
 /// conflicts with the already-accumulated type (e.g. `$.a` was set to a
 /// string and a later `partialArgs` chunk targets `$.a[0].b`), or when the
 /// path exceeds the resource caps ([`MAX_PARTIAL_ARG_INDEX`],
@@ -456,7 +456,7 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
         return Ok(());
     }
     if segments.len() > MAX_PARTIAL_ARG_DEPTH {
-        return Err(AiMuxError::Json(format!(
+        return Err(AiMuxError::JsonParse(format!(
             "partial args path exceeds maximum depth of {MAX_PARTIAL_ARG_DEPTH}"
         )));
     }
@@ -469,7 +469,7 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
         if let Segment::Index(index) = segment
             && *index > MAX_PARTIAL_ARG_INDEX
         {
-            return Err(AiMuxError::Json(format!(
+            return Err(AiMuxError::JsonParse(format!(
                 "partial args array index {index} exceeds maximum of {MAX_PARTIAL_ARG_INDEX}"
             )));
         }
@@ -524,14 +524,14 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
                 .ok_or_else(|| parent_must_be(seg))?
                 .get_mut(k)
                 .ok_or_else(|| {
-                    AiMuxError::Json(format!("partial args path conflict at {:?}", seg))
+                    AiMuxError::JsonParse(format!("partial args path conflict at {:?}", seg))
                 })?,
             Segment::Index(i) => current
                 .as_array_mut()
                 .ok_or_else(|| parent_must_be(seg))?
                 .get_mut(*i)
                 .ok_or_else(|| {
-                    AiMuxError::Json(format!("partial args path conflict at {:?}", seg))
+                    AiMuxError::JsonParse(format!("partial args path conflict at {:?}", seg))
                 })?,
             Segment::Root => current,
         };
@@ -562,7 +562,7 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
 /// Build the path-type-conflict error for a segment whose actual JSON type
 /// does not match the path's expectation (e.g. an index into a string).
 fn parent_must_be(seg: &Segment) -> AiMuxError {
-    AiMuxError::Json(format!(
+    AiMuxError::JsonParse(format!(
         "partial args path type conflict at {:?}: accumulated value does not match the path",
         seg
     ))

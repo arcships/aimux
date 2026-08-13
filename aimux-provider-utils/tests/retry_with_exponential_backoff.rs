@@ -1,4 +1,4 @@
-﻿//! Rust translation of
+//! Rust translation of
 //! `packages/ai/src/util/retry-with-exponential-backoff.test.ts`.
 //!
 //! The TS suite exercises `retryWithExponentialBackoffRespectingRetryHeaders`,
@@ -15,9 +15,9 @@
 //! (`#[tokio::test(start_paused = true)]` + `tokio::time::advance`).
 //!
 //! The TS tests are written against `APICallError` carrying `responseHeaders`.
-//! Rust's `AiMuxError::RateLimited { retry_after_ms }` carries the parsed
+//! Rust's rate-limit error carries the parsed hint in the detail's
 //! delay hint (exposed via `AiMuxError::retry_after_hint()`), so a
-//! `RateLimited` error stands in for an `APICallError` with a `retry-after-ms`
+//! 429 `Provider` error stands in for an `APICallError` with a `retry-after-ms`
 //! header. Errors without a hint (e.g. `ApiCall`, `Http`) stand in for
 //! `APICallError` with no retry headers.
 
@@ -25,7 +25,27 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, SystemTime};
 
-use aimux_core::AiMuxError;
+use aimux_core::{AiMuxError, ApiCallError};
+
+/// A retryable transient failure: a 5xx `ApiCall` error. `is_retryable` is
+/// stored at construction, as `error_for_status` does for a live 5xx.
+fn server_error(msg: &str) -> AiMuxError {
+    AiMuxError::ApiCall(ApiCallError {
+        status_code: Some(500),
+        message: msg.into(),
+        is_retryable: true,
+        ..Default::default()
+    })
+}
+
+fn rate_limited(ms: u64) -> AiMuxError {
+    AiMuxError::ApiCall(ApiCallError {
+        status_code: Some(429),
+        retry_after_ms: Some(ms),
+        is_retryable: true,
+        ..Default::default()
+    })
+}
 use aimux_provider_utils::{
     RetryConfig, get_retry_delay_ms, parse_retry_after,
     retry_with_exponential_backoff_respecting_retry_headers,
@@ -90,7 +110,7 @@ fn get_delay_uses_exponential_when_hint_too_long() {
 #[test]
 fn get_delay_falls_back_when_negative() {
     // TS: "should fall back to exponential backoff when rate limit delay is
-    // negative". `RateLimited` stores the delay as u64 so it cannot carry a
+    // negative". The detail stores the delay as u64 so it cannot carry a
     // negative value end-to-end; the negative branch is covered here via the
     // pure helper that the retry loop uses.
     assert_eq!(get_retry_delay_ms(Some(-1000), 2000), 2000);
@@ -179,10 +199,7 @@ async fn uses_rate_limit_header_delay_when_reasonable() {
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| {
         if n == 1 {
-            Some(AiMuxError::RateLimited {
-                retry_after_ms: 3000,
-                message: String::new(),
-            })
+            Some(rate_limited(3000))
         } else {
             None
         }
@@ -210,10 +227,7 @@ async fn uses_exponential_backoff_when_delay_too_long() {
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| {
         if n == 1 {
-            Some(AiMuxError::RateLimited {
-                retry_after_ms: 70_000,
-                message: String::new(),
-            })
+            Some(rate_limited(70_000))
         } else {
             None
         }
@@ -242,7 +256,7 @@ async fn falls_back_to_exponential_when_no_rate_limit_headers() {
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| {
         if n == 1 {
-            Some(AiMuxError::ApiCall("Temporary error".to_string()))
+            Some(server_error("Temporary error"))
         } else {
             None
         }
@@ -271,10 +285,7 @@ async fn handles_anthropic_429_with_retry_after_ms() {
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| {
         if n == 1 {
-            Some(AiMuxError::RateLimited {
-                retry_after_ms: 5000,
-                message: String::new(),
-            })
+            Some(rate_limited(5000))
         } else {
             None
         }
@@ -303,14 +314,8 @@ async fn multiple_retries_with_exponential_progression() {
     // retry, which covers the 2000ms delay.
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| match n {
-        1 => Some(AiMuxError::RateLimited {
-            retry_after_ms: 5000,
-            message: String::new(),
-        }),
-        2 => Some(AiMuxError::RateLimited {
-            retry_after_ms: 2000,
-            message: String::new(),
-        }),
+        1 => Some(rate_limited(5000)),
+        2 => Some(rate_limited(2000)),
         _ => None,
     });
 
@@ -341,7 +346,7 @@ async fn retries_on_gateway_internal_server_error() {
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| {
         if n == 1 {
-            Some(AiMuxError::ApiCall("Internal server error".to_string()))
+            Some(server_error("Internal server error"))
         } else {
             None
         }
@@ -367,14 +372,11 @@ async fn retries_on_gateway_internal_server_error() {
 #[tokio::test(start_paused = true)]
 async fn retries_on_gateway_rate_limit_error() {
     // TS: "should retry on GatewayRateLimitError" — a retryable rate-limit
-    // error. Modelled as a RateLimited error carrying a reasonable hint.
+    // error. Modelled as a 429 Provider error carrying a reasonable hint.
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| {
         if n == 1 {
-            Some(AiMuxError::RateLimited {
-                retry_after_ms: 2000,
-                message: String::new(),
-            })
+            Some(rate_limited(2000))
         } else {
             None
         }
@@ -402,7 +404,11 @@ async fn does_not_retry_on_non_retryable_auth_error() {
     // TS: "should not retry on non-retryable GatewayAuthenticationError"
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |_| {
-        Some(AiMuxError::Auth("Invalid API key".to_string()))
+        Some(AiMuxError::ApiCall(ApiCallError {
+            status_code: Some(401),
+            message: "Invalid API key".into(),
+            ..Default::default()
+        }))
     });
 
     let result =
@@ -412,7 +418,7 @@ async fn does_not_retry_on_non_retryable_auth_error() {
     // Auth is not retryable: a single attempt, no delay, error propagates.
     assert_eq!(counter.load(Ordering::SeqCst), 1);
     let err = result.unwrap_err();
-    assert!(matches!(err, AiMuxError::Auth(ref m) if m == "Invalid API key"));
+    assert!(matches!(err, AiMuxError::ApiCall(ref m) if m.message == "Invalid API key"));
 }
 
 #[tokio::test(start_paused = true)]
@@ -425,10 +431,7 @@ async fn uses_retry_after_hint_from_wrapped_error() {
     let counter = Arc::new(AtomicU32::new(0));
     let closure = failing_then_success(counter.clone(), |n| {
         if n == 1 {
-            Some(AiMuxError::RateLimited {
-                retry_after_ms: 3000,
-                message: String::new(),
-            })
+            Some(rate_limited(3000))
         } else {
             None
         }
@@ -466,9 +469,7 @@ async fn gives_up_after_max_retries() {
     // TS counterpart: the suite's `maxRetries` config bounds attempts. A
     // persistently-retryable error must surface after `max_retries + 1` tries.
     let counter = Arc::new(AtomicU32::new(0));
-    let closure = failing_then_success(counter.clone(), |_| {
-        Some(AiMuxError::ApiCall("always fails".to_string()))
-    });
+    let closure = failing_then_success(counter.clone(), |_| Some(server_error("always fails")));
 
     let config = RetryConfig {
         max_retries: 2,

@@ -401,7 +401,7 @@ impl MockReplayModel {
                 continue;
             }
             let rec: Recording = serde_json::from_str(line)
-                .map_err(|e| AiMuxError::Json(format!("mock replay line {}: {e}", idx + 1)))?;
+                .map_err(|e| AiMuxError::JsonParse(format!("mock replay line {}: {e}", idx + 1)))?;
             recordings.push(rec);
         }
         if recordings.is_empty() {
@@ -484,7 +484,7 @@ fn u32_from_json(v: &serde_json::Value, field: &str) -> Result<Option<u32>, AiMu
     v.as_u64()
         .map(|n| {
             u32::try_from(n).map_err(|_| {
-                AiMuxError::Json(format!("mock replay: usage '{field}' overflows u32: {n}"))
+                AiMuxError::JsonParse(format!("mock replay: usage '{field}' overflows u32: {n}"))
             })
         })
         .transpose()
@@ -540,15 +540,15 @@ fn parse_tool_arguments(args: &str) -> serde_json::Value {
 /// 仅支持 OpenAI `chat.completions` 格式:`choices[0].message` 的 `content`
 /// (文本)+ `tool_calls`(C4-4,`content:null + tool_calls:[...]` 不得返回空);
 /// 以及 `finish_reason` / `usage` / `id` / `model`。非 OpenAI 格式(无
-/// `choices[0].message`)返回 [`AiMuxError::Unsupported`](A7),不再降级为文本。
+/// `choices[0].message`)返回 [`AiMuxError::UnsupportedFunctionality`](A7),不再降级为文本。
 fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError> {
     let resp = last_response(rec)?;
     let body = resp
         .body
         .as_deref()
         .ok_or_else(|| AiMuxError::InvalidArgument("mock replay: response has no body".into()))?;
-    let v: serde_json::Value =
-        serde_json::from_str(body).map_err(|e| AiMuxError::Json(format!("mock replay: {e}")))?;
+    let v: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: {e}")))?;
 
     // A7:必须有 choices[0].message 才算 OpenAI chat.completions;否则 Unsupported。
     let message = v
@@ -556,7 +556,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         .and_then(|c| c.get(0))
         .and_then(|choice| choice.get("message"))
         .ok_or_else(|| {
-            AiMuxError::Unsupported(
+            AiMuxError::UnsupportedFunctionality(
                 "mock replay: response is not an OpenAI chat.completions body (no choices[0].message)"
                     .into(),
             )
@@ -643,7 +643,7 @@ struct ToolCallAccumulator {
 /// - usage-only 末帧(`choices:[]` + `usage`)→ 累积到 Finish.usage。
 ///
 /// `data: [DONE]` 结束。**A7**:若整段 body 未出现任何 `choices` 数组事件(非
-/// OpenAI SSE),返回 [`AiMuxError::Unsupported`],不再按行 Raw 降级成功。
+/// OpenAI SSE),返回 [`AiMuxError::UnsupportedFunctionality`],不再按行 Raw 降级成功。
 fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
     let resp = last_response(rec)?;
     let body = resp
@@ -891,7 +891,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
 
     // A7:未解析出任何 OpenAI 结构 → 非OpenAI SSE,返回 Unsupported(不降级 Raw)。
     if !saw_openai {
-        return Err(AiMuxError::Unsupported(
+        return Err(AiMuxError::UnsupportedFunctionality(
             "mock replay: response is not an OpenAI chat.completions SSE stream".into(),
         ));
     }
@@ -948,7 +948,7 @@ pub async fn replay_with_model(
 ) -> Result<GenerateTextResult, AiMuxError> {
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)。
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::Json(format!("mock replay: input options invalid: {e}")))?;
+        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {
@@ -1506,7 +1506,7 @@ mod tests {
                 .await
                 .unwrap_err()
         });
-        assert!(matches!(err, AiMuxError::Json(_)), "{err}");
+        assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
         assert!(err.to_string().contains("overflows u32"), "{err}");
     }
 
@@ -1559,7 +1559,10 @@ mod tests {
                 .await
                 .unwrap_err()
         });
-        assert!(matches!(err, AiMuxError::Unsupported(_)), "{err}");
+        assert!(
+            matches!(err, AiMuxError::UnsupportedFunctionality(_)),
+            "{err}"
+        );
     }
 
     #[test]
@@ -1577,7 +1580,10 @@ mod tests {
                 .await
                 .unwrap_err()
         });
-        assert!(matches!(err, AiMuxError::Unsupported(_)), "{err}");
+        assert!(
+            matches!(err, AiMuxError::UnsupportedFunctionality(_)),
+            "{err}"
+        );
     }
 
     #[test]
@@ -1991,6 +1997,6 @@ mod tests {
         let model = EchoModel::new();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let err = rt.block_on(async { replay_with_model(&rec, &model, None).await.unwrap_err() });
-        assert!(matches!(err, AiMuxError::Json(_)), "{err}");
+        assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
     }
 }

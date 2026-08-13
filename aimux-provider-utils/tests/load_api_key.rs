@@ -52,12 +52,12 @@ fn reads_api_key_from_environment_variable() {
 
 #[test]
 #[serial]
-fn returns_auth_error_when_neither_provided() {
+fn returns_invalid_argument_when_neither_provided() {
     // TS: throws LoadAPIKeyError when apiKey is null and the env var is unset.
     cleanup();
     remove_env();
     let err = load_api_key(None, ENV_VAR, "Test API key").unwrap_err();
-    assert!(matches!(err, AiMuxError::Auth(_)));
+    assert!(matches!(err, AiMuxError::InvalidArgument(_)));
 }
 
 #[test]
@@ -68,8 +68,8 @@ fn error_message_mentions_description_and_env_var() {
     remove_env();
     let err = load_api_key(None, ENV_VAR, "Test API key").unwrap_err();
     let msg = match err {
-        AiMuxError::Auth(m) => m,
-        other => panic!("expected Auth error, got {other:?}"),
+        AiMuxError::InvalidArgument(m) => m,
+        other => panic!("expected InvalidArgument error, got {other:?}"),
     };
     assert!(
         msg.contains("Test API key"),
@@ -99,7 +99,7 @@ fn empty_string_api_key_errors_when_env_var_also_unset() {
     cleanup();
     remove_env();
     let err = load_api_key(Some(""), ENV_VAR, "Test").unwrap_err();
-    assert!(matches!(err, AiMuxError::Auth(_)));
+    assert!(matches!(err, AiMuxError::InvalidArgument(_)));
 }
 
 #[test]

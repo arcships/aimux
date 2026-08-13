@@ -70,7 +70,7 @@ function tables below.
 
 | Function | Signature (abridged) | Notes |
 |----------|----------------------|-------|
-| `provider` | `provider(name, api_key, model_id, options) -> Box<dyn LanguageModel>` | registry lookup; unknown name → `UnknownProvider` |
+| `provider` | `provider(name, api_key, model_id, options) -> Box<dyn LanguageModel>` | registry lookup; unknown name → `NoSuchProvider` |
 | `provider_from_env` | `provider_from_env(name, model_id, options)` | key read from the registry entry's env var |
 | `provider_registry_entry` | `-> Option<OpenAICompatProfile>` | inspect a registry profile |
 | `generate_text` | `(model, prompt, options) -> GenerateTextResult` | non-streaming |

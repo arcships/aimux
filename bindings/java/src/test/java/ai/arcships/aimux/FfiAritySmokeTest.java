@@ -30,8 +30,8 @@ class FfiAritySmokeTest {
             Model.provider("definitely-not-a-provider", "sk-x", "some-model", null);
             throw new AssertionError("expected AimuxException");
         } catch (AimuxException e) {
-            assertThat(e).isInstanceOf(AimuxException.UnknownProviderError.class);
-            assertThat(e.getErrorValue()).isNotNull().contains("UnknownProvider");
+            assertThat(e).isInstanceOf(AimuxException.NoSuchProviderError.class);
+            assertThat(e.getErrorValue()).isNotNull().contains("NoSuchProvider");
         }
     }
 

@@ -76,8 +76,10 @@ async fn retry_chain_logged_with_redaction() {
         output.contains("status=429"),
         "missing status field:\n{output}"
     );
+    // The classification is the logged status; the variant name is just
+    // "provider".
     assert!(
-        output.contains("reason=rate_limited"),
+        output.contains("reason=api_call"),
         "missing reason field:\n{output}"
     );
     assert!(

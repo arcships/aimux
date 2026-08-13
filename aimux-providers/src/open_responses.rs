@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
@@ -279,8 +280,7 @@ impl LanguageModel for OpenResponsesModel {
 
         let response_headers = resp.headers;
 
-        let raw: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let raw: Value = serde_json::from_slice(&resp.body)?;
 
         // Check for response.error first (surfaces before the no-output fallback).
         if let Some(error) = raw.get("error").and_then(|e| e.as_object())
@@ -290,7 +290,17 @@ impl LanguageModel for OpenResponsesModel {
                 .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("unknown error");
-            return Err(AiMuxError::ApiCall(message.to_string()));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                status_code: Some(resp.status),
+                provider_code: error
+                    .get("code")
+                    .or_else(|| error.get("type"))
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string()),
+                message: message.to_string(),
+                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                ..Default::default()
+            }));
         }
 
         // Check for null/missing output.
@@ -305,7 +315,7 @@ impl LanguageModel for OpenResponsesModel {
                 Some(d) => format!("Responses API returned no output ({})", d),
                 None => "Responses API returned no output".to_string(),
             };
-            return Err(AiMuxError::ApiCall(message));
+            return Err(AiMuxError::InvalidResponseData(message));
         }
 
         // Build content array from output items.
@@ -457,7 +467,17 @@ impl LanguageModel for OpenResponsesModel {
                 .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("stream error");
-            return Err(AiMuxError::ApiCall(message.to_string()));
+            return Err(AiMuxError::ApiCall(ApiCallError {
+                status_code: Some(resp.status),
+                provider_code: err_obj
+                    .get("code")
+                    .or_else(|| err_obj.get("type"))
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string()),
+                message: message.to_string(),
+                response_body: Some(event.data.clone()),
+                ..Default::default()
+            }));
         }
 
         let stream = async_stream::stream! {
@@ -488,9 +508,7 @@ impl LanguageModel for OpenResponsesModel {
                         let chunk: Value = match serde_json::from_str(&sse_event.data) {
                             Ok(v) => v,
                             Err(e) => {
-                                yield Ok(StreamPart::Error {
-                                    error: AiMuxError::Json(e.to_string()),
-                                });
+                                yield Ok(StreamPart::Error { error: e.into() });
                                 break;
                             }
                         };
@@ -760,7 +778,7 @@ impl LanguageModel for OpenResponsesModel {
                     }
                     Err(e) => {
                         yield Ok(StreamPart::Error {
-                            error: AiMuxError::Stream(e.to_string()),
+                            error: AiMuxError::InvalidResponseData(e.to_string()),
                         });
                         break;
                     }

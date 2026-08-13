@@ -263,7 +263,7 @@
 
 ## Typed factories (non-registry)
 
-These providers are **not** name-addressable: `provider("anthropic", ...)` fails with `UnknownProvider`. Use the typed entry points below (Rust type names; per-binding constructors: see [reference.md](reference.md)).
+These providers are **not** name-addressable: `provider("anthropic", ...)` fails with `NoSuchProvider`. Use the typed entry points below (Rust type names; per-binding constructors: see [reference.md](reference.md)).
 
 ### Native protocol providers
 

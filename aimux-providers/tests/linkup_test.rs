@@ -232,7 +232,7 @@ async fn status_401_maps_to_auth_error() {
 
     let result = model.do_search(&opts("rust language")).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(ref m)) if m == "Invalid API key"),
+        matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Invalid API key"),
         "expected Auth error, got {result:?}"
     );
 }
@@ -253,7 +253,7 @@ async fn status_403_maps_to_provider_error() {
 
     let result = model.do_search(&opts("rust language")).await;
     assert!(
-        matches!(result, Err(AiMuxError::Provider(ref m)) if m.contains("403") && m.contains("Forbidden")),
+        matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.to_string().contains("403") && m.to_string().contains("Forbidden")),
         "expected Provider error, got {result:?}"
     );
 }
@@ -272,7 +272,7 @@ fn language_model_returns_unsupported_error() {
     let config = LinkupConfig::new(API_KEY);
     let provider = LinkupProvider::new(config);
     match provider.language_model("linkup-search") {
-        Err(AiMuxError::Unsupported(msg)) => {
+        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
             assert!(
                 msg.contains("provider 'linkup' does not provide language models"),
                 "unexpected message: {msg}"

@@ -11,14 +11,15 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
+    without_trailing_slash,
 };
 
 /// Configuration for the Prodia provider.
@@ -246,9 +247,8 @@ impl ImageModel for ProdiaImageModel {
                 p.strip_prefix("boundary=").map(|s| s.trim().to_string())
             })
             .ok_or_else(|| {
-                AiMuxError::Provider(format!(
-                    "Prodia response missing multipart boundary: {}",
-                    content_type
+                AiMuxError::InvalidResponseData(format!(
+                    "Prodia response missing multipart boundary: {content_type}"
                 ))
             })?;
 
@@ -273,7 +273,7 @@ impl ImageModel for ProdiaImageModel {
         }
 
         let image_bytes = image_bytes.ok_or_else(|| {
-            AiMuxError::Provider("Prodia multipart response missing output image".into())
+            AiMuxError::InvalidResponseData("Prodia multipart response missing output image".into())
         })?;
         let job_result = job_result.unwrap_or(Value::Null);
 
@@ -381,19 +381,26 @@ impl VideoModel for ProdiaVideoModel {
         )
         .await?;
 
-        let job: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let job: Value = serde_json::from_slice(&resp.body)?;
         let job_id = job
             .get("job")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AiMuxError::Provider("Prodia job missing id".to_string()))?
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData(
+                    "Prodia job submission response missing job id".to_string(),
+                )
+            })?
             .to_string();
 
         // Poll for completion.
         let mut raw_body: Value;
         let mut response_headers: HashMap<String, String>;
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            sleep_or_abort(
+                std::time::Duration::from_millis(100),
+                options.abort_signal.as_ref(),
+            )
+            .await?;
 
             let resp = send(
                 HttpRequest {
@@ -412,16 +419,20 @@ impl VideoModel for ProdiaVideoModel {
             .await?;
 
             response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
+            raw_body = serde_json::from_slice(&resp.body)?;
             let status_str = raw_body
                 .get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if status_str == "done" || status_str == "failed" {
                 if status_str == "failed" {
-                    return Err(AiMuxError::Provider(
-                        "Prodia video generation failed".to_string(),
-                    ));
+                    return Err(AiMuxError::ApiCall(ApiCallError {
+                        status_code: Some(resp.status),
+                        provider_code: Some(status_str.to_string()),
+                        message: "Prodia video generation failed".to_string(),
+                        response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
+                        ..Default::default()
+                    }));
                 }
                 break;
             }
@@ -431,15 +442,14 @@ impl VideoModel for ProdiaVideoModel {
         let video_url = raw_body
             .get("videoUrl")
             .or_else(|| raw_body.get("video_url"))
-            .and_then(|v| v.as_str());
-        let videos: Vec<VideoData> = video_url
-            .map(|url| {
-                vec![VideoData::Url {
-                    url: url.to_string(),
-                    media_type: "video/mp4".to_string(),
-                }]
-            })
-            .unwrap_or_default();
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData("Prodia job done without a video URL".to_string())
+            })?;
+        let videos: Vec<VideoData> = vec![VideoData::Url {
+            url: video_url.to_string(),
+            media_type: "video/mp4".to_string(),
+        }];
 
         Ok(VideoResult {
             videos,

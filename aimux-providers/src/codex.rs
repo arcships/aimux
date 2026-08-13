@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
+use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
@@ -260,11 +261,14 @@ impl CodexModel {
     /// Map a subscription-channel authentication failure to
     /// [`AiMuxError::TokenExpired`] so the integrator can refresh the access
     /// token and retry (RFC-0018 §3.2). The only credential on the
-    /// subscription channel is the account token, so any `Auth` error (401
-    /// from the endpoint) means the token is invalid/expired.
+    /// subscription channel is the account token, so any 401 from the
+    /// endpoint (read from the `status_code` field) means the token is
+    /// invalid/expired.
     fn map_subscription_401(&self, error: AiMuxError) -> AiMuxError {
         match error {
-            AiMuxError::Auth(message) => AiMuxError::TokenExpired(message),
+            AiMuxError::ApiCall(d) if d.status_code == Some(401) => {
+                AiMuxError::TokenExpired(d.message)
+            }
             other => other,
         }
     }
@@ -300,7 +304,8 @@ impl CodexModel {
 
         let response_headers = resp.headers;
         let mut sse = SseStream::new(resp.body);
-        let mut completed: Option<Value> = None;
+        // (parsed response object, raw event payload) of the terminal event.
+        let mut completed: Option<(Value, String)> = None;
         let mut failure: Option<AiMuxError> = None;
 
         while let Some(event) = sse.next().await {
@@ -309,7 +314,7 @@ impl CodexModel {
                     let data: Value = match serde_json::from_str(&ev.data) {
                         Ok(v) => v,
                         Err(e) => {
-                            failure = Some(AiMuxError::Json(e.to_string()));
+                            failure = Some(e.into());
                             break;
                         }
                     };
@@ -321,7 +326,8 @@ impl CodexModel {
                             // The completed event nests the full response
                             // object under `response` — the generate-result
                             // parser expects the response object itself.
-                            completed = Some(data.get("response").cloned().unwrap_or(data));
+                            let obj = data.get("response").cloned().unwrap_or(data);
+                            completed = Some((obj, ev.data));
                             break;
                         }
                         "response.failed" | "error" => {
@@ -332,29 +338,42 @@ impl CodexModel {
                                 .and_then(|e| e.get("message"))
                                 .and_then(|m| m.as_str())
                                 .unwrap_or("subscription response failed");
-                            failure = Some(AiMuxError::Provider(message.to_string()));
+                            failure = Some(AiMuxError::ApiCall(ApiCallError {
+                                // Provider-declared in-band failure: keep the
+                                // observed 2xx envelope status (§2.2).
+                                status_code: Some(resp.status),
+                                provider_code: err_obj
+                                    .and_then(|e| e.get("code").or_else(|| e.get("type")))
+                                    .and_then(|c| c.as_str())
+                                    .map(|s| s.to_string()),
+                                message: message.to_string(),
+                                response_body: Some(ev.data.clone()),
+                                ..Default::default()
+                            }));
                             break;
                         }
                         _ => {}
                     }
                 }
                 Err(e) => {
-                    failure = Some(AiMuxError::Stream(e.to_string()));
+                    failure = Some(AiMuxError::InvalidResponseData(e.to_string()));
                     break;
                 }
             }
         }
 
         match completed {
-            Some(data) => build_responses_generate_result(
+            Some((data, raw)) => build_responses_generate_result(
                 &data,
+                resp.status,
+                &raw,
                 warnings,
                 "openai".to_string(),
                 body,
                 response_headers,
             ),
             None => Err(failure.unwrap_or_else(|| {
-                AiMuxError::Stream(
+                AiMuxError::InvalidResponseData(
                     "subscription stream ended without response.completed".to_string(),
                 )
             })),
@@ -384,12 +403,14 @@ impl CodexModel {
         .await
         .map_err(|e| self.map_subscription_401(e))?;
 
+        let status = resp.status;
         let response_headers = resp.headers;
         let mut sse_stream = SseStream::new(resp.body);
         let first_event = sse_stream.next().await;
         let stream = build_responses_event_stream(
             first_event,
             sse_stream,
+            status,
             "openai".to_string(),
             warnings,
             false,
@@ -503,13 +524,12 @@ pub async fn codex_refresh_at(
     )
     .await?;
 
-    let data: Value =
-        serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+    let data: Value = serde_json::from_slice(&resp.body)?;
     let access_token = data
         .get("access_token")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            AiMuxError::Provider("oauth token response missing access_token".to_string())
+            AiMuxError::InvalidResponseData("oauth token response missing access_token".to_string())
         })?;
 
     Ok(CodexTokens {

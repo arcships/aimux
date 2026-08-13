@@ -595,7 +595,7 @@ fn trace_layer_records_stream_part_error() {
                 stream: Box::pin(async_stream::stream! {
                     yield Ok(StreamPart::StreamStart { warnings: vec![] });
                     // Provider-reported mid-stream error (Ok(Error{..})).
-                    yield Ok(StreamPart::Error { error: AiMuxError::Stream("mid-stream failure".into()) });
+                    yield Ok(StreamPart::Error { error: AiMuxError::InvalidResponseData("mid-stream failure".into()) });
                 }),
                 request_body: None,
                 response_headers: None,
@@ -638,7 +638,7 @@ fn trace_layer_records_stream_transport_error() {
             Ok(StreamResult {
                 stream: Box::pin(async_stream::stream! {
                     yield Ok(StreamPart::StreamStart { warnings: vec![] });
-                    yield Err(AiMuxError::Stream("transport failure".into()));
+                    yield Err(AiMuxError::InvalidResponseData("transport failure".into()));
                 }),
                 request_body: None,
                 response_headers: None,

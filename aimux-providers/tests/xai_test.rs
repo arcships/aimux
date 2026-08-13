@@ -2639,7 +2639,7 @@ mod error_handling {
         );
     }
 
-    /// TS: 401 maps to Auth error
+    /// TS: 401 maps to `ApiCall` (401)
     #[tokio::test]
     async fn status_401_maps_to_auth_error() {
         let server = MockServer::start().await;
@@ -2659,7 +2659,7 @@ mod error_handling {
         let result = model.do_generate(&default_options(test_prompt())).await;
 
         assert!(
-            matches!(result, Err(AiMuxError::Auth(ref m)) if m == "Incorrect API key provided")
+            matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Incorrect API key provided")
         );
     }
 }

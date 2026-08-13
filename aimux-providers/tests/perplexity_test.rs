@@ -410,7 +410,7 @@ async fn do_stream_returns_text() {
     assert_eq!(text_deltas, vec!["Hello".to_string(), " world".to_string()]);
 }
 
-/// TS: a 401 response maps to `AiMuxError::Auth`.
+/// TS: a 401 response maps to `AiMuxError::ApiCall` (401 in `status_code`).
 #[tokio::test]
 async fn status_401_maps_to_auth_error() {
     let server = MockServer::start().await;
@@ -426,12 +426,12 @@ async fn status_401_maps_to_auth_error() {
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(ref m)) if m == "Invalid API key"),
+        matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Invalid API key"),
         "expected Auth error, got {result:?}"
     );
 }
 
-/// TS: a 429 response maps to `AiMuxError::RateLimited`.
+/// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn status_429_maps_to_rate_limited() {
     let server = MockServer::start().await;
@@ -447,7 +447,7 @@ async fn status_429_maps_to_rate_limited() {
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::RateLimited { .. })),
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
 }

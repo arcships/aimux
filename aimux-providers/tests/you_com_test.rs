@@ -171,7 +171,7 @@ async fn status_401_maps_to_auth_error() {
 
     let result = model.do_search(&opts("rust", Some(10))).await;
     assert!(
-        matches!(result, Err(AiMuxError::Auth(ref m)) if m == "Unauthorized"),
+        matches!(result, Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message == "Unauthorized"),
         "expected Auth error, got {result:?}"
     );
 }
@@ -190,7 +190,7 @@ fn language_model_returns_unsupported_error() {
     let config = YouComConfig::new(API_KEY);
     let provider = YouComProvider::new(config);
     match provider.language_model("youcom-search") {
-        Err(AiMuxError::Unsupported(msg)) => {
+        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
             assert!(
                 msg.contains("provider 'you_com' does not provide language models"),
                 "unexpected message: {msg}"

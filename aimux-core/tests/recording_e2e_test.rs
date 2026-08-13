@@ -39,7 +39,12 @@ impl LanguageModel for EchoModel {
         _options: &CallOptions,
     ) -> Result<GenerateResult, aimux_core::error::AiMuxError> {
         if self.gen_fails {
-            return Err(aimux_core::error::AiMuxError::Provider("gen boom".into()));
+            return Err(aimux_core::error::AiMuxError::ApiCall(
+                aimux_core::error::ApiCallError {
+                    message: "gen boom".into(),
+                    ..Default::default()
+                },
+            ));
         }
         Ok(GenerateResult {
             content: vec![GenerateContent::Text {
@@ -64,13 +69,15 @@ impl LanguageModel for EchoModel {
         _options: &CallOptions,
     ) -> Result<StreamResult, aimux_core::error::AiMuxError> {
         if self.stream_fails {
-            return Err(aimux_core::error::AiMuxError::Stream("boom".into()));
+            return Err(aimux_core::error::AiMuxError::InvalidResponseData(
+                "boom".into(),
+            ));
         }
         if self.part_error {
             let parts = vec![
                 Ok(StreamPart::StreamStart { warnings: vec![] }),
                 Ok(StreamPart::Error {
-                    error: aimux_core::error::AiMuxError::Stream("mid-stream".into()),
+                    error: aimux_core::error::AiMuxError::InvalidResponseData("mid-stream".into()),
                 }),
             ];
             return Ok(StreamResult {

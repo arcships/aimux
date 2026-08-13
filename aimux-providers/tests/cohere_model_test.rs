@@ -711,12 +711,9 @@ async fn should_handle_auth_error() {
     let result = model.do_generate(&default_options(test_prompt())).await;
 
     assert!(result.is_err());
-    match result.unwrap_err() {
-        aimux_core::error::AiMuxError::Auth(msg) => {
-            assert!(msg.contains("Invalid API key"));
-        }
-        other => panic!("expected Auth error, got {:?}", other),
-    }
+    let err = result.unwrap_err();
+    assert_eq!(err.status_code(), Some(401), "got {err:?}");
+    assert!(err.to_string().contains("Invalid API key"));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1315,7 +1312,7 @@ async fn should_send_full_request_body() {
     assert!(body.get("response_format").is_none());
 }
 
-/// TS: a 429 response maps to `AiMuxError::RateLimited`.
+/// TS: a 429 response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn should_handle_rate_limit_error() {
     let server = MockServer::start().await;
@@ -1333,11 +1330,8 @@ async fn should_handle_rate_limit_error() {
 
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(
-            result,
-            Err(aimux_core::error::AiMuxError::RateLimited { .. })
-        ),
-        "expected RateLimited, got {result:?}"
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
+        "expected a 429, got {result:?}"
     );
 }
 
@@ -1474,7 +1468,7 @@ async fn should_stream_empty_tool_call_arguments() {
     }
 }
 
-/// TS: a 429 HTTP response surfaces as `AiMuxError::RateLimited` from do_stream.
+/// TS: a 429 HTTP response surfaces as `AiMuxError::ApiCall` (429 in `status_code`) from do_stream.
 #[tokio::test]
 async fn should_stream_rate_limit_error() {
     let server = MockServer::start().await;
@@ -1492,10 +1486,7 @@ async fn should_stream_rate_limit_error() {
 
     let result = model.do_stream(&default_options(test_prompt())).await;
     assert!(
-        matches!(
-            result,
-            Err(aimux_core::error::AiMuxError::RateLimited { .. })
-        ),
-        "expected RateLimited, got {result:?}"
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
+        "expected a 429, got {result:?}"
     );
 }

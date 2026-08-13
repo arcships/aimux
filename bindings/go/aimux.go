@@ -991,10 +991,9 @@ func errorFromC(e *C.AimuxError) error {
 		C.aimux_free_string(e.error_value)
 		e.error_value = nil
 	}
-	// Status defaults for well-known HTTP kinds mirror Kotlin/Flutter/Node
-	// when C reports -1 (no concrete HTTP status): RateLimited→429,
-	// Auth/TokenExpired→401, ModelNotFound→404. See bindings/kotlin
-	// Errors.kt createByCode and bindings/flutter errors.dart fromC.
+	// TokenExpired carries a 401 by contract even if C reports -1; every
+	// other status is the observed one (ApiCall without a status = transport
+	// failure, no response). See bindings/node src/error.ts.
 	status := defaultStatus(Code(e.code), int(e.status))
 	return &Error{
 		Code:       Code(e.code),

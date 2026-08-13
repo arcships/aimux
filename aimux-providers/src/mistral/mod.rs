@@ -147,8 +147,7 @@ impl Provider for MistralProvider {
                 #[serde(default)]
                 owned_by: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(format!("mistral list_models: parse: {e}")))?;
+            let parsed: Resp = serde_json::from_slice(&resp.body)?;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()

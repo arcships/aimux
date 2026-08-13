@@ -174,8 +174,7 @@ impl SearchModel for ExaAiSearchModel {
         .await?;
         let response_headers = resp.headers;
 
-        let parsed: ExaResponse = serde_json::from_slice(&resp.body)
-            .map_err(|e| AiMuxError::Provider(format!("Failed to parse Exa response: {e}")))?;
+        let parsed: ExaResponse = serde_json::from_slice(&resp.body)?;
 
         Ok(SearchResult {
             results: map_results(parsed.results),

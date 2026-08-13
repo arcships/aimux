@@ -87,7 +87,7 @@ impl Model {
             None => Default::default(),
         };
         serde_json::to_string(&store.aggregate(&filter))
-            .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
+            .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
     }
 
     /// One session's chain view. Returns a JSON `SessionChainView` string.
@@ -101,7 +101,7 @@ impl Model {
             .session_chain(session_id)
             .ok_or_else(|| to_py_err(&AiMuxError::Other("unknown session".into())))?;
         serde_json::to_string(&view)
-            .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
+            .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
     }
 
     /// Export all probe records as JSONL (one `TraceRecord` per line).
@@ -140,7 +140,7 @@ impl Model {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -206,7 +206,7 @@ impl Model {
 
         match result {
             Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize result: {e}")))),
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -584,7 +584,7 @@ fn provider(
     let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
         Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(
             serde_json::from_str(s)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid config: {e}"))))?,
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid config: {e}"))))?,
         ),
         _ => None,
     };
@@ -620,7 +620,7 @@ impl ProviderHandle {
             .block_on(async { self.inner.list_models().await })
             .map_err(|e| to_py_err(&e))?;
         serde_json::to_string(&models)
-            .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize list_models: {e}"))))
+            .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize list_models: {e}"))))
     }
 
     /// Build a language model from a discovered model id.
@@ -651,7 +651,7 @@ fn create_provider(
     let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
         Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(
             serde_json::from_str(s)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid config: {e}"))))?,
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid config: {e}"))))?,
         ),
         _ => None,
     };
@@ -673,7 +673,7 @@ fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
         .block_on(async { aimux_providers::get_model_specs(source_url).await })
         .map_err(|e| to_py_err(&e))?;
     serde_json::to_string(&catalogue)
-        .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize catalogue: {e}"))))
+        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize catalogue: {e}"))))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -726,14 +726,14 @@ fn init_session_infer(enabled: bool) {
 #[pyfunction]
 fn session_calls(session_id: &str) -> PyResult<String> {
     serde_json::to_string(&aimux_core::session::session_calls(session_id))
-        .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
+        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
 }
 
 /// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
 #[pyfunction]
 fn list_sessions() -> PyResult<String> {
     serde_json::to_string(&aimux_core::session::list_sessions())
-        .map_err(|e| to_py_err(&AiMuxError::Json(format!("serialize: {e}"))))
+        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -894,7 +894,7 @@ where
 
 fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
     let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid prompt JSON: {e}"))))?;
+        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid prompt JSON: {e}"))))?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -902,7 +902,7 @@ fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid prompt: {e}"))))
+        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid prompt: {e}"))))
 }
 
 fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
@@ -914,7 +914,7 @@ fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
                 return Ok(GenerateTextOptions::default());
             }
             serde_json::from_str(s)
-                .map_err(|e| to_py_err(&AiMuxError::Json(format!("invalid options JSON: {e}"))))
+                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid options JSON: {e}"))))
         }
     }
 }

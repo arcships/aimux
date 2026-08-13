@@ -19,7 +19,7 @@ pub fn load_api_key(
     }
 
     std::env::var(environment_variable_name).map_err(|_| {
-        AiMuxError::Auth(format!(
+        AiMuxError::InvalidArgument(format!(
             "No API key found for {}. \
              Please provide it via the `api_key` parameter \
              or set the `{}` environment variable.",

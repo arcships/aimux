@@ -51,7 +51,7 @@ pub mod video_model;
 pub mod prelude {
     pub use crate::content::ContentPart;
     pub use crate::embedding_model::{EmbeddingCallOptions, EmbeddingModel, EmbeddingResult};
-    pub use crate::error::AiMuxError;
+    pub use crate::error::{AiMuxError, ApiCallError};
     pub use crate::files_model::{Files, UploadFileCallOptions, UploadFileResult};
     pub use crate::generate::{
         GenerateTextOptions, GenerateTextResult, StreamTextResult, generate_text,
@@ -97,7 +97,7 @@ pub mod prelude {
 
 // Root-level re-exports for convenience.
 pub use embedding_model::EmbeddingModel;
-pub use error::AiMuxError;
+pub use error::{AiMuxError, ApiCallError};
 pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;

@@ -292,7 +292,7 @@ async fn status_401_maps_to_auth_error() {
     assert!(
         matches!(
             result,
-            Err(AiMuxError::Auth(ref m)) if m ==
+            Err(AiMuxError::ApiCall(ref m)) if m.status_code == Some(401) && m.message ==
                 "Invalid API key. Verify your API key at https://jina.ai/api-dashboard/key-manager or generate a new one."
         ),
         "expected Auth error, got {result:?}"
@@ -313,7 +313,7 @@ fn language_model_returns_unsupported_error() {
     let config = JinaAiConfig::new(API_KEY);
     let provider = JinaAiProvider::new(config);
     match provider.language_model(MODEL) {
-        Err(AiMuxError::Unsupported(msg)) => {
+        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
             assert!(
                 msg.contains("provider 'jina_ai' does not provide language models"),
                 "unexpected message: {msg}"

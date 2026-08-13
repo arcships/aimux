@@ -41,19 +41,71 @@ final class AimuxTests: XCTestCase {
         XCTAssertThrowsError(try model.generateText(prompt: "{invalid json}"))
     }
 
-    func testUnknownProviderErrorValue() {
+    func testNoSuchProviderErrorValue() {
         XCTAssertThrowsError(try Model.provider(
             name: "no-such-provider", apiKey: "sk-test-fake-key", modelId: "whatever"
         )) { error in
             guard let e = error as? AimuxError else {
                 return XCTFail("expected AimuxError, got \(error)")
             }
-            guard case .unknownProvider = e else {
-                return XCTFail("expected .unknownProvider, got \(e)")
+            guard case .noSuchProvider = e else {
+                return XCTFail("expected .noSuchProvider, got \(e)")
             }
             // errorValue is the raw externally-tagged core AiMuxError JSON.
-            XCTAssertTrue(e.errorValue?.contains("UnknownProvider") == true,
-                          "errorValue should contain UnknownProvider, got \(e.errorValue ?? "nil")")
+            XCTAssertTrue(e.errorValue?.contains("NoSuchProvider") == true,
+                          "errorValue should contain NoSuchProvider, got \(e.errorValue ?? "nil")")
+        }
+    }
+
+    /// HTTP-shaped failures all arrive as `.apiCall`; the classification is the
+    /// `status` field (there are no per-status cases any more).
+    func testApiCallClassifiesByStatus() {
+        let rateLimited = AimuxError.apiCall(
+            message: "API call error: HTTP 429: slow down",
+            status: 429, retryMs: 1500, errorValue: nil
+        )
+        XCTAssertEqual(rateLimited.status, 429)
+        XCTAssertEqual(rateLimited.retryMs, 1500)
+
+        let auth = AimuxError.apiCall(
+            message: "API call error: HTTP 401: invalid api key",
+            status: 401, retryMs: -1, errorValue: nil
+        )
+        XCTAssertEqual(auth.status, 401)
+        XCTAssertNil(auth.retryMs)
+
+        // Transport failure: no response, so no status.
+        let transport = AimuxError.apiCall(
+            message: "API call error: connection reset",
+            status: -1, retryMs: -1, errorValue: nil
+        )
+        XCTAssertNil(transport.status)
+    }
+
+    /// End to end: a 401 from the provider surfaces as `.apiCall` with the
+    /// observed status, not a dedicated auth case.
+    func testE2EAuthFailureIsApiCall() throws {
+        let server = MockHTTPServer(response: .json(
+            ["error": ["message": "invalid api key", "type": "invalid_request_error"]],
+            status: 401
+        ))
+        try server.start()
+        defer { server.stop() }
+
+        let model = try Model.openai(
+            apiKey: "bad-key", modelId: "gpt-4o", baseUrl: server.baseURL
+        )
+        XCTAssertThrowsError(try model.generateText(prompt: jsonEncodeString("hi"))) { error in
+            guard let e = error as? AimuxError else {
+                return XCTFail("expected AimuxError, got \(error)")
+            }
+            guard case .apiCall = e else {
+                return XCTFail("expected .apiCall, got \(e)")
+            }
+            XCTAssertEqual(e.status, 401)
+            XCTAssertTrue(e.message.contains("401"), "got \(e.message)")
+            XCTAssertTrue(e.errorValue?.contains("ApiCall") == true,
+                          "errorValue should contain ApiCall, got \(e.errorValue ?? "nil")")
         }
     }
 

@@ -12,7 +12,6 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
-use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -731,7 +730,7 @@ async fn bedrock_generate_tool_choice_specific_tool() {
     assert_eq!(body["toolConfig"]["tools"].as_array().unwrap().len(), 1);
 }
 
-/// TS: a 429/throttling response maps to `AiMuxError::RateLimited`.
+/// TS: a 429/throttling response maps to `AiMuxError::ApiCall` (429 in `status_code`).
 #[tokio::test]
 async fn bedrock_generate_throttling_error() {
     let server = MockServer::start().await;
@@ -745,7 +744,7 @@ async fn bedrock_generate_throttling_error() {
     let model = make_model(&server);
     let result = model.do_generate(&default_options(test_prompt())).await;
     assert!(
-        matches!(result, Err(AiMuxError::RateLimited { .. })),
+        matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
     );
 }

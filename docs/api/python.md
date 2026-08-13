@@ -320,36 +320,39 @@ OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
 ```text
 Exception
  └── AimuxError
-      ├── ProviderError / HttpError / JsonError / StreamError / ToolError
+      ├── APICallError              # every HTTP-shaped failure; classify on status
+      ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
-      ├── RateLimitError
-      ├── AuthenticationError / TokenExpiredError
-      ├── ModelNotFoundError / NoSuchModelError
-      ├── UnsupportedError / UnknownProviderError
-      ├── APICallError / APITimeoutError
+      ├── TokenExpiredError
+      ├── UnsupportedFunctionalityError
+      ├── NoSuchModelError / NoSuchProviderError
+      ├── APITimeoutError
       ├── RequestAbortedError
       └── OtherError
 ```
 
 Instances carry `status` (HTTP status or `None`), `retry_ms` (hint or `None`),
 and `error_value: str | None` — the raw externally-tagged AiMuxError JSON
-(e.g. `'{"RateLimited":{"retry_after_ms":1500,"message":"..."}}'`), the
+(e.g. `'{"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}'`), the
 machine-readable companion to `str(e)`.
 
 ```python
 from aimux import (
     generate_text,
     AimuxError,
-    RateLimitError,
-    AuthenticationError,
+    APICallError,
 )
 
 try:
     generate_text(model, "hi")
-except RateLimitError as e:
-    ...  # e.retry_ms, e.status
-except AuthenticationError:
-    ...
+except APICallError as e:
+    # classify on status:
+    if e.status == 429:
+        ...  # rate limited — e.retry_ms
+    elif e.status == 401:
+        ...  # auth failure
+    elif e.status == 404:
+        ...  # model not found
 except AimuxError:
     ...  # any engine / binding failure
 ```

@@ -7,10 +7,12 @@ import (
 	"testing"
 )
 
+// A 429 arrives as CodeAPICall; the classification is Status, and the hint
+// rides along in RetryMs.
 func TestErrorAs(t *testing.T) {
 	inner := &Error{
-		Code:    CodeRateLimited,
-		Message: "rate limited: slow down (retry after 1000ms)",
+		Code:    CodeAPICall,
+		Message: "API call error: HTTP 429: slow down",
 		Status:  429,
 		RetryMs: 1000,
 	}
@@ -20,14 +22,35 @@ func TestErrorAs(t *testing.T) {
 	if !errors.As(wrapped, &e) {
 		t.Fatal("errors.As(*Error) failed")
 	}
-	if e.Code != CodeRateLimited {
+	if e.Code != CodeAPICall {
 		t.Fatalf("Code: got %v", e.Code)
 	}
 	if e.Status != 429 || e.RetryMs != 1000 {
 		t.Fatalf("Status/RetryMs: got %d / %d", e.Status, e.RetryMs)
 	}
-	if e.Code.String() != "RateLimited" {
+	if e.Code.String() != "ApiCall" {
 		t.Fatalf("Code.String: %s", e.Code.String())
+	}
+}
+
+// Auth (401) and model-not-found (404) are the same CodeAPICall kind, told
+// apart by Status alone.
+func TestAPICallClassification(t *testing.T) {
+	for _, c := range []struct {
+		status int
+		msg    string
+	}{
+		{401, "API call error: HTTP 401: invalid api key"},
+		{404, "API call error: HTTP 404: model not found"},
+		{-1, "API call error: connection reset"}, // transport: no response
+	} {
+		e := &Error{Code: CodeAPICall, Message: c.msg, Status: c.status, RetryMs: -1}
+		if got := defaultStatus(e.Code, e.Status); got != c.status {
+			t.Errorf("defaultStatus(ApiCall, %d) = %d; want %d", c.status, got, c.status)
+		}
+		if e.Error() != c.msg {
+			t.Errorf("Error() = %q; want %q", e.Error(), c.msg)
+		}
 	}
 }
 
@@ -50,8 +73,20 @@ func TestErrorValueEngineFailure(t *testing.T) {
 	if len(m) != 1 {
 		t.Fatalf("expected exactly one key, got %d: %q", len(m), e.ErrorValue)
 	}
-	if _, ok := m["UnknownProvider"]; !ok {
-		t.Fatalf("expected key %q, got %q", "UnknownProvider", e.ErrorValue)
+	// Payload is a struct now, not a plain string:
+	// {"NoSuchProvider":{"provider_id":"…"}}
+	raw, ok := m["NoSuchProvider"]
+	if !ok {
+		t.Fatalf("expected key %q, got %q", "NoSuchProvider", e.ErrorValue)
+	}
+	var payload struct {
+		ProviderID string `json:"provider_id"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("NoSuchProvider payload is not a struct: %v (%s)", err, raw)
+	}
+	if payload.ProviderID != "no-such-provider" {
+		t.Fatalf("provider_id: got %q", payload.ProviderID)
 	}
 }
 
@@ -72,22 +107,23 @@ func TestErrorValueSynthesizedFailure(t *testing.T) {
 	}
 }
 
-// TestDefaultStatus verifies R4-2: when C reports status == -1, well-known
-// HTTP error kinds get the conventional default status (matching Kotlin /
-// Flutter / Node). A concrete status is never overwritten.
+// TestDefaultStatus: TokenExpired is a 401 by contract; every other status is
+// the observed one. Nothing is invented for ApiCall — a missing status there
+// means no response arrived. A concrete status is never overwritten.
 func TestDefaultStatus(t *testing.T) {
 	cases := []struct {
 		code     Code
 		in, want int
 	}{
-		{CodeRateLimited, -1, 429},
-		{CodeAuth, -1, 401},
 		{CodeTokenExpired, -1, 401},
-		{CodeModelNotFound, -1, 404},
-		// Concrete statuses are preserved.
-		{CodeRateLimited, 503, 503},
-		{CodeAuth, 403, 403},
-		{CodeModelNotFound, 404, 404},
+		{CodeTokenExpired, 401, 401},
+		// Observed ApiCall statuses pass through untouched.
+		{CodeAPICall, 429, 429},
+		{CodeAPICall, 401, 401},
+		{CodeAPICall, 404, 404},
+		{CodeAPICall, 503, 503},
+		// Transport failure: no response, so no status is fabricated.
+		{CodeAPICall, -1, -1},
 		// Non-HTTP kinds keep -1.
 		{CodeTimeout, -1, -1},
 		{CodeAborted, -1, -1},

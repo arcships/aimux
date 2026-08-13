@@ -228,7 +228,7 @@ impl Provider for AnthropicAwsProvider {
                     headers.push(("x-api-key".to_string(), key.clone()));
                 }
                 AnthropicAwsAuth::SigV4(_) => {
-                    return Err(AiMuxError::Unsupported(
+                    return Err(AiMuxError::UnsupportedFunctionality(
                         "list_models via SigV4 not supported for Anthropic-AWS; use API key auth"
                             .into(),
                     ));
@@ -265,8 +265,7 @@ impl Provider for AnthropicAwsProvider {
                 #[serde(default)]
                 display_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)
-                .map_err(|e| AiMuxError::Json(format!("anthropic-aws list_models: parse: {e}")))?;
+            let parsed: Resp = serde_json::from_slice(&resp.body)?;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()

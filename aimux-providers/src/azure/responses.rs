@@ -121,7 +121,7 @@ impl AzureResponsesModel {
                 headers.insert("Authorization".to_string(), format!("Bearer {}", token));
             }
             None => {
-                return Err(AiMuxError::Auth(
+                return Err(AiMuxError::InvalidArgument(
                     "Azure OpenAI has no authentication configured. \
                      Provide an `api_key` or a `token_provider`."
                         .to_string(),
@@ -292,13 +292,15 @@ impl LanguageModel for AzureResponsesModel {
         )
         .await?;
 
+        let status = resp.status;
         let response_headers = resp.headers;
 
-        let data: Value =
-            serde_json::from_slice(&resp.body).map_err(|e| AiMuxError::Json(e.to_string()))?;
+        let data: Value = serde_json::from_slice(&resp.body)?;
 
         build_responses_generate_result(
             &data,
+            status,
+            &String::from_utf8_lossy(&resp.body),
             request_result.warnings,
             provider_key,
             body,
@@ -348,6 +350,7 @@ impl LanguageModel for AzureResponsesModel {
         )
         .await?;
 
+        let status = resp.status;
         let response_headers = resp.headers;
 
         let mut sse_stream = SseStream::new(resp.body);
@@ -355,6 +358,7 @@ impl LanguageModel for AzureResponsesModel {
         let stream = build_responses_event_stream(
             first_event,
             sse_stream,
+            status,
             provider_key,
             warnings,
             store_flag,
