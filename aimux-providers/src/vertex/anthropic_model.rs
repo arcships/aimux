@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
@@ -33,7 +33,9 @@ use aimux_provider_utils::{
 };
 use aimux_stream::SseStream;
 
-use crate::anthropic::convert::{build_request_body, parse_stop_reason};
+use crate::anthropic::convert::{build_request_body_with_warnings, parse_stop_reason};
+use crate::anthropic::stream::stream_parts_for_result_block;
+use crate::anthropic::tool_name_mapping::ToolNameMapping;
 use crate::anthropic::types::{AnthropicResponse, ContentBlock, StreamEvent};
 
 use super::VertexAuth;
@@ -176,8 +178,8 @@ impl LanguageModel for VertexAnthropicModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let anthropic_body = build_request_body(&self.model_id, options, false)?;
-        let body = self.wrap_raw_predict_body(anthropic_body);
+        let req = build_request_body_with_warnings(&self.model_id, options, false)?;
+        let body = self.wrap_raw_predict_body(req.body);
         let url = self.generate_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
         let retry_config = crate::openai::model::resolve_retry_config(
@@ -205,51 +207,10 @@ impl LanguageModel for VertexAnthropicModel {
         let data: AnthropicResponse =
             serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
 
-        let mut content = Vec::new();
-        for block in &data.content {
-            match block {
-                ContentBlock::Text { text } => {
-                    content.push(GenerateContent::Text {
-                        text: text.clone(),
-                        provider_metadata: None,
-                    });
-                }
-                ContentBlock::ToolUse { id, name, input } => {
-                    content.push(GenerateContent::ToolCall {
-                        tool_call_id: id.clone(),
-                        tool_name: name.clone(),
-                        input: input.clone(),
-                        provider_executed: None,
-                        dynamic: None,
-                        thought_signature: None,
-                        provider_metadata: None,
-                    });
-                }
-                ContentBlock::Thinking {
-                    thinking,
-                    signature,
-                } => {
-                    content.push(GenerateContent::Reasoning {
-                        text: thinking.clone(),
-                        provider_metadata: Some(serde_json::json!({
-                            "anthropic": { "signature": signature }
-                        })),
-                    });
-                }
-                ContentBlock::ServerToolUse { id, name, input } => {
-                    content.push(GenerateContent::ToolCall {
-                        tool_call_id: id.clone(),
-                        tool_name: name.clone(),
-                        input: input.clone(),
-                        provider_executed: None,
-                        dynamic: None,
-                        thought_signature: None,
-                        provider_metadata: None,
-                    });
-                }
-                _ => {}
-            }
-        }
+        let content = crate::anthropic::stream::parse_anthropic_content(
+            &data.content,
+            &ToolNameMapping::new(options.tools.as_deref()),
+        );
 
         let finish_reason = data
             .stop_reason
@@ -267,7 +228,7 @@ impl LanguageModel for VertexAnthropicModel {
             content,
             finish_reason,
             usage,
-            warnings: Vec::new(),
+            warnings: req.warnings,
             provider_metadata: None,
             response: ResponseMetadata {
                 id: Some(data.id),
@@ -280,8 +241,10 @@ impl LanguageModel for VertexAnthropicModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let anthropic_body = build_request_body(&self.model_id, options, true)?;
-        let body = self.wrap_raw_predict_body(anthropic_body);
+        let req = build_request_body_with_warnings(&self.model_id, options, true)?;
+        let body = self.wrap_raw_predict_body(req.body);
+        let warnings = req.warnings;
+        let tool_names = ToolNameMapping::new(options.tools.as_deref());
         let url = self.stream_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
         let retry_config = crate::openai::model::resolve_retry_config(
@@ -311,13 +274,14 @@ impl LanguageModel for VertexAnthropicModel {
         let sse_stream = SseStream::new(resp.body);
 
         let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings: vec![] });
+            yield Ok(StreamPart::StreamStart { warnings });
 
             let mut sse = sse_stream;
             let mut blocks: HashMap<usize, BlockState> = HashMap::new();
             let mut final_usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
             let mut response_meta_emitted = false;
+            let mut mcp_tool_calls: HashMap<String, (String, String)> = HashMap::new();
 
             while let Some(event) = sse.next().await {
                 match event {
@@ -362,7 +326,55 @@ impl LanguageModel for VertexAnthropicModel {
                                             accumulated_json: String::new(),
                                         });
                                     }
-                                    _ => {}
+                                    ContentBlock::ServerToolUse { id, name, input } => {
+                                        yield Ok(StreamPart::ToolCall {
+                                            tool_call_id: id.clone(),
+                                            tool_name: tool_names
+                                                .to_custom_tool_name(&name)
+                                                .to_string(),
+                                            input: input.clone(),
+                                            provider_executed: Some(true),
+                                            dynamic: None,
+                                            thought_signature: None,
+                                            provider_metadata: None,
+                                        });
+                                    }
+                                    ContentBlock::McpToolUse { id, name, input, server_name } => {
+                                        mcp_tool_calls
+                                            .insert(id.clone(), (name.clone(), server_name.clone()));
+                                        yield Ok(StreamPart::ToolCall {
+                                            tool_call_id: id.clone(),
+                                            tool_name: name.clone(),
+                                            input: input.clone(),
+                                            provider_executed: Some(true),
+                                            dynamic: Some(true),
+                                            thought_signature: None,
+                                            provider_metadata: Some(json!({
+                                                "anthropic": {
+                                                    "type": "mcp-tool-use",
+                                                    "serverName": server_name,
+                                                }
+                                            })),
+                                        });
+                                    }
+                                    ContentBlock::RedactedThinking { data } => {
+                                        yield Ok(StreamPart::ReasoningStart {
+                                            id: index.to_string(),
+                                            provider_metadata: Some(json!({
+                                                "anthropic": { "redactedData": data }
+                                            })),
+                                        });
+                                        blocks.insert(index, BlockState::Thinking { started: true });
+                                    }
+                                    other => {
+                                        for part in stream_parts_for_result_block(
+                                            &other,
+                                            &tool_names,
+                                            &mcp_tool_calls,
+                                        ) {
+                                            yield Ok(part);
+                                        }
+                                    }
                                 }
                             }
                             Ok(StreamEvent::ContentBlockDelta { index, delta }) => {
@@ -481,10 +493,16 @@ impl LanguageModel for VertexAnthropicModel {
                                     final_finish_reason = Some(parse_stop_reason(&reason));
                                 }
                                 if let Some(u) = usage {
-                                    final_usage.output_tokens = aimux_core::types::TokenUsage {
-                                        total: u.output_tokens,
-                                        ..Default::default()
-                                    };
+                                    // Reuse the shared conversion so the output
+                                    // reasoning/text split (from
+                                    // output_tokens_details) is preserved, matching
+                                    // anthropic/stream.rs. Only the output side is
+                                    // applied — MessageDelta carries output tokens
+                                    // only, so input-side usage from MessageStart is
+                                    // kept intact.
+                                    final_usage.output_tokens =
+                                        crate::anthropic::usage::usage_from_anthropic(&u)
+                                            .output_tokens;
                                 }
                             }
                             Ok(StreamEvent::MessageStop) => break,

@@ -7,6 +7,7 @@ pub mod model;
 pub mod prepare_tools;
 pub mod sanitize_json_schema;
 pub mod stream;
+pub mod tool_name_mapping;
 pub mod types;
 pub mod usage;
 

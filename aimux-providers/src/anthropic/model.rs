@@ -16,6 +16,7 @@ use aimux_core::result::{GenerateResult, StreamResult};
 use super::AnthropicConfig;
 use super::convert::build_request_body_with_warnings;
 use super::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
+use super::tool_name_mapping::ToolNameMapping;
 use aimux_provider_utils::RetryConfig;
 
 /// An Anthropic language model (e.g. `claude-sonnet-4-20250514`).
@@ -130,6 +131,7 @@ impl LanguageModel for AnthropicModel {
             options.abort_signal.clone(),
             options.timeout.map(Into::into),
             options.recording_context.clone(),
+            &ToolNameMapping::new(options.tools.as_deref()),
         )
         .await
     }
@@ -150,6 +152,7 @@ impl LanguageModel for AnthropicModel {
             options.abort_signal.clone(),
             options.timeout.map(Into::into),
             options.recording_context.clone(),
+            ToolNameMapping::new(options.tools.as_deref()),
         )
         .await
     }
