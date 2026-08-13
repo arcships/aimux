@@ -188,10 +188,8 @@ impl LanguageModel for CohereModel {
         // Mirrors TS `cohere-chat-language-model.ts`: each citation becomes a
         // `{ type: 'source', sourceType: 'document', title, providerMetadata:
         // { cohere: { start, end, text, sources, citationType } } }` content
-        // item. The Rust `GenerateContent::Source` variant carries no
-        // `mediaType` / `providerMetadata`, so only `source_type` and `title`
-        // are preserved here; the rich per-citation metadata (start/end/text/
-        // sources/citationType) is dropped — a documented data-model gap.
+        // item. The per-citation metadata (start/end/text/sources/citationType)
+        // is preserved in `provider_metadata`.
         if let Some(citations) = &data.message.citations {
             for (i, citation) in citations.iter().enumerate() {
                 let title = citation
@@ -203,12 +201,31 @@ impl LanguageModel for CohereModel {
                     .and_then(|t| t.as_str())
                     .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| "Document".to_string());
+
+                // Build `providerMetadata.cohere` from the citation's fields.
+                // Only present fields are included (matching TS, where `undefined`
+                // values are dropped); `citationType` mirrors the TS spread
+                // `...(citation.type && { citationType: citation.type })` and is
+                // included only when `citation.type` is a non-empty string.
+                let mut cohere_meta = serde_json::Map::new();
+                for field in ["start", "end", "text", "sources"] {
+                    if let Some(v) = citation.get(field) {
+                        cohere_meta.insert(field.to_string(), v.clone());
+                    }
+                }
+                if let Some(t) = citation
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                {
+                    cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
+                }
                 content.push(GenerateContent::Source {
                     id: format!("citation-{i}"),
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
-                    provider_metadata: None,
+                    provider_metadata: Some(json!({ "cohere": cohere_meta })),
                 });
             }
         }
