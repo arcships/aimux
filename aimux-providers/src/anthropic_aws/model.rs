@@ -17,8 +17,9 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_provider_utils::RetryConfig;
 
-use crate::anthropic::convert::build_request_body;
+use crate::anthropic::convert::build_request_body_with_warnings;
 use crate::anthropic::stream::{BodyEncoding, anthropic_generate_core, anthropic_stream_core};
+use crate::anthropic::tool_name_mapping::ToolNameMapping;
 use crate::bedrock::sigv4::sign_request;
 
 use super::AnthropicAwsAuth;
@@ -156,7 +157,7 @@ impl LanguageModel for AnthropicAwsModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, false)?;
+        let req = build_request_body_with_warnings(&self.model_id, options, false)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
         let retry_config = crate::openai::model::resolve_retry_config(
@@ -166,19 +167,20 @@ impl LanguageModel for AnthropicAwsModel {
         anthropic_generate_core(
             &endpoint,
             retry_config,
-            body,
-            Vec::new(),
+            req.body,
+            req.warnings,
             build_headers,
             BodyEncoding::Bytes,
             options.abort_signal.clone(),
             options.timeout.map(Into::into),
             options.recording_context.clone(),
+            &ToolNameMapping::new(options.tools.as_deref()),
         )
         .await
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let body = build_request_body(&self.model_id, options, true)?;
+        let req = build_request_body_with_warnings(&self.model_id, options, true)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
         let retry_config = crate::openai::model::resolve_retry_config(
@@ -188,13 +190,14 @@ impl LanguageModel for AnthropicAwsModel {
         anthropic_stream_core(
             &endpoint,
             retry_config,
-            body,
-            Vec::new(),
+            req.body,
+            req.warnings,
             build_headers,
             BodyEncoding::Bytes,
             options.abort_signal.clone(),
             options.timeout.map(Into::into),
             options.recording_context.clone(),
+            ToolNameMapping::new(options.tools.as_deref()),
         )
         .await
     }

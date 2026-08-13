@@ -321,7 +321,11 @@ fn prepare_function_tool(
 
 /// Map a provider-defined tool `id` to its Anthropic tool definition, returning
 /// `None` (so the caller emits an "unsupported" warning) when the id is unknown.
-fn prepare_provider_tool(id: &str, args: &Value, betas: &mut BTreeSet<String>) -> Option<Value> {
+pub(crate) fn prepare_provider_tool(
+    id: &str,
+    args: &Value,
+    betas: &mut BTreeSet<String>,
+) -> Option<Value> {
     Some(match id {
         "anthropic.computer_20241022" => {
             betas.insert("computer-use-2024-10-22".to_string());
