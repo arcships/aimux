@@ -11,7 +11,32 @@
       "content-length": "580",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the capital of France? Give me the city name, country, and population."
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "outputConfig": {
+        "textFormat": {
+          "type": "json_schema",
+          "structure": {
+            "jsonSchema": {
+              "name": "CityInfo",
+              "schema": "{\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}, \"population\": {\"type\": \"integer\"}}, \"required\": [\"city\", \"country\", \"population\"], \"type\": \"object\"}",
+              "description": "Information about a city."
+            }
+          }
+        }
+      }
+    }
   },
   "response": {
     "status": 200,
@@ -19,6 +44,6 @@
       "connection": "keep-alive",
       "content-type": "application/vnd.amazon.eventstream"
     },
-    "body": ""
+    "body_base64": "AAAAjgAAAFLukeFCCzpldmVudC10eXBlBwAMbWVzc2FnZVN0YXJ0DTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsicCI6ImFiY2RlZmdoaWprbG1ub3BxIiwicm9sZSI6ImFzc2lzdGFudCJ99FCslQAAAMIAAABXA/ighQs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiJ7XCIifSwicCI6ImFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6QUJDREVGR0hJSktMIn1yr8JuAAAApAAAAFcViiJoCzpldmVudC10eXBlBwARY29udGVudEJsb2NrRGVsdGENOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJjb250ZW50QmxvY2tJbmRleCI6MCwiZGVsdGEiOnsidGV4dCI6ImNpdHlcIjpcIiJ9LCJwIjoiYWIifYDzWQ0AAADYAAAAVymoL6YLOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tEZWx0YQ06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjowLCJkZWx0YSI6eyJ0ZXh0IjoiUGFyaXNcIixcImNvdW50cnlcIjpcIkZyYW5jZVwiLFwicG9wdWxhdGlvblwiOiJ9LCJwIjoiYWJjZGVmZ2hpamtsbW5vcHEifQQkAtYAAADFAAAAV7HYfJULOmV2ZW50LXR5cGUHABFjb250ZW50QmxvY2tEZWx0YQ06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjowLCJkZWx0YSI6eyJ0ZXh0IjoiMjE2MSJ9LCJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTiJ91obVWQAAAM4AAABXxghNhAs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiIwMDB9In0sInAiOiJhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ekFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXIn3Dku8eAAAApQAAAFZf7TtOCzpldmVudC10eXBlBwAQY29udGVudEJsb2NrU3RvcA06Y29udGVudC10eXBlBwAQYXBwbGljYXRpb24vanNvbg06bWVzc2FnZS10eXBlBwAFZXZlbnR7ImNvbnRlbnRCbG9ja0luZGV4IjowLCJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHIn0nz+rEAAAAnAAAAFFtuHQaCzpldmVudC10eXBlBwALbWVzc2FnZVN0b3ANOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJwIjoiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBIiwic3RvcFJlYXNvbiI6ImVuZF90dXJuIn0w+k65AAAA9wAAAE4OUj+zCzpldmVudC10eXBlBwAIbWV0YWRhdGENOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJtZXRyaWNzIjp7ImxhdGVuY3lNcyI6Mzk1MH0sInAiOiJhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ekFCQ0RFIiwidXNhZ2UiOnsiaW5wdXRUb2tlbnMiOjIxMCwib3V0cHV0VG9rZW5zIjoxOCwic2VydmVyVG9vbFVzYWdlIjp7fSwidG90YWxUb2tlbnMiOjIyOH19dy1GZg=="
   }
 }

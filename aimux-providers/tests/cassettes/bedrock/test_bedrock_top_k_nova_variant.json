@@ -11,7 +11,25 @@
       "content-length": "193",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Reply with the single word: ok"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "inferenceConfig": {
+          "topK": 20
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

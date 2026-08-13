@@ -30,6 +30,10 @@
 //! raw string — non-streaming responses are JSON text, streaming responses are
 //! the original SSE text. The body bytes are returned to the caller untouched.
 //!
+//! Responses whose body is not valid UTF-8 (e.g. Bedrock's
+//! `application/vnd.amazon.eventstream` frames) carry `response.body_base64`
+//! instead of `response.body`; it is decoded and replayed as raw bytes.
+//!
 //! ## Matching
 //!
 //! Cassettes are grouped by `(method, path)`; one `Mock` is registered per
@@ -71,6 +75,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::Value;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
@@ -271,11 +277,17 @@ fn load_cassettes(dir: &Path) -> Vec<Cassette> {
             as u16;
         let req_body = req.get("body").cloned().unwrap_or(Value::Null);
 
-        let body_str = match resp.get("body") {
-            None => "",
-            Some(Value::String(s)) => s.as_str(),
-            Some(other) => {
+        let body_bytes: Vec<u8> = match (resp.get("body"), resp.get("body_base64")) {
+            (Some(Value::String(s)), _) => s.as_bytes().to_vec(),
+            (None, Some(Value::String(b64))) => BASE64
+                .decode(b64.as_bytes())
+                .unwrap_or_else(|e| panic!("replay: {label} invalid `response.body_base64`: {e}")),
+            (None, None) => Vec::new(),
+            (Some(other), _) => {
                 panic!("replay: {label} `response.body` must be a raw string, got {other}")
+            }
+            (_, Some(other)) => {
+                panic!("replay: {label} `response.body_base64` must be a string, got {other}")
             }
         };
 
@@ -291,7 +303,7 @@ fn load_cassettes(dir: &Path) -> Vec<Cassette> {
                 }
             }
         }
-        template = template.set_body_bytes(body_str.as_bytes().to_vec());
+        template = template.set_body_bytes(body_bytes);
 
         out.push(Cassette {
             method,

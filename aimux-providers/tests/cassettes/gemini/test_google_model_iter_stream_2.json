@@ -138,6 +138,6 @@
       "server-timing": "gfet4t7; dur=404",
       "vary": "Origin"
     },
-    "body": ""
+    "body": "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The temperature in Paris\"}],\"role\": \"model\"}}],\"usageMetadata\": {\"promptTokenCount\": 169,\"totalTokenCount\": 169,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 169}]},\"modelVersion\": \"gemini-2.0-flash\",\"responseId\": \"11peaI_ZJLq3nvgP0vasuQk\"}\r\n\r\ndata: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \" is 30°C.\\n\"}],\"role\": \"model\"},\"finishReason\": \"STOP\"}],\"usageMetadata\": {\"promptTokenCount\": 79,\"candidatesTokenCount\": 12,\"totalTokenCount\": 91,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 79}],\"candidatesTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 12}]},\"modelVersion\": \"gemini-2.0-flash\",\"responseId\": \"11peaI_ZJLq3nvgP0vasuQk\"}\r\n\r\n"
   }
 }

@@ -1,0 +1,32 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "openai",
+  "scenario": "test_webrtc_sideband_audio_turn",
+  "request": {
+    "path": "/v1/realtime/calls",
+    "method": "POST",
+    "headers": {
+      "accept": "application/sdp",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "2105",
+      "content-type": "multipart/form-data; boundary=a0ca18404a1632a9610e1dfb53ec9563",
+      "host": "api.openai.com"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "access-control-allow-origin": "*",
+      "access-control-expose-headers": "Location, X-Request-Id",
+      "alt-svc": "h3=\":443\"; ma=86400",
+      "connection": "keep-alive",
+      "content-type": "text/plain; charset=utf-8",
+      "location": "/v1/realtime/calls/rtc_u0_E6mH7YwmYXwYY0iVKLojm",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "timing-allow-origin": "*"
+    },
+    "body": "v=0\r\no=- 2432201517205382135 1785284245 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\na=msid-semantic:WMS *\r\na=fingerprint:sha-256 48:99:60:17:57:4F:A7:19:4D:FD:C4:D7:E4:04:C3:DD:00:72:A6:E9:10:16:58:E8:6A:87:80:23:B4:2E:9E:3B\r\na=ice-lite\r\na=group:BUNDLE 0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 96 0 8\r\nc=IN IP4 0.0.0.0\r\na=setup:active\r\na=mid:0\r\na=ice-ufrag:iOreJB/u0/3oMK2r\r\na=ice-pwd:bndxxbmMM9g371gbpPAM6dCP5uUxFTez\r\na=rtcp-mux\r\na=rtcp-rsize\r\na=rtpmap:96 opus/48000/2\r\na=fmtp:96 minptime=10;useinbandfec=1\r\na=rtpmap:0 PCMU/8000\r\na=rtpmap:8 PCMA/8000\r\na=ssrc:826030450 cname:realtimeapi\r\na=ssrc:826030450 msid:realtimeapi audio\r\na=ssrc:826030450 mslabel:realtimeapi\r\na=ssrc:826030450 label:audio\r\na=msid:realtimeapi audio\r\na=sendrecv\r\na=candidate:1352698770 1 udp 2130706431 68.155.152.41 3478 typ host ufrag iOreJB/u0/3oMK2r\r\na=candidate:2321888134 1 tcp 1671430143 68.155.152.41 443 typ host tcptype passive ufrag iOreJB/u0/3oMK2r\r\na=candidate:727169150 1 udp 2130706431 4.151.200.38 3478 typ host ufrag iOreJB/u0/3oMK2r\r\na=candidate:1878291698 1 tcp 1671430143 4.151.200.38 443 typ host tcptype passive ufrag iOreJB/u0/3oMK2r\r\na=candidate:2832417414 1 udp 2130706431 20.168.48.117 3478 typ host ufrag iOreJB/u0/3oMK2r\r\na=candidate:3818869066 1 tcp 1671430143 20.168.48.117 443 typ host tcptype passive ufrag iOreJB/u0/3oMK2r\r\n"
+  }
+}

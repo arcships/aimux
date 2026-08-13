@@ -1,0 +1,154 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_deferred_capability_without_tool_search_across_models[claude-opus-5]_1",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "1797",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "First load the refunds capability. Then call lookup_refund_policy for order-123. Return only the tool result.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "I'll load the refunds capability first.",
+              "type": "text"
+            },
+            {
+              "id": "toolu_01Pjc5yo2Cj8R3rHkS5CXB94",
+              "input": {
+                "id": "refunds"
+              },
+              "name": "load_capability",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "{}",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "toolu_01Pjc5yo2Cj8R3rHkS5CXB94",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "id": "auto_load_0f10f8b659c3c105",
+              "input": {
+                "queries": [
+                  "refunds"
+                ]
+              },
+              "name": "search_tools",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "tool_name": "lookup_refund_policy",
+                  "type": "tool_reference"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "auto_load_0f10f8b659c3c105",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-opus-5",
+      "stream": false,
+      "system": [
+        {
+          "text": "The following capabilities are deferred and can be loaded using the `load_capability` tool:\n- refunds: Refund policy tools. Load this capability before looking up refund policy.",
+          "type": "text"
+        }
+      ],
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "Load a capability to access its full instructions and tools.",
+          "input_schema": {
+            "description": "Typed arguments for a `load_capability` tool call.",
+            "properties": {
+              "id": {
+                "description": "The id of the capability to load.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "name": "load_capability"
+        },
+        {
+          "defer_loading": true,
+          "description": "",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "order_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "order_id"
+            ],
+            "type": "object"
+          },
+          "name": "lookup_refund_policy"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-518c7b3326eabb36b090fb8b3bdc32da-4eb3a45fdb97c69f-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"content\": [{\"caller\": {\"type\": \"direct\"}, \"id\": \"toolu_01KrWvUyLnZTsc9qqMQPhWfZ\", \"input\": {\"order_id\": \"order-123\"}, \"name\": \"lookup_refund_policy\", \"type\": \"tool_use\"}], \"id\": \"msg_011CdTfZkGbmVhKoJiVn89to\", \"model\": \"claude-opus-5\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"global\", \"input_tokens\": 806, \"output_tokens\": 57, \"output_tokens_details\": {\"thinking_tokens\": 0}, \"service_tier\": \"standard\"}}"
+  }
+}

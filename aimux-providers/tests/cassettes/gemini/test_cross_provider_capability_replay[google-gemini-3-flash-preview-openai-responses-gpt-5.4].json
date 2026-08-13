@@ -7,9 +7,9 @@
     "method": "POST",
     "headers": {
       "accept": "*/*",
-      "accept-encoding": "gzip, deflate, br, zstd",
+      "accept-encoding": "gzip, deflate, br",
       "connection": "keep-alive",
-      "content-length": "1592",
+      "content-length": "771",
       "content-type": "application/json",
       "host": "generativelanguage.googleapis.com"
     },
@@ -39,7 +39,7 @@
       },
       "toolConfig": {
         "functionCallingConfig": {
-          "mode": "AUTO"
+          "mode": "VALIDATED"
         }
       },
       "tools": [
@@ -49,7 +49,7 @@
               "description": "Load a capability to access its full instructions and tools.",
               "name": "load_capability",
               "parameters_json_schema": {
-                "description": "Typed arguments for a `load_capability` call.",
+                "description": "Typed arguments for a `load_capability` tool call.",
                 "properties": {
                   "id": {
                     "description": "The id of the capability to load.",
@@ -58,26 +58,6 @@
                 },
                 "required": [
                   "id"
-                ],
-                "type": "object"
-              }
-            },
-            {
-              "description": "There are additional tools not yet visible to you. When you need a capability not provided by your current tools, search here by providing one or more queries to discover and activate relevant tools. Each query is tokenized into words; tool names and descriptions are scored by token overlap. If no tools are found, they do not exist -- do not retry.",
-              "name": "search_tools",
-              "parameters_json_schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "queries": {
-                    "description": "List of search queries to match against tool names and descriptions. Use specific words likely to appear in tool names or descriptions to narrow down relevant tools. Each query is independently tokenized; matches across queries are unioned.",
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "queries"
                 ],
                 "type": "object"
               }
@@ -92,9 +72,9 @@
     "headers": {
       "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
       "content-type": "application/json; charset=UTF-8",
-      "server-timing": "gfet4t7; dur=1629",
+      "server-timing": "gfet4t7; dur=3446",
       "vary": "Origin"
     },
-    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"id\": \"refunds\"}, \"id\": \"5i7v9nsb\", \"name\": \"load_capability\"}, \"thoughtSignature\": \"EvgCCvUCAQw51sczaJcxTTH1EcDyIHbMNOE+h1yLteUCBCZY/vEW8oQpqJL2RS8ZCrQUuhZHP2eUsGnboikpRtZy3wt68tdq0uRGbPkzusR5TME3M3DYirzZ1xRCd2TT3eAh0OT+HBmBcvf8g9lFl906YZVFS2jMabSsJlF/iexlowTnqShbh/PMbNb6b+4cHguzW0mSYRNtFI5VquOGnAC8kyCM7zQompQ8pjEveDZJRvrZbbrMuXOqin1mZDGqr/LaqASud5SYnUav/htq9II3omxzoFXOFlllFuxbyasL4oCF0B3RN0eu9v851a7enMpFb5aLxyKlmT0dog2i70YDEC65VX98+swwtADcX7CnLOb3h/BgtulqTuquShYb970n9OARQAEoy82hQ61xk4R8/I6ejaXiM5qZerwdaJkPKxvwm4j7tt2wZm7ZuIChsWWb8gdqMA/u3HBv2DWC7rB7u9ohvR/y0x0OEv6IykGvoz+X9nkUXVwwKA==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"LVYQasS1K4O-0-kPkLnJ-QM\", \"usageMetadata\": {\"candidatesTokenCount\": 17, \"promptTokenCount\": 280, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 280}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 69, \"totalTokenCount\": 366}}"
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"id\": \"refunds\"}, \"id\": \"hq1dul8c\", \"name\": \"load_capability\"}, \"thoughtSignature\": \"EusCCugCARFNMg/xhLV/lRD/+24wsqFpEuoTL+43PbyawHKfmEGlu3TtqxhIckL+C4P/qka/G2eJPGK/V+LdBVbfS/y08LQ/rUfAqZjpCqzAySrji811ssroGMMtboR8oz802JhPjtpTE35bSdSvkxXURqOHgSugH5L0iXOo39z/iLj9YEf7wqlCS8UKDcGKRKfsE1+5nzpkAKkih7IDrHJfw1bcp6S0PiID7fDaK8IsI/KUhBXKWJwsOFvSkcYPT4zXK0oVr15yP/c5SRlCKvT73Za9cxqrKzojOIrT83fRyKE5Z7jCaTIIWAzRUG2mEdO9u4CvE+3LiEkmftU+5lXOGspoURhLD7SQb2CVJBRYpprPNkMgQz6Dtq9iiTDhp7q74LRxSOA9kuP4tJlbN4WIXMTXQs8k8xduJhSirr5JzGVs8qWymq9GMxUyUPLuKwrmzIBPQiA6UKirTGoQQZ61urfxSupV+TN/sIzS\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"hbFrapf2Lt6QmtkPxPab2Q0\", \"usageMetadata\": {\"candidatesTokenCount\": 17, \"promptTokenCount\": 118, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 118}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 69, \"totalTokenCount\": 204}}"
   }
 }

@@ -12,7 +12,10 @@
       "content-length": "41",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "inputText": "hello",
+      "normalize": true
+    }
   },
   "response": {
     "status": 200,

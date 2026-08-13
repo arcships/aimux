@@ -12,7 +12,13 @@
       "content-length": "88",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "texts": [
+        "Test truncate priority"
+      ],
+      "input_type": "search_query",
+      "truncate": "START"
+    }
   },
   "response": {
     "status": 200,

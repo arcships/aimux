@@ -11,7 +11,40 @@
       "content-length": "278",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Hello! How can I help you today?"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Now say goodbye."
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "Generate a short greeting."
+        }
+      ],
+      "inferenceConfig": {}
+    }
   },
   "response": {
     "status": 200,

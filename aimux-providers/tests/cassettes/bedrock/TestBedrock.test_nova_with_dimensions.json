@@ -12,7 +12,17 @@
       "content-length": "196",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "taskType": "SINGLE_EMBEDDING",
+      "singleEmbeddingParams": {
+        "embeddingPurpose": "GENERIC_RETRIEVAL",
+        "text": {
+          "value": "Test Nova dimensions",
+          "truncationMode": "NONE"
+        },
+        "embeddingDimension": 256
+      }
+    }
   },
   "response": {
     "status": 200,

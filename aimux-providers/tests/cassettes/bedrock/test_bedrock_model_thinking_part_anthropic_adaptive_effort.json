@@ -11,7 +11,28 @@
       "content-length": "227",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "How do I cross the street?"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "thinking": {
+          "type": "adaptive"
+        },
+        "output_config": {
+          "effort": "high"
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

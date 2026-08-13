@@ -11,7 +11,61 @@
       "content-length": "5581",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "How do I cross the street?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "<thinking>\n**Providing crossing guidance**\n\nI see the user is asking, \"How do I cross the street?\" and it seems like a general safety question. Since they didn’t provide an image or locale, I need to focus on safe pedestrian practices.\n\nI’ll outline steps like using crosswalks, waiting for signals, and looking both ways while being cautious of distractions. For multi-lane roads, it’s important to wait until all lanes have stopped before crossing, and I’ll remind them to watch for turning vehicles.\n</thinking>"
+            },
+            {
+              "text": "<thinking>\n**Outlining crossing steps**\n\nI need to give guidance on crossing the street, but I don’t know what country the user is in. I can mention that if vehicles drive on the right or the left, they should adjust accordingly. The policy allows general safety advice, so I can offer concise steps without being too verbose.\n\nI can ask a clarifying question, like whether they are at a crosswalk with a signal. I’ll present a step-by-step approach to help them cross safely.\n</thinking>"
+            },
+            {
+              "text": "<thinking>\n**Detailing crossing tactics**\n\nIf you're already crossing when the countdown starts, just keep going, but don't start crossing on a flashing hand signal.\n\nFor an unsignalized crosswalk, remember that traffic should yield, but confirm by making eye contact. Wait for all lanes to come to a full stop before stepping out cautiously and keep watching for any vehicles.\n\nIf there’s no crosswalk, choose a straight stretch with good visibility, look left-right-left, and wait for a safe gap before crossing straight. For multi-lane roads, ensure all lanes have stopped, as vehicles may still pass.\n</thinking>"
+            },
+            {
+              "text": "<thinking>\n**Including additional safety tips**\n\nI also want to remind users to watch for bikes and e-scooters while crossing.\n\nIn low visibility conditions or at night, it's vital to wear bright or reflective clothing, use a light, and choose well-lit crosswalks. When roads are icy or wet, vehicles require longer stopping distances.\n\nWhen crossing with children or the elderly, hold hands, cross at signals, and teach them to look for safety. For accessible crossings, using audible signals helps, and if the signal changes while you're halfway, just keep going without running back. \n\nTo make this easier, I'll provide a simple plan with steps, like starting by finding the safest place to cross at an intersection.\n</thinking>"
+            },
+            {
+              "text": "<thinking>\n**Explaining safe crossing steps**\n\nHere are some basic steps for crossing the street safely:\n\n- Choose a crosswalk or intersection; avoid crossing mid-block or between parked cars. Make sure it’s well-lit so you can clearly see traffic.\n  \n- Stop at the curb, take one step back, put away your phone and earbuds, and hold a child's hand or shorten pet leashes.\n  \n- If there’s a button, press it and wait for the WALK symbol.\n\n- Look left, right, and left again (reverse this for left-hand traffic). Check for turning cars and bikes.\n\n- Make eye contact with drivers and don’t move until all lanes have stopped or you see a big enough gap.\n\n- Walk straight across, don’t run, and keep looking around.\n\n- If the signal starts counting down while you’re already crossing, keep going and do not start on a flashing hand.\n\n- Be cautious on multi-lane roads, as cars in other lanes might still pass stopped vehicles.\n\n- At night or in rain/snow, be extra cautious and try to be as visible as possible.\n\n- If a driver waves you on, still double-check all lanes.\n\n- If there’s a median, pause there if needed before crossing the next direction. \n\nIf you share where you are right now, like if you have a signal or not, I can provide tailored instructions!\n</thinking>"
+            },
+            {
+              "text": "Here’s a simple, safe way to cross:\n\n- Go to a marked crosswalk or intersection if possible; avoid crossing mid‑block or between parked cars.\n- Stop at the curb, one step back. Put your phone away and remove earbuds. Hold kids’ hands; keep pets close.\n- If there’s a button, press it and wait for the WALK signal.\n- Look for traffic: left, right, then left again (reverse this in countries where cars drive on the left). Also check for turning cars, bikes, and e‑scooters.\n- Make eye contact with drivers. Don’t step out until traffic in all lanes has fully stopped or there’s a big enough gap.\n- Start crossing straight across; walk, don’t run, and keep looking both ways as you go.\n- If the signal starts counting down after you’ve started, keep going; don’t start on a flashing hand.\n- On multi‑lane roads, be wary of a second lane car passing a stopped one—ensure every lane is safe.\n- At night or in rain/snow, be extra cautious and try to cross where it’s well lit.\n- If a driver waves you on, still check other lanes yourself before stepping out.\n- If there’s a median/island, you can pause there and reassess before crossing the next lanes.\n\nIf you tell me whether you have a signalized crosswalk or not (and your country), I can tailor the steps."
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Considering the way to cross the street, analogously, how do I cross the river?"
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful assistant."
+        }
+      ],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 1024
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

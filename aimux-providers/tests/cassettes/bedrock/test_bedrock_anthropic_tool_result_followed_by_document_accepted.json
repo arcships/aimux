@@ -11,7 +11,92 @@
       "content-length": "750",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "show me my expenses"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "toolUseId": "t1",
+                "name": "get_expenses",
+                "input": {}
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "t1",
+                "content": [
+                  {
+                    "text": "ok"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is in this document?"
+            },
+            {
+              "document": {
+                "name": "Document 1",
+                "format": "txt",
+                "source": {
+                  "bytes": "RHVtbXkgVFhUIGZpbGUK"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_expenses",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

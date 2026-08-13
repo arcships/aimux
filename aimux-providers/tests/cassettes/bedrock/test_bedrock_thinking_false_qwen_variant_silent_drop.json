@@ -12,7 +12,20 @@
       "amz-sdk-invocation-id": "b'00ca07be-de4c-4876-a85e-0ffd07b90bde'",
       "amz-sdk-request": "b'attempt=1'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Reply with the single word: ok"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {}
+    }
   },
   "response": {
     "status": 200,
@@ -22,6 +35,6 @@
       "via": "1.1 google",
       "x-amzn-requestid": "9ed59709-3b35-46f0-88b4-4e1356a41286"
     },
-    "body": ""
+    "body": "{\"metrics\": {\"latencyMs\": 1230}, \"output\": {\"message\": {\"content\": [{\"text\": \"ok\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 19, \"outputTokens\": 2, \"serverToolUsage\": {}, \"totalTokens\": 21}}"
   }
 }

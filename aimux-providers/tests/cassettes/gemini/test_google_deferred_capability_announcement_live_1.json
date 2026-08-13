@@ -1,0 +1,131 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_deferred_capability_announcement_live_1",
+  "request": {
+    "path": "/v1beta/models/gemini-3.6-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "2048",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "First load the refunds capability. Then use its newly available tool for order A-4417. Return only the result."
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "id": "refunds"
+                },
+                "id": "g98os1Jf",
+                "name": "load_capability"
+              },
+              "thoughtSignature": "EpYCCpMCARFNMg_SsdjZFu2ihVT0jb7fb9cL3YcbPihwvbZhlrCqmrBhhzRQmxZbOOF37qvrx5AYOKCxWaD9YGEjvmbaGKzCZwxuZWx8TiaBXzfU723maFtAudIBW0dpdZAjwEKxurOuIjJUBF06wrTHUQDmzdHCKl9M-Jd3FoHFNmPrOu6lfYGXnTME4qXEhatcjZPzK78e-LJW-FtqxIhbPcFF06thtxehxGfS_LWweAyqR9se-UcwiGHN1Y4_DgLwPY0xR1jqZ6gaE8vRLIXXkc8yP-RpLBB0Lir0IKR4_HgEKKYrf0_LBIjzZ5NS6fXCJPjKeDjWh2RJIzIdwJlmcy-IXKcyFU9THZecTg_if1OdrAvPXqk="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "g98os1Jf",
+                "name": "load_capability",
+                "response": {}
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "<system>The following tool(s) are now available: `lookup_refund_policy`</system>"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "The following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- refunds: Refund policy tools. Load this capability before looking up refund policy."
+          }
+        ],
+        "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "VALIDATED"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Load a listed capability whenever it is plausibly relevant to the task. Loading makes the capability instructions and any tools it provides available.",
+              "name": "load_capability",
+              "parameters_json_schema": {
+                "description": "Typed arguments for a `load_capability` tool call.",
+                "properties": {
+                  "id": {
+                    "description": "The id of the capability to load.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Look up the refund policy for an order.",
+              "name": "lookup_refund_policy",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "order_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "order_id"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=826",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"order_id\": \"A-4417\"}, \"id\": \"grBScFvZ\", \"name\": \"lookup_refund_policy\"}, \"thoughtSignature\": \"EqMBCqABARFNMg9F+fnPF2zVdBk6ZU2Rjrx3laGnpf37y3lIgJoOmtpqCU+IYLaPmNr29CMed1bzAOGLzFaGnGVfO7aDild/R88Q6yOUwqpr2i1yvBVDAD6qNbrTM9JEDAkwvCIc3msi/cXohNUz0tdDSq21yFa4fe/1bnF+/a/etP4k+iCrmGZbQPmgixuuSQvqzWtK1jX+eHc+nt+F1ouxy9uJCQ==\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3.6-flash\", \"responseId\": \"MRZyaoPoApODz7IP3PyuuAc\", \"usageMetadata\": {\"candidatesTokenCount\": 25, \"promptTokenCount\": 341, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 341}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 40, \"totalTokenCount\": 406}}"
+  }
+}

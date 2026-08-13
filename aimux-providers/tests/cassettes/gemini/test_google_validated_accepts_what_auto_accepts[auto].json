@@ -1,0 +1,139 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_validated_accepts_what_auto_accepts[auto]",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "1618",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Record a tree whose root is labelled \"root\" with two children labelled \"a\" and \"b\", and whose deep value is \"hello\". Use the record tool."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "AUTO"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "The two schema shapes Google names as risky, neither of which `HostileToStrict` covers.\n\nGoogle's JSON schema reference demonstrates recursive `$ref` and warns that very large or deeply\nnested schemas may be rejected, so these are where `VALIDATED` could plausibly accept less than\n`AUTO` does.\n\nSee <https://ai.google.dev/gemini-api/docs/structured-output#json-schema-support>.",
+              "name": "record",
+              "parameters_json_schema": {
+                "$defs": {
+                  "DeepA": {
+                    "properties": {
+                      "b": {
+                        "$ref": "#/$defs/DeepB"
+                      }
+                    },
+                    "required": [
+                      "b"
+                    ],
+                    "type": "object"
+                  },
+                  "DeepB": {
+                    "properties": {
+                      "c": {
+                        "$ref": "#/$defs/DeepC"
+                      }
+                    },
+                    "required": [
+                      "c"
+                    ],
+                    "type": "object"
+                  },
+                  "DeepC": {
+                    "properties": {
+                      "d": {
+                        "$ref": "#/$defs/DeepD"
+                      }
+                    },
+                    "required": [
+                      "d"
+                    ],
+                    "type": "object"
+                  },
+                  "DeepD": {
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ],
+                    "type": "object"
+                  },
+                  "TreeNode": {
+                    "description": "A self-referencing node, so Pydantic emits a `$ref` cycle back into `$defs`.",
+                    "properties": {
+                      "children": {
+                        "default": [],
+                        "items": {
+                          "$ref": "#/$defs/TreeNode"
+                        },
+                        "type": "array"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "label"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "properties": {
+                  "deep": {
+                    "$ref": "#/$defs/DeepA"
+                  },
+                  "tree": {
+                    "$ref": "#/$defs/TreeNode"
+                  }
+                },
+                "required": [
+                  "tree",
+                  "deep"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1714",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"deep\": {\"b\": {\"c\": {\"d\": {\"value\": \"hello\"}}}}, \"tree\": {\"children\": [{\"label\": \"a\"}, {\"label\": \"b\"}], \"label\": \"root\"}}, \"name\": \"record\"}, \"thoughtSignature\": \"CuIGARFNMg/mWulnXs/KJ1uoR/fFbeCNeN0IbmQ9i322OdAEKx668OS3XgPYycYhDnLGP04IREf/K7W1qjFZqCxVjlnkXVxgXbP3Fnex52ZEMWmUCl3DMCjf8Bj86THNiWGa3umz3G24V0NRn4eTnL6QTKuFHA2O3IuJKKkh9lXRJVCmLBM8o7aNZ7cOiGkRi6iT/XbecRP1ozwho5r2PjVbh42wwqfKj2mbkHxxRf0S5/rEzPbTviN0+C1DeSjSGYaKUEmWFuykUj+NWYH0YdYBFR7QkVYka9kt7IwN911CPGHXIa/RjV9k+LiZgcrfunTK/vu9fbroVRZ1XOPeN8ry+b86M9m7LjZsa7eQJASszaKzkmFeLczPW0BOFbXyPaSoApxxN41JQheaU+eSymLHC82GV00kb6R0KE62eJ917hmtGdLK9Cit0ELKsFzKOxBxQk6BzdlErJmIns0VIVY4FZZ0Xyk5M8NtAnIAxMUAQs/E/SH2v2sOp1XBrGqhm0XIYpCVAi0R/Ly4RQXsLu8dLKt7T1wJqTdWbwECfdeIxhC3d77czHsQ7p57ZJU9FGdGmCNEx9Agt8M6flRFLcMVTcZsz/Ix0Ant/7+JOFslSx5ikirVEWt5XW44oP/uTtAljLaGT5UQwvE59Fbuzyg63lxQvAQ8fMrwlv/yy6PsG5q/qb5BMmmnvxJb5ZMQhFoU32ryejq1FAn+7uJTuMkAKT90P1RNc+An3WN0B8KEzLx7JHXUX8zb5mWwqYEkzSjtpoeU6Z89yJchYuQSN8veLpVnGMdZbddVv81Z+4CcPzm/qKsbS+R7VABlIDCEFzBkswGA5PzHWmhqIG5h1V3fgIzivQlnVrAajAl3DTa5AecsgjdkiOFWvP8W1vT4lxI3Rd+DIswsLSKVvQrtOAiWeAI9Yxy61IsqzcLePKUTB5LBvarNXcM/KAh17+DT81p3CxCsaZ44eX26XOSWuHtYb/L7iCFgqpGT6e8+W3h8hbFqXTd29lrgUyg93LLQMcRg+vekbgTHvuc28N47ascI9xqv4NRO9Qw4+RXGWskN930nuzPwmZxnF3Rgwq9cCpQwpTa8H9b0nITeLHwcr6DqeAr8xkBE9OdOIvvF7M0cV1IioYB2/7n6lzardfHgI8tvlSM=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"YH1ravSnJOGkqtsP4oP1-Q0\", \"usageMetadata\": {\"candidatesTokenCount\": 51, \"promptTokenCount\": 776, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 776}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 246, \"totalTokenCount\": 1073}}"
+  }
+}

@@ -11,7 +11,77 @@
       "content-length": "703",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What's the weather in Paris?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "toolUseId": "tooluse_8ZVLMmsdearTDSS0unN07z",
+                "name": "get_weather",
+                "input": {
+                  "city": "Paris"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_8ZVLMmsdearTDSS0unN07z",
+                "content": [
+                  {
+                    "text": "Weather in Paris: Sunny, 22°C"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_weather",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "object"
+                }
+              },
+              "strict": true
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

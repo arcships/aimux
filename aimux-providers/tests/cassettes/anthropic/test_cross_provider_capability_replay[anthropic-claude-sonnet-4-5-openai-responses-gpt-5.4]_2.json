@@ -7,9 +7,9 @@
     "method": "POST",
     "headers": {
       "accept": "application/json",
-      "accept-encoding": "gzip, deflate, br, zstd",
+      "accept-encoding": "gzip, deflate, br",
       "connection": "keep-alive",
-      "content-length": "2298",
+      "content-length": "2208",
       "content-type": "application/json",
       "host": "api.anthropic.com"
     },
@@ -32,11 +32,26 @@
               "type": "text"
             },
             {
-              "id": "toolu_013NPFpsAF6oupzrxPKbq6jE",
+              "id": "toolu_01FupCqh9WiFLKTeXddq4ZXH",
               "input": {
                 "id": "refunds"
               },
               "name": "load_capability",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "id": "auto_load_97d4a2341e6817ea",
+              "input": {
+                "queries": [
+                  "lookup_refund_policy"
+                ]
+              },
+              "name": "search_tools",
               "type": "tool_use"
             }
           ],
@@ -52,29 +67,9 @@
                 }
               ],
               "is_error": false,
-              "tool_use_id": "toolu_013NPFpsAF6oupzrxPKbq6jE",
+              "tool_use_id": "toolu_01FupCqh9WiFLKTeXddq4ZXH",
               "type": "tool_result"
-            }
-          ],
-          "role": "user"
-        },
-        {
-          "content": [
-            {
-              "id": "auto_load_0f10f8b659c3c105",
-              "input": {
-                "queries": [
-                  "refunds"
-                ]
-              },
-              "name": "search_tools",
-              "type": "tool_use"
-            }
-          ],
-          "role": "assistant"
-        },
-        {
-          "content": [
+            },
             {
               "content": [
                 {
@@ -83,7 +78,7 @@
                 }
               ],
               "is_error": false,
-              "tool_use_id": "auto_load_0f10f8b659c3c105",
+              "tool_use_id": "auto_load_97d4a2341e6817ea",
               "type": "tool_result"
             }
           ],
@@ -92,7 +87,7 @@
         {
           "content": [
             {
-              "id": "toolu_01K2xTxYdW2BKiTTjGQsQTMj",
+              "id": "toolu_017ZWRrNd2wfiSf4RowmwaXE",
               "input": {
                 "order_id": "order-123"
               },
@@ -112,7 +107,7 @@
                 }
               ],
               "is_error": false,
-              "tool_use_id": "toolu_01K2xTxYdW2BKiTTjGQsQTMj",
+              "tool_use_id": "toolu_017ZWRrNd2wfiSf4RowmwaXE",
               "type": "tool_result"
             }
           ],
@@ -134,7 +129,7 @@
         {
           "description": "Load a capability to access its full instructions and tools.",
           "input_schema": {
-            "description": "Typed arguments for a `load_capability` call.",
+            "description": "Typed arguments for a `load_capability` tool call.",
             "properties": {
               "id": {
                 "description": "The id of the capability to load.",
@@ -164,10 +159,6 @@
             "type": "object"
           },
           "name": "lookup_refund_policy"
-        },
-        {
-          "name": "tool_search_tool_bm25",
-          "type": "tool_search_tool_bm25_20251119"
         }
       ]
     }
@@ -179,9 +170,9 @@
       "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
       "content-type": "application/json",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
-      "traceresponse": "00-f2fed24ed47dbe9d235af9aa3c4a7709-8e41dac8e5e27e0c-01",
+      "traceresponse": "00-34355ab9f433aa4568f241d5a9fcab24-1667723175717a41-01",
       "vary": "Accept-Encoding"
     },
-    "body": "{\"content\": [{\"text\": \"Good news! According to the refund policy for order-123, refunds are allowed for 30 days from the date of purchase. \\n\\nTo proceed with your refund request, you should be eligible as long as it's within that 30-day window. Would you like me to help you process the refund, or do you have any questions about the refund policy?\", \"type\": \"text\"}], \"id\": \"msg_01NFhhEUaJzT3xUq1T33Zmjh\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 1160, \"output_tokens\": 83, \"service_tier\": \"standard\"}}"
+    "body": "{\"content\": [{\"text\": \"Good news! Your order (order-123) is eligible for a refund. According to the refund policy, refunds are allowed for 30 days from the purchase date.\\n\\nTo proceed with your refund, please confirm that you'd like to move forward, and I can help you initiate the refund process. Is there anything specific about the order or the refund that you'd like to know?\", \"type\": \"text\"}], \"id\": \"msg_011CdYroQGWq48XadsDUehQx\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 991, \"output_tokens\": 89, \"service_tier\": \"standard\"}}"
   }
 }

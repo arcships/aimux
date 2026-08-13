@@ -82,6 +82,6 @@
       "server-timing": "gfet4t7; dur=2034",
       "vary": "Origin"
     },
-    "body": ""
+    "body": "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The capital of Mexico\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 55,\"candidatesTokenCount\": 4,\"totalTokenCount\": 59,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 55}]},\"modelVersion\": \"gemini-3-pro-preview\",\"responseId\": \"REVVabaiCdq4qtsPnZu96Qo\"}\r\n\r\ndata: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \" is Mexico City.\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 55,\"candidatesTokenCount\": 8,\"totalTokenCount\": 63,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 55}]},\"modelVersion\": \"gemini-3-pro-preview\",\"responseId\": \"REVVabaiCdq4qtsPnZu96Qo\"}\r\n\r\ndata: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"\"}],\"role\": \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 257,\"candidatesTokenCount\": 8,\"totalTokenCount\": 265,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 257}]},\"modelVersion\": \"gemini-3-pro-preview\",\"responseId\": \"REVVabaiCdq4qtsPnZu96Qo\"}\r\n\r\n"
   }
 }

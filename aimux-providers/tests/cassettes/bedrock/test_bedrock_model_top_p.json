@@ -11,7 +11,26 @@
       "content-length": "175",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful chatbot."
+        }
+      ],
+      "inferenceConfig": {
+        "topP": 0.5
+      }
+    }
   },
   "response": {
     "status": 200,

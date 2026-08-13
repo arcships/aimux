@@ -11,7 +11,31 @@
       "content-length": "527",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Should we ship the feature? Give a confidence (0-1) and a short title."
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "outputConfig": {
+        "textFormat": {
+          "type": "json_schema",
+          "structure": {
+            "jsonSchema": {
+              "name": "Decision",
+              "schema": "{\"properties\":{\"confidence\":{\"type\":\"number\",\"description\":\"minimum=0.0, maximum=1.0\"},\"title\":{\"minLength\":1,\"type\":\"string\"}},\"required\":[\"confidence\",\"title\"],\"type\":\"object\",\"additionalProperties\":false}"
+            }
+          }
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

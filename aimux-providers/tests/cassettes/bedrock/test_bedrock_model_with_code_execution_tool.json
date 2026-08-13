@@ -11,7 +11,56 @@
       "content-length": "501",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is 1234 * 5678?"
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful chatbot."
+        }
+      ],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "final_result",
+              "inputSchema": {
+                "json": {
+                  "properties": {
+                    "result": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "result"
+                  ],
+                  "title": "Response",
+                  "type": "object"
+                }
+              },
+              "description": "The final response which ends this conversation"
+            }
+          },
+          {
+            "systemTool": {
+              "name": "nova_code_interpreter"
+            }
+          }
+        ],
+        "toolChoice": {
+          "any": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -12,7 +12,16 @@
       "content-length": "150",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "taskType": "SINGLE_EMBEDDING",
+      "singleEmbeddingParams": {
+        "embeddingPurpose": "GENERIC_INDEX",
+        "text": {
+          "value": "world",
+          "truncationMode": "NONE"
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -12,7 +12,14 @@
       "content-length": "107",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "texts": [
+        "Test max tokens setting"
+      ],
+      "input_type": "search_query",
+      "max_tokens": 256,
+      "truncate": "NONE"
+    }
   },
   "response": {
     "status": 200,

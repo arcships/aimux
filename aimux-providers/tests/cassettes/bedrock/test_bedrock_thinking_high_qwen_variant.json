@@ -12,7 +12,23 @@
       "amz-sdk-invocation-id": "b'5054b9b3-0357-4693-afa6-6e4f26bc965f'",
       "amz-sdk-request": "b'attempt=1'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Reply with the single word: ok"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "reasoning_config": "high"
+      }
+    }
   },
   "response": {
     "status": 200,
@@ -22,6 +38,6 @@
       "via": "1.1 google",
       "x-amzn-requestid": "6fb2b0cd-9427-495a-badc-75457faf4160"
     },
-    "body": ""
+    "body": "{\"metrics\": {\"latencyMs\": 496}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"text\": \"\\nOkay, the user wants me to reply with the single word \\\"ok\\\". They probably just need a quick confirmation or acknowledgment. Let me make sure I don't add anything extra. Just \\\"ok\\\" as requested. Alright, that's straightforward.\\n\"}}}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 15, \"outputTokens\": 55, \"serverToolUsage\": {}, \"totalTokens\": 70}}"
   }
 }

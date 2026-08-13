@@ -11,7 +11,39 @@
       "content-length": "353",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Call the get_mixed_content tool and describe what you received."
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_mixed_content",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

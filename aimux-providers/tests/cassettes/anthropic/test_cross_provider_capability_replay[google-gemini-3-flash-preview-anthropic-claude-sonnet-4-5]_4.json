@@ -1,0 +1,227 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_cross_provider_capability_replay[google-gemini-3-flash-preview-anthropic-claude-sonnet-4-5]_4",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "2730",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Can I get a refund on order-123?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "id": "0usajhl5",
+              "input": {
+                "id": "refunds"
+              },
+              "name": "load_capability",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "{\"instructions\":\"Use the refund policy tool before answering refund questions.\"}",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "0usajhl5",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "id": "0usajhl5",
+              "input": {
+                "queries": [
+                  "lookup_refund_policy"
+                ]
+              },
+              "name": "search_tools",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "tool_name": "lookup_refund_policy",
+                  "type": "tool_reference"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "0usajhl5",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "id": "8ci92gmp",
+              "input": {
+                "order_id": "order-123"
+              },
+              "name": "lookup_refund_policy",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "order-123: refund allowed for 30 days",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "8ci92gmp",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "Yes, a refund is allowed for order-123 if it is within 30 days of the purchase date.",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "text": "And what about order-456?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "id": "toolu_01P1KHB7WG1b5n2MX4Z1UQu4",
+              "input": {
+                "order_id": "order-456"
+              },
+              "name": "lookup_refund_policy",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "order-456: refund allowed for 30 days",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "toolu_01P1KHB7WG1b5n2MX4Z1UQu4",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "stream": false,
+      "system": [
+        {
+          "text": "The following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- refunds: Refund policy tools.",
+          "type": "text"
+        }
+      ],
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "description": "Load a listed capability whenever it is plausibly relevant to the task. Loading makes the capability instructions and any tools it provides available.",
+          "input_schema": {
+            "description": "Typed arguments for a `load_capability` tool call.",
+            "properties": {
+              "id": {
+                "description": "The id of the capability to load.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "name": "load_capability"
+        },
+        {
+          "defer_loading": true,
+          "description": "Look up the refund policy for an order.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "order_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "order_id"
+            ],
+            "type": "object"
+          },
+          "name": "lookup_refund_policy"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "server-timing": "x-originResponse;dur=1131",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-d3b1881476bd2fd5823ba04727692bf4-b3d0e9e9f0db9dde-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"content\": [{\"text\": \"Yes, a refund is also allowed for order-456 if it is within 30 days of the purchase date.\", \"type\": \"text\"}], \"id\": \"msg_011CdkFLPaKCVxbaC9J3oRB2\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 1101, \"output_tokens\": 29, \"service_tier\": \"standard\"}}"
+  }
+}

@@ -11,7 +11,107 @@
       "content-length": "1402",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the temperature of the capital of France?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "<thinking> To find the temperature of the capital of France, I need to first determine the capital of France and then get the current temperature in that city. The capital of France is Paris. I will use the \"get_temperature\" tool to find the current temperature in Paris.</thinking>\n"
+            },
+            {
+              "toolUse": {
+                "toolUseId": "tooluse_lAG_zP8QRHmSYOwZzzaCqA",
+                "name": "get_temperature",
+                "input": {
+                  "city": "Paris"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_lAG_zP8QRHmSYOwZzzaCqA",
+                "content": [
+                  {
+                    "text": "30°C"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful chatbot."
+        }
+      ],
+      "inferenceConfig": {
+        "topP": 0.5
+      },
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_capital",
+              "description": "Get the capital of a country.",
+              "inputSchema": {
+                "json": {
+                  "properties": {
+                    "country": {
+                      "description": "The country name.",
+                      "title": "Country",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "country"
+                  ],
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "toolSpec": {
+              "name": "get_temperature",
+              "description": "Get the temperature in a city.",
+              "inputSchema": {
+                "json": {
+                  "properties": {
+                    "city": {
+                      "description": "The city name.",
+                      "title": "City",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "object",
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
   },
   "response": {
     "status": 200,
@@ -19,6 +119,6 @@
       "connection": "keep-alive",
       "content-type": "application/vnd.amazon.eventstream"
     },
-    "body": ""
+    "body_base64": "AAAAggAAAFIrYQxDCzpldmVudC10eXBlBwAMbWVzc2FnZVN0YXJ0DTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsicCI6ImFiY2RlIiwicm9sZSI6ImFzc2lzdGFudCJ9Ki5zGAAAAKsAAABXl9q1uQs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiJUaGUifSwicCI6ImFiY2RlZmdoaWprbG1ubyJ9URJ5hwAAAMsAAABXDujC9As6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiIgY3VycmVudCB0ZW1wZXJhdHVyZSBpbiBQYXJpcywgdGhlIn0sInAiOiJhYmNkZWZnaGlqa2xtbm9wIn31u0aNAAAArwAAAFdiWhN5CzpldmVudC10eXBlBwARY29udGVudEJsb2NrRGVsdGENOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJjb250ZW50QmxvY2tJbmRleCI6MCwiZGVsdGEiOnsidGV4dCI6IiBjYXBpdGFsIG9mIEZyYW5jZSwifSwicCI6ImFiYyJ9vDc8fgAAAMgAAABXSUi4JAs6ZXZlbnQtdHlwZQcAEWNvbnRlbnRCbG9ja0RlbHRhDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsiY29udGVudEJsb2NrSW5kZXgiOjAsImRlbHRhIjp7InRleHQiOiIgaXMgMzDCsEMifSwicCI6ImFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6QUJDREVGR0hJSktMIn0JIvoaAAAAoAAAAFfgCoSoCzpldmVudC10eXBlBwARY29udGVudEJsb2NrRGVsdGENOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJjb250ZW50QmxvY2tJbmRleCI6MCwiZGVsdGEiOnsidGV4dCI6Ii4ifSwicCI6ImFiY2RlZiJ9JeMRnQAAAJ8AAABWtHybaQs6ZXZlbnQtdHlwZQcAEGNvbnRlbnRCbG9ja1N0b3ANOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJjb250ZW50QmxvY2tJbmRleCI6MCwicCI6ImFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6QSJ9gmuxAQAAAJsAAABR35ioCgs6ZXZlbnQtdHlwZQcAC21lc3NhZ2VTdG9wDTpjb250ZW50LXR5cGUHABBhcHBsaWNhdGlvbi9qc29uDTptZXNzYWdlLXR5cGUHAAVldmVudHsicCI6ImFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6Iiwic3RvcFJlYXNvbiI6ImVuZF90dXJuIn0EgYGjAAAA0AAAAE59s8ynCzpldmVudC10eXBlBwAIbWV0YWRhdGENOmNvbnRlbnQtdHlwZQcAEGFwcGxpY2F0aW9uL2pzb24NOm1lc3NhZ2UtdHlwZQcABWV2ZW50eyJtZXRyaWNzIjp7ImxhdGVuY3lNcyI6MjIzfSwicCI6ImFiY2RlZmdoaWprbG1uIiwidXNhZ2UiOnsiaW5wdXRUb2tlbnMiOjU3Nywib3V0cHV0VG9rZW5zIjoxOCwidG90YWxUb2tlbnMiOjU5NX19aWpwrQ=="
   }
 }

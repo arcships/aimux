@@ -1,0 +1,59 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "deepseek",
+  "scenario": "test_deepseek_responses[function_tool]",
+  "request": {
+    "path": "/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "411",
+      "content-type": "application/json",
+      "host": "api.deepseek.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "What is the temperature in Tokyo?",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek-v4-flash",
+      "stream": false,
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": "Get the current temperature in a city.",
+          "name": "get_temperature",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "vary": "origin, access-control-request-method, access-control-request-headers"
+    },
+    "body": "{\"background\": false, \"completed_at\": 1785967718, \"content_filters\": null, \"created_at\": 1785967717, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"92471b7c-94ad-452f-a3f5-c29aa74a95e1\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"deepseek-v4-flash\", \"moderation\": null, \"object\": \"response\", \"output\": [{\"content\": [{\"text\": \"The user asks for the temperature in Tokyo. I should call the get_temperature tool.\", \"type\": \"reasoning_text\"}], \"id\": \"76f8b89e-4a41-46fb-86ae-546cc1e4ba6c\", \"status\": \"completed\", \"summary\": [], \"type\": \"reasoning\"}, {\"arguments\": \"{\\\"city\\\": \\\"Tokyo\\\"}\", \"call_id\": \"call_00_iD0U8IMtyIljI0ET7GLz1318\", \"id\": \"8fc1af85-3010-42b2-bcb8-1a6d5003ad3b\", \"name\": \"get_temperature\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": false, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": null}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": \"Get the current temperature in a city.\", \"name\": \"get_temperature\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 366, \"input_tokens_details\": {\"cached_tokens\": 256}, \"output_tokens\": 63, \"output_tokens_details\": {\"reasoning_tokens\": 18}, \"total_tokens\": 429}, \"user\": null}"
+  }
+}

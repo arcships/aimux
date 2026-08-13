@@ -11,7 +11,77 @@
       "content-length": "726",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What's the weather in Paris?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "toolUseId": "tooluse_XjTErzm6TpyMMpDviNVY3g",
+                "name": "get_weather",
+                "input": {
+                  "city": "Paris"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_XjTErzm6TpyMMpDviNVY3g",
+                "content": [
+                  {
+                    "text": "Sunny, 22C in Paris"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_weather",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "object"
+                }
+              },
+              "description": "Get the current weather for a city."
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

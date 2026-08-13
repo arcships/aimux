@@ -11,7 +11,23 @@
       "content-length": "141",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "input": {
+        "converse": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "The quick brown fox jumps over the lazydog."
+                }
+              ]
+            }
+          ],
+          "system": []
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

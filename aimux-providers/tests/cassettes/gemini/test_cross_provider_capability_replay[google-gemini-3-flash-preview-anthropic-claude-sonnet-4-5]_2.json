@@ -1,0 +1,162 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_cross_provider_capability_replay[google-gemini-3-flash-preview-anthropic-claude-sonnet-4-5]_2",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "2728",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Can I get a refund on order-123?"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "id": "refunds"
+                },
+                "id": "0usajhl5",
+                "name": "load_capability"
+              },
+              "thoughtSignature": "Ep8CCpwCARFNMg8pIKFgHbQKf22HiYHZ5Aw1ayAouqki40l9QRON-1qCpDfSKTTBk9pmmxcg_5SKXtbk5hatnnGcIxURfHC5YcnS2QC8e5hZquKH9Yv3NBuKThOmSVJMHg3s8q6K12AJ9wjilzZYYeKOIzK46USzg6AaKYWBqCUif3sVYmxRbqpD9hfGGf2NlQJjRL_hBZLAmsKbQmz3IXO_G8CAmvQ0JUhoC56IgZE2tFOZDteivAdhIIJuI-_hy8R36-atbOsZTirx5BxjXAHUHAhKTF0iFEt72NhVE21iN7bh-_xXuRKRcMXCzwkrFwAUC8ES7gktuIqieGQSEBN6cJLWNC3sdk_BF1QLAwfynANO6C1D0sYAo9pIqcsMziU="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "0usajhl5",
+                "name": "load_capability",
+                "response": {
+                  "instructions": "Use the refund policy tool before answering refund questions."
+                }
+              }
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "text": "<system>The following tool(s) are now available: `lookup_refund_policy`</system>"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "parts": [
+            {
+              "functionCall": {
+                "args": {
+                  "order_id": "order-123"
+                },
+                "id": "8ci92gmp",
+                "name": "lookup_refund_policy"
+              },
+              "thoughtSignature": "Ep8CCpwCARFNMg_8d9XXPaguNmSRZA8nZwxMLMn3W561a5J5V1xBm-loUqz7PifDhVMzNP_5EX8_TfMm3QUVxjDcJUYUKypmRazGwua_wvW6GcKEhqQpW9fI8c8PhiT-CV0StL7L6NUYC73bKMaUzuE-Qfj26ori_LcQHx6lgdUnQtltSaktPFKPhGzV2ERqv1yr2qpB4-jjUMKWpPQnAZjFfpi-qUMFEijEdBi9cDlXAjrNbSKD_rJkuy0ssnIDDsV0a8aiKxbtLNuIr4Okkw0LkG6q9GZ3Fv0Jg8MK9R_Usm1zlE0TgT_-osyGr9M-reelotRSBYIzTHpX4Q7adpTJP7ZlwzN8zPVvD2RCcAZxkxB7V_adi5qba37pE4G5GTA="
+            }
+          ],
+          "role": "model"
+        },
+        {
+          "parts": [
+            {
+              "functionResponse": {
+                "id": "8ci92gmp",
+                "name": "lookup_refund_policy",
+                "response": {
+                  "return_value": "order-123: refund allowed for 30 days"
+                }
+              }
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "The following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- refunds: Refund policy tools."
+          }
+        ],
+        "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "VALIDATED"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Load a listed capability whenever it is plausibly relevant to the task. Loading makes the capability instructions and any tools it provides available.",
+              "name": "load_capability",
+              "parameters_json_schema": {
+                "description": "Typed arguments for a `load_capability` tool call.",
+                "properties": {
+                  "id": {
+                    "description": "The id of the capability to load.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "Look up the refund policy for an order.",
+              "name": "lookup_refund_policy",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "order_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "order_id"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=2351",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Yes, a refund is allowed for order-123 if it is within 30 days of the purchase date.\", \"thoughtSignature\": \"EtUCCtICARFNMg/dVkkhmCA2OkU72ghbmAudNinjiyun+SnhadmPFJfYfxxh1/mRcFHxCeOn4MNfoSlc+kTnieSOGVdT2vzm9smkikb63vLfzPiKz4eDyuktC50GTpEk5wx+iGSIKLStUUMU6ctRjP/rM8sf0kreZ9yWkfghfjG/87XuYXHBOcCKL/PCp3r8zAEtNqI9ccslnnK/YEc+FsvEu0oOJAj4CSQEYHGCD5AamtXJkuTVrTfclSxZXi3Z2bKmnYXTaJ0E21Lhcd0vTkNOYkSu7VKiSkPfN1xMRmpqlW8yWghLBonUxbTCloboAeWJs2ZNJtvfNlV4Ir6mpreEUUwJRphN2NyQ2SDvNMUifdqWnhJXgvBCj3ytFqAlj3HF2rUCbyiEc52XKa1QMgHbm35xJREVeAWf1e7GcsgJRAnLiMxvn5880NGMMG1t9jNZKnLhSRQ=\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"nZ9zatSKDMr7qtsPvobb0As\", \"usageMetadata\": {\"candidatesTokenCount\": 25, \"promptTokenCount\": 376, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 376}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 79, \"totalTokenCount\": 480}}"
+  }
+}

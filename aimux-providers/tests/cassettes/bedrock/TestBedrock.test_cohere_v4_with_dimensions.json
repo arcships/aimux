@@ -12,7 +12,14 @@
       "content-length": "113",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "texts": [
+        "Test dimensions setting"
+      ],
+      "input_type": "search_query",
+      "output_dimension": 512,
+      "truncate": "NONE"
+    }
   },
   "response": {
     "status": 200,

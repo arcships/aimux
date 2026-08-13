@@ -11,7 +11,46 @@
       "content-length": "369",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What's the weather in Paris?"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_weather",
+              "inputSchema": {
+                "json": {
+                  "type": "object",
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ]
+                }
+              },
+              "description": "Get weather for a city"
+            }
+          }
+        ],
+        "toolChoice": {
+          "any": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -11,7 +11,59 @@
       "content-length": "812",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Give me details about Paris including its population"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "lookup_population",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "object"
+                }
+              },
+              "strict": true
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      },
+      "outputConfig": {
+        "textFormat": {
+          "type": "json_schema",
+          "structure": {
+            "jsonSchema": {
+              "name": "CityInfo",
+              "schema": "{\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}, \"population\": {\"type\": \"integer\"}}, \"required\": [\"city\", \"country\", \"population\"], \"type\": \"object\"}",
+              "description": "Information about a city."
+            }
+          }
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -1,0 +1,38 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "bedrock",
+  "scenario": "test_bedrock_model_with_extra_headers",
+  "request": {
+    "path": "/model/us.amazon.nova-micro-v1%3A0/converse",
+    "method": "POST",
+    "headers": {
+      "amz-sdk-invocation-id": "b'c51e5313-9d7a-4413-89f8-295fc399526e'",
+      "amz-sdk-request": "b'attempt=1'",
+      "content-length": "102",
+      "content-type": "b'application/json'",
+      "custom-header": "b'value'"
+    },
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Hello!"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {}
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-type": "application/json"
+    },
+    "body": "{\"metrics\": {\"latencyMs\": 529}, \"output\": {\"message\": {\"content\": [{\"text\": \"Hello! How can I assist you today? Whether you have a question, need information, or just want to chat, I'm here to help.\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 2, \"outputTokens\": 32, \"serverToolUsage\": {}, \"totalTokens\": 34}}"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_cross_provider_capability_replay[google-gemini-3-flash-preview-anthropic-claude-sonnet-4-5]",
+  "request": {
+    "path": "/v1beta/models/gemini-3-flash-preview:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "914",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Can I get a refund on order-123?"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "The following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- refunds: Refund policy tools."
+          }
+        ],
+        "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "VALIDATED"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "Load a listed capability whenever it is plausibly relevant to the task. Loading makes the capability instructions and any tools it provides available.",
+              "name": "load_capability",
+              "parameters_json_schema": {
+                "description": "Typed arguments for a `load_capability` tool call.",
+                "properties": {
+                  "id": {
+                    "description": "The id of the capability to load.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1614",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"id\": \"refunds\"}, \"id\": \"0usajhl5\", \"name\": \"load_capability\"}, \"thoughtSignature\": \"Ep8CCpwCARFNMg8pIKFgHbQKf22HiYHZ5Aw1ayAouqki40l9QRON+1qCpDfSKTTBk9pmmxcg/5SKXtbk5hatnnGcIxURfHC5YcnS2QC8e5hZquKH9Yv3NBuKThOmSVJMHg3s8q6K12AJ9wjilzZYYeKOIzK46USzg6AaKYWBqCUif3sVYmxRbqpD9hfGGf2NlQJjRL/hBZLAmsKbQmz3IXO/G8CAmvQ0JUhoC56IgZE2tFOZDteivAdhIIJuI+/hy8R36+atbOsZTirx5BxjXAHUHAhKTF0iFEt72NhVE21iN7bh+/xXuRKRcMXCzwkrFwAUC8ES7gktuIqieGQSEBN6cJLWNC3sdk/BF1QLAwfynANO6C1D0sYAo9pIqcsMziU=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-3-flash-preview\", \"responseId\": \"mp9zaonYDIGTqtsPyYuKOA\", \"usageMetadata\": {\"candidatesTokenCount\": 17, \"promptTokenCount\": 145, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 145}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 56, \"totalTokenCount\": 218}}"
+  }
+}

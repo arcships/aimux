@@ -11,7 +11,28 @@
       "content-length": "190",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "input": {
+        "converse": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "Hello, world!"
+                }
+              ]
+            }
+          ],
+          "system": [],
+          "additionalModelRequestFields": {
+            "anthropic_beta": [
+              "context-1m-2025-08-07"
+            ]
+          }
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

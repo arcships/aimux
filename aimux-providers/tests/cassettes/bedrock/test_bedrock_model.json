@@ -11,7 +11,24 @@
       "content-length": "132",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Hello!"
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a chatbot."
+        }
+      ],
+      "inferenceConfig": {}
+    }
   },
   "response": {
     "status": 200,

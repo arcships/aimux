@@ -12,7 +12,20 @@
       "amz-sdk-invocation-id": "b'255855c1-58f8-45c3-ac5f-76a7d1785e35'",
       "amz-sdk-request": "b'attempt=1'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Reply with the single word: ok"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {}
+    }
   },
   "response": {
     "status": 200,
@@ -22,6 +35,6 @@
       "via": "1.1 google",
       "x-amzn-requestid": "696bc8dc-e7a2-4860-a608-18d32ede2018"
     },
-    "body": ""
+    "body": "{\"metrics\": {\"latencyMs\": 436}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"text\": \"The user: \\\"Reply with the single word: ok\\\". They want the assistant to respond with the single word \\\"ok\\\". So I should respond with \\\"ok\\\".\"}}}, {\"text\": \"ok\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 74, \"outputTokens\": 44, \"serverToolUsage\": {}, \"totalTokens\": 118}}"
   }
 }

@@ -12,7 +12,13 @@
       "content-length": "86",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "texts": [
+        "Test input type setting"
+      ],
+      "input_type": "clustering",
+      "truncate": "NONE"
+    }
   },
   "response": {
     "status": 200,

@@ -1,0 +1,38 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "deepseek",
+  "scenario": "test_deepseek_responses[text_multi_turn]",
+  "request": {
+    "path": "/responses",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "109",
+      "content-type": "application/json",
+      "host": "api.deepseek.com"
+    },
+    "body": {
+      "input": [
+        {
+          "content": "Say exactly: hello",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek-v4-flash",
+      "stream": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "connection": "keep-alive",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "vary": "origin, access-control-request-method, access-control-request-headers"
+    },
+    "body": "{\"background\": false, \"completed_at\": 1785983454, \"content_filters\": null, \"created_at\": 1785983453, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"49d254fd-deb4-4207-a85a-038a3893db25\", \"incomplete_details\": null, \"instructions\": null, \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"deepseek-v4-flash\", \"moderation\": null, \"object\": \"response\", \"output\": [{\"content\": [{\"text\": \"We need answer exactly hello.\", \"type\": \"reasoning_text\"}], \"id\": \"1e97d346-aa16-46e5-866d-b34e91c5d499\", \"status\": \"completed\", \"summary\": [], \"type\": \"reasoning\"}, {\"content\": [{\"annotations\": [], \"logprobs\": [], \"text\": \"hello\", \"type\": \"output_text\"}], \"id\": \"c431c0bc-edd8-4d1d-9bab-46ddd59d15e1\", \"phase\": \"final_answer\", \"role\": \"assistant\", \"status\": \"completed\", \"type\": \"message\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": null, \"reasoning\": {\"effort\": null, \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": false, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": null}, \"tool_choice\": \"auto\", \"tools\": [], \"top_logprobs\": 0, \"top_p\": 1.0, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 87, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 8, \"output_tokens_details\": {\"reasoning_tokens\": 6}, \"total_tokens\": 95}, \"user\": null}"
+  }
+}

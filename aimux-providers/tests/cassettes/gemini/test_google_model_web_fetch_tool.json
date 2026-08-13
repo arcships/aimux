@@ -13,7 +13,32 @@
       "content-type": "application/json",
       "host": "generativelanguage.googleapis.com"
     },
-    "body": {}
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the first sentence on the page https://ai.pydantic.dev? Reply with only the sentence."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "systemInstruction": {
+        "parts": [
+          {
+            "text": "You are a helpful chatbot."
+          }
+        ],
+        "role": "user"
+      },
+      "tools": [
+        {
+          "urlContext": {}
+        }
+      ],
+      "generationConfig": {}
+    }
   },
   "response": {
     "status": 200,
@@ -28,6 +53,6 @@
       "x-frame-options": "SAMEORIGIN",
       "x-xss-protection": "0"
     },
-    "body": ""
+    "body": "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\": [\n          {\n            \"text\": \"Pydantic AI is a Python agent framework designed to make it less painful to build production grade applications with Generative AI.\"\n          }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0,\n      \"groundingMetadata\": {\n        \"groundingChunks\": [\n          {\n            \"web\": {\n              \"uri\": \"https://ai.pydantic.dev\",\n              \"title\": \"Pydantic AI\"\n            }\n          }\n        ],\n        \"groundingSupports\": [\n          {\n            \"segment\": {\n              \"endIndex\": 131,\n              \"text\": \"Pydantic AI is a Python agent framework designed to make it less painful to build production grade applications with Generative AI.\"\n            },\n            \"groundingChunkIndices\": [\n              0\n            ]\n          }\n        ]\n      },\n      \"urlContextMetadata\": {\n        \"urlMetadata\": [\n          {\n            \"retrievedUrl\": \"https://ai.pydantic.dev\",\n            \"urlRetrievalStatus\": \"URL_RETRIEVAL_STATUS_SUCCESS\"\n          }\n        ]\n      }\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 32,\n    \"candidatesTokenCount\": 41,\n    \"totalTokenCount\": 2515,\n    \"promptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 32\n      }\n    ],\n    \"toolUsePromptTokenCount\": 2395,\n    \"toolUsePromptTokensDetails\": [\n      {\n        \"modality\": \"TEXT\",\n        \"tokenCount\": 2395\n      }\n    ],\n    \"thoughtsTokenCount\": 47\n  },\n  \"modelVersion\": \"gemini-2.5-flash\",\n  \"responseId\": \"qgqkaI-iDLrTjMcP0bP24A4\"\n}\n"
   }
 }
