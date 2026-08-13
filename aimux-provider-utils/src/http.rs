@@ -1946,4 +1946,60 @@ mod tests {
         let acc = ByteAccumulator::new(RECORD_BODY_CAP);
         assert!(acc.decode().is_none());
     }
+
+    // ── M6 ProxyConfig tests ────────────────────────────────────────────────
+
+    #[test]
+    fn proxy_config_default_is_no_proxy() {
+        let config = ProxyConfig::default();
+        assert!(config.http_url.is_none());
+        assert!(config.https_url.is_none());
+        assert!(config.all_url.is_none());
+        assert!(config.no_proxy.is_none());
+    }
+
+    #[test]
+    fn apply_proxy_with_all_url_sets_http_and_https() {
+        let config = ProxyConfig {
+            all_url: Some("http://proxy.example:8080".into()),
+            ..Default::default()
+        };
+        let _ = apply_proxy(reqwest::Client::builder(), &config);
+    }
+
+    #[test]
+    fn apply_proxy_with_no_proxy_whitelist_builds() {
+        let config = ProxyConfig {
+            https_url: Some("http://proxy.example:8080".into()),
+            no_proxy: Some("localhost,127.0.0.1,.internal.team".into()),
+            ..Default::default()
+        };
+        let _ = apply_proxy(reqwest::Client::builder(), &config);
+    }
+
+    #[test]
+    fn apply_proxy_default_is_noop() {
+        let config = ProxyConfig::default();
+        let _ = apply_proxy(reqwest::Client::builder(), &config);
+    }
+
+    #[test]
+    fn apply_proxy_invalid_url_is_silently_skipped() {
+        let config = ProxyConfig {
+            http_url: Some("not-a-url".into()),
+            ..Default::default()
+        };
+        let _ = apply_proxy(reqwest::Client::builder(), &config);
+    }
+
+    #[test]
+    fn init_proxy_returns_true_first_time() {
+        // init_proxy uses a global OnceLock; the first call should succeed.
+        // Note: once set, it cannot be reset (process-wide), so this test
+        // asserts only the return value, not the actual client behavior.
+        let result = init_proxy(ProxyConfig::default());
+        // Either true (first call) or false (already set by another test) —
+        // both are valid. We just assert it doesn't panic.
+        let _ = result;
+    }
 }

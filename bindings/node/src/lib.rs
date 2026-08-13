@@ -20,7 +20,8 @@ use std::sync::Arc;
 use crate::error::{AimuxResult, MResult, MappedError, StreamItem};
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+    GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
+    stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -217,6 +218,70 @@ impl Model {
                     .map_err(|e| MappedError::from(&e))?;
 
                 serde_json::to_string(&result).map_err(|e| {
+                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
+                })
+            }
+            .await;
+            __r
+        })
+    }
+
+    /// Generate a structured JSON object from the model (M12, RFC-0016).
+    ///
+    /// Same signature as [`Model::generate_text`]; returns a JSON-serialized
+    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
+    /// via `options` for schema control; the function applies JSON repair
+    /// before parsing.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub async fn generate_object(
+        &self,
+        prompt: String,
+        options: Option<String>,
+        bridge: Option<&AbortBridge>,
+    ) -> AimuxResult<String> {
+        AimuxResult({
+            let __r: crate::error::MResult<String> = async {
+                let parsed_prompt = parse_prompt(&prompt)?;
+                let mut opts = parse_opts(options.as_deref())?;
+                opts.abort_signal = bridge.map(|b| b.core_signal());
+
+                let result = generate_object(&*self.inner, parsed_prompt, opts)
+                    .await
+                    .map_err(|e| MappedError::from(&e))?;
+
+                serde_json::to_string(&result).map_err(|e| {
+                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
+                })
+            }
+            .await;
+            __r
+        })
+    }
+
+    /// Consume a stream to completion and return the aggregated result
+    /// (M11, RFC-0016).
+    ///
+    /// Drives `streamText` to completion and returns a JSON-serialized
+    /// `StreamTextResultAggregated` (the fully-consumed stream summary).
+    #[napi(ts_return_type = "Promise<string>")]
+    pub async fn consume_stream_text(
+        &self,
+        prompt: String,
+        options: Option<String>,
+        bridge: Option<&AbortBridge>,
+    ) -> AimuxResult<String> {
+        AimuxResult({
+            let __r: crate::error::MResult<String> = async {
+                let parsed_prompt = parse_prompt(&prompt)?;
+                let mut opts = parse_opts(options.as_deref())?;
+                opts.abort_signal = bridge.map(|b| b.core_signal());
+
+                let stream_result = stream_text(&*self.inner, parsed_prompt, opts)
+                    .await
+                    .map_err(|e| MappedError::from(&e))?;
+                let aggregated = stream_result.consume().await.map_err(|e| MappedError::from(&e))?;
+
+                serde_json::to_string(&aggregated).map_err(|e| {
                     MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
                 })
             }

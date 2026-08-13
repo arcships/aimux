@@ -187,8 +187,8 @@ async fn generate_object_non_json_fails() {
         .unwrap_err();
 
     assert!(
-        matches!(err, AiMuxError::Json(ref m) if m.contains("not valid JSON")),
-        "expected Json error, got {err:?}"
+        matches!(err, AiMuxError::JsonParse(ref m) if m.contains("not valid JSON")),
+        "expected JsonParse error, got {err:?}"
     );
 }
 

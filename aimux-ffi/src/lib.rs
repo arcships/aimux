@@ -43,7 +43,8 @@ use serde::de::DeserializeOwned;
 
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
-    GenerateTextOptions, generate_text, generate_text_as_openai, stream_text, stream_text_as_openai,
+    GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
+    stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -1216,6 +1217,83 @@ pub extern "C" fn aimux_generate_text(
         err,
         async move { generate_text(&*model, prompt, opts).await },
     )
+}
+
+/// Generate a structured JSON object from the model (M12, RFC-0016).
+///
+/// Same signature as [`aimux_generate_text`]; returns a JSON string — the
+/// serialized `GenerateObjectResult`, or NULL on failure (fills `*err`).
+/// The caller passes `response_format: { "Json": { ... } }` via `opts_json`
+/// to control the schema; the function applies JSON repair before parsing.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_generate_object(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => return unsafe { fail_invalid_handle(err, "model") },
+    };
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
+        },
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
+        }
+    };
+    let opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
+        },
+        None => GenerateTextOptions::default(),
+    };
+    run_and_serialize(
+        err,
+        async move { generate_object(&*model, prompt, opts).await },
+    )
+}
+
+/// Consume a stream to completion and return the aggregated result (M11,
+/// RFC-0016). Synchronous — blocks until the stream finishes.
+///
+/// Same signature as [`aimux_generate_text`]; returns a JSON string — the
+/// serialized `StreamTextResultAggregated`, or NULL on failure (fills `*err`).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_consume_stream_text(
+    handle: u64,
+    prompt_json: *const c_char,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> *mut c_char {
+    let model = match get_model(handle) {
+        Some(m) => m,
+        None => return unsafe { fail_invalid_handle(err, "model") },
+    };
+    let prompt = match cstr_to_string(prompt_json) {
+        Some(s) => match parse_prompt(&s) {
+            Ok(p) => p,
+            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
+        },
+        None => {
+            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
+        }
+    };
+    let opts = match cstr_to_string(opts_json) {
+        Some(s) => match parse_opts(&s) {
+            Ok(o) => o,
+            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
+        },
+        None => GenerateTextOptions::default(),
+    };
+    run_and_serialize(err, async move {
+        let stream_result = stream_text(&*model, prompt, opts).await?;
+        stream_result.consume().await
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

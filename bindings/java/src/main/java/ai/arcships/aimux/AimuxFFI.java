@@ -113,6 +113,12 @@ public interface AimuxFFI extends Library {
     /** @return JSON result string (caller MUST free with {@link #aimux_free_string}); NULL on failure. */
     Pointer aimux_generate_text(long handle, String promptJson, String optsJson, AimuxCError err);
 
+    /** @return JSON GenerateObjectResult string (caller MUST free); NULL on failure. */
+    Pointer aimux_generate_object(long handle, String promptJson, String optsJson, AimuxCError err);
+
+    /** @return JSON StreamTextResultAggregated string (caller MUST free); NULL on failure. */
+    Pointer aimux_consume_stream_text(long handle, String promptJson, String optsJson, AimuxCError err);
+
     /**
      * Push streaming with callbacks; blocks until the stream ends.
      * @return non-zero on success; 0 on failure (details in {@code err}).

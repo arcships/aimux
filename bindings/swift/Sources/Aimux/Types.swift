@@ -1646,6 +1646,61 @@ public extension Model {
         }
     }
 
+    /// Generate a structured JSON object with typed inputs/outputs (M12, RFC-0016).
+    ///
+    /// Same signature as the typed `generateText`; returns a decoded
+    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
+    /// via `options` for schema control; the engine applies JSON repair
+    /// before parsing.
+    ///
+    /// - Parameters:
+    ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
+    ///     (`.messages`), serialized to the JSON shape the FFI expects.
+    ///   - options: Optional `GenerateTextOptions`.
+    /// - Returns: A decoded `GenerateObjectResult`.
+    func generateObject(
+        prompt: ModelPrompt,
+        options: GenerateTextOptions? = nil
+    ) throws -> GenerateObjectResult {
+        let promptJson = try AimuxCodable.jsonString(for: prompt)
+        let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
+        let resultJson = try generateObject(prompt: promptJson, options: optsJson)
+        guard let data = resultJson.data(using: .utf8) else {
+            throw AimuxError.serializationError("generate_object returned non-UTF-8 result")
+        }
+        do {
+            return try JSONDecoder().decode(GenerateObjectResult.self, from: data)
+        } catch {
+            throw AimuxError.serializationError("failed to decode GenerateObjectResult: \(error)")
+        }
+    }
+
+    /// Consume a stream to completion and return the aggregated typed result
+    /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
+    ///
+    /// - Parameters:
+    ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
+    ///     (`.messages`), serialized to the JSON shape the FFI expects.
+    ///   - options: Optional `GenerateTextOptions`.
+    /// - Returns: A decoded `StreamTextResultAggregated`.
+    func consumeStreamText(
+        prompt: ModelPrompt,
+        options: GenerateTextOptions? = nil
+    ) throws -> StreamTextResultAggregated {
+        let promptJson = try AimuxCodable.jsonString(for: prompt)
+        let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
+        let resultJson = try consumeStreamText(prompt: promptJson, options: optsJson)
+        guard let data = resultJson.data(using: .utf8) else {
+            throw AimuxError.serializationError("consume_stream_text returned non-UTF-8 result")
+        }
+        do {
+            return try JSONDecoder().decode(StreamTextResultAggregated.self, from: data)
+        } catch {
+            throw AimuxError.serializationError(
+                "failed to decode StreamTextResultAggregated: \(error)")
+        }
+    }
+
     /// Stream text with typed `StreamPart`s.
     ///
     /// Each raw JSON-string part is decoded into a `StreamPart` before being

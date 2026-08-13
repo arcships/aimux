@@ -259,6 +259,7 @@ impl StreamTextResult {
         let mut raw_finish_reason: Option<String> = None;
         let mut usage = Usage::default();
         let mut finish_provider_metadata: Option<Value> = None;
+        let mut response: Option<crate::types::ResponseMetadata> = None;
         let mut response_content_parts: Vec<ContentPart> = Vec::new();
 
         let mut stream = self.stream;
@@ -305,13 +306,8 @@ impl StreamTextResult {
                         dynamic: None,
                         thought_signature: thought_signature.clone(),
                     });
-                    response_content_parts.push(ContentPart::ToolCall {
-                        tool_call_id,
-                        tool_name,
-                        input,
-                        thought_signature,
-                        provider_options: None,
-                    });
+                    // Defer adding to response_content_parts — order is rebuilt
+                    // after the loop (reasoning → text → tool_calls).
                 }
                 StreamPart::Source {
                     id,
@@ -359,15 +355,35 @@ impl StreamTextResult {
                     break;
                 }
                 StreamPart::Error { error } => return Err(error),
+                StreamPart::ResponseMetadata {
+                    id,
+                    timestamp,
+                    model_id,
+                } => {
+                    response = Some(crate::types::ResponseMetadata {
+                        id,
+                        timestamp,
+                        model_id,
+                    });
+                }
                 _ => {}
             }
         }
 
-        // Append the accumulated text as a single ContentPart (after reasoning,
-        // matching the provider's stream order: reasoning → text → tool calls).
+        // Build response_content_parts in provider order:
+        // reasoning (added during loop) → text → tool_calls.
         if !text.is_empty() {
             response_content_parts.push(ContentPart::Text {
                 text: text.clone(),
+                provider_options: None,
+            });
+        }
+        for tc in &tool_calls {
+            response_content_parts.push(ContentPart::ToolCall {
+                tool_call_id: tc.tool_call_id.clone(),
+                tool_name: tc.tool_name.clone(),
+                input: tc.input.clone(),
+                thought_signature: tc.thought_signature.clone(),
                 provider_options: None,
             });
         }
@@ -399,7 +415,7 @@ impl StreamTextResult {
             usage,
             warnings,
             provider_metadata: finish_provider_metadata,
-            response: None, // streams don't carry ResponseMetadata in Finish
+            response,
             response_messages,
         })
     }
@@ -679,7 +695,7 @@ pub async fn generate_object(
     let text_result = generate_text(model, prompt, options).await?;
     let repaired = crate::json_repair::fix_json(&text_result.text);
     let object: Value = serde_json::from_str(&repaired).map_err(|e| {
-        AiMuxError::Json(format!(
+        AiMuxError::JsonParse(format!(
             "generateObject: model output is not valid JSON after repair: {e}"
         ))
     })?;

@@ -555,6 +555,35 @@ public final class Model: @unchecked Sendable {
         try ffiStringCall { aimux_generate_text(handle, prompt, options, $0) }
     }
 
+    /// Generate a structured JSON object (M12, RFC-0016).
+    ///
+    /// Same signature as `generateText`; returns a JSON-serialized
+    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
+    /// via `options` for schema control; the engine applies JSON repair
+    /// before parsing.
+    ///
+    /// - Parameters:
+    ///   - prompt: A prompt string or messages array (serialized as JSON).
+    ///   - options: Optional GenerateTextOptions (serialized as JSON).
+    /// - Returns: The JSON-serialized GenerateObjectResult.
+    public func generateObject(prompt: String, options: String? = nil) throws -> String {
+        try ffiStringCall { aimux_generate_object(handle, prompt, options, $0) }
+    }
+
+    /// Consume a stream to completion and return the aggregated result
+    /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
+    ///
+    /// Same signature as `generateText`; returns a JSON-serialized
+    /// `StreamTextResultAggregated`.
+    ///
+    /// - Parameters:
+    ///   - prompt: A prompt string or messages array (serialized as JSON).
+    ///   - options: Optional GenerateTextOptions (serialized as JSON).
+    /// - Returns: The JSON-serialized StreamTextResultAggregated.
+    public func consumeStreamText(prompt: String, options: String? = nil) throws -> String {
+        try ffiStringCall { aimux_consume_stream_text(handle, prompt, options, $0) }
+    }
+
     /// Generate text (non-streaming) with OpenAI Chat Completions output.
     ///
     /// Same as `generateText`, but returns a serialized ChatCompletion

@@ -217,6 +217,10 @@ final class _AimuxFFI {
           'aimux_get_model_specs');
   late final generateText = _lib
       .lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_text');
+  late final generateObject = _lib
+      .lookupFunction<_GenerateTextC, _GenerateTextDart>('aimux_generate_object');
+  late final consumeStreamText = _lib.lookupFunction<_GenerateTextC, _GenerateTextDart>(
+      'aimux_consume_stream_text');
   late final streamText =
       _lib.lookupFunction<_StreamTextC, _StreamTextDart>('aimux_stream_text');
   late final generateTextAsOpenAI = _lib
@@ -493,6 +497,73 @@ class Model implements Finalizable {
         try {
           final resultPtr =
               _ffi.generateText(_handle, promptPtr, optsPtr, err);
+          return takeString(resultPtr, err);
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
+    });
+
+    return jsonDecode(resultStr) as Map<String, dynamic>;
+  }
+
+  /// Generate a structured JSON object (M12, RFC-0016).
+  ///
+  /// Same signature as [generateText]; returns the parsed
+  /// GenerateObjectResult as a Map. Pass `response_format: { "Json": { ... } }`
+  /// via [options] for schema control; the engine applies JSON repair before
+  /// parsing.
+  ///
+  /// [prompt] — a string or a list of message maps.
+  /// [options] — optional generation options map.
+  /// Throws [AimuxException] on engine failure.
+  Map<String, dynamic> generateObject(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) {
+    _checkOpen();
+    final promptJson = _promptToJson(prompt);
+    final optsJson = options != null ? jsonEncode(options) : null;
+
+    final resultStr = withAimuxCError((err) {
+      return withUtf8(promptJson, (promptPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final resultPtr =
+              _ffi.generateObject(_handle, promptPtr, optsPtr, err);
+          return takeString(resultPtr, err);
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
+      });
+    });
+
+    return jsonDecode(resultStr) as Map<String, dynamic>;
+  }
+
+  /// Consume a stream to completion and return the aggregated result
+  /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
+  ///
+  /// Same signature as [generateText]; returns the parsed
+  /// StreamTextResultAggregated as a Map.
+  ///
+  /// [prompt] — a string or a list of message maps.
+  /// [options] — optional generation options map.
+  /// Throws [AimuxException] on engine failure.
+  Map<String, dynamic> consumeStreamText(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) {
+    _checkOpen();
+    final promptJson = _promptToJson(prompt);
+    final optsJson = options != null ? jsonEncode(options) : null;
+
+    final resultStr = withAimuxCError((err) {
+      return withUtf8(promptJson, (promptPtr) {
+        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+        try {
+          final resultPtr =
+              _ffi.consumeStreamText(_handle, promptPtr, optsPtr, err);
           return takeString(resultPtr, err);
         } finally {
           if (optsPtr != nullptr) calloc.free(optsPtr);

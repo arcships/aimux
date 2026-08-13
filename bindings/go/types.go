@@ -212,6 +212,26 @@ func ParseGenerateTextResult(jsonStr string) (*GenerateTextResult, error) {
 	return &r, nil
 }
 
+// ParseGenerateObjectResult parses the JSON string returned by
+// Model.GenerateObject into a typed GenerateObjectResult (M12).
+func ParseGenerateObjectResult(jsonStr string) (*GenerateObjectResult, error) {
+	var r GenerateObjectResult
+	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
+		return nil, fmt.Errorf("aimux: failed to parse GenerateObjectResult: %w", err)
+	}
+	return &r, nil
+}
+
+// ParseStreamTextResultAggregated parses the JSON string returned by
+// Model.ConsumeStreamText into a typed StreamTextResultAggregated (M11).
+func ParseStreamTextResultAggregated(jsonStr string) (*StreamTextResultAggregated, error) {
+	var r StreamTextResultAggregated
+	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
+		return nil, fmt.Errorf("aimux: failed to parse StreamTextResultAggregated: %w", err)
+	}
+	return &r, nil
+}
+
 // ── ModelMessage (for multi-role prompts) ─────────────────────────────────────
 
 // ModelMessage is a single message in a conversation.

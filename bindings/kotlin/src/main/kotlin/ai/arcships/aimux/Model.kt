@@ -67,6 +67,8 @@ internal interface AimuxFFI : Library {
     fun aimux_get_model_specs(sourceUrl: String?, err: AimuxCError?): Pointer?
 
     fun aimux_generate_text(handle: Long, promptJson: String, optsJson: String?, err: AimuxCError?): Pointer?
+    fun aimux_generate_object(handle: Long, promptJson: String, optsJson: String?, err: AimuxCError?): Pointer?
+    fun aimux_consume_stream_text(handle: Long, promptJson: String, optsJson: String?, err: AimuxCError?): Pointer?
     fun aimux_stream_text(
         handle: Long,
         promptJson: String,
@@ -296,6 +298,55 @@ class Model internal constructor(handle: Long) : Closeable {
             val h = requireHandleLocked()
             return withCErrorString { err ->
                 FFI.lib.aimux_generate_text(h, promptJson, optsJson, err)
+            }
+        } finally {
+            lock.readLock().unlock()
+        }
+    }
+
+    /**
+     * Generate a structured JSON object (M12, RFC-0016).
+     *
+     * Same signature as [generateText]; returns a JSON-serialized
+     * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }` via
+     * [optsJson] for schema control; the engine applies JSON repair before
+     * parsing.
+     *
+     * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
+     * @param optsJson Optional JSON-serialized GenerateTextOptions.
+     * @return JSON-serialized GenerateObjectResult.
+     * @throws AimuxException on engine / binding failure.
+     */
+    fun generateObject(promptJson: String, optsJson: String? = null): String {
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            return withCErrorString { err ->
+                FFI.lib.aimux_generate_object(h, promptJson, optsJson, err)
+            }
+        } finally {
+            lock.readLock().unlock()
+        }
+    }
+
+    /**
+     * Consume a stream to completion and return the aggregated result
+     * (M11, RFC-0016). Synchronous (blocks until the stream finishes).
+     *
+     * Same signature as [generateText]; returns a JSON-serialized
+     * `StreamTextResultAggregated`.
+     *
+     * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
+     * @param optsJson Optional JSON-serialized GenerateTextOptions.
+     * @return JSON-serialized StreamTextResultAggregated.
+     * @throws AimuxException on engine / binding failure.
+     */
+    fun consumeStreamText(promptJson: String, optsJson: String? = null): String {
+        lock.readLock().lock()
+        try {
+            val h = requireHandleLocked()
+            return withCErrorString { err ->
+                FFI.lib.aimux_consume_stream_text(h, promptJson, optsJson, err)
             }
         } finally {
             lock.readLock().unlock()

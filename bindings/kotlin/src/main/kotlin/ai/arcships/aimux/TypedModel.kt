@@ -81,6 +81,96 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
         }
     }
 
+    // ── generateObject (M12, RFC-0016) ───────────────────────────────────
+
+    /**
+     * Generate a structured JSON object from a simple string prompt (M12).
+     *
+     * @param prompt  Plain text prompt.
+     * @param options Optional typed [GenerateTextOptions].
+     * @return Decoded [GenerateObjectResult].
+     */
+    fun generateObject(prompt: String, options: GenerateTextOptions? = null): GenerateObjectResult {
+        val promptJson = AimuxJson.encodeToString(prompt)
+        val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        val resultJson = raw.generateObject(promptJson, optsJson)
+        return decodeObjectResult(resultJson)
+    }
+
+    /**
+     * Generate a structured JSON object from a multi-role message list (M12).
+     *
+     * @param messages Conversation as a list of [ModelMessage]s.
+     * @param options  Optional typed [GenerateTextOptions].
+     * @return Decoded [GenerateObjectResult].
+     */
+    fun generateObject(messages: List<ModelMessage>, options: GenerateTextOptions? = null): GenerateObjectResult {
+        val promptJson = AimuxJson.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(ModelMessage.serializer()),
+            messages,
+        )
+        val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        val resultJson = raw.generateObject(promptJson, optsJson)
+        return decodeObjectResult(resultJson)
+    }
+
+    private fun decodeObjectResult(resultJson: String): GenerateObjectResult {
+        return try {
+            AimuxJson.decodeFromString(GenerateObjectResult.serializer(), resultJson)
+        } catch (e: Exception) {
+            throw InvalidArgumentError(
+                "failed to decode GenerateObjectResult: ${e.message ?: e::class.simpleName}",
+                cause = e,
+            )
+        }
+    }
+
+    // ── consumeStreamText (M11, RFC-0016) ────────────────────────────────
+
+    /**
+     * Consume a stream to completion from a simple string prompt and return
+     * the aggregated result (M11). Synchronous (blocks until finished).
+     *
+     * @param prompt  Plain text prompt.
+     * @param options Optional typed [GenerateTextOptions].
+     * @return Decoded [StreamTextResultAggregated].
+     */
+    fun consumeStreamText(prompt: String, options: GenerateTextOptions? = null): StreamTextResultAggregated {
+        val promptJson = AimuxJson.encodeToString(prompt)
+        val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        val resultJson = raw.consumeStreamText(promptJson, optsJson)
+        return decodeAggregated(resultJson)
+    }
+
+    /**
+     * Consume a stream to completion from a multi-role message list and
+     * return the aggregated result (M11).
+     *
+     * @param messages Conversation as a list of [ModelMessage]s.
+     * @param options  Optional typed [GenerateTextOptions].
+     * @return Decoded [StreamTextResultAggregated].
+     */
+    fun consumeStreamText(messages: List<ModelMessage>, options: GenerateTextOptions? = null): StreamTextResultAggregated {
+        val promptJson = AimuxJson.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(ModelMessage.serializer()),
+            messages,
+        )
+        val optsJson = options?.let { AimuxJson.encodeToString(GenerateTextOptions.serializer(), it) }
+        val resultJson = raw.consumeStreamText(promptJson, optsJson)
+        return decodeAggregated(resultJson)
+    }
+
+    private fun decodeAggregated(resultJson: String): StreamTextResultAggregated {
+        return try {
+            AimuxJson.decodeFromString(StreamTextResultAggregated.serializer(), resultJson)
+        } catch (e: Exception) {
+            throw InvalidArgumentError(
+                "failed to decode StreamTextResultAggregated: ${e.message ?: e::class.simpleName}",
+                cause = e,
+            )
+        }
+    }
+
     // ── streamText ───────────────────────────────────────────────────────
 
     /**

@@ -59,6 +59,56 @@ class TypedModel {
     return GenerateTextResult.fromJson(result);
   }
 
+  // ── generateObject (M12, RFC-0016) ──────────────────────────────────────
+
+  /// Generate a structured JSON object from a string [prompt] (M12).
+  ///
+  /// Same signature as [generateText]; returns a typed
+  /// [GenerateObjectResult]. Pass `response_format: { "Json": { ... } }`
+  /// via [options] for schema control; the engine applies JSON repair
+  /// before parsing.
+  GenerateObjectResult generateObject(
+    String prompt, [
+    GenerateTextOptions? options,
+  ]) {
+    final result = _raw.generateObject(prompt, options?.toJson());
+    return GenerateObjectResult.fromJson(result);
+  }
+
+  /// Generate a structured JSON object from a list of typed [ModelMessage]s
+  /// (M12).
+  GenerateObjectResult generateObjectMessages(
+    List<ModelMessage> messages, [
+    GenerateTextOptions? options,
+  ]) {
+    final prompt = messages.map((m) => m.toJson()).toList();
+    final result = _raw.generateObject(prompt, options?.toJson());
+    return GenerateObjectResult.fromJson(result);
+  }
+
+  // ── consumeStreamText (M11, RFC-0016) ───────────────────────────────────
+
+  /// Consume a stream to completion from a string [prompt] and return the
+  /// aggregated result (M11). Synchronous (blocks until the stream finishes).
+  StreamTextResultAggregated consumeStreamText(
+    String prompt, [
+    GenerateTextOptions? options,
+  ]) {
+    final result = _raw.consumeStreamText(prompt, options?.toJson());
+    return StreamTextResultAggregated.fromJson(result);
+  }
+
+  /// Consume a stream to completion from a list of typed [ModelMessage]s
+  /// and return the aggregated result (M11).
+  StreamTextResultAggregated consumeStreamTextMessages(
+    List<ModelMessage> messages, [
+    GenerateTextOptions? options,
+  ]) {
+    final prompt = messages.map((m) => m.toJson()).toList();
+    final result = _raw.consumeStreamText(prompt, options?.toJson());
+    return StreamTextResultAggregated.fromJson(result);
+  }
+
   /// Stream text, yielding typed [StreamPart]s.
   ///
   /// [prompt] may be a `String` or a `List<Map<String, dynamic>>` of messages,

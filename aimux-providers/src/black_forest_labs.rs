@@ -319,11 +319,7 @@ impl ImageModel for BlackForestLabsImageModel {
 
         let mut poll_url_with_id = url::Url::parse(&poll_url)
             .map_err(|e| AiMuxError::InvalidResponseData(format!("invalid BFL poll URL: {e}")))?;
-        if poll_url_with_id
-            .query_pairs()
-            .find(|(k, _)| k == "id")
-            .is_none()
-        {
+        if !poll_url_with_id.query_pairs().any(|(k, _)| k == "id") {
             poll_url_with_id
                 .query_pairs_mut()
                 .append_pair("id", &request_id);

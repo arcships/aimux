@@ -258,6 +258,20 @@ char *aimux_generate_text(uint64_t handle,
                           const char *prompt_json,
                           const char *opts_json, AimuxError *err);
 
+/* Generate a structured JSON object (M12, RFC-0016). Same signature as
+   aimux_generate_text; returns serialized GenerateObjectResult JSON.
+   Pass response_format: { "Json": { ... } } via opts_json for schema control. */
+char *aimux_generate_object(uint64_t handle,
+                            const char *prompt_json,
+                            const char *opts_json, AimuxError *err);
+
+/* Consume a stream to completion and return aggregated result (M11, RFC-0016).
+   Synchronous (blocks until stream finishes). Same signature as
+   aimux_generate_text; returns serialized StreamTextResultAggregated JSON. */
+char *aimux_consume_stream_text(uint64_t handle,
+                                const char *prompt_json,
+                                const char *opts_json, AimuxError *err);
+
 /**
  * Streaming text generation with push callbacks (blocks until stream ends).
  *

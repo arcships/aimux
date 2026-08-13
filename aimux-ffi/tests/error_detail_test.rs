@@ -12,11 +12,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use aimux_ffi::{
     AIMUX_E_INVALID_ARGUMENT, AIMUX_E_JSON_PARSE, AIMUX_E_NO_SUCH_PROVIDER, AIMUX_E_OTHER,
     AIMUX_OK, CAimuxError, aimux_abort_signal_abort, aimux_abort_signal_drop,
-    aimux_abort_signal_new, aimux_azure_new, aimux_cohere_reranking_new, aimux_drop_handle,
-    aimux_free_string, aimux_generate_text, aimux_google_image_new, aimux_google_video_new,
-    aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new,
-    aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new, aimux_stream_text,
-    aimux_tavily_search_new,
+    aimux_abort_signal_new, aimux_azure_new, aimux_cohere_reranking_new, aimux_consume_stream_text,
+    aimux_drop_handle, aimux_free_string, aimux_generate_object, aimux_generate_text,
+    aimux_google_image_new, aimux_google_video_new, aimux_init_proxy, aimux_openai_embedding_new,
+    aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new, aimux_openai_speech_new,
+    aimux_openai_transcription_new, aimux_provider_new, aimux_stream_text, aimux_tavily_search_new,
 };
 
 fn c(s: &str) -> CString {
@@ -334,4 +334,47 @@ fn multimodal_empty_key_construction_is_infallible() {
     assert_ne!(h, 0, "empty api_key still constructs (infallible)");
     assert_eq!(err.code, AIMUX_OK, "err untouched on success");
     aimux_drop_handle(h);
+}
+
+// ── Arity smoke tests for new FFI symbols (M11/M12/M6) ────────────────────────
+
+#[test]
+fn generate_object_bad_handle_fails() {
+    let mut err = clear_err();
+    let out = aimux_generate_object(99999, c("{}").as_ptr(), ptr::null(), &mut err);
+    assert!(out.is_null(), "expected NULL on bad handle");
+    assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    free_err(&mut err);
+}
+
+#[test]
+fn consume_stream_text_bad_handle_fails() {
+    let mut err = clear_err();
+    let out = aimux_consume_stream_text(99999, c("{}").as_ptr(), ptr::null(), &mut err);
+    assert!(out.is_null(), "expected NULL on bad handle");
+    assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    free_err(&mut err);
+}
+
+#[test]
+fn init_proxy_valid_json_succeeds() {
+    let mut err = clear_err();
+    let rc = aimux_init_proxy(c(r#"{"http_url": null}"#).as_ptr(), &mut err);
+    assert!(
+        rc == 0 || rc == 1,
+        "init_proxy should return 0 or 1, got {rc}"
+    );
+    // err should be untouched on success (rc != 0) — don't free if untouched.
+    if rc == 0 {
+        free_err(&mut err);
+    }
+}
+
+#[test]
+fn init_proxy_null_json_fails() {
+    let mut err = clear_err();
+    let rc = aimux_init_proxy(ptr::null(), &mut err);
+    assert_eq!(rc, 0, "null config_json must fail");
+    assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    free_err(&mut err);
 }
