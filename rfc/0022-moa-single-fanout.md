@@ -214,7 +214,9 @@ async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxEr
                     });
                 }
                 Ok(other) => yield Ok(other),
-                Err(e) => yield Err(e),
+                // 传输层 Err 是终止性的——转发后立即 break,不继续转发后续
+                // part(违反协议的 aggregator 可能在 Err 后继续吐 token)。
+                Err(e) => { yield Err(e); break; }
             }
         }
     };

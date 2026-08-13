@@ -575,4 +575,201 @@ mod tests {
             "parts after the terminal Err must not be forwarded; got: {text}"
         );
     }
+
+    /// Like `mk` but with full per-field usage (for G4 accumulation testing).
+    fn mk_full(
+        name: &'static str,
+        text: &str,
+        total: u32,
+        cache_read: u32,
+        cache_write: u32,
+        text_tokens: u32,
+        reasoning_tokens: u32,
+    ) -> ChildModel {
+        Arc::new(MockChild {
+            name,
+            text: text.into(),
+            fail: false,
+            usage: Usage {
+                input_tokens: TokenUsage {
+                    total: Some(total),
+                    cache_read: Some(cache_read),
+                    cache_write: Some(cache_write),
+                    ..Default::default()
+                },
+                output_tokens: TokenUsage {
+                    total: Some(total),
+                    text: Some(text_tokens),
+                    reasoning: Some(reasoning_tokens),
+                    ..Default::default()
+                },
+                raw: None,
+            },
+        })
+    }
+
+    #[tokio::test]
+    async fn generate_accumulates_per_field_usage() {
+        // G4: add_usage must sum cache_read/cache_write/text/reasoning, not
+        // just total. ref-a: cache_read=5,cache_write=2,text=3,reasoning=1;
+        // ref-b: cache_read=7,cache_write=4,text=6,reasoning=2; agg totals=1.
+        let refs = vec![
+            mk_full("ref-a", "A", 10, 5, 2, 3, 1),
+            mk_full("ref-b", "B", 20, 7, 4, 6, 2),
+        ];
+        let agg = mk_full("aggregator", "out", 1, 0, 0, 1, 0);
+        let moa = MoaModel::new(refs, agg, MoaConfig::default());
+        let r = moa.do_generate(&opts_with_prompt()).await.unwrap();
+        // input: cache_read 5+7+0=12, cache_write 2+4+0=6
+        assert_eq!(r.usage.input_tokens.cache_read, Some(12));
+        assert_eq!(r.usage.input_tokens.cache_write, Some(6));
+        // output: text 3+6+1=10, reasoning 1+2+0=3
+        assert_eq!(r.usage.output_tokens.text, Some(10));
+        assert_eq!(r.usage.output_tokens.reasoning, Some(3));
+    }
+
+    #[tokio::test]
+    async fn strip_reference_tools_false_preserves_tools() {
+        // G5: strip_reference_tools=false keeps tools/tool_choice on references.
+        let agg = mk("agg", "x", false, 0);
+        let moa = MoaModel::new(
+            vec![],
+            agg,
+            MoaConfig {
+                strip_reference_tools: false,
+                ..Default::default()
+            },
+        );
+        let opts = CallOptions {
+            prompt: vec![],
+            tools: Some(vec![]),
+            tool_choice: ToolChoice::Required,
+            ..Default::default()
+        };
+        let ref_opts = moa.reference_options(&opts);
+        assert_eq!(ref_opts.tools.as_ref().map(|t| t.len()), Some(0));
+        assert_eq!(ref_opts.tool_choice, ToolChoice::Required);
+    }
+
+    #[tokio::test]
+    async fn aggregator_failure_on_generate_propagates() {
+        // G11: if the aggregator's do_generate fails, the error surfaces
+        // (references already ran successfully).
+        let refs = vec![mk("ref-a", "A", false, 5)];
+        let agg = mk("aggregator", "out", true, 1);
+        let moa = MoaModel::new(refs, agg, MoaConfig::default());
+        let err = moa.do_generate(&opts_with_prompt()).await.unwrap_err();
+        assert!(err.to_string().contains("aggregator failed"));
+    }
+
+    /// A mock aggregator whose stream emits non-text parts (ToolCall, Source,
+    /// Reasoning) so we can verify they're forwarded by MoA's do_stream.
+    struct RichStreamAggregator;
+
+    #[async_trait]
+    impl LanguageModel for RichStreamAggregator {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "rich-agg"
+        }
+        async fn do_generate(&self, _: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unimplemented!()
+        }
+        async fn do_stream(&self, _: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
+                Ok(StreamPart::StreamStart { warnings: vec![] }),
+                Ok(StreamPart::TextDelta {
+                    id: "t1".into(),
+                    delta: "answer".into(),
+                    provider_metadata: None,
+                }),
+                Ok(StreamPart::ToolCall {
+                    tool_call_id: "tc1".into(),
+                    tool_name: "search".into(),
+                    input: serde_json::json!({"q": "rust"}),
+                    provider_executed: None,
+                    dynamic: None,
+                    thought_signature: None,
+                    provider_metadata: None,
+                }),
+                Ok(StreamPart::Source {
+                    id: "s1".into(),
+                    source_type: "url".into(),
+                    url: Some("https://example.com".into()),
+                    title: Some("Ex".into()),
+                    provider_metadata: None,
+                }),
+                Ok(StreamPart::Finish {
+                    finish_reason: FinishReason {
+                        unified: FinishReasonUnified::Stop,
+                        raw: None,
+                    },
+                    usage: Usage::default(),
+                    provider_metadata: None,
+                }),
+            ];
+            Ok(StreamResult {
+                stream: Box::pin(stream::iter(parts)),
+                request_body: None,
+                response_headers: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_forwards_non_text_parts() {
+        // G10: ToolCall/Source deltas from the aggregator must pass through
+        // (not just TextDelta).
+        let refs = vec![mk("ref-a", "A", false, 5)];
+        let agg = Arc::new(RichStreamAggregator);
+        let moa = MoaModel::new(refs, agg, MoaConfig::default());
+        let result = moa.do_stream(&opts_with_prompt()).await.unwrap();
+        let parts: Vec<_> = result.stream.collect().await;
+        let mut saw_tool_call = false;
+        let mut saw_source = false;
+        for part in parts {
+            match part.unwrap() {
+                StreamPart::ToolCall { tool_name, .. } => {
+                    saw_tool_call = true;
+                    assert_eq!(tool_name, "search");
+                }
+                StreamPart::Source { id, .. } => {
+                    saw_source = true;
+                    assert_eq!(id, "s1");
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_tool_call, "aggregator ToolCall must be forwarded");
+        assert!(saw_source, "aggregator Source must be forwarded");
+    }
+
+    #[tokio::test]
+    async fn nested_router_as_moa_reference() {
+        // G8: composability — a RouterModel can be used as a MoaModel reference
+        // (both are Arc<dyn LanguageModel>). RFC-0022 §6.2 explicitly says this
+        // is supported and "needs testing". The router's fallback should run
+        // inside the MoA fanout, and its output feeds the aggregator.
+        let router = crate::router::RouterModel::new(
+            vec![
+                mk("router-primary", "router picked primary", true, 0),
+                mk("router-backup", "router fell back", false, 4),
+            ],
+            Box::new(crate::router::RuleRouter),
+            crate::router::FallbackPolicy::OnError,
+            crate::router::RouterConfig::default(),
+        );
+        let router_child: ChildModel = Arc::new(router);
+        let plain_ref = mk("plain-ref", "plain reference", false, 3);
+        let agg = mk("aggregator", "aggregated", false, 1);
+        let moa = MoaModel::new(vec![router_child, plain_ref], agg, MoaConfig::default());
+
+        let r = moa.do_generate(&opts_with_prompt()).await.unwrap();
+        // Aggregator output wins as content.
+        assert_eq!(extract_text(&r.content), "aggregated");
+        // Usage: router(fell back to backup=4) + plain_ref(3) + aggregator(1) = 8.
+        assert_eq!(r.usage.input_tokens.total, Some(8));
+    }
 }

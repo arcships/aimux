@@ -332,7 +332,7 @@ impl Router for RoutellmRouter {
 2. **LLM 分类器的成本归属**:分类器消耗的 token **累加进总 usage**（用 `add_usage` helper）。顶层 `usage` 是累加总和；明细拆分放 `provider_metadata.composite_usage`，**统一结构**为 `{ "participants": [{ "role": "classifier"|"selected", "model": "model-id", "usage": Usage }], "total": Usage }`，与 RFC-0022 的 MoA 场景共用同一 schema（role 不同但结构一致）。
 3. **能力声明系统**:不做，留后续。
 4. **fallback 与 retry 的交互**:每个子模型的 `max_retries` 仍生效（单 provider 内 retry 先跑完，再 fallback 下一个）。
-5. **`WeightedRouter` 方向语义**:**weight 高 = 优先级高 = 选 max**。用户想按成本选（低成本优先）传倒数或负数即可。
+5. **`WeightedRouter` 方向语义 + tie-break**:**weight 高 = 优先级高 = 选 max**。用户想按成本选（低成本优先）传倒数或负数即可。**平局取最早索引**(与 `RuleRouter` "child 0 优先"语义一致;§3.4.1 草图用 `max_by` 会取最晚,impl 改用手写循环 `if w > best_weight` 实现最早优先,同时 NaN-safe)。索引越界(用户自定义 `Router` 返回 `idx >= len`)防御为 `InvalidArgument` 而非 panic。
 6. **`config_snapshot` 聚合策略（修订）**:Composite model **不伪造自己的 config_snapshot**。P1 使用默认 `ProviderRecord::minimal("router", "router")`。真正的录制/回放对 composite 的支持是 **RFC-0023 录制层的 nested 设计**（见下），不是 composite 自身要解决的。
 
 ### RFC-0023 录制层的 nested 设计（follow-up note）

@@ -569,6 +569,26 @@ fn parse_provider_options(
     }
 }
 
+/// Read a config_json C string and normalize it for lenient deserialization.
+///
+/// NULL, empty, whitespace-only, and `"null"` all become `"{}"` (defaults),
+/// matching `parse_provider_options` / `parse_opts` convention so direct C
+/// callers get the documented "empty = defaults" behavior. Invalid UTF-8
+/// (cstr_to_string returns None) is still an error.
+fn normalize_config_json(config_json: *const c_char, err: *mut CAimuxError) -> Option<String> {
+    if config_json.is_null() {
+        return Some(String::from("{}"));
+    }
+    match cstr_to_string(config_json) {
+        None => unsafe {
+            fill_error(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, INVALID_ARGS);
+            None
+        },
+        Some(s) if s.trim().is_empty() || s.trim() == "null" => Some(String::from("{}")),
+        Some(s) => Some(s),
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // C ABI: provider constructors
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2790,13 +2810,10 @@ pub extern "C" fn aimux_router_new(
     if models.is_empty() {
         return unsafe { fail_other(err, "router: no valid child handles") };
     }
-    let config_json = if config_json.is_null() {
-        String::from("{}")
-    } else {
-        match cstr_to_string(config_json) {
-            Some(s) => s,
-            None => return unsafe { fail_invalid_args(err) },
-        }
+    // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
+    // convention). Invalid UTF-8 → invalid args.
+    let Some(config_json) = normalize_config_json(config_json, err) else {
+        return 0;
     };
     let cfg: RouterFfiConfig = match serde_json::from_str::<RouterFfiConfig>(&config_json) {
         Ok(c) => c,
@@ -2863,13 +2880,10 @@ pub extern "C" fn aimux_moa_new(
             }
             v
         };
-    let config_json = if config_json.is_null() {
-        String::from("{}")
-    } else {
-        match cstr_to_string(config_json) {
-            Some(s) => s,
-            None => return unsafe { fail_invalid_args(err) },
-        }
+    // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
+    // convention). Invalid UTF-8 → invalid args.
+    let Some(config_json) = normalize_config_json(config_json, err) else {
+        return 0;
     };
     let cfg: aimux_core::moa::MoaConfig = match serde_json::from_str(&config_json) {
         Ok(c) => c,
@@ -3203,6 +3217,26 @@ mod tests {
         let h = aimux_router_new(handles.as_ptr(), handles.len(), bad.as_ptr(), &mut err);
         assert_eq!(h, 0);
         assert_eq!(err.code, AIMUX_E_JSON_PARSE);
+    }
+
+    #[test]
+    fn router_new_treats_empty_config_as_defaults() {
+        // S1 guard: empty string / "null" config must NOT be a JSON_PARSE error
+        // (consistent with other config-bearing FFI entry points).
+        let handles = [mock_handle("mock", "m", "x")];
+        for cfg in ["", "  ", "null"] {
+            let c = std::ffi::CString::new(cfg).unwrap();
+            let h = aimux_router_new(
+                handles.as_ptr(),
+                handles.len(),
+                c.as_ptr(),
+                std::ptr::null_mut(),
+            );
+            assert!(
+                h != 0,
+                "router with config {cfg:?} should succeed (defaults)"
+            );
+        }
     }
 
     #[test]

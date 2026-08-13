@@ -486,4 +486,45 @@ mod tests {
         let err = router.do_generate(&opts()).await.unwrap_err();
         assert!(err.to_string().contains("no models"));
     }
+
+    #[tokio::test]
+    async fn stream_does_not_fallback_when_routed_child_fails() {
+        // G3: the key streaming invariant — even with FallbackPolicy::OnError,
+        // a failing primary is NOT retried via the backup during do_stream.
+        // (StreamStart is already emitted by the time a retry would matter.)
+        let router = RouterModel::new(
+            vec![
+                child("primary", "primary-out", true),
+                child("backup", "backup-out", false),
+            ],
+            Box::new(RuleRouter),
+            FallbackPolicy::OnError, // would fall back in do_generate, must NOT here
+            RouterConfig::default(),
+        );
+        let err = router.do_stream(&opts()).await.unwrap_err();
+        assert!(
+            err.to_string().contains("primary always fails"),
+            "do_stream must surface the primary error, not fall back; got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn usable_as_dyn_language_model_via_generate_text() {
+        // G7: the RFCs' headline claim — composite models drop into the
+        // generate_text free function unchanged via &dyn LanguageModel.
+        let router = RouterModel::new(
+            vec![child("a", "works through trait object", false)],
+            Box::new(RuleRouter),
+            FallbackPolicy::OnError,
+            RouterConfig::default(),
+        );
+        let r = crate::generate::generate_text(
+            &router,
+            "hello",
+            crate::generate::GenerateTextOptions::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(r.text, "works through trait object");
+    }
 }
