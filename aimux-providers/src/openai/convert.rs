@@ -646,10 +646,20 @@ fn convert_message_to_openai(
     // all plain text (without providerOptions), collapse to a string — matching
     // the Vercel AI SDK `openai-compatible` assistant conversion
     // (`content: toolCalls.length > 0 ? text || null : text`).
+    //
+    // Provider-executed tool results are dropped from assistant messages: the
+    // OpenAI chat wire format has no content part for them, and upstream's
+    // assistant branch handles only `text` and `tool-call`
+    // (convert-to-openai-chat-messages.ts:246-300). Emitting one produces a
+    // part type the API rejects.
     let content_parts: Vec<&ContentPart> = msg
         .content
         .iter()
-        .filter(|p| !matches!(p, ContentPart::Reasoning { .. }))
+        .filter(|p| match p {
+            ContentPart::Reasoning { .. } => false,
+            ContentPart::ToolResult { .. } => msg.role != Role::Assistant,
+            _ => true,
+        })
         .collect();
     let all_plain_text = content_parts.iter().all(|p| {
         matches!(
@@ -676,7 +686,10 @@ fn convert_message_to_openai(
             .iter()
             .enumerate()
             .map(|(i, part)| convert_part_to_openai(part, i))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|p| !p.is_null())
+            .collect();
         json!({ "role": role, "content": parts })
     };
     if has_reasoning {
@@ -853,15 +866,10 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiM
                 "arguments": input.to_string(),
             }
         })),
-        ContentPart::ToolResult {
-            tool_call_id,
-            result,
-            ..
-        } => Ok(json!({
-            "type": "tool_result",
-            "tool_call_id": tool_call_id,
-            "content": result,
-        })),
+        // Tool results reach the wire as a separate `role: "tool"` message
+        // (built by `convert_message_to_openai`), never as a content part —
+        // there is no such part type in the OpenAI chat format.
+        ContentPart::ToolResult { .. } => Ok(Value::Null),
     }
 }
 

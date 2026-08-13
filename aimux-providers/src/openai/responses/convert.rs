@@ -946,9 +946,17 @@ pub fn build_responses_request_body(
 /// - `output.total = output_tokens`
 /// - `output.text = output_tokens - reasoning_tokens`
 /// - `output.reasoning = reasoning_tokens`
-pub fn convert_responses_usage(usage: Option<&ResponsesUsage>) -> Usage {
+///
+/// `raw` is the untouched wire `usage` object; it is stored on `Usage.raw`
+/// (RFC-0015 P0-3). Re-serializing the typed struct instead would drop the
+/// `orchestration_*` counters and add explicit nulls, so the caller passes the
+/// original value through — matching the TS `raw: usage`.
+pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
-        return Usage::default();
+        return Usage {
+            raw,
+            ..Default::default()
+        };
     };
 
     let input_tokens = usage.input_tokens;
@@ -986,8 +994,7 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>) -> Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
-        // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw,
     }
 }
 

@@ -127,7 +127,11 @@ pub fn build_responses_generate_result(
                             if !text.is_empty() {
                                 content.push(GenerateContent::Text {
                                     text,
-                                    provider_metadata: None,
+                                    provider_metadata: Some(json!({
+                                        (provider_key.clone()): {
+                                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                                        }
+                                    })),
                                 });
                             }
                         }
@@ -182,7 +186,11 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: None,
+                    provider_metadata: Some(json!({
+                        (provider_key.clone()): {
+                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                        }
+                    })),
                 });
             }
             Some("custom_tool_call") => {
@@ -207,16 +215,26 @@ pub fn build_responses_generate_result(
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
-                    provider_metadata: None,
+                    provider_metadata: Some(json!({
+                        (provider_key.clone()): {
+                            "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                        }
+                    })),
                 });
             }
             Some("reasoning") => {
                 let summary = part.get("summary").and_then(|v| v.as_array());
                 let parts: Vec<&Value> = summary.map(|s| s.iter().collect()).unwrap_or_default();
+                let reasoning_metadata = Some(json!({
+                    (provider_key.clone()): {
+                        "itemId": part.get("id").cloned().unwrap_or(Value::Null),
+                        "reasoningEncryptedContent": part.get("encrypted_content").cloned().unwrap_or(Value::Null),
+                    }
+                }));
                 if parts.is_empty() {
                     content.push(GenerateContent::Reasoning {
                         text: String::new(),
-                        provider_metadata: None,
+                        provider_metadata: reasoning_metadata.clone(),
                     });
                 } else {
                     for sp in parts {
@@ -227,7 +245,7 @@ pub fn build_responses_generate_result(
                             .to_string();
                         content.push(GenerateContent::Reasoning {
                             text,
-                            provider_metadata: None,
+                            provider_metadata: reasoning_metadata.clone(),
                         });
                     }
                 }
@@ -242,7 +260,10 @@ pub fn build_responses_generate_result(
         .and_then(|v| v.as_str());
     let finish_reason = map_responses_finish_reason(incomplete_reason, has_function_call);
 
-    let usage = convert_responses_usage(data.get("usage").and_then(parse_usage).as_ref());
+    let usage = convert_responses_usage(
+        data.get("usage").and_then(parse_usage).as_ref(),
+        data.get("usage").cloned(),
+    );
 
     // Provider metadata: { <provider_key>: { responseId, reasoningContext?, serviceTier? } }
     let mut pm = json!({ "responseId": data.get("id").cloned().unwrap_or(Value::Null) });
@@ -308,6 +329,18 @@ enum SummaryStatus {
     Active,
     CanConclude,
     Concluded,
+}
+
+/// Generate a unique source ID for streaming annotation sources.
+///
+/// Uses a process-wide atomic counter — consistent with the xAI Responses
+/// provider (`aimux-providers/src/xai/responses/mod.rs`). Upstream TS uses
+/// `generateId()` for the same purpose.
+fn generate_source_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("source-{}", n)
 }
 
 /// Build the streaming event reducer shared by the OpenAI and Azure providers.
@@ -378,6 +411,9 @@ where
 
         let mut has_function_call = false;
         let mut final_usage: Option<ResponsesUsage> = None;
+        let mut final_raw_usage: Option<Value> = None;
+        let mut final_service_tier: Option<String> = None;
+        let mut final_reasoning_context: Option<Value> = None;
         let mut final_finish_reason: Option<FinishReason> = None;
         let mut response_id: Option<String> = None;
         let mut stream_errored = false;
@@ -797,6 +833,28 @@ where
                             }
                         }
 
+                        // ── response.output_text.annotation.added → Source ─────────
+                        "response.output_text.annotation.added" => {
+                            if let Some(ann) = parsed.get("annotation")
+                                && ann.get("type").and_then(|v| v.as_str())
+                                    == Some("url_citation")
+                            {
+                                yield Ok(StreamPart::Source {
+                                    id: generate_source_id(),
+                                    source_type: "url".to_string(),
+                                    url: ann
+                                        .get("url")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string()),
+                                    title: ann
+                                        .get("title")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string()),
+                                    provider_metadata: None,
+                                });
+                            }
+                        }
+
                         // ── response.completed / response.incomplete → finish ────
                         "response.completed" | "response.incomplete" => {
                             if let Some(resp_obj) = parsed.get("response") {
@@ -810,6 +868,23 @@ where
                                 ));
                                 final_usage =
                                     resp_obj.get("usage").and_then(parse_usage);
+                                // Keep the raw wire usage object for `usage.raw`
+                                // (RFC-0015 P0-3) and capture the finish-time
+                                // provider metadata fields carried on the
+                                // terminal response object.
+                                final_raw_usage = resp_obj.get("usage").cloned();
+                                if let Some(st) = resp_obj
+                                    .get("service_tier")
+                                    .and_then(|v| v.as_str())
+                                {
+                                    final_service_tier = Some(st.to_string());
+                                }
+                                if let Some(reasoning) = resp_obj.get("reasoning")
+                                    && let Some(ctx) = reasoning.get("context")
+                                    && !ctx.is_null()
+                                {
+                                    final_reasoning_context = Some(ctx.clone());
+                                }
                             }
                         }
 
@@ -829,6 +904,15 @@ where
                                 });
                                 final_usage =
                                     resp_obj.get("usage").and_then(parse_usage);
+                                final_raw_usage = resp_obj.get("usage").cloned();
+                                // Upstream's `response.failed` arm carries
+                                // `reasoningContext` (but not `serviceTier`).
+                                if let Some(reasoning) = resp_obj.get("reasoning")
+                                    && let Some(ctx) = reasoning.get("context")
+                                    && !ctx.is_null()
+                                {
+                                    final_reasoning_context = Some(ctx.clone());
+                                }
                                 if !stream_errored
                                     && resp_obj.get("error").is_some()
                                 {
@@ -900,10 +984,18 @@ where
             }
         }
 
-        // Build provider metadata for the Finish part.
+        // Build provider metadata for the Finish part: { <provider_key>: {
+        // responseId, serviceTier?, reasoningContext? } }. Mirrors the TS
+        // flush() providerMetadata, which carries `service_tier` and
+        // `reasoning.context` from the terminal response object.
         let mut pm = json!({ "responseId": response_id.unwrap_or_default() });
+        if let Some(st) = final_service_tier {
+            pm["serviceTier"] = json!(st);
+        }
+        if let Some(ctx) = final_reasoning_context {
+            pm["reasoningContext"] = ctx;
+        }
         let provider_metadata = Some(json!({ provider_key: pm }));
-        let _ = &mut pm;
 
         yield Ok(StreamPart::Finish {
             finish_reason: if stream_errored {
@@ -924,7 +1016,7 @@ where
             usage: if stream_errored {
                 Usage::default()
             } else {
-                convert_responses_usage(final_usage.as_ref())
+                convert_responses_usage(final_usage.as_ref(), final_raw_usage)
             },
             provider_metadata,
         });

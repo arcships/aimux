@@ -719,6 +719,30 @@ pub async fn execute_stream(
                             }
                         }
 
+                        // Annotations / citations (URL citations → Source).
+                        if let Some(annotations) = choice.delta.annotations {
+                            for (i, ann) in annotations.iter().enumerate() {
+                                if ann.get("type").and_then(|v| v.as_str())
+                                    == Some("url_citation")
+                                    && let Some(uc) = ann.get("url_citation")
+                                {
+                                    yield Ok(StreamPart::Source {
+                                        id: format!("annotation-{}", i),
+                                        source_type: "url".to_string(),
+                                        url: uc
+                                            .get("url")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string()),
+                                        title: uc
+                                            .get("title")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string()),
+                                        provider_metadata: None,
+                                    });
+                                }
+                            }
+                        }
+
                         // Finish reason.
                         if let Some(reason) = choice.finish_reason {
                             // Close any open reasoning segment.

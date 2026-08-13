@@ -149,6 +149,9 @@ pub struct Delta {
     pub reasoning_content: Option<String>,
     #[serde(default)]
     pub tool_calls: Option<Vec<DeltaToolCall>>,
+    /// Annotations (e.g. URL citations) carried by a streaming delta.
+    #[serde(default)]
+    pub annotations: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Deserialize)]

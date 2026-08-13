@@ -283,6 +283,13 @@ impl LanguageModel for BedrockModel {
             let mut tool_blocks: HashMap<usize, (String, String, String)> = HashMap::new();
             let mut final_usage: Usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
+            // Provider metadata accumulated for the Finish chunk from `metadata`
+            // and `messageStop` events (findings #26, #27). Mirrors the TS
+            // `providerMetadata` / `stopSequence` accumulation in
+            // `amazon-bedrock-chat-language-model.ts` (`doStream`).
+            let mut finish_meta: serde_json::Map<String, serde_json::Value> =
+                serde_json::Map::new();
+            let mut stop_sequence: Option<String> = None;
 
             for msg in &messages {
                 if msg.message_type != "event" {
@@ -382,28 +389,73 @@ impl LanguageModel for BedrockModel {
                                                 provider_metadata: None,
                                             });
                                         }
-                            // Reasoning delta — `reasoningContent.text` carries
-                            // incremental reasoning text; `reasoningContent.signature`
-                            // carries the final signature. The signature cannot be
-                            // represented on `StreamPart::ReasoningDelta` (no
-                            // provider_metadata field), so it is intentionally not
-                            // emitted. Empty text deltas are skipped.
-                            if let Some(rc) = delta.get("reasoningContent")
-                                && let Some(text) = rc.get("text").and_then(|v| v.as_str())
-                                    && !text.is_empty() {
-                                        let id = idx.to_string();
-                                        if reasoning_id.as_deref() != Some(id.as_str()) {
-                                            reasoning_id = Some(id.clone());
-                                            yield Ok(StreamPart::ReasoningStart { id,
-                provider_metadata: None,
-            });
-                                        }
-                                        yield Ok(StreamPart::ReasoningDelta {
-                                            id: idx.to_string(),
-                                            delta: text.to_string(),
-                provider_metadata: None,
-            });
+                            // Reasoning delta. `reasoningContent` carries
+                            // exactly one of `text`, `signature`, or `data` per
+                            // the Bedrock streaming schema (mirrors the TS
+                            // `reasoningContent` union in `doStream`). `signature`
+                            // and `data` are emitted as zero-length deltas that
+                            // carry the payload in `provider_metadata` under both
+                            // `amazonBedrock` and `bedrock` keys — finding #10.
+                            if let Some(rc) = delta.get("reasoningContent") {
+                                if let Some(text) =
+                                    rc.get("text").and_then(|v| v.as_str())
+                                    && !text.is_empty()
+                                {
+                                    let id = idx.to_string();
+                                    if reasoning_id.as_deref() != Some(id.as_str()) {
+                                        reasoning_id = Some(id.clone());
+                                        yield Ok(StreamPart::ReasoningStart {
+                                            id,
+                                            provider_metadata: None,
+                                        });
                                     }
+                                    yield Ok(StreamPart::ReasoningDelta {
+                                        id: idx.to_string(),
+                                        delta: text.to_string(),
+                                        provider_metadata: None,
+                                    });
+                                } else if let Some(sig) =
+                                    rc.get("signature").and_then(|v| v.as_str())
+                                    && !sig.is_empty()
+                                {
+                                    let id = idx.to_string();
+                                    if reasoning_id.as_deref() != Some(id.as_str()) {
+                                        reasoning_id = Some(id.clone());
+                                        yield Ok(StreamPart::ReasoningStart {
+                                            id,
+                                            provider_metadata: None,
+                                        });
+                                    }
+                                    yield Ok(StreamPart::ReasoningDelta {
+                                        id: idx.to_string(),
+                                        delta: String::new(),
+                                        provider_metadata: Some(json!({
+                                            "amazonBedrock": { "signature": sig },
+                                            "bedrock": { "signature": sig }
+                                        })),
+                                    });
+                                } else if let Some(data) =
+                                    rc.get("data").and_then(|v| v.as_str())
+                                    && !data.is_empty()
+                                {
+                                    let id = idx.to_string();
+                                    if reasoning_id.as_deref() != Some(id.as_str()) {
+                                        reasoning_id = Some(id.clone());
+                                        yield Ok(StreamPart::ReasoningStart {
+                                            id,
+                                            provider_metadata: None,
+                                        });
+                                    }
+                                    yield Ok(StreamPart::ReasoningDelta {
+                                        id: idx.to_string(),
+                                        delta: String::new(),
+                                        provider_metadata: Some(json!({
+                                            "amazonBedrock": { "redactedData": data },
+                                            "bedrock": { "redactedData": data }
+                                        })),
+                                    });
+                                }
+                            }
                         }
                     }
                     "contentBlockStop" => {
@@ -459,12 +511,35 @@ impl LanguageModel for BedrockModel {
                             }
                             final_finish_reason = Some(map_finish_reason(reason));
                         }
+                        // #26: surface which stop sequence sentinel fired
+                        // (additionalModelResponseFields.delta.stop_sequence), if any.
+                        if let Some(seq) = payload
+                            .get("additionalModelResponseFields")
+                            .and_then(|f| f.get("delta"))
+                            .and_then(|d| d.get("stop_sequence"))
+                            .and_then(|v| v.as_str())
+                        {
+                            stop_sequence = Some(seq.to_string());
+                        }
                     }
                     "metadata" => {
                         if let Some(usage) = payload.get("usage") {
                             let bedrock_usage: super::types::BedrockUsage =
                                 serde_json::from_value(usage.clone()).unwrap_or_default();
                             final_usage = convert_usage(Some(&bedrock_usage));
+                        }
+                        // #27: surface guardrails trace, performanceConfig, and
+                        // serviceTier into the Finish chunk's provider_metadata
+                        // (mirrors TS `doStream` metadata handling).
+                        if let Some(trace) = payload.get("trace") {
+                            finish_meta.insert("trace".to_string(), trace.clone());
+                        }
+                        if let Some(pc) = payload.get("performanceConfig") {
+                            finish_meta
+                                .insert("performanceConfig".to_string(), pc.clone());
+                        }
+                        if let Some(st) = payload.get("serviceTier") {
+                            finish_meta.insert("serviceTier".to_string(), st.clone());
                         }
                     }
                     _ => {}
@@ -482,13 +557,32 @@ impl LanguageModel for BedrockModel {
             });
             }
 
+            // #26: merge the stop sentinel into the metadata payload, then build
+            // the Finish provider_metadata under both `amazonBedrock` and
+            // `bedrock` keys (mirrors the TS `doStream` flush handler).
+            if let Some(seq) = stop_sequence {
+                finish_meta.insert(
+                    "stopSequence".to_string(),
+                    serde_json::Value::String(seq),
+                );
+            }
+            let provider_metadata = if finish_meta.is_empty() {
+                None
+            } else {
+                let payload = serde_json::Value::Object(finish_meta);
+                Some(json!({
+                    "amazonBedrock": payload,
+                    "bedrock": payload,
+                }))
+            };
+
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason.unwrap_or(FinishReason {
                     unified: FinishReasonUnified::Stop,
                     raw: None,
                 }),
                 usage: final_usage,
-                provider_metadata: None,
+                provider_metadata,
             });
         };
 

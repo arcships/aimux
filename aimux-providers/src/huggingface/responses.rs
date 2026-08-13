@@ -287,7 +287,12 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("")
                                                     .to_string();
-                                                yield Ok(StreamPart::TextStart { id, provider_metadata: None});
+                                                yield Ok(StreamPart::TextStart {
+                                                    id: id.clone(),
+                                                    provider_metadata: Some(json!({
+                                                        "huggingface": { "itemId": id }
+                                                    })),
+                                                });
                                             }
                                         }
                                         "function_call" => {
@@ -1030,9 +1035,12 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     .unwrap_or(&empty_vec);
                 for cp in content_parts {
                     let text = cp.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                    let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: None,
+                        provider_metadata: Some(json!({
+                            "huggingface": { "itemId": item_id }
+                        })),
                     });
 
                     // Process annotations → source parts.
@@ -1088,9 +1096,6 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     thought_signature: None,
                     provider_metadata: None,
                 });
-                // Tool result — the Rust GenerateContent enum has no ToolResult
-                // variant, so it is omitted (the TS emits it as a separate
-                // content item).
             }
 
             "mcp_call" => {
@@ -1111,6 +1116,18 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     thought_signature: None,
                     provider_metadata: None,
                 });
+
+                if let Some(output) = part.get("output").filter(|v| !v.is_null()) {
+                    content.push(GenerateContent::ToolResult {
+                        tool_call_id: id.to_string(),
+                        tool_name: name.to_string(),
+                        result: output.clone(),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    });
+                }
             }
 
             "mcp_list_tools" => {
@@ -1125,6 +1142,18 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     thought_signature: None,
                     provider_metadata: None,
                 });
+
+                if let Some(tools) = part.get("tools").filter(|v| !v.is_null()) {
+                    content.push(GenerateContent::ToolResult {
+                        tool_call_id: id.to_string(),
+                        tool_name: "list_tools".to_string(),
+                        result: json!({ "tools": tools }),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    });
+                }
             }
 
             _ => {}
