@@ -21,9 +21,26 @@ dependencies {
     testImplementation("org.json:json:20240303")
 }
 
+// Declare the JVM the binding is built and tested against. Without this the
+// bytecode level of a published artifact depends on whichever JDK happened to
+// run the release, which is not something a Maven Central consumer can read
+// off the POM. 17 is what CI runs, so the declaration and the verification
+// agree — see bindings/java for the alternative shape, where an explicit
+// 1.8 target is backed by a four-JDK matrix.
+kotlin {
+    jvmToolchain(17)
+}
+
 tasks.test {
     useJUnitPlatform()
     systemProperty("jna.library.path", rootProject.projectDir.resolve("../../target/release").canonicalPath)
+    // Gradle prints only "there were failing tests" by default; the names live
+    // in an HTML report that CI logs never surface. Without this, a red build
+    // tells you nothing about which test broke.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
 
 // Package the native library into the JAR for distribution.
