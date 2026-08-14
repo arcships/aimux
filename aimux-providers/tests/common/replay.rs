@@ -26,9 +26,10 @@
 //! }
 //! ```
 //!
-//! `request.body` may be a JSON object or a string. `response.body` is always a
-//! raw string — non-streaming responses are JSON text, streaming responses are
-//! the original SSE text. The body bytes are returned to the caller untouched.
+//! `request.body` may be a JSON object or a string. `response.body`, **when
+//! present**, is a raw string — non-streaming responses are JSON text,
+//! streaming responses are the original SSE text. The body bytes are returned
+//! to the caller untouched.
 //!
 //! Responses whose body is not valid UTF-8 (e.g. Bedrock's
 //! `application/vnd.amazon.eventstream` frames) carry `response.body_base64`
