@@ -108,6 +108,12 @@
     "description": "Source/citation. Note url and title carry no skip_serializing_if, so they are always emitted (null when unset) — unlike provider_metadata, which is omitted when unset."
   },
   {
+    "name": "generate_content_source_unset_optionals",
+    "type": "GenerateContent",
+    "json": "{\"Source\":{\"id\":\"src_2\",\"source_type\":\"document\",\"url\":null,\"title\":null}}",
+    "description": "Source with url and title unset. They carry no skip_serializing_if, so they must appear as explicit nulls — while provider_metadata, which does carry it, stays absent in the same object. Pinning the unset form is what makes that difference load-bearing: without this case, adding skip_serializing_if to url/title would silently turn null into an omitted key and no fixture would notice."
+  },
+  {
     "name": "generate_content_file",
     "type": "GenerateContent",
     "json": "{\"File\":{\"data\":{\"Data\":{\"data\":{\"Base64\":\"aGk=\"}}},\"media_type\":\"image/png\"}}",

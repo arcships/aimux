@@ -113,11 +113,27 @@ func TestWireFormatConsistency(t *testing.T) {
 					if opts.SessionID == nil || *opts.SessionID != "sess-1" {
 						t.Errorf("expected session_id \"sess-1\", got %v", opts.SessionID)
 					}
+					// This fixture sets only session_id; the numeric fields stay
+					// null. There is no round-trip comparison in this branch to
+					// catch that incidentally, so assert it.
+					if opts.MaxOutputTokens != nil {
+						t.Error("expected nil MaxOutputTokens")
+					}
+					if opts.Temperature != nil {
+						t.Error("expected nil Temperature")
+					}
 
 				case "generate_text_options_include_raw_chunks_true":
 					// RFC-0016 M2 true-case: include_raw_chunks round-trips.
 					if opts.IncludeRawChunks == nil || *opts.IncludeRawChunks != true {
 						t.Errorf("expected IncludeRawChunks=true, got %v", opts.IncludeRawChunks)
+					}
+					// Likewise: only include_raw_chunks is set here.
+					if opts.MaxOutputTokens != nil {
+						t.Error("expected nil MaxOutputTokens")
+					}
+					if opts.Temperature != nil {
+						t.Error("expected nil Temperature")
 					}
 
 				case "generate_text_options_numeric_types":
