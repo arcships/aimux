@@ -74,8 +74,21 @@ fn wait_line(dir: &std::path::Path) -> Recording {
     }
 }
 
-/// 模拟层 A 的 outcome + transport closed(barrier 所需)。
+/// 模拟层 A 的完整生命周期(input + outcome + transport closed,barrier 所需)。
+/// 生产中层 A 总是先 `record_input`(RFC-0023 §3.2)——input 是 completion
+/// barrier 的必要条件,缺失时记录以 incomplete 落盘。
 fn mimic_layer_a(rec: &dyn Recorder, call_id: &str) {
+    use aimux_core::content::ContentPart;
+    use aimux_core::language_model_message::LanguageModelPromptMessage;
+    use aimux_core::message::Role;
+    use aimux_core::options::CallOptions;
+
+    let options = CallOptions::new(vec![LanguageModelPromptMessage {
+        role: Role::User,
+        content: vec![ContentPart::text("hi")],
+        ..Default::default()
+    }]);
+    rec.record_input(call_id, &options, "openai", "gpt-4o");
     rec.record_outcome(
         call_id,
         &OutcomeRecord {
