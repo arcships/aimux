@@ -57,7 +57,16 @@ pub fn sign_request(
 ) -> SignedRequest {
     let parsed =
         url::Url::parse(url).unwrap_or_else(|_| url::Url::parse("http://localhost").unwrap());
-    let host = parsed.host_str().unwrap_or("");
+    // The signed host must match the wire host: keep the port whenever the
+    // URL carries a non-default one (Url::port() is Some only for non-default
+    // ports). Signing a bare host diverges from the Host header reqwest would
+    // otherwise send, so gateways and proxies on non-standard ports reject the
+    // signature (observed as 502 when an env proxy forwarded a signed
+    // loopback request whose host lacked the port).
+    let host = match parsed.port() {
+        Some(port) => format!("{}:{}", parsed.host_str().unwrap_or(""), port),
+        None => parsed.host_str().unwrap_or("").to_string(),
+    };
     let path = parsed.path();
     let query = parsed.query().unwrap_or("");
 
@@ -160,4 +169,56 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn creds() -> AwsCredentials {
+        AwsCredentials {
+            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            session_token: None,
+            region: "us-east-1".to_string(),
+        }
+    }
+
+    fn host_header(signed: &SignedRequest) -> String {
+        signed
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("host"))
+            .map(|(_, v)| v.clone())
+            .expect("signed request carries a host header")
+    }
+
+    #[test]
+    fn host_keeps_non_default_port() {
+        let signed = sign_request(
+            &creds(),
+            "bedrock",
+            "POST",
+            "http://127.0.0.1:54321/model/x/invoke",
+            "{}",
+            &[],
+        );
+        assert_eq!(host_header(&signed), "127.0.0.1:54321");
+    }
+
+    #[test]
+    fn host_omits_default_port() {
+        let signed = sign_request(
+            &creds(),
+            "bedrock",
+            "POST",
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/x/invoke",
+            "{}",
+            &[],
+        );
+        assert_eq!(
+            host_header(&signed),
+            "bedrock-runtime.us-east-1.amazonaws.com"
+        );
+    }
 }
