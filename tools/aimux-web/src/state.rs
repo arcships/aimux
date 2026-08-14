@@ -133,7 +133,7 @@ impl AppState {
         let rec = recs
             .iter()
             .rev()
-            .find(|r| session_id.map_or(true, |s| r.session_id.as_deref() == Some(s)))
+            .find(|r| session_id.is_none_or(|s| r.session_id.as_deref() == Some(s)))
             .or_else(|| recs.last())?;
         Some(crate::wire::WireMeta {
             call_id: rec.call_id.clone(),
