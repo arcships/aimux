@@ -1919,6 +1919,28 @@ mod request_body {
         assert_eq!(fr["response"]["name"], "weather");
     }
 
+    #[test]
+    fn tool_result_blank_tool_name_falls_back_to_call_id() {
+        // An explicitly blank tool_name is treated as unset and falls back
+        // to the call id (locks the empty-string filter branch).
+        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
+            role: Role::Tool,
+            content: vec![ContentPart::ToolResult {
+                tool_call_id: "call-blank".to_string(),
+                result: json!({ "ok": true }),
+                tool_name: Some(String::new()),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            }],
+            ..Default::default()
+        }];
+        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+        let fr = &body["contents"][0]["parts"][0]["functionResponse"];
+        assert_eq!(fr["name"], "call-blank");
+    }
+
     // ── tools → tools array with functionDeclarations ─────────────────────────
 
     #[test]
