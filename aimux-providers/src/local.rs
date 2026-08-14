@@ -1,6 +1,6 @@
 //! Local LLM provider — a thin OpenAI-compatible wrapper.
 //!
-//! See <localhost> for API documentation. Exposes an OpenAI-compatible
+//! See `localhost` for API documentation. Exposes an OpenAI-compatible
 //! Chat Completions API at `http://127.0.0.1:8080/v1`. The `LOCAL_LLM_BASE_URL` environment
 //! variable holds a *base URL* (not an API key); when unset, the default
 //! endpoint is used. A placeholder API key is sent in the `Authorization`

@@ -13,7 +13,7 @@
 //! - **Authentication**: AWS SigV4 signing (service name
 //!   `aws-external-anthropic`) or `x-api-key` header.
 //!
-//! Reference: https://docs.anthropic.com/en/api/messages
+//! Reference: <https://docs.anthropic.com/en/api/messages>
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;

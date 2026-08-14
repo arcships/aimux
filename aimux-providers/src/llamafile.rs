@@ -3,7 +3,7 @@
 //!
 //! llamafile exposes an OpenAI-compatible Chat Completions API at
 //! `http://127.0.0.1:8080/v1` by default. The Rust
-//! [`OpenAIProvider`](crate::openai::OpenAIProvider) appends `/chat/completions`
+//! [`OpenAIProvider`] appends `/chat/completions`
 //! to this base URL, yielding `http://127.0.0.1:8080/v1/chat/completions`.
 //!
 //! Unlike hosted providers, llamafile runs locally and does not require

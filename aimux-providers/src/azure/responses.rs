@@ -10,7 +10,7 @@
 //!    `{base}/v1/responses?api-version={v}`; the deployment-based form is
 //!    `{base}/deployments/{deployment}/responses?api-version={v}`.
 //! 2. **Authentication** — either an `api-key` header (API key) or a `Bearer`
-//!    token supplied by a [`TokenProvider`] (Azure AD / Microsoft Entra ID).
+//!    token supplied by a `TokenProvider` (Azure AD / Microsoft Entra ID).
 //!    The two are mutually exclusive.
 //! 3. **File ID prefix** — Azure file IDs use the `assistant-` prefix. When a
 //!    file content part's data starts with `assistant-`, it is passed through

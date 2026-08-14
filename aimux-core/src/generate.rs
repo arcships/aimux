@@ -949,7 +949,7 @@ pub async fn generate_text_as_openai(
 ///
 /// This is the OpenAI-compatible equivalent of [`stream_text`]. Internally
 /// it calls `stream_text`, then converts the `StreamPart` stream into a
-/// [`ChatCompletionChunk`] stream via [`to_chat_completion_stream`].
+/// `ChatCompletionChunk` stream via [`to_chat_completion_stream`].
 ///
 /// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
 /// always standard OpenAI Chat Completions streaming chunks.

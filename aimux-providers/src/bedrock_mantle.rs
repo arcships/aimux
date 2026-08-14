@@ -4,7 +4,7 @@
 //! `https://bedrock-mantle.{region}.api.aws/v1` (region defaults to `us-east-1`).
 //! Provider-specific details are the region-aware base URL and the
 //! `BEDROCK_MANTLE_API_KEY` environment variable; everything else is delegated
-//! to the shared [`OpenAIProvider`](crate::openai::OpenAIProvider).
+//! to the shared [`OpenAIProvider`].
 //!
 //! # Authentication
 //!

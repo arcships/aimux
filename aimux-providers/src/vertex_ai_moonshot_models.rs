@@ -14,7 +14,7 @@
 //! used by the native Vertex provider), sent as `Authorization: Bearer <token>`.
 //!
 //! Because the endpoint is OpenAI-compatible, this provider is a thin wrapper
-//! over [`OpenAIProvider`](crate::openai::OpenAIProvider): only the base URL,
+//! over [`OpenAIProvider`]: only the base URL,
 //! the Bearer-token env var, and the provider name differ. The shared
 //! `OpenAIProvider` appends `/chat/completions` to the configured base URL.
 //! Sample model ids: `"moonshotai/kimi-k2-thinking-maas"`.

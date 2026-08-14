@@ -26,7 +26,7 @@
 //! not allow a panic to propagate — the process terminates (and under this
 //! workspace's release profile, `panic = "abort"`, it terminates at the panic
 //! site). Either way the re-entrant call must be rejected before it reaches
-//! the runtime; the thread-local guard in [`ffi_block_on`] does that
+//! the runtime; the thread-local guard in `ffi_block_on` does that
 //! (issue M7).
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 // `extern "C"` entry points dereference raw pointers (`*const c_char`) by
@@ -202,7 +202,7 @@ thread_local! {
     /// this thread. tokio rejects nested `block_on` with a **panic**; Rust's
     /// non-unwind `extern "C"` ABI terminates the process rather than letting
     /// the panic propagate (and `panic = "abort"` terminates at the panic site).
-    /// [`ffi_block_on`] checks this guard and turns that re-entrant call into
+    /// `ffi_block_on` checks this guard and turns that re-entrant call into
     /// a failure sentinel + optional AimuxError instead (issue M7).
     static IN_FFI_BLOCK_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -325,7 +325,7 @@ pub const AIMUX_E_OTHER: i32 = 14;
 /// Layout must match `aimux-error.h` `AimuxError` (40 bytes).
 ///
 /// On failure the callee overwrites every field; `message` is allocated with
-/// [`into_cstring_raw`] and the caller releases it with `aimux_free_string`.
+/// `into_cstring_raw` and the caller releases it with `aimux_free_string`.
 /// `error_value` is the lossless externally-tagged serde JSON of the source
 /// [`AiMuxError`] (null when the failure was synthesized at the FFI boundary
 /// and has no core error value). `reserved` is future ABI room (the

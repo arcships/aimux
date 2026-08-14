@@ -8,8 +8,8 @@
 //! This module implements just enough of the format to decode Bedrock stream
 //! events and to encode them in tests.
 //!
-//! Reference: https://docs.aws.amazon.com/transcribe/latest/dg/event-stream.md
-//!            https://github.com/smithy-lang/smithy-typescript/tree/main/packages/eventstream-codec
+//! Reference: <https://docs.aws.amazon.com/transcribe/latest/dg/event-stream.md>
+//!            <https://github.com/smithy-lang/smithy-typescript/tree/main/packages/eventstream-codec>
 
 /// CRC32 lookup table (IEEE polynomial 0xEDB88320).
 const CRC32_TABLE: [u32; 256] = {

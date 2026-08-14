@@ -5,7 +5,7 @@
 //! parameter and authenticates via either an `api-key` header or an Azure AD
 //! (Microsoft Entra ID) bearer token.
 //!
-//! See [`AzureProvider`] and [`AzureConfig`](model::AzureConfig).
+//! See [`AzureProvider`] and [`AzureConfig`].
 
 pub mod model;
 pub mod responses;

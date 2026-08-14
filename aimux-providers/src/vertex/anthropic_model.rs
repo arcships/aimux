@@ -12,7 +12,7 @@
 //! construction and authentication differ from the standard Anthropic provider,
 //! and both come from the parent Vertex provider ([`super::VertexAuth`]).
 //!
-//! Reference: https://docs.cloud.google.com/claude-on-vertex-ai
+//! Reference: <https://docs.cloud.google.com/claude-on-vertex-ai>
 
 use std::collections::HashMap;
 
