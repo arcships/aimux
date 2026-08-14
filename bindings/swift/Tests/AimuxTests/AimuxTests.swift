@@ -31,7 +31,7 @@ final class AimuxTests: XCTestCase {
         // Recommended typed spelling: ProviderName enum case (key is
         // validated on the first API call, not construction).
         let model = try Model.provider(
-            name: ProviderName.groq.rawValue, apiKey: "sk-test-fake-key", modelId: "llama-3.3-70b"
+            name: ProviderName.Groq.rawValue, apiKey: "sk-test-fake-key", modelId: "llama-3.3-70b"
         )
         XCTAssertNotNil(model)
     }

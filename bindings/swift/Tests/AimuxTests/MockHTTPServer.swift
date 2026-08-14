@@ -87,7 +87,12 @@ final class MockHTTPServer {
 
     /// Bind to 127.0.0.1 on an OS-assigned port and start accepting.
     func start() throws {
+#if canImport(Glibc)
+        // Glibc imports SOCK_STREAM as an enum; Darwin imports it as Int32.
         listenFd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+#else
+        listenFd = socket(AF_INET, SOCK_STREAM, 0)
+#endif
         guard listenFd >= 0 else {
             throw NSError(domain: "MockHTTPServer", code: 1, userInfo: [NSLocalizedDescriptionKey: "socket() failed"])
         }

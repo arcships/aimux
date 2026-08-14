@@ -306,11 +306,11 @@ final class WrapperTests: XCTestCase {
 
 // MARK: - Helpers
 
-/// Drain an `AsyncStream<StreamPart>` into an array (the mock stream completes
+/// Drain an `AsyncThrowingStream<StreamPart, Error>` into an array (the mock stream completes
 /// synchronously inside `streamText`, so this returns promptly).
-private func collect(_ stream: AsyncStream<StreamPart>) async throws -> [StreamPart] {
+private func collect(_ stream: AsyncThrowingStream<StreamPart, Error>) async throws -> [StreamPart] {
     var parts: [StreamPart] = []
-    for await part in stream { parts.append(part) }
+    for try await part in stream { parts.append(part) }
     return parts
 }
 
