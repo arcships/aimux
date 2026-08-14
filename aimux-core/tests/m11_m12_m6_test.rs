@@ -258,3 +258,109 @@ async fn consume_stream_builds_response_messages() {
         _ => panic!("expected Parts"),
     }
 }
+
+/// A mock model whose stream carries a reasoning block with provider
+/// metadata but NO summary text (OpenAI Responses with store=false can
+/// return encrypted reasoning without any summary deltas).
+struct MetadataOnlyReasoningModel;
+
+#[async_trait]
+impl LanguageModel for MetadataOnlyReasoningModel {
+    fn provider(&self) -> &str {
+        "mock"
+    }
+    fn model_id(&self) -> &str {
+        "mock-meta-reasoning"
+    }
+    async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        unimplemented!()
+    }
+    async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        let meta = serde_json::json!({
+            "openai": {
+                "itemId": "rs_1",
+                "reasoningEncryptedContent": "enc-blob-123",
+            }
+        });
+        let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
+            Ok(StreamPart::StreamStart { warnings: vec![] }),
+            Ok(StreamPart::ReasoningStart {
+                id: "rs_1:0".into(),
+                provider_metadata: Some(meta.clone()),
+            }),
+            // No ReasoningDelta at all — no visible summary text.
+            Ok(StreamPart::ReasoningEnd {
+                id: "rs_1:0".into(),
+                provider_metadata: Some(meta),
+            }),
+            Ok(StreamPart::TextDelta {
+                id: "t1".into(),
+                delta: "Done.".into(),
+                provider_metadata: None,
+            }),
+            Ok(StreamPart::Finish {
+                finish_reason: FinishReason {
+                    unified: FinishReasonUnified::Stop,
+                    raw: Some("stop".into()),
+                },
+                usage: Usage::default(),
+                provider_metadata: None,
+            }),
+        ];
+        Ok(StreamResult {
+            stream: Box::pin(stream::iter(parts)),
+            request_body: None,
+            response_headers: None,
+        })
+    }
+}
+
+/// Regression: a reasoning part with provider metadata but no summary text
+/// used to be dropped from response_messages entirely, losing the
+/// encrypted reasoning blob (it must round-trip on the next turn).
+#[tokio::test]
+async fn consume_keeps_metadata_only_reasoning_in_response_messages() {
+    let result = aimux_core::generate::stream_text(
+        &MetadataOnlyReasoningModel,
+        "hi",
+        GenerateTextOptions::default(),
+    )
+    .await
+    .unwrap();
+    let agg = result.consume().await.unwrap();
+
+    // No visible reasoning text at the top level...
+    assert!(
+        agg.reasoning.is_empty(),
+        "no summary text, no ReasoningPart"
+    );
+
+    // ...but the reasoning part must survive in response_messages with its
+    // provider metadata, or the next turn loses the encrypted blob.
+    let msg = &agg.response_messages[0];
+    match &msg.content {
+        MessageContent::Parts(parts) => {
+            let reasoning = parts
+                .iter()
+                .find(|p| matches!(p, aimux_core::content::ContentPart::Reasoning { .. }));
+            match reasoning {
+                Some(aimux_core::content::ContentPart::Reasoning {
+                    text,
+                    provider_options: Some(po),
+                    ..
+                }) => {
+                    assert!(text.is_empty());
+                    assert_eq!(po["openai"]["itemId"], serde_json::json!("rs_1"));
+                    assert_eq!(
+                        po["openai"]["reasoningEncryptedContent"],
+                        serde_json::json!("enc-blob-123")
+                    );
+                }
+                other => panic!(
+                    "response_messages must keep the metadata-carrying reasoning part, got {other:?}"
+                ),
+            }
+        }
+        _ => panic!("expected Parts"),
+    }
+}
