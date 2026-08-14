@@ -108,6 +108,8 @@ function wrapAsync<A extends unknown[], R>(
 export const sessionCalls = wrapSync(native.sessionCalls)
 export const listSessions = wrapSync(native.listSessions)
 export const mockReplay = wrapSync(native.mockReplay)
+export const router = wrapSync(native.router)
+export const moa = wrapSync(native.moa)
 export const openai = wrapAsync(native.openai)
 export const anthropic = wrapAsync(native.anthropic)
 export const deepseek = wrapAsync(native.deepseek)

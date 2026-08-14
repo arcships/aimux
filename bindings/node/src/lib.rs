@@ -784,6 +784,85 @@ pub fn mock_replay(recordings_jsonl: String) -> AimuxResult<Model> {
     })())
 }
 
+#[napi]
+pub fn router(
+    models: Vec<&Model>,
+    config_json: Option<String>,
+) -> AimuxResult<Model> {
+    AimuxResult((|| -> crate::error::MResult<Model> {
+        if models.is_empty() {
+            return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                "router: models must be non-empty".into(),
+            )));
+        }
+        let children: Vec<Arc<dyn LanguageModel>> =
+            models.iter().map(|m| m.inner.clone()).collect();
+        let cfg: RouterFfiConfig = match config_json.as_deref() {
+            Some(json) => serde_json::from_str(json).map_err(|e| {
+                MappedError::from(&AiMuxError::JsonParse(format!(
+                    "router config_json: {e}"
+                )))
+            })?,
+            None => RouterFfiConfig::default(),
+        };
+        let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
+            Some("weighted") => {
+                let weights = cfg.weights.unwrap_or_else(|| vec![1.0; children.len()]);
+                Box::new(aimux_core::router::WeightedRouter::new(weights))
+            }
+            _ => Box::new(aimux_core::router::RuleRouter),
+        };
+        let fallback = if cfg.fallback.as_deref() == Some("none") {
+            aimux_core::router::FallbackPolicy::None
+        } else {
+            aimux_core::router::FallbackPolicy::OnError
+        };
+        let router_cfg = aimux_core::router::RouterConfig {
+            provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
+            model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
+        };
+        let model =
+            aimux_core::router::RouterModel::new(children, router, fallback, router_cfg);
+        Ok(Model {
+            inner: Arc::new(model),
+            trace_store: None,
+        })
+    })())
+}
+
+#[napi]
+pub fn moa(
+    references: Vec<&Model>,
+    aggregator: &Model,
+    config_json: Option<String>,
+) -> AimuxResult<Model> {
+    AimuxResult((|| -> crate::error::MResult<Model> {
+        let refs: Vec<Arc<dyn LanguageModel>> =
+            references.iter().map(|m| m.inner.clone()).collect();
+        let cfg: aimux_core::moa::MoaConfig = match config_json.as_deref() {
+            Some(json) => serde_json::from_str(json).map_err(|e| {
+                MappedError::from(&AiMuxError::JsonParse(format!("moa config_json: {e}")))
+            })?,
+            None => aimux_core::moa::MoaConfig::default(),
+        };
+        let model = aimux_core::moa::MoaModel::new(refs, aggregator.inner.clone(), cfg);
+        Ok(Model {
+            inner: Arc::new(model),
+            trace_store: None,
+        })
+    })())
+}
+
+/// Lenient router config (mirrors the FFI-side shape; all fields optional).
+#[derive(Default, serde::Deserialize)]
+struct RouterFfiConfig {
+    router: Option<String>,
+    weights: Option<Vec<f64>>,
+    fallback: Option<String>,
+    provider_name: Option<String>,
+    model_id: Option<String>,
+}
+
 /// Query: all calls of a session (RFC-0024), as a JSON-serialized
 /// `SessionCall[]` (ordered by step). Empty array if the session is unknown
 /// or no store is registered.

@@ -466,6 +466,14 @@ RFC-0015(缓存审计,DRAFT)存哈希指纹 + usage + verdict,**刻意不存明�
 4. **`ScoreMatcher` 的匹配键**:MVP 用 prompt 公共前缀消息数 + 文本 LCP(2026-08-06 定稿,见 §3.6.2),PrefixMatcher 作为 P5 可选增强。
 5. ~~`ConfigSnapshot` 是否进 `LanguageModel` trait~~ **已定(B1,2026-08-06):`config_snapshot` 默认方法并入主 trait**。
 6. **回放录制格式与 RFC-0003 cassette 的互操作**:能否用 RFC-0003 的 cassette 做 mock 回放?格式相近(cassette 是单 exchange,Recording 是三层),可写转换器。MVP 不做,后续兼容。
+7. **Nested 录制（composite model 支持）**:RFC-0021（RouterModel）/RFC-0022（MoaModel）引入的 composite model 持有 `Vec<Arc<dyn LanguageModel>>` 子模型。composite 自身不发 HTTP 请求——真正发请求的是子模型。现有录制层 `TraceLayer` 装饰在 `generate_text` 入口的最外层（给 model 套一层），因此 composite 调用目前只产生一条顶层 trace 记录（`provider="router"/"moa"`），子模型的实际调用不被录制。
+
+   **设计方向（follow-up，不阻塞 RFC-0021/0022 P1）**：
+   - 对 **RouterModel**：只调一个子模型，委托透明。外层录制足够——回放时 `rebuild_provider` 从 trace 里拿到 composite 的 config，composite 的 `replay_with_model` 重建子模型并委托。不需要 nested。
+   - 对 **MoaModel**：并行调多个 reference + aggregator。若需看每个 reference 的调用详情，应在**子模型级别**装饰 `TraceLayer`（而非仅外层）。录制时所有子模型共享同一 `call_id`，用**独立的 `composite_step: Option<String>`** 字段区分（值如 `"ref-0"`/`"ref-1"`/`"aggregator"`）。**不复用 `step` 或 `session_id`**——它们是 RFC-0024 会话归组的专用字段（语义："会话 id + 会话内单调递增的调用步号"），复用会导致同一字段两种语义叠加（MoA 调用本身是会话第 N 步 + 内部又有 M 个 reference——两个维度塞一个字段）。回放时按 `call_id` + `composite_step` 聚合成树形调用链。
+   - **RouterModel fallback 场景**：fallback 时 RouterModel 调了模型 A（失败）再调模型 B（成功），外层录制不够。失败的 A 和成功的 B 的 HTTP exchange 挂同一 `call_id`，需用 `composite_step` 区分（`"primary"`/`"fallback-0"`/`"fallback-1"`）。
+   - **不扩展 `ProviderRecord`**：不加 `children` 字段。每个子模型的录制是独立的 `TraceRecord`，通过 `call_id` + `composite_step` 关联。这与现有扁平 jsonl + call_id 关联架构一致。
+   - **实现入口**：`TraceLayer` 已是 `Arc<dyn LanguageModel>` 包装器（`trace/layer.rs:68`），可递归装饰子模型。`Recording` 结构需新增 `composite_step: Option<String>` 字段（serde `default` + `skip_serializing_if`，向后兼容已有 jsonl）。
 
 ---
 

@@ -108,6 +108,16 @@ public class Model implements Closeable {
         return handle;
     }
 
+    /** Package-private handle read for composite-model factories (router/moa). */
+    long handle() {
+        lock.readLock().lock();
+        try {
+            return requireHandleLocked();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     // ── Provider constructors ──────────────────────────────────────────────
 
     /** Create an OpenAI model instance. */
@@ -330,6 +340,63 @@ public class Model implements Closeable {
         AimuxCError err = AimuxResult.newError();
         long h = AimuxFFI.INSTANCE.aimux_mock_replay_new(recordingsJsonl, err);
         return new Model(AimuxResult.extractHandle(h, err, "Failed to create mock replay model"));
+    }
+
+    // ── Composite models (RFC-0021 / RFC-0022) ──────────────────────────────
+
+    /**
+     * Create a RouterModel (RFC-0021) over the given child models. The returned
+     * model routes each call to one child and falls back across the rest on
+     * error (per {@code configJson}).
+     *
+     * @param models     child models (must be non-empty; closed models throw).
+     * @param configJson optional config: {@code {"router": "rule"|"weighted",
+     *                   "weights": [...], "fallback": "on_error"|"none",
+     *                   "provider_name", "model_id"}} — all optional.
+     * @return a new RouterModel wrapping the children.
+     */
+    public static Model router(java.util.List<Model> models, String configJson) {
+        if (models == null || models.isEmpty()) {
+            throw new IllegalArgumentException("router: models must be non-empty");
+        }
+        long[] handles = new long[models.size()];
+        for (int i = 0; i < models.size(); i++) {
+            handles[i] = models.get(i).handle();
+        }
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_router_new(handles, handles.length, configJson, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create router model"));
+    }
+
+    /**
+     * Create a MoaModel (RFC-0022) over reference models + one aggregator.
+     * References fan out in parallel, then the aggregator synthesizes a final
+     * answer.
+     *
+     * @param references reference models (may be null/empty — runs aggregator only).
+     * @param aggregator the aggregator model (must be non-null and open).
+     * @param configJson optional MoaConfig: {@code {"provider_name", "model_id",
+     *                   "aggregator_instructions", "strip_reference_tools",
+     *                   "fail_mode": "best_effort"|"fail_fast"}}.
+     * @return a new MoaModel.
+     */
+    public static Model moa(java.util.List<Model> references, Model aggregator, String configJson) {
+        if (aggregator == null) {
+            throw new IllegalArgumentException("moa: aggregator must be non-null");
+        }
+        long[] refHandles;
+        if (references == null || references.isEmpty()) {
+            refHandles = new long[0];
+        } else {
+            refHandles = new long[references.size()];
+            for (int i = 0; i < references.size(); i++) {
+                refHandles[i] = references.get(i).handle();
+            }
+        }
+        AimuxCError err = AimuxResult.newError();
+        long h = AimuxFFI.INSTANCE.aimux_moa_new(
+                refHandles, refHandles.length, aggregator.handle(), configJson, err);
+        return new Model(AimuxResult.extractHandle(h, err, "Failed to create moa model"));
     }
 
     // ── Generation ─────────────────────────────────────────────────────────

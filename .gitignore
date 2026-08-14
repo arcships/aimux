@@ -40,3 +40,4 @@ bindings/kotlin/build/
 *.exe
 *.pdb
 dist/
+.zcode/

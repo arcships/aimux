@@ -354,6 +354,8 @@ export declare function listSessions(): AimuxResult<string>
 /** Create a Mistral language model instance. */
 export declare function mistral(apiKey: string, modelId: string, config?: string | ProviderConfig | undefined | null): Promise<AimuxResult<Model>>
 
+export declare function moa(references: Array<Model>, aggregator: Model, configJson?: string | undefined | null): AimuxResult<Model>
+
 /**
  * 从录制 JSONL 创建 mock 回放模型(RFC-0023 P3):按输入匹配录制响应,
  * **不发真实 API**。返回的 `Model` 可用于 `generateText` / `streamText`。
@@ -430,6 +432,8 @@ export declare function recordingStop(): void
  * name, unsupported protocol).
  */
 export declare function registerProviders(configJson: string): AimuxResult<undefined>
+
+export declare function router(models: Array<Model>, configJson?: string | undefined | null): AimuxResult<Model>
 
 /**
  * Query: all calls of a session (RFC-0024), as a JSON-serialized
