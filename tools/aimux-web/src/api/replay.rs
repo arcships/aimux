@@ -9,6 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use aimux_core::error::AiMuxError;
+use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::convert_to_language_model_prompt;
 use aimux_core::message::ModelPrompt;
 use aimux_core::recording::Recording;
@@ -129,18 +130,37 @@ fn mock_load_inner(state: AppState, req: MockLoadRequest) -> Result<Response, Ai
             "mock load: empty recording data".into(),
         ));
     }
-    let provider = recordings[0].provider.provider.clone();
-    let model_id = recordings[0].provider.model_id.clone();
-    let mock = Arc::new(MockReplayModel::new(
-        provider.clone(),
-        model_id.clone(),
-        recordings,
-    ));
-    *state.mock_model.lock().unwrap() = Some(mock);
+
+    // Group recordings by (provider, model_id): each model gets its own
+    // `MockReplayModel` (a mock model is bound to one provider/model).
+    let mut grouped: std::collections::HashMap<(String, String), Vec<Recording>> =
+        std::collections::HashMap::new();
+    for rec in recordings {
+        grouped
+            .entry((rec.provider.provider.clone(), rec.provider.model_id.clone()))
+            .or_default()
+            .push(rec);
+    }
+
+    let mut models: std::collections::HashMap<String, Arc<dyn LanguageModel>> =
+        std::collections::HashMap::new();
+    for ((provider, model_id), recs) in grouped {
+        let key = format!("{provider}/{model_id}");
+        let mock = Arc::new(MockReplayModel::new(provider, model_id, recs));
+        models.insert(key, mock);
+    }
+    *state.mock_models.lock().unwrap() = models.clone();
+
+    let mut loaded: Vec<serde_json::Value> = Vec::new();
+    for (provider, model_id) in models.keys().map(|k| {
+        let (p, m) = k.split_once('/').unwrap_or((k, ""));
+        (p.to_string(), m.to_string())
+    }) {
+        loaded.push(json!({ "provider": provider, "model": model_id }));
+    }
     Ok(Json(json!({
         "loaded": true,
-        "provider": provider,
-        "model": model_id,
+        "models": loaded,
     }))
     .into_response())
 }

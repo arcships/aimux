@@ -6,6 +6,7 @@
 //! The first two recordings are crafted so the console's mock mode matches:
 //! - `call-demo-pg`  prompt = [user: "what is 1 + 1?"]            (Playground)
 //! - `call-demo-agent` prompt = [system: <agent system>, user: "what is 17 * 19?"]  (Agent)
+//!
 //! The rest only enrich the Traces / Sessions listing.
 
 use aimux_core::content::ContentPart;
@@ -28,6 +29,7 @@ fn msg(role: Role, text: &str) -> LanguageModelPromptMessage {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn recording(
     call_id: &str,
     recorded_at: &str,
@@ -68,7 +70,7 @@ fn recording(
             attempt: 0,
             request: HttpRecord {
                 method: "POST".into(),
-                url: format!("https://api.example.com/v1/chat/completions"),
+                url: "https://api.example.com/v1/chat/completions".to_string(),
                 headers: vec![],
                 body: Some("{\"model\":\"demo\",\"messages\":[...]}".into()),
             },

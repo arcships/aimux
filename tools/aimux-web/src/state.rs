@@ -6,7 +6,7 @@
 //! the console is wrapped in a `TraceLayer`, so each call produces both a
 //! `Recording` (RFC-0023) and a `TraceRecord` (RFC-0015).
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use aimux_core::language_model::LanguageModel;
@@ -76,8 +76,9 @@ pub struct AppState {
     pub trace_sink: Arc<WebTraceSink>,
     /// Session grouping (RFC-0024).
     pub session_store: Arc<SessionStore>,
-    /// Loaded `MockReplayModel` (offline mock mode, RFC-0023 P3).
-    pub mock_model: Arc<Mutex<Option<Arc<dyn LanguageModel>>>>,
+    /// Loaded `MockReplayModel`s (offline mock mode, RFC-0023 P3), keyed by
+    /// `"{provider}/{model_id}"` — each model has its own recordings.
+    pub mock_models: Arc<Mutex<HashMap<String, Arc<dyn LanguageModel>>>>,
     /// Recordings imported from jsonl (RFC-0023), merged into listings.
     pub imported: Arc<Mutex<Vec<Recording>>>,
 }
@@ -96,7 +97,7 @@ impl AppState {
             recorder,
             trace_sink,
             session_store,
-            mock_model: Arc::new(Mutex::new(None)),
+            mock_models: Arc::new(Mutex::new(HashMap::new())),
             imported: Arc::new(Mutex::new(Vec::new())),
         }
     }

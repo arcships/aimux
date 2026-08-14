@@ -12,6 +12,7 @@ import Slider from '../components/ui/Slider.vue'
 import Label from '../components/ui/Label.vue'
 import Badge from '../components/ui/Badge.vue'
 import Separator from '../components/ui/Separator.vue'
+import Switch from '../components/ui/Switch.vue'
 
 const store = useAppStore()
 const router = useRouter()
@@ -31,6 +32,7 @@ function defaultDef(): AgentDef {
     max_steps: 8,
     temperature: 0,
     session_id: store.newSessionId(),
+    mock: false,
   }
 }
 
@@ -195,6 +197,10 @@ function statusBadge(status: string): BadgeVariant {
         <div class="flex items-center justify-between">
           <Label>Temperature <span class="text-muted-foreground">{{ agentDef.temperature.toFixed(1) }}</span></Label>
           <Slider v-model="agentDef.temperature" :min="0" :max="2" :step="0.1" class="ml-3 w-32" />
+        </div>
+        <div class="flex items-center justify-between">
+          <Label>Mock 模式（离线）</Label>
+          <Switch v-model="agentDef.mock" />
         </div>
 
         <Separator />

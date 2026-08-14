@@ -47,6 +47,8 @@ export interface AgentDef {
   max_steps: number
   temperature: number
   session_id: string
+  /** Route calls through the loaded mock model (offline demo/testing). */
+  mock: boolean
 }
 
 export interface AgentRun {
@@ -100,7 +102,7 @@ export async function runAgent(
         api_key: def.api_key || null,
         base_url: def.base_url || null,
         stream: true,
-        mock: false,
+        mock: def.mock,
         options: {
           temperature: def.temperature,
           max_output_tokens: 2048,

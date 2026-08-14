@@ -34,13 +34,19 @@ async fn run(state: AppState, req: WireCallRequest) -> Result<Response, AiMuxErr
     let key = wire::resolve_api_key(req.api_key.as_deref())?;
 
     let model: Arc<dyn LanguageModel> = if req.mock {
-        state.mock_model.lock().unwrap().clone().ok_or_else(|| {
-            AiMuxError::InvalidArgument(
-                "mock mode requested but no recordings are loaded — \
-                     POST /api/mock/load first"
-                    .into(),
-            )
-        })?
+        let key = format!("{}/{}", req.provider, req.model);
+        state
+            .mock_models
+            .lock()
+            .unwrap()
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| {
+                AiMuxError::InvalidArgument(format!(
+                    "mock mode requested for '{key}' but no recordings are loaded for it — \
+                     POST /api/mock/load first (recordings must include this provider/model)"
+                ))
+            })?
     } else {
         let m =
             model_builder::build_model(&req.provider, key, &req.model, req.base_url.as_deref())?;
