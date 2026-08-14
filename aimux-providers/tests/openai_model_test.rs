@@ -295,6 +295,46 @@ mod do_generate {
         }
     }
 
+    // ── L1: timestamp from `created` (RFC-0016) ───────────────────────────────
+
+    /// The `created` Unix-seconds field must surface as an RFC3339 timestamp
+    /// in ResponseMetadata (matching AI SDK's `created*1000 → Date`).
+    #[tokio::test]
+    async fn should_fill_timestamp_from_created() {
+        let server = MockServer::start().await;
+        mock_json_response(
+            &server,
+            json!({
+                "id": "chatcmpl-ts",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gpt-3.5-turbo-0125",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "hi" },
+                    "finish_reason": "stop"
+                }],
+                "usage": { "prompt_tokens": 1, "total_tokens": 2, "completion_tokens": 1 }
+            }),
+        )
+        .await;
+
+        let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = OpenAIProvider::new(config);
+        let model = provider.model("gpt-3.5-turbo");
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("do_generate should succeed");
+
+        assert_eq!(
+            result.response.timestamp.as_deref(),
+            Some("2024-03-22T13:43:57+00:00"),
+            "created=1711115037 must convert to RFC3339"
+        );
+    }
+
     // ── should extract usage ──────────────────────────────────────────────────
 
     /// TS: "should extract usage"

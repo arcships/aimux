@@ -221,7 +221,9 @@ impl LanguageModel for VertexModel {
             provider_metadata,
             response: ResponseMetadata {
                 id: data.response_id,
-                timestamp: None,
+                // Gemini responses carry no timestamp field; use the response
+                // `Date` header (RFC1123) like Bedrock does.
+                timestamp: response_headers.get("date").cloned(),
                 model_id: data.model_version,
             },
             request_body: Some(body),
@@ -255,6 +257,8 @@ impl LanguageModel for VertexModel {
         .await?;
 
         let response_headers = resp.headers;
+        // Same source as the non-stream path: the response `Date` header.
+        let response_timestamp = response_headers.get("date").cloned();
 
         let sse_stream = SseStream::new(resp.body);
 
@@ -303,7 +307,7 @@ impl LanguageModel for VertexModel {
                                 response_metadata_emitted = true;
                                 yield Ok(StreamPart::ResponseMetadata {
                                     id: Some(id.clone()),
-                                    timestamp: None,
+                                    timestamp: response_timestamp.clone(),
                                     model_id: chunk.model_version.clone(),
                                 });
                             }

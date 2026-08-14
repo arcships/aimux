@@ -255,11 +255,9 @@ impl LanguageModel for XaiModel {
             raw: None,
         });
 
-        let timestamp = data.created.map(|c| {
-            chrono::DateTime::from_timestamp(c as i64, 0)
-                .map(|dt| dt.to_rfc3339())
-                .unwrap_or_default()
-        });
+        let timestamp = data
+            .created
+            .and_then(|c| chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339()));
 
         Ok(GenerateResult {
             content,
