@@ -528,6 +528,11 @@ impl TranscriptionModel for OpenAITranscriptionModel {
 
                 tokio::select! {
                     biased;
+                    // Audio arm first: a backpressured send parks the loop
+                    // (socket-level backpressure), which is the correct
+                    // throttle for a saturated pre-recorded source. Inbound
+                    // events wait until the send completes; live-mic rates
+                    // interleave naturally.
 
                     chunk = audio_next => {
                         match chunk {

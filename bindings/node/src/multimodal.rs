@@ -903,8 +903,8 @@ impl TranscriptionSession {
     /// Pull the next transcription part (JSON string). Resolves `null` when
     /// the stream ended normally. Rejects on error — including a timeout
     /// (no part within `timeoutMs`; the session stays live, call again).
-    /// `timeoutMs`: >0 wait at most; 0 immediate poll; negative = wait
-    /// indefinitely.
+    /// `timeoutMs`: >0 wait at most; 0 immediate poll; negative OR omitted
+    /// = wait indefinitely.
     #[napi]
     pub async fn next_part(
         &self,

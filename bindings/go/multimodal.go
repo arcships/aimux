@@ -724,7 +724,11 @@ func NewDeepSeek(apiKey, modelID string) (*Model, error) {
 // pull transcription parts (JSON TranscriptionStreamPart) with NextPart.
 // Close releases the session (safe and idempotent).
 type TranscriptionSession struct {
-	mu      sync.Mutex
+	// RWMutex: Push/NextPart/InputDone take the READ lock so a bidirectional
+	// session works from two goroutines (a blocking NextPart(-1) must not
+	// exclude a concurrent PushAudio — that would deadlock). Close takes the
+	// write lock, waiting for in-flight calls to finish.
+	mu      sync.RWMutex
 	session uint64
 	closed  bool
 }
@@ -881,13 +885,13 @@ func (s *TranscriptionSession) Close() {
 }
 
 func (s *TranscriptionSession) acquire() (uint64, func(), error) {
-	s.mu.Lock()
+	s.mu.RLock()
 	if s.closed {
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return 0, nil, newError(CodeInvalidArgument, "aimux: transcription session already closed")
 	}
 	h := s.session
-	return h, s.mu.Unlock, nil
+	return h, s.mu.RUnlock, nil
 }
 
 func cstring1(a string) (*C.char, func()) {

@@ -131,7 +131,12 @@ impl TranscriptionFfiSession {
                                         return;
                                     }
                                     // Channel full: wait for capacity or
-                                    // abort. (Sink::flush on futures mpsc
+                                    // abort.
+                                    // NOTE: if abort fires while full, the model's terminal
+                                    // Err(Aborted) part may be dropped — a host that stopped
+                                    // consuming then sees "ended normally" rather than Aborted.
+                                    // Accepted trade-off (bounded memory beats exact terminal
+                                    // delivery under a 256-part backlog). (Sink::flush on futures mpsc
                                     // maps Disconnected to Ok — never rely on
                                     // it for receiver-loss detection.)
                                     part = send_err.into_inner();

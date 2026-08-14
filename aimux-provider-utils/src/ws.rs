@@ -133,18 +133,22 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
         );
     }
 
-    let connect_timeout = req
+    // `first_chunk_ms` is ONE combined budget for connect + first event
+    // (RFC §3.1): anchor the deadline here, spend the remainder on the
+    // post-connect first-event wait.
+    let first_chunk_deadline = req
         .timeout
         .as_ref()
         .and_then(|t| t.first_chunk_ms)
-        .map(tokio::time::Duration::from_millis);
+        .map(|ms| tokio::time::Instant::now() + tokio::time::Duration::from_millis(ms));
+    let connect_deadline = first_chunk_deadline;
 
     let (stream, _response) = tokio::select! {
         biased;
         _ = abort_future(&req.abort_signal) => {
             return Err(AiMuxError::Aborted);
         }
-        res = connect_with_timeout(http_req, connect_timeout) => match res {
+        res = connect_with_timeout(http_req, connect_deadline.map(|d| d - tokio::time::Instant::now())) => match res {
             Ok(v) => v,
             Err(ConnectError::Timeout) => {
                 return Err(AiMuxError::Timeout("websocket connect timed out".into()));
@@ -155,15 +159,12 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
         },
     };
 
-    let now = tokio::time::Instant::now();
     Ok(WsConnection {
         stream,
         abort: req.abort_signal.clone(),
-        first_chunk_deadline: req
-            .timeout
-            .as_ref()
-            .and_then(|t| t.first_chunk_ms)
-            .map(|ms| now + tokio::time::Duration::from_millis(ms)),
+        // The REMAINING first-chunk budget (anchored before connect) — not a
+        // fresh full window, so connect+ack can never exceed first_chunk_ms.
+        first_chunk_deadline,
         chunk_timeout: req
             .timeout
             .as_ref()
@@ -173,7 +174,7 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
             .timeout
             .as_ref()
             .and_then(|t| t.total_ms)
-            .map(|ms| now + tokio::time::Duration::from_millis(ms)),
+            .map(|ms| tokio::time::Instant::now() + tokio::time::Duration::from_millis(ms)),
     })
 }
 

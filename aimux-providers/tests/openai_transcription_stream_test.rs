@@ -377,7 +377,7 @@ async fn stream_first_chunk_timeout_fires() {
         let (stream, _) = listener.accept().await.unwrap();
         let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
         // Read session.update, then send NOTHING but KEEP the socket alive
-        // (drain client appends) well past the client's 300ms first-chunk
+        // (drain client appends) well past the client's 500ms first-chunk
         // deadline — the timeout must fire before any disconnect could.
         let _ = ws.next().await;
         while let Ok(Some(_)) = tokio::time::timeout(Duration::from_secs(2), ws.next()).await {}
