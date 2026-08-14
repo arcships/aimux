@@ -554,6 +554,15 @@ mod anthropic_stream_errors {
                 StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")),
             "expected a StreamPart::Error carrying 'Overloaded', got {parts:?}"
         );
+        // Finish is the final-chunk contract: the stream must terminate with
+        // an error-finish even when the very first event is an error.
+        assert!(
+            matches!(parts.last(),
+                Some(StreamPart::Finish { finish_reason, .. })
+                    if matches!(finish_reason.unified,
+                        aimux_core::prelude::FinishReasonUnified::Error)),
+            "expected the last part to be Finish with unified=Error, got {parts:?}"
+        );
     }
 
     /// TS: "should forward error chunks" + "should forward overloaded error
@@ -598,6 +607,16 @@ mod anthropic_stream_errors {
                 StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")),
             "expected a StreamPart::Error carrying 'Overloaded', got {parts:?}"
         );
+
+        // Finish=final chunk: a mid-stream error must still be followed by a
+        // Finish part (error finish), never leave the stream unterminated.
+        assert!(
+            matches!(parts.last(),
+                Some(StreamPart::Finish { finish_reason, .. })
+                    if matches!(finish_reason.unified,
+                        aimux_core::prelude::FinishReasonUnified::Error)),
+            "expected the last part to be Finish with unified=Error, got {parts:?}"
+        );
     }
 
     /// TS: "should forward error chunks" — a generic (non-overloaded) error
@@ -627,6 +646,13 @@ mod anthropic_stream_errors {
             parts.iter().any(|p| matches!(p,
                 StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "test error")),
             "expected a StreamPart::Error carrying 'test error', got {parts:?}"
+        );
+        assert!(
+            matches!(parts.last(),
+                Some(StreamPart::Finish { finish_reason, .. })
+                    if matches!(finish_reason.unified,
+                        aimux_core::prelude::FinishReasonUnified::Error)),
+            "expected the last part to be Finish with unified=Error, got {parts:?}"
         );
     }
 }
