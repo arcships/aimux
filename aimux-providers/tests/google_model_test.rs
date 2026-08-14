@@ -1885,9 +1885,38 @@ mod request_body {
         assert_eq!(tool_msg["role"], "user");
         let fr = &tool_msg["parts"][0]["functionResponse"];
         assert_eq!(fr["id"], "call-1");
+        // Without a tool_name the call id is used as the required `name`
+        // (fallback path).
+        assert_eq!(fr["name"], "call-1");
+        assert_eq!(fr["response"]["name"], "call-1");
         // The serialized JSON output is a string under response.content.
         let content_str = fr["response"]["content"].as_str().unwrap();
         assert!(content_str.contains("\"temp\":70"));
+    }
+
+    #[test]
+    fn tool_result_uses_tool_name_for_function_response() {
+        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
+            role: Role::Tool,
+            content: vec![ContentPart::ToolResult {
+                tool_call_id: "call-9".to_string(),
+                result: json!({ "temp": 21 }),
+                tool_name: Some("weather".to_string()),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            }],
+            ..Default::default()
+        }];
+        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+
+        let fr = &body["contents"][0]["parts"][0]["functionResponse"];
+        assert_eq!(fr["id"], "call-9");
+        // `name` carries the real tool name, not the opaque call id —
+        // Gemini pairs functionResponse with the prior functionCall by name.
+        assert_eq!(fr["name"], "weather");
+        assert_eq!(fr["response"]["name"], "weather");
     }
 
     // ── tools → tools array with functionDeclarations ─────────────────────────
