@@ -93,6 +93,10 @@ impl Recording {
     /// "无 exchange"而早写;缺 input(事件先于 Input 到达的占位条目,或 Input
     /// 被 drop-newest 丢弃)同样不得定稿——否则会写出 complete=true 但 input
     /// 为空占位的失真取证记录(RFC-0023 §3.1 completion barrier)。
+    ///
+    /// 权衡:合法的空 prompt 调用(`prompt: Vec::new()`)与"input 丢失"在此
+    /// 不可区分,会落到 shutdown 兜底以 incomplete 写出——取证失真远轻于
+    /// 反向错误(空占位被标 complete),可接受。
     fn ready(&self) -> bool {
         self.transport_closed
             && self.outcome.status != OutcomeStatus::Pending
