@@ -617,6 +617,14 @@ mod anthropic_stream_errors {
                         aimux_core::prelude::FinishReasonUnified::Error)),
             "expected the last part to be Finish with unified=Error, got {parts:?}"
         );
+        // Error-finish zeroes usage: the message_start input_tokens (17)
+        // must not leak into the final part (mirrors openai behaviour).
+        if let Some(StreamPart::Finish { usage, .. }) = parts.last() {
+            assert_eq!(
+                usage.input_tokens.total, None,
+                "usage must be zeroed on error finish"
+            );
+        }
     }
 
     /// TS: "should forward error chunks" — a generic (non-overloaded) error
