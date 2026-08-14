@@ -55,7 +55,7 @@ use responses_convert::build_header_list;
 /// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use
 /// the process-wide shared `Client` internally (RFC-0009 §4.1).
 ///
-/// Created via [`OpenAIResponsesProvider`](super::OpenAIResponsesProvider) or
+/// Created via `OpenAIResponsesProvider` or
 /// directly with [`OpenAIResponsesModel::new`].
 pub struct OpenAIResponsesModel {
     model_id: String,

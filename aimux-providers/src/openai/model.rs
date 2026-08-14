@@ -62,7 +62,7 @@ impl OpenAIModel {
 
 /// Build the auth + provider-level headers from a config (no per-call headers).
 ///
-/// Shared by [`OpenAIModel::build_headers`] and the model-listing path
+/// Shared by `OpenAIModel::build_headers` and the model-listing path
 /// ([`execute_list_models`]) so both use identical auth wiring.
 pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, String> {
     let mut headers = HashMap::new();
@@ -212,7 +212,7 @@ impl LanguageModel for OpenAIModel {
     /// Provider identity for recording/routing. Uses `config.provider` (the
     /// registry entry name, e.g. `"deepseek"`/`"groq"`) rather than a hardcoded
     /// `"openai"`, so OpenAI-compatible providers keep their real identity —
-    /// mirroring the Responses path ([`OpenAIResponsesModel::provider`]).
+    /// mirroring the Responses path (`OpenAIResponsesModel::provider`).
     /// Direct `OpenAIProvider` use defaults to `"openai"`.
     fn provider(&self) -> &str {
         &self.config.provider

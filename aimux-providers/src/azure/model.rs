@@ -170,7 +170,7 @@ impl AzureConfig {
     /// Create a config from environment variables.
     ///
     /// Reads `AZURE_API_KEY` (required) and `AZURE_RESOURCE_NAME` (optional —
-    /// may also be supplied via [`with_resource_name`]).
+    /// may also be supplied via `with_resource_name`).
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "AZURE_API_KEY", "Azure OpenAI")?;
         let mut config = Self::new()

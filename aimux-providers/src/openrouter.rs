@@ -3,7 +3,7 @@
 //! OpenRouter exposes an OpenAI-compatible Chat Completions API at
 //! `https://openrouter.ai/api/v1`. The only provider-specific detail is the
 //! base URL and the `OPENROUTER_API_KEY` environment variable; everything else
-//! is delegated to the shared [`OpenAIProvider`](crate::openai::OpenAIProvider).
+//! is delegated to the shared [`OpenAIProvider`].
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;

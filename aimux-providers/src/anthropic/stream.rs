@@ -1,18 +1,18 @@
 //! Shared Anthropic request/streaming core.
 //!
 //! The standard Anthropic provider ([`crate::anthropic::model`]) and the
-//! Anthropic-AWS provider ([`crate::anthropic_aws::model`]) speak the exact
+//! Anthropic-AWS provider (`crate::anthropic_aws::model`) speak the exact
 //! same Messages API. The only differences are endpoint, authentication
 //! (Bearer/x-api-key vs AWS SigV4) and the wire body encoding (`Json` vs
 //! `Bytes`, the latter preventing re-serialization from invalidating the SigV4
 //! signature).
 //!
 //! This module factors out the parts that are identical across both providers:
-//! - [`build_anthropic_request`] — serialize the body once, build auth headers
+//! - `build_anthropic_request` — serialize the body once, build auth headers
 //!   via a closure, and choose the wire encoding.
-//! - [`anthropic_generate_core`] — non-streaming send + response parsing.
-//! - [`anthropic_stream_core`] — streaming send + the Anthropic SSE event loop.
-//! - [`parse_anthropic_content`] — shared content-block → `GenerateContent`
+//! - `anthropic_generate_core` — non-streaming send + response parsing.
+//! - `anthropic_stream_core` — streaming send + the Anthropic SSE event loop.
+//! - `parse_anthropic_content` — shared content-block → `GenerateContent`
 //!   mapping used by the non-streaming path.
 
 use std::collections::HashMap;

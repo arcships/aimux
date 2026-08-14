@@ -44,9 +44,9 @@ pub trait ReplayMatcher: Send + Sync {
 /// (call_id/abort_signal/recording_context)不参与比较。
 ///
 /// headers/provider_options/body_overrides 用**脱敏感知比较**:录制侧这些
-/// 字段经 [`recording::redact_json`](crate::recording::redact_json) 脱敏
+/// 字段经 `recording::redact_json` 脱敏
 /// (敏感键值→`"[REDACTED]"`),脱敏值视为通配,匹配任意显式请求值;非脱敏
-/// 部分仍精确比较。规则见 [`redaction_aware_eq`]。
+/// 部分仍精确比较。规则见 `redaction_aware_eq`。
 pub struct ExactMatcher {
     provider: String,
     model_id: String,
@@ -126,7 +126,7 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
 
 /// 脱敏感知比较(用于 headers/provider_options/body_overrides)。
 ///
-/// 录制侧这些字段经 [`recording::redact_json`](crate::recording::redact_json)
+/// 录制侧这些字段经 `recording::redact_json`
 /// 脱敏:敏感键(authorization/api-key/apikey/key/token/cookie/...)的**值**
 /// 被替换为字符串 `"[REDACTED]"`(键名保留)。比较规则(**保守原则——宁可 miss
 /// 不可误 hit**):

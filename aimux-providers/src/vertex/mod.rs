@@ -4,7 +4,7 @@
 //! (`{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent`).
 //!
 //! Vertex AI uses the same request/response format as the Google Gemini API,
-//! so this provider reuses the shared [`google::convert`] message conversion
+//! so this provider reuses the shared `google::convert` message conversion
 //! logic. The differences are:
 //! - **Endpoint**: Vertex uses a project/location-scoped URL instead of the
 //!   public Gemini API URL.
@@ -12,7 +12,7 @@
 //!   (obtained from a service account or `gcloud auth print-access-token`)
 //!   instead of an API key. Express mode (API key) is also supported.
 //!
-//! Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-gemini
+//! Reference: <https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-gemini>
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;

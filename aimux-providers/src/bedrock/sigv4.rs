@@ -5,7 +5,7 @@
 //! the `Authorization` header and supporting `X-Amz-*` headers that AWS
 //! expects.
 //!
-//! Reference: https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html
+//! Reference: <https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html>
 //!
 //! This is a self-contained implementation using only `sha2` + `hmac` (no AWS
 //! SDK dependency). It supports:

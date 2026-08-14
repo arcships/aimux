@@ -32,7 +32,7 @@ impl MultipartForm {
     /// Add a text field.
     ///
     /// `name` is validated before it is interpolated into the MIME headers; see
-    /// [`validate_multipart_param`] for the rules.
+    /// `validate_multipart_param` for the rules.
     pub fn text(&mut self, name: &str, value: &str) -> Result<&mut Self, AiMuxError> {
         validate_multipart_param(name, "name")?;
         self.parts
@@ -48,7 +48,7 @@ impl MultipartForm {
     /// Add a binary file field with a filename and media type.
     ///
     /// `name`, `filename` and `media_type` are validated before they are
-    /// interpolated into the MIME headers; see [`validate_multipart_param`] for
+    /// interpolated into the MIME headers; see `validate_multipart_param` for
     /// the rules.
     pub fn file(
         &mut self,

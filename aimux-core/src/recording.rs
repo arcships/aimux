@@ -173,7 +173,7 @@ fn default_finalized() -> bool {
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
-    /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "[REDACTED]"。
+    /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
     pub body: Option<String>,
@@ -538,7 +538,7 @@ impl JsonlRecorder {
     }
 
     /// 在 `dir` 下创建录制器并启动 writer 线程(兼容入口:FFI `aimux_init_recording`
-    /// 及绑定均以 infallible `new` 调用,A9 要求保持兼容)。内部委托 [`try_new`],
+    /// 及绑定均以 infallible `new` 调用,A9 要求保持兼容)。内部委托 [`JsonlRecorder::try_new`],
     /// 失败时降级为无 writer 的 no-op recorder(`tx = None`,事件静默丢弃),
     /// 行为等价于原先 `create_dir_all().ok()` + writer 打开文件失败早退。
     pub fn new(dir: impl Into<PathBuf>) -> Self {
