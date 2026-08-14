@@ -67,15 +67,17 @@ aimux 的 `openai` 模块**不是**薄封装的 openai-compatible 等价物,而�
 
 ### 2.3 低优先级
 
+> 2026-08-14 逐项核对 AI SDK 源码后核定,详见 [§7.2](#72-未落地清单逐条追踪)。结论:L1 落地,L3/L5/L6/L7 经核对不做(架构差异或已超出)。
+
 | # | 缺口 | Vercel | aimux | 证据 |
 |---|------|--------|-------|------|
-| L1 | `response-metadata.timestamp` 恒 None | ✅ 用 `created*1000` 填充 | ❌ | [stream_part.rs](../aimux-core/src/stream_part.rs) |
-| L2 | `tool-call.input` 类型为 `Value`(解析后 JSON) vs V4 规范的 `string` | ✅ string | ⚠️ Value | 可能是 aimux 有意设计(Node 侧消费更友好),非确认缺口 |
-| L3 | supportsStructuredOutputs / includeUsage 可配置化 | ✅ | ❌ 硬编码 | [openai/mod.rs](../aimux-providers/src/openai/mod.rs) |
-| L4 | env 自动读取 apiKey/baseUrl | ✅ `OPENAI_API_KEY`/`OPENAI_BASE_URL` | ❌ Node 强制传参(Rust 有 `from_env()` 但 Node 未用) | [lib.rs:165](../bindings/node/src/lib.rs#L165) |
-| L5 | telemetry | ✅ | ❌ | — |
-| L6 | toolApproval | ✅ | ❌ | — |
-| L7 | queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage | ✅ | ❌ | [openai-compatible-provider.ts:49-118](../reference/ai/packages/openai-compatible/src/openai-compatible-provider.ts#L49) |
+| ~~L1~~ | `response-metadata.timestamp` 恒 None | ✅ 用 `created*1000` 填充 | ✅ 已落地(2026-08-14) | [model.rs](../aimux-providers/src/openai/model.rs) |
+| L2 | `tool-call.input` 类型为 `Value`(解析后 JSON) vs V4 规范的 `string` | ✅ string | ⚠️ Value | aimux 有意设计(Node 侧消费更友好),非缺口 |
+| L3 | supportsStructuredOutputs / includeUsage 可配置化 | ✅(openai-compatible 框架) | ❌ 经核对**不做** | aimux 非 openai-compatible 框架,已用 per-provider 特判 + body_overrides 覆盖 |
+| ~~L4~~ | env 自动读取 apiKey/baseUrl | ✅ `OPENAI_API_KEY`/`OPENAI_BASE_URL` | ✅ 已落地 | `provider()`/`deepseek()` 走注册表读 env |
+| L5 | telemetry | ✅ | ❌ 经核对**不做** | aimux 已有 RFC-0014 `tracing` span 体系,不重复造 JS 式 telemetry 子系统 |
+| L6 | toolApproval | ✅ | ❌ 经核对**不做** | provider-executed tool 多步交互,与 H4(不做 agent loop)冲突 |
+| L7 | queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage | ✅(openai-compatible 框架) | ❌ 经核对**不做**(大部分已超出) | metadataExtractor/convertUsage aimux 已超出(usage.raw + per-provider convert_usage) |
 
 ---
 
@@ -189,11 +191,16 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 - **M12** 结构化 output / generateObject — 无
 - **M13** 生命周期 callbacks — 无
 
-**低优先级:**
-- **L1** response-metadata.timestamp 恒 None(非流式 [model.rs:387](../aimux-providers/src/openai/model.rs#L387)、流式 [model.rs:539](../aimux-providers/src/openai/model.rs#L539))
-- **L3** supportsStructuredOutputs / includeUsage 仍硬编码
-- **L5** telemetry、**L6** toolApproval — 无
-- **L7** queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage — 均未做(注:error structure 有 `DEFAULT_ERROR_STRUCTURE` 常量但写死不可配)
+**低优先级(2026-08-14 核对 AI SDK 源码后逐项核定):**
+- ~~**L1** response-metadata.timestamp 恒 None~~ — **已落地**(2026-08-14)。`created` 已在 `ChatCompletionResponse`/`ChatCompletionStreamChunk` 解析([types.rs:15](../aimux-providers/src/openai/types.rs#L15)、[:111](../aimux-providers/src/openai/types.rs#L111)),只是 model.rs 填了 None。现填 ISO8601 字符串(`created*1000` → `DateTime` → RFC3339),对齐 AI SDK `createLanguageModelResponseMetadata` 的 `timestamp: created != null ? new Date(created*1000) : undefined`。
+- **L3** supportsStructuredOutputs / includeUsage — **经核对不做**。这是 AI SDK **openai-compatible provider**(第三方代理框架)的配置项([openai-compatible-provider.ts](https://github.com/vercel/ai/blob/main/packages/openai-compatible/src/openai-compatible-provider.ts)),让用户创建第三方 provider 时声明能力。aimux 不是 openai-compatible 框架(用户不通过 aimux 创建 provider),而是**内置 provider 集合**——已用 per-provider 特判(groq structuredOutputs、stream_options)处理,且 `body_overrides`(RFC-0017)可覆盖任意请求体字段。做成可配是过度工程。
+- **L5** telemetry — **经核对不做**。AI SDK telemetry 是独立子系统([packages/ai/src/telemetry/](https://github.com/vercel/ai/tree/main/packages/ai/src/telemetry):tracing channel publisher、OTel 集成、事件钩子),绑定在其 `generateText`/`streamText` 编排层。aimux 已有 RFC-0014 的 `tracing` span 体系(`generate` span + `generate_end` event),走 Rust `tracing` crate。重复造 JS 式 telemetry 子系统无意义。
+- **L6** toolApproval — **经核对不做**。`tool-approval-request` 是 stream part + content type,用于 provider-executed tool(MCP)需用户批准的多步交互。与 H4(不做 agent loop,§7.5)冲突,属编排层语义。
+- **L7** queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage — **经核对不做(大部分已超出)**:
+  - `queryParams` / `supportedUrls`:openai-compatible 框架的活(URL 拼装/白名单),aimux 非 openai-compatible。
+  - `errorStructure`:aimux 有 `DEFAULT_ERROR_STRUCTURE`(#94 结构化错误),写死但覆盖主流;做成可配是过度工程。
+  - `metadataExtractor`:**已超出**——aimux 的 `usage.raw`(M10)保留原始 JSON,比 AI SDK extractor 更通用。
+  - `convertUsage`:**已超出**——aimux 的 `convert_usage` 是 per-provider 实现(含 Moonshot/DeepSeek 缓存格式特判),比 AI SDK 的单一 convertUsage 更细。
 
 ### 7.3 下游 wrapper 影响矩阵
 
