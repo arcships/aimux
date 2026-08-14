@@ -259,6 +259,9 @@ impl LanguageModel for BedrockModel {
             .get("x-amzn-requestid")
             .cloned()
             .or_else(|| response_headers.get("x-amzn-request-id").cloned());
+        // Same source as the non-stream path: the response `Date` header
+        // (RFC1123). Keeps stream/non-stream timestamps consistent.
+        let response_timestamp = response_headers.get("date").cloned();
 
         let model_id = self.model_id.clone();
 
@@ -267,7 +270,7 @@ impl LanguageModel for BedrockModel {
 
             yield Ok(StreamPart::ResponseMetadata {
                 id: request_id,
-                timestamp: None,
+                timestamp: response_timestamp,
                 model_id: Some(model_id.clone()),
             });
 

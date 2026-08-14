@@ -311,7 +311,10 @@ impl LanguageModel for MistralModel {
             provider_metadata: None,
             response: ResponseMetadata {
                 id: data.id,
-                timestamp: None,
+                timestamp: data
+                    .created
+                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                    .map(|dt| dt.to_rfc3339()),
                 model_id: data.model,
             },
             request_body: Some(body),
@@ -419,7 +422,12 @@ impl LanguageModel for MistralModel {
                             response_metadata_emitted = true;
                             yield Ok(StreamPart::ResponseMetadata {
                                 id: chunk.id.clone(),
-                                timestamp: None,
+                                timestamp: chunk
+                                    .created
+                                    .and_then(|secs| {
+                                        chrono::DateTime::from_timestamp(secs as i64, 0)
+                                    })
+                                    .map(|dt| dt.to_rfc3339()),
                                 model_id: chunk.model.clone(),
                             });
                         }

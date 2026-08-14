@@ -424,7 +424,10 @@ pub async fn execute_generate(
         provider_metadata,
         response: ResponseMetadata {
             id: Some(data.id),
-            timestamp: None,
+            timestamp: data
+                .created
+                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                .map(|dt| dt.to_rfc3339()),
             model_id: Some(data.model),
         },
         request_body: Some(body),
@@ -590,7 +593,10 @@ pub async fn execute_stream(
                         response_metadata_emitted = true;
                         yield Ok(StreamPart::ResponseMetadata {
                             id: chunk.id.clone(),
-                            timestamp: None,
+                            timestamp: chunk
+                                .created
+                                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                                .map(|dt| dt.to_rfc3339()),
                             model_id: chunk.model.clone(),
                         });
                     }
