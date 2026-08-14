@@ -57,6 +57,9 @@ tokio-stream = "0.1"
 bytes = "1"
 async-stream = "0.3"
 
+# WebSocket (realtime provider APIs, RFC-0028; feature-gated per crate)
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
 # URL
 url = "2"
 

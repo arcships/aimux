@@ -748,6 +748,7 @@ module.exports.recordingStop = nativeBinding.recordingStop
 module.exports.registerProviders = nativeBinding.registerProviders
 module.exports.router = nativeBinding.router
 module.exports.sessionCalls = nativeBinding.sessionCalls
+module.exports.startTranscriptionSession = nativeBinding.startTranscriptionSession
 module.exports.tavilySearch = nativeBinding.tavilySearch
 module.exports.vertex = nativeBinding.vertex
 module.exports.xai = nativeBinding.xai

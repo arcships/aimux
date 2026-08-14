@@ -26,6 +26,13 @@ httpdate = { workspace = true }
 chrono = "0.4"
 rand = { workspace = true }
 
+# WebSocket client (RFC-0028 realtime transcription). Optional: enabled via
+# the `ws` feature so consumers without realtime needs compile it out.
+tokio-tungstenite = { workspace = true, optional = true }
+
+[features]
+ws = ["dep:tokio-tungstenite"]
+
 [dev-dependencies]
 aimux-core = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt", "time"] }

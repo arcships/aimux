@@ -13,6 +13,10 @@ pub mod multipart;
 pub mod response;
 pub mod retry;
 pub mod url;
+/// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
+/// `ws` feature is enabled.
+#[cfg(feature = "ws")]
+pub mod ws;
 
 pub use api_key::load_api_key;
 pub use headers::with_user_agent_suffix;

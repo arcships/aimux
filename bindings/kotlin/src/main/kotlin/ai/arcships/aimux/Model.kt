@@ -170,6 +170,18 @@ internal interface AimuxFFI : Library {
     // referenceHandles may be null/empty (degrades to aggregator-only). Returns
     // handle > 0 or 0 on failure.
     fun aimux_moa_new(referenceHandles: LongArray?, refLen: Long, aggregator: Long, configJson: String?, err: AimuxCError?): Long
+
+    // Transcription streaming sessions (RFC-0028).
+
+    fun aimux_transcription_session_new(modelHandle: Long, abortHandle: Long, optsJson: String?, err: AimuxCError?): Long
+
+    fun aimux_transcription_push_audio(session: Long, data: ByteArray?, len: Long, err: AimuxCError?): Int
+
+    fun aimux_transcription_input_done(session: Long, err: AimuxCError?): Int
+
+    fun aimux_transcription_next_part(session: Long, timeoutMs: Long, err: AimuxCError?): Pointer?
+
+    fun aimux_transcription_session_drop(session: Long)
 }
 
 internal object FFI {

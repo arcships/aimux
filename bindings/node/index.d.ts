@@ -224,6 +224,22 @@ export declare class TranscriptionModel {
   generate(audioBase64: string, mediaType: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 
+/** A live streaming-transcription session (RFC-0028). */
+export declare class TranscriptionSession {
+  /** Push one binary audio chunk. Awaits while the internal channel is full (backpressure). */
+  pushAudio(data: Buffer): Promise<void>
+  /** Signal end-of-audio (idempotent). */
+  inputDone(): void
+  /**
+   * Pull the next transcription part (JSON string). Resolves `null` when the
+   * stream ended normally. Rejects on error — including timeout (no part
+   * within `timeoutMs`; session stays live, call again).
+   */
+  nextPart(timeoutMs?: number | undefined | null): Promise<AimuxResult<string | null>>
+  /** Terminate the session (aborts the driver). The object becomes inert. */
+  close(): void
+}
+
 export declare class VideoModel {
   /**
    * Generate video. `opts_json` is JSON-serialized VideoCallOptions.
@@ -441,6 +457,8 @@ export declare function router(models: Array<Model>, configJson?: string | undef
  * or no store is registered.
  */
 export declare function sessionCalls(sessionId: string): AimuxResult<string>
+
+export declare function startTranscriptionSession(model: TranscriptionModel, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AimuxResult<TranscriptionSession>>
 
 /** Create a Tavily search model instance. */
 export declare function tavilySearch(apiKey: string, baseUrl?: string | undefined | null): Promise<AimuxResult<SearchModel>>
