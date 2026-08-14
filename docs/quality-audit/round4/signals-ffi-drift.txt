@@ -1,0 +1,6 @@
+rust extern "C" fns: 94
+header aimux_* tokens: 97
+
+MISSING in header (0): []
+
+Header-only tokens (3) — expected: callbacks/typedefs: ['aimux_abort_signal_', 'aimux_free_string', 'aimux_trace_']
