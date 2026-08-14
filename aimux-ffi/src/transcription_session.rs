@@ -90,7 +90,7 @@ impl TranscriptionFfiSession {
         // Effective abort = user abort OR drop token. `AbortSignal` has no
         // OR-composition, so link both by forwarding into one signal.
         let effective = AbortSignal::new();
-        for source in std::iter::once(token.clone()).chain(user_abort.into_iter()) {
+        for source in std::iter::once(token.clone()).chain(user_abort) {
             let linked = effective.clone();
             runtime().spawn(async move {
                 source.cancelled().await;
