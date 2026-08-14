@@ -7,6 +7,7 @@
 use aimux_core::generate::GenerateTextOptions;
 use aimux_core::message::{ModelMessage, Role};
 use aimux_core::options::{TimeoutConfiguration, ToolChoice};
+use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 use serde_json::Value;
@@ -313,6 +314,7 @@ fn all_fixtures_match_rust_serialization() {
         match f.ty.as_str() {
             "ToolChoice" => assert_fixture_matches_rust::<ToolChoice>(f),
             "StreamPart" => assert_fixture_matches_rust::<StreamPart>(f),
+            "GenerateContent" => assert_fixture_matches_rust::<GenerateContent>(f),
             "GenerateTextOptions" => assert_fixture_matches_rust::<GenerateTextOptions>(f),
             "TimeoutConfiguration" => assert_fixture_matches_rust::<TimeoutConfiguration>(f),
             "Role" => assert_fixture_matches_rust::<Role>(f),

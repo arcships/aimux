@@ -382,3 +382,24 @@ jobs:
         working-directory: contract-tests
         run: |
           node --experimental-strip-types run-node.ts
+
+  # ── Swift contract tests: the eighth binding joins the shared fixtures ─────
+  # Needs macOS (XCTest) and the FFI cdylib, which the Swift package links via
+  # the CAimuxFFI system module. The Dart side needs no job here: flutter-binding
+  # already runs `flutter test`, which picks up bindings/flutter/test/contract_test.dart.
+  swift-contract-tests:
+    name: Swift contract tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the FFI library the Swift package links against
+        run: cargo build -p aimux-ffi --release
+      - name: Run Swift contract tests
+        working-directory: bindings/swift
+        env:
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: |
+          swift test --filter ContractTests \
+            -Xlinker -L${{ github.workspace }}/target/release

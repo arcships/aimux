@@ -78,6 +78,48 @@
     "description": "Numeric fields carry non-null, type-discriminating values so every binding's declared types are exercised. top_k is deliberately FRACTIONAL: Rust is Option<f64> (matching the upstream AI SDK's `topK?: number`), so a binding that declares it as an integer cannot hold this value. Integer fields (max_output_tokens u32, seed u64, max_retries u32) and a negative penalty pin the signedness. This case exists to lock TYPES, not to model a realistic call."
   },
   {
+    "name": "generate_content_text",
+    "type": "GenerateContent",
+    "json": "{\"Text\":{\"text\":\"Hello\",\"provider_metadata\":{\"openai\":{\"itemId\":\"msg_1\"}}}}",
+    "description": "Text content with provider_metadata present. GenerateContent is externally tagged, so every binding sees a single-key object whose key is the variant name."
+  },
+  {
+    "name": "generate_content_text_no_metadata",
+    "type": "GenerateContent",
+    "json": "{\"Text\":{\"text\":\"Hello\"}}",
+    "description": "Text without provider_metadata: the key is ABSENT, not null (the field is skip_serializing_if = Option::is_none). Pins the omission so a binding that expects a required field is caught."
+  },
+  {
+    "name": "generate_content_reasoning_no_metadata",
+    "type": "GenerateContent",
+    "json": "{\"Reasoning\":{\"text\":\"Thinking\",\"provider_metadata\":null}}",
+    "description": "KNOWN ASYMMETRY, pinned deliberately: Reasoning.provider_metadata has NO skip_serializing_if, so unlike Text (see generate_content_text_no_metadata) it emits an explicit null. The two neighbouring fixtures therefore disagree on purpose — that is the drift, recorded rather than hidden. The ticket that makes the attributes symmetric must update this fixture in the same commit; if you are here because this case went red, that is the sentinel working, not a broken test."
+  },
+  {
+    "name": "generate_content_tool_call",
+    "type": "GenerateContent",
+    "json": "{\"ToolCall\":{\"tool_call_id\":\"call_1\",\"tool_name\":\"get_weather\",\"input\":{\"city\":\"Paris\"},\"provider_executed\":true,\"thought_signature\":\"sig_abc\"}}",
+    "description": "Tool call with provider_executed and thought_signature set; dynamic and provider_metadata unset and therefore absent. `input` is an object here — the ticket that moves tool-call input to a JSON string will change this fixture, which is the point."
+  },
+  {
+    "name": "generate_content_source",
+    "type": "GenerateContent",
+    "json": "{\"Source\":{\"id\":\"src_1\",\"source_type\":\"url\",\"url\":\"https://example.com/a\",\"title\":\"Example\"}}",
+    "description": "Source/citation. Note url and title carry no skip_serializing_if, so they are always emitted (null when unset) — unlike provider_metadata, which is omitted when unset."
+  },
+  {
+    "name": "generate_content_file",
+    "type": "GenerateContent",
+    "json": "{\"File\":{\"data\":{\"Data\":{\"data\":{\"Base64\":\"aGk=\"}}},\"media_type\":\"image/png\"}}",
+    "description": "Generated file. `data` is a doubly-nested externally-tagged union (FileData::Data wrapping FileBytes::Base64) — the shape every binding must reproduce, and the one the four-file-variant merge will collapse."
+  },
+  {
+    "name": "generate_content_tool_result",
+    "type": "GenerateContent",
+    "json": "{\"ToolResult\":{\"tool_call_id\":\"call_1\",\"tool_name\":\"web_search\",\"result\":{\"answer\":42},\"is_error\":false}}",
+    "description": "Provider-executed tool result. is_error is false (present); preliminary, dynamic and provider_metadata are unset and absent."
+  },
+  {
     "name": "timeout_configuration_values",
     "type": "TimeoutConfiguration",
     "json": "{\"total_ms\":5000,\"first_chunk_ms\":1000,\"chunk_ms\":500}",

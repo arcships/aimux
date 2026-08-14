@@ -97,22 +97,47 @@ func TestWireFormatConsistency(t *testing.T) {
 				if err := json.Unmarshal([]byte(wireJSON), &opts); err != nil {
 					t.Fatalf("failed to unmarshal GenerateTextOptions: %v", err)
 				}
-				if tc.Name == "generate_text_options_with_session_id" {
+				// Per-fixture expectations. The emptiness checks belong to the
+				// default fixture alone — asserting them for every case is what
+				// kept the numeric fields untested while they were all null.
+				switch tc.Name {
+				case "generate_text_options_default":
+					if opts.MaxOutputTokens != nil {
+						t.Error("expected nil MaxOutputTokens")
+					}
+					if opts.Temperature != nil {
+						t.Error("expected nil Temperature")
+					}
+
+				case "generate_text_options_with_session_id":
 					if opts.SessionID == nil || *opts.SessionID != "sess-1" {
 						t.Errorf("expected session_id \"sess-1\", got %v", opts.SessionID)
 					}
-				}
-				// All fields should be zero/nil for the default case.
-				if opts.MaxOutputTokens != nil {
-					t.Error("expected nil MaxOutputTokens")
-				}
-				if opts.Temperature != nil {
-					t.Error("expected nil Temperature")
-				}
-				// RFC-0016 M2 true-case: include_raw_chunks round-trips.
-				if tc.Name == "generate_text_options_include_raw_chunks_true" {
+
+				case "generate_text_options_include_raw_chunks_true":
+					// RFC-0016 M2 true-case: include_raw_chunks round-trips.
 					if opts.IncludeRawChunks == nil || *opts.IncludeRawChunks != true {
 						t.Errorf("expected IncludeRawChunks=true, got %v", opts.IncludeRawChunks)
+					}
+
+				case "generate_text_options_numeric_types":
+					// top_k is fractional on purpose: Go declares *float64, so
+					// the fraction must survive. An integer type would truncate
+					// 40.5 to 40 and still pass a field-name-only check.
+					if opts.TopK == nil || *opts.TopK != 40.5 {
+						t.Errorf("expected TopK=40.5, got %v", opts.TopK)
+					}
+					if opts.FrequencyPenalty == nil || *opts.FrequencyPenalty != -0.5 {
+						t.Errorf("expected FrequencyPenalty=-0.5, got %v", opts.FrequencyPenalty)
+					}
+					if opts.MaxOutputTokens == nil || *opts.MaxOutputTokens != 256 {
+						t.Errorf("expected MaxOutputTokens=256, got %v", opts.MaxOutputTokens)
+					}
+					if opts.Seed == nil || *opts.Seed != 42 {
+						t.Errorf("expected Seed=42, got %v", opts.Seed)
+					}
+					if opts.MaxRetries == nil || *opts.MaxRetries != 3 {
+						t.Errorf("expected MaxRetries=3, got %v", opts.MaxRetries)
 					}
 				}
 
@@ -180,6 +205,20 @@ func TestWireFormatConsistency(t *testing.T) {
 				reencoded, _ := json.Marshal(tc3)
 				if string(reencoded) != wireJSON {
 					t.Errorf("round-trip mismatch: got %s, want %s", reencoded, wireJSON)
+				}
+
+			case "GenerateContent":
+				// Go keeps result content parts as raw JSON by design
+				// (ContentPart = json.RawMessage), so there is no typed
+				// GenerateContent to decode into. Verify the wire shape
+				// survives Go's JSON layer byte-for-byte — the same check
+				// ToolChoice gets, and for the same reason.
+				var gc json.RawMessage
+				if err := json.Unmarshal([]byte(wireJSON), &gc); err != nil {
+					t.Fatalf("failed to unmarshal GenerateContent %s: %v", wireJSON, err)
+				}
+				if string(gc) != wireJSON {
+					t.Errorf("round-trip mismatch: got %s, want %s", gc, wireJSON)
 				}
 
 			default:
