@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
@@ -15,12 +14,17 @@ use aimux_core::message::{MessageContent, ModelMessage, ModelPrompt, Role};
 use aimux_core::tool::{FunctionTool, Tool};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Wire request types (TS-exported for the frontend)
+// Wire request types — the console's API surface.
+//
+// The corresponding TypeScript declarations live in `web/src/types/Wire*.ts`
+// (committed). They are NOT ts-rs `#[ts(export)]`ed here: the repo's global
+// `TS_RS_EXPORT_DIR` points at `bindings/node/src/types`, and these types
+// belong to the web frontend, not the node bindings. Keep the committed
+// `web/src/types/Wire*.ts` in sync when changing these structs.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// One model call from the console (RFC-0029 §5.3).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireCallRequest {
     /// Registry name or native protocol name ("openai", "deepseek", …).
     pub provider: String,
@@ -54,8 +58,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WireOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
@@ -81,8 +84,7 @@ pub struct WireOptions {
 }
 
 /// A function tool definition (JSON Schema parameters).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireTool {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,8 +94,7 @@ pub struct WireTool {
 }
 
 /// A chat message in the wire format.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireMessage {
     /// "system" | "user" | "assistant" | "tool".
     pub role: String,
@@ -101,8 +102,7 @@ pub struct WireMessage {
 }
 
 /// A content part in the wire format.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WireContentPart {
     Text {
@@ -122,8 +122,7 @@ pub enum WireContentPart {
 }
 
 /// Response for non-streaming calls.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireCallResponse {
     pub text: String,
     pub finish_reason: Value,
@@ -135,8 +134,7 @@ pub struct WireCallResponse {
 }
 
 /// SSE `meta` event payload — the frontend trace anchor (RFC-0029 §5.2).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WireMeta {
     pub call_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

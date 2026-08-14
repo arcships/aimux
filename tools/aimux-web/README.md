@@ -67,9 +67,19 @@ cargo run -p aimux-web --example gen_fixture /tmp/fixture.jsonl
 ```
 tools/aimux-web/
 ├── src/          Rust 后端(axum):main/state/wire/agents/model_builder + api/*
-├── examples/     gen_fixture:mock 录制生成器
+├── examples/     gen_fixture / gen_demo_fixtures:mock 录制生成器
 └── web/          Vue 3 + shadcn 风格 + Tailwind + markstream-vue
     ├── src/agent/engine.ts   前端 agent loop 引擎
     ├── src/api/client.ts     SSE/端点封装
-    └── src/types/            ts-rs 生成的 d.ts(从 bindings/node/src/types 拷入)
+    └── src/types/            d.ts(core 类型来自 ts-rs,见下)
 ```
+
+## 前端类型来源
+
+- **core 类型**(`Recording`/`StreamPart`/`TraceRecord`/`SessionView` 等):ts-rs 从
+  `aimux-core` 生成到 `bindings/node/src/types/`(`scripts/gen_ts_types.py` 管线),
+  **拷贝**到 `web/src/types/` 供前端使用。改 core 类型后:跑 `scripts/gen_ts_types.py`
+  并同步拷贝。
+- **wire 类型**(`Wire*.ts`):是 aimux-web 的 API 契约,**手动维护**在
+  `web/src/types/`(不 ts-rs 导出,避免污染 node bindings 的导出目录)。
+  改 `src/wire.rs` 时同步更新对应的 `web/src/types/Wire*.ts`。
