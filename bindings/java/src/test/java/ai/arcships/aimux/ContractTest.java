@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * shared fixtures in {@code contract-tests/fixtures/wire-format.json} (the same
  * fixtures used by the Rust contract tests and the Node runner).
  *
- * <p>Two deliberate deviations from a strict "deserialize → re-serialize == fixture"
- * round-trip, documented here because they reflect the binding's real behavior:
+ * <p>One deliberate deviation from a strict "deserialize → re-serialize == fixture"
+ * round-trip, documented here because it reflects the binding's real behavior:
  *
  * <ol>
  *   <li><b>Null-field omission.</b> {@link Types.AimuxJson} uses
@@ -24,17 +24,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       encode. {@code stream_part_stream_start} carries {@code "warnings": []},
  *       an empty (non-null) list, so re-serialization keeps it — the round-trip
  *       is exact.</li>
- *   <li><b>Finish's {@code {"unified":{"stop":null}}}.</b> The
- *       {@code stream_part_finish} fixture encodes the finish reason as an
- *       externally-tagged object, but the actual Rust wire format for
- *       {@code FinishReasonUnified} is the bare string {@code "stop"} (see
- *       {@code aimux-core/tests/contract_test.rs::finish_reason_unified_wire_format}),
- *       and the Java enum mirrors that string form. The fixture therefore cannot
- *       be deserialized by <em>any</em> binding (Rust serde would reject the
- *       object form too). This test asserts the fixture's JSON shape at the
- *       wire level and separately proves the Java {@link Types.StreamPart.Finish}
- *       round-trips with the binding's own {@code "unified":"stop"} encoding.</li>
  * </ol>
+ *
+ * <p>A second "deviation" used to be documented here: the {@code stream_part_finish}
+ * fixture encoded the finish reason as an externally-tagged object,
+ * {@code {"unified":{"stop":null}}}, which no binding could deserialize. That was
+ * not a deviation — the fixture described a shape Rust never emits (its wire form
+ * is the bare string {@code "stop"}), and nothing pinned the fixture to Rust's real
+ * output, so the drift survived as a documented "expected failure". The fixture is
+ * now correct and this test deserializes it like any other.
  *
  * <p>These tests are pure serialization tests: no native library is loaded.
  */
@@ -214,20 +212,23 @@ class ContractTest {
         assertThat(finishNode.size()).isEqualTo(1);
         JsonNode inner = finishNode.get("Finish");
         assertThat(inner).isNotNull();
-        assertThat(inner.path("finish_reason").path("unified").path("stop").isNull()).isTrue();
+        assertThat(inner.path("finish_reason").path("unified").asText()).isEqualTo("stop");
         assertThat(inner.path("usage").path("input_tokens").path("total").asInt()).isEqualTo(10);
         assertThat(inner.path("usage").path("output_tokens").path("total").asInt()).isEqualTo(20);
         assertThat(inner.path("provider_metadata").isNull()).isTrue();
 
-        // 2) The Java binding cannot deserialize the fixture's object-form enum
-        //    ({"unified":{"stop":null}}); its FinishReasonUnified is the string
-        //    wire format "stop" — the same as Rust's actual serialization.
-        try {
+        // 2) The Java binding deserializes the shared fixture itself. It could not
+        //    before: the fixture carried an externally-tagged enum form,
+        //    {"unified":{"stop":null}}, that Rust never emits, and this test used
+        //    to assert that failure as if it were the contract.
+        Types.StreamPart fromFixture =
             Types.AimuxJson.MAPPER.readValue(json, Types.StreamPart.class);
-            throw new AssertionError("expected MismatchedInputException for object-form enum");
-        } catch (com.fasterxml.jackson.databind.exc.MismatchedInputException expected) {
-            // expected: the fixture's externally-tagged enum form is not the wire format
-        }
+        assertThat(fromFixture).isInstanceOf(Types.StreamPart.Finish.class);
+        Types.StreamPart.Finish fixtureFinish = (Types.StreamPart.Finish) fromFixture;
+        assertThat(fixtureFinish.getFinishReason().getUnified())
+            .isEqualTo(Types.FinishReasonUnified.STOP);
+        assertThat(fixtureFinish.getUsage().getInputTokens().getTotal()).isEqualTo(10L);
+        assertThat(fixtureFinish.getUsage().getOutputTokens().getTotal()).isEqualTo(20L);
 
         // 3) Java-native Finish round-trips with the binding's own encoding.
         Types.StreamPart.Finish nativeFinish = Types.StreamPart.Finish.builder()
