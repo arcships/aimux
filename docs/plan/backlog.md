@@ -44,5 +44,5 @@
 | R4-S3 | P2 | 依赖清理 5 处（bytes 校验为整体移除）；dead_code 清单校验修正（item 10 + 模块级 9 + 测试 5；store.rs:73 属过期属性）（#123） | 🔶 待做 |
 | R4-S4 | P2 | 15 个零覆盖本地 provider registry 化或补 smoke；contract-tests fixtures 扩面 | 🔶 待做 |
 | R4-F1 | P1 | SigV4 签名 host 头缺端口（真实签名缺陷）+ 环境代理触发回环 502；"时间敏感"机理经校验推翻；cassette_full 移出（#125） | 🔶 待做 |
-| R4-D1 | P1→#135 | 绑定层跟进：reasoning signature round-trip 核验（8 语言）+ toolName 透传测试 + #128 旧断言核验 | 🔶 待做 |
-| R4-D2 | P1→#136 | FFI 暴露 recording try-flush（aimux_recording_flush 恒 0，Write 错误对绑定用户不可见） | 🔶 待做 |
+| R4-D1 | P1→#135 | 绑定层跟进（node/python/go 本地全绿，flutter 既有覆盖，swift/kotlin/java 检视通过；另修复 anthropic 输入回显缺口）| ✅ PR #138 |
+| R4-D2 | P1→#136 | FFI aimux_recording_try_flush + 3 错误码 + 头文件/c.md + 测试 | ✅ PR #137（叠加 #133）|
