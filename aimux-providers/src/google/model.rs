@@ -373,13 +373,25 @@ impl LanguageModel for GoogleModel {
                                     if text.is_empty() {
                                         // Empty-text part may carry a thoughtSignature
                                         // (upstream :784-794): emit as a zero-length
-                                        // text-delta with the signature metadata.
-                                        if let (Some(meta), Some(id)) = (&thought_sig_meta, &text_id) {
-                                            yield Ok(StreamPart::TextDelta {
-                                                id: id.clone(),
-                                                delta: String::new(),
-                                                provider_metadata: Some(meta.clone()),
-                                            });
+                                        // delta with the signature metadata on
+                                        // whichever block is open — text or
+                                        // reasoning (mirrors the non-streaming
+                                        // path, which attaches to the last
+                                        // content item regardless of type).
+                                        if let Some(meta) = &thought_sig_meta {
+                                            if let Some(id) = &text_id {
+                                                yield Ok(StreamPart::TextDelta {
+                                                    id: id.clone(),
+                                                    delta: String::new(),
+                                                    provider_metadata: Some(meta.clone()),
+                                                });
+                                            } else if let Some(id) = &reasoning_id {
+                                                yield Ok(StreamPart::ReasoningDelta {
+                                                    id: id.clone(),
+                                                    delta: String::new(),
+                                                    provider_metadata: Some(meta.clone()),
+                                                });
+                                            }
                                         }
                                     } else {
                                         let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
