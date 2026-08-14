@@ -850,18 +850,20 @@ func (s *TranscriptionSession) NextPart(timeoutMs int64) (string, error) {
 		C.int64_t(timeoutMs),
 		&cerr,
 	)
-	if ptr == nil {
-		if cerr.code == C.AIMUX_OK {
-			return "", ErrTranscriptionEnded
-		}
-		if cerr.code == C.AIMUX_E_TIMEOUT {
-			// Free any message then map to the retryable sentinel.
-			_ = errorFromC(&cerr)
-			return "", ErrTranscriptionTimeout
-		}
-		return "", errorFromC(&cerr)
+	if ptr != nil {
+		defer C.aimux_free_string(ptr)
+		return C.GoString(ptr), nil
 	}
-	return C.GoString(ptr), nil
+	// ptr == nil: disambiguate via err code.
+	if cerr.code == C.AIMUX_OK {
+		return "", ErrTranscriptionEnded
+	}
+	if cerr.code == C.AIMUX_E_TIMEOUT {
+		// Free any message then map to the retryable sentinel.
+		_ = errorFromC(&cerr)
+		return "", ErrTranscriptionTimeout
+	}
+	return "", errorFromC(&cerr)
 }
 
 // Close terminates and releases the session (aborts the driver; idempotent).

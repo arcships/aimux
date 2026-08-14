@@ -2140,6 +2140,7 @@ struct TranscriptionSessionFfiOptions {
     provider_options: Option<HashMap<String, serde_json::Value>>,
     headers: Option<HashMap<String, String>>,
     include_raw_chunks: Option<bool>,
+    timeout: Option<aimux_core::options::TimeoutConfiguration>,
 }
 
 /// Look up a transcription streaming session handle.
@@ -2203,6 +2204,7 @@ pub extern "C" fn aimux_transcription_session_new(
             provider_options: ffi_opts.provider_options,
             headers: ffi_opts.headers,
             include_raw_chunks: ffi_opts.include_raw_chunks.unwrap_or(false),
+            timeout: ffi_opts.timeout,
         },
         abort,
     );

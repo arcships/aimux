@@ -1017,6 +1017,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SpeechModel>()?;
     m.add_class::<ImageModel>()?;
     m.add_class::<TranscriptionModel>()?;
+    m.add_class::<crate::multimodal::TranscriptionSession>()?;
     m.add_class::<RerankingModel>()?;
     m.add_class::<VideoModel>()?;
     m.add_class::<SearchModel>()?;

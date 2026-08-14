@@ -1144,6 +1144,9 @@ public final class TranscriptionSession: @unchecked Sendable {
                 return String(cString: ptr)
             }
             if cerr.code == AIMUX_E_TIMEOUT {
+                // fromC consumes (frees) the message strings, then we swap in
+                // the retryable sentinel.
+                _ = AimuxError.fromC(cerr)
                 throw AimuxTranscriptionTimeoutError()
             }
             if cerr.code == AIMUX_OK {

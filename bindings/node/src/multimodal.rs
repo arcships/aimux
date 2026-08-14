@@ -735,6 +735,7 @@ pub async fn start_transcription_session(
                     Option<std::collections::HashMap<String, serde_json::Value>>,
                 headers: Option<std::collections::HashMap<String, String>>,
                 include_raw_chunks: Option<bool>,
+                timeout: Option<aimux_core::options::TimeoutConfiguration>,
             }
             let opts: SessionOpts = match opts_json.as_deref() {
                 Some(json) if !json.trim().is_empty() && json.trim() != "null" => {
@@ -781,6 +782,7 @@ pub async fn start_transcription_session(
                     abort_signal: Some(effective.clone()),
                     headers: opts.headers,
                     include_raw_chunks: opts.include_raw_chunks.unwrap_or(false),
+                    timeout: opts.timeout,
                 };
                 let result = model.do_stream(options).await;
                 match result {
@@ -847,19 +849,27 @@ impl TranscriptionSession {
     pub async fn push_audio(&self, data: napi::bindgen_prelude::Buffer) -> napi::Result<()> {
         use futures::SinkExt;
         let bytes = data.to_vec();
-        let mut guard = self
-            .audio_tx
-            .lock()
-            .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "session poisoned"))?;
-        match guard.as_mut() {
-            None => Err(napi::Error::new(
-                napi::Status::GenericFailure,
-                "audio input already finished",
-            )),
-            Some(tx) => tx.send(AudioChunk::Binary(bytes)).await.map_err(|_| {
-                napi::Error::new(napi::Status::GenericFailure, "session ended")
-            }),
-        }
+        // Clone the sender and drop the guard BEFORE awaiting: the mutex is
+        // shared with the SYNC inputDone()/close() methods on the JS thread —
+        // holding it across a backpressured send would wedge the event loop.
+        let mut tx = {
+            let guard = self
+                .audio_tx
+                .lock()
+                .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "session poisoned"))?;
+            match guard.as_ref() {
+                None => {
+                    return Err(napi::Error::new(
+                        napi::Status::GenericFailure,
+                        "audio input already finished",
+                    ));
+                }
+                Some(tx) => tx.clone(),
+            }
+        };
+        tx.send(AudioChunk::Binary(bytes))
+            .await
+            .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "session ended"))
     }
 
     /// Signal end-of-audio (idempotent).
@@ -913,7 +923,9 @@ impl TranscriptionSession {
     }
 
     /// Terminate the session (aborts the driver). The object becomes inert;
-    /// further `pushAudio`/`nextPart` fail. Also runs on GC.
+    /// further `pushAudio`/`nextPart` fail. Call this promptly — GC teardown
+    /// drops the channels (which eventually tears the driver down) but never
+    /// fires the abort token.
     pub fn close(&self) {
         // End audio + abort; the driver unblocks and exits.
         if let Ok(mut guard) = self.audio_tx.lock() {

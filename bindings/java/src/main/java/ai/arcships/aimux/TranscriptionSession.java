@@ -87,6 +87,9 @@ public final class TranscriptionSession implements AutoCloseable {
         }
         // NULL: timeout / ended / error — disambiguate via err.code.
         if (err.code == AimuxException.AIMUX_E_TIMEOUT) {
+            // fromC consumes (frees) the message strings, then we swap in the
+            // retryable sentinel.
+            AimuxException.fromC(err, "nextPart timeout");
             throw new AimuxTranscriptionTimeoutException();
         }
         if (err.code == AimuxException.AIMUX_OK) {

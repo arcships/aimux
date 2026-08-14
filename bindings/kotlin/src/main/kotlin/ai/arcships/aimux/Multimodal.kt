@@ -298,6 +298,9 @@ class TranscriptionSession internal constructor(handle: Long) : Closeable {
             return s
         }
         if (err.code == AIMUX_E_TIMEOUT) {
+            // throwFromC consumes (frees) the message strings, then we swap
+            // in the retryable sentinel.
+            throwFromC(err)
             throw AimuxTranscriptionTimeoutException()
         }
         if (err.code == AIMUX_OK) {

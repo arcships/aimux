@@ -207,13 +207,18 @@ impl WsConnection {
         }
     }
 
-    /// Receive the next message. `None` = the peer closed the connection.
-    /// Enforces first-chunk / chunk-idle / total timeouts and abort.
-    /// Control frames (ping/pong) are handled by tungstenite internally and
-    /// skipped — only data frames surface.
+    /// Receive the next message. `None` = the peer closed cleanly with no
+    /// close frame (or the stream simply ended). A peer close frame surfaces
+    /// as `Err` carrying the close code (RFC §3.1 error mapping). Enforces
+    /// first-chunk / chunk-idle / total timeouts and abort. Control frames
+    /// (ping/pong) are handled by tungstenite internally and skipped — only
+    /// data frames surface (they do NOT reset the chunk-idle deadline: a
+    /// half-alive peer pinging forever must still trip the idle timer).
     pub async fn next(&mut self) -> Option<Result<WsMessage, AiMuxError>> {
+        // Compute the idle deadline ONCE per call: control-frame `continue`s
+        // must not re-extend the window.
+        let chunk_idle = self.current_chunk_deadline();
         loop {
-            let chunk_idle = self.current_chunk_deadline();
             tokio::select! {
                 biased;
                 _ = abort_future(&self.abort) => return Some(Err(AiMuxError::Aborted)),
@@ -240,7 +245,17 @@ impl WsConnection {
                         // Handled inside tungstenite; wait for the next frame.
                         continue;
                     }
-                    Some(Ok(Message::Close(_))) => return None,
+                    Some(Ok(Message::Close(frame))) => {
+                        // Surface the peer's close code/reason (auth/quota
+                        // failures often arrive this way) instead of a bare
+                        // EOF.
+                        let detail = frame
+                            .map(|f| format!(" (code {}: {})", u16::from(f.code), f.reason))
+                            .unwrap_or_default();
+                        return Some(Err(ws_error(format!(
+                            "websocket closed by peer{detail}"
+                        ))));
+                    }
                     Some(Err(e)) => {
                         return Some(Err(ws_error(format!("websocket error: {e}"))));
                     }
@@ -249,22 +264,30 @@ impl WsConnection {
         }
     }
 
-    /// Close the connection with a normal-completion code (1000).
+    /// Close the connection with a normal-completion code (1000). Bounded:
+    /// a close handshake against a dead peer must not hang the caller (the
+    /// send pends while the socket buffer can't drain).
     pub async fn close(&mut self) {
-        let _ = self
-            .stream
-            .close(Some(
-                tokio_tungstenite::tungstenite::protocol::frame::CloseFrame {
-                    code:
-                        tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal,
-                    reason: std::borrow::Cow::Borrowed("finished"),
-                },
-            ))
-            .await;
+        let close_fut = self.stream.close(Some(
+            tokio_tungstenite::tungstenite::protocol::frame::CloseFrame {
+                code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal,
+                reason: std::borrow::Cow::Borrowed("finished"),
+            },
+        ));
+        tokio::select! {
+            res = close_fut => {
+                let _ = res;
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+                tracing::warn!(
+                    "aimux: websocket close handshake timed out; abandoning socket"
+                );
+            }
+        }
     }
 
-    /// After an inbound event: the first-chunk deadline is spent, and the
-    /// chunk-idle window restarts.
+    /// After an inbound event: the first-chunk deadline is spent. The
+    /// chunk-idle window naturally restarts on the next `next()` call.
     fn on_event(&mut self) {
         self.first_chunk_deadline = None;
     }

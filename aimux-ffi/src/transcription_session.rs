@@ -54,6 +54,7 @@ pub struct SessionOptions {
     pub provider_options: Option<std::collections::HashMap<String, serde_json::Value>>,
     pub headers: Option<std::collections::HashMap<String, String>>,
     pub include_raw_chunks: bool,
+    pub timeout: Option<aimux_core::options::TimeoutConfiguration>,
 }
 
 /// A live transcription streaming session (FFI-side).
@@ -108,6 +109,7 @@ impl TranscriptionFfiSession {
                 abort_signal: Some(effective.clone()),
                 headers: opts.headers,
                 include_raw_chunks: opts.include_raw_chunks,
+                timeout: opts.timeout,
             };
             let result = model.do_stream(options).await;
             match result {
@@ -124,16 +126,19 @@ impl TranscriptionFfiSession {
                             match parts_tx.try_send(part) {
                                 Ok(()) => break,
                                 Err(send_err) => {
+                                    if send_err.is_disconnected() {
+                                        // Receiver dropped (session dropped).
+                                        return;
+                                    }
+                                    // Channel full: wait for capacity or
+                                    // abort. (Sink::flush on futures mpsc
+                                    // maps Disconnected to Ok — never rely on
+                                    // it for receiver-loss detection.)
                                     part = send_err.into_inner();
-                                    // Channel full: wait for capacity, abort,
-                                    // or receiver loss.
                                     tokio::select! {
                                         _ = effective.cancelled() => return,
-                                        flushed = parts_tx.flush() => {
-                                            if flushed.is_err() {
-                                                // Receiver dropped — stop.
-                                                return;
-                                            }
+                                        res = parts_tx.flush() => {
+                                            let _ = res;
                                         }
                                     }
                                 }
@@ -143,8 +148,29 @@ impl TranscriptionFfiSession {
                 }
                 Err(e) => {
                     // Connect/establishment failure: surface as the first
-                    // (and only) channel item so next_part reports it.
-                    let _ = parts_tx.send(Err(e)).await;
+                    // (and only) channel item so next_part reports it. Select
+                    // on abort so a full channel can't stall the drop join.
+                    let mut err = Some(e);
+                    loop {
+                        let e = err.take().expect("err only None after successful send");
+                        match parts_tx.try_send(Err(e)) {
+                            Ok(()) => break,
+                            Err(send_err) => {
+                                if send_err.is_disconnected() {
+                                    return;
+                                }
+                                // into_inner returns the unsent Result — the
+                                // Err payload is the original error.
+                                err = send_err.into_inner().err();
+                                tokio::select! {
+                                    _ = effective.cancelled() => return,
+                                    res = parts_tx.flush() => {
+                                        let _ = res;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         });

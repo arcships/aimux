@@ -368,6 +368,29 @@ class TranscriptionModel {
     });
   }
 
+  /// Start a streaming transcription session (RFC-0028) on this model.
+  /// Requires a model that supports streaming (realtime models such as
+  /// gpt-realtime-whisper).
+  ///
+  /// [optsJson] — optional session options JSON
+  /// (`{"input_audio_format": {...}, "provider_options", "headers",
+  /// "include_raw_chunks"}`).
+  /// [abortHandle] — optional abort handle; firing it aborts the session.
+  TranscriptionSession startStream({String? optsJson, int abortHandle = 0}) {
+    _checkOpen();
+    final handle = withAimuxCError((err) {
+      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+      try {
+        return takeHandle(
+            _ffi.transcriptionSessionNew(_handle, abortHandle, optsPtr, err),
+            err);
+      } finally {
+        if (optsPtr != nullptr) calloc.free(optsPtr);
+      }
+    });
+    return TranscriptionSession._(handle);
+  }
+
   /// Release the native handle. Safe to call multiple times.
   void close() {
     if (!_closed) {
@@ -681,8 +704,10 @@ class TranscriptionSession {
         final rc = _ffi.transcriptionPushAudio(
             _handle, ptr, audio.length, err);
         if (rc == 0) {
+          // Build the exception FIRST (it reads the message), then free.
+          final ex = AimuxException.fromC(err.ref);
           _freeCError(err);
-          throw AimuxException.fromC(err.ref);
+          throw ex;
         }
         return 0;
       });
@@ -697,8 +722,9 @@ class TranscriptionSession {
     withAimuxCError((err) {
       final rc = _ffi.transcriptionInputDone(_handle, err);
       if (rc == 0) {
+        final ex = AimuxException.fromC(err.ref);
         _freeCError(err);
-        throw AimuxException.fromC(err.ref);
+        throw ex;
       }
       return 0;
     });
@@ -721,8 +747,12 @@ class TranscriptionSession {
           aimuxFreeString(ptr);
         }
       }
-      // NULL: disambiguate via err.code. Free any message first so the
-      // err struct is clean for the sentinel checks below.
+      // NULL: disambiguate via err.code. Build the failure exception FIRST
+      // (it reads the message), then free before the sentinel checks.
+      final failure = err.ref.code == AimuxErrorCode.timeout ||
+              err.ref.code == AimuxErrorCode.ok
+          ? null
+          : AimuxException.fromC(err.ref);
       _freeCError(err);
       if (err.ref.code == AimuxErrorCode.timeout) {
         throw AimuxTranscriptionTimeoutException();
@@ -730,7 +760,7 @@ class TranscriptionSession {
       if (err.ref.code == AimuxErrorCode.ok) {
         throw AimuxTranscriptionEndedException();
       }
-      throw AimuxException.fromC(err.ref);
+      throw failure!;
     });
   }
 

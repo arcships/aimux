@@ -495,7 +495,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             headers: std::mem::take(&mut header_list),
             subprotocols: Vec::new(),
             abort_signal: abort.clone(),
-            timeout: None,
+            timeout: options.timeout,
         };
         let mut ws = ws_connect(&req).await?;
 

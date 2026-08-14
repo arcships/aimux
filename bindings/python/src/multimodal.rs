@@ -576,6 +576,7 @@ pub fn start_transcription_session(
         provider_options: Option<std::collections::HashMap<String, serde_json::Value>>,
         headers: Option<std::collections::HashMap<String, String>>,
         include_raw_chunks: Option<bool>,
+        timeout: Option<aimux_core::options::TimeoutConfiguration>,
     }
     let opts: SessionOpts = match opts_json {
         Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
@@ -617,6 +618,7 @@ pub fn start_transcription_session(
             abort_signal: Some(effective.clone()),
             headers: opts.headers,
             include_raw_chunks: opts.include_raw_chunks.unwrap_or(false),
+            timeout: opts.timeout,
         };
         let result = model.do_stream(options).await;
         match result {
@@ -674,23 +676,31 @@ impl TranscriptionSession {
     /// Push one binary audio chunk. Blocks while the internal channel is
     /// full (backpressure).
     #[pyo3(signature = (data,))]
-    pub fn push_audio(&self, data: &[u8]) -> PyResult<()> {
+    pub fn push_audio(&self, py: pyo3::Python<'_>, data: &[u8]) -> PyResult<()> {
         use futures::SinkExt;
-        let mut guard = self
-            .audio_tx
-            .lock()
-            .map_err(|_| to_py_err(&AiMuxError::Other("session poisoned".into())))?;
-        match guard.as_mut() {
-            None => Err(to_py_err(&AiMuxError::Other(
-                "audio input already finished".into(),
-            ))),
-            Some(tx) => {
-                let chunk = AudioChunk::Binary(data.to_vec());
-                crate::runtime()
-                    .block_on(async move { tx.send(chunk).await })
-                    .map_err(|_| to_py_err(&AiMuxError::Other("session ended".into())))
+        // Clone the sender and drop the guard BEFORE blocking: the mutex is
+        // shared with the sync input_done()/close(), and blocking with the
+        // guard held (or with the GIL held) would freeze other Python
+        // threads — including one calling close() to abort.
+        let mut tx = {
+            let guard = self
+                .audio_tx
+                .lock()
+                .map_err(|_| to_py_err(&AiMuxError::Other("session poisoned".into())))?;
+            match guard.as_ref() {
+                None => {
+                    return Err(to_py_err(&AiMuxError::Other(
+                        "audio input already finished".into(),
+                    )));
+                }
+                Some(tx) => tx.clone(),
             }
-        }
+        };
+        let chunk = AudioChunk::Binary(data.to_vec());
+        py.allow_threads(|| {
+            crate::runtime().block_on(async move { tx.send(chunk).await })
+        })
+        .map_err(|_| to_py_err(&AiMuxError::Other("session ended".into())))
     }
 
     /// Signal end-of-audio (idempotent).
@@ -703,12 +713,16 @@ impl TranscriptionSession {
     }
 
     /// Pull the next transcription part (JSON string). Returns None when the
-    /// stream ended normally. Raises on error — including TimeoutError when
-    /// no part arrives within `timeout_ms` (the session stays live, call
-    /// again). `timeout_ms`: >0 wait at most; 0 immediate poll; negative =
-    /// wait indefinitely.
+    /// stream ended normally. Raises on error — including APITimeoutError
+    /// (an AimuxError subclass) when no part arrives within `timeout_ms`
+    /// (the session stays live, call again). `timeout_ms`: >0 wait at most;
+    /// 0 immediate poll; negative = wait indefinitely.
     #[pyo3(signature = (timeout_ms=-1))]
-    pub fn next_part(&self, timeout_ms: i64) -> PyResult<Option<String>> {
+    pub fn next_part(
+        &self,
+        py: pyo3::Python<'_>,
+        timeout_ms: i64,
+    ) -> PyResult<Option<String>> {
         let timeout = if timeout_ms >= 0 {
             Some(std::time::Duration::from_millis(timeout_ms as u64))
         } else {
@@ -718,16 +732,18 @@ impl TranscriptionSession {
             Part(Option<std::result::Result<String, AiMuxError>>),
             TimedOut,
         }
-        let outcome = crate::runtime().block_on(async {
-            let mut rx = self.parts_rx.lock().await;
-            let recv = rx.recv();
-            match timeout {
-                Some(d) => match tokio::time::timeout(d, recv).await {
-                    Ok(p) => Outcome::Part(p),
-                    Err(_) => Outcome::TimedOut,
-                },
-                None => Outcome::Part(recv.await),
-            }
+        let outcome = py.allow_threads(|| {
+            crate::runtime().block_on(async {
+                let mut rx = self.parts_rx.lock().await;
+                let recv = rx.recv();
+                match timeout {
+                    Some(d) => match tokio::time::timeout(d, recv).await {
+                        Ok(p) => Outcome::Part(p),
+                        Err(_) => Outcome::TimedOut,
+                    },
+                    None => Outcome::Part(recv.await),
+                }
+            })
         });
         let part = match outcome {
             Outcome::Part(p) => p,

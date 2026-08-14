@@ -155,6 +155,7 @@ fn stream_options(
         abort_signal: abort,
         headers: None,
         include_raw_chunks: false,
+        timeout: None,
     }
 }
 
@@ -364,4 +365,53 @@ async fn stream_rejects_non_realtime_models() {
         }
         other => panic!("expected UnsupportedFunctionality, got {other:?}"),
     }
+}
+
+/// A silent server (accepts + reads session.update, then goes quiet) — the
+/// first-chunk timeout must fire (B1/timer coverage).
+#[tokio::test]
+async fn stream_first_chunk_timeout_fires() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        // Read session.update, then send NOTHING but KEEP the socket alive
+        // (drain client appends) well past the client's 300ms first-chunk
+        // deadline — the timeout must fire before any disconnect could.
+        let _ = ws.next().await;
+        while let Ok(Some(_)) = tokio::time::timeout(Duration::from_secs(2), ws.next()).await {}
+    });
+
+    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
+    let provider = OpenAIProvider::new(config);
+    let model = provider.transcription("gpt-realtime-whisper");
+
+    let options = TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::iter(vec![AudioChunk::Binary(vec![1])])),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: None,
+        },
+        provider_options: None,
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: Some(aimux_core::options::TimeoutConfiguration {
+            // first_chunk covers connect + session ack; 300ms is generous on
+            // loopback but far below the test's tolerance.
+            first_chunk_ms: Some(300),
+            total_ms: None,
+            chunk_ms: None,
+        }),
+    };
+    let result = model.do_stream(options).await.unwrap();
+    let parts = collect(result).await;
+    let timed_out = parts
+        .iter()
+        .any(|p| matches!(p, Err(AiMuxError::Timeout(_))));
+    assert!(
+        timed_out,
+        "expected a Timeout error against a silent server; got: {parts:?}"
+    );
 }

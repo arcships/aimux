@@ -450,8 +450,10 @@ uint64_t aimux_transcription_session_new(uint64_t model_handle, uint64_t abort_h
 
 /* Push one binary audio chunk. BLOCKING: waits while the internal channel is
    full (backpressure propagation). data may be NULL only when len == 0
-   (no-op). Not callable from within an aimux callback (re-entrancy guard).
-   Returns 1 on success, 0 on failure (fills *err). */
+   (no-op). Pushing after aimux_transcription_input_done or after the session
+   ended fails. Not callable from within an aimux callback (re-entrancy
+   guard — applies to next_part too). Returns 1 on success, 0 on failure
+   (fills *err). */
 int32_t aimux_transcription_push_audio(uint64_t session, const uint8_t *data, size_t len,
                                        AimuxError *err);
 
@@ -461,8 +463,10 @@ int32_t aimux_transcription_input_done(uint64_t session, AimuxError *err);
 /* Pull the next part (JSON TranscriptionStreamPart; free with
    aimux_free_string). timeout_ms: >0 = wait at most; 0 = immediate poll;
    <0 = wait indefinitely. NULL return is disambiguated via err (caller MUST
-   pass non-NULL err): AIMUX_E_TIMEOUT = retry, AIMUX_E_OK (untouched) =
-   stream ended normally, other codes = stream failed. */
+   pass non-NULL err): AIMUX_E_TIMEOUT = retry (free err.message!), AIMUX_E_OK
+   (untouched) = stream ended normally, other codes = stream failed.
+   opts_json of session_new accepts an optional "timeout" object
+   {"total_ms","first_chunk_ms","chunk_ms"} bounding the WS session. */
 char *aimux_transcription_next_part(uint64_t session, int64_t timeout_ms, AimuxError *err);
 
 /* Terminate and release the session (aborts the driver; safe with 0). */

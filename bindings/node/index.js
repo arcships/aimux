@@ -711,6 +711,7 @@ module.exports.SearchModel = nativeBinding.SearchModel
 module.exports.SpeechModel = nativeBinding.SpeechModel
 module.exports.StreamTextGenerator = nativeBinding.StreamTextGenerator
 module.exports.TranscriptionModel = nativeBinding.TranscriptionModel
+module.exports.TranscriptionSession = nativeBinding.TranscriptionSession
 module.exports.VideoModel = nativeBinding.VideoModel
 module.exports.anthropic = nativeBinding.anthropic
 module.exports.anthropicAws = nativeBinding.anthropicAws
