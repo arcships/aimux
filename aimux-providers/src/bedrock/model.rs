@@ -278,6 +278,10 @@ impl LanguageModel for BedrockModel {
 
             let mut text_id: Option<String> = None;
             let mut reasoning_id: Option<String> = None;
+            // Reasoning signatures arrive in their own reasoningContent delta
+            // (usually with no text); accumulated here and attached to the
+            // concluding ReasoningEnd.
+            let mut reasoning_signature: Option<String> = None;
             let mut block_counter = 0usize;
             // Tool call state: block_index → (id, name, accumulated_json)
             let mut tool_blocks: HashMap<usize, (String, String, String)> = HashMap::new();
@@ -384,26 +388,38 @@ impl LanguageModel for BedrockModel {
                                         }
                             // Reasoning delta — `reasoningContent.text` carries
                             // incremental reasoning text; `reasoningContent.signature`
-                            // carries the final signature. The signature cannot be
-                            // represented on `StreamPart::ReasoningDelta` (no
-                            // provider_metadata field), so it is intentionally not
-                            // emitted. Empty text deltas are skipped.
-                            if let Some(rc) = delta.get("reasoningContent")
-                                && let Some(text) = rc.get("text").and_then(|v| v.as_str())
-                                    && !text.is_empty() {
-                                        let id = idx.to_string();
-                                        if reasoning_id.as_deref() != Some(id.as_str()) {
-                                            reasoning_id = Some(id.clone());
-                                            yield Ok(StreamPart::ReasoningStart { id,
-                provider_metadata: None,
-            });
-                                        }
-                                        yield Ok(StreamPart::ReasoningDelta {
-                                            id: idx.to_string(),
-                                            delta: text.to_string(),
-                provider_metadata: None,
-            });
+                            // carries the reasoning signature (typically in a
+                            // final, text-less delta). The signature is attached
+                            // to the concluding ReasoningEnd via provider_metadata
+                            // so extended-thinking multi-turn can echo it back —
+                            // same shape as the non-streaming path. Empty text
+                            // deltas are skipped.
+                            if let Some(rc) = delta.get("reasoningContent") {
+                                if let Some(text) = rc.get("text").and_then(|v| v.as_str())
+                                    && !text.is_empty()
+                                {
+                                    let id = idx.to_string();
+                                    if reasoning_id.as_deref() != Some(id.as_str()) {
+                                        reasoning_id = Some(id.clone());
+                                        yield Ok(StreamPart::ReasoningStart {
+                                            id,
+                                            provider_metadata: None,
+                                        });
                                     }
+                                    yield Ok(StreamPart::ReasoningDelta {
+                                        id: idx.to_string(),
+                                        delta: text.to_string(),
+                                        provider_metadata: None,
+                                    });
+                                }
+                                if let Some(sig) =
+                                    rc.get("signature").and_then(|v| v.as_str())
+                                {
+                                    reasoning_signature
+                                        .get_or_insert_with(String::new)
+                                        .push_str(sig);
+                                }
+                            }
                         }
                     }
                     "contentBlockStop" => {
@@ -431,9 +447,13 @@ impl LanguageModel for BedrockModel {
                         } else if reasoning_id.is_some() {
                             let id = idx.to_string();
                             if reasoning_id.as_deref() == Some(id.as_str()) {
-                                yield Ok(StreamPart::ReasoningEnd { id,
-                provider_metadata: None,
-            });
+                                let provider_metadata = reasoning_signature
+                                    .take()
+                                    .map(|s| json!({ "bedrock": { "signature": s } }));
+                                yield Ok(StreamPart::ReasoningEnd {
+                                    id,
+                                    provider_metadata,
+                                });
                                 reasoning_id = None;
                             }
                         } else if text_id.is_some() {
@@ -453,9 +473,13 @@ impl LanguageModel for BedrockModel {
                                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                             }
                             if let Some(id) = reasoning_id.take() {
-                                yield Ok(StreamPart::ReasoningEnd { id,
-                provider_metadata: None,
-            });
+                                let provider_metadata = reasoning_signature
+                                    .take()
+                                    .map(|s| json!({ "bedrock": { "signature": s } }));
+                                yield Ok(StreamPart::ReasoningEnd {
+                                    id,
+                                    provider_metadata,
+                                });
                             }
                             final_finish_reason = Some(map_finish_reason(reason));
                         }
