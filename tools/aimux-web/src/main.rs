@@ -2,6 +2,13 @@
 //!
 //! Runs an axum server bound to `127.0.0.1` that serves the Vue SPA and the
 //! `/api/*` endpoints, with recording / trace / session wiring enabled.
+//!
+//! Two frontend serving modes:
+//! - default (dev): serve `web/dist` from disk (`ServeDir`), so the frontend
+//!   can be rebuilt / hot-reloaded independently;
+//! - `--features embed-frontend` (release / distribution): the built frontend
+//!   is embedded into the binary with `rust-embed`, producing a self-contained
+//!   executable users can download with no npm step.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -9,13 +16,15 @@ use std::path::PathBuf;
 use anyhow::Result;
 use axum::Router;
 use clap::Parser;
-use tower_http::services::ServeDir;
 
 mod agents;
 mod api;
 mod model_builder;
 mod state;
 mod wire;
+
+#[cfg(feature = "embed-frontend")]
+mod embed;
 
 #[derive(Parser)]
 #[command(
@@ -33,7 +42,8 @@ struct Cli {
     /// Do not open the browser automatically.
     #[arg(long)]
     no_open: bool,
-    /// Directory of built frontend assets (default: `web/dist` next to the crate).
+    /// Directory of built frontend assets (default: `web/dist` next to the
+    /// crate). Ignored when the `embed-frontend` feature is enabled.
     #[arg(long)]
     static_dir: Option<PathBuf>,
 }
@@ -43,14 +53,29 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let state = state::AppState::new();
 
-    let static_dir = cli
-        .static_dir
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web/dist"));
+    let app = Router::new().merge(api::router(state));
 
-    let app = Router::new()
-        .merge(api::router(state))
-        .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true));
+    #[cfg(feature = "embed-frontend")]
+    let app = app.fallback(embed::serve);
+    #[cfg(not(feature = "embed-frontend"))]
+    let app = {
+        let static_dir = cli
+            .static_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web/dist"));
+        if !static_dir.join("index.html").exists() {
+            eprintln!(
+                "  warning: frontend not built — API only. Run `npm install && npm run build` in {}",
+                static_dir
+                    .parent()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            );
+        }
+        app.fallback_service(
+            tower_http::services::ServeDir::new(&static_dir).append_index_html_on_directories(true),
+        )
+    };
 
     let addr: SocketAddr = format!("{}:{}", cli.host, cli.port).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -59,18 +84,17 @@ async fn main() -> Result<()> {
 
     println!("aimux-web — RFC-0029 Web console");
     println!("  URL: {url}");
-    println!("  static: {}", static_dir.display());
+    #[cfg(feature = "embed-frontend")]
+    println!("  frontend: embedded in binary");
+    #[cfg(not(feature = "embed-frontend"))]
+    println!(
+        "  static: {}",
+        cli.static_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web/dist"))
+            .display()
+    );
     println!("  wiring: RingRecorder(2048) + RingTraceStore + SessionStore");
-
-    if !static_dir.join("index.html").exists() {
-        eprintln!(
-            "  warning: frontend not built — API only. Run `npm install && npm run build` in {}",
-            static_dir
-                .parent()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default()
-        );
-    }
 
     if !cli.no_open {
         // Best-effort browser open (ignore failures on headless machines).

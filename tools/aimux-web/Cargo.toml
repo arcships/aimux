@@ -12,6 +12,13 @@ documentation = "https://docs.rs/aimux-web"
 name = "aimux-web"
 path = "src/main.rs"
 
+[features]
+# Release / distribution builds: embed the built frontend (web/dist) into the
+# binary so users get a self-contained console with no npm step. Requires
+# `web/dist` to exist at compile time (run `npm run build` first). Dev builds
+# (default) keep serving from disk so the frontend can hot-reload.
+embed-frontend = ["dep:rust-embed"]
+
 [dependencies]
 aimux-core = { workspace = true }
 aimux-providers = { workspace = true }
@@ -26,7 +33,7 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 clap = { workspace = true }
-
+rust-embed = { version = "8", optional = true, features = ["mime-guess"] }
 
 [dev-dependencies]
 tempfile = "3"

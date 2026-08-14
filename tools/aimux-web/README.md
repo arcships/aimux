@@ -4,6 +4,45 @@
 端点并托管前端 SPA;每次调用自动落 `Recording`(RFC-0023)、`TraceRecord`
 (RFC-0015)并归组到会话(RFC-0024)。
 
+## 安装 / 获取
+
+**方式 1：GitHub Releases 预编译二进制（推荐，普通用户）**
+
+每个版本在 GitHub Releases 发布**自包含单文件**（前端已内嵌进二进制，
+无需安装 Rust / Node）：
+- `aimux-web-linux-x64`（Ubuntu 等）
+- `aimux-web-macos-arm64`（Apple Silicon）
+- `aimux-web-windows-x64.exe`
+
+下载后直接运行，自动打开浏览器：
+
+```bash
+./aimux-web            # 自动开 http://127.0.0.1:<port>
+./aimux-web --port 8787 --no-open   # 指定端口 / 不开浏览器
+```
+
+同一 Release 也附 `aimux-cli-*` / `aimux-replay-*`（缓存探测与请求回放 CLI）。
+
+**方式 2：从源码运行（开发者 / 贡献者）**
+
+```bash
+# 1. 构建前端(首次需要)
+cd tools/aimux-web/web
+npm install
+npm run build
+
+# 2. 启动服务(自动打开浏览器)
+cargo run -p aimux-web
+# 指定端口 / 不开浏览器
+cargo run -p aimux-web -- --port 8787 --no-open
+```
+
+### 内嵌前端构建
+
+发布二进制由 CI 用 `--features embed-frontend` 构建：`web/dist` 在编译期
+被 `rust-embed` 打进二进制（需要先 `npm run build`），产物完全自包含。
+本地 dev 构建默认从磁盘读 `web/dist`（前端可独立热更新）。
+
 ## 快速开始
 
 ```bash
