@@ -1,4 +1,4 @@
-﻿//! Rust port of the Anthropic provider `doGenerate` response-parsing tests and
+//! Rust port of the Anthropic provider `doGenerate` response-parsing tests and
 //! `doStream` streaming tests.
 //!
 //! Translated from the Vercel AI SDK TypeScript test suite:
@@ -1497,59 +1497,6 @@ mod do_stream {
             StreamPart::Finish { finish_reason, .. }
                 if matches!(finish_reason.unified, FinishReasonUnified::Error)
         ));
-    }
-
-    /// Extended-thinking streams: `signature_delta` pieces accumulate on the
-    /// thinking block and are attached to the concluding ReasoningEnd as
-    /// provider_metadata (`{"anthropic": {"signature": ..}}`), matching the
-    /// non-streaming path (#113).
-    #[tokio::test]
-    async fn should_attach_thinking_signature_to_reasoning_end() {
-        let server = MockServer::start().await;
-        let sse_body = sse_stream(&[
-            json!({
-                "type": "message_start",
-                "message": {
-                    "id": "msg_1",
-                    "model": "claude-3-haiku-20240307",
-                    "usage": { "input_tokens": 10 },
-                },
-            }),
-            json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}),
-            json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me think."}}),
-            json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-part-1"}}),
-            json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-part-2"}}),
-            json!({"type":"content_block_stop","index":0}),
-            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}),
-            json!({"type":"message_stop"}),
-        ]);
-        mock_sse(&server, &sse_body).await;
-        let model = make_model(&server);
-        let parts = collect_stream(
-            model
-                .do_stream(&default_options(test_prompt()))
-                .await
-                .unwrap(),
-        )
-        .await;
-
-        assert!(
-            parts.iter().any(|p| matches!(p,
-                StreamPart::ReasoningDelta { delta, .. } if delta == "Let me think.")),
-            "expected the thinking text delta, got {parts:?}"
-        );
-        let meta = parts.iter().find_map(|p| match p {
-            StreamPart::ReasoningEnd {
-                provider_metadata, ..
-            } => provider_metadata.clone(),
-            _ => None,
-        });
-        let meta = meta.expect("ReasoningEnd with provider_metadata");
-        // Incremental signature pieces are concatenated.
-        assert_eq!(
-            meta["anthropic"]["signature"].as_str(),
-            Some("sig-part-1sig-part-2")
-        );
     }
 
     /// Extended-thinking streams: `signature_delta` pieces accumulate on the
