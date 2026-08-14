@@ -1,4 +1,4 @@
-﻿// Panic convert wrappers are #[deprecated]; these tests still use them.
+// Panic convert wrappers are #[deprecated]; these tests still use them.
 #![allow(deprecated)]
 //! Rust port of the remaining `convert-to-anthropic-prompt.test.ts` cases that
 //! exercise features now supported by the Rust data model: mid-conversation
@@ -307,6 +307,78 @@ fn should_omit_reasoning_parts_without_signature_when_send_reasoning_is_false() 
     assert_other_warning(
         &result.warnings,
         "sending reasoning content is disabled for this model",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Extended-thinking input echo (build_request_body_with_warnings wiring)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn thinking_enabled_echoes_reasoning_parts_as_thinking_blocks() {
+    use aimux_core::options::CallOptions;
+    use aimux_providers::anthropic::convert::build_request_body_with_warnings;
+
+    let mut options = CallOptions::new(vec![msg(
+        Role::Assistant,
+        vec![
+            reasoning_part("Let me weigh the options.", Some("sig-echo-1")),
+            text_part("Here is the answer."),
+        ],
+    )]);
+    options.provider_options = Some(
+        [(
+            "anthropic".to_string(),
+            json!({ "thinking": { "type": "enabled", "budgetTokens": 1024 } }),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let result =
+        build_request_body_with_warnings("claude-sonnet-4-20250514", &options, false).unwrap();
+    let blocks = result.body["messages"][0]["content"].as_array().unwrap();
+    let thinking = blocks
+        .iter()
+        .find(|b| b["type"] == "thinking")
+        .expect("reasoning part must be echoed as a thinking block");
+    assert_eq!(thinking["signature"], "sig-echo-1");
+    assert_eq!(thinking["thinking"], "Let me weigh the options.");
+    assert!(
+        !result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, Warning::Other { message } if message.contains("disabled"))),
+        "no 'disabled' warning when thinking is enabled: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn thinking_disabled_omits_reasoning_parts() {
+    use aimux_core::options::CallOptions;
+    use aimux_providers::anthropic::convert::build_request_body_with_warnings;
+
+    let mut options = CallOptions::new(vec![msg(
+        Role::Assistant,
+        vec![
+            reasoning_part("Let me weigh the options.", Some("sig-echo-1")),
+            text_part("Here is the answer."),
+        ],
+    )]);
+    options.provider_options = Some(
+        [(
+            "anthropic".to_string(),
+            json!({ "thinking": { "type": "disabled" } }),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    let result =
+        build_request_body_with_warnings("claude-sonnet-4-20250514", &options, false).unwrap();
+    let blocks = result.body["messages"][0]["content"].as_array().unwrap();
+    assert!(
+        !blocks.iter().any(|b| b["type"] == "thinking"),
+        "thinking block must be omitted when thinking is disabled"
     );
 }
 
