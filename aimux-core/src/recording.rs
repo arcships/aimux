@@ -88,12 +88,15 @@ impl Recording {
         }
     }
 
-    /// completion barrier:outcome 非 Pending && 传输层已封闭 &&
-    /// 全部 exchange 已终结。缺封闭信号时(层 B 未发)不提前写出,
-    /// 防止 outcome 先到时误以为"无 exchange"而早写。
+    /// completion barrier:input ✅ + outcome ✅ + 传输层已封闭 + 全部 exchange
+    /// 已终结。缺封闭信号时(层 B 未发)不提前写出,防止 outcome 先到时误以为
+    /// "无 exchange"而早写;缺 input(事件先于 Input 到达的占位条目,或 Input
+    /// 被 drop-newest 丢弃)同样不得定稿——否则会写出 complete=true 但 input
+    /// 为空占位的失真取证记录(RFC-0023 §3.1 completion barrier)。
     fn ready(&self) -> bool {
         self.transport_closed
             && self.outcome.status != OutcomeStatus::Pending
+            && !self.input.prompt.is_empty()
             && self.exchanges.iter().all(|e| e.finalized)
     }
 }
@@ -281,6 +284,10 @@ pub enum RecordingError {
     /// flush 在 30s 内未收到 writer 回执。
     #[error("recording flush timed out")]
     FlushTimeout,
+    /// writer 写行 / flush 失败(首个错误,粘性)。此前磁盘满等 I/O 失败被
+    /// 静默丢弃且 `try_flush` 仍返回 `Ok`,违反"flush 阻塞至落盘"契约。
+    #[error("recording write failed: {0}")]
+    Write(String),
 }
 
 /// 录制器 trait。
@@ -478,7 +485,11 @@ enum RecordEvent {
     /// 传输层封闭:该调用不再会有 exchange(层 B 发;P1 由层 A 收尾发)。
     TransportClosed { call_id: String },
     /// 刷盘命令;完成后经 ack 回执(SyncSender,容量 0 即 rendezvous)。
-    Flush { ack: SyncSender<()> },
+    /// 回执携带粘性写错误状态:writer 端发生过的 I/O 失败以
+    /// `Err(RecordingError::Write)` 暴露给 `try_flush`。
+    Flush {
+        ack: SyncSender<Result<(), RecordingError>>,
+    },
 }
 
 /// JsonlRecorder 事件通道容量(有界,A4):防止 writer 跟不上时录制热路径
@@ -499,6 +510,9 @@ pub struct JsonlRecorder {
     /// 存于 recorder 侧而非 `Recording` 字段——后者被 `replay.rs` 以全字段
     /// 字面量构造,新增 serde 字段会破坏其它模块编译,故用旁路集合标记。
     inconsistent: Arc<Mutex<HashSet<String>>>,
+    /// writer 的首个写失败(粘性):`try_flush` 据此返回
+    /// [`RecordingError::Write`],磁盘满等 I/O 错误不再静默。
+    write_error: Arc<Mutex<Option<String>>>,
 }
 
 impl JsonlRecorder {
@@ -524,9 +538,11 @@ impl JsonlRecorder {
         let (tx, rx) = sync_channel::<RecordEvent>(JSONL_CHANNEL_CAPACITY);
         let inconsistent = Arc::new(Mutex::new(HashSet::new()));
         let writer_inconsistent = inconsistent.clone();
+        let write_error = Arc::new(Mutex::new(None));
+        let writer_write_error = write_error.clone();
         let handle = std::thread::Builder::new()
             .name("aimux-recording".into())
-            .spawn(move || writer_loop(rx, w, writer_inconsistent))
+            .spawn(move || writer_loop(rx, w, writer_inconsistent, writer_write_error))
             .map_err(|source| RecordingError::Spawn { source })?;
         Ok(Self {
             tx: Some(tx),
@@ -534,6 +550,7 @@ impl JsonlRecorder {
             thread: Some(handle),
             dropped: AtomicU64::new(0),
             inconsistent,
+            write_error,
         })
     }
 
@@ -554,6 +571,7 @@ impl JsonlRecorder {
             thread: None,
             dropped: AtomicU64::new(0),
             inconsistent: Arc::new(Mutex::new(HashSet::new())),
+            write_error: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -576,19 +594,22 @@ impl JsonlRecorder {
         v
     }
 
-    /// 显式 flush(A9/N4):把 writer 退出 / 超时作为 `Result` 返回。阻塞至落盘。
+    /// 显式 flush(A9/N4):把 writer 退出 / 超时 / **写失败** 作为 `Result`
+    /// 返回。阻塞至落盘——writer 端发生过的首个 I/O 错误会让本次(及后续)
+    /// flush 返回 [`RecordingError::Write`],磁盘满不再静默。
     pub fn try_flush(&self) -> Result<(), RecordingError> {
         let Some(tx) = &self.tx else {
             return Err(RecordingError::WriterGone);
         };
-        let (ack_tx, ack_rx) = sync_channel::<()>(0);
+        let (ack_tx, ack_rx) = sync_channel::<Result<(), RecordingError>>(0);
         // Flush 事件必须送达 writer(不可 drop-newest),故用阻塞 send 等待空位;
         // writer 断开时立即返回 Err。30s 回执超时兜底 writer 卡死。
         tx.send(RecordEvent::Flush { ack: ack_tx })
             .map_err(|_| RecordingError::WriterGone)?;
-        ack_rx
-            .recv_timeout(Duration::from_secs(30))
-            .map_err(|_| RecordingError::FlushTimeout)
+        match ack_rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(status) => status,
+            Err(_) => Err(RecordingError::FlushTimeout),
+        }
     }
 
     /// 录制文件路径。
@@ -709,8 +730,9 @@ fn entry_or_init<'a>(
 /// recorder 共享的旁路集合,用于标记 C4-7 检测到的不一致 call_id。
 fn writer_loop(
     rx: Receiver<RecordEvent>,
-    mut w: BufWriter<std::fs::File>,
+    mut w: impl Write,
     inconsistent: Arc<Mutex<HashSet<String>>>,
+    write_error: Arc<Mutex<Option<String>>>,
 ) {
     let mut pending: HashMap<String, Recording> = HashMap::new();
 
@@ -739,7 +761,7 @@ fn writer_loop(
                 let rec = entry_or_init(&mut pending, &call_id);
                 rec.session_id = Some(session_id);
                 rec.step = Some(step);
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             // C4-6:用 entry_or_init(而非 get_mut)兜底建条目,保证乱序
             // (先于 Input 到达)的 Provider 快照不丢。
@@ -752,7 +774,7 @@ fn writer_loop(
                 if insert_exchange(rec, exchange) {
                     mark_inconsistent(&inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::ExchangeUpdate {
                 call_id,
@@ -769,21 +791,28 @@ fn writer_loop(
                 ) {
                     mark_inconsistent(&inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::TransportClosed { call_id } => {
                 entry_or_init(&mut pending, &call_id).transport_closed = true;
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::Outcome { call_id, outcome } => {
                 entry_or_init(&mut pending, &call_id).outcome = outcome;
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::Flush { ack } => {
-                write_ready_all(&mut w, &mut pending);
-                let _ = w.flush();
-                // 阻塞 send:rendezvous 语义,确保 ack 一定被调用方收到。
-                let _ = ack.send(());
+                write_ready_all(&mut w, &mut pending, &write_error);
+                if let Err(e) = w.flush() {
+                    note_write_error(&write_error, &e);
+                }
+                // 阻塞 send:rendezvous 语义,确保 ack 一定被调用方收到;
+                // ack 携带粘性写错误,磁盘满等失败对 try_flush 可见。
+                let status = match write_error.lock().unwrap().as_ref() {
+                    Some(msg) => Err(RecordingError::Write(msg.clone())),
+                    None => Ok(()),
+                };
+                let _ = ack.send(status);
             }
         }
     }
@@ -795,24 +824,35 @@ fn writer_loop(
         if rec.outcome.status == OutcomeStatus::Pending {
             rec.outcome.status = OutcomeStatus::Incomplete;
         }
-        write_line(&mut w, rec);
+        write_line(&mut w, rec, &write_error);
     }
-    let _ = w.flush();
+    if let Err(e) = w.flush() {
+        note_write_error(&write_error, &e);
+    }
 }
 
 /// 若该 call 的所有分片到齐(barrier 满足)则写出,并标记 complete=true。
-fn try_finalize(w: &mut impl Write, pending: &mut HashMap<String, Recording>, call_id: &str) {
+fn try_finalize(
+    w: &mut impl Write,
+    pending: &mut HashMap<String, Recording>,
+    call_id: &str,
+    write_error: &Mutex<Option<String>>,
+) {
     if pending.get(call_id).map(|r| r.ready()).unwrap_or(false)
         && let Some(mut rec) = pending.remove(call_id)
     {
         if !rec.exchanges.is_empty() || rec.transport_closed {
             rec.complete = true;
         }
-        write_line(w, rec);
+        write_line(w, rec, write_error);
     }
 }
 
-fn write_ready_all(w: &mut impl Write, pending: &mut HashMap<String, Recording>) {
+fn write_ready_all(
+    w: &mut impl Write,
+    pending: &mut HashMap<String, Recording>,
+    write_error: &Mutex<Option<String>>,
+) {
     let ids: Vec<String> = pending
         .iter()
         .filter(|(_, r)| r.ready())
@@ -821,15 +861,29 @@ fn write_ready_all(w: &mut impl Write, pending: &mut HashMap<String, Recording>)
     for id in ids {
         if let Some(mut rec) = pending.remove(&id) {
             rec.complete = true;
-            write_line(w, rec);
+            write_line(w, rec, write_error);
         }
     }
 }
 
-fn write_line(w: &mut impl Write, rec: Recording) {
-    if let Ok(line) = serde_json::to_string(&rec) {
-        let _ = writeln!(w, "{line}");
-        let _ = w.flush(); // 每行落盘,保证崩溃前已写行可见。
+fn write_line(w: &mut impl Write, rec: Recording, write_error: &Mutex<Option<String>>) {
+    match serde_json::to_string(&rec) {
+        Ok(line) => {
+            // 每行落盘,保证崩溃前已写行可见;失败记入粘性错误槽,
+            // 由 try_flush 显式暴露。
+            if let Err(e) = writeln!(w, "{line}").and_then(|()| w.flush()) {
+                note_write_error(write_error, &e);
+            }
+        }
+        Err(e) => note_write_error(write_error, &e),
+    }
+}
+
+/// 记录首个写失败(粘性):后续 flush 据此返回 [`RecordingError::Write`]。
+fn note_write_error(slot: &Mutex<Option<String>>, e: &impl std::fmt::Display) {
+    let mut guard = slot.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(e.to_string());
     }
 }
 
@@ -1502,6 +1556,123 @@ mod tests {
         assert!(parsed.exchanges.is_empty()); // 无 exchange 也算 ready(非流式仅层 A)
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── #110:barrier input 条件 + writer I/O 错误可见 ──────────────────────
+
+    #[test]
+    fn barrier_requires_input_record() {
+        // 事件先于 Input 到达(或 Input 被 drop-newest 丢弃)的占位条目:
+        // 即便 outcome + transport_closed 都到齐,也不得定稿。
+        let mut rec = Recording::new(
+            "call-x",
+            InputRecord {
+                prompt: Vec::new(),
+                options: serde_json::Value::Null,
+            },
+            ProviderRecord::minimal("openai", "gpt-4o"),
+        );
+        rec.transport_closed = true;
+        rec.outcome = OutcomeRecord {
+            status: OutcomeStatus::Success,
+            finish_reason: Some("stop".into()),
+            error: None,
+            usage: None,
+        };
+        assert!(!rec.ready(), "empty-prompt placeholder must not finalize");
+        rec.input = InputRecord::from_call_options(&sample_options());
+        assert!(rec.ready(), "real input satisfies the barrier");
+    }
+
+    #[test]
+    fn missing_input_writes_incomplete_on_shutdown() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-noinput-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+
+        // 只来 outcome + transport_closed,Input 事件丢失(模拟 drop-newest)。
+        rec.record_outcome(
+            "call-noinput",
+            &OutcomeRecord {
+                status: OutcomeStatus::Success,
+                finish_reason: Some("stop".into()),
+                error: None,
+                usage: None,
+            },
+        );
+        rec.record_transport_closed("call-noinput");
+        rec.flush();
+        // flush 不应定稿(barrier 缺 input);shutdown 兜底写出 incomplete。
+        drop(rec);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
+        assert!(
+            !parsed.complete,
+            "must not be marked complete without input"
+        );
+        assert!(parsed.input.prompt.is_empty());
+        assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 恒定失败的 sink:模拟磁盘满(ENOSPC)等 writer I/O 错误。
+    struct FailingWriter;
+
+    impl std::io::Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("simulated disk full"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("simulated disk full"))
+        }
+    }
+
+    #[test]
+    fn try_flush_reports_writer_io_error() {
+        let (tx, rx) = sync_channel(16);
+        let write_error = Arc::new(Mutex::new(None));
+        let handle = {
+            let inconsistent = Arc::new(Mutex::new(HashSet::new()));
+            let w_err = write_error.clone();
+            std::thread::spawn(move || writer_loop(rx, FailingWriter, inconsistent, w_err))
+        };
+
+        tx.send(RecordEvent::Input {
+            call_id: "c1".into(),
+            input: InputRecord::from_call_options(&sample_options()),
+            provider: ProviderRecord::minimal("openai", "gpt-4o"),
+        })
+        .unwrap();
+        tx.send(RecordEvent::TransportClosed {
+            call_id: "c1".into(),
+        })
+        .unwrap();
+        tx.send(RecordEvent::Outcome {
+            call_id: "c1".into(),
+            outcome: OutcomeRecord {
+                status: OutcomeStatus::Success,
+                finish_reason: Some("stop".into()),
+                error: None,
+                usage: None,
+            },
+        })
+        .unwrap();
+
+        let (ack_tx, ack_rx) = sync_channel(0);
+        tx.send(RecordEvent::Flush { ack: ack_tx }).unwrap();
+        let status = ack_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("flush ack within timeout");
+        assert!(
+            matches!(&status, Err(RecordingError::Write(m)) if m.contains("disk full")),
+            "expected Err(Write) carrying the io error, got {status:?}"
+        );
+
+        drop(tx);
+        handle.join().unwrap();
+        // 粘性:错误状态在 writer 侧保留,后续 flush 继续报错。
+        assert!(write_error.lock().unwrap().is_some());
     }
 
     // ── RFC-0024 P3: session 归组信息进 Recording ─────────────────────────
