@@ -8,6 +8,7 @@ members = [
     "scripts/fix_tool",
     "tools/aimux-cli",
     "tools/aimux-replay",
+    "tools/aimux-web",
 ]
 resolver = "2"
 
@@ -92,6 +93,11 @@ rand = "0.8"
 
 # Serial test execution (for env-var-mutating tests)
 serial_test = "3"
+
+# Web console server (RFC-0029)
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
 
 # TypeScript type generation (auto-generate .d.ts from Rust types)
 ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
