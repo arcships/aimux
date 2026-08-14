@@ -213,6 +213,7 @@ fn convert_tool_parts(content: &[ContentPart]) -> Vec<Value> {
     for part in content {
         if let ContentPart::ToolResult {
             tool_call_id,
+            tool_name,
             result,
             ..
         } = part
@@ -225,12 +226,16 @@ fn convert_tool_parts(content: &[ContentPart]) -> Vec<Value> {
             if !tool_call_id.is_empty() {
                 function_response.insert("id".to_string(), json!(tool_call_id));
             }
-            // `name` is required by the API; the TS SDK uses the tool name
-            // from the part. We don't have it on `ToolResult`, so we fall
-            // back to the call id. This is sufficient for round-tripping
-            // with our own test fixtures; production callers that need the
-            // real tool name should use `ContentPart::ToolCall` first.
-            let name = tool_call_id.clone();
+            // `name` is required by the API and must be the name of the tool
+            // that was called (Gemini pairs functionResponse with the prior
+            // functionCall by name; an empty or mismatched name is rejected
+            // with HTTP 400 on multi-turn tool calls). Prefer the framework
+            // provided `tool_name`, falling back to the call id for callers
+            // that never set one.
+            let name = tool_name
+                .clone()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| tool_call_id.clone());
             function_response.insert("name".to_string(), json!(name));
             function_response.insert(
                 "response".to_string(),

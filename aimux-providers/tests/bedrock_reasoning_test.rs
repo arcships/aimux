@@ -732,9 +732,25 @@ async fn bedrock_stream_reasoning_and_text() {
         ]
     );
     assert!(has_reasoning_end(&parts), "expected a ReasoningEnd");
-    // NOTE: the signature carried on the final (empty) reasoning delta in TS is
-    // not representable on `StreamPart::ReasoningDelta` (no provider_metadata),
-    // so it is intentionally not asserted.
+    // The signature on the final (text-less) reasoning delta is attached to
+    // the concluding ReasoningEnd via provider_metadata, so extended-thinking
+    // multi-turn can echo it back (#113).
+    let reasoning_end_meta = parts.iter().find_map(|p| match p {
+        StreamPart::ReasoningEnd {
+            provider_metadata, ..
+        } => provider_metadata.clone(),
+        _ => None,
+    });
+    let reasoning_end_meta = reasoning_end_meta.expect("ReasoningEnd with provider_metadata");
+    assert_eq!(
+        reasoning_end_meta["bedrock"]["signature"].as_str(),
+        Some(STREAM_SIGNATURE)
+    );
+    // Dual-key shape matches the non-streaming path.
+    assert_eq!(
+        reasoning_end_meta["amazonBedrock"]["signature"].as_str(),
+        Some(STREAM_SIGNATURE)
+    );
 
     // Text block (id "1").
     assert_eq!(
