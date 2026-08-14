@@ -21,11 +21,9 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
-bytes = { workspace = true }
 async-stream = { workspace = true }
 base64 = "0.22"
 sha2 = "0.10"
@@ -34,7 +32,6 @@ hex = "0.4"
 chrono = "0.4"
 url = { workspace = true }
 percent-encoding = "2"
-dirs = { workspace = true }
 
 [features]
 default = ["realtime"]
