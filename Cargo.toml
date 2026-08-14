@@ -53,7 +53,6 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 
 # Streaming
-tokio-stream = "0.1"
 bytes = "1"
 async-stream = "0.3"
 
@@ -63,8 +62,6 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 # URL
 url = "2"
 
-# Cache directories (RFC-0027 catalogue cache)
-dirs = "5"
 
 # Logging
 tracing = "0.1"
