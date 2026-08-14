@@ -16,7 +16,6 @@ path = "src/main.rs"
 aimux-core = { workspace = true }
 aimux-providers = { workspace = true }
 clap = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }

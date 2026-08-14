@@ -70,7 +70,6 @@ pub(crate) struct MatchInfo {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LcpResult {
     pub lcp_bytes: u64,
-    #[allow(dead_code)]
     pub matched_blocks: u32,
     pub matched: Option<MatchInfo>,
     /// Block-0 had a candidate that failed the TTL check (timing violation)
