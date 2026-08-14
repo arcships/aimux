@@ -224,6 +224,8 @@ enum BlockState {
     },
     Thinking {
         started: bool,
+        /// Accumulated `signature_delta` pieces for the thinking block.
+        signature: Option<String>,
     },
 }
 
@@ -297,7 +299,13 @@ pub(crate) async fn anthropic_stream_core(
                                     blocks.insert(index, BlockState::Text { started: false });
                                 }
                                 ContentBlock::Thinking { .. } => {
-                                    blocks.insert(index, BlockState::Thinking { started: false });
+                                    blocks.insert(
+                                        index,
+                                        BlockState::Thinking {
+                                            started: false,
+                                            signature: None,
+                                        },
+                                    );
                                 }
                                 ContentBlock::ToolUse { id, name, .. } => {
                                     yield Ok(StreamPart::ToolInputStart {
@@ -380,8 +388,8 @@ pub(crate) async fn anthropic_stream_core(
                                 // thinking delta. The id is the stringified
                                 // content-block index, matching the TS SDK.
                                 let start_id: Option<String> = match blocks.get_mut(&index) {
-                                    Some(BlockState::Thinking { started: false }) => {
-                                        if let Some(BlockState::Thinking { started }) =
+                                    Some(BlockState::Thinking { started: false, .. }) => {
+                                        if let Some(BlockState::Thinking { started, .. }) =
                                             blocks.get_mut(&index)
                                         {
                                             *started = true;
@@ -402,6 +410,26 @@ pub(crate) async fn anthropic_stream_core(
                                     provider_metadata: None,
                                 });
                             }
+                            if let Some(sig) = delta.signature {
+                                // `signature_delta`: incremental pieces of the
+                                // thinking-block signature. Accumulated on the
+                                // block state and attached to ReasoningEnd, so
+                                // the aggregated Reasoning part can echo it
+                                // back on extended-thinking multi-turn — same
+                                // shape as the non-streaming path.
+                                //
+                                // Edge: a thinking block carrying only a
+                                // signature (no text deltas) stays
+                                // `started: false` and emits nothing — the
+                                // protocol always sends text first, and the
+                                // core aggregator gates on non-empty text
+                                // anyway, so there is nothing to attach to.
+                                if let Some(BlockState::Thinking { signature, .. }) =
+                                    blocks.get_mut(&index)
+                                {
+                                    signature.get_or_insert_with(String::new).push_str(&sig);
+                                }
+                            }
                         }
                         Ok(StreamEvent::ContentBlockStop { index }) => {
                             // Removing the block releases the borrow before any
@@ -417,13 +445,18 @@ pub(crate) async fn anthropic_stream_core(
                                     BlockState::Text { started: false } => {
                                         // Text block with no deltas — nothing to emit.
                                     }
-                                    BlockState::Thinking { started: true } => {
+                                    BlockState::Thinking {
+                                        started: true,
+                                        signature,
+                                    } => {
                                         yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
-                                            provider_metadata: None,
+                                            provider_metadata: signature.map(|s| {
+                                                json!({ "anthropic": { "signature": s } })
+                                            }),
                                         });
                                     }
-                                    BlockState::Thinking { started: false } => {
+                                    BlockState::Thinking { started: false, .. } => {
                                         // Thinking block with no deltas — nothing to emit.
                                     }
                                     BlockState::ToolUse {
