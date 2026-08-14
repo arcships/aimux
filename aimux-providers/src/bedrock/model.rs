@@ -525,16 +525,6 @@ impl LanguageModel for BedrockModel {
     }
 }
 
-/// Extract `GenerateContent` items from a non-streaming content block.
-///
-/// Bedrock content blocks are field-tagged: each block carries exactly one of
-/// `text`, `toolUse`, or `reasoningContent`. Empty `text` blocks are preserved
-/// (matching the TS SDK) so that empty text between reasoning blocks survives.
-/// `reasoningContent.reasoningText` yields a `Reasoning` item whose
-/// `provider_metadata` carries the `signature` under both `amazonBedrock` and
-/// `bedrock` keys (or `None` when no signature is present).
-/// `reasoningContent.redactedReasoning` yields a `Reasoning` item with empty
-/// text and `redactedData` under both metadata keys.
 /// Wrap the accumulated reasoning signature as provider_metadata in the same
 /// dual-key shape the non-streaming path emits (`amazonBedrock` + `bedrock`),
 /// so consumers reading either key see it.
@@ -547,6 +537,16 @@ fn reasoning_signature_meta(sig: Option<String>) -> Option<serde_json::Value> {
     })
 }
 
+/// Extract `GenerateContent` items from a non-streaming content block.
+///
+/// Bedrock content blocks are field-tagged: each block carries exactly one of
+/// `text`, `toolUse`, or `reasoningContent`. Empty `text` blocks are preserved
+/// (matching the TS SDK) so that empty text between reasoning blocks survives.
+/// `reasoningContent.reasoningText` yields a `Reasoning` item whose
+/// `provider_metadata` carries the `signature` under both `amazonBedrock` and
+/// `bedrock` keys (or `None` when no signature is present).
+/// `reasoningContent.redactedReasoning` yields a `Reasoning` item with empty
+/// text and `redactedData` under both metadata keys.
 fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateContent>) {
     if let Some(text) = &block.text {
         content.push(GenerateContent::Text {
