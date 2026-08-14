@@ -1477,7 +1477,8 @@ mod do_stream {
         .await;
 
         // The stream must contain a StreamPart::Error carrying the provider
-        // message, and must NOT emit a Finish after it.
+        // message, followed by an error-finish (Finish is the final-chunk
+        // contract, matching openai/google — see #112).
         let error_idx = parts
             .iter()
             .position(|p| matches!(p, StreamPart::Error { .. }));
@@ -1489,7 +1490,12 @@ mod do_stream {
             }
             _ => unreachable!(),
         }
-        // Nothing after the Error.
-        assert_eq!(parts.len(), error_idx + 1);
+        // Error is followed by exactly one Finish with unified=Error.
+        assert_eq!(parts.len(), error_idx + 2);
+        assert!(matches!(
+            &parts[error_idx + 1],
+            StreamPart::Finish { finish_reason, .. }
+                if matches!(finish_reason.unified, FinishReasonUnified::Error)
+        ));
     }
 }

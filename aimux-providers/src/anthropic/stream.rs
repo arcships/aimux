@@ -270,6 +270,7 @@ pub(crate) async fn anthropic_stream_core(
         let mut final_usage = Usage::default();
         let mut final_finish_reason: Option<FinishReason> = None;
         let mut response_meta_emitted = false;
+        let mut stream_errored = false;
 
         while let Some(event) = sse.next().await {
             match event {
@@ -491,7 +492,12 @@ pub(crate) async fn anthropic_stream_core(
                                     ..Default::default()
                                 }),
                             });
-                            return;
+                            // Finish is the final-chunk contract: it must
+                            // still terminate the stream after an in-stream
+                            // error (openai and google do the same), so
+                            // downstream aggregators see a well-formed end.
+                            stream_errored = true;
+                            break;
                         }
                         Ok(_) | Err(_) => {}
                     }
@@ -500,18 +506,30 @@ pub(crate) async fn anthropic_stream_core(
                     yield Ok(StreamPart::Error {
                         error: AiMuxError::InvalidResponseData(e.to_string()),
                     });
-                    return;
+                    stream_errored = true;
+                    break;
                 }
             }
         }
 
         // Final part: Finish.
         yield Ok(StreamPart::Finish {
-            finish_reason: final_finish_reason.unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Stop,
-                raw: None,
-            }),
-            usage: final_usage,
+            finish_reason: if stream_errored {
+                FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                }
+            } else {
+                final_finish_reason.unwrap_or(FinishReason {
+                    unified: FinishReasonUnified::Stop,
+                    raw: None,
+                })
+            },
+            usage: if stream_errored {
+                Usage::default()
+            } else {
+                final_usage
+            },
             provider_metadata: None,
         });
     };
