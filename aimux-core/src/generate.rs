@@ -300,6 +300,15 @@ impl StreamTextResult {
                             provider_options: provider_metadata,
                         });
                         reasoning_text_buf.clear();
+                    } else if provider_metadata.is_some() {
+                        // No visible summary text, but the part carries
+                        // provider data (e.g. OpenAI encrypted reasoning with
+                        // store=false) that must round-trip on the next turn.
+                        response_content_parts.push(ContentPart::Reasoning {
+                            text: String::new(),
+                            signature: None,
+                            provider_options: provider_metadata,
+                        });
                     }
                 }
                 StreamPart::ToolCall {

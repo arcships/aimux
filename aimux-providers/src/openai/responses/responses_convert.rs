@@ -338,6 +338,23 @@ enum SummaryStatus {
     Concluded,
 }
 
+/// Provider metadata for streamed reasoning parts, in the same shape the
+/// non-streaming path uses (`{ <provider_key>: { itemId,
+/// reasoningEncryptedContent? } }`) so `consume()` can propagate it into
+/// `response_messages` and the next turn's request conversion can read it
+/// back (`item_reference` when stored, `encrypted_content` when not).
+fn reasoning_stream_metadata(
+    provider_key: &str,
+    item_id: &str,
+    encrypted_content: Option<&str>,
+) -> Value {
+    let mut inner = json!({ "itemId": item_id });
+    if let Some(enc) = encrypted_content {
+        inner["reasoningEncryptedContent"] = json!(enc);
+    }
+    json!({ (provider_key): inner })
+}
+
 /// Generate a unique source ID for streaming annotation sources.
 ///
 /// Uses a process-wide atomic counter — consistent with the xAI Responses
@@ -572,6 +589,15 @@ where
                                             .get("encrypted_content")
                                             .and_then(|v| v.as_str())
                                             .map(std::string::ToString::to_string);
+                                        // Carry itemId + encrypted_content in
+                                        // provider_metadata (same shape as the
+                                        // non-streaming path) so reasoning can
+                                        // be echoed back on the next turn.
+                                        let meta = reasoning_stream_metadata(
+                                            &provider_key,
+                                            &id,
+                                            encrypted.as_deref(),
+                                        );
                                         active_reasoning.insert(
                                             id.clone(),
                                             ReasoningState {
@@ -584,7 +610,7 @@ where
                                         );
                                         yield Ok(StreamPart::ReasoningStart {
                                             id: format!("{id}:0"),
-                                            provider_metadata: None,
+                                            provider_metadata: Some(meta),
                                         });
                                     }
                                     _ => {}
@@ -643,6 +669,11 @@ where
                             if summary_index > 0
                                 && let Some(state) = active_reasoning.get_mut(&item_id)
                             {
+                                let meta = reasoning_stream_metadata(
+                                    &provider_key,
+                                    &item_id,
+                                    state.encrypted_content.as_deref(),
+                                );
                                 // Conclude all 'can-conclude' parts.
                                 let to_conclude: Vec<usize> = state
                                     .summary_parts
@@ -654,18 +685,16 @@ where
                                     state.summary_parts.insert(idx, SummaryStatus::Concluded);
                                     yield Ok(StreamPart::ReasoningEnd {
                                         id: format!("{item_id}:{idx}"),
-                                        provider_metadata: None,
+                                        provider_metadata: Some(meta.clone()),
                                     });
                                 }
                                 state
                                     .summary_parts
                                     .insert(summary_index, SummaryStatus::Active);
-                                let encrypted = state.encrypted_content.clone();
                                 yield Ok(StreamPart::ReasoningStart {
                                     id: format!("{item_id}:{summary_index}"),
-                                    provider_metadata: None,
+                                    provider_metadata: Some(meta),
                                 });
-                                let _ = encrypted;
                             }
                         }
 
@@ -710,7 +739,11 @@ where
                                         .insert(summary_index, SummaryStatus::Concluded);
                                     yield Ok(StreamPart::ReasoningEnd {
                                         id: format!("{item_id}:{summary_index}"),
-                                        provider_metadata: None,
+                                        provider_metadata: Some(reasoning_stream_metadata(
+                                            &provider_key,
+                                            &item_id,
+                                            state.encrypted_content.as_deref(),
+                                        )),
                                     });
                                 } else {
                                     state
@@ -818,6 +851,11 @@ where
                                             .unwrap_or("")
                                             .to_string();
                                         if let Some(state) = active_reasoning.get_mut(&id) {
+                                            let meta = reasoning_stream_metadata(
+                                                &provider_key,
+                                                &id,
+                                                state.encrypted_content.as_deref(),
+                                            );
                                             // Conclude all active / can-conclude parts.
                                             let to_conclude: Vec<usize> = state
                                                 .summary_parts
@@ -834,7 +872,7 @@ where
                                                     .insert(idx, SummaryStatus::Concluded);
                                                 yield Ok(StreamPart::ReasoningEnd {
                                                     id: format!("{id}:{idx}"),
-                                                    provider_metadata: None,
+                                                    provider_metadata: Some(meta.clone()),
                                                 });
                                             }
                                         }
