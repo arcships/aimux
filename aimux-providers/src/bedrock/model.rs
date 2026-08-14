@@ -447,9 +447,8 @@ impl LanguageModel for BedrockModel {
                         } else if reasoning_id.is_some() {
                             let id = idx.to_string();
                             if reasoning_id.as_deref() == Some(id.as_str()) {
-                                let provider_metadata = reasoning_signature
-                                    .take()
-                                    .map(|s| json!({ "bedrock": { "signature": s } }));
+                                let provider_metadata =
+                                    reasoning_signature_meta(reasoning_signature.take());
                                 yield Ok(StreamPart::ReasoningEnd {
                                     id,
                                     provider_metadata,
@@ -473,9 +472,8 @@ impl LanguageModel for BedrockModel {
                                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                             }
                             if let Some(id) = reasoning_id.take() {
-                                let provider_metadata = reasoning_signature
-                                    .take()
-                                    .map(|s| json!({ "bedrock": { "signature": s } }));
+                                let provider_metadata =
+                                    reasoning_signature_meta(reasoning_signature.take());
                                 yield Ok(StreamPart::ReasoningEnd {
                                     id,
                                     provider_metadata,
@@ -499,10 +497,13 @@ impl LanguageModel for BedrockModel {
             if let Some(id) = text_id.take() {
                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
-            // Close any remaining reasoning block.
+            // Close any remaining reasoning block (truncated stream without
+            // contentBlockStop): still attach the accumulated signature.
             if let Some(id) = reasoning_id.take() {
+                let provider_metadata =
+                    reasoning_signature_meta(reasoning_signature.take());
                 yield Ok(StreamPart::ReasoningEnd { id,
-                provider_metadata: None,
+                provider_metadata,
             });
             }
 
@@ -534,6 +535,18 @@ impl LanguageModel for BedrockModel {
 /// `bedrock` keys (or `None` when no signature is present).
 /// `reasoningContent.redactedReasoning` yields a `Reasoning` item with empty
 /// text and `redactedData` under both metadata keys.
+/// Wrap the accumulated reasoning signature as provider_metadata in the same
+/// dual-key shape the non-streaming path emits (`amazonBedrock` + `bedrock`),
+/// so consumers reading either key see it.
+fn reasoning_signature_meta(sig: Option<String>) -> Option<serde_json::Value> {
+    sig.map(|s| {
+        json!({
+            "amazonBedrock": { "signature": &s },
+            "bedrock": { "signature": s }
+        })
+    })
+}
+
 fn extract_content(block: &BedrockContentBlock, content: &mut Vec<GenerateContent>) {
     if let Some(text) = &block.text {
         content.push(GenerateContent::Text {

@@ -417,6 +417,13 @@ pub(crate) async fn anthropic_stream_core(
                                 // the aggregated Reasoning part can echo it
                                 // back on extended-thinking multi-turn — same
                                 // shape as the non-streaming path.
+                                //
+                                // Edge: a thinking block carrying only a
+                                // signature (no text deltas) stays
+                                // `started: false` and emits nothing — the
+                                // protocol always sends text first, and the
+                                // core aggregator gates on non-empty text
+                                // anyway, so there is nothing to attach to.
                                 if let Some(BlockState::Thinking { signature, .. }) =
                                     blocks.get_mut(&index)
                                 {

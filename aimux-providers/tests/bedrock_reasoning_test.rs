@@ -746,6 +746,11 @@ async fn bedrock_stream_reasoning_and_text() {
         reasoning_end_meta["bedrock"]["signature"].as_str(),
         Some(STREAM_SIGNATURE)
     );
+    // Dual-key shape matches the non-streaming path.
+    assert_eq!(
+        reasoning_end_meta["amazonBedrock"]["signature"].as_str(),
+        Some(STREAM_SIGNATURE)
+    );
 
     // Text block (id "1").
     assert_eq!(
