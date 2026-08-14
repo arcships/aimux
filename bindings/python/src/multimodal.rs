@@ -23,7 +23,8 @@ use aimux_core::search_model::{SearchCallOptions, SearchModel as SearchModelTrai
 use aimux_core::shared::FileBytes;
 use aimux_core::speech_model::{SpeechCallOptions, SpeechModel as SpeechModelTrait};
 use aimux_core::transcription_model::{
-    AudioInput, TranscriptionCallOptions, TranscriptionModel as TranscriptionModelTrait,
+    AudioChunk, AudioInput, TranscriptionCallOptions,
+    TranscriptionModel as TranscriptionModelTrait,
 };
 use aimux_core::video_model::{VideoCallOptions, VideoModel as VideoModelTrait};
 use pyo3::prelude::*;
@@ -540,4 +541,246 @@ pub fn tavily_search(api_key: &str, base_url: Option<&str>) -> PyResult<SearchMo
     Ok(SearchModel {
         inner: Arc::new(model),
     })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TranscriptionSession (RFC-0028 streaming, native path)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A live streaming-transcription session (RFC-0028). Push audio chunks with
+/// `push_audio`, mark end-of-audio with `input_done`, then pull transcription
+/// parts with `next_part`. Mirrors the C-ABI session shape, built natively on
+/// core channels.
+#[pyclass]
+pub struct TranscriptionSession {
+    audio_tx: std::sync::Mutex<Option<futures::channel::mpsc::Sender<AudioChunk>>>,
+    parts_rx: tokio::sync::Mutex<
+        tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxError>>,
+    >,
+    token: aimux_core::shared::AbortSignal,
+}
+
+/// Start a streaming transcription session. `opts_json` (optional):
+/// `{ "input_audio_format": {"format_type","rate"}, "provider_options",
+/// "headers", "include_raw_chunks" }`. Returned parts are JSON-serialized
+/// `TranscriptionStreamPart`s.
+#[pyfunction]
+#[pyo3(signature = (model, opts_json=None))]
+pub fn start_transcription_session(
+    model: &TranscriptionModel,
+    opts_json: Option<&str>,
+) -> PyResult<TranscriptionSession> {
+    #[derive(serde::Deserialize, Default)]
+    struct SessionOpts {
+        input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
+        provider_options: Option<std::collections::HashMap<String, serde_json::Value>>,
+        headers: Option<std::collections::HashMap<String, String>>,
+        include_raw_chunks: Option<bool>,
+        timeout: Option<aimux_core::options::TimeoutConfiguration>,
+    }
+    let opts: SessionOpts = match opts_json {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            serde_json::from_str(s).map_err(|e| {
+                to_py_err(&AiMuxError::InvalidArgument(format!(
+                    "invalid opts_json: {e}"
+                )))
+            })?
+        }
+        _ => SessionOpts::default(),
+    };
+
+    let token = aimux_core::shared::AbortSignal::new();
+    let effective = aimux_core::shared::AbortSignal::new();
+    {
+        let linked = effective.clone();
+        let source = token.clone();
+        crate::runtime().spawn(async move {
+            source.cancelled().await;
+            linked.abort();
+        });
+    }
+
+    let (audio_tx, audio_rx) = futures::channel::mpsc::channel::<AudioChunk>(64);
+    let (tx, rx) =
+        tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxError>>(256);
+
+    let model = model.inner.clone();
+    crate::runtime().spawn(async move {
+        let options = aimux_core::transcription_model::TranscriptionStreamOptions {
+            audio: Box::pin(audio_rx),
+            input_audio_format: opts
+                .input_audio_format
+                .unwrap_or(aimux_core::transcription_model::InputAudioFormat {
+                    format_type: "audio/pcm".to_string(),
+                    rate: None,
+                }),
+            provider_options: opts.provider_options,
+            abort_signal: Some(effective.clone()),
+            headers: opts.headers,
+            include_raw_chunks: opts.include_raw_chunks.unwrap_or(false),
+            timeout: opts.timeout,
+        };
+        let result = model.do_stream(options).await;
+        match result {
+            Ok(stream_result) => {
+                use futures::StreamExt;
+                let mut stream = stream_result.stream;
+                // Immediate delivery when capacity allows (terminal errors are
+                // never preempted); abort only unblocks a full channel.
+                while let Some(part) = stream.next().await {
+                    let json = match serde_json::to_string(&part) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(AiMuxError::JsonParse(format!(
+                                    "serialize part: {e}"
+                                ))))
+                                .await;
+                            return;
+                        }
+                    };
+                    loop {
+                        match tx.try_send(Ok(json.clone())) {
+                            Ok(()) => break,
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                tokio::select! {
+                                    _ = effective.cancelled() => return,
+                                    res = tx.send(Ok(json.clone())) => {
+                                        if res.is_err() { return; }
+                                        break;
+                                    }
+                                }
+                            }
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                // Connect failure: deliver as the first channel item
+                // (try_send + abort-select; mirrors the FFI driver).
+                loop {
+                    match tx.try_send(Err(e.clone())) {
+                        Ok(()) => break,
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            tokio::select! {
+                                _ = effective.cancelled() => return,
+                                res = tx.send(Err(e.clone())) => {
+                                    if res.is_err() { return; }
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(TranscriptionSession {
+        audio_tx: std::sync::Mutex::new(Some(audio_tx)),
+        parts_rx: tokio::sync::Mutex::new(rx),
+        token,
+    })
+}
+
+#[pymethods]
+impl TranscriptionSession {
+    /// Push one binary audio chunk. Blocks while the internal channel is
+    /// full (backpressure).
+    #[pyo3(signature = (data,))]
+    pub fn push_audio(&self, py: pyo3::Python<'_>, data: &[u8]) -> PyResult<()> {
+        use futures::SinkExt;
+        // Clone the sender and drop the guard BEFORE blocking: the mutex is
+        // shared with the sync input_done()/close(), and blocking with the
+        // guard held (or with the GIL held) would freeze other Python
+        // threads — including one calling close() to abort.
+        let mut tx = {
+            let guard = self
+                .audio_tx
+                .lock()
+                .map_err(|_| to_py_err(&AiMuxError::Other("session poisoned".into())))?;
+            match guard.as_ref() {
+                None => {
+                    return Err(to_py_err(&AiMuxError::Other(
+                        "audio input already finished".into(),
+                    )));
+                }
+                Some(tx) => tx.clone(),
+            }
+        };
+        let chunk = AudioChunk::Binary(data.to_vec());
+        py.allow_threads(|| {
+            crate::runtime().block_on(async move { tx.send(chunk).await })
+        })
+        .map_err(|_| to_py_err(&AiMuxError::Other("session ended".into())))
+    }
+
+    /// Signal end-of-audio (idempotent).
+    pub fn input_done(&self) -> PyResult<()> {
+        self.audio_tx
+            .lock()
+            .map_err(|_| to_py_err(&AiMuxError::Other("session poisoned".into())))?
+            .take();
+        Ok(())
+    }
+
+    /// Pull the next transcription part (JSON string). Returns None when the
+    /// stream ended normally. Raises on error — including APITimeoutError
+    /// (an AimuxError subclass) when no part arrives within `timeout_ms`
+    /// (the session stays live, call again). `timeout_ms`: >0 wait at most;
+    /// 0 immediate poll; negative = wait indefinitely.
+    #[pyo3(signature = (timeout_ms=-1))]
+    pub fn next_part(
+        &self,
+        py: pyo3::Python<'_>,
+        timeout_ms: i64,
+    ) -> PyResult<Option<String>> {
+        let timeout = if timeout_ms >= 0 {
+            Some(std::time::Duration::from_millis(timeout_ms as u64))
+        } else {
+            None
+        };
+        enum Outcome {
+            Part(Option<std::result::Result<String, AiMuxError>>),
+            TimedOut,
+        }
+        let outcome = py.allow_threads(|| {
+            crate::runtime().block_on(async {
+                let mut rx = self.parts_rx.lock().await;
+                let recv = rx.recv();
+                match timeout {
+                    Some(d) => match tokio::time::timeout(d, recv).await {
+                        Ok(p) => Outcome::Part(p),
+                        Err(_) => Outcome::TimedOut,
+                    },
+                    None => Outcome::Part(recv.await),
+                }
+            })
+        });
+        let part = match outcome {
+            Outcome::Part(p) => p,
+            Outcome::TimedOut => {
+                return Err(to_py_err(&AiMuxError::Timeout(
+                    "no transcription part within timeout".into(),
+                )));
+            }
+        };
+        match part {
+            Some(Ok(json)) => Ok(Some(json)),
+            Some(Err(e)) => Err(to_py_err(&e)),
+            None => Ok(None), // ended normally
+        }
+    }
+
+    /// Terminate the session (aborts the driver). Further push/next fail.
+    pub fn close(&self) {
+        if let Ok(mut guard) = self.audio_tx.lock() {
+            guard.take();
+        }
+        self.token.abort();
+    }
 }

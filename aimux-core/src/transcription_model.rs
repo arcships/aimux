@@ -174,6 +174,12 @@ pub struct TranscriptionStreamOptions {
     /// When `true`, providers should include raw provider chunks in the
     /// stream.
     pub include_raw_chunks: bool,
+
+    /// Timeout configuration (RFC-0028): `first_chunk_ms` bounds connect +
+    /// session establishment, `chunk_ms` the gap between events, `total_ms`
+    /// the whole stream. `None` = no timeouts (waits are unbounded apart from
+    /// abort).
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
 }
 
 impl std::fmt::Debug for TranscriptionStreamOptions {
@@ -184,6 +190,7 @@ impl std::fmt::Debug for TranscriptionStreamOptions {
             .field("abort_signal", &self.abort_signal)
             .field("headers", &self.headers)
             .field("include_raw_chunks", &self.include_raw_chunks)
+            .field("timeout", &self.timeout)
             .field("audio", &"<stream>")
             .finish()
     }

@@ -214,6 +214,108 @@ class TranscriptionModel private constructor(handle: Long) : Closeable {
      */
     fun generate(audioBase64: String, mediaType: String, optsJson: String? = null): String =
         withCErrorString { err -> FFI.lib.aimux_transcription_generate(requireHandle(), audioBase64, mediaType, optsJson, err) }
+
+    /**
+     * Start a streaming transcription session (RFC-0028) on this model.
+     * Requires a model that supports streaming (realtime models).
+     *
+     * @param optsJson    optional session options JSON (`input_audio_format` /
+     *                    `provider_options` / `headers` / `include_raw_chunks`).
+     * @param abortHandle abort handle (from `Model.abortSignalNew()`), or 0.
+     * @return a new live session.
+     */
+    fun startStream(optsJson: String? = null, abortHandle: Long = 0L): TranscriptionSession {
+        val h = requireHandle()
+        return TranscriptionSession(
+            withCErrorHandle { err ->
+                FFI.lib.aimux_transcription_session_new(h, abortHandle, optsJson, err)
+            }
+        )
+    }
+}
+
+/**
+ * A live streaming-transcription session (RFC-0028): push audio chunks with
+ * [pushAudio], mark end-of-audio with [inputDone], then pull transcription
+ * parts (JSON `TranscriptionStreamPart`) with [nextPart]. [close] releases
+ * the session (aborts the driver; idempotent).
+ */
+// Internal constructor: sessions are created via TranscriptionModel.startStream.
+class TranscriptionSession internal constructor(handle: Long) : Closeable {
+    private val handle = AtomicLong(handle)
+
+    override fun close() {
+        val h = handle.getAndSet(0L)
+        if (h != 0L) {
+            FFI.lib.aimux_transcription_session_drop(h)
+        }
+    }
+
+    private fun requireHandle(): Long = handle.get().also {
+        check(it != 0L) { "TranscriptionSession is closed" }
+    }
+
+    protected fun finalize() {
+        close()
+    }
+
+    /**
+     * Push one binary audio chunk. **Blocks** while the internal channel is
+     * full (backpressure propagation).
+     */
+    fun pushAudio(audio: ByteArray) {
+        val h = requireHandle()
+        val err = AimuxCError()
+        val rc = FFI.lib.aimux_transcription_push_audio(h, audio, audio.size.toLong(), err)
+        if (rc == 0) throwFromC(err)
+    }
+
+    /** Signal end-of-audio (idempotent). */
+    fun inputDone() {
+        val h = requireHandle()
+        val err = AimuxCError()
+        val rc = FFI.lib.aimux_transcription_input_done(h, err)
+        if (rc == 0) throwFromC(err)
+    }
+
+    /**
+     * Pull the next transcription part (JSON string).
+     *
+     * @param timeoutMs wait bound: >0 wait at most; 0 immediate poll; <0 wait
+     *                  indefinitely.
+     * @return the part JSON.
+     * @throws AimuxTranscriptionEndedException   the stream finished normally.
+     * @throws AimuxTranscriptionTimeoutException no part in time (retryable).
+     * @throws AimuxException                     the stream failed.
+     */
+    fun nextPart(timeoutMs: Long): String {
+        val h = requireHandle()
+        val err = AimuxCError()
+        val ptr = FFI.lib.aimux_transcription_next_part(h, timeoutMs, err)
+        if (ptr != null) {
+            val s = ptr.getString(0, "UTF-8")
+            FFI.lib.aimux_free_string(ptr)
+            return s
+        }
+        if (err.code == AIMUX_E_TIMEOUT) {
+            // throwFromC consumes (frees) the message strings, then we swap
+            // in the retryable sentinel.
+            throwFromC(err)
+            throw AimuxTranscriptionTimeoutException()
+        }
+        if (err.code == AIMUX_OK) {
+            throw AimuxTranscriptionEndedException()
+        }
+        throwFromC(err)
+    }
+
+    /** The transcription stream ended normally. */
+    class AimuxTranscriptionEndedException :
+        RuntimeException("transcription stream ended")
+
+    /** No transcription part arrived within the timeout (retryable). */
+    class AimuxTranscriptionTimeoutException :
+        RuntimeException("transcription part timeout")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

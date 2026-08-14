@@ -989,6 +989,10 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(recording_flush, m)?)?;
     m.add_function(wrap_pyfunction!(mock_replay, m)?)?;
     m.add_function(wrap_pyfunction!(router, m)?)?;
+    {
+        use crate::multimodal::start_transcription_session;
+        m.add_function(wrap_pyfunction!(start_transcription_session, m)?)?;
+    }
     m.add_function(wrap_pyfunction!(moa, m)?)?;
     m.add_function(wrap_pyfunction!(register_providers, m)?)?;
     m.add_function(wrap_pyfunction!(init_proxy, m)?)?;
@@ -1013,6 +1017,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SpeechModel>()?;
     m.add_class::<ImageModel>()?;
     m.add_class::<TranscriptionModel>()?;
+    m.add_class::<crate::multimodal::TranscriptionSession>()?;
     m.add_class::<RerankingModel>()?;
     m.add_class::<VideoModel>()?;
     m.add_class::<SearchModel>()?;

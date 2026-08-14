@@ -435,6 +435,43 @@ uint64_t aimux_openai_transcription_new_with_base(const char *api_key, const cha
 /* opts_json is currently IGNORED (reserved for future options). */
 char *aimux_transcription_generate(uint64_t handle, const char *audio_base64, const char *media_type, const char *opts_json, AimuxError *err);
 
+/* ── Transcription streaming sessions (RFC-0028) ─────────────────────────── */
+
+/* Start a streaming transcription session. The driver task spawns
+   immediately; push audio with aimux_transcription_push_audio, then pull
+   parts with aimux_transcription_next_part. model_handle must support
+   streaming (models without do_stream fail on the first next_part).
+   abort_handle: 0 = no cancellation, or an aimux_abort_signal_new handle.
+   opts_json (all optional): { "input_audio_format": {"format_type","rate"},
+   "provider_options", "headers", "include_raw_chunks" }; NULL/empty/"null"
+   = defaults. Returns session handle > 0 or 0 on failure (fills *err). */
+uint64_t aimux_transcription_session_new(uint64_t model_handle, uint64_t abort_handle,
+                                         const char *opts_json, AimuxError *err);
+
+/* Push one binary audio chunk. BLOCKING: waits while the internal channel is
+   full (backpressure propagation). data may be NULL only when len == 0
+   (no-op). Pushing after aimux_transcription_input_done or after the session
+   ended fails. Not callable from within an aimux callback (re-entrancy
+   guard — applies to next_part too). Returns 1 on success, 0 on failure
+   (fills *err). */
+int32_t aimux_transcription_push_audio(uint64_t session, const uint8_t *data, size_t len,
+                                       AimuxError *err);
+
+/* Signal end-of-audio (idempotent). Returns 1, or 0 on invalid handle. */
+int32_t aimux_transcription_input_done(uint64_t session, AimuxError *err);
+
+/* Pull the next part (JSON TranscriptionStreamPart; free with
+   aimux_free_string). timeout_ms: >0 = wait at most; 0 = immediate poll;
+   <0 = wait indefinitely. NULL return is disambiguated via err (caller MUST
+   pass non-NULL err): AIMUX_E_TIMEOUT = retry (free err.message!), AIMUX_E_OK
+   (untouched) = stream ended normally, other codes = stream failed.
+   opts_json of session_new accepts an optional "timeout" object
+   {"total_ms","first_chunk_ms","chunk_ms"} bounding the WS session. */
+char *aimux_transcription_next_part(uint64_t session, int64_t timeout_ms, AimuxError *err);
+
+/* Terminate and release the session (aborts the driver; safe with 0). */
+void aimux_transcription_session_drop(uint64_t session);
+
 /* ── Files ──────────────────────────────────────────────────────────────── */
 
 uint64_t aimux_openai_files_new(const char *api_key, AimuxError *err);

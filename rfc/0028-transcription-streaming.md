@@ -1,6 +1,6 @@
 # RFC-0028: Transcription 流式支持(实时 STT)
 
-> **Status**: DRAFT (设计稿,待 review;Phase 1 可立即实施,Phase 2/3 视需求)
+> **Status**: 已实现(2026-08-14,三个 Phase 一次性落地;实现细节与本文差异见 §10)
 > **Date**: 2026-08-14
 > **Scope**: 为 `TranscriptionModel::do_stream` 落地完整实现 —— WebSocket 传输基础设施 + OpenAI realtime provider 实现(Rust 核心),以及后续 FFI 会话式 API + 8 语言绑定
 > **Related**: [RFC-0008](0008-multimodal-bindings.md) §2.3 Mode C(当初 defer 的决策)、[#43](https://github.com/arcships/aimux/issues/43)、[RFC-0016](0016-align-with-aisdk.md) H1(abort 基础设施)
@@ -233,9 +233,9 @@ FFI 层:mock provider 实现 `do_stream` → 验证 push/next_part/input_done/dr
 
 | 语言 | 形态 |
 |---|---|
-| **Node**(native) | `openaiTranscription(modelId, config)` 已有;新增 `streamTranscribe(model, audioStream, opts)`:JS `ReadableStream<Buffer \| string>` → Rust `Stream<AudioChunk>`;输出 AsyncGenerator<part>。napi 的 channel bridging 一进一出 |
-| **Python**(native) | `stream_transcribe(model, audio_iter, opts)`:输入 Python async iterator(bytes/str),输出 async generator。PyO3 asyncio 桥接 |
-| **Go/Swift/Java/Kotlin/Flutter**(C-ABI) | 各包一个 `TranscriptionSession` 类:new → pushAudio(bytes) → nextPart(timeoutMs) → inputDone → close。模式同各自的 Model wrapper(锁 + handle) |
+| **Node**(native) | ~~streamTranscribe + ReadableStream/AsyncGenerator~~ → **实际落地为会话对象**(见 §10 D1):`startTranscriptionSession(model, optsJson?, bridge?)` 返回 `TranscriptionSession` 类(pushAudio/inputDone/nextPart/close) |
+| **Python**(native) | 同 D1:`start_transcription_session(model, opts_json?)` + `TranscriptionSession` pyclass(push_audio/input_done/next_part/close) |
+| **Go/Swift/Java/Kotlin/Flutter**(C-ABI) | 各包一个 `TranscriptionSession` 类:start → pushAudio(bytes) → nextPart(timeoutMs) → inputDone → close。模式同各自的 Model wrapper(锁 + handle);Go 用 RWMutex 允许并发 push/pull(双向会话不死锁) |
 
 Node/Python 的 native 路径不走 Phase 2 的 FFI 会话(直连 core,与 generateText 同架构);C-ABI 5 语言消费 Phase 2。
 
@@ -262,11 +262,11 @@ Node/Python 的 native 路径不走 Phase 2 的 FFI 会话(直连 core,与 gener
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |------|------|------|------|
-| **Phase 1** | ws.rs 基础设施 + OpenAI `gpt-realtime-whisper` do_stream + 测试 | 无 | 待实施(可立即开始) |
-| **Phase 2** | FFI 会话 API(5 个新符号)+ 测试 | Phase 1 | 待需求确认 |
-| **Phase 3** | 8 语言绑定 | Phase 2(C-ABI)/ Phase 1(native) | 待需求确认 |
+| **Phase 1** | ws.rs 基础设施 + OpenAI `gpt-realtime-whisper` do_stream + 测试 | 无 | ✅ 已实现(2026-08-14) |
+| **Phase 2** | FFI 会话 API(5 个新符号)+ 测试 | Phase 1 | ✅ 已实现(2026-08-14) |
+| **Phase 3** | 8 语言绑定 | Phase 2(C-ABI)/ Phase 1(native) | ✅ 已实现(2026-08-14) |
 
-**建议**:Phase 1 单独成 PR(独立闭环、Rust 用户直接受益);Phase 2/3 在 Phase 1 落地后按真实跨语言需求决定。
+**实施记录**:三个 Phase 在一个 PR 内落地(#43)。R1-R3 三轮独立 review 的发现(超时死代码、ws 定时器语义、绑定内存/死锁)全部修复;R3 通过后合并。
 
 ## 9. Open Questions
 
@@ -275,3 +275,13 @@ Node/Python 的 native 路径不走 Phase 2 的 FFI 会话(直连 core,与 gener
 3. **next_part 的零拷贝变体**:是否需要 `aimux_transcription_next_part_into(session, buf, len)`(调用方提供缓冲避免 JSON 字符串分配)?MVP 用 JSON 字符串(与全仓 wire 一致),性能需求出现再加。
 4. **ElevenLabs/Cartesia 等其他 realtime provider**:骨架同构但协议各异,是否在 Phase 1 一起做?建议 Phase 1 只做 OpenAI(验证骨架),其余按需。
 5. **录制支持**(RFC-0023):转录会话暂不录制(chat 流式有层 A 录制;transcription 无 core 入口是现状起点);若要,session 内部生成 call_id + recording_context 接线 —— 留待需求。
+
+---
+
+## 10. 实现记录(2026-08-14,与设计稿的差异)
+
+1. **D1 — Node/Python 也用会话对象而非流式糖**(§5 变更):原设计给 Node/Python 做流式语法糖(ReadableStream 进 / AsyncGenerator 出)。落地时改为与 C-ABI 同构的 push/pull 会话——(a) 三条路径行为一致、文档单份;(b) napi 的 ReadableStream→Rust Stream 桥接与 PyO3 的 async-iterator 桥接各自都是不小的基础设施,而会话对象在两边都是薄层;(c) 流式糖可以后续在会话之上加纯 TS/Python 包装(零 wire 改动)。
+2. **D2 — `TranscriptionStreamOptions` 增加 `timeout` 字段**(R1 B1):设计稿的超时只在 ws 层;实现把 `Option<TimeoutConfiguration>` 提到 options(FFI opts_json 的 `"timeout"` 对象 / Node/Python opts 同),`first_chunk_ms` 为 connect+首事件**合并预算**(锚定在 connect 前,connect 后只花余额)。
+3. **D3 — peer close 携带 code/reason**(R1 S3):设计稿只说"close frame → ApiCall 带 code";实现为 `"websocket closed by peer (code NNN: reason)"`。
+4. **D4 — live-API smoke 未执行**:§3.3 的"用真实 key 跑一次最小会话"需要 API key,未在 CI/本地执行。wire 形状已由本地 WS 集成测试逐字段断言(含 session.update 嵌套结构与 turn_detection 嵌套位置);首次真实调用时如遇 shape 偏差请回报此 RFC。
+5. **D5 — 其余 review 修正**:ws close() 5s 有界;chunk-idle 窗口按 next() 调用计算(ping 不续命);FFI 驱动的 futures-mpsc `flush()` 不可用于断连检测(改 `try_send + is_disconnected`);五个 C-ABI 绑定的 timeout 路径先消费错误串(防泄漏);Go 会话 RWMutex(并发 push/pull);Python push/next 释放 GIL(allow_threads)。

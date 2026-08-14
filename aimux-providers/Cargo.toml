@@ -36,7 +36,15 @@ url = { workspace = true }
 percent-encoding = "2"
 dirs = { workspace = true }
 
+[features]
+default = ["realtime"]
+# Realtime (WebSocket) provider paths — RFC-0028. Disable with
+# `--no-default-features` to compile out tokio-tungstenite entirely.
+realtime = ["aimux-provider-utils/ws"]
+
 [dev-dependencies]
+# WebSocket server side for realtime transcription integration tests.
+tokio-tungstenite = { workspace = true }
 aimux-core = { workspace = true }
 serde_json = { workspace = true }
 base64 = "0.22"

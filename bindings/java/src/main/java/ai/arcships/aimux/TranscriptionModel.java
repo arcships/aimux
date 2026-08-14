@@ -96,6 +96,48 @@ public final class TranscriptionModel implements Closeable {
      * @return JSON-serialized {@code TranscriptionResult}.
      * @throws AimuxException on engine / transport failure.
      */
+    /**
+     * Start a streaming transcription session (RFC-0028) on this model.
+     * Requires a model that supports streaming (realtime models).
+     *
+     * @param optsJson optional session options JSON
+     *                 ({@code input_audio_format} / {@code provider_options}
+     *                 / {@code headers} / {@code include_raw_chunks}), or
+     *                 {@code null} for defaults.
+     * @return a new live session.
+     * @throws AimuxException on failure.
+     */
+    public TranscriptionSession startStream(String optsJson) {
+        return startStream(optsJson, 0L);
+    }
+
+    /**
+     * Start a streaming transcription session with an abort handle
+     * (from {@code Aimux.abortSignalNew()}); firing it aborts the session.
+     *
+     * @param optsJson    optional session options JSON, or {@code null}.
+     * @param abortHandle abort handle, or 0 for none.
+     * @return a new live session.
+     * @throws AimuxException on failure.
+     */
+    public TranscriptionSession startStream(String optsJson, long abortHandle) {
+        long h = requireHandle();
+        AimuxCError err = AimuxResult.newError();
+        long session = AimuxFFI.INSTANCE.aimux_transcription_session_new(h, abortHandle, optsJson, err);
+        return new TranscriptionSession(
+                AimuxResult.extractHandle(session, err, "Failed to start transcription session"));
+    }
+
+    /**
+     * Transcribe audio (base64-encoded) to text.
+     *
+     * @param audioBase64 Base64-encoded audio bytes.
+     * @param mediaType   Media type of the audio (e.g. {@code audio/wav}).
+     * @param optsJson    Optional JSON-serialized {@code TranscriptionCallOptions},
+     *                    or {@code null} for defaults.
+     * @return JSON-serialized {@code TranscriptionResult}.
+     * @throws AimuxException on engine / transport failure.
+     */
     public String generate(String audioBase64, String mediaType, String optsJson) {
         AimuxCError err = AimuxResult.newError();
         return AimuxResult.extractString(

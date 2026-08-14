@@ -224,6 +224,37 @@ export declare class TranscriptionModel {
   generate(audioBase64: string, mediaType: string, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 
+/**
+ * A live streaming-transcription session (RFC-0028). Push audio chunks with
+ * `pushAudio`, mark end-of-audio with `inputDone`, then pull transcription
+ * parts with `nextPart`. Mirrors the C-ABI session shape, built natively on
+ * core channels.
+ */
+export declare class TranscriptionSession {
+  /**
+   * Push one binary audio chunk. Awaits while the internal channel is
+   * full (backpressure).
+   */
+  pushAudio(data: Buffer): Promise<void>
+  /** Signal end-of-audio (idempotent). */
+  inputDone(): void
+  /**
+   * Pull the next transcription part (JSON string). Resolves `null` when
+   * the stream ended normally. Rejects on error — including a timeout
+   * (no part within `timeoutMs`; the session stays live, call again).
+   * `timeoutMs`: >0 wait at most; 0 immediate poll; negative OR omitted
+   * = wait indefinitely.
+   */
+  nextPart(timeoutMs?: number | undefined | null): Promise<AimuxResult<string | undefined | null>>
+  /**
+   * Terminate the session (aborts the driver). The object becomes inert;
+   * further `pushAudio`/`nextPart` fail. Call this promptly — GC teardown
+   * drops the channels (which eventually tears the driver down) but never
+   * fires the abort token.
+   */
+  close(): void
+}
+
 export declare class VideoModel {
   /**
    * Generate video. `opts_json` is JSON-serialized VideoCallOptions.
@@ -441,6 +472,15 @@ export declare function router(models: Array<Model>, configJson?: string | undef
  * or no store is registered.
  */
 export declare function sessionCalls(sessionId: string): AimuxResult<string>
+
+/**
+ * Start a streaming transcription session. `opts_json` (optional):
+ * `{ "input_audio_format": {"format_type","rate"}, "provider_options",
+ * "headers", "include_raw_chunks" }`. `bridge` — optional AbortSignal; firing
+ * it aborts the session. The returned parts are JSON-serialized
+ * `TranscriptionStreamPart`s.
+ */
+export declare function startTranscriptionSession(model: TranscriptionModel, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AimuxResult<TranscriptionSession>>
 
 /** Create a Tavily search model instance. */
 export declare function tavilySearch(apiKey: string, baseUrl?: string | undefined | null): Promise<AimuxResult<SearchModel>>
