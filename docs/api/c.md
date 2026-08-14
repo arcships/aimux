@@ -234,6 +234,7 @@ the opposite polarity of streams; they take no `err`.
 |------|------|
 | `aimux_init_recording(dir)` / `aimux_init_recording_ring(cap)` | Opt-in recording |
 | `aimux_recording_stop` / `aimux_recording_flush` | Stop / flush |
+| `aimux_recording_try_flush` | Flush with write-failure reporting |
 | `aimux_mock_replay_new(recordings_jsonl, err)` | Replay model handle |
 
 ## Examples

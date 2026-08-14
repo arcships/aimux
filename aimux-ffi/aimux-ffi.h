@@ -591,6 +591,14 @@ int aimux_recording_stop(void);
    ring recorder). Returns 0. */
 int aimux_recording_flush(void);
 
+/* Flush the global recorder and report write failures. Returns
+   AIMUX_OK (0) when the JSONL is confirmed on disk (also when recording was
+   never initialized), or one of:
+     AIMUX_E_RECORDING_WRITE (15) — a prior write failed (sticky, e.g. ENOSPC)
+     AIMUX_E_RECORDING_WRITER_GONE (16) — writer unavailable (unwritable dir)
+     AIMUX_E_RECORDING_FLUSH_TIMEOUT (17) — no writer ack within 30s */
+int aimux_recording_try_flush(void);
+
 /* Register external OpenAI-compatible providers from a JSON config string
    (RFC-0020). config_json is { "providers": [ { "name", "base_url", ... } ] }.
    Entries override same-named built-ins or add new ones.
