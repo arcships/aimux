@@ -321,6 +321,12 @@ pub const AIMUX_E_API_CALL: i32 = 11;
 pub const AIMUX_E_TIMEOUT: i32 = 12;
 pub const AIMUX_E_ABORTED: i32 = 13;
 pub const AIMUX_E_OTHER: i32 = 14;
+/// Recording write failed (sticky) — see `aimux_recording_try_flush`.
+pub const AIMUX_E_RECORDING_WRITE: i32 = 15;
+/// Recording writer thread unavailable — see `aimux_recording_try_flush`.
+pub const AIMUX_E_RECORDING_WRITER_GONE: i32 = 16;
+/// Recording flush ack timed out — see `aimux_recording_try_flush`.
+pub const AIMUX_E_RECORDING_FLUSH_TIMEOUT: i32 = 17;
 
 /// Layout must match `aimux-error.h` `AimuxError` (40 bytes).
 ///
@@ -2879,6 +2885,34 @@ pub extern "C" fn aimux_recording_flush() -> i32 {
         rec.flush();
     }
     0
+}
+
+/// Flush the global recorder and **report write failures** (see #136).
+///
+/// Unlike [`aimux_recording_flush`] — which always returns 0 for
+/// compatibility — this surface makes the recorder's durability observable
+/// across the C ABI:
+/// - `AIMUX_OK` — data confirmed on disk (also when recording was never
+///   initialized: nothing to flush).
+/// - `AIMUX_E_RECORDING_WRITE` — a prior write failed (e.g. ENOSPC); the
+///   first error is sticky and every later flush keeps reporting it.
+/// - `AIMUX_E_RECORDING_WRITER_GONE` — the writer thread is unavailable
+///   (e.g. recording was initialized with an unwritable directory and
+///   downgraded to a no-op recorder).
+/// - `AIMUX_E_RECORDING_FLUSH_TIMEOUT` — no writer ack within 30s.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_recording_try_flush() -> i32 {
+    let Some(rec) = aimux_core::recording::recorder() else {
+        return AIMUX_OK;
+    };
+    use aimux_core::recording::RecordingError;
+    match rec.try_flush() {
+        Ok(()) => AIMUX_OK,
+        Err(RecordingError::Write(_)) => AIMUX_E_RECORDING_WRITE,
+        Err(RecordingError::WriterGone) => AIMUX_E_RECORDING_WRITER_GONE,
+        Err(RecordingError::FlushTimeout) => AIMUX_E_RECORDING_FLUSH_TIMEOUT,
+        Err(_) => AIMUX_E_UNKNOWN,
+    }
 }
 
 /// Register external OpenAI-compatible providers from a JSON config string
