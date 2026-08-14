@@ -603,7 +603,13 @@ impl JsonlRecorder {
     /// flush 返回 [`RecordingError::Write`],磁盘满不再静默。
     pub fn try_flush(&self) -> Result<(), RecordingError> {
         let Some(tx) = &self.tx else {
-            return Err(RecordingError::WriterGone);
+            // The writer is gone, but it may have recorded a terminal write
+            // error into the shared slot before exiting (shutdown drain) —
+            // surface the specific failure over the generic WriterGone.
+            return Err(self.write_error.lock().unwrap().as_ref().map_or_else(
+                || RecordingError::WriterGone,
+                |msg| RecordingError::Write(msg.clone()),
+            ));
         };
         let (ack_tx, ack_rx) = sync_channel::<Result<(), RecordingError>>(0);
         // Flush 事件必须送达 writer(不可 drop-newest),故用阻塞 send 等待空位;
@@ -614,6 +620,12 @@ impl JsonlRecorder {
             Ok(status) => status,
             Err(_) => Err(RecordingError::FlushTimeout),
         }
+    }
+
+    /// recorder 侧可见的 writer 粘性首错(如 ENOSPC),无则 `None`。
+    /// 与 writer 线程共享;首次写行/flush 失败时写入。
+    pub fn last_write_error(&self) -> Option<String> {
+        self.write_error.lock().unwrap().clone()
     }
 
     /// 录制文件路径。
