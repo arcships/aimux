@@ -1,0 +1,107 @@
+# Production-code panic / swallow inventory (outside #[cfg(test)]), baseline cf2cea5
+
+## unwrap (58)
+aimux-core/src/generate.rs:934: /// println!("{}", completion.choices[0].message.content.as_deref().unwrap());
+aimux-core/src/recording.rs:574: let mut v: Vec<String> = self.inconsistent.lock().unwrap().iter().cloned().collect();
+aimux-core/src/recording.rs:1035: self.inner.lock().unwrap().completed.len()
+aimux-core/src/recording.rs:1044: self.inner.lock().unwrap().pending.len()
+aimux-core/src/recording.rs:1049: self.inner.lock().unwrap().dropped
+aimux-core/src/recording.rs:1054: self.inner.lock().unwrap().pending_evicted
+aimux-core/src/recording.rs:1062: .unwrap()
+aimux-core/src/recording.rs:1072: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1084: let inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1175: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1190: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1196: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1212: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1225: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1231: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/recording.rs:1239: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/session.rs:133: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/session.rs:151: let entry = inner.sessions.get_mut(session_id).unwrap();
+aimux-core/src/session.rs:173: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/session.rs:188: let inner = self.inner.lock().unwrap();
+aimux-core/src/session.rs:202: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/session.rs:323: *SESSION_STORE.write().unwrap() = Some(store);
+aimux-core/src/session.rs:328: SESSION_STORE.read().unwrap().clone()
+aimux-core/src/session.rs:336: *SESSION_INFERER.write().unwrap() = Some(Arc::new(Mutex::new(SessionInferer::new(enabled))));
+aimux-core/src/session.rs:341: SESSION_INFERER.read().unwrap().clone()
+aimux-core/src/session.rs:369: return inferer.lock().unwrap().resolve(explicit, prompt);
+aimux-core/src/trace/hash.rs:27: let w = u64::from_le_bytes(c.try_into().unwrap());
+aimux-core/src/trace/layer.rs:232: let mut map = self.session_tracker.lock().unwrap();
+aimux-core/src/trace/store.rs:394: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/trace/store.rs:401: self.inner.lock().unwrap().records.len()
+aimux-core/src/trace/store.rs:410: let inner = self.inner.lock().unwrap();
+aimux-core/src/trace/store.rs:466: let inner = self.inner.lock().unwrap();
+aimux-core/src/trace/store.rs:514: let inner = self.inner.lock().unwrap();
+aimux-core/src/trace/store.rs:536: let inner = self.inner.lock().unwrap();
+aimux-core/src/trace/store.rs:546: let mut inner = self.inner.lock().unwrap();
+aimux-core/src/trace/store.rs:585: .unwrap()
+aimux-core/src/trace/store.rs:591: self.inner.lock().unwrap().store.records_in_scope(scope)
+aimux-providers/src/open_responses.rs:960: match options.reasoning.unwrap() {
+aimux-providers/src/provider.rs:234: let mut overlays = overlays().write().unwrap();
+aimux-providers/src/provider.rs:243: overlays().read().unwrap().contains_key(name)
+aimux-providers/src/provider.rs:365: let resolved = if let Some(ext) = overlays().read().unwrap().get(name) {
+aimux-providers/src/google/utils.rs:102: return Some((Value::String(s.clone()), serde_json::to_string(s).unwrap()));
+aimux-providers/src/google/utils.rs:313: let entry = self.path_stack.pop().unwrap();
+aimux-providers/src/google/utils.rs:325: let parent_entry = self.path_stack.last_mut().unwrap();
+aimux-providers/src/google/utils.rs:333: fragment.push_str(&serde_json::to_string(k).unwrap());
+aimux-providers/src/google/utils.rs:358: let container = self.path_stack.last_mut().unwrap();
+aimux-providers/src/google/utils.rs:366: fragment.push_str(&serde_json::to_string(k).unwrap());
+aimux-providers/src/google/utils.rs:415: let quoted = serde_json::to_string(s).unwrap();
+aimux-providers/src/xai/convert.rs:481: let reasoning = options.reasoning.unwrap();
+aimux-providers/src/xai/responses/convert.rs:142: let non_empty_tools = non_empty.unwrap();
+aimux-providers/src/xai/responses/convert.rs:592: let reasoning = options.reasoning.unwrap();
+aimux-providers/src/bedrock/convert.rs:54: blocks.last_mut().unwrap().1.push(i);
+aimux-providers/src/bedrock/image.rs:148: let files = options.files.as_ref().unwrap();
+aimux-providers/src/bedrock/sigv4.rs:59: url::Url::parse(url).unwrap_or_else(|_| url::Url::parse("http://localhost").unwrap());
+aimux-providers/src/anthropic/sanitize_json_schema.rs:181: let value = value.unwrap();
+aimux-providers/src/huggingface/responses.rs:943: .all(|(i, &b)| b.is_none() || bytes[i] == b.unwrap())
+aimux-providers/src/openai/image.rs:399: let files = options.files.as_ref().unwrap();
+aimux-provider-utils/src/logging.rs:174: self.0.lock().unwrap().extend_from_slice(buf);
+
+## expect (32)
+aimux-core/src/json_repair.rs:142: .expect("fix-json stack is never empty (seeded with Root)");
+aimux-core/src/json_repair.rs:284: .expect("literal_start is set whenever INSIDE_LITERAL is pushed");
+aimux-core/src/json_repair.rs:339: .expect("literal_start is set whenever INSIDE_LITERAL is pushed");
+aimux-core/src/recording.rs:1113: .expect("just inserted or present")
+aimux-core/src/router.rs:178: Err(last_err.expect("seeded primary_err makes last_err always Some"))
+aimux-providers/src/azure/model.rs:383: .expect("resource_name or base_url required (validated at construction)")
+aimux-providers/src/azure/responses.rs:86: .expect("resource_name or base_url required (validated at construction)")
+aimux-providers/src/bedrock/sigv4.rs:160: let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
+aimux-providers/src/anthropic/convert.rs:255: .expect("convert_prompt_to_anthropic_full: conversion failed")
+aimux-providers/src/openai/convert.rs:216: .expect("convert_prompt_to_openai_messages: conversion failed")
+aimux-providers/src/openai/convert.rs:248: .expect("convert_prompt_to_openai_messages_with_mode: conversion failed")
+aimux-ffi/src/lib.rs:109: .expect("aimux-ffi: registry mutex poisoned")
+aimux-ffi/src/lib.rs:118: .expect("aimux-ffi: registry mutex poisoned")
+aimux-ffi/src/lib.rs:148: .expect("aimux-ffi: registry mutex poisoned")
+aimux-ffi/src/lib.rs:165: .expect("aimux-ffi: registry mutex poisoned")
+aimux-ffi/src/lib.rs:170: .expect("aimux-ffi: trace registry mutex poisoned")
+aimux-ffi/src/lib.rs:178: .expect("aimux-ffi: registry mutex poisoned");
+aimux-ffi/src/lib.rs:191: tokio::runtime::Runtime::new().expect("aimux-ffi: failed to build tokio runtime")
+aimux-ffi/src/lib.rs:267: obj.get("prompt").expect("checked by guard")
+aimux-ffi/src/lib.rs:303: .expect("aimux-ffi: impossible: NUL-free string rejected by CString::new")
+aimux-ffi/src/lib.rs:2313: .expect("aimux-ffi: registry mutex poisoned")
+aimux-ffi/src/lib.rs:2681: .expect("aimux-ffi: trace registry mutex poisoned")
+aimux-ffi/src/lib.rs:2700: .expect("aimux-ffi: trace registry mutex poisoned")
+aimux-ffi/src/lib.rs:2719: .expect("aimux-ffi: trace registry mutex poisoned")
+aimux-ffi/src/transcription_session.rs:160: let e = err.take().expect("err only None after successful send");
+aimux-ffi/src/transcription_session.rs:200: let guard = self.audio_tx.lock().expect("session audio mutex poisoned");
+aimux-ffi/src/transcription_session.rs:220: .expect("session audio mutex poisoned")
+aimux-ffi/src/transcription_session.rs:257: .expect("session task mutex poisoned")
+aimux-provider-utils/src/http.rs:177: b.build().expect("shared reqwest Client build failed")
+bindings/node/src/lib.rs:1529: obj.get("prompt").expect("checked by guard")
+bindings/python/src/lib.rs:34: RT.get_or_init(|| tokio::runtime::Runtime::new().expect("failed to build tokio runtime"))
+bindings/python/src/lib.rs:1057: obj.get("prompt").expect("checked by guard")
+
+## panic! (2)
+aimux-providers/src/provider.rs:87: panic!(
+aimux-providers/src/anthropic/convert.rs:276: Err(e) => panic!("{}", e),
+
+## todo! (0)
+
+## unimplemented! (0)
+
+## unreachable! (1)
+aimux-providers/src/bedrock/convert.rs:501: ToolChoice::None => unreachable!(),
+
