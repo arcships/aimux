@@ -398,9 +398,9 @@ async fn stream_first_chunk_timeout_fires() {
         headers: None,
         include_raw_chunks: false,
         timeout: Some(aimux_core::options::TimeoutConfiguration {
-            // first_chunk covers connect + session ack; 300ms is generous on
-            // loopback but far below the test's tolerance.
-            first_chunk_ms: Some(300),
+            // first_chunk covers connect + session ack; 500ms is generous on
+            // loopback but far below the server's 2s hold.
+            first_chunk_ms: Some(500),
             total_ms: None,
             chunk_ms: None,
         }),

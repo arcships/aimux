@@ -245,7 +245,7 @@ export declare class TranscriptionSession {
    * `timeoutMs`: >0 wait at most; 0 immediate poll; negative = wait
    * indefinitely.
    */
-  nextPart(timeoutMs?: number | undefined | null): Promise<AimuxResult<string | null>>
+  nextPart(timeoutMs?: number | undefined | null): Promise<AimuxResult<string | undefined | null>>
   /**
    * Terminate the session (aborts the driver). The object becomes inert;
    * further `pushAudio`/`nextPart` fail. Call this promptly — GC teardown
@@ -475,7 +475,7 @@ export declare function sessionCalls(sessionId: string): AimuxResult<string>
 
 /**
  * Start a streaming transcription session. `opts_json` (optional):
- * `{ "input_audio_format": {"format_type","rate"}, "provider_options`,
+ * `{ "input_audio_format": {"format_type","rate"}, "provider_options",
  * "headers", "include_raw_chunks" }`. `bridge` — optional AbortSignal; firing
  * it aborts the session. The returned parts are JSON-serialized
  * `TranscriptionStreamPart`s.

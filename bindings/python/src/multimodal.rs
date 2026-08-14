@@ -659,7 +659,23 @@ pub fn start_transcription_session(
                 }
             }
             Err(e) => {
-                let _ = tx.send(Err(e)).await;
+                // Connect failure: deliver as the first channel item
+                // (try_send + abort-select; mirrors the FFI driver).
+                loop {
+                    match tx.try_send(Err(e.clone())) {
+                        Ok(()) => break,
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            tokio::select! {
+                                _ = effective.cancelled() => return,
+                                res = tx.send(Err(e.clone())) => {
+                                    if res.is_err() { return; }
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
+                    }
+                }
             }
         }
     });

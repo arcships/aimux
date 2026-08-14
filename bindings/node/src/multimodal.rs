@@ -826,7 +826,24 @@ pub async fn start_transcription_session(
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(Err(MappedError::from(&e))).await;
+                        // Connect failure: deliver as the first channel item.
+                        // try_send + abort-select (a full channel must not
+                        // stall; abort covers the session-drop path).
+                        loop {
+                            match tx.try_send(Err(MappedError::from(&e))) {
+                                Ok(()) => break,
+                                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                    tokio::select! {
+                                        _ = effective.cancelled() => return,
+                                        res = tx.send(Err(MappedError::from(&e))) => {
+                                            if res.is_err() { return; }
+                                            break;
+                                        }
+                                    }
+                                }
+                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
+                            }
+                        }
                     }
                 }
             });
@@ -846,6 +863,7 @@ pub async fn start_transcription_session(
 impl TranscriptionSession {
     /// Push one binary audio chunk. Awaits while the internal channel is
     /// full (backpressure).
+    #[napi]
     pub async fn push_audio(&self, data: napi::bindgen_prelude::Buffer) -> napi::Result<()> {
         use futures::SinkExt;
         let bytes = data.to_vec();
@@ -873,6 +891,7 @@ impl TranscriptionSession {
     }
 
     /// Signal end-of-audio (idempotent).
+    #[napi]
     pub fn input_done(&self) -> napi::Result<()> {
         self.audio_tx
             .lock()
@@ -886,6 +905,7 @@ impl TranscriptionSession {
     /// (no part within `timeoutMs`; the session stays live, call again).
     /// `timeoutMs`: >0 wait at most; 0 immediate poll; negative = wait
     /// indefinitely.
+    #[napi]
     pub async fn next_part(
         &self,
         timeout_ms: Option<i64>,
@@ -926,6 +946,7 @@ impl TranscriptionSession {
     /// further `pushAudio`/`nextPart` fail. Call this promptly — GC teardown
     /// drops the channels (which eventually tears the driver down) but never
     /// fires the abort token.
+    #[napi]
     pub fn close(&self) {
         // End audio + abort; the driver unblocks and exits.
         if let Ok(mut guard) = self.audio_tx.lock() {
