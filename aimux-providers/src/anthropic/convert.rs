@@ -1624,7 +1624,16 @@ pub fn build_request_body_with_warnings(
 
     let max_tokens = options.max_output_tokens.unwrap_or(caps.max_output_tokens);
 
-    let conversion = convert_prompt_to_anthropic_full_fallible(&options.prompt, false)?;
+    // Extended-thinking multi-turn: when thinking is enabled/adaptive, the
+    // prior assistant turns' reasoning parts (carrying their signatures)
+    // must be echoed back as thinking blocks — Anthropic rejects tool-use
+    // continuations that omit them, and the reasoning context is lost
+    // otherwise. With thinking disabled the blocks would be rejected, so
+    // the parts are omitted with a warning instead.
+    let send_input_reasoning =
+        matches!(thinking_type.as_deref(), Some("enabled") | Some("adaptive"));
+    let conversion =
+        convert_prompt_to_anthropic_full_fallible(&options.prompt, send_input_reasoning)?;
     let system = conversion.system;
     let messages = conversion.messages;
     betas.extend(conversion.betas);
