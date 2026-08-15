@@ -6,9 +6,9 @@
 //! provider 不持有 `Client`、不构造 `RequestBuilder`、不碰 `reqwest::Response`。
 //!
 //! 三个职责：
-//! - **连接池**：`shared_client()` / `shared_streaming_client()` 返回 `&'static
-//!   Client` 全局单例，TLS 会话与连接池全仓复用（RFC-0009 §4.1）。替代散落
-//!   各处的 `Client::new()`。
+//! - **连接池**：`shared_client()` / `shared_streaming_client()` 返回共享单例
+//!   （`Result<&'static Client, AiMuxError>`——构建失败粘性返回错误），TLS 会话
+//!   与连接池全仓复用（RFC-0009 §4.1）。替代散落各处的 `Client::new()`。
 //! - **超时**：非流式带 30s 整体超时；流式禁用整体超时（LLM 流式时长取决于
 //!   生成长度，固定超时会误杀长生成，RFC-0009 §4.3）。
 //! - **retry**：408/409/429/5xx 重试 + Full Jitter 退避（RFC-0009 §4.2）。retry 是本
