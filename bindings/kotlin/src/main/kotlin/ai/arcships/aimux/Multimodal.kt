@@ -307,8 +307,7 @@ class TranscriptionSession internal constructor(handle: Long) : Closeable {
             // the error strings to avoid leaking) — but swap the generic
             // TimeoutError for the retryable session sentinel: the session
             // is still live and nextPart may be called again.
-            FFI.lib.aimux_free_string(err.message)
-            FFI.lib.aimux_free_string(err.error_value)
+            consumeErrorStrings(err)
             throw AimuxTranscriptionTimeoutException()
         }
         if (err.code == AIMUX_OK) {
