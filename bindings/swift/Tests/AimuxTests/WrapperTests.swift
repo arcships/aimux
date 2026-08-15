@@ -273,6 +273,15 @@ final class WrapperTests: XCTestCase {
           "finish_reason": {"unified":"stop","raw":"stop"},
           "usage": {"input_tokens":{"total":3},"output_tokens":{"total":2}},
           "warnings": [],
+          "reasoning": [],
+          "reasoning_text": "",
+          "sources": [],
+          "files": [],
+          "response_messages": [],
+          "raw_finish_reason": "stop",
+          "provider_metadata": null,
+          "response": {"id":"resp_1","timestamp":null,"model_id":"gpt-4o"},
+          "total_usage": {"input_tokens":{"total":3},"output_tokens":{"total":2}},
           "raw": {
             "content": [
               {"Text":{"text":"hello"}},

@@ -50,7 +50,11 @@ void main() {
         // Encoding a decoded fixture and decoding that again must produce the
         // same encoding. Comparing encodings rather than objects is deliberate:
         // these generated classes do not implement value equality, so `==`
-        // would compare identities and pass no matter what.
+        // would compare identities and pass no matter what. The generated
+        // toJson() is shallow — nested models stay live objects — so each
+        // encoding is normalized through jsonEncode/jsonDecode, which invokes
+        // nested toJson() recursively.
+        Object? norm(Object? o) => jsonDecode(jsonEncode(o));
         final Object? first;
         final Object? second;
 
@@ -58,44 +62,37 @@ void main() {
         // silent skipping is how a net grows holes.
         switch (type) {
           case 'ToolChoice':
-            first = ToolChoice.fromJson(wire).toJson();
-            second = ToolChoice.fromJson(first).toJson();
+            first = norm(ToolChoice.fromJson(wire).toJson());
+            second = norm(ToolChoice.fromJson(first).toJson());
           case 'StreamPart':
-            first = StreamPart.fromJson(wire as Map<String, dynamic>).toJson();
-            second =
-                StreamPart.fromJson(first as Map<String, dynamic>).toJson();
+            first = norm(StreamPart.fromJson(wire as Map<String, dynamic>).toJson());
+            second = norm(StreamPart.fromJson(first as Map<String, dynamic>).toJson());
           case 'GenerateContent':
-            first =
-                GenerateContent.fromJson(wire as Map<String, dynamic>).toJson();
-            second =
-                GenerateContent.fromJson(first as Map<String, dynamic>)
-                    .toJson();
+            first = norm(GenerateContent.fromJson(wire as Map<String, dynamic>).toJson());
+            second = norm(GenerateContent.fromJson(first as Map<String, dynamic>)
+                    .toJson());
           case 'GenerateTextOptions':
-            first = GenerateTextOptions.fromJson(wire as Map<String, dynamic>)
-                .toJson();
-            second =
-                GenerateTextOptions.fromJson(first as Map<String, dynamic>)
-                    .toJson();
+            first = norm(GenerateTextOptions.fromJson(wire as Map<String, dynamic>)
+                .toJson());
+            second = norm(GenerateTextOptions.fromJson(first as Map<String, dynamic>)
+                    .toJson());
           case 'TimeoutConfiguration':
-            first = TimeoutConfiguration.fromJson(wire as Map<String, dynamic>)
-                .toJson();
-            second =
-                TimeoutConfiguration.fromJson(first as Map<String, dynamic>)
-                    .toJson();
+            first = norm(TimeoutConfiguration.fromJson(wire as Map<String, dynamic>)
+                .toJson());
+            second = norm(TimeoutConfiguration.fromJson(first as Map<String, dynamic>)
+                    .toJson());
           case 'ModelMessage':
-            first =
-                ModelMessage.fromJson(wire as Map<String, dynamic>).toJson();
-            second =
-                ModelMessage.fromJson(first as Map<String, dynamic>).toJson();
+            first = norm(ModelMessage.fromJson(wire as Map<String, dynamic>).toJson());
+            second = norm(ModelMessage.fromJson(first as Map<String, dynamic>).toJson());
           case 'Role':
-            first = Role.fromJson(wire as String).toJson();
-            second = Role.fromJson(first as String).toJson();
+            first = norm(Role.fromJson(wire as String).toJson());
+            second = norm(Role.fromJson(first as String).toJson());
           case 'FinishReasonUnified':
-            first = FinishReasonUnified.fromJson(wire as String).toJson();
-            second = FinishReasonUnified.fromJson(first as String).toJson();
+            first = norm(FinishReasonUnified.fromJson(wire as String).toJson());
+            second = norm(FinishReasonUnified.fromJson(first as String).toJson());
           case 'ReasoningEffort':
-            first = ReasoningEffort.fromJson(wire as String).toJson();
-            second = ReasoningEffort.fromJson(first as String).toJson();
+            first = norm(ReasoningEffort.fromJson(wire as String).toJson());
+            second = norm(ReasoningEffort.fromJson(first as String).toJson());
           default:
             fail(
               "fixture '$name' declares type '$type', which has no case in "
