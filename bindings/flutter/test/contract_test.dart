@@ -47,27 +47,55 @@ void main() {
         final type = fixture['type'] as String;
         final wire = jsonDecode(fixture['json'] as String);
 
+        // Encoding a decoded fixture and decoding that again must produce the
+        // same encoding. Comparing encodings rather than objects is deliberate:
+        // these generated classes do not implement value equality, so `==`
+        // would compare identities and pass no matter what.
+        final Object? first;
+        final Object? second;
+
         // A fixture type with no case here fails rather than being skipped:
         // silent skipping is how a net grows holes.
         switch (type) {
           case 'ToolChoice':
-            ToolChoice.fromJson(wire);
+            first = ToolChoice.fromJson(wire).toJson();
+            second = ToolChoice.fromJson(first).toJson();
           case 'StreamPart':
-            StreamPart.fromJson(wire as Map<String, dynamic>);
+            first = StreamPart.fromJson(wire as Map<String, dynamic>).toJson();
+            second =
+                StreamPart.fromJson(first as Map<String, dynamic>).toJson();
           case 'GenerateContent':
-            GenerateContent.fromJson(wire as Map<String, dynamic>);
+            first =
+                GenerateContent.fromJson(wire as Map<String, dynamic>).toJson();
+            second =
+                GenerateContent.fromJson(first as Map<String, dynamic>)
+                    .toJson();
           case 'GenerateTextOptions':
-            GenerateTextOptions.fromJson(wire as Map<String, dynamic>);
+            first = GenerateTextOptions.fromJson(wire as Map<String, dynamic>)
+                .toJson();
+            second =
+                GenerateTextOptions.fromJson(first as Map<String, dynamic>)
+                    .toJson();
           case 'TimeoutConfiguration':
-            TimeoutConfiguration.fromJson(wire as Map<String, dynamic>);
+            first = TimeoutConfiguration.fromJson(wire as Map<String, dynamic>)
+                .toJson();
+            second =
+                TimeoutConfiguration.fromJson(first as Map<String, dynamic>)
+                    .toJson();
           case 'ModelMessage':
-            ModelMessage.fromJson(wire as Map<String, dynamic>);
+            first =
+                ModelMessage.fromJson(wire as Map<String, dynamic>).toJson();
+            second =
+                ModelMessage.fromJson(first as Map<String, dynamic>).toJson();
           case 'Role':
-            Role.fromJson(wire as String);
+            first = Role.fromJson(wire as String).toJson();
+            second = Role.fromJson(first as String).toJson();
           case 'FinishReasonUnified':
-            FinishReasonUnified.fromJson(wire as String);
+            first = FinishReasonUnified.fromJson(wire as String).toJson();
+            second = FinishReasonUnified.fromJson(first as String).toJson();
           case 'ReasoningEffort':
-            ReasoningEffort.fromJson(wire as String);
+            first = ReasoningEffort.fromJson(wire as String).toJson();
+            second = ReasoningEffort.fromJson(first as String).toJson();
           default:
             fail(
               "fixture '$name' declares type '$type', which has no case in "
@@ -75,6 +103,13 @@ void main() {
               'checked against Dart',
             );
         }
+
+        expect(
+          second,
+          equals(first),
+          reason:
+              "fixture '$name' does not survive a Dart encode/decode round-trip",
+        );
       }
     });
 

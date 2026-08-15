@@ -229,8 +229,12 @@ jobs:
   # job here, so nothing ever compiled or ran its six test files. Its
   # build.gradle.kts already points jna.library.path at target/release.
   kotlin-binding:
-    name: Kotlin binding
+    name: Kotlin binding (JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [17, 21]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -243,7 +247,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: ${{ matrix.java }}
       - name: Test
         working-directory: bindings/kotlin
         env:
@@ -427,5 +431,4 @@ jobs:
         env:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: |
-          swift test --filter ContractTests \
-            -Xlinker -L${{ github.workspace }}/target/release
+          swift test -Xlinker -L${{ github.workspace }}/target/release

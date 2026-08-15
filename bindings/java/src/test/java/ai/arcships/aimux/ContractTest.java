@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -200,6 +202,84 @@ class ContractTest {
         Types.GenerateTextOptions decoded =
             Types.AimuxJson.MAPPER.readValue(nativeJson, Types.GenerateTextOptions.class);
         assertThat(decoded.getSessionId()).isEqualTo("sess-1");
+    }
+
+    /**
+     * Every {@code GenerateContent} fixture decodes into its concrete variant.
+     *
+     * <p>The variant type is asserted, not merely the absence of an exception.
+     * {@code GenerateContent} falls back to {@link Types.GenerateContent.Unknown}
+     * for forward compatibility, so a variant whose shape drifted would still
+     * decode — silently, as {@code Unknown}. Only naming the expected class
+     * catches that. The fixture count is asserted so a newly added fixture
+     * cannot slip past this test unnoticed.
+     */
+    @Test
+    void generateContentFixturesDecodeIntoTheirVariants() throws Exception {
+        JsonNode fixtures = loadFixtures();
+        Map<String, Types.GenerateContent> byName = new LinkedHashMap<>();
+        for (JsonNode f : fixtures) {
+            if (!"GenerateContent".equals(f.get("type").asText())) {
+                continue;
+            }
+            String json = f.get("json").asText();
+            byName.put(
+                f.get("name").asText(),
+                Types.AimuxJson.MAPPER.readValue(json, Types.GenerateContent.class));
+        }
+        assertThat(byName).hasSize(8);
+
+        assertThat(byName.get("generate_content_text"))
+            .isInstanceOf(Types.GenerateContent.Text.class);
+        assertThat(byName.get("generate_content_reasoning_no_metadata"))
+            .isInstanceOf(Types.GenerateContent.Reasoning.class);
+
+        // The shapes a parse-only check leaves invisible: the tool-call input,
+        // the nested file union, and Source's optionals.
+        Types.GenerateContent.ToolCall toolCall =
+            (Types.GenerateContent.ToolCall) byName.get("generate_content_tool_call");
+        assertThat(toolCall.getToolCallId()).isEqualTo("call_1");
+        assertThat(toolCall.getInput().path("city").asText()).isEqualTo("Paris");
+        assertThat(toolCall.getProviderExecuted()).isTrue();
+
+        Types.GenerateContent.File file =
+            (Types.GenerateContent.File) byName.get("generate_content_file");
+        assertThat(file.getMediaType()).isEqualTo("image/png");
+        assertThat(file.getData()).isNotNull();
+
+        Types.GenerateContent.Source source =
+            (Types.GenerateContent.Source) byName.get("generate_content_source_unset_optionals");
+        assertThat(source.getUrl()).isNull();
+        assertThat(source.getTitle()).isNull();
+    }
+
+    /**
+     * The regression lock for {@code topK}, which this binding declared as
+     * {@code Long} against an {@code f64} wire.
+     *
+     * <p>The values are asserted explicitly, and for Java that is not a
+     * stylistic choice: Jackson coerces a {@code 40.5} token into a
+     * {@code Long} by truncating it to {@code 40} rather than by failing, so a
+     * decode-only test would still pass if someone restored the integer type.
+     * Only comparing the decoded value catches that. {@code topK} is the field
+     * that was wrong; the rest are asserted so narrowing any single numeric
+     * type is caught here too.
+     */
+    @Test
+    void generateTextOptionsNumericTypesDecodeWithFullPrecision() throws Exception {
+        JsonNode fixtures = loadFixtures();
+        String json = fixtureJson(fixtures, "generate_text_options_numeric_types");
+        Types.GenerateTextOptions opts =
+            Types.AimuxJson.MAPPER.readValue(json, Types.GenerateTextOptions.class);
+
+        assertThat(opts.getTopK()).isEqualTo(40.5);
+        assertThat(opts.getFrequencyPenalty()).isEqualTo(-0.5);
+        assertThat(opts.getTemperature()).isEqualTo(0.7);
+        assertThat(opts.getTopP()).isEqualTo(0.95);
+        assertThat(opts.getPresencePenalty()).isEqualTo(0.5);
+        assertThat(opts.getMaxOutputTokens()).isEqualTo(256L);
+        assertThat(opts.getSeed()).isEqualTo(42L);
+        assertThat(opts.getMaxRetries()).isEqualTo(3L);
     }
 
     @Test
