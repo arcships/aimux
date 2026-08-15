@@ -985,24 +985,34 @@ async fn vertex_stream_finish_provider_metadata() {
     mock_stream_content(
         &server,
         &sse_stream(&[
-            stream_chunk(
-                "hello",
-                None,
-                Some(json!({
-                    "webSearchQueries": ["super bowl 2026 halftime show"],
-                    "groundingChunks": [{
-                        "web": { "uri": "https://example.com/superbowl", "title": "Super Bowl 2026" }
-                    }]
-                })),
+            {
+                let mut c = stream_chunk(
+                    "hello",
+                    None,
+                    Some(json!({
+                        "webSearchQueries": ["super bowl 2026 halftime show"],
+                        "groundingChunks": [{
+                            "web": { "uri": "https://example.com/superbowl", "title": "Super Bowl 2026" }
+                        }]
+                    })),
                 Some(json!({
                     "urlMetadata": [{
                         "retrievedUrl": "https://example.com/page",
                         "urlRetrievalStatus": "URL_RETRIEVAL_STATUS_SUCCESS"
                     }]
                 })),
-            ),
+                );
+                // Carry a valued promptFeedback so the assertion below locks
+                // the captured value, not just key presence.
+                c["promptFeedback"] = json!({ "promptTokenCount": 12 });
+                c
+            },
             {
                 let mut c = stream_chunk(" world", Some("STOP"), None, None);
+                c["candidates"][0]["safetyRatings"] = json!([
+                    { "category": "HARM_CATEGORY_HARASSMENT", "probability": "NEGLIGIBLE" }
+                ]);
+                c["candidates"][0]["finishMessage"] = json!("natural stop");
                 c["usageMetadata"] = json!({
                     "promptTokenCount": 38,
                     "candidatesTokenCount": 1335,
@@ -1066,6 +1076,14 @@ async fn vertex_stream_finish_provider_metadata() {
             pm
         );
     }
+    // …and the three snapshot fields carry their captured values, not just
+    // key presence (locks the capture code, not the key scaffold).
+    assert_eq!(vertex["promptFeedback"], json!({ "promptTokenCount": 12 }));
+    assert_eq!(
+        vertex["safetyRatings"],
+        json!([{ "category": "HARM_CATEGORY_HARASSMENT", "probability": "NEGLIGIBLE" }])
+    );
+    assert_eq!(vertex["finishMessage"], json!("natural stop"));
 
     // Usage also lands on the Finish part itself.
     let finish_usage = parts.iter().find_map(|p| match p {
