@@ -43,14 +43,22 @@ impl BlackForestLabsConfig {
             headers: None,
         }
     }
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
+    /// Create from the `BFL_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "BFL_API_KEY", "Black Forest Labs")?;
         Ok(Self::new(api_key))
@@ -61,9 +69,11 @@ pub struct BlackForestLabsProvider {
     config: BlackForestLabsConfig,
 }
 impl BlackForestLabsProvider {
+    #[must_use]
     pub fn new(config: BlackForestLabsConfig) -> Self {
         Self { config }
     }
+    #[must_use]
     pub fn image(&self, model_id: &str) -> BlackForestLabsImageModel {
         BlackForestLabsImageModel::new(model_id.to_string(), self.config.clone())
     }
@@ -75,6 +85,7 @@ pub struct BlackForestLabsImageModel {
     config: BlackForestLabsConfig,
 }
 impl BlackForestLabsImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: BlackForestLabsConfig) -> Self {
         Self { model_id, config }
     }
@@ -309,11 +320,11 @@ impl ImageModel for BlackForestLabsImageModel {
         // Poll for result
         let poll_interval = bfl_opts
             .and_then(|o| o.get("pollIntervalMillis"))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(DEFAULT_POLL_INTERVAL_MS);
         let poll_timeout = bfl_opts
             .and_then(|o| o.get("pollTimeoutMillis"))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(DEFAULT_POLL_TIMEOUT_MS);
         let max_attempts = (poll_timeout / poll_interval.max(1)) as usize;
 

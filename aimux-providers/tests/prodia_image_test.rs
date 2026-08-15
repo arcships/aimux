@@ -12,17 +12,17 @@ const PROMPT: &str = "A cute baby sea otter";
 
 fn multipart_response(boundary: &str, job_json: &str, image_bytes: &[u8]) -> Vec<u8> {
     let mut body = Vec::new();
-    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(b"Content-Disposition: form-data; name=\"job\"\r\n");
     body.extend_from_slice(b"Content-Type: application/json\r\n\r\n");
     body.extend_from_slice(job_json.as_bytes());
     body.extend_from_slice(b"\r\n");
-    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     body.extend_from_slice(b"Content-Disposition: form-data; name=\"output\"\r\n");
     body.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
     body.extend_from_slice(image_bytes);
     body.extend_from_slice(b"\r\n");
-    body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
     body
 }
 

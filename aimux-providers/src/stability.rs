@@ -66,14 +66,22 @@ impl StabilityConfig {
             headers: None,
         }
     }
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
+    /// Create from the `STABILITY_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "STABILITY_API_KEY", "Stability")?;
         Ok(Self::new(api_key))
@@ -85,9 +93,11 @@ pub struct StabilityProvider {
 }
 
 impl StabilityProvider {
+    #[must_use]
     pub fn new(config: StabilityConfig) -> Self {
         Self { config }
     }
+    #[must_use]
     pub fn image(&self, model_id: &str) -> StabilityImageModel {
         StabilityImageModel::new(model_id.to_string(), self.config.clone())
     }
@@ -106,6 +116,7 @@ pub struct StabilityImageModel {
 }
 
 impl StabilityImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: StabilityConfig) -> Self {
         Self { model_id, config }
     }
@@ -204,7 +215,7 @@ impl ImageModel for StabilityImageModel {
         let seed = options.seed.or_else(|| {
             stability_opts
                 .and_then(|o| o.get("seed"))
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
         });
 
         // Resolve output format (defaults to png).

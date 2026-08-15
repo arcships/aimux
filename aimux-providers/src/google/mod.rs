@@ -56,24 +56,32 @@ impl GoogleConfig {
     }
 
     /// Use a custom base URL (e.g. for Vertex AI or a proxy).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// Create from the `GOOGLE_GENERATIVE_AI_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when
+    /// `GOOGLE_GENERATIVE_AI_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "GOOGLE_GENERATIVE_AI_API_KEY", "Google Generative AI")?;
         Ok(Self::new(api_key).with_api_key_source(Some("env:GOOGLE_GENERATIVE_AI_API_KEY")))
@@ -89,28 +97,33 @@ pub struct GoogleProvider {
 }
 
 impl GoogleProvider {
+    #[must_use]
     pub fn new(config: GoogleConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"gemini-2.0-flash"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> model::GoogleModel {
         model::GoogleModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Files interface for uploading files to Google.
+    #[must_use]
     pub fn files(&self) -> files::GoogleFiles {
         files::GoogleFiles::new(self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"gemini-embedding-001"`).
+    #[must_use]
     pub fn embedding_model(&self, model_id: &str) -> embedding::GoogleEmbeddingModel {
         embedding::GoogleEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an image generation model instance for the given model name
     /// (e.g. `"imagen-3.0-generate-002"` or `"gemini-2.5-flash-image"`).
+    #[must_use]
     pub fn image(&self, model_id: &str) -> image::GoogleImageModel {
         image::GoogleImageModel::new(
             model_id.to_string(),
@@ -121,11 +134,13 @@ impl GoogleProvider {
 
     /// Create a video generation model instance for the given model name
     /// (e.g. `"veo-3.0-generate-001"`).
+    #[must_use]
     pub fn video(&self, model_id: &str) -> video::GoogleVideoModel {
         video::GoogleVideoModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an image generation model instance with custom settings.
+    #[must_use]
     pub fn image_with_settings(
         &self,
         model_id: &str,

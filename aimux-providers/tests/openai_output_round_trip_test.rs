@@ -41,7 +41,7 @@ use aimux_providers::openai::{OpenAICompatProfile, OpenAIConfig, OpenAIProvider}
 fn openai_provider(uri: &str) -> aimux_providers::openai::OpenAIModel {
     let provider = OpenAIProvider::new(
         OpenAIConfig::new("test-key")
-            .with_base_url(format!("{}/v1", uri))
+            .with_base_url(format!("{uri}/v1"))
             .with_profile(OpenAICompatProfile::full()),
     );
     provider.model("gpt-4o")
@@ -410,8 +410,7 @@ async fn cross_protocol_anthropic_to_openai_non_streaming() {
         .unwrap_or("stop");
     assert!(
         matches!(fr, "stop" | "length" | "tool_calls" | "content_filter"),
-        "finish_reason should be valid OpenAI value, got {}",
-        fr
+        "finish_reason should be valid OpenAI value, got {fr}"
     );
 }
 
@@ -473,8 +472,7 @@ async fn cross_protocol_anthropic_to_openai_streaming() {
         .unwrap_or("stop");
     assert!(
         matches!(fr, "stop" | "length" | "tool_calls" | "content_filter"),
-        "last chunk finish_reason should be valid, got {}",
-        fr
+        "last chunk finish_reason should be valid, got {fr}"
     );
 
     for chunk in &chunks {

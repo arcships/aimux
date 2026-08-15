@@ -70,12 +70,18 @@ impl DataforseoConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Create from the `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` environment variables.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `DATAFORSEO_LOGIN` or
+    /// `DATAFORSEO_PASSWORD` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let login = std::env::var("DATAFORSEO_LOGIN").map_err(|_| {
             AiMuxError::InvalidArgument(
@@ -113,11 +119,13 @@ pub struct DataforseoProvider {
 }
 
 impl DataforseoProvider {
+    #[must_use]
     pub fn new(config: DataforseoConfig) -> Self {
         Self { config }
     }
 
     /// Create a search model instance.
+    #[must_use]
     pub fn search_model(&self) -> DataforseoSearchModel {
         DataforseoSearchModel::new(self.config.clone())
     }
@@ -205,6 +213,7 @@ pub struct DataforseoSearchModel {
 }
 
 impl DataforseoSearchModel {
+    #[must_use]
     pub fn new(config: DataforseoConfig) -> Self {
         Self { config }
     }
@@ -213,7 +222,7 @@ impl DataforseoSearchModel {
     fn basic_auth(&self) -> String {
         let credentials = format!("{}:{}", self.config.login, self.config.password);
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
-        format!("Basic {}", encoded)
+        format!("Basic {encoded}")
     }
 
     fn build_headers(&self, extra: Option<&SharedHeaders>) -> HashMap<String, String> {

@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK Amazon Bedrock embedding model tests.
+//! Rust translations of the AI SDK Amazon Bedrock embedding model tests.
 //!
 //! Source: `reference/ai/packages/amazon-bedrock/src/amazon-bedrock-embedding-model.test.ts`
 //! (536 lines, 12 cases).
@@ -204,7 +204,10 @@ async fn should_send_multiple_values_cohere_v4() {
 
     let result = model
         .do_embed(&default_options(
-            TEST_VALUES.iter().map(|s| s.to_string()).collect(),
+            TEST_VALUES
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         ))
         .await
         .expect("should succeed");

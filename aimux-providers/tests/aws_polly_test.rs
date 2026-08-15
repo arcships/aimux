@@ -42,7 +42,7 @@ async fn mock_audio_response(server: &MockServer, format: &str) {
         .and(path("/v1/speech"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", format!("audio/{}", format))
+                .insert_header("content-type", format!("audio/{format}"))
                 .set_body_bytes(mock_audio_bytes()),
         )
         .mount(server)
@@ -138,8 +138,7 @@ async fn model_id_maps_to_engine() {
         let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(
             body["Engine"], expected_engine,
-            "model id {} should map to engine {}",
-            model_id, expected_engine
+            "model id {model_id} should map to engine {expected_engine}"
         );
     }
 }
@@ -167,14 +166,12 @@ async fn request_carries_sigv4_authorization_header() {
     let auth_str = auth.to_str().unwrap();
     assert!(
         auth_str.starts_with("AWS4-HMAC-SHA256 "),
-        "expected SigV4 Authorization header, got: {}",
-        auth_str
+        "expected SigV4 Authorization header, got: {auth_str}"
     );
     // The credential scope must reference the polly service.
     assert!(
         auth_str.contains("/polly/aws4_request"),
-        "expected polly service in credential scope, got: {}",
-        auth_str
+        "expected polly service in credential scope, got: {auth_str}"
     );
 }
 
@@ -361,11 +358,10 @@ async fn error_401_maps_to_auth_error() {
 
     assert!(
         matches!(err, ref e if e.status_code() == Some(401)),
-        "expected Auth error for 401, got: {:?}",
-        err
+        "expected Auth error for 401, got: {err:?}"
     );
     // The error must not leak the secret key.
-    let err_str = format!("{:?}", err);
+    let err_str = format!("{err:?}");
     assert!(
         !err_str.contains(TEST_SECRET_KEY),
         "error must not leak the secret key"
@@ -394,8 +390,7 @@ async fn error_403_keeps_the_observed_status() {
 
     assert!(
         matches!(err, ref e if e.status_code() == Some(403)),
-        "expected a 403 provider error, got: {:?}",
-        err
+        "expected a 403 provider error, got: {err:?}"
     );
 }
 
@@ -422,8 +417,7 @@ async fn error_404_maps_to_model_not_found() {
 
     assert!(
         matches!(err, ref e if e.status_code() == Some(404)),
-        "expected ModelNotFound error for 404, got: {:?}",
-        err
+        "expected ModelNotFound error for 404, got: {err:?}"
     );
 }
 

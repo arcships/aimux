@@ -70,7 +70,7 @@ impl std::fmt::Display for ApiCallError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (self.status_code, self.message.is_empty()) {
             (Some(status), false) => write!(f, "HTTP {}: {}", status, self.message),
-            (Some(status), true) => write!(f, "HTTP {}", status),
+            (Some(status), true) => write!(f, "HTTP {status}"),
             (None, _) => f.write_str(&self.message),
         }
     }
@@ -172,6 +172,7 @@ impl AiMuxError {
     /// caller-side time budget — the AI SDK treats it as part of the abort
     /// family (`isAbortError` matches `"TimeoutError"`) and does not retry
     /// it; neither do we.
+    #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {
             AiMuxError::ApiCall(d) => d.is_retryable,
@@ -187,6 +188,7 @@ impl AiMuxError {
     ///
     /// Mirrors the header-consulting behaviour of
     /// `retryWithExponentialBackoffRespectingRetryHeaders` in the TS SDK.
+    #[must_use]
     pub fn retry_after_hint(&self) -> Option<i64> {
         match self {
             AiMuxError::ApiCall(d) => d.retry_after_ms.map(|ms| ms as i64),
@@ -206,6 +208,7 @@ impl AiMuxError {
     /// its only producer is the codex subscription channel's observed-401
     /// mapping (RFC-0018), which trades the carried fields for the "refresh
     /// helps" bit — the status is part of the variant's contract.
+    #[must_use]
     pub fn status_code(&self) -> Option<u16> {
         match self {
             AiMuxError::TokenExpired(_) => Some(401),

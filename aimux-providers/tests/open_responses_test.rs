@@ -82,7 +82,7 @@ async fn mock_sse(server: &MockServer, body: String) {
 
 /// Build a single SSE `data: <json>\n\n` event string.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events and append the `[DONE]` sentinel.
@@ -1004,8 +1004,7 @@ mod do_generate_tests {
         let msg = result.unwrap_err().to_string();
         assert!(
             msg.contains("Responses API returned no output (content_filter)"),
-            "got: {}",
-            msg
+            "got: {msg}"
         );
     }
 
@@ -1034,8 +1033,7 @@ mod do_generate_tests {
         let msg = result.unwrap_err().to_string();
         assert!(
             msg.contains("The upstream provider failed to generate a response."),
-            "got: {}",
-            msg
+            "got: {msg}"
         );
     }
 
@@ -1451,7 +1449,7 @@ mod do_generate_tests {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &json!({"location": "San Francisco"}));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1864,7 +1862,12 @@ mod do_stream_tests {
     async fn stream_basic_generation() {
         let server = MockServer::start().await;
         let chunks = basic_stream_chunks();
-        let body = sse_body(&chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+        let body = sse_body(
+            &chunks
+                .iter()
+                .map(std::string::String::as_str)
+                .collect::<Vec<_>>(),
+        );
         mock_sse(&server, body).await;
 
         let model = make_model(&server, "gemma-7b-it");
@@ -1966,7 +1969,12 @@ mod do_stream_tests {
     async fn stream_reasoning_with_tool_call() {
         let server = MockServer::start().await;
         let chunks = reasoning_tool_call_chunks();
-        let body = sse_body(&chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+        let body = sse_body(
+            &chunks
+                .iter()
+                .map(std::string::String::as_str)
+                .collect::<Vec<_>>(),
+        );
         mock_sse(&server, body).await;
 
         let model = make_model(&server, "gemma-7b-it");
@@ -2061,7 +2069,12 @@ mod do_stream_tests {
     async fn stream_pdf_input() {
         let server = MockServer::start().await;
         let chunks = pdf_stream_chunks();
-        let body = sse_body(&chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+        let body = sse_body(
+            &chunks
+                .iter()
+                .map(std::string::String::as_str)
+                .collect::<Vec<_>>(),
+        );
         mock_sse(&server, body).await;
 
         let model = make_model(&server, "gpt-4.1-nano");

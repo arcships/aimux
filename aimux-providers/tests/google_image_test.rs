@@ -1,4 +1,4 @@
-﻿//! Rust translation of the Google image model tests.
+//! Rust translation of the Google image model tests.
 //!
 //! Source: `reference/ai/packages/google/src/google-image-model.test.ts`
 //!
@@ -311,11 +311,13 @@ async fn should_include_response_data_with_timestamp_model_id_and_headers() {
     );
     let headers = result.response.headers.as_ref().unwrap();
     assert_eq!(
-        headers.get("request-id").map(|s| s.as_str()),
+        headers.get("request-id").map(std::string::String::as_str),
         Some("test-request-id")
     );
     assert_eq!(
-        headers.get("x-goog-quota-remaining").map(|s| s.as_str()),
+        headers
+            .get("x-goog-quota-remaining")
+            .map(std::string::String::as_str),
         Some("123")
     );
 }

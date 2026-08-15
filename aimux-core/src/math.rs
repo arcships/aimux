@@ -17,6 +17,11 @@ pub enum UtilError {
 /// Returns `Ok(0.0)` for empty vectors or when either vector is the zero
 /// vector, and `Err(UtilError::VectorLengthMismatch)` when the lengths differ
 /// (the TS version throws an `InvalidArgumentError`).
+///
+/// # Errors
+///
+/// Returns `UtilError::VectorLengthMismatch` when the two vectors have
+/// different lengths.
 pub fn cosine_similarity(vector1: &[f64], vector2: &[f64]) -> Result<f64, UtilError> {
     if vector1.len() != vector2.len() {
         return Err(UtilError::VectorLengthMismatch);

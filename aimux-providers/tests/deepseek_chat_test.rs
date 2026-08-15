@@ -110,7 +110,7 @@ async fn mock_sse(server: &MockServer, body: String) {
 
 /// Build a single SSE `data: <json>\n\n` event string.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events and append the `[DONE]` sentinel.
@@ -130,7 +130,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -324,10 +324,9 @@ async fn should_extract_text_content() {
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert!(
             text.contains("Gratitude of Small Things Day"),
-            "expected the fixture text, got: {}",
-            text
+            "expected the fixture text, got: {text}"
         ),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Length);
     assert_eq!(result.finish_reason.raw.as_deref(), Some("length"));
@@ -420,7 +419,7 @@ async fn should_extract_tool_call_content() {
             assert_eq!(tool_name, "weather");
             assert_eq!(input, &json!({ "location": "San Francisco" }));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -548,10 +547,9 @@ async fn should_extract_json_response_text_content() {
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert!(
             text.contains("San Francisco"),
-            "expected JSON content with 'San Francisco', got: {}",
-            text
+            "expected JSON content with 'San Francisco', got: {text}"
         ),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
 }
@@ -674,7 +672,7 @@ async fn should_stream_text() {
         Some(StreamPart::Finish { finish_reason, .. }) => {
             assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
         }
-        other => panic!("expected Finish as last part, got {:?}", other),
+        other => panic!("expected Finish as last part, got {other:?}"),
     }
 }
 
@@ -763,7 +761,7 @@ async fn should_stream_tool_call() {
         Some(StreamPart::Finish { finish_reason, .. }) => {
             assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
         }
-        other => panic!("expected Finish as last part, got {:?}", other),
+        other => panic!("expected Finish as last part, got {other:?}"),
     }
 }
 
@@ -829,13 +827,11 @@ async fn should_convert_image_file_parts_to_image_url() {
     let messages_str = result.body["messages"].to_string();
     assert!(
         messages_str.contains("image_url"),
-        "messages should contain image_url: {}",
-        messages_str
+        "messages should contain image_url: {messages_str}"
     );
     assert!(
         messages_str.contains("data:image/png;base64,AAECAw=="),
-        "messages should contain base64 data URL: {}",
-        messages_str
+        "messages should contain base64 data URL: {messages_str}"
     );
 }
 
@@ -869,8 +865,7 @@ async fn should_accept_top_level_only_mediatype_without_error() {
     let messages_str = result.body["messages"].to_string();
     assert!(
         messages_str.contains("image_url"),
-        "messages should contain image_url for top-level image media type: {}",
-        messages_str
+        "messages should contain image_url for top-level image media type: {messages_str}"
     );
 }
 

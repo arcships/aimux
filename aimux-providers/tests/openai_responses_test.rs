@@ -92,7 +92,7 @@ async fn mock_sse_response(server: &MockServer, sse_body: &str) {
 
 /// Build an SSE event string from a JSON value.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events and append `[DONE]`.
@@ -112,7 +112,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -486,7 +486,7 @@ mod do_generate_request {
             aimux_core::types::Warning::Unsupported { feature, .. } => {
                 assert_eq!(feature, "conversation");
             }
-            other => panic!("expected Unsupported warning, got {:?}", other),
+            other => panic!("expected Unsupported warning, got {other:?}"),
         }
     }
 
@@ -708,7 +708,7 @@ mod do_generate_response {
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "answer text"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
     }
 
@@ -807,13 +807,11 @@ mod do_generate_response {
         let msg = err.to_string();
         assert!(
             msg.contains("no output"),
-            "error should mention 'no output', got: {}",
-            msg
+            "error should mention 'no output', got: {msg}"
         );
         assert!(
             msg.contains("content_filter"),
-            "error should mention 'content_filter', got: {}",
-            msg
+            "error should mention 'content_filter', got: {msg}"
         );
     }
 
@@ -873,7 +871,7 @@ mod do_generate_response {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input["location"], "San Francisco");
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
         // finish reason should be tool-calls (hasFunctionCall = true, no incomplete_details)
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
@@ -933,11 +931,11 @@ mod do_generate_response {
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
             GenerateContent::Reasoning { text, .. } => assert_eq!(text, "thinking..."),
-            other => panic!("expected Reasoning, got {:?}", other),
+            other => panic!("expected Reasoning, got {other:?}"),
         }
         match &result.content[1] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "answer"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
         assert_eq!(result.usage.output_tokens.reasoning, Some(15));
         assert_eq!(result.usage.output_tokens.text, Some(5));
@@ -1008,12 +1006,12 @@ mod do_stream {
                 assert_eq!(id.as_deref(), Some("resp_1"));
                 assert_eq!(model_id.as_deref(), Some("gpt-4o-2024-07-18"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
 
         match &parts[2] {
             StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_1"),
-            other => panic!("expected TextStart, got {:?}", other),
+            other => panic!("expected TextStart, got {other:?}"),
         }
 
         match &parts[3] {
@@ -1021,7 +1019,7 @@ mod do_stream {
                 assert_eq!(id, "msg_1");
                 assert_eq!(delta, "Hello,");
             }
-            other => panic!("expected TextDelta, got {:?}", other),
+            other => panic!("expected TextDelta, got {other:?}"),
         }
 
         match &parts[4] {
@@ -1029,12 +1027,12 @@ mod do_stream {
                 assert_eq!(id, "msg_1");
                 assert_eq!(delta, " World!");
             }
-            other => panic!("expected TextDelta, got {:?}", other),
+            other => panic!("expected TextDelta, got {other:?}"),
         }
 
         match &parts[5] {
             StreamPart::TextEnd { id, .. } => assert_eq!(id, "msg_1"),
-            other => panic!("expected TextEnd, got {:?}", other),
+            other => panic!("expected TextEnd, got {other:?}"),
         }
 
         match &parts[6] {
@@ -1050,7 +1048,7 @@ mod do_stream {
                 assert_eq!(usage.output_tokens.reasoning, Some(123));
                 assert_eq!(usage.output_tokens.text, Some(355));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1111,7 +1109,7 @@ mod do_stream {
                 assert_eq!(id, "call_added");
                 assert_eq!(tool_name, "weather");
             }
-            other => panic!("expected ToolInputStart, got {:?}", other),
+            other => panic!("expected ToolInputStart, got {other:?}"),
         }
 
         // ToolInputDelta uses the ongoing tool call's id (from added item).
@@ -1120,20 +1118,20 @@ mod do_stream {
                 assert_eq!(id, "call_added");
                 assert!(delta.contains("location"));
             }
-            other => panic!("expected ToolInputDelta, got {:?}", other),
+            other => panic!("expected ToolInputDelta, got {other:?}"),
         }
         match &parts[4] {
             StreamPart::ToolInputDelta { id, delta, .. } => {
                 assert_eq!(id, "call_added");
                 assert!(delta.contains("Rome"));
             }
-            other => panic!("expected ToolInputDelta, got {:?}", other),
+            other => panic!("expected ToolInputDelta, got {other:?}"),
         }
 
         // ToolInputEnd uses the call_id from the done item.
         match &parts[5] {
             StreamPart::ToolInputEnd { id, .. } => assert_eq!(id, "call_done"),
-            other => panic!("expected ToolInputEnd, got {:?}", other),
+            other => panic!("expected ToolInputEnd, got {other:?}"),
         }
 
         // ToolCall uses the call_id and arguments from the done item.
@@ -1148,7 +1146,7 @@ mod do_stream {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input["location"], "Rome");
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
 
         // Finish should have tool-calls finish reason.
@@ -1156,7 +1154,7 @@ mod do_stream {
             StreamPart::Finish { finish_reason, .. } => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1215,7 +1213,7 @@ mod do_stream {
             StreamPart::ReasoningStart { id, .. } => {
                 assert_eq!(id, "rs_1:0");
             }
-            other => panic!("expected ReasoningStart, got {:?}", other),
+            other => panic!("expected ReasoningStart, got {other:?}"),
         }
 
         match &parts[3] {
@@ -1223,19 +1221,19 @@ mod do_stream {
                 assert_eq!(id, "rs_1:0");
                 assert_eq!(delta, "thinking through the steps");
             }
-            other => panic!("expected ReasoningDelta, got {:?}", other),
+            other => panic!("expected ReasoningDelta, got {other:?}"),
         }
 
         match &parts[4] {
             StreamPart::ReasoningEnd { id, .. } => assert_eq!(id, "rs_1:0"),
-            other => panic!("expected ReasoningEnd, got {:?}", other),
+            other => panic!("expected ReasoningEnd, got {other:?}"),
         }
 
         match &parts[5] {
             StreamPart::Finish { finish_reason, .. } => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 

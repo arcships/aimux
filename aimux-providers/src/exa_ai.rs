@@ -37,11 +37,18 @@ impl ExaAiConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    /// Create from the `EXA_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "EXA_API_KEY", "Exa AI")?;
         Ok(Self::new(api_key))
@@ -54,10 +61,12 @@ pub struct ExaAiProvider {
 }
 
 impl ExaAiProvider {
+    #[must_use]
     pub fn new(config: ExaAiConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn search_model(&self) -> ExaAiSearchModel {
         ExaAiSearchModel::new(self.config.clone())
     }
@@ -121,6 +130,7 @@ pub struct ExaAiSearchModel {
 }
 
 impl ExaAiSearchModel {
+    #[must_use]
     pub fn new(config: ExaAiConfig) -> Self {
         Self { config }
     }

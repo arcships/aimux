@@ -37,12 +37,17 @@ impl XAIConfig {
     }
 
     /// Create from the `XAI_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `XAI_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "xAI")?;
         Ok(Self::new(key).with_api_key_source(Some("env:XAI_API_KEY")))
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
         self.0 = self.0.with_api_key_source(source);
         self
@@ -54,6 +59,7 @@ impl XAIConfig {
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -84,6 +90,7 @@ pub struct XAIProvider {
 }
 
 impl XAIProvider {
+    #[must_use]
     pub fn new(config: XAIConfig) -> Self {
         Self { config }
     }
@@ -93,6 +100,7 @@ impl XAIProvider {
     /// Clones the provider config so the model inherits the same
     /// `api_key_source` / `retry_config` (M2b: previously reconstructed with
     /// `XAIConfig::new`, which dropped the credential source).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> XaiModel {
         XaiModel::new(model_id.to_string(), self.config.clone())
     }
@@ -101,6 +109,7 @@ impl XAIProvider {
     ///
     /// Uses the xAI `/responses` endpoint with the Responses API wire format
     /// (input items, reasoning objects, provider-executed tools, etc.).
+    #[must_use]
     pub fn responses_model(&self, model_id: &str) -> XaiResponsesModel {
         XaiResponsesModel::new(model_id.to_string(), self.config.clone())
     }

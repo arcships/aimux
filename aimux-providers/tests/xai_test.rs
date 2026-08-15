@@ -106,7 +106,7 @@ fn xai_text_fixture() -> Value {
 
 /// Build a single SSE `data: <json>\n\n` event string.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events and append the `[DONE]` sentinel.
@@ -126,7 +126,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -617,7 +617,7 @@ mod prepare_tools {
                 || tools
                     .unwrap()
                     .as_array()
-                    .map(|a| a.is_empty())
+                    .map(std::vec::Vec::is_empty)
                     .unwrap_or(true)
         );
 
@@ -1356,7 +1356,7 @@ mod do_generate {
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "Hello from object"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
     }
@@ -1962,7 +1962,7 @@ mod do_stream {
             Some(StreamPart::Finish { finish_reason, .. }) => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -2429,7 +2429,7 @@ mod reasoning {
                 .map(|c| sse_event(c))
                 .collect::<Vec<_>>()
                 .iter()
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .collect::<Vec<_>>(),
         );
         Mock::given(method("POST"))
@@ -2478,7 +2478,7 @@ mod reasoning {
                 .map(|c| sse_event(c))
                 .collect::<Vec<_>>()
                 .iter()
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .collect::<Vec<_>>(),
         );
         Mock::given(method("POST"))
@@ -2552,8 +2552,7 @@ mod error_handling {
         let msg = err.to_string();
         assert!(
             msg.contains("Invalid value: temperature must be between 0 and 2"),
-            "got: {}",
-            msg
+            "got: {msg}"
         );
     }
 
@@ -2579,10 +2578,9 @@ mod error_handling {
         let msg = err.to_string();
         assert!(
             msg.contains("Client specified an invalid argument"),
-            "got: {}",
-            msg
+            "got: {msg}"
         );
-        assert!(msg.contains("Invalid request content"), "got: {}", msg);
+        assert!(msg.contains("Invalid request content"), "got: {msg}");
     }
 
     /// TS: should throw APICallError when xai returns error with 200 status (doGenerate)
@@ -2607,8 +2605,7 @@ mod error_handling {
         let msg = err.to_string();
         assert!(
             msg.contains("Timed out waiting for first token"),
-            "got: {}",
-            msg
+            "got: {msg}"
         );
     }
 
@@ -2634,8 +2631,7 @@ mod error_handling {
         let msg = err.to_string();
         assert!(
             msg.contains("Timed out waiting for first token"),
-            "got: {}",
-            msg
+            "got: {msg}"
         );
     }
 

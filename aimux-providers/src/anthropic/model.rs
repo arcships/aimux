@@ -25,6 +25,7 @@ pub struct AnthropicModel {
 }
 
 impl AnthropicModel {
+    #[must_use]
     pub fn new(model_id: String, config: AnthropicConfig) -> Self {
         Self { model_id, config }
     }

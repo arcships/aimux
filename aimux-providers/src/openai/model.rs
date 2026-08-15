@@ -40,6 +40,7 @@ pub struct OpenAIModel {
 }
 
 impl OpenAIModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -64,6 +65,7 @@ impl OpenAIModel {
 ///
 /// Shared by `OpenAIModel::build_headers` and the model-listing path
 /// ([`execute_list_models`]) so both use identical auth wiring.
+#[must_use]
 pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     headers.insert(
@@ -282,6 +284,12 @@ fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)>
 /// `endpoint` is the full chat-completions URL; `headers` carries the auth
 /// headers (and any extra/request headers); `model_id` is placed in the
 /// request body's `model` field.
+///
+/// # Errors
+///
+/// Returns request-build conversion errors, `ApiCall` for HTTP/transport
+/// failures, `JsonParse` for a malformed body, and `InvalidResponseData` when
+/// `choices` is empty.
 pub async fn execute_generate(
     endpoint: &str,
     headers: &HashMap<String, String>,
@@ -371,16 +379,16 @@ pub async fn execute_generate(
                 && let Some(uc) = ann.get("url_citation")
             {
                 content.push(GenerateContent::Source {
-                    id: format!("annotation-{}", i),
+                    id: format!("annotation-{i}"),
                     source_type: "url".to_string(),
                     url: uc
                         .get("url")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     title: uc
                         .get("title")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     provider_metadata: None,
                 });
             }
@@ -440,6 +448,11 @@ pub async fn execute_generate(
 /// `endpoint` is the full chat-completions URL; `headers` carries the auth
 /// headers (and any extra/request headers); `model_id` is placed in the
 /// request body's `model` field.
+///
+/// # Errors
+///
+/// Returns request-build conversion errors and `ApiCall` when establishing the
+/// stream fails; transport errors surface as `Err` items in the stream.
 pub async fn execute_stream(
     endpoint: &str,
     headers: &HashMap<String, String>,
@@ -651,12 +664,12 @@ pub async fn execute_stream(
                             if !text_started {
                                 text_started = true;
                                 yield Ok(StreamPart::TextStart {
-                                    id: format!("{}", text_id),
+                                    id: format!("{text_id}"),
                                     provider_metadata: None,
                                 });
                             }
                             yield Ok(StreamPart::TextDelta {
-                                id: format!("{}", text_id),
+                                id: format!("{text_id}"),
                                 delta: content,
                                 provider_metadata: None,
                             });
@@ -733,7 +746,7 @@ pub async fn execute_stream(
                             // Close any open text segment.
                             if text_started {
                                 yield Ok(StreamPart::TextEnd {
-                                    id: format!("{}", text_id),
+                                    id: format!("{text_id}"),
                                     provider_metadata: None,
                                 });
                                 text_started = false;
@@ -788,7 +801,7 @@ pub async fn execute_stream(
         // Close any remaining open text segment.
         if text_started {
             yield Ok(StreamPart::TextEnd {
-                id: format!("{}", text_id),
+                id: format!("{text_id}"),
                 provider_metadata: None,
             });
         }
@@ -883,6 +896,11 @@ struct ModelEntry {
 ///
 /// `headers` carries the auth headers (Bearer key etc.); `base_url` is the
 /// provider's API base (e.g. `https://api.openai.com/v1`).
+///
+/// # Errors
+///
+/// Returns `ApiCall` for HTTP/transport failures and `JsonParse` when the
+/// body does not deserialize into the models list.
 pub async fn execute_list_models(
     base_url: &str,
     headers: &HashMap<String, String>,

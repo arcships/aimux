@@ -201,10 +201,10 @@ impl LanguageModel for CohereModel {
                     .and_then(|src| src.get("document"))
                     .and_then(|d| d.get("title"))
                     .and_then(|t| t.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| "Document".to_string());
                 content.push(GenerateContent::Source {
-                    id: format!("citation-{}", i),
+                    id: format!("citation-{i}"),
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
@@ -337,12 +337,12 @@ impl LanguageModel for CohereModel {
                                 if content_type == Some("thinking") {
                                     is_reasoning = true;
                                     yield Ok(StreamPart::ReasoningStart {
-                                        id: format!("reasoning-{}", idx),
+                                        id: format!("reasoning-{idx}"),
                                         provider_metadata: None,
                                     });
                                 } else {
                                     yield Ok(StreamPart::TextStart {
-                                        id: format!("{}", idx),
+                                        id: format!("{idx}"),
                                         provider_metadata: None,
                                     });
                                 }
@@ -362,7 +362,7 @@ impl LanguageModel for CohereModel {
                                         content.get("thinking").and_then(|t| t.as_str())
                                     {
                                         yield Ok(StreamPart::ReasoningDelta {
-                                            id: format!("reasoning-{}", idx),
+                                            id: format!("reasoning-{idx}"),
                                             delta: thinking.to_string(),
                                             provider_metadata: None,
                                         });
@@ -372,7 +372,7 @@ impl LanguageModel for CohereModel {
                                         content.get("text").and_then(|t| t.as_str())
                                     {
                                         yield Ok(StreamPart::TextDelta {
-                                            id: format!("{}", idx),
+                                            id: format!("{idx}"),
                                             delta: text.to_string(),
                                             provider_metadata: None,
                                         });
@@ -384,13 +384,13 @@ impl LanguageModel for CohereModel {
                                 let idx = parsed.index.unwrap_or(0);
                                 if is_reasoning {
                                     yield Ok(StreamPart::ReasoningEnd {
-                                        id: format!("reasoning-{}", idx),
+                                        id: format!("reasoning-{idx}"),
                                         provider_metadata: None,
                                     });
                                     is_reasoning = false;
                                 } else {
                                     yield Ok(StreamPart::TextEnd {
-                                        id: format!("{}", idx),
+                                        id: format!("{idx}"),
                                         provider_metadata: None,
                                     });
                                 }

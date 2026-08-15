@@ -374,10 +374,12 @@ use std::sync::Arc as Arc2;
 
 impl RingTraceStore {
     /// A store with default bounds (2048 records, 512 per scope).
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_RING_CAPACITY, DEFAULT_SCOPE_CAP)
     }
 
+    #[must_use]
     pub fn with_capacity(cap: usize, per_scope_cap: usize) -> Self {
         assert!(cap > 0 && per_scope_cap > 0);
         Self {
@@ -531,6 +533,11 @@ impl RingTraceStore {
     }
 
     /// Export all records as JSONL (one `TraceRecord` per line).
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error (JSON serialization failures included) when
+    /// serializing a record or writing a line fails.
     pub fn export_jsonl(&self, w: &mut impl Write) -> std::io::Result<()> {
         let inner = self.inner.lock().unwrap();
         for rec in &inner.records {

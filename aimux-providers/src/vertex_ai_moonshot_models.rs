@@ -43,13 +43,10 @@ const DEFAULT_PROJECT: &str = "your-project";
 fn build_maas_base_url(project: &str, location: &str) -> String {
     let host = match location {
         "global" => "aiplatform.googleapis.com".to_string(),
-        "eu" | "us" => format!("aiplatform.{}.rep.googleapis.com", location),
-        _ => format!("{}-aiplatform.googleapis.com", location),
+        "eu" | "us" => format!("aiplatform.{location}.rep.googleapis.com"),
+        _ => format!("{location}-aiplatform.googleapis.com"),
     };
-    format!(
-        "https://{}/v1/projects/{}/locations/{}/endpoints/openapi",
-        host, project, location
-    )
+    format!("https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi")
 }
 
 /// Assemble the shared [`OpenAIConfig`] for the given token + project/location.
@@ -78,6 +75,11 @@ impl VertexAiMoonshotModelsConfig {
 
     /// Create from `GOOGLE_VERTEX_ACCESS_TOKEN` + `GOOGLE_VERTEX_PROJECT` +
     /// `GOOGLE_VERTEX_LOCATION` (location defaults to `global`).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `GOOGLE_VERTEX_ACCESS_TOKEN` or
+    /// `GOOGLE_VERTEX_PROJECT` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let token = std::env::var(TOKEN_ENV_VAR).map_err(|_| {
             AiMuxError::InvalidArgument(
@@ -97,6 +99,7 @@ impl VertexAiMoonshotModelsConfig {
     }
 
     /// Override the base URL (useful for tests / proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -108,12 +111,14 @@ impl VertexAiMoonshotModelsConfig {
 pub struct VertexAiMoonshotModelsProvider(OpenAIProvider);
 
 impl VertexAiMoonshotModelsProvider {
+    #[must_use]
     pub fn new(config: VertexAiMoonshotModelsConfig) -> Self {
         Self(OpenAIProvider::new(config.0))
     }
 
     /// Create a model instance for the given Vertex AI MaaS model id
     /// (e.g. `"moonshotai/kimi-k2-thinking-maas"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         self.0.model(model_id)
     }

@@ -52,18 +52,24 @@ impl HumeConfig {
     }
 
     /// Override the base URL (for testing or proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into().trim_end_matches('/').to_string();
         self
     }
 
     /// Attach extra headers merged into every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Create from environment variable `HUME_API_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `HUME_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "HUME_API_KEY", "Hume")?;
         Ok(Self::new(api_key))
@@ -78,12 +84,14 @@ pub struct HumeProvider {
 }
 
 impl HumeProvider {
+    #[must_use]
     pub fn new(config: HumeConfig) -> Self {
         Self { config }
     }
 
     /// Create a speech (TTS) model instance. Hume does not use model IDs for
     /// TTS, so the model ID is always an empty string.
+    #[must_use]
     pub fn speech(&self) -> HumeSpeechModel {
         HumeSpeechModel::new(self.config.clone())
     }
@@ -105,6 +113,7 @@ pub struct HumeSpeechModel {
 }
 
 impl HumeSpeechModel {
+    #[must_use]
     pub fn new(config: HumeConfig) -> Self {
         Self {
             model_id: String::new(),
@@ -236,8 +245,7 @@ fn build_request(
         warnings.push(Warning::Unsupported {
             feature: "outputFormat".to_string(),
             details: Some(format!(
-                "Unsupported output format: {}. Using mp3 instead.",
-                output_format
+                "Unsupported output format: {output_format}. Using mp3 instead."
             )),
         });
     }
@@ -255,8 +263,7 @@ fn build_request(
         warnings.push(Warning::Unsupported {
             feature: "language".to_string(),
             details: Some(format!(
-                "Hume speech models do not support language selection. Language parameter \"{}\" was ignored.",
-                language
+                "Hume speech models do not support language selection. Language parameter \"{language}\" was ignored."
             )),
         });
     }
@@ -301,10 +308,10 @@ fn parse_hume_provider_options(
                     if let Some(d) = u.get("description").and_then(|v| v.as_str()) {
                         m.insert("description".to_string(), json!(d));
                     }
-                    if let Some(s) = u.get("speed").and_then(|v| v.as_f64()) {
+                    if let Some(s) = u.get("speed").and_then(serde_json::Value::as_f64) {
                         m.insert("speed".to_string(), json!(s));
                     }
-                    if let Some(ts) = u.get("trailingSilence").and_then(|v| v.as_f64()) {
+                    if let Some(ts) = u.get("trailingSilence").and_then(serde_json::Value::as_f64) {
                         m.insert("trailing_silence".to_string(), json!(ts));
                     }
                     if let Some(v) = u.get("voice") {

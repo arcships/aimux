@@ -35,6 +35,7 @@ pub struct Chain {
 }
 
 impl Chain {
+    #[must_use]
     pub fn block_count(&self) -> u64 {
         self.block_hashes.len() as u64
     }
@@ -48,6 +49,7 @@ pub struct BlockChainFingerprint {
 }
 
 impl BlockChainFingerprint {
+    #[must_use]
     pub fn new(block_size: usize, scope_salt: u64) -> Self {
         debug_assert!(block_size >= 16, "block size too small");
         Self {
@@ -57,6 +59,7 @@ impl BlockChainFingerprint {
     }
 
     /// Compute the chain for a byte slice.
+    #[must_use]
     pub fn compute(&self, data: &[u8]) -> Chain {
         let n = data.len();
         let mut prev: u128 = 0;
@@ -89,6 +92,7 @@ impl BlockChainFingerprint {
 /// - Nested levels: only `request_id` / `requestId` (universal request ids;
 ///   `timestamp`/`nonce` may be legitimate business payload inside tool
 ///   arguments, so they are kept there).
+#[must_use]
 pub fn denoise(value: &Value) -> Value {
     denoise_at(value, 0)
 }

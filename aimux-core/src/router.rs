@@ -28,6 +28,11 @@ use crate::result::{GenerateResult, StreamResult};
 /// learned routing is intentionally out of core (see RFC-0021 §6.1).
 pub trait Router: Send + Sync {
     /// Choose a child-model index. `Err` means "no child can serve this prompt".
+    ///
+    /// # Errors
+    ///
+    /// `Err` means no child model can serve this prompt (all children filtered
+    /// out).
     fn route(
         &self,
         prompt: &LanguageModelPrompt,
@@ -65,6 +70,7 @@ pub struct WeightedRouter {
 impl WeightedRouter {
     /// Weights are positional — `weights[i]` applies to `models[i]`. Missing
     /// trailing weights default to `0.0`.
+    #[must_use]
     pub fn new(weights: Vec<f64>) -> Self {
         Self { weights }
     }
@@ -141,6 +147,7 @@ pub struct RouterModel {
 }
 
 impl RouterModel {
+    #[must_use]
     pub fn new(
         models: Vec<ChildModel>,
         router: Box<dyn Router>,

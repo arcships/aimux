@@ -49,6 +49,11 @@ impl LlamafileConfig {
     /// inference server that does not require authentication. When the variable
     /// is unset (or empty), the default local endpoint
     /// (`http://127.0.0.1:8080/v1`) is used.
+    ///
+    /// # Errors
+    ///
+    /// Never returns an error; an unset `LLAMAFILE_BASE_URL` falls back to the
+    /// default local endpoint.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let config = Self::new(PLACEHOLDER_API_KEY);
         match std::env::var(ENV_VAR) {
@@ -58,6 +63,7 @@ impl LlamafileConfig {
     }
 
     /// Override the base URL (useful for tests / non-default ports).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -68,12 +74,14 @@ impl LlamafileConfig {
 pub struct LlamafileProvider(OpenAIProvider);
 
 impl LlamafileProvider {
+    #[must_use]
     pub fn new(config: LlamafileConfig) -> Self {
         Self(OpenAIProvider::new(config.0))
     }
 
     /// Create a model instance for the given llamafile model id
     /// (e.g. `"llama3.2:latest"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         self.0.model(model_id)
     }

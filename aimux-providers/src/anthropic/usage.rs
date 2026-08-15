@@ -76,6 +76,7 @@ pub struct AnthropicUsageResult {
 ///
 /// `raw_usage` corresponds to the TS `rawUsage` argument; when `None`, the
 /// `usage` object itself is used as `raw`.
+#[must_use]
 pub fn convert_anthropic_usage(usage: &Value, raw_usage: Option<&Value>) -> AnthropicUsageResult {
     let u: AnthropicUsageInput = serde_json::from_value(usage.clone()).unwrap_or_default();
 
@@ -141,6 +142,7 @@ pub fn convert_anthropic_usage(usage: &Value, raw_usage: Option<&Value>) -> Anth
 /// Semantics (RFC-0015 P0-2): `input_tokens.total` = input + cache_read +
 /// cache_creation (Anthropic's own `input_tokens` excludes cache). This is a
 /// deliberate correction for consumers.
+#[must_use]
 pub fn usage_from_anthropic(usage: &AnthropicUsage) -> Usage {
     match serde_json::to_value(usage) {
         Ok(v) => {

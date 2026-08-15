@@ -1,4 +1,4 @@
-﻿//! Tool preparation for the Anthropic provider.
+//! Tool preparation for the Anthropic provider.
 //!
 //! Faithful Rust port of the function-tool and tool-choice handling of the
 //! TypeScript `prepareTools` in `packages/anthropic/src/anthropic-prepare-tools.ts`,
@@ -37,6 +37,7 @@ const BETA_ADVANCED_TOOL_USE: &str = "advanced-tool-use-2025-11-20";
 /// `disable_parallel_tool_use` mirrors the TS `disableParallelToolUse` flag and
 /// is attached to the chosen `tool_choice` when set. `default_eager_input_streaming`
 /// is the model-level default for `eager_input_streaming` on function tools.
+#[must_use]
 pub fn prepare_tools(
     tools: Option<&[FunctionTool]>,
     tool_choice: Option<&ToolChoice>,
@@ -133,6 +134,7 @@ fn arg(args: &Value, key: &str) -> Value {
 /// Prepare a mix of function and provider-defined tools into the Anthropic
 /// `tools` / `tool_choice` shape. This is the provider-tool-aware counterpart of
 /// [`prepare_tools`]; it mirrors the TS `prepareTools` `case 'provider'` branch.
+#[must_use]
 pub fn prepare_tools_with_provider(
     tools: Option<&[AnthropicTool]>,
     tool_choice: Option<&ToolChoice>,
@@ -168,7 +170,7 @@ pub fn prepare_tools_with_provider(
                             anthropic_tools.push(def);
                         } else {
                             tool_warnings.push(Warning::Unsupported {
-                                feature: format!("provider-defined tool {}", id),
+                                feature: format!("provider-defined tool {id}"),
                                 details: None,
                             });
                         }
@@ -257,11 +259,11 @@ fn prepare_function_tool(
 
     let eager_input_streaming = anthropic_options
         .and_then(|o| o.get("eagerInputStreaming"))
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(default_eager_input_streaming);
     let defer_loading = anthropic_options
         .and_then(|o| o.get("deferLoading"))
-        .and_then(|v| v.as_bool());
+        .and_then(serde_json::Value::as_bool);
     let allowed_callers = anthropic_options.and_then(|o| o.get("allowedCallers"));
 
     #[allow(clippy::collapsible_if, reason = "let-chain not stable on 1.97")]

@@ -72,6 +72,7 @@ pub struct Recording {
 
 impl Recording {
     /// 以 call_id 开一条新录制(字段由事件流填充)。
+    #[must_use]
     pub fn new(call_id: &str, input: InputRecord, provider: ProviderRecord) -> Self {
         Self {
             schema: RECORDING_SCHEMA,
@@ -117,6 +118,7 @@ pub struct InputRecord {
 
 impl InputRecord {
     /// 从 CallOptions 提取输入侧快照(options 序列化后递归脱敏)。
+    #[must_use]
     pub fn from_call_options(options: &CallOptions) -> Self {
         let value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
         Self {
@@ -145,6 +147,7 @@ pub struct ProviderRecord {
 
 impl ProviderRecord {
     /// 最小快照(provider/model_id)——`config_snapshot` 默认实现;cover 的部分放结构方法。
+    #[must_use]
     pub fn minimal(provider: &str, model_id: &str) -> Self {
         Self {
             provider: provider.to_string(),
@@ -232,18 +235,20 @@ pub struct OutcomeRecord {
 
 impl OutcomeRecord {
     /// 非流式成功。
+    #[must_use]
     pub fn from_generate_result(r: &crate::result::GenerateResult) -> Self {
         Self {
             status: OutcomeStatus::Success,
             finish_reason: serde_json::to_value(r.finish_reason.unified)
                 .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
             error: None,
             usage: serde_json::to_value(&r.usage).ok(),
         }
     }
 
     /// 失败(非流式 / 流式立即失败)。
+    #[must_use]
     pub fn from_error(e: &crate::error::AiMuxError) -> Self {
         Self {
             status: OutcomeStatus::Error,
@@ -329,6 +334,12 @@ pub trait Recorder: Send + Sync {
     fn flush(&self);
     /// 显式 flush:同 [`flush`](Self::flush) 但把 writer 退出/超时等写失败作为
     /// `Result` 返回(A9/N4)。默认 `Ok(())`(无 I/O 的实现,如 `RingRecorder`)。
+    ///
+    /// # Errors
+    ///
+    /// The default (I/O-free) implementation always returns `Ok(())`;
+    /// file-backed implementations return `RecordingError` on write or timeout
+    /// failures.
     fn try_flush(&self) -> Result<(), RecordingError> {
         Ok(())
     }
@@ -364,6 +375,7 @@ pub fn init_recording(recorder: Option<Arc<dyn Recorder>>) {
 
 /// 从环境变量初始化:`AIMUX_RECORD=1` 开启,`AIMUX_RECORD_DIR` 指定目录(默认 `./recordings`)。
 /// 未开启返回 false(静默)。
+#[must_use]
 pub fn init_recording_from_env() -> bool {
     if std::env::var("AIMUX_RECORD").as_deref() != Ok("1") {
         return false;
@@ -419,6 +431,7 @@ pub fn new_call_id() -> String {
 /// 精确匹配 AWS Bedrock sigv4 真实写入的凭据头 `x-amz-security-token`(name 已
 /// lowercase 归一化,直接 `==` 比较即可)。其余 needle 维持 contains,以覆盖
 /// `x-goog-api-key`/`proxy-authorization` 等变体。
+#[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n == "cookie"
@@ -523,6 +536,11 @@ impl JsonlRecorder {
     /// 显式构造(`try_new`,A9/N4):`create_dir_all` / 打开文件 / 派生 writer
     /// 线程失败均返回 `Err`(替代原 `.ok()` 静默与 `.expect` panic)。
     /// 文件:`{dir}/recordings.jsonl`。
+    ///
+    /// # Errors
+    ///
+    /// Returns `RecordingError::Init` / `OpenFile` / `Spawn` when creating the
+    /// directory, opening `recordings.jsonl`, or spawning the writer thread fails.
     pub fn try_new(dir: impl Into<PathBuf>) -> Result<Self, RecordingError> {
         let dir = dir.into();
         std::fs::create_dir_all(&dir).map_err(|source| RecordingError::Init {
@@ -601,6 +619,12 @@ impl JsonlRecorder {
     /// 显式 flush(A9/N4):把 writer 退出 / 超时 / **写失败** 作为 `Result`
     /// 返回。阻塞至落盘——writer 端发生过的首个 I/O 错误会让本次(及后续)
     /// flush 返回 [`RecordingError::Write`],磁盘满不再静默。
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordingError::Write`] when the writer hit an I/O error,
+    /// `WriterGone` when the writer thread has exited, and `FlushTimeout` when the
+    /// flush deadline expires.
     pub fn try_flush(&self) -> Result<(), RecordingError> {
         let Some(tx) = &self.tx else {
             // The writer is gone, but it may have recorded a terminal write
@@ -854,7 +878,7 @@ fn try_finalize(
     call_id: &str,
     write_error: &Mutex<Option<String>>,
 ) {
-    if pending.get(call_id).map(|r| r.ready()).unwrap_or(false)
+    if pending.get(call_id).map(Recording::ready).unwrap_or(false)
         && let Some(mut rec) = pending.remove(call_id)
     {
         if !rec.exchanges.is_empty() || rec.transport_closed {
@@ -1080,10 +1104,12 @@ struct RingInner {
 
 impl RingRecorder {
     /// 默认容量(2048 条)。
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_RING_CAPACITY)
     }
 
+    #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         assert!(cap > 0, "RingRecorder capacity must be > 0");
         Self {
@@ -1150,6 +1176,11 @@ impl RingRecorder {
 
     /// 导出全部已完成录制(每行一个 `Recording`)。pending 未完成条目不导出
     /// (但被 A3 淘汰的 pending 会以 incomplete 形式进 ring,可导出)。
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error (JSON serialization failures included) when
+    /// serializing a record or writing a line fails.
     pub fn export_jsonl(&self, w: &mut impl Write) -> std::io::Result<()> {
         let inner = self.inner.lock().unwrap();
         for rec in &inner.completed {
@@ -1210,7 +1241,7 @@ impl RingInner {
 
     /// 合并一个已 ready 的分片(barrier 满足则入 ring)。
     fn finalize(&mut self, call_id: &str) {
-        if self.pending.get(call_id).is_some_and(|r| r.ready())
+        if self.pending.get(call_id).is_some_and(Recording::ready)
             && let Some(mut rec) = self.pending.remove(call_id)
         {
             if !rec.exchanges.is_empty() || rec.transport_closed {
@@ -1396,7 +1427,7 @@ where
                             status: OutcomeStatus::Success,
                             finish_reason: serde_json::to_value(finish_reason.unified)
                                 .ok()
-                                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                                .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
                             error: None,
                             usage: serde_json::to_value(usage).ok(),
                         };

@@ -129,7 +129,7 @@ async fn mock_sse(server: &MockServer, body: String) {
 
 /// Build a single SSE `data: <json>\n\n` event string.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events and append the `[DONE]` sentinel.
@@ -149,7 +149,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -249,13 +249,13 @@ async fn should_prefer_reasoning_content_over_reasoning_field_when_both_provided
     );
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::Reasoning { text, .. } => {
             assert_eq!(text, "This is from reasoning_content")
         }
-        other => panic!("expected Reasoning from reasoning_content, got {:?}", other),
+        other => panic!("expected Reasoning from reasoning_content, got {other:?}"),
     }
 }
 
@@ -310,7 +310,7 @@ async fn should_extract_reasoning_from_reasoning_field_when_reasoning_content_no
     );
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-        other => panic!("expected Text only, got {:?}", other),
+        other => panic!("expected Text only, got {other:?}"),
     }
 }
 
@@ -370,18 +370,16 @@ async fn should_extract_reasoning_content_and_text_from_deepseek_reasoning_fixtu
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert!(
             text.contains("strawberry"),
-            "expected the fixture text, got: {}",
-            text
+            "expected the fixture text, got: {text}"
         ),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::Reasoning { text, .. } => assert!(
             text.contains("How many"),
-            "expected the fixture reasoning_content, got: {}",
-            text
+            "expected the fixture reasoning_content, got: {text}"
         ),
-        other => panic!("expected Reasoning, got {:?}", other),
+        other => panic!("expected Reasoning, got {other:?}"),
     }
 }
 
@@ -585,8 +583,7 @@ async fn should_ignore_deepseek_provider_options_reasoning_effort() {
 
         assert!(
             body.get("reasoning_effort").is_none(),
-            "stage2-001: deepseek 特化退役,providerOptions.deepseek.reasoningEffort 被忽略,effort={} 不出现",
-            effort
+            "stage2-001: deepseek 特化退役,providerOptions.deepseek.reasoningEffort 被忽略,effort={effort} 不出现"
         );
     }
 }

@@ -65,28 +65,38 @@ impl RunwaymlConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Override the interval between status polls.
+    #[must_use]
     pub fn with_poll_interval(mut self, interval: Duration) -> Self {
         self.poll_interval = interval;
         self
     }
 
     /// Override the maximum time to wait for a task to finish.
+    #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
+    /// Create from the `RUNWAYML_API_SECRET` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, ENV_VAR, "RunwayML")?;
         Ok(Self::new(api_key))
@@ -100,11 +110,13 @@ pub struct RunwaymlProvider {
 }
 
 impl RunwaymlProvider {
+    #[must_use]
     pub fn new(config: RunwaymlConfig) -> Self {
         Self { config }
     }
 
     /// Create a video generation model instance for the given model ID.
+    #[must_use]
     pub fn video(&self, model_id: &str) -> RunwaymlVideoModel {
         RunwaymlVideoModel::new(model_id.to_string(), self.config.clone())
     }
@@ -156,6 +168,7 @@ pub struct RunwaymlVideoModel {
 }
 
 impl RunwaymlVideoModel {
+    #[must_use]
     pub fn new(model_id: String, config: RunwaymlConfig) -> Self {
         Self { model_id, config }
     }

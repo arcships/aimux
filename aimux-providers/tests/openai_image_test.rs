@@ -1,4 +1,4 @@
-﻿//! Rust translation of the OpenAI image model tests.
+//! Rust translation of the OpenAI image model tests.
 //!
 //! Source: `reference/ai/packages/openai/src/image/openai-image-model.test.ts`
 //!
@@ -371,11 +371,13 @@ async fn should_include_response_data_with_timestamp_model_id_and_headers() {
     assert_eq!(result.response.model_id.as_deref(), Some("dall-e-3"));
     let headers = result.response.headers.as_ref().unwrap();
     assert_eq!(
-        headers.get("x-request-id").map(|s| s.as_str()),
+        headers.get("x-request-id").map(std::string::String::as_str),
         Some("test-request-id")
     );
     assert_eq!(
-        headers.get("x-ratelimit-remaining").map(|s| s.as_str()),
+        headers
+            .get("x-ratelimit-remaining")
+            .map(std::string::String::as_str),
         Some("123")
     );
 }
@@ -1007,7 +1009,7 @@ async fn should_include_response_metadata_for_edited_images() {
     assert_eq!(result.response.model_id.as_deref(), Some("gpt-image-1"));
     let headers = result.response.headers.as_ref().unwrap();
     assert_eq!(
-        headers.get("x-request-id").map(|s| s.as_str()),
+        headers.get("x-request-id").map(std::string::String::as_str),
         Some("edit-request-id")
     );
 }

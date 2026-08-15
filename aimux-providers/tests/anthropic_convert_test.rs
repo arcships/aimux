@@ -337,12 +337,11 @@ mod prepare_tools_tests {
             Warning::Unsupported { feature, details } => {
                 assert_eq!(feature, "strict");
                 let expected = format!(
-                    "Tool '{}' has strict: {}, but strict mode is not supported by this provider. The strict property will be ignored.",
-                    tool_name, strict_val
+                    "Tool '{tool_name}' has strict: {strict_val}, but strict mode is not supported by this provider. The strict property will be ignored."
                 );
                 assert_eq!(details.as_ref().unwrap(), &expected);
             }
-            other => panic!("expected Unsupported warning, got {:?}", other),
+            other => panic!("expected Unsupported warning, got {other:?}"),
         }
     }
 

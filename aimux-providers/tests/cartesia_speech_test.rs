@@ -27,7 +27,7 @@ async fn mock_audio_response(server: &MockServer, format: &str) {
         .and(path("/tts/bytes"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", format!("audio/{}", format))
+                .insert_header("content-type", format!("audio/{format}"))
                 .set_body_bytes(mock_audio_bytes()),
         )
         .mount(server)
@@ -40,7 +40,7 @@ async fn mock_audio_response_with_headers(
     headers: &[(&str, &str)],
 ) {
     let mut template = ResponseTemplate::new(200)
-        .insert_header("content-type", format!("audio/{}", format))
+        .insert_header("content-type", format!("audio/{format}"))
         .set_body_bytes(mock_audio_bytes());
     for (k, v) in headers {
         template = template.insert_header(*k, *v);
@@ -110,8 +110,7 @@ async fn should_throw_when_no_voice_is_provided() {
     let err = result.unwrap_err();
     assert!(
         err.to_string().contains("require a `voice`"),
-        "expected voice-required error, got {}",
-        err
+        "expected voice-required error, got {err}"
     );
 }
 
@@ -242,7 +241,7 @@ async fn should_warn_and_ignore_an_out_of_range_generic_speed() {
             assert_eq!(feature, "speed");
             assert!(details.as_ref().unwrap().contains("between 0.6 and 1.5"));
         }
-        other => panic!("expected Unsupported warning, got {:?}", other),
+        other => panic!("expected Unsupported warning, got {other:?}"),
     }
 }
 
@@ -273,7 +272,7 @@ async fn should_warn_about_unsupported_instructions_parameter() {
                     .contains("do not support instructions")
             );
         }
-        other => panic!("expected Unsupported warning, got {:?}", other),
+        other => panic!("expected Unsupported warning, got {other:?}"),
     }
 }
 
@@ -351,7 +350,7 @@ async fn should_ignore_encoding_for_mp3_output() {
         Warning::Unsupported { feature, .. } => {
             assert_eq!(feature, "providerOptions.cartesia.encoding");
         }
-        other => panic!("expected Unsupported warning, got {:?}", other),
+        other => panic!("expected Unsupported warning, got {other:?}"),
     }
 }
 
@@ -381,7 +380,7 @@ async fn should_warn_about_an_unsupported_sample_rate_suffix() {
             assert_eq!(feature, "outputFormat");
             assert!(details.as_ref().unwrap().contains("wav_12345"));
         }
-        other => panic!("expected Unsupported warning, got {:?}", other),
+        other => panic!("expected Unsupported warning, got {other:?}"),
     }
 }
 

@@ -37,6 +37,7 @@ pub struct BedrockEmbeddingModel {
 }
 
 impl BedrockEmbeddingModel {
+    #[must_use]
     pub fn new(model_id: String, config: BedrockConfig) -> Self {
         Self { model_id, config }
     }
@@ -64,7 +65,7 @@ impl BedrockEmbeddingModel {
 
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
+                let mut headers = vec![("Authorization".to_string(), format!("Bearer {token}"))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -286,11 +287,14 @@ impl EmbeddingModel for BedrockEmbeddingModel {
 
         let tokens = if let Some(count) = raw_value
             .get("inputTextTokenCount")
-            .and_then(|t| t.as_u64())
+            .and_then(serde_json::Value::as_u64)
         {
             // Titan response
             count as u32
-        } else if let Some(count) = raw_value.get("inputTokenCount").and_then(|t| t.as_u64()) {
+        } else if let Some(count) = raw_value
+            .get("inputTokenCount")
+            .and_then(serde_json::Value::as_u64)
+        {
             // Nova response
             count as u32
         } else if let Some(header_count) = header_token_count {
@@ -340,30 +344,30 @@ fn parse_bedrock_provider_options(
     BedrockEmbeddingProviderOptions {
         dimensions: provider_opts
             .and_then(|o| o.get("dimensions"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
         normalize: provider_opts
             .and_then(|o| o.get("normalize"))
-            .and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
         embedding_dimension: provider_opts
             .and_then(|o| o.get("embeddingDimension"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
         embedding_purpose: provider_opts
             .and_then(|o| o.get("embeddingPurpose"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         input_type: provider_opts
             .and_then(|o| o.get("inputType"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         truncate: provider_opts
             .and_then(|o| o.get("truncate"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         output_dimension: provider_opts
             .and_then(|o| o.get("outputDimension"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
     }
 }

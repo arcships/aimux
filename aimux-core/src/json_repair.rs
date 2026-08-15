@@ -360,6 +360,7 @@ impl<'a> Fixer<'a> {
 /// Repairs a (possibly partial) JSON string into valid JSON.
 ///
 /// Port of `fixJson` in `packages/ai/src/util/fix-json.ts`.
+#[must_use]
 pub fn fix_json(input: &str) -> String {
     let chars: Vec<char> = input.chars().collect();
     let mut fixer = Fixer::new(&chars);
@@ -399,6 +400,7 @@ pub struct ParsePartialJsonResult {
 /// The TS original is `async` only because its `safeParseJSON` helper is
 /// async; the Rust port is synchronous (it uses `serde_json::from_str` as the
 /// equivalent of `safeParseJSON`).
+#[must_use]
 pub fn parse_partial_json(json_text: Option<&str>) -> ParsePartialJsonResult {
     let Some(text) = json_text else {
         return ParsePartialJsonResult {

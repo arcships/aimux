@@ -83,7 +83,7 @@ async fn mock_stream_content(server: &MockServer, sse_body: &str) {
 }
 
 fn sse(data: &Value) -> String {
-    format!("data: {}\n\n", data)
+    format!("data: {data}\n\n")
 }
 
 fn sse_stream(events: &[Value]) -> String {
@@ -93,7 +93,7 @@ fn sse_stream(events: &[Value]) -> String {
 fn as_text(item: &GenerateContent) -> &str {
     match item {
         GenerateContent::Text { text, .. } => text,
-        _ => panic!("expected Text content, got {:?}", item),
+        _ => panic!("expected Text content, got {item:?}"),
     }
 }
 
@@ -105,7 +105,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             input,
             ..
         } => (tool_call_id, tool_name, input),
-        _ => panic!("expected ToolCall content, got {:?}", item),
+        _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
 
@@ -115,7 +115,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -257,7 +257,7 @@ async fn vertex_generate_tool_call_with_thought_signature() {
                 Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
             );
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -753,8 +753,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
     });
     assert!(
         has_call,
-        "expected a code_execution tool-call, got {:?}",
-        calls
+        "expected a code_execution tool-call, got {calls:?}"
     );
 
     // The ToolResult must reference the preceding executableCode call id.
@@ -769,8 +768,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
     });
     assert!(
         has_result,
-        "expected a code_execution tool-result, got {:?}",
-        results
+        "expected a code_execution tool-result, got {results:?}"
     );
 
     // Provider-executed tool → Stop, not ToolCalls.
@@ -833,8 +831,7 @@ async fn vertex_stream_code_execution_result_missing_output() {
         .any(|(_, output)| *output == json!({ "outcome": "OUTCOME_OK", "output": "" }));
     assert!(
         has_empty,
-        "expected a tool-result with empty output, got {:?}",
-        results
+        "expected a tool-result with empty output, got {results:?}"
     );
 }
 
@@ -888,16 +885,14 @@ async fn vertex_stream_server_tool_call_and_response() {
         calls
             .iter()
             .any(|(_, name, _)| name == "server:GOOGLE_SEARCH_WEB"),
-        "expected a server-side tool-call in the stream, got {:?}",
-        calls
+        "expected a server-side tool-call in the stream, got {calls:?}"
     );
 
     let results = stream_tool_results(&parts);
     assert!(
         results.iter().any(|(id, output)| *id == "server-call-1"
             && *output == json!({ "results": [{ "title": "Weather in SF" }] })),
-        "expected a server tool-response keyed to server-call-1, got {:?}",
-        results
+        "expected a server tool-response keyed to server-call-1, got {results:?}"
     );
 
     // Provider-executed server tools → stop, not tool-calls.
@@ -963,16 +958,14 @@ async fn vertex_stream_grounding_metadata_sources() {
     assert_eq!(
         example.len(),
         1,
-        "duplicate source should be emitted once, got {:?}",
-        sources
+        "duplicate source should be emitted once, got {sources:?}"
     );
     assert_eq!(example[0].1, "url");
     assert_eq!(example[0].3.as_deref(), Some("Example"));
     assert_eq!(
         sources.len(),
         3,
-        "expected 3 deduplicated sources, got {:?}",
-        sources
+        "expected 3 deduplicated sources, got {sources:?}"
     );
 }
 
@@ -1035,8 +1028,7 @@ async fn vertex_stream_finish_provider_metadata() {
     let vertex = &pm["googleVertex"];
     assert!(
         !vertex.is_null() && vertex.as_object().map(|o| !o.is_empty()).unwrap_or(false),
-        "googleVertex provider metadata should be non-empty, got {}",
-        pm
+        "googleVertex provider metadata should be non-empty, got {pm}"
     );
     assert_eq!(
         vertex["groundingMetadata"],
@@ -1072,8 +1064,7 @@ async fn vertex_stream_finish_provider_metadata() {
     ] {
         assert!(
             vertex.get(key).is_some(),
-            "expected key `{key}` in googleVertex metadata, got {}",
-            pm
+            "expected key `{key}` in googleVertex metadata, got {pm}"
         );
     }
     // …and the three snapshot fields carry their captured values, not just

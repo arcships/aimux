@@ -39,6 +39,7 @@ pub struct GoogleEmbeddingModel {
 }
 
 impl GoogleEmbeddingModel {
+    #[must_use]
     pub fn new(model_id: String, config: GoogleConfig) -> Self {
         Self { model_id, config }
     }
@@ -272,11 +273,11 @@ fn parse_google_provider_options(
     GoogleEmbeddingProviderOptions {
         output_dimensionality: provider_opts
             .and_then(|o| o.get("outputDimensionality"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
         task_type: provider_opts
             .and_then(|o| o.get("taskType"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
     }
 }

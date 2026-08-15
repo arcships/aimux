@@ -362,7 +362,7 @@ impl LanguageModel for GoogleModel {
                                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                                     if !text.is_empty() {
                                         if text_id.is_none() {
-                                            let id = format!("{}", block_counter);
+                                            let id = format!("{block_counter}");
                                             block_counter += 1;
                                             text_id = Some(id.clone());
                                             yield Ok(StreamPart::TextStart { id, provider_metadata: None});
@@ -385,14 +385,14 @@ impl LanguageModel for GoogleModel {
                                     let id = fc
                                         .get("id")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_else(|| format!("call-{}", block_counter));
+                                        .map(std::string::ToString::to_string)
+                                        .unwrap_or_else(|| format!("call-{block_counter}"));
                                     block_counter += 1;
                                     let args = fc.get("args").cloned().unwrap_or(json!({}));
                                     let thought_signature = part
                                         .get("thoughtSignature")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string());
+                                        .map(std::string::ToString::to_string);
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -427,7 +427,7 @@ impl LanguageModel for GoogleModel {
                                         .map(|s| !s.is_empty())
                                         .unwrap_or(false);
                                     if has_code {
-                                        let id = format!("call-{}", block_counter);
+                                        let id = format!("call-{block_counter}");
                                         block_counter += 1;
                                         last_code_execution_tool_call_id = Some(id.clone());
                                         yield Ok(StreamPart::ToolCall {
@@ -452,7 +452,7 @@ impl LanguageModel for GoogleModel {
                                         let output = cer
                                             .get("output")
                                             .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string())
+                                            .map(std::string::ToString::to_string)
                                             .unwrap_or_default();
                                         yield Ok(StreamPart::ToolResult {
                                             tool_call_id: call_id,
@@ -473,14 +473,14 @@ impl LanguageModel for GoogleModel {
                                     let id = tc
                                         .get("id")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_else(|| format!("call-{}", block_counter));
+                                        .map(std::string::ToString::to_string)
+                                        .unwrap_or_else(|| format!("call-{block_counter}"));
                                     block_counter += 1;
                                     last_server_tool_call_id = Some(id.clone());
                                     let args = tc.get("args").cloned().unwrap_or(json!({}));
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
-                                        tool_name: format!("server:{}", tool_type),
+                                        tool_name: format!("server:{tool_type}"),
                                         input: args,
                                         provider_executed: None,
                                         dynamic: None,
@@ -495,9 +495,9 @@ impl LanguageModel for GoogleModel {
                                         .or_else(|| {
                                             tr.get("id")
                                                 .and_then(|v| v.as_str())
-                                                .map(|s| s.to_string())
+                                                .map(std::string::ToString::to_string)
                                         })
-                                        .unwrap_or_else(|| format!("call-{}", block_counter));
+                                        .unwrap_or_else(|| format!("call-{block_counter}"));
                                     block_counter += 1;
                                     let response =
                                         tr.get("response").cloned().unwrap_or(json!({}));
@@ -625,7 +625,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 let thought_signature = part
                     .get("thoughtSignature")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                    .map(std::string::ToString::to_string);
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: name,
@@ -670,7 +670,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 let input = tc.get("args").cloned().unwrap_or(json!({}));
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
-                    tool_name: format!("server:{}", tool_type),
+                    tool_name: format!("server:{tool_type}"),
                     input,
                     provider_executed: None,
                     dynamic: None,

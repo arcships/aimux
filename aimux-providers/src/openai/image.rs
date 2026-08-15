@@ -70,6 +70,7 @@ pub struct OpenAIImageModel {
 }
 
 impl OpenAIImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -490,15 +491,15 @@ fn extract_usage(response: &Value) -> Option<ImageUsage> {
     response.get("usage").map(|u| ImageUsage {
         input_tokens: u
             .get("input_tokens")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|x| x as u32),
         output_tokens: u
             .get("output_tokens")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|x| x as u32),
         total_tokens: u
             .get("total_tokens")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|x| x as u32),
     })
 }
@@ -512,7 +513,10 @@ fn distribute_token_details(details: Option<&Value>, index: usize, total: usize)
     let details = details?;
     let mut result = Map::new();
 
-    if let Some(image_tokens) = details.get("image_tokens").and_then(|v| v.as_u64()) {
+    if let Some(image_tokens) = details
+        .get("image_tokens")
+        .and_then(serde_json::Value::as_u64)
+    {
         let total = total as u64;
         let base = image_tokens / total;
         let remainder = image_tokens - base * (total - 1);
@@ -524,7 +528,10 @@ fn distribute_token_details(details: Option<&Value>, index: usize, total: usize)
         result.insert("imageTokens".to_string(), json!(value));
     }
 
-    if let Some(text_tokens) = details.get("text_tokens").and_then(|v| v.as_u64()) {
+    if let Some(text_tokens) = details
+        .get("text_tokens")
+        .and_then(serde_json::Value::as_u64)
+    {
         let total = total as u64;
         let base = text_tokens / total;
         let remainder = text_tokens - base * (total - 1);
@@ -553,7 +560,7 @@ fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
     let mut metadata = HashMap::new();
 
     let data = response.get("data").and_then(|d| d.as_array());
-    let created = response.get("created").and_then(|v| v.as_u64());
+    let created = response.get("created").and_then(serde_json::Value::as_u64);
     let size = response.get("size").and_then(|v| v.as_str());
     let quality = response.get("quality").and_then(|v| v.as_str());
     let background = response.get("background").and_then(|v| v.as_str());

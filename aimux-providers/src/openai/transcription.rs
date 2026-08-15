@@ -133,7 +133,7 @@ fn parse_openai_options(
             opts.include = Some(
                 include
                     .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                     .collect(),
             );
         }
@@ -143,7 +143,10 @@ fn parse_openai_options(
         if let Some(prompt) = openai.get("prompt").and_then(|v| v.as_str()) {
             opts.prompt = Some(prompt.to_string());
         }
-        if let Some(temp) = openai.get("temperature").and_then(|v| v.as_f64()) {
+        if let Some(temp) = openai
+            .get("temperature")
+            .and_then(serde_json::Value::as_f64)
+        {
             opts.temperature = Some(temp);
         }
         if let Some(tg) = openai
@@ -152,7 +155,7 @@ fn parse_openai_options(
         {
             opts.timestamp_granularities = Some(
                 tg.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                     .collect(),
             );
         }
@@ -221,6 +224,7 @@ pub struct OpenAITranscriptionModel {
 }
 
 impl OpenAITranscriptionModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -365,7 +369,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             .language
             .as_deref()
             .and_then(language_name_to_code)
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         // Segments: prefer `segments`, fall back to `words`.
         let segments: Vec<TranscriptionSegment> = if let Some(segs) = parsed.segments {
@@ -604,7 +608,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                                 match event_type {
                                     "conversation.item.input_audio_transcription.delta" => {
                                         yield Ok(TranscriptionStreamPart::TranscriptDelta {
-                                            id: value.get("item_id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                            id: value.get("item_id").and_then(|v| v.as_str()).map(std::string::ToString::to_string),
                                             delta: value.get("delta").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                                             provider_metadata: None,
                                         });
@@ -613,7 +617,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                                         let transcript = value.get("transcript")
                                             .and_then(|v| v.as_str()).unwrap_or("").to_string();
                                         let item_id = value.get("item_id")
-                                            .and_then(|v| v.as_str()).map(|s| s.to_string());
+                                            .and_then(|v| v.as_str()).map(std::string::ToString::to_string);
                                         yield Ok(TranscriptionStreamPart::TranscriptFinal {
                                             id: item_id.clone(),
                                             text: transcript.clone(),

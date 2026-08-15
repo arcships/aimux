@@ -162,7 +162,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -171,7 +171,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
 fn as_text(item: &GenerateContent) -> &str {
     match item {
         GenerateContent::Text { text, .. } => text,
-        _ => panic!("expected Text content, got {:?}", item),
+        _ => panic!("expected Text content, got {item:?}"),
     }
 }
 
@@ -181,7 +181,7 @@ fn as_reasoning(item: &GenerateContent) -> (&str, &Option<Value>) {
             text,
             provider_metadata,
         } => (text.as_str(), provider_metadata),
-        _ => panic!("expected Reasoning content, got {:?}", item),
+        _ => panic!("expected Reasoning content, got {item:?}"),
     }
 }
 
@@ -242,7 +242,7 @@ fn tool_msg(content: Vec<ContentPart>) -> LanguageModelPromptMessage {
 fn reasoning(text: &str, signature: Option<&str>) -> ContentPart {
     ContentPart::Reasoning {
         text: text.to_string(),
-        signature: signature.map(|s| s.to_string()),
+        signature: signature.map(std::string::ToString::to_string),
         provider_options: None,
     }
 }

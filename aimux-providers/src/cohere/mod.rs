@@ -41,24 +41,31 @@ impl CohereConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// Create from environment variable `COHERE_API_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `COHERE_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "COHERE_API_KEY", "Cohere")?;
         Ok(Self::new(api_key).with_api_key_source(Some("env:COHERE_API_KEY")))
@@ -71,23 +78,27 @@ pub struct CohereProvider {
 }
 
 impl CohereProvider {
+    #[must_use]
     pub fn new(config: CohereConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"command-r-plus"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> model::CohereModel {
         model::CohereModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a reranking model instance for the given model name (e.g.
     /// `"rerank-english-v3.0"`).
+    #[must_use]
     pub fn reranking_model(&self, model_id: &str) -> reranking::CohereRerankingModel {
         reranking::CohereRerankingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"embed-english-v3.0"`).
+    #[must_use]
     pub fn embedding_model(&self, model_id: &str) -> embedding::CohereEmbeddingModel {
         embedding::CohereEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }

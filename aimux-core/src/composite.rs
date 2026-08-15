@@ -33,6 +33,7 @@ pub type ChildModel = Arc<dyn LanguageModel>;
 ///
 /// Each `TokenUsage` field is `Option<u32>`; `None` is treated as zero so a
 /// child that doesn't report a breakdown doesn't erase the other child's data.
+#[must_use]
 pub fn add_usage(a: Usage, b: &Usage) -> Usage {
     Usage {
         input_tokens: add_token_usage(a.input_tokens, &b.input_tokens),
@@ -64,6 +65,7 @@ fn opt_add(a: Option<u32>, b: Option<u32>) -> Option<u32> {
 /// Extract concatenated text from a `GenerateContent` list. Only `Text` parts
 /// are kept; `Reasoning` / `ToolCall` / `Source` / `File` are dropped (MoA
 /// thin version — references contribute analysis text, not tool calls).
+#[must_use]
 pub fn extract_text(content: &[GenerateContent]) -> String {
     let mut out = String::new();
     for c in content {
@@ -82,6 +84,7 @@ pub fn extract_text(content: &[GenerateContent]) -> String {
 /// the user message; when `None`, a default aggregation instruction is used.
 /// The reference list may be empty — in that case the aggregator just runs the
 /// original prompt (degenerates to a single-model call).
+#[must_use]
 pub fn build_aggregator_prompt(
     prompt: &LanguageModelPrompt,
     instructions: Option<&str>,

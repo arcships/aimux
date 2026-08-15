@@ -33,12 +33,18 @@ impl OpenRouterConfig {
     }
 
     /// Create from the `OPENROUTER_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `OPENROUTER_API_KEY` is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "OpenRouter")?;
         Ok(Self::new(key))
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -49,12 +55,14 @@ impl OpenRouterConfig {
 pub struct OpenRouterProvider(OpenAIProvider);
 
 impl OpenRouterProvider {
+    #[must_use]
     pub fn new(config: OpenRouterConfig) -> Self {
         Self(OpenAIProvider::new(config.0))
     }
 
     /// Create a model instance for the given OpenRouter model id
     /// (e.g. `"openai/gpt-4o-mini"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         self.0.model(model_id)
     }
@@ -63,6 +71,7 @@ impl OpenRouterProvider {
     ///
     /// OpenRouter exposes an OpenAI-compatible Responses API at `/v1/responses`.
     /// This delegates to the underlying [`OpenAIProvider::responses_model`].
+    #[must_use]
     pub fn responses_model(&self, model_id: &str) -> OpenAIResponsesModel {
         self.0.responses_model(model_id)
     }

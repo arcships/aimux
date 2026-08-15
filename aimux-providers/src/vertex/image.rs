@@ -43,6 +43,7 @@ pub struct VertexImageModel {
 }
 
 impl VertexImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: VertexConfig) -> Self {
         Self { model_id, config }
     }
@@ -51,7 +52,7 @@ impl VertexImageModel {
         let mut h = vec![("Content-Type".into(), "application/json".into())];
         match &self.config.auth {
             VertexAuth::BearerToken(token) => {
-                h.push(("Authorization".into(), format!("Bearer {}", token)));
+                h.push(("Authorization".into(), format!("Bearer {token}")));
             }
             VertexAuth::ApiKey(key) => {
                 h.push(("x-goog-api-key".into(), key.clone()));
@@ -164,7 +165,7 @@ impl VertexImageModel {
                 if let Some(d) = mask_dilation {
                     mask_config.insert("dilation".into(), d.clone());
                 }
-                let file_count = options.files.as_ref().map_or(0, |f| f.len());
+                let file_count = options.files.as_ref().map_or(0, std::vec::Vec::len);
                 reference_images.push(json!({
                     "referenceType": "REFERENCE_TYPE_MASK",
                     "referenceId": file_count + 1,
@@ -383,15 +384,15 @@ impl VertexImageModel {
         let usage = rb.get("usageMetadata").map(|u| {
             let inp = u
                 .get("promptTokenCount")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .map(|x| x as u32);
             let out = u
                 .get("candidatesTokenCount")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .map(|x| x as u32);
             let tot = u
                 .get("totalTokenCount")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .map(|x| x as u32);
             ImageUsage {
                 input_tokens: inp,

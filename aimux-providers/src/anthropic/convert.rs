@@ -63,6 +63,12 @@ pub struct AnthropicPromptConversion {
 /// `send_reasoning` controls whether assistant `Reasoning` parts are converted
 /// into Anthropic `thinking` blocks (when `true`) or dropped with a warning
 /// (when `false`).
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` / `UnsupportedFunctionality` when a
+/// message part cannot be represented in the Anthropic wire format (e.g. an
+/// unresolvable file reference or an unsupported media type).
 pub fn convert_prompt_to_anthropic_full_fallible(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
@@ -247,6 +253,7 @@ pub fn convert_prompt_to_anthropic_full_fallible(
     since = "0.2.1",
     note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
 )]
+#[must_use]
 pub fn convert_prompt_to_anthropic_full(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
@@ -268,6 +275,7 @@ pub fn convert_prompt_to_anthropic_full(
     since = "0.2.1",
     note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
 )]
+#[must_use]
 pub fn convert_prompt_to_anthropic(
     prompt: &LanguageModelPrompt,
 ) -> (Option<Vec<Value>>, Vec<Value>) {
@@ -414,7 +422,7 @@ fn convert_part_to_anthropic(
                 .as_ref()
                 .and_then(|o| o.get("anthropic"))
                 .and_then(|a| a.get("containerUpload"))
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             let block = if container_upload {
                 json!({ "type": "container_upload", "file_id": file_id })
@@ -585,8 +593,7 @@ fn route_file_bytes(
             Ok(block)
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "media type: {}",
-            full_media_type
+            "media type: {full_media_type}"
         ))),
     }
 }
@@ -630,8 +637,7 @@ fn route_file_base64(
             Ok(block)
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "media type: {}",
-            full_media_type
+            "media type: {full_media_type}"
         ))),
     }
 }
@@ -655,8 +661,7 @@ fn route_file_url(
             Ok(json!({ "type": "document", "source": { "type": "url", "url": url } }))
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "media type: {}",
-            media_type
+            "media type: {media_type}"
         ))),
     }
 }
@@ -722,8 +727,7 @@ fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiM
     match detect_media_type(bytes, top) {
         Some(detected) => Ok(detected.to_string()),
         None => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file of media type \"{}\" must specify subtype since it could not be auto-detected",
-            media_type
+            "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
         ))),
     }
 }
@@ -964,8 +968,7 @@ fn map_reasoning_to_effort(
             warnings.push(Warning::Unsupported {
                 feature: "reasoning".to_string(),
                 details: Some(format!(
-                    "reasoning \"{}\" is not supported by this model.",
-                    level
+                    "reasoning \"{level}\" is not supported by this model."
                 )),
             });
             return None;
@@ -976,8 +979,7 @@ fn map_reasoning_to_effort(
         warnings.push(Warning::Compatibility {
             feature: "reasoning".to_string(),
             details: Some(format!(
-                "reasoning \"{}\" is not directly supported by this model. mapped to effort \"{}\".",
-                level, mapped
+                "reasoning \"{level}\" is not directly supported by this model. mapped to effort \"{mapped}\"."
             )),
         });
     }
@@ -1012,8 +1014,7 @@ fn map_reasoning_to_budget(
             warnings.push(Warning::Unsupported {
                 feature: "reasoning".to_string(),
                 details: Some(format!(
-                    "reasoning \"{}\" is not supported by this model.",
-                    reasoning
+                    "reasoning \"{reasoning}\" is not supported by this model."
                 )),
             });
             return None;
@@ -1107,6 +1108,11 @@ fn strip_null_fields(value: &mut Value) {
 /// Build the Anthropic request body (without warnings). Returns an error when
 /// provider-option resolution fails (e.g. a custom skill provider reference
 /// that does not include the `anthropic` key).
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when provider-option resolution
+/// fails (e.g. a custom skill reference missing the `anthropic` key).
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -1132,8 +1138,7 @@ fn strip_anthropic_sampling_params(
             warnings.push(Warning::Unsupported {
                 feature: "temperature".to_string(),
                 details: Some(format!(
-                    "temperature is not supported by {} and will be ignored",
-                    model_id
+                    "temperature is not supported by {model_id} and will be ignored"
                 )),
             });
             temperature = None;
@@ -1142,8 +1147,7 @@ fn strip_anthropic_sampling_params(
             warnings.push(Warning::Unsupported {
                 feature: "topK".to_string(),
                 details: Some(format!(
-                    "topK is not supported by {} and will be ignored",
-                    model_id
+                    "topK is not supported by {model_id} and will be ignored"
                 )),
             });
             top_k = None;
@@ -1152,8 +1156,7 @@ fn strip_anthropic_sampling_params(
             warnings.push(Warning::Unsupported {
                 feature: "topP".to_string(),
                 details: Some(format!(
-                    "topP is not supported by {} and will be ignored",
-                    model_id
+                    "topP is not supported by {model_id} and will be ignored"
                 )),
             });
             top_p = None;
@@ -1180,7 +1183,7 @@ fn resolve_anthropic_thinking(
     let mut thinking_config: Option<Value> =
         anthropic_option(&options.provider_options, "thinking");
     let mut effort: Option<String> = anthropic_option(&options.provider_options, "effort")
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     if let Some(reasoning) = options.reasoning
         && reasoning.is_custom()
@@ -1243,7 +1246,7 @@ fn derive_anthropic_thinking(
         .as_ref()
         .and_then(|t| t.get("type"))
         .and_then(|t| t.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let is_thinking =
         thinking_type.as_deref() == Some("enabled") || thinking_type.as_deref() == Some("adaptive");
@@ -1253,7 +1256,7 @@ fn derive_anthropic_thinking(
         thinking_config
             .as_ref()
             .and_then(|t| t.get("budgetTokens"))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|n| n as u32)
     } else {
         None
@@ -1531,8 +1534,7 @@ fn append_anthropic_container(
                     Some(id) => id.clone(),
                     None => {
                         return Err(AiMuxError::UnsupportedFunctionality(format!(
-                            "skill provider reference is missing the 'anthropic' key: {}",
-                            skill
+                            "skill provider reference is missing the 'anthropic' key: {skill}"
                         )));
                     }
                 }
@@ -1590,6 +1592,12 @@ fn append_anthropic_container(
 /// effort mapping (provider options take precedence), and thinking-enabled
 /// default budget. The single oversized function was split into focused
 /// helpers (issue M11); behavior is unchanged.
+///
+/// # Errors
+///
+/// Propagates prompt/provider-option conversion errors, e.g.
+/// `AiMuxError::InvalidArgument` for an unresolvable file reference or
+/// container option.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -1704,6 +1712,7 @@ pub fn build_request_body_with_warnings(
 }
 
 /// Parse Anthropic stop_reason into `FinishReason`.
+#[must_use]
 pub fn parse_stop_reason(s: &str) -> FinishReason {
     let unified = match s {
         "end_turn" => FinishReasonUnified::Stop,

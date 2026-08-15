@@ -1,4 +1,4 @@
-﻿//! Conversion between `LanguageModelPrompt` and Amazon Bedrock Converse format.
+//! Conversion between `LanguageModelPrompt` and Amazon Bedrock Converse format.
 //!
 //! Mirrors `convert-to-amazon-bedrock-chat-messages.ts`,
 //! `amazon-bedrock-prepare-tools.ts`, `map-amazon-bedrock-finish-reason.ts`,
@@ -34,6 +34,7 @@ use serde_json::{Value, json};
 /// messages into a single `assistant` block. Assistant text is trimmed when it
 /// is the last content part of the last message of the last block; empty
 /// assistant text is dropped unless the message also carries reasoning.
+#[must_use]
 pub fn convert_prompt_to_bedrock(prompt: &LanguageModelPrompt) -> (Vec<Value>, Vec<Value>) {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Blk {
@@ -309,7 +310,7 @@ fn citations_enabled(provider_options: &Option<Value>) -> bool {
             .get(key)
             .and_then(|b| b.get("citations"))
             .and_then(|c| c.get("enabled"))
-            .and_then(|e| e.as_bool())
+            .and_then(serde_json::Value::as_bool)
         {
             return enabled;
         }
@@ -424,6 +425,7 @@ fn mime_to_document_format(media_type: &str) -> &'static str {
 ///
 /// Mirrors the TS `supportsStrictTools`: the newest Claude models reject
 /// `strict` (and `output_config.format`), so the field is omitted for them.
+#[must_use]
 pub fn supports_strict_tools(model_id: &str) -> bool {
     const REJECTING: &[&str] = &[
         "claude-opus-4-7",
@@ -448,6 +450,7 @@ pub fn supports_strict_tools(model_id: &str) -> bool {
 /// Provider-defined tools (web_search, anthropic provider tools) and the
 /// `additionalTools`/`betas`/`toolWarnings` they produce are not modelled in
 /// the Rust `FunctionTool` and are intentionally not handled here.
+#[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
     tool_choice: &ToolChoice,
@@ -514,6 +517,7 @@ pub fn prepare_tools(
 /// and `inferenceConfig.maxTokens` is bumped by `budgetTokens`. The
 /// `reasoningConfig` key never appears in the request body. User-supplied
 /// `additionalModelRequestFields` are merged with the derived `thinking` field.
+#[must_use]
 pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
     let (system, messages) = convert_prompt_to_bedrock(&options.prompt);
 
@@ -530,7 +534,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
     let mut budget_tokens: Option<u64> = None;
     if let Some(rc) = reasoning_config
         && rc.get("type").and_then(|v| v.as_str()) == Some("enabled")
-        && let Some(bt) = rc.get("budgetTokens").and_then(|v| v.as_u64())
+        && let Some(bt) = rc.get("budgetTokens").and_then(serde_json::Value::as_u64)
     {
         thinking = Some(json!({ "type": "enabled", "budget_tokens": bt }));
         budget_tokens = Some(bt);
@@ -612,6 +616,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
 }
 
 /// Map a Bedrock `stopReason` to the unified `FinishReason`.
+#[must_use]
 pub fn map_finish_reason(reason: &str) -> FinishReason {
     let unified = match reason {
         "stop_sequence" | "end_turn" | "stop" => FinishReasonUnified::Stop,
@@ -635,6 +640,7 @@ pub fn map_finish_reason(reason: &str) -> FinishReason {
 /// `Usage` (the TS `undefined` fields). The TS `raw` echo is not modelled on
 /// the Rust `Usage` type (see `convert-usage` tests for the skipped `raw`
 /// cases); `outputTokens.text` mirrors the TS `outputTokens.text` field.
+#[must_use]
 pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
     use aimux_core::types::{TokenUsage, Usage};
 

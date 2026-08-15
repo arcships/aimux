@@ -41,6 +41,7 @@ pub struct VertexEmbeddingModel {
 }
 
 impl VertexEmbeddingModel {
+    #[must_use]
     pub fn new(model_id: String, config: VertexConfig) -> Self {
         Self { model_id, config }
     }
@@ -49,7 +50,7 @@ impl VertexEmbeddingModel {
         let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
         match &self.config.auth {
             VertexAuth::BearerToken(token) => {
-                headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
+                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
             }
             VertexAuth::ApiKey(key) => {
                 headers.push(("x-goog-api-key".to_string(), key.clone()));
@@ -175,7 +176,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
             let usage = raw_value
                 .get("usageMetadata")
                 .and_then(|u| u.get("promptTokenCount"))
-                .and_then(|t| t.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .map(|tokens| EmbeddingUsage {
                     tokens: tokens as u32,
                 });
@@ -268,7 +269,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
                         pred.get("embeddings")
                             .and_then(|e| e.get("statistics"))
                             .and_then(|s| s.get("token_count"))
-                            .and_then(|t| t.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                     })
                     .map(|t| t as u32)
                     .sum();
@@ -316,18 +317,18 @@ fn parse_vertex_provider_options(
     VertexEmbeddingProviderOptions {
         output_dimensionality: provider_opts
             .and_then(|o| o.get("outputDimensionality"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
         task_type: provider_opts
             .and_then(|o| o.get("taskType"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         title: provider_opts
             .and_then(|o| o.get("title"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         auto_truncate: provider_opts
             .and_then(|o| o.get("autoTruncate"))
-            .and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
     }
 }

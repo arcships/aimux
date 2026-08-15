@@ -94,6 +94,7 @@ pub struct AzureConfig {
 impl AzureConfig {
     /// Create a new config with default settings (deployment-based URLs,
     /// `api-version = 2024-10-21`, no auth yet).
+    #[must_use]
     pub fn new() -> Self {
         Self {
             resource_name: None,
@@ -108,60 +109,70 @@ impl AzureConfig {
     }
 
     /// Set the Azure resource name.
+    #[must_use]
     pub fn with_resource_name(mut self, name: impl Into<String>) -> Self {
         self.resource_name = Some(name.into());
         self
     }
 
     /// Override the base URL prefix (takes precedence over `resource_name`).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = Some(without_trailing_slash(&url.into()));
         self
     }
 
     /// Set the `api-version` query parameter.
+    #[must_use]
     pub fn with_api_version(mut self, version: impl Into<String>) -> Self {
         self.api_version = version.into();
         self
     }
 
     /// Authenticate with an API key (sent as the `api-key` header).
+    #[must_use]
     pub fn with_api_key(mut self, api_key: impl Into<String>) -> Self {
         self.auth = Some(AzureAuth::ApiKey(api_key.into()));
         self
     }
 
     /// Authenticate with an Azure AD token provider (sent as `Bearer`).
+    #[must_use]
     pub fn with_token_provider(mut self, provider: Arc<dyn TokenProvider>) -> Self {
         self.auth = Some(AzureAuth::TokenProvider(provider));
         self
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// Add a provider-level extra header.
+    #[must_use]
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.extra_headers.insert(key.into(), value.into());
         self
     }
 
     /// Use the deployment-based URL form (the default).
+    #[must_use]
     pub fn use_deployment_based_urls(mut self) -> Self {
         self.use_deployment_based_urls = true;
         self
     }
 
     /// Use the newer `v1` URL form (`…/openai/v1/chat/completions?api-version=…`).
+    #[must_use]
     pub fn use_v1_urls(mut self) -> Self {
         self.use_deployment_based_urls = false;
         self
@@ -171,6 +182,10 @@ impl AzureConfig {
     ///
     /// Reads `AZURE_API_KEY` (required) and `AZURE_RESOURCE_NAME` (optional —
     /// may also be supplied via `with_resource_name`).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `AZURE_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "AZURE_API_KEY", "Azure OpenAI")?;
         let mut config = Self::new()
@@ -204,6 +219,12 @@ impl AzureProvider {
     /// Returns [`AiMuxError::InvalidArgument`] if both an API key and a token
     /// provider were supplied, or if neither `resource_name` nor `base_url` is
     /// set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AiMuxError::InvalidArgument`] when both an API key and a token
+    /// provider are supplied, or when neither `resource_name` nor `base_url` is
+    /// set.
     pub fn new(config: AzureConfig) -> Result<Self, AiMuxError> {
         // Reject both auth methods — mirrors the TS `createAzure` guard.
         // (The builder API makes it hard to set both, but a hand-built config
@@ -218,11 +239,13 @@ impl AzureProvider {
 
     /// Create a model instance for the given deployment name
     /// (e.g. `"gpt-4o-deployment"`).
+    #[must_use]
     pub fn deployment(&self, deployment: &str) -> AzureModel {
         AzureModel::new(deployment.to_string(), self.config.clone())
     }
 
     /// Alias for [`Self::deployment`] (matches the OpenAI provider's `model`).
+    #[must_use]
     pub fn model(&self, deployment: &str) -> AzureModel {
         self.deployment(deployment)
     }
@@ -233,11 +256,13 @@ impl AzureProvider {
     /// deployment-based URL form) instead of `/chat/completions`.
     ///
     /// Mirrors the TS `createResponsesModel` / `provider.responses()` factory.
+    #[must_use]
     pub fn responses_model(&self, deployment: &str) -> AzureResponsesModel {
         AzureResponsesModel::new(deployment.to_string(), self.config.clone())
     }
 
     /// Alias for [`Self::responses_model`] (matches the TS `provider.responses`).
+    #[must_use]
     pub fn responses(&self, deployment: &str) -> AzureResponsesModel {
         self.responses_model(deployment)
     }
@@ -356,6 +381,7 @@ pub struct AzureModel {
 }
 
 impl AzureModel {
+    #[must_use]
     pub fn new(deployment: String, config: AzureConfig) -> Self {
         Self { deployment, config }
     }
@@ -398,7 +424,7 @@ impl AzureModel {
         if is_azure || self.config.use_deployment_based_urls {
             format!("{}{}?api-version={}", prefix, path, self.config.api_version)
         } else {
-            format!("{}{}", prefix, path)
+            format!("{prefix}{path}")
         }
     }
 
@@ -416,7 +442,7 @@ impl AzureModel {
             }
             Some(AzureAuth::TokenProvider(tp)) => {
                 let token = tp.get_token().await?;
-                headers.insert("Authorization".to_string(), format!("Bearer {}", token));
+                headers.insert("Authorization".to_string(), format!("Bearer {token}"));
             }
             None => {
                 return Err(AiMuxError::InvalidArgument(

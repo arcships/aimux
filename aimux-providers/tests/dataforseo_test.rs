@@ -82,9 +82,9 @@ async fn mount_search_mock(server: &MockServer) {
 
 /// The expected `Authorization: Basic …` header value for the test credentials.
 fn expected_basic_auth() -> String {
-    let credentials = format!("{}:{}", LOGIN, PASSWORD);
+    let credentials = format!("{LOGIN}:{PASSWORD}");
     let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
-    format!("Basic {}", encoded)
+    format!("Basic {encoded}")
 }
 
 // -- result mapping ----------------------------------------------------------

@@ -54,6 +54,7 @@ pub struct OpenAICompatProfile {
 impl OpenAICompatProfile {
     /// 默认 profile：支持全部能力，无特殊流式 usage key。
     /// 适用于 OpenAI 本身和大多数兼容厂商。
+    #[must_use]
     pub fn full() -> Self {
         Self {
             supports_top_k: true,
@@ -66,6 +67,7 @@ impl OpenAICompatProfile {
 
     /// Groq profile：不支持 top_k，流式 usage 在 x_groq 字段；
     /// `max_tokens` 已弃用，只发 `max_completion_tokens`（backlog B9）。
+    #[must_use]
     pub fn groq() -> Self {
         Self {
             supports_top_k: false,
@@ -78,6 +80,7 @@ impl OpenAICompatProfile {
 
     /// 设置 `max_tokens_key`（内部数据，非用户概念）：`"max_tokens"` 或
     /// `"max_completion_tokens"`。注册表薄封装行用此构建差异 profile。
+    #[must_use]
     pub fn with_max_tokens_key(mut self, key: &'static str) -> Self {
         self.max_tokens_key = Some(key);
         self
@@ -86,6 +89,7 @@ impl OpenAICompatProfile {
     /// DeepSeek profile：特化已退役（RFC-0017 阶段 2），回归 `full()`——
     /// thinking / effort 映射等厂商差异由用户 bodyOverrides 定义。
     /// 保留此薄封装以维持注册表与调用方结构不变。
+    #[must_use]
     pub fn deepseek() -> Self {
         Self::full()
     }
@@ -187,61 +191,74 @@ impl OpenAIConfig {
     }
 
     /// Use a custom base URL (for Azure, Groq, etc.).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    #[must_use]
     pub fn with_org_id(mut self, org_id: impl Into<String>) -> Self {
         self.org_id = Some(org_id.into());
         self
     }
 
     /// Set the OpenAI project ID (sent via the `OpenAI-Project` header).
+    #[must_use]
     pub fn with_project(mut self, project: impl Into<String>) -> Self {
         self.project = Some(project.into());
         self
     }
 
     /// Attach extra headers merged into every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Set the provider name (e.g. "groq") for provider-specific behaviour.
+    #[must_use]
     pub fn with_provider(mut self, provider: impl Into<String>) -> Self {
         self.provider = provider.into();
         self
     }
 
     /// 设置厂商能力差异描述。
+    #[must_use]
     pub fn with_profile(mut self, profile: OpenAICompatProfile) -> Self {
         self.profile = profile;
         self
     }
 
     /// 设置重试配置。传入 `max_retries: 0` 可关闭重试。
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// 设置 provider 级请求体覆盖（RFC-0017）。
+    #[must_use]
     pub fn with_body_overrides(mut self, overrides: Value) -> Self {
         self.body_overrides = Some(overrides);
         self
     }
 
     /// Create from environment variable `OPENAI_API_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `OPENAI_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "OPENAI_API_KEY", "OpenAI")?;
         Ok(Self::new(api_key).with_api_key_source(Some("env:OPENAI_API_KEY")))
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 }
@@ -255,11 +272,13 @@ pub struct OpenAIProvider {
 }
 
 impl OpenAIProvider {
+    #[must_use]
     pub fn new(config: OpenAIConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"gpt-4o"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> model::OpenAIModel {
         model::OpenAIModel::new(model_id.to_string(), self.config.clone())
     }
@@ -267,23 +286,27 @@ impl OpenAIProvider {
     /// Create a Responses API model instance for the given model name (e.g.
     /// `"gpt-4o"`). Uses the `/v1/responses` endpoint instead of
     /// `/v1/chat/completions`.
+    #[must_use]
     pub fn responses_model(&self, model_id: &str) -> responses::OpenAIResponsesModel {
         responses::OpenAIResponsesModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Files interface for uploading files to OpenAI.
+    #[must_use]
     pub fn files(&self) -> files::OpenAIFiles {
         files::OpenAIFiles::new(self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"text-embedding-3-large"`).
+    #[must_use]
     pub fn embedding_model(&self, model_id: &str) -> embedding::OpenAIEmbeddingModel {
         embedding::OpenAIEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a speech (TTS) model instance for the given model name (e.g.
     /// `"tts-1"`). Uses the `/audio/speech` endpoint.
+    #[must_use]
     pub fn speech(&self, model_id: &str) -> speech::OpenAISpeechModel {
         speech::OpenAISpeechModel::new(model_id.to_string(), self.config.clone())
     }
@@ -291,6 +314,7 @@ impl OpenAIProvider {
     /// Create an image generation model instance for the given model name
     /// (e.g. `"dall-e-3"` or `"gpt-image-1"`). Uses the `/images/generations`
     /// endpoint for generation and `/images/edits` for editing.
+    #[must_use]
     pub fn image(&self, model_id: &str) -> image::OpenAIImageModel {
         image::OpenAIImageModel::new(model_id.to_string(), self.config.clone())
     }
@@ -298,6 +322,7 @@ impl OpenAIProvider {
     /// Create a transcription (STT) model instance for the given model name
     /// (e.g. `"whisper-1"` or `"gpt-4o-transcribe"`). Uses the
     /// `/audio/transcriptions` endpoint.
+    #[must_use]
     pub fn transcription(&self, model_id: &str) -> transcription::OpenAITranscriptionModel {
         transcription::OpenAITranscriptionModel::new(model_id.to_string(), self.config.clone())
     }

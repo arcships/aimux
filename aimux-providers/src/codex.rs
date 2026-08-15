@@ -112,36 +112,45 @@ impl CodexConfig {
     }
 
     /// API-key mode reading `CODEX_API_KEY` from the environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `CODEX_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = aimux_provider_utils::load_api_key(None, CODEX_API_KEY_ENV_VAR, "Codex")?;
         Ok(Self::new(key).with_api_key_source(Some("env:CODEX_API_KEY")))
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
         self.openai = self.openai.with_api_key_source(source);
         self
     }
 
     /// Override the base URL (tests / self-hosted endpoints).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.openai = self.openai.with_base_url(url);
         self
     }
 
     /// Subscription mode: set the `ChatGPT-Account-Id` header.
+    #[must_use]
     pub fn with_chatgpt_account_id(mut self, id: impl Into<String>) -> Self {
         self.chatgpt_account_id = Some(id.into());
         self
     }
 
     /// Subscription mode: override the `Originator` header (default `"aimux"`).
+    #[must_use]
     pub fn with_originator(mut self, originator: impl Into<String>) -> Self {
         self.originator = originator.into();
         self
     }
 
     /// Override the retry configuration.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.openai = self.openai.with_retry_config(config);
         self
@@ -149,6 +158,7 @@ impl CodexConfig {
 
     /// Extra headers merged into every request (user-supplied values win over
     /// the subscription-mode defaults).
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.openai = self.openai.with_headers(headers);
         self
@@ -161,12 +171,14 @@ pub struct CodexProvider {
 }
 
 impl CodexProvider {
+    #[must_use]
     pub fn new(config: CodexConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given Codex model id
     /// (e.g. `"gpt-5.2-codex"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> CodexModel {
         CodexModel {
             model_id: model_id.to_string(),
@@ -345,7 +357,7 @@ impl CodexModel {
                                 provider_code: err_obj
                                     .and_then(|e| e.get("code").or_else(|| e.get("type")))
                                     .and_then(|c| c.as_str())
-                                    .map(|s| s.to_string()),
+                                    .map(std::string::ToString::to_string),
                                 message: message.to_string(),
                                 response_body: Some(ev.data.clone()),
                                 ..Default::default()
@@ -486,6 +498,12 @@ pub struct CodexTokens {
 /// Retries are disabled on purpose: refresh tokens rotate on first use, so
 /// retrying a refresh whose first response was lost would burn the rotation
 /// (`refresh_token_reused`).
+///
+/// # Errors
+///
+/// Returns `ApiCall` for HTTP/transport failures of the token endpoint,
+/// `JsonParse` for a malformed body, and `InvalidResponseData` when the
+/// response has no `access_token`.
 pub async fn codex_refresh(
     refresh_token: &str,
     client_id: &str,
@@ -495,6 +513,12 @@ pub async fn codex_refresh(
 
 /// [`codex_refresh`] with an explicit token endpoint (tests / self-hosted
 /// identity providers).
+///
+/// # Errors
+///
+/// Returns `ApiCall` for HTTP/transport failures of the token endpoint,
+/// `JsonParse` for a malformed body, and `InvalidResponseData` when the
+/// response has no `access_token`.
 pub async fn codex_refresh_at(
     refresh_token: &str,
     client_id: &str,
@@ -538,7 +562,7 @@ pub async fn codex_refresh_at(
             .get("refresh_token")
             .and_then(|v| v.as_str())
             .map(str::to_string),
-        expires_in_secs: data.get("expires_in").and_then(|v| v.as_u64()),
+        expires_in_secs: data.get("expires_in").and_then(serde_json::Value::as_u64),
     })
 }
 

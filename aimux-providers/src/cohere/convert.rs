@@ -1,4 +1,4 @@
-﻿//! Conversion between `LanguageModelPrompt` and Cohere API format.
+//! Conversion between `LanguageModelPrompt` and Cohere API format.
 //!
 //! Mirrors the TS `convert-to-cohere-chat-prompt.ts`,
 //! `cohere-prepare-tools.ts`, and `map-cohere-finish-reason.ts`.
@@ -31,6 +31,7 @@ pub struct PreparedTools {
 /// - `ToolChoice::None` → `"NONE"`
 /// - `ToolChoice::Required` → `"REQUIRED"`
 /// - `ToolChoice::Tool` → filter tools and use `"REQUIRED"`
+#[must_use]
 pub fn prepare_tools(tools: &Option<Vec<Tool>>, tool_choice: Option<&ToolChoice>) -> PreparedTools {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
 
@@ -117,6 +118,7 @@ pub struct ConvertedPrompt {
 /// - Non-image file parts are extracted as `documents` (RAG), not in the message.
 /// - Assistant content is a plain string; with tool calls, `content` is omitted.
 /// - Tool messages are flat `{role:"tool", content, tool_call_id}`.
+#[must_use]
 pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt {
     let mut messages = Vec::new();
     let mut documents = Vec::new();
@@ -194,7 +196,7 @@ pub fn convert_prompt_to_cohere(prompt: &LanguageModelPrompt) -> ConvertedPrompt
                             if p.get("type").and_then(|t| t.as_str()) == Some("text") {
                                 p.get("text")
                                     .and_then(|t| t.as_str())
-                                    .map(|s| s.to_string())
+                                    .map(std::string::ToString::to_string)
                             } else {
                                 None
                             }
@@ -306,6 +308,7 @@ pub struct RequestBodyResult {
 /// Mirrors the TS `getArgs` in `cohere-chat-language-model.ts`: assembles the
 /// model id, messages, documents, sampling settings, response format, tools,
 /// and the `thinking` config resolved from `reasoning` / provider options.
+#[must_use]
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -410,6 +413,7 @@ fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
 /// - `reasoning: None` (not specified) → no `thinking` field.
 /// - `reasoning: "none"` → `{ type: "disabled" }`.
 /// - other reasoning levels → `{ type: "enabled", token_budget: <n> }`.
+#[must_use]
 pub fn resolve_cohere_thinking(
     reasoning: Option<ReasoningEffort>,
     provider_options: &Option<std::collections::HashMap<String, Value>>,
@@ -425,7 +429,10 @@ pub fn resolve_cohere_thinking(
             .unwrap_or("enabled")
             .to_string();
         let mut obj = json!({ "type": t_type });
-        if let Some(budget) = thinking.get("tokenBudget").and_then(|v| v.as_u64()) {
+        if let Some(budget) = thinking
+            .get("tokenBudget")
+            .and_then(serde_json::Value::as_u64)
+        {
             obj["token_budget"] = json!(budget);
         }
         return Some(obj);
@@ -447,6 +454,7 @@ pub fn resolve_cohere_thinking(
 }
 
 /// Parse Cohere finish reason string into `FinishReason`.
+#[must_use]
 pub fn parse_finish_reason(s: &str) -> FinishReason {
     let unified = match s {
         "COMPLETE" | "STOP_SEQUENCE" => FinishReasonUnified::Stop,

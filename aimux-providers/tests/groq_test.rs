@@ -160,7 +160,7 @@ fn groq_tool_call_body() -> Value {
 
 /// Build a single SSE `data: <json>\n\n` event string.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events and append the `[DONE]` sentinel.
@@ -1859,7 +1859,7 @@ mod auth {
         assert!(result.is_err());
         match result {
             Err(ref e) if e.status_code() == Some(401) => {}
-            Err(e) => panic!("expected a 401, got {:?}", e),
+            Err(e) => panic!("expected a 401, got {e:?}"),
             Ok(_) => panic!("expected error, got Ok"),
         }
     }

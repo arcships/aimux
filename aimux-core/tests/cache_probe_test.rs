@@ -482,7 +482,7 @@ impl LanguageModel for MockModel {
 
 fn model_opts(session_id: Option<&str>) -> CallOptions {
     let mut o = CallOptions::new(Default::default());
-    o.session_id = session_id.map(|s| s.to_string());
+    o.session_id = session_id.map(std::string::ToString::to_string);
     o
 }
 

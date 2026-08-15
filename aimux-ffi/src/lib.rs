@@ -1587,11 +1587,11 @@ fn stream_text_as_openai_with_signal(
         .map(|v| OpenAiStreamOptions {
             include_usage: v
                 .get("include_usage")
-                .and_then(|b| b.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true),
             include_reasoning: v
                 .get("include_reasoning")
-                .and_then(|b| b.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true),
         })
         .unwrap_or_default();

@@ -37,16 +37,24 @@ impl ReplicateConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
+    /// Create from the `REPLICATE_API_TOKEN` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "REPLICATE_API_TOKEN", "Replicate")?;
         Ok(Self::new(api_key))
@@ -59,16 +67,19 @@ pub struct ReplicateProvider {
 }
 
 impl ReplicateProvider {
+    #[must_use]
     pub fn new(config: ReplicateConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn image(&self, model_id: &str) -> ReplicateImageModel {
         ReplicateImageModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a video generation model instance for the given model name
     /// (e.g. `"wan-lab/wan-2.1-t2v-14b"`).
+    #[must_use]
     pub fn video(&self, model_id: &str) -> ReplicateVideoModel {
         ReplicateVideoModel::new(model_id.to_string(), self.config.clone())
     }
@@ -85,6 +96,7 @@ pub struct ReplicateImageModel {
 }
 
 impl ReplicateImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: ReplicateConfig) -> Self {
         Self { model_id, config }
     }
@@ -165,7 +177,7 @@ impl ImageModel for ReplicateImageModel {
         let replicate_opts = options.provider_options.get("replicate");
         let max_wait = replicate_opts
             .and_then(|o| o.get("maxWaitTimeInSeconds"))
-            .and_then(|v| v.as_u64());
+            .and_then(serde_json::Value::as_u64);
 
         // Build image inputs
         let mut image_inputs = Map::new();
@@ -186,7 +198,7 @@ impl ImageModel for ReplicateImageModel {
                     image_inputs.insert(key, json!(Self::file_to_data_uri(file)?));
                 }
                 if files.len() > MAX_FLUX_2_INPUT_IMAGES as usize {
-                    warnings.push(Warning::Other { message: format!("Flux-2 models support up to {} input images. Additional images are ignored.", MAX_FLUX_2_INPUT_IMAGES) });
+                    warnings.push(Warning::Other { message: format!("Flux-2 models support up to {MAX_FLUX_2_INPUT_IMAGES} input images. Additional images are ignored.") });
                 }
             } else {
                 image_inputs.insert("image".into(), json!(Self::file_to_data_uri(&files[0])?));
@@ -343,6 +355,7 @@ pub struct ReplicateVideoModel {
 }
 
 impl ReplicateVideoModel {
+    #[must_use]
     pub fn new(model_id: String, config: ReplicateConfig) -> Self {
         Self { model_id, config }
     }

@@ -91,7 +91,7 @@ fn convert_bcp47_to_iso6391(value: &Option<String>) -> Option<String> {
         .as_ref()
         .and_then(|s| s.split('-').next())
         .filter(|s| s.len() == 2)
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
@@ -115,6 +115,7 @@ pub struct VertexTranscriptionModel {
 }
 
 impl VertexTranscriptionModel {
+    #[must_use]
     pub fn new(
         model_id: String,
         project: String,
@@ -208,15 +209,18 @@ impl TranscriptionModel for VertexTranscriptionModel {
                     if let Some(lc) = gv.get("languageCodes").and_then(|v| v.as_array()) {
                         language_codes = lc
                             .iter()
-                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                             .collect();
                     }
-                    if let Some(v) = gv.get("enableWordTimeOffsets").and_then(|v| v.as_bool()) {
+                    if let Some(v) = gv
+                        .get("enableWordTimeOffsets")
+                        .and_then(serde_json::Value::as_bool)
+                    {
                         enable_word_time_offsets = v;
                     }
                     if let Some(v) = gv
                         .get("enableAutomaticPunctuation")
-                        .and_then(|v| v.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                     {
                         enable_automatic_punctuation = v;
                     }

@@ -43,6 +43,7 @@ pub struct AnthropicAwsModel {
 }
 
 impl AnthropicAwsModel {
+    #[must_use]
     pub fn new(model_id: String, config: AnthropicAwsConfig) -> Self {
         Self { model_id, config }
     }

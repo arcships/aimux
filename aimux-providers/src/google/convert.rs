@@ -58,6 +58,7 @@ pub struct GooglePrompt {
 /// Thought signatures: `ContentPart::ToolCall.thought_signature` is echoed
 /// back as a `thoughtSignature` sibling of the `functionCall` part (required
 /// by Gemini thinking models on follow-up turns).
+#[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
     let mut system_parts: Vec<Value> = Vec::new();
     let mut contents: Vec<Value> = Vec::new();
@@ -264,6 +265,7 @@ pub struct PreparedTools {
 /// Mirrors the function-tools path of the TS `prepareTools`. Provider-defined
 /// tools (`google_search`, `code_execution`, …) are out of scope for the Rust
 /// port — only `FunctionTool`s are supported.
+#[must_use]
 pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice) -> PreparedTools {
     // Coerce empty arrays to None (matches TS `tools?.length ? tools : undefined`).
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
@@ -359,6 +361,7 @@ pub struct GoogleModelCapabilities {
 /// Mirrors `getGoogleModelCapabilities`. Unrecognized Gemini ids inherit the
 /// newest supported behaviour (matching the TS intent); only known older
 /// generations are downgraded.
+#[must_use]
 pub fn get_google_model_capabilities(model_id: &str) -> GoogleModelCapabilities {
     let lower = model_id.to_lowercase();
 
@@ -384,7 +387,7 @@ pub fn get_google_model_capabilities(model_id: &str) -> GoogleModelCapabilities 
 /// `/(^|\/)prefix/` — `prefix` appears at the start of `lower` or just after a
 /// `/`, with no requirement on what follows.
 fn contains_at_boundary(lower: &str, prefix: &str) -> bool {
-    lower.starts_with(prefix) || lower.contains(&format!("/{}", prefix))
+    lower.starts_with(prefix) || lower.contains(&format!("/{prefix}"))
 }
 
 /// `/(^|\/)prefix(?:[.-]|$)/` — `prefix` appears at the start of `lower` or
@@ -451,6 +454,7 @@ pub struct PreparedToolsWithWarnings {
 /// `Tool::Provider` entries (`google.google_search`, `google.code_execution`,
 /// `google.url_context`, `google.google_maps`, `google.enterprise_web_search`,
 /// `google.file_search`) and the Gemini 3 combined function+provider shape.
+#[must_use]
 pub fn prepare_all_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: &ToolChoice,
@@ -570,7 +574,7 @@ fn push_provider_tool(
 ) {
     let unsupported = |details: Option<&str>| Warning::Unsupported {
         feature: format!("provider-defined tool {}", tool.id),
-        details: details.map(|s| s.to_string()),
+        details: details.map(std::string::ToString::to_string),
     };
     match tool.id.as_str() {
         "google.google_search" => {
@@ -664,6 +668,7 @@ fn build_function_declaration(ft: &FunctionTool) -> Value {
 /// - `$schema` / `additionalProperties` / `definitions` etc. are dropped.
 /// - `type`, `description`, `required`, `properties`, `items`, `enum`,
 ///   `format`, `const`, `anyOf`/`oneOf`/`allOf` are preserved.
+#[must_use]
 pub fn convert_json_schema_to_openapi_schema(schema: &Value, is_root: bool) -> Value {
     if schema.is_null() {
         return Value::Null;
@@ -828,7 +833,7 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
             || obj
                 .get("properties")
                 .and_then(|p| p.as_object())
-                .map(|o| o.is_empty())
+                .map(serde_json::Map::is_empty)
                 .unwrap_or(true))
         && !obj.contains_key("additionalProperties")
 }
@@ -844,6 +849,7 @@ fn is_empty_object_schema(obj: &Map<String, Value>) -> bool {
 ///
 /// This is the request-body-only entry point; warnings about unsupported tools
 /// are discarded. Use [`build_request_body_with_warnings`] to surface them.
+#[must_use]
 pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
     build_request_body_with_warnings(model_id, options).0
 }
@@ -851,6 +857,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions) -> Value {
 /// Build the Gemini `generateContent` request body **and** collect the tool
 /// warnings (e.g. unsupported provider-defined tools, mixed function+provider
 /// tools on pre-Gemini-3 models).
+#[must_use]
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -935,6 +942,7 @@ pub fn build_request_body_with_warnings(
 ///
 /// `STOP` maps to `ToolCalls` when `has_tool_calls` is true (mirroring the
 /// TS `mapGoogleFinishReason`).
+#[must_use]
 pub fn parse_finish_reason(reason: &str, has_tool_calls: bool) -> FinishReason {
     let unified = match reason {
         "STOP" => {
@@ -966,6 +974,7 @@ pub fn parse_finish_reason(reason: &str, has_tool_calls: bool) -> FinishReason {
 /// - `input.noCache = promptTokenCount - cachedContentTokenCount`
 /// - `input.cacheRead = cachedContentTokenCount`
 /// - `output.total = candidatesTokenCount + thoughtsTokenCount`
+#[must_use]
 pub fn convert_usage(usage: &super::types::GoogleUsageMetadata) -> aimux_core::types::Usage {
     use aimux_core::types::{TokenUsage, Usage};
 
@@ -1016,7 +1025,7 @@ pub fn extract_sources(
     };
 
     let next_id = |counter: &mut usize| -> String {
-        let id = format!("{}", counter);
+        let id = format!("{counter}");
         *counter += 1;
         id
     };
@@ -1029,11 +1038,11 @@ pub fn extract_sources(
                 url: web
                     .get("uri")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 title: web
                     .get("title")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 provider_metadata: None,
             });
         } else if let Some(image) = chunk.get("image") {
@@ -1043,11 +1052,11 @@ pub fn extract_sources(
                 url: image
                     .get("sourceUri")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 title: image
                     .get("title")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 provider_metadata: None,
             });
         } else if let Some(rc) = chunk.get("retrievedContext") {
@@ -1060,7 +1069,7 @@ pub fn extract_sources(
                         id: next_id(id_counter),
                         source_type: "url".to_string(),
                         url: Some(uri.to_string()),
-                        title: title.map(|s| s.to_string()),
+                        title: title.map(std::string::ToString::to_string),
                         provider_metadata: None,
                     });
                 } else {
@@ -1094,7 +1103,7 @@ pub fn extract_sources(
                 title: maps
                     .get("title")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 provider_metadata: None,
             });
         }
