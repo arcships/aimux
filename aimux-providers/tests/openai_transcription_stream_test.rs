@@ -367,6 +367,121 @@ async fn stream_rejects_non_realtime_models() {
     }
 }
 
+/// A closed port (connection refused) — `do_stream` itself must fail with a
+/// clear connect error, not an in-stream error part (#118).
+#[tokio::test]
+async fn stream_connect_failure_errors() {
+    // Port 1 is never listening on loopback: TCP refuses immediately.
+    let config = OpenAIConfig::new("k").with_base_url("http://127.0.0.1:1".to_string());
+    let provider = OpenAIProvider::new(config);
+    let model = provider.transcription("gpt-realtime-whisper");
+
+    let err = model
+        .do_stream(stream_options(vec![AudioChunk::Binary(vec![1])], None))
+        .await
+        .unwrap_err();
+    match &err {
+        AiMuxError::ApiCall(d) => {
+            assert!(
+                d.message.contains("websocket connect failed"),
+                "connect failure must name the phase, got: {}",
+                d.message
+            );
+        }
+        other => panic!("expected ApiCall connect error, got {other:?}"),
+    }
+}
+
+/// Abort while the WS handshake is still in flight — `Aborted`, not a
+/// timeout and not an IO error (#118).
+#[tokio::test]
+async fn stream_abort_during_connect() {
+    // A black-hole server: accepts TCP but never completes the WS handshake,
+    // so `connect_async` pends and only the abort can end the connect phase.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        // Hold the socket open without writing the 101 response.
+        let _hold = stream;
+        std::future::pending::<()>().await;
+    });
+
+    let abort = AbortSignal::new();
+    let abort_clone = abort.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        abort.abort();
+    });
+
+    let model = realtime_model(&format!("http://127.0.0.1:{port}"));
+    let err = model
+        .do_stream(stream_options(
+            vec![AudioChunk::Binary(vec![1])],
+            Some(abort_clone),
+        ))
+        .await
+        .unwrap_err();
+    // Abort semantics exactly: distinct from timeout and from IO failure.
+    assert!(
+        matches!(err, AiMuxError::Aborted),
+        "connect-phase abort must surface Aborted, got {err:?}"
+    );
+    assert!(!matches!(&err, AiMuxError::Timeout(_)));
+    assert!(!matches!(&err, AiMuxError::ApiCall(_)));
+}
+
+/// `first_chunk_ms` doubles as the connect budget: against a black-hole
+/// server the CONNECT phase itself must time out with its own message —
+/// distinguishable from both the first-EVENT timeout and a connect IO
+/// failure (#118).
+#[tokio::test]
+async fn stream_connect_timeout_fires() {
+    // Accepts TCP but never answers the WS handshake — connect pends.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let _hold = stream;
+        std::future::pending::<()>().await;
+    });
+
+    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
+    let provider = OpenAIProvider::new(config);
+    let model = provider.transcription("gpt-realtime-whisper");
+
+    let options = TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::iter(vec![AudioChunk::Binary(vec![1])])),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: None,
+        },
+        provider_options: None,
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: Some(aimux_core::options::TimeoutConfiguration {
+            first_chunk_ms: Some(300),
+            total_ms: None,
+            chunk_ms: None,
+        }),
+    };
+    let err = model.do_stream(options).await.unwrap_err();
+    match &err {
+        AiMuxError::Timeout(msg) => {
+            assert_eq!(
+                msg, "websocket connect timed out",
+                "connect timeout must carry its own message"
+            );
+            assert!(
+                !msg.contains("first websocket event"),
+                "must not be confused with the first-event timeout"
+            );
+        }
+        other => panic!("expected connect Timeout, got {other:?}"),
+    }
+}
+
 /// A silent server (accepts + reads session.update, then goes quiet) — the
 /// first-chunk timeout must fire (B1/timer coverage).
 #[tokio::test]
@@ -414,4 +529,237 @@ async fn stream_first_chunk_timeout_fires() {
         timed_out,
         "expected a Timeout error against a silent server; got: {parts:?}"
     );
+}
+
+/// The server emits a realtime `error` event — the provider message must
+/// propagate verbatim and readable (not wrapped in transport noise), and the
+/// session must terminate there (#118).
+#[tokio::test]
+async fn stream_server_error_event_propagates() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let _ = ws.next().await; // session.update
+        ws.send(Message::Text(
+            r#"{"type":"error","error":{"message":"insufficient quota for realtime transcription","type":"insufficient_quota"}}"#
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+        // The client closes(1000) after surfacing the error.
+        let _ = ws.next().await;
+    });
+
+    let model = realtime_model(&format!("http://127.0.0.1:{port}"));
+    let result = model
+        .do_stream(stream_options(vec![AudioChunk::Binary(vec![1])], None))
+        .await
+        .unwrap();
+    let parts = collect(result).await;
+
+    // StreamStart then the terminal error — nothing after it.
+    assert_eq!(parts.len(), 2, "parts: {parts:?}");
+    assert!(matches!(
+        &parts[0],
+        Ok(TranscriptionStreamPart::StreamStart { .. })
+    ));
+    match &parts[1] {
+        Err(AiMuxError::ApiCall(d)) => {
+            assert_eq!(
+                d.message, "insufficient quota for realtime transcription",
+                "the provider's own message must propagate verbatim"
+            );
+            assert!(
+                !d.message.contains("websocket"),
+                "must not be wrapped in transport noise: {}",
+                d.message
+            );
+        }
+        other => panic!("expected ApiCall from server error event, got {other:?}"),
+    }
+}
+
+/// The server closes the socket (close frame with code + reason) after the
+/// handshake — the client must surface peer-closed semantics carrying the
+/// code/reason, not a bare EOF or a hang (#118).
+#[tokio::test]
+async fn stream_peer_close_before_completion() {
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+    use tokio_tungstenite::tungstenite::protocol::frame::{CloseFrame as WsCloseFrame, Frame};
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let _ = ws.next().await; // session.update
+        // Server-initiated abnormal close: code 1011 + a human reason.
+        let frame = WsCloseFrame {
+            code: CloseCode::Error,
+            reason: std::borrow::Cow::Borrowed("server overloaded"),
+        };
+        ws.send(Message::Frame(Frame::close(Some(frame))))
+            .await
+            .unwrap();
+        // Drain until the client side tears down.
+        let _ = ws.next().await;
+    });
+
+    let model = realtime_model(&format!("http://127.0.0.1:{port}"));
+    let result = model
+        .do_stream(stream_options(vec![AudioChunk::Binary(vec![1])], None))
+        .await
+        .unwrap();
+    let parts = collect(result).await;
+
+    assert_eq!(parts.len(), 2, "parts: {parts:?}");
+    match &parts[1] {
+        Err(AiMuxError::ApiCall(d)) => {
+            assert!(
+                d.message.contains("websocket closed by peer"),
+                "peer close must be identifiable, got: {}",
+                d.message
+            );
+            assert!(
+                d.message.contains("1011") && d.message.contains("server overloaded"),
+                "close code and reason must be carried: {}",
+                d.message
+            );
+        }
+        other => panic!("expected ApiCall peer-closed error, got {other:?}"),
+    }
+}
+
+/// chunk-idle timeout: the server delivers one event, then goes silent while
+/// holding the socket open — `chunk_ms` must trip with its own message,
+/// distinct from the total timeout (#118).
+#[tokio::test]
+async fn stream_chunk_idle_timeout_fires() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let _ = ws.next().await; // session.update
+        // One event so the stream is established and alive…
+        ws.send(Message::Text(r#"{"type":"session.created"}"#.to_string()))
+            .await
+            .unwrap();
+        // …then total silence while KEEPING the socket open (drain client
+        // messages for 2s, far past the 400ms idle window) — the idle timer,
+        // not a disconnect, must end the session.
+        while let Ok(Some(_)) = tokio::time::timeout(Duration::from_secs(2), ws.next()).await {}
+    });
+
+    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
+    let provider = OpenAIProvider::new(config);
+    let model = provider.transcription("gpt-realtime-whisper");
+
+    let options = TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::iter(vec![AudioChunk::Binary(vec![1])])),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: None,
+        },
+        provider_options: None,
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: Some(aimux_core::options::TimeoutConfiguration {
+            first_chunk_ms: None,
+            total_ms: None,
+            chunk_ms: Some(400),
+        }),
+    };
+    let result = model.do_stream(options).await.unwrap();
+    let parts = collect(result).await;
+
+    assert_eq!(parts.len(), 2, "parts: {parts:?}");
+    match &parts[1] {
+        Err(AiMuxError::Timeout(msg)) => {
+            assert_eq!(
+                msg, "websocket chunk idle timeout",
+                "chunk-idle must fire with its own message"
+            );
+            assert!(
+                !msg.contains("total"),
+                "must not be confused with the total timeout"
+            );
+        }
+        other => panic!("expected chunk-idle Timeout, got {other:?}"),
+    }
+}
+
+/// total timeout: the server keeps events flowing (so chunk-idle never
+/// trips) — the hard connection deadline must still fire, with a message
+/// distinct from chunk-idle (#118).
+#[tokio::test]
+async fn stream_total_timeout_fires() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let _ = ws.next().await; // session.update
+        // Keep the stream visibly alive: a delta every 100ms for 2s — well
+        // inside the 300ms chunk window, well past the 700ms total deadline.
+        for i in 0..20 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let event = format!(
+                r#"{{"type":"conversation.item.input_audio_transcription.delta","item_id":"i","delta":"{i}"}}"#
+            );
+            if ws.send(Message::Text(event)).await.is_err() {
+                break; // client tore down after the total timeout
+            }
+        }
+    });
+
+    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
+    let provider = OpenAIProvider::new(config);
+    let model = provider.transcription("gpt-realtime-whisper");
+
+    let options = TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::iter(vec![AudioChunk::Binary(vec![1])])),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: None,
+        },
+        provider_options: None,
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: Some(aimux_core::options::TimeoutConfiguration {
+            first_chunk_ms: None,
+            total_ms: Some(700),
+            chunk_ms: Some(300),
+        }),
+    };
+    let result = model.do_stream(options).await.unwrap();
+    let parts = collect(result).await;
+
+    // StreamStart + several deltas (alive stream) + the terminal total error.
+    let deltas = parts
+        .iter()
+        .filter(|p| matches!(p, Ok(TranscriptionStreamPart::TranscriptDelta { .. })))
+        .count();
+    assert!(
+        deltas >= 2,
+        "stream must be alive pre-timeout; parts: {parts:?}"
+    );
+    let last = parts.last().expect("must end with an error part");
+    match last {
+        Err(AiMuxError::Timeout(msg)) => {
+            assert_eq!(
+                msg, "websocket total timeout",
+                "total deadline must fire with its own message"
+            );
+            assert!(
+                !msg.contains("chunk"),
+                "must not be confused with the chunk-idle timeout"
+            );
+        }
+        other => panic!("expected total Timeout as the last part, got {other:?}"),
+    }
 }
