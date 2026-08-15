@@ -193,10 +193,15 @@ internal object FFI {
  * Frees the FFI-allocated [AimuxCError.message] and [AimuxCError.error_value]
  * exactly once each (fromC itself is a pure mapping and never frees).
  */
-internal fun throwFromC(err: AimuxCError): Nothing {
-    val ex = AimuxException.fromC(err)
+/** Free the FFI-allocated error strings, per the RFC-0028 D5 release contract. */
+internal fun consumeErrorStrings(err: AimuxCError) {
     FFI.lib.aimux_free_string(err.message)
     FFI.lib.aimux_free_string(err.error_value)
+}
+
+internal fun throwFromC(err: AimuxCError): Nothing {
+    val ex = AimuxException.fromC(err)
+    consumeErrorStrings(err)
     throw ex
 }
 
