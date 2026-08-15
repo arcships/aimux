@@ -177,8 +177,7 @@ async fn e2e_openai_error_401() {
     let err = result.unwrap_err();
     assert!(
         matches!(err, ref e if e.status_code() == Some(401)),
-        "expected Auth error, got {:?}",
-        err
+        "expected Auth error, got {err:?}"
     );
 }
 
@@ -289,8 +288,7 @@ async fn e2e_anthropic_error_429() {
     let err = result.unwrap_err();
     assert!(
         matches!(err, ref e if e.status_code() == Some(429)),
-        "expected RateLimited error, got {:?}",
-        err
+        "expected RateLimited error, got {err:?}"
     );
 }
 
@@ -826,8 +824,7 @@ async fn e2e_openai_stream_tool_calls() {
     });
     assert!(
         has_tool_part,
-        "expected a tool-related StreamPart; got: {:?}",
-        parts
+        "expected a tool-related StreamPart; got: {parts:?}"
     );
 
     // Must contain a Finish part

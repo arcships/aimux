@@ -45,12 +45,17 @@ impl SearxngConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Create from the `SEARXNG_URL` environment variable (required).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `SEARXNG_URL` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let base_url = std::env::var("SEARXNG_URL").map_err(|_| {
             AiMuxError::InvalidArgument(
@@ -69,11 +74,13 @@ pub struct SearxngProvider {
 }
 
 impl SearxngProvider {
+    #[must_use]
     pub fn new(config: SearxngConfig) -> Self {
         Self { config }
     }
 
     /// Create a search model instance.
+    #[must_use]
     pub fn search_model(&self) -> SearxngSearchModel {
         SearxngSearchModel::new(self.config.clone())
     }
@@ -127,6 +134,7 @@ pub struct SearxngSearchModel {
 }
 
 impl SearxngSearchModel {
+    #[must_use]
     pub fn new(config: SearxngConfig) -> Self {
         Self { config }
     }

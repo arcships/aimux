@@ -96,3 +96,8 @@ ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 # CI additionally promotes all warnings to errors.
 [workspace.lints.clippy]
 all = "warn"
+uninlined_format_args = "warn"
+must_use_candidate = "warn"
+redundant_closure_for_method_calls = "warn"
+return_self_not_must_use = "warn"
+missing_errors_doc = "warn"

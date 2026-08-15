@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK Mistral embedding model tests.
+//! Rust translations of the AI SDK Mistral embedding model tests.
 //!
 //! Source: `reference/ai/packages/mistral/src/mistral-embedding-model.test.ts`
 //! (127 lines, 5 cases).
@@ -31,7 +31,10 @@ fn embedding_response_body(embeddings: &[Vec<f32>], usage: Option<Value>) -> Val
 }
 
 fn test_values() -> Vec<String> {
-    TEST_VALUES.iter().map(|s| s.to_string()).collect()
+    TEST_VALUES
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect()
 }
 
 fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
@@ -122,7 +125,7 @@ async fn should_expose_raw_response() {
         .and_then(|r| r.headers.as_ref())
         .expect("headers present");
     assert_eq!(
-        headers.get("test-header").map(|s| s.as_str()),
+        headers.get("test-header").map(std::string::String::as_str),
         Some("test-value")
     );
 }

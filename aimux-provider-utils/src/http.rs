@@ -86,6 +86,7 @@ impl TimeoutConfig {
     ///
     /// LLM 流式时长取决于生成长度 / max_tokens，固定整体超时会误杀长
     /// 生成请求（RFC-0009 §4.3）。仅保留 connect timeout 守护建连阶段。
+    #[must_use]
     pub fn streaming() -> Self {
         Self {
             connect_timeout_ms: 10_000,
@@ -225,6 +226,7 @@ pub enum HttpMethod {
 
 impl HttpMethod {
     /// 方法名（小写），用于日志。
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             HttpMethod::Get => "get",
@@ -326,6 +328,12 @@ pub struct HttpStreamResponse {
 /// - 408/409/429/5xx 可重试；其他 4xx **立即返回不重试**
 ///
 /// 退避用 Full Jitter（`delay ∈ [0, base)`），防并发 429 惊群。
+///
+/// # Errors
+///
+/// Returns `ApiCall` for transport failures and non-2xx responses (after the
+/// configured retries), `Aborted` when the abort signal fires, and `Timeout`
+/// when reading the body exceeds the 30s overall deadline.
 pub async fn send(
     request: HttpRequest,
     retry_config: RetryConfig,
@@ -437,6 +445,12 @@ pub async fn send(
 ///
 /// retry 仅覆盖**建连阶段**——`.send()` 返回 200 后立即返回字节流，流中途
 /// 出错不重试（已吐 token 后重试会重复内容，RFC-0009 §5）。
+///
+/// # Errors
+///
+/// Returns `ApiCall` when establishing the connection (including retries)
+/// fails; transport errors on the byte stream surface as `Err` items in the
+/// returned stream.
 pub async fn send_stream(
     request: HttpRequest,
     retry_config: RetryConfig,
@@ -666,6 +680,12 @@ impl Drop for ObservedByteStream {
 /// The timeout covers the **entire** call: connect, response body, and any
 /// retry backoff. On expiry the call fails with `AiMuxError::Timeout` (no
 /// retry is attempted after the deadline).
+///
+/// # Errors
+///
+/// Returns `InvalidArgument` for a malformed timeout, `Timeout` when the
+/// total deadline expires, and the inner retry loop's `ApiCall`/`Aborted`
+/// errors.
 pub async fn send_timed(
     request: HttpRequest,
     retry_config: RetryConfig,
@@ -690,6 +710,12 @@ pub async fn send_timed(
 /// wrapped so that `first_chunk_ms` / `chunk_ms` / the remaining `total_ms`
 /// are enforced on the chunks themselves. Expired limits surface as
 /// `AiMuxError::Timeout` items in the stream (after which the stream ends).
+///
+/// # Errors
+///
+/// Returns `InvalidArgument` for a malformed timeout and `Timeout` when the
+/// connect-phase deadline expires; expired chunk limits surface as `Timeout`
+/// items inside the returned stream.
 pub async fn send_stream_timed(
     request: HttpRequest,
     retry_config: RetryConfig,
@@ -976,6 +1002,11 @@ impl Stream for TimeoutBodyStream {
 /// - cancellation is exactly [`AiMuxError::Aborted`].
 ///
 /// Shared by the retry backoff here and by provider polling waits.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::Aborted` when the cancellation signal fires before or
+/// during the sleep.
 pub async fn sleep_or_abort(
     duration: Duration,
     signal: Option<&AbortSignal>,

@@ -181,7 +181,7 @@ fn sse_body(events: &[&str]) -> String {
 
 /// Build an SSE event string from a JSON string.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Collect all `StreamPart`s from a `StreamResult` into a `Vec`.
@@ -191,7 +191,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -235,7 +235,7 @@ struct CountingToken {
 impl TokenProvider for CountingToken {
     async fn get_token(&self) -> Result<String, AiMuxError> {
         let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
-        Ok(format!("token-{}", n))
+        Ok(format!("token-{n}"))
     }
 }
 
@@ -468,8 +468,7 @@ async fn should_pass_custom_headers() {
         .unwrap_or("");
     assert!(
         ua.contains("ai-sdk/azure"),
-        "user-agent should contain ai-sdk/azure, got: {}",
-        ua
+        "user-agent should contain ai-sdk/azure, got: {ua}"
     );
 }
 
@@ -678,7 +677,7 @@ async fn should_extract_response_headers() {
 
     let headers = result.response_headers.expect("response_headers");
     assert_eq!(
-        headers.get("test-header").map(|s| s.as_str()),
+        headers.get("test-header").map(std::string::String::as_str),
         Some("test-value")
     );
 }
@@ -975,8 +974,7 @@ async fn should_handle_error_status() {
     let msg = err.to_string().to_lowercase();
     assert!(
         msg.contains("rate limit"),
-        "error should mention rate limit, got: {}",
-        err
+        "error should mention rate limit, got: {err}"
     );
 }
 

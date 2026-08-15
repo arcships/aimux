@@ -1,4 +1,4 @@
-﻿//! Utility functions ported from the Vercel AI SDK TypeScript `util` package.
+//! Utility functions ported from the Vercel AI SDK TypeScript `util` package.
 //!
 //! This module is a facade — the implementations live in dedicated modules:
 //!
@@ -18,6 +18,7 @@ pub use crate::math::{UtilError, cosine_similarity};
 
 /// Current time as RFC 3339 UTC with millisecond precision
 /// (`2026-08-05T04:52:30.123Z`).
+#[must_use]
 pub fn rfc3339_now() -> String {
     let d = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

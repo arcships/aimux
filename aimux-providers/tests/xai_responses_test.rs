@@ -44,7 +44,7 @@ fn default_options(prompt: Vec<LanguageModelPromptMessage>) -> CallOptions {
 }
 
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 fn sse_body(events: &[&str]) -> String {
@@ -62,7 +62,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -129,7 +129,7 @@ mod do_generate {
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "hello world"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
     }
 
@@ -366,11 +366,11 @@ mod reasoning {
                     )
                 );
             }
-            other => panic!("expected Reasoning, got {:?}", other),
+            other => panic!("expected Reasoning, got {other:?}"),
         }
         match &result.content[1] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "The answer is 42."),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
     }
 
@@ -423,7 +423,7 @@ mod reasoning {
                     &Some(json!({ "xai": { "itemId": "rs_456" } }))
                 );
             }
-            other => panic!("expected Reasoning, got {:?}", other),
+            other => panic!("expected Reasoning, got {other:?}"),
         }
     }
 
@@ -470,7 +470,7 @@ mod reasoning {
             GenerateContent::Reasoning { text, .. } => {
                 assert_eq!(text, "Let me think step by step.");
             }
-            other => panic!("expected Reasoning, got {:?}", other),
+            other => panic!("expected Reasoning, got {other:?}"),
         }
     }
 
@@ -526,7 +526,7 @@ mod reasoning {
                     )
                 );
             }
-            other => panic!("expected Reasoning, got {:?}", other),
+            other => panic!("expected Reasoning, got {other:?}"),
         }
     }
 }
@@ -1122,7 +1122,7 @@ mod tools {
                 assert_eq!(tool_name, "web_search");
                 assert_eq!(input, "{\"query\":\"test\"}");
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1162,7 +1162,7 @@ mod tools {
 
         match &result.content[0] {
             GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "web_search"),
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1202,7 +1202,7 @@ mod tools {
 
         match &result.content[0] {
             GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "x_search"),
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1242,7 +1242,7 @@ mod tools {
 
         match &result.content[0] {
             GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "code_execution"),
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1282,7 +1282,7 @@ mod tools {
 
         match &result.content[0] {
             GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "code_execution"),
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1324,7 +1324,7 @@ mod tools {
             GenerateContent::ToolCall { tool_name, .. } => {
                 assert_eq!(tool_name, "my_custom_search")
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1386,7 +1386,7 @@ mod tools {
                 assert_eq!(tool_name, "file_search");
                 assert_eq!(input, "");
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
         // Tool result
         match &result.content[1] {
@@ -1402,12 +1402,12 @@ mod tools {
                 assert_eq!(result["results"].as_array().unwrap().len(), 2);
                 assert_eq!(result["results"][0]["fileId"], "file_abc123");
             }
-            other => panic!("expected ToolResult, got {:?}", other),
+            other => panic!("expected ToolResult, got {other:?}"),
         }
         // Text
         match &result.content[2] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the documents..."),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
     }
 
@@ -1458,7 +1458,7 @@ mod tools {
                 assert_eq!(result["queries"], json!(["nonexistent topic"]));
                 assert_eq!(result["results"], Value::Null);
             }
-            other => panic!("expected ToolResult, got {:?}", other),
+            other => panic!("expected ToolResult, got {other:?}"),
         }
     }
 
@@ -1511,7 +1511,7 @@ mod tools {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &json!({ "location": "sf" }));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1616,7 +1616,7 @@ mod citations {
         // Text
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "based on research"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
         // Source 1
         match &result.content[1] {
@@ -1624,7 +1624,7 @@ mod citations {
                 assert_eq!(url.as_deref(), Some("https://example.com"));
                 assert_eq!(title.as_deref(), Some("example title"));
             }
-            other => panic!("expected Source, got {:?}", other),
+            other => panic!("expected Source, got {other:?}"),
         }
         // Source 2 (title falls back to url)
         match &result.content[2] {
@@ -1632,7 +1632,7 @@ mod citations {
                 assert_eq!(url.as_deref(), Some("https://test.com"));
                 assert_eq!(title.as_deref(), Some("https://test.com"));
             }
-            other => panic!("expected Source, got {:?}", other),
+            other => panic!("expected Source, got {other:?}"),
         }
     }
 }

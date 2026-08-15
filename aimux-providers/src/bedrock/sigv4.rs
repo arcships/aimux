@@ -47,6 +47,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// - `body` - The request body as a string (e.g. JSON).
 /// - `extra_headers` - Additional headers to include in the request (these are
 ///   also included in the canonical headers for signing).
+#[must_use]
 pub fn sign_request(
     credentials: &AwsCredentials,
     service: &str,
@@ -106,7 +107,7 @@ pub fn sign_request(
 
     let canonical_headers_str: String = canonical_headers
         .iter()
-        .map(|(k, v)| format!("{}:{}\n", k, v))
+        .map(|(k, v)| format!("{k}:{v}\n"))
         .collect();
     let signed_headers: String = canonical_headers
         .iter()
@@ -134,10 +135,8 @@ pub fn sign_request(
     );
 
     // String to sign
-    let string_to_sign = format!(
-        "AWS4-HMAC-SHA256\n{}\n{}\n{}",
-        amz_date, credential_scope, canonical_request_hash
-    );
+    let string_to_sign =
+        format!("AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{canonical_request_hash}");
 
     // Signing key: derived through chained HMAC
     let k_date = hmac_sha256(

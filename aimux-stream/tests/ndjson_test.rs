@@ -41,11 +41,10 @@ async fn emoji_ndjson_line_split_at_every_byte_boundary() {
         );
         let line = lines[0]
             .as_ref()
-            .unwrap_or_else(|e| panic!("split at byte {} errored: {:?}", split, e));
+            .unwrap_or_else(|e| panic!("split at byte {split} errored: {e:?}"));
         assert_eq!(
             line.text, "😀👋",
-            "split at byte {} corrupted the text",
-            split
+            "split at byte {split} corrupted the text"
         );
     }
 }
@@ -63,7 +62,7 @@ async fn invalid_utf8_line_returns_utf8_error() {
     assert_eq!(lines.len(), 1, "expected exactly one result");
     match &lines[0] {
         Err(NdjsonError::Utf8(_)) => {}
-        other => panic!("expected NdjsonError::Utf8, got {:?}", other),
+        other => panic!("expected NdjsonError::Utf8, got {other:?}"),
     }
 }
 

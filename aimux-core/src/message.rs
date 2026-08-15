@@ -65,6 +65,7 @@ impl ModelMessage {
     }
 
     /// User message with multi-part content.
+    #[must_use]
     pub fn user_parts(parts: Vec<ContentPart>) -> Self {
         Self {
             role: Role::User,

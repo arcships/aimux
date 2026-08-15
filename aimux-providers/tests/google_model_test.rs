@@ -91,7 +91,7 @@ fn weather_tool() -> FunctionTool {
 /// Mock a JSON `generateContent` response.
 async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:generateContent", model)))
+        .and(path(format!("/models/{model}:generateContent")))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .mount(server)
         .await;
@@ -100,7 +100,7 @@ async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
 /// Mock a JSON `generateContent` response with a custom status code.
 async fn mock_json_error(server: &MockServer, model: &str, status: u16, body: Value) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:generateContent", model)))
+        .and(path(format!("/models/{model}:generateContent")))
         .respond_with(ResponseTemplate::new(status).set_body_json(body))
         .mount(server)
         .await;
@@ -109,7 +109,7 @@ async fn mock_json_error(server: &MockServer, model: &str, status: u16, body: Va
 /// Mock an SSE `streamGenerateContent` response.
 async fn mock_sse_response(server: &MockServer, model: &str, sse_body: &str) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:streamGenerateContent", model)))
+        .and(path(format!("/models/{model}:streamGenerateContent")))
         .and(query_param("alt", "sse"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -122,7 +122,7 @@ async fn mock_sse_response(server: &MockServer, model: &str, sse_body: &str) {
 
 /// Build an SSE event string from a JSON value.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events (no `[DONE]` sentinel — Gemini doesn't use one).
@@ -141,7 +141,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -203,7 +203,7 @@ mod do_generate {
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
     }
 
@@ -428,7 +428,7 @@ mod do_generate {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &json!({ "location": "San Francisco" }));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
         // STOP + has_tool_calls -> ToolCalls
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
@@ -488,7 +488,7 @@ mod do_generate {
                     Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
                 );
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -880,7 +880,7 @@ mod do_generate {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &json!({ "location": "SF" }));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
@@ -927,7 +927,7 @@ mod do_generate {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
             }
-            other => panic!("expected first ToolCall, got {:?}", other),
+            other => panic!("expected first ToolCall, got {other:?}"),
         }
         match &result.content[1] {
             GenerateContent::ToolCall {
@@ -940,7 +940,7 @@ mod do_generate {
                 assert_eq!(tool_name, "calendar");
                 assert_eq!(input, &json!({ "date": "2024-01-01" }));
             }
-            other => panic!("expected second ToolCall, got {:?}", other),
+            other => panic!("expected second ToolCall, got {other:?}"),
         }
     }
 
@@ -979,11 +979,11 @@ mod do_generate {
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "Let me check the weather."),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
         match &result.content[1] {
             GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "weather"),
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1103,7 +1103,7 @@ mod do_stream {
             StreamPart::ResponseMetadata { id, .. } => {
                 assert_eq!(id.as_deref(), Some("resp-1"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
 
         // text-start
@@ -1128,7 +1128,7 @@ mod do_stream {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
                 assert_eq!(finish_reason.raw.as_deref(), Some("STOP"));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1189,7 +1189,7 @@ mod do_stream {
             Some(StreamPart::Finish { finish_reason, .. }) => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1264,7 +1264,7 @@ mod do_stream {
                 assert_eq!(usage.input_tokens.total, Some(10));
                 assert_eq!(usage.output_tokens.total, Some(3));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1319,7 +1319,7 @@ mod do_stream {
                 assert_eq!(usage.input_tokens.total, Some(10));
                 assert_eq!(usage.output_tokens.total, Some(20));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1355,7 +1355,7 @@ mod do_stream {
             Some(StreamPart::Finish { usage, .. }) => {
                 assert_eq!(usage.input_tokens.total, Some(5));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1393,7 +1393,7 @@ mod do_stream {
                 assert_eq!(id.as_deref(), Some("resp-xyz"));
                 assert_eq!(model_id.as_deref(), Some("gemini-2.0-flash-001"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
     }
 
@@ -1573,7 +1573,7 @@ mod error_handling {
 
         match err {
             AiMuxError::ApiCall(d) => assert!(d.to_string().contains("Internal error")),
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -1625,9 +1625,9 @@ mod error_handling {
         match err {
             AiMuxError::ApiCall(msg_d) => {
                 let msg = msg_d.to_string();
-                assert!(msg.contains("Invalid request"), "msg was: {}", msg)
+                assert!(msg.contains("Invalid request"), "msg was: {msg}")
             }
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -1653,9 +1653,9 @@ mod error_handling {
         match err {
             AiMuxError::ApiCall(msg_d) => {
                 let msg = msg_d.to_string();
-                assert!(msg.contains("Permission denied"), "msg was: {}", msg)
+                assert!(msg.contains("Permission denied"), "msg was: {msg}")
             }
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -1684,9 +1684,9 @@ mod error_handling {
         match err {
             AiMuxError::ApiCall(msg_d) => {
                 let msg = msg_d.to_string();
-                assert!(msg.contains("Internal error"), "msg was: {}", msg)
+                assert!(msg.contains("Internal error"), "msg was: {msg}")
             }
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -2021,7 +2021,7 @@ mod request_body {
         assert_eq!(gc["temperature"], 0.5);
         // f32 -> f64 round-trip introduces tiny error; compare with tolerance.
         let top_p = gc["topP"].as_f64().unwrap();
-        assert!((top_p - 0.9).abs() < 1e-5, "topP was {}", top_p);
+        assert!((top_p - 0.9).abs() < 1e-5, "topP was {top_p}");
         assert_eq!(gc["topK"], 40.0);
         assert_eq!(gc["stopSequences"][0], "STOP");
     }
@@ -2073,11 +2073,11 @@ mod request_body {
         let pp = body["generationConfig"]["presencePenalty"]
             .as_f64()
             .unwrap();
-        assert!((pp - 0.5).abs() < 1e-5, "presencePenalty was {}", pp);
+        assert!((pp - 0.5).abs() < 1e-5, "presencePenalty was {pp}");
         let fp = body["generationConfig"]["frequencyPenalty"]
             .as_f64()
             .unwrap();
-        assert!((fp - 0.3).abs() < 1e-5, "frequencyPenalty was {}", fp);
+        assert!((fp - 0.3).abs() < 1e-5, "frequencyPenalty was {fp}");
     }
 
     // ── should omit generationConfig when no options set ─────────────────────

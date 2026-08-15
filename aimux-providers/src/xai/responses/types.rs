@@ -63,6 +63,7 @@ pub struct XaiResponsesOutputTokensDetails {
 
 /// A streaming SSE event from the Responses API. The `event_type` field
 /// corresponds to the `type` field in the JSON payload.
+#[must_use]
 pub fn event_type(event: &serde_json::Value) -> &str {
     event.get("type").and_then(|v| v.as_str()).unwrap_or("")
 }

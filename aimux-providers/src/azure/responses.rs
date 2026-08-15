@@ -63,6 +63,7 @@ pub struct AzureResponsesModel {
 }
 
 impl AzureResponsesModel {
+    #[must_use]
     pub fn new(deployment: String, config: AzureConfig) -> Self {
         Self { deployment, config }
     }
@@ -100,7 +101,7 @@ impl AzureResponsesModel {
         if is_azure || self.config.use_deployment_based_urls {
             format!("{}{}?api-version={}", prefix, path, self.config.api_version)
         } else {
-            format!("{}{}", prefix, path)
+            format!("{prefix}{path}")
         }
     }
 
@@ -118,7 +119,7 @@ impl AzureResponsesModel {
             }
             Some(AzureAuth::TokenProvider(tp)) => {
                 let token = tp.get_token().await?;
-                headers.insert("Authorization".to_string(), format!("Bearer {}", token));
+                headers.insert("Authorization".to_string(), format!("Bearer {token}"));
             }
             None => {
                 return Err(AiMuxError::InvalidArgument(
@@ -176,7 +177,7 @@ fn apply_prefix_to_part(part: &mut Value) {
             .and_then(|v| v.as_str())
             .and_then(extract_base64_data)
             .filter(|data| data.starts_with(AZURE_FILE_ID_PREFIX))
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         if let Some(file_id) = file_id
             && let Some(obj) = part.as_object_mut()
         {
@@ -190,7 +191,7 @@ fn apply_prefix_to_part(part: &mut Value) {
         let file_data = part
             .get("file_data")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         if let Some(file_data) = file_data {
             let media_type = extract_media_type(&file_data).unwrap_or("");
             let data = extract_base64_data(&file_data);
@@ -325,7 +326,7 @@ impl LanguageModel for AzureResponsesModel {
             .as_ref()
             .and_then(|m| m.get("openai"))
             .and_then(|o| o.get("store"))
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             == Some(true);
 
         let retry_config = crate::openai::model::resolve_retry_config(

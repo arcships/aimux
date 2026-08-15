@@ -57,12 +57,17 @@ impl YouComConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Create from the `YDC_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `YDC_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "YDC_API_KEY", "You.com")?;
         Ok(Self::new(api_key))
@@ -88,11 +93,13 @@ pub struct YouComProvider {
 }
 
 impl YouComProvider {
+    #[must_use]
     pub fn new(config: YouComConfig) -> Self {
         Self { config }
     }
 
     /// Create a search model instance.
+    #[must_use]
     pub fn search_model(&self) -> YouComSearchModel {
         YouComSearchModel::new(self.config.clone())
     }
@@ -161,6 +168,7 @@ pub struct YouComSearchModel {
 }
 
 impl YouComSearchModel {
+    #[must_use]
     pub fn new(config: YouComConfig) -> Self {
         Self { config }
     }

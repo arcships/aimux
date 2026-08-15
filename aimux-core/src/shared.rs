@@ -101,6 +101,7 @@ impl Default for AbortSignal {
 
 impl AbortSignal {
     /// Create a fresh, un-aborted signal.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             token: CancellationToken::new(),
@@ -114,6 +115,7 @@ impl AbortSignal {
     }
 
     /// Returns `true` once [`abort`](Self::abort) has been called.
+    #[must_use]
     pub fn is_aborted(&self) -> bool {
         self.token.is_cancelled()
     }
@@ -142,6 +144,7 @@ pub struct Size {
 
 impl Size {
     /// Create a size from explicit pixel dimensions.
+    #[must_use]
     pub const fn new(width: u32, height: u32) -> Self {
         Self { width, height }
     }
@@ -150,6 +153,11 @@ impl Size {
     ///
     /// Returns an error if the string is not in the expected format or either
     /// dimension is zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `String` describing the malformed input when it is not
+    /// `{width}x{height}` or either dimension is zero.
     pub fn parse(s: &str) -> Result<Self, String> {
         let (w, h) = parse_pair(s, 'x').ok_or_else(|| {
             format!("invalid size `{s}`: expected format `{{width}}x{{height}}` (e.g. `1024x1024`)")
@@ -161,11 +169,13 @@ impl Size {
     }
 
     /// Width in pixels.
+    #[must_use]
     pub const fn width(&self) -> u32 {
         self.width
     }
 
     /// Height in pixels.
+    #[must_use]
     pub const fn height(&self) -> u32 {
         self.height
     }
@@ -198,11 +208,17 @@ pub struct AspectRatio {
 
 impl AspectRatio {
     /// Create an aspect ratio from explicit components.
+    #[must_use]
     pub const fn new(width: u32, height: u32) -> Self {
         Self { width, height }
     }
 
     /// Parse a `{width}:{height}` string (e.g. `"16:9"`).
+    ///
+    /// # Errors
+    ///
+    /// Returns a `String` describing the malformed input when it is not
+    /// `{width}:{height}` or either value is zero.
     pub fn parse(s: &str) -> Result<Self, String> {
         let (w, h) = parse_pair(s, ':').ok_or_else(|| {
             format!(
@@ -218,11 +234,13 @@ impl AspectRatio {
     }
 
     /// Width component.
+    #[must_use]
     pub const fn width(&self) -> u32 {
         self.width
     }
 
     /// Height component.
+    #[must_use]
     pub const fn height(&self) -> u32 {
         self.height
     }

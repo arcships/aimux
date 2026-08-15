@@ -65,7 +65,7 @@ fn body_with_usage(usage: Value) -> Value {
 }
 
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 fn sse_body(events: &[&str]) -> String {
@@ -83,7 +83,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -410,7 +410,7 @@ async fn do_generate_returns_text() {
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Hi"),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
 }

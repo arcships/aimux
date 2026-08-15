@@ -12,6 +12,7 @@
 /// - `end_line` past EOF clamps to the last line.
 /// - Mixed line endings are not supported: detection picks one and uses it for
 ///   both the split and the rejoin.
+#[must_use]
 pub fn extract_lines(text: &str, start_line: Option<usize>, end_line: Option<usize>) -> String {
     if start_line.is_none() && end_line.is_none() {
         return text.to_string();

@@ -29,7 +29,7 @@ const PROVIDER_NAME: &str = "bedrock_mantle";
 /// Build the Bedrock Mantle base URL for a region:
 /// `https://bedrock-mantle.{region}.api.aws/v1`.
 fn base_url_for_region(region: &str) -> String {
-    format!("https://bedrock-mantle.{}.api.aws/v1", region)
+    format!("https://bedrock-mantle.{region}.api.aws/v1")
 }
 
 /// Resolve the Bedrock Mantle region from the environment.
@@ -66,14 +66,19 @@ impl BedrockMantleConfig {
     /// Create from the `BEDROCK_MANTLE_API_KEY` environment variable.
     ///
     /// The region is resolved from `BEDROCK_MANTLE_REGION` / `AWS_REGION`
-    /// (defaulting to `us-east-1`). Returns an `Auth` error when the API key
-    /// is not set.
+    /// (defaulting to `us-east-1`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AiMuxError::InvalidArgument`] when `BEDROCK_MANTLE_API_KEY` is
+    /// not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "Bedrock Mantle")?;
         Ok(Self::new(key))
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -84,12 +89,14 @@ impl BedrockMantleConfig {
 pub struct BedrockMantleProvider(OpenAIProvider);
 
 impl BedrockMantleProvider {
+    #[must_use]
     pub fn new(config: BedrockMantleConfig) -> Self {
         Self(OpenAIProvider::new(config.0))
     }
 
     /// Create a model instance for the given model id
     /// (e.g. `"bedrock_mantle/openai.gpt-oss-120b"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         self.0.model(model_id)
     }

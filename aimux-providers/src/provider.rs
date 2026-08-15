@@ -151,6 +151,12 @@ pub struct ProviderOptions {
 /// - Unknown names return [`AiMuxError::NoSuchProvider`] naming the requested
 ///   provider; built-in names are enumerated by the generated `ProviderName`
 ///   (overlay-registered names are not).
+///
+/// # Errors
+///
+/// Returns [`AiMuxError::NoSuchProvider`] for unknown names,
+/// `InvalidArgument` for invalid entries/options, and key-resolution errors
+/// from the registry env var.
 pub fn provider(
     name: impl AsRef<str>,
     api_key: Option<String>,
@@ -229,6 +235,11 @@ pub(crate) fn clear_overlay(name: &str) {
 ///
 /// Validation failures (empty name, non-`http(s)://` base_url, unsupported
 /// protocol) return [`AiMuxError::InvalidArgument`] — they never panic.
+///
+/// # Errors
+///
+/// Returns [`AiMuxError::InvalidArgument`] when entry validation fails (empty
+/// name, non-`http(s)://` base URL, unsupported protocol).
 pub fn register_provider(entry: ExternalProviderEntry) -> Result<(), AiMuxError> {
     validate_external_entry(&entry)?;
     let mut overlays = overlays().write().unwrap();
@@ -239,12 +250,18 @@ pub fn register_provider(entry: ExternalProviderEntry) -> Result<(), AiMuxError>
 /// Whether `name` was registered at runtime via [`register_provider`] /
 /// [`load_providers_from_json`] (RFC-0020 overlay). Used by the replay path
 /// to recognize externally-registered OpenAI-compatible providers.
+#[must_use]
 pub fn is_external_provider(name: &str) -> bool {
     overlays().read().unwrap().contains_key(name)
 }
 
 /// Load and register multiple external providers from a JSON string
 /// (`{ "providers": [ ... ] }`). Useful for binding-layer pass-through.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::JsonParse` for malformed JSON and propagates each
+/// entry's `register_provider` validation error.
 pub fn load_providers_from_json(json: &str) -> Result<(), AiMuxError> {
     let config: ProvidersConfig = serde_json::from_str(json).map_err(|e| {
         AiMuxError::JsonParse(format!("failed to parse external providers config: {e}"))
@@ -354,6 +371,12 @@ impl ResolvedEntry {
 /// [`Provider::language_model`] on a chosen id.
 ///
 /// Same key/options semantics as [`provider`].
+///
+/// # Errors
+///
+/// Returns [`AiMuxError::NoSuchProvider`] for unknown names, `InvalidArgument`
+/// for an unexpanded templated base URL or invalid options, and key-resolution
+/// errors.
 pub fn provider_handle(
     name: impl AsRef<str>,
     api_key: Option<String>,
@@ -525,6 +548,11 @@ fn profile_from_registry(p: &ProviderProfile) -> OpenAICompatProfile {
 }
 
 /// Convenience: build from the env-var key of the registry entry.
+///
+/// # Errors
+///
+/// Propagates the errors of [`provider`] (unknown provider, missing env-var
+/// key, invalid options).
 pub fn provider_from_env(
     name: impl AsRef<str>,
     model_id: &str,
@@ -536,6 +564,7 @@ pub fn provider_from_env(
 /// Public lookup of a registered provider's runtime profile — used by tests
 /// that assert registry wiring (e.g. `max_tokens_key`) without constructing a
 /// model. Returns `None` for unknown provider names.
+#[must_use]
 pub fn provider_registry_entry(name: &str) -> Option<OpenAICompatProfile> {
     registry()
         .iter()

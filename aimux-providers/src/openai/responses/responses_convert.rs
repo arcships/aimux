@@ -41,6 +41,7 @@ pub type ResponsesEventStream = Pin<Box<dyn Stream<Item = Result<StreamPart, AiM
 ///
 /// Byte-identical copies previously lived in the OpenAI, HuggingFace and xAI
 /// responses modules; they now route through this single implementation.
+#[must_use]
 pub fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)> {
     let mut list: Vec<(String, String)> = headers
         .iter()
@@ -62,6 +63,12 @@ pub fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, Stri
 /// the observed HTTP `status` and full `raw_body` (evidence for in-band 2xx
 /// errors), the request `body`/`response_headers` to attach, and the
 /// provider-metadata namespace `provider_key` ("openai" / "azure").
+///
+/// # Errors
+///
+/// Returns `ApiCall` for in-band 2xx errors (top-level `error` object, error
+/// status, `incomplete_details`) and `InvalidResponseData` when required
+/// fields such as `output` are missing.
 pub fn build_responses_generate_result(
     data: &Value,
     status: u16,
@@ -83,7 +90,7 @@ pub fn build_responses_generate_result(
             .get("type")
             .or_else(|| err_obj.get("code"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         return Err(AiMuxError::ApiCall(ApiCallError {
             // Provider-declared in-band failure: keep the observed 2xx
             // envelope status and the full raw body (§2.2).
@@ -106,7 +113,7 @@ pub fn build_responses_generate_result(
         AiMuxError::InvalidResponseData(if detail.is_empty() {
             "Responses API returned no output".to_string()
         } else {
-            format!("Responses API returned no output ({})", detail)
+            format!("Responses API returned no output ({detail})")
         })
     })?;
 
@@ -138,16 +145,16 @@ pub fn build_responses_generate_result(
                                 if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
                                 {
                                     content.push(GenerateContent::Source {
-                                        id: format!("annotation-{}", i),
+                                        id: format!("annotation-{i}"),
                                         source_type: "url".to_string(),
                                         url: ann
                                             .get("url")
                                             .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string()),
+                                            .map(std::string::ToString::to_string),
                                         title: ann
                                             .get("title")
                                             .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string()),
+                                            .map(std::string::ToString::to_string),
                                         provider_metadata: None,
                                     });
                                 }
@@ -260,14 +267,14 @@ pub fn build_responses_generate_result(
     let response_id = data
         .get("id")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let model = data
         .get("model")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let timestamp = data
         .get("created_at")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
         .map(|dt| dt.to_rfc3339());
 
@@ -321,6 +328,11 @@ enum SummaryStatus {
 /// The caller performs the HTTP send (`send_stream`) and hands the peeked
 /// `first_event` plus the remainder `sse_stream` to this reducer; an early
 /// `error` / `response.failed` surfaces as a clean `Err` here.
+///
+/// # Errors
+///
+/// An early `error` / `response.failed` event yields an `ApiCall` error item
+/// in the returned stream; malformed events yield parse-error items.
 pub fn build_responses_event_stream<S>(
     first_event: Option<Result<SseEvent, SseError>>,
     sse_stream: S,
@@ -359,7 +371,7 @@ where
                     .or_else(|| val.get("error"))
                     .and_then(|e| e.get("type").or_else(|| e.get("code")))
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 message: message.to_string(),
                 response_body: Some(event.data.clone()),
                 ..Default::default()
@@ -420,14 +432,14 @@ where
                                 response_id = resp_obj
                                     .get("id")
                                     .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string());
+                                    .map(std::string::ToString::to_string);
                                 let model_id = resp_obj
                                     .get("model")
                                     .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string());
+                                    .map(std::string::ToString::to_string);
                                 let timestamp = resp_obj
                                     .get("created_at")
-                                    .and_then(|v| v.as_u64())
+                                    .and_then(serde_json::Value::as_u64)
                                     .and_then(|secs| {
                                         chrono::DateTime::from_timestamp(secs as i64, 0)
                                     })
@@ -444,7 +456,7 @@ where
                         "response.output_item.added" => {
                             let output_index = parsed
                                 .get("output_index")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .unwrap_or(0) as usize;
                             if let Some(item) = parsed.get("item") {
                                 let item_type = item
@@ -523,7 +535,7 @@ where
                                         let encrypted = item
                                             .get("encrypted_content")
                                             .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string());
+                                            .map(std::string::ToString::to_string);
                                         active_reasoning.insert(
                                             id.clone(),
                                             ReasoningState {
@@ -535,7 +547,7 @@ where
                                             },
                                         );
                                         yield Ok(StreamPart::ReasoningStart {
-                                            id: format!("{}:0", id),
+                                            id: format!("{id}:0"),
                                             provider_metadata: None,
                                         });
                                     }
@@ -564,7 +576,7 @@ where
                         | "response.custom_tool_call_input.delta" => {
                             let output_index = parsed
                                 .get("output_index")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .unwrap_or(0) as usize;
                             let delta = parsed
                                 .get("delta")
@@ -589,7 +601,7 @@ where
                                 .to_string();
                             let summary_index = parsed
                                 .get("summary_index")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .unwrap_or(0) as usize;
 
                             if summary_index > 0
@@ -605,7 +617,7 @@ where
                                 for idx in to_conclude {
                                     state.summary_parts.insert(idx, SummaryStatus::Concluded);
                                     yield Ok(StreamPart::ReasoningEnd {
-                                        id: format!("{}:{}", item_id, idx),
+                                        id: format!("{item_id}:{idx}"),
                                         provider_metadata: None,
                                     });
                                 }
@@ -614,7 +626,7 @@ where
                                     .insert(summary_index, SummaryStatus::Active);
                                 let encrypted = state.encrypted_content.clone();
                                 yield Ok(StreamPart::ReasoningStart {
-                                    id: format!("{}:{}", item_id, summary_index),
+                                    id: format!("{item_id}:{summary_index}"),
                                     provider_metadata: None,
                                 });
                                 let _ = encrypted;
@@ -630,7 +642,7 @@ where
                                 .to_string();
                             let summary_index = parsed
                                 .get("summary_index")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .unwrap_or(0) as usize;
                             let delta = parsed
                                 .get("delta")
@@ -638,7 +650,7 @@ where
                                 .unwrap_or("")
                                 .to_string();
                             yield Ok(StreamPart::ReasoningDelta {
-                                id: format!("{}:{}", item_id, summary_index),
+                                id: format!("{item_id}:{summary_index}"),
                                 delta,
                                 provider_metadata: None,
                             });
@@ -653,7 +665,7 @@ where
                                 .to_string();
                             let summary_index = parsed
                                 .get("summary_index")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .unwrap_or(0) as usize;
                             if let Some(state) = active_reasoning.get_mut(&item_id) {
                                 if store_flag {
@@ -661,7 +673,7 @@ where
                                         .summary_parts
                                         .insert(summary_index, SummaryStatus::Concluded);
                                     yield Ok(StreamPart::ReasoningEnd {
-                                        id: format!("{}:{}", item_id, summary_index),
+                                        id: format!("{item_id}:{summary_index}"),
                                         provider_metadata: None,
                                     });
                                 } else {
@@ -676,7 +688,7 @@ where
                         "response.output_item.done" => {
                             let output_index = parsed
                                 .get("output_index")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .unwrap_or(0) as usize;
                             if let Some(item) = parsed.get("item") {
                                 let item_type = item
@@ -785,7 +797,7 @@ where
                                                     .summary_parts
                                                     .insert(idx, SummaryStatus::Concluded);
                                                 yield Ok(StreamPart::ReasoningEnd {
-                                                    id: format!("{}:{}", id, idx),
+                                                    id: format!("{id}:{idx}"),
                                                     provider_metadata: None,
                                                 });
                                             }
@@ -845,7 +857,7 @@ where
                                                 .get("error")
                                                 .and_then(|e| e.get("type").or_else(|| e.get("code")))
                                                 .and_then(|v| v.as_str())
-                                                .map(|s| s.to_string()),
+                                                .map(std::string::ToString::to_string),
                                             message: message.to_string(),
                                             response_body: Some(sse_event.data.clone()),
                                             ..Default::default()
@@ -874,7 +886,7 @@ where
                                         .get("error")
                                         .and_then(|e| e.get("type").or_else(|| e.get("code")))
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string()),
+                                        .map(std::string::ToString::to_string),
                                     message: message.to_string(),
                                     response_body: Some(sse_event.data.clone()),
                                     ..Default::default()

@@ -33,6 +33,7 @@ pub type LanguageModelPrompt = Vec<LanguageModelPromptMessage>;
 ///
 /// - String content is normalized to a single `ContentPart::Text`.
 /// - If `instructions` is provided, it is prepended as a system message.
+#[must_use]
 pub fn convert_to_language_model_prompt(
     messages: &[crate::message::ModelMessage],
     instructions: Option<&str>,

@@ -647,7 +647,7 @@ mod tests {
             ..Default::default()
         };
         let ref_opts = moa.reference_options(&opts);
-        assert_eq!(ref_opts.tools.as_ref().map(|t| t.len()), Some(0));
+        assert_eq!(ref_opts.tools.as_ref().map(std::vec::Vec::len), Some(0));
         assert_eq!(ref_opts.tool_choice, ToolChoice::Required);
     }
 

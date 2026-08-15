@@ -44,6 +44,7 @@ const DESCRIPTION_CONSTRAINT_KEYS: &[&str] = &[
 
 /// Sanitize a JSON Schema, removing keywords Anthropic rejects and adding
 /// readable descriptions for stripped constraints.
+#[must_use]
 pub fn sanitize_json_schema(schema: &Value) -> Value {
     sanitize_schema(schema)
 }

@@ -79,6 +79,7 @@ pub struct VertexAnthropicModel {
 }
 
 impl VertexAnthropicModel {
+    #[must_use]
     pub fn new(model_id: String, config: VertexAnthropicConfig) -> Self {
         Self { model_id, config }
     }
@@ -105,7 +106,7 @@ impl VertexAnthropicModel {
         let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
         match &self.config.auth {
             VertexAuth::BearerToken(token) => {
-                headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
+                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
             }
             VertexAuth::ApiKey(key) => {
                 headers.push(("x-goog-api-key".to_string(), key.clone()));

@@ -211,10 +211,7 @@ fn assert_vendor_key(
     assert_eq!(
         result.body[expected_key],
         json!(100),
-        "[{}] {} 分支: 请求体应含 {}",
-        provider,
-        branch,
-        expected_key
+        "[{provider}] {branch} 分支: 请求体应含 {expected_key}"
     );
     let other_key = if expected_key == "max_tokens" {
         "max_completion_tokens"
@@ -239,8 +236,7 @@ fn max_tokens_key_wiring_registry() {
         assert_eq!(
             profile.max_tokens_key,
             Some(expected),
-            "[{}] 注册表接线错误",
-            provider
+            "[{provider}] 注册表接线错误"
         );
     }
 }

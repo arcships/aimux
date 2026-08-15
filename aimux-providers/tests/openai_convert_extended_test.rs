@@ -252,7 +252,7 @@ mod convert_extended {
             "application/pdf".to_string(),
             json!({ "anthropic": "file-xyz" }),
         )])];
-        convert_prompt_to_openai_messages(&p);
+        let _ = convert_prompt_to_openai_messages(&p);
     }
 
     #[test]
@@ -265,7 +265,7 @@ mod convert_extended {
     #[test]
     #[should_panic(expected = "file part media type application/something")]
     fn throws_unsupported_mime() {
-        convert_prompt_to_openai_messages(&vec![up(vec![fb64(
+        let _ = convert_prompt_to_openai_messages(&vec![up(vec![fb64(
             "AAECAw==",
             "application/something",
         )])]);
@@ -278,13 +278,13 @@ mod convert_extended {
             "https://example.com/foo.wav".to_string(),
             "audio/wav".to_string(),
         )])];
-        convert_prompt_to_openai_messages(&p);
+        let _ = convert_prompt_to_openai_messages(&p);
     }
 
     #[test]
     #[should_panic(expected = "file part media type text/plain")]
     fn throws_unsupported_file_type() {
-        convert_prompt_to_openai_messages(&vec![up(vec![fb64("AQIDBAU=", "text/plain")])]);
+        let _ = convert_prompt_to_openai_messages(&vec![up(vec![fb64("AQIDBAU=", "text/plain")])]);
     }
 
     #[test]
@@ -294,7 +294,7 @@ mod convert_extended {
             "https://example.com/document.pdf".to_string(),
             "application/pdf".to_string(),
         )])];
-        convert_prompt_to_openai_messages(&p);
+        let _ = convert_prompt_to_openai_messages(&p);
     }
 
     #[test]
@@ -303,7 +303,7 @@ mod convert_extended {
         let r = convert_prompt_to_openai_messages(&vec![up(vec![fb64(b64, "image")])]);
         assert_eq!(
             r[0]["content"][0]["image_url"]["url"],
-            json!(format!("data:image/png;base64,{}", b64))
+            json!(format!("data:image/png;base64,{b64}"))
         );
     }
 
@@ -313,7 +313,7 @@ mod convert_extended {
         let r = convert_prompt_to_openai_messages(&vec![up(vec![fb64(b64, "image/*")])]);
         assert_eq!(
             r[0]["content"][0]["image_url"]["url"],
-            json!(format!("data:image/png;base64,{}", b64))
+            json!(format!("data:image/png;base64,{b64}"))
         );
     }
 
@@ -336,7 +336,7 @@ mod convert_extended {
         let r = convert_prompt_to_openai_messages(&vec![up(vec![fb64(b64, "image/png")])]);
         assert_eq!(
             r[0]["content"][0]["image_url"]["url"],
-            json!(format!("data:image/png;base64,{}", b64))
+            json!(format!("data:image/png;base64,{b64}"))
         );
     }
 

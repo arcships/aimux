@@ -88,7 +88,7 @@ impl AwsPollyConfig {
         region: impl Into<String>,
     ) -> Self {
         let region = region.into();
-        let base_url = format!("https://polly.{}.amazonaws.com", region);
+        let base_url = format!("https://polly.{region}.amazonaws.com");
         Self {
             access_key_id: access_key_id.into(),
             secret_access_key: secret_access_key.into(),
@@ -99,12 +99,14 @@ impl AwsPollyConfig {
     }
 
     /// Override the base URL (for testing or proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into().trim_end_matches('/').to_string();
         self
     }
 
     /// Add a session token for temporary STS credentials.
+    #[must_use]
     pub fn with_session_token(mut self, token: impl Into<String>) -> Self {
         self.session_token = Some(token.into());
         self
@@ -114,6 +116,11 @@ impl AwsPollyConfig {
     ///
     /// Reads `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `AWS_REGION`
     /// (defaulting to `us-east-1`), and the optional `AWS_SESSION_TOKEN`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `AWS_ACCESS_KEY_ID` or
+    /// `AWS_SECRET_ACCESS_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").map_err(|_| {
             AiMuxError::InvalidArgument(
@@ -184,12 +191,14 @@ pub struct AwsPollyProvider {
 }
 
 impl AwsPollyProvider {
+    #[must_use]
     pub fn new(config: AwsPollyConfig) -> Self {
         Self { config }
     }
 
     /// Create a speech (TTS) model instance for the given model id
     /// (e.g. `"aws_polly/neural"` or `"neural"`).
+    #[must_use]
     pub fn speech(&self, model_id: &str) -> AwsPollySpeechModel {
         AwsPollySpeechModel::new(model_id.to_string(), self.config.clone())
     }
@@ -210,6 +219,7 @@ pub struct AwsPollySpeechModel {
 }
 
 impl AwsPollySpeechModel {
+    #[must_use]
     pub fn new(model_id: String, config: AwsPollyConfig) -> Self {
         Self { model_id, config }
     }
@@ -335,8 +345,7 @@ fn build_request(
         warnings.push(Warning::Unsupported {
             feature: "outputFormat".to_string(),
             details: Some(format!(
-                "Unsupported output format: {}. Using mp3 instead.",
-                output_format
+                "Unsupported output format: {output_format}. Using mp3 instead."
             )),
         });
         body.insert("OutputFormat".to_string(), json!(DEFAULT_OUTPUT_FORMAT));
@@ -399,8 +408,7 @@ fn resolve_engine(model_id: &str) -> (&'static str, Option<Warning>) {
             Some(Warning::Unsupported {
                 feature: "engine".to_string(),
                 details: Some(format!(
-                    "Unknown Polly engine: {}. Using standard instead.",
-                    other
+                    "Unknown Polly engine: {other}. Using standard instead."
                 )),
             }),
         ),
@@ -433,22 +441,22 @@ fn parse_polly_provider_options(
         engine: opts
             .get("engine")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         sample_rate: opts.get("sampleRate").and_then(|v| {
             v.as_str()
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .or_else(|| v.as_u64().map(|n| n.to_string()))
         }),
         text_type: opts
             .get("textType")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         lexicon_names: opts
             .get("lexiconNames")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                     .collect()
             }),
         speech_mark_types: opts
@@ -456,7 +464,7 @@ fn parse_polly_provider_options(
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                     .collect()
             }),
     })
@@ -533,7 +541,7 @@ mod tests {
     fn config_debug_redacts_credentials() {
         let config = AwsPollyConfig::new("AKIAEXAMPLE", "super-secret-key", "us-west-2")
             .with_session_token("session-token");
-        let debug = format!("{:?}", config);
+        let debug = format!("{config:?}");
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("AKIAEXAMPLE"));
         assert!(!debug.contains("super-secret-key"));

@@ -47,12 +47,14 @@ impl FunctionTool {
     }
 
     /// Builder-style setter for `description`.
+    #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
     }
 
     /// Builder-style setter for `strict`.
+    #[must_use]
     pub fn with_strict(mut self, strict: bool) -> Self {
         self.strict = Some(strict);
         self

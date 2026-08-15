@@ -38,6 +38,7 @@ pub struct OpenAISpeechModel {
 }
 
 impl OpenAISpeechModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -172,8 +173,7 @@ fn build_request_body_and_warnings(
         warnings.push(Warning::Unsupported {
             feature: "outputFormat".to_string(),
             details: Some(format!(
-                "Unsupported output format: {}. Using mp3 instead.",
-                output_format
+                "Unsupported output format: {output_format}. Using mp3 instead."
             )),
         });
     }
@@ -182,8 +182,7 @@ fn build_request_body_and_warnings(
         warnings.push(Warning::Unsupported {
             feature: "language".to_string(),
             details: Some(format!(
-                "OpenAI speech models do not support language selection. Language parameter \"{}\" was ignored.",
-                language
+                "OpenAI speech models do not support language selection. Language parameter \"{language}\" was ignored."
             )),
         });
     }

@@ -94,7 +94,7 @@ fn tool_call_completion_body() -> Value {
 }
 
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 fn sse_body(events: &[&str]) -> String {
@@ -112,7 +112,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -360,7 +360,7 @@ async fn do_generate_returns_text() {
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
 }
@@ -409,7 +409,7 @@ async fn do_generate_extracts_tool_call() {
             assert_eq!(tool_name, "get-weather");
             assert_eq!(input, &json!({"city": "SF"}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -683,8 +683,7 @@ mod conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }
@@ -713,8 +712,7 @@ mod conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }

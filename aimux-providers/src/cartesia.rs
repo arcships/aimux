@@ -67,24 +67,31 @@ impl CartesiaConfig {
     }
 
     /// Override the base URL (for testing or proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into().trim_end_matches('/').to_string();
         self
     }
 
     /// Override the Cartesia API version.
+    #[must_use]
     pub fn with_version(mut self, version: impl Into<String>) -> Self {
         self.version = version.into();
         self
     }
 
     /// Attach extra headers merged into every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Create from environment variable `CARTESIA_API_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `CARTESIA_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "CARTESIA_API_KEY", "Cartesia")?;
         Ok(Self::new(api_key))
@@ -99,18 +106,21 @@ pub struct CartesiaProvider {
 }
 
 impl CartesiaProvider {
+    #[must_use]
     pub fn new(config: CartesiaConfig) -> Self {
         Self { config }
     }
 
     /// Create a speech (TTS) model instance for the given model name (e.g.
     /// `"sonic-3.5"`).
+    #[must_use]
     pub fn speech(&self, model_id: &str) -> CartesiaSpeechModel {
         CartesiaSpeechModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a transcription (STT) model instance for the given model name
     /// (e.g. `"best"`). Uses the `/stt` endpoint.
+    #[must_use]
     pub fn transcription(&self, model_id: &str) -> CartesiaTranscriptionModel {
         CartesiaTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
@@ -125,6 +135,7 @@ pub struct CartesiaSpeechModel {
 }
 
 impl CartesiaSpeechModel {
+    #[must_use]
     pub fn new(model_id: String, config: CartesiaConfig) -> Self {
         Self { model_id, config }
     }
@@ -308,8 +319,7 @@ fn resolve_output_format(
         warnings.push(Warning::Unsupported {
             feature: "outputFormat".to_string(),
             details: Some(format!(
-                "Unknown output format \"{}\". Falling back to mp3. Use providerOptions.cartesia to configure container, encoding, and sampleRate directly.",
-                output_format
+                "Unknown output format \"{output_format}\". Falling back to mp3. Use providerOptions.cartesia to configure container, encoding, and sampleRate directly."
             )),
         });
         default_output_format()
@@ -562,24 +572,24 @@ fn parse_cartesia_provider_options(
         container: opts
             .get("container")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         encoding: opts
             .get("encoding")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         sample_rate: opts
             .get("sampleRate")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|n| n as u32),
         bit_rate: opts
             .get("bitRate")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|n| n as u32),
-        speed: opts.get("speed").and_then(|v| v.as_f64()),
+        speed: opts.get("speed").and_then(serde_json::Value::as_f64),
         language: opts
             .get("language")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
     })
 }
 
@@ -632,6 +642,7 @@ pub struct CartesiaTranscriptionModel {
 }
 
 impl CartesiaTranscriptionModel {
+    #[must_use]
     pub fn new(model_id: String, config: CartesiaConfig) -> Self {
         Self { model_id, config }
     }
@@ -709,7 +720,7 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
             {
                 timestamp_granularities = Some(
                     tg.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                         .collect(),
                 );
             }

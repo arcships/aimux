@@ -57,7 +57,7 @@ fn weather_tool() -> FunctionTool {
 }
 
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 fn sse_body(events: &[&str]) -> String {
@@ -105,7 +105,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -199,7 +199,7 @@ async fn api_key_generates_text() {
         aimux_core::result::GenerateContent::Text { text, .. } => {
             assert_eq!(text, "answer text")
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(model.provider(), "codex");
     assert_eq!(model.model_id(), "gpt-5.2-codex");
@@ -237,15 +237,15 @@ async fn api_key_streams_text() {
     ));
     match &parts[2] {
         StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_1"),
-        other => panic!("expected TextStart, got {:?}", other),
+        other => panic!("expected TextStart, got {other:?}"),
     }
     match &parts[3] {
         StreamPart::TextDelta { delta, .. } => assert_eq!(delta, "Hello,"),
-        other => panic!("expected TextDelta, got {:?}", other),
+        other => panic!("expected TextDelta, got {other:?}"),
     }
     match &parts[6] {
         StreamPart::Finish { usage, .. } => assert_eq!(usage.input_tokens.total, Some(543)),
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 
@@ -277,13 +277,13 @@ async fn api_key_streams_tool_calls() {
             assert_eq!(tool_name, "weather");
             assert_eq!(input["location"], "Rome");
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     match &parts[7] {
         StreamPart::Finish { finish_reason, .. } => {
             assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 
@@ -316,7 +316,7 @@ async fn subscription_generate_forces_stream_and_assembles_result() {
         aimux_core::result::GenerateContent::Text { text, .. } => {
             assert_eq!(text, "answer text")
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
 
     // The request must be a *streaming* request with store disabled.

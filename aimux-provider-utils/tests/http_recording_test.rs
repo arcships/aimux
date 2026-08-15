@@ -44,7 +44,7 @@ fn json_post(url: &str, call_id: Option<&str>) -> HttpRequest {
         ],
         body: HttpBody::Json(serde_json::json!({"q": "hi"})),
         abort_signal: None,
-        call_id: call_id.map(|s| s.to_string()),
+        call_id: call_id.map(std::string::ToString::to_string),
         recording_context,
     }
 }

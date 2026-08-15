@@ -42,14 +42,22 @@ impl LumaConfig {
             headers: None,
         }
     }
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
+    /// Create from the `LUMA_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "LUMA_API_KEY", "Luma")?;
         Ok(Self::new(api_key))
@@ -60,9 +68,11 @@ pub struct LumaProvider {
     config: LumaConfig,
 }
 impl LumaProvider {
+    #[must_use]
     pub fn new(config: LumaConfig) -> Self {
         Self { config }
     }
+    #[must_use]
     pub fn image(&self, model_id: &str) -> LumaImageModel {
         LumaImageModel::new(model_id.to_string(), self.config.clone())
     }
@@ -74,6 +84,7 @@ pub struct LumaImageModel {
     config: LumaConfig,
 }
 impl LumaImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: LumaConfig) -> Self {
         Self { model_id, config }
     }
@@ -147,11 +158,11 @@ impl ImageModel for LumaImageModel {
         // Extract non-request options
         let poll_interval = luma_opts
             .and_then(|o| o.get("pollIntervalMillis"))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(DEFAULT_POLL_INTERVAL_MS);
         let max_poll_attempts = luma_opts
             .and_then(|o| o.get("maxPollAttempts"))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(DEFAULT_MAX_POLL_ATTEMPTS);
         let reference_type = luma_opts
             .and_then(|o| o.get("referenceType"))
@@ -197,7 +208,7 @@ impl ImageModel for LumaImageModel {
                                 .as_ref()
                                 .and_then(|c| c.get(i))
                                 .and_then(|c| c.get("weight"))
-                                .and_then(|v| v.as_f64())
+                                .and_then(serde_json::Value::as_f64)
                                 .unwrap_or(default_weight);
                             json!({ "url": url, "weight": weight })
                         })
@@ -219,7 +230,7 @@ impl ImageModel for LumaImageModel {
                         .as_ref()
                         .and_then(|c| c.first())
                         .and_then(|c| c.get("weight"))
-                        .and_then(|v| v.as_f64())
+                        .and_then(serde_json::Value::as_f64)
                         .unwrap_or(default_weight);
                     editing_opts.insert(
                         "modify_image".into(),
@@ -246,7 +257,7 @@ impl ImageModel for LumaImageModel {
                                 .as_ref()
                                 .and_then(|c| c.get(i))
                                 .and_then(|c| c.get("weight"))
-                                .and_then(|v| v.as_f64())
+                                .and_then(serde_json::Value::as_f64)
                                 .unwrap_or(default_weight);
                             json!({ "url": url, "weight": weight })
                         })

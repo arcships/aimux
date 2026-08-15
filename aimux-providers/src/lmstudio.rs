@@ -49,6 +49,11 @@ impl LmStudioConfig {
     /// inference server that does not require authentication. When the variable
     /// is unset (or empty), the default local endpoint
     /// (`http://127.0.0.1:1234/v1`) is used.
+    ///
+    /// # Errors
+    ///
+    /// Never returns an error; an unset `LMSTUDIO_BASE_URL` falls back to the
+    /// default local endpoint.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let config = Self::new(PLACEHOLDER_API_KEY);
         match std::env::var(ENV_VAR) {
@@ -58,6 +63,7 @@ impl LmStudioConfig {
     }
 
     /// Override the base URL (useful for tests / non-default ports).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -68,12 +74,14 @@ impl LmStudioConfig {
 pub struct LmStudioProvider(OpenAIProvider);
 
 impl LmStudioProvider {
+    #[must_use]
     pub fn new(config: LmStudioConfig) -> Self {
         Self(OpenAIProvider::new(config.0))
     }
 
     /// Create a model instance for the given LM Studio model id
     /// (e.g. `"llama-3.2-3b-instruct"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         self.0.model(model_id)
     }

@@ -86,6 +86,7 @@ pub struct TraceRecord {
 impl TraceRecord {
     /// Reported hit rate — strictly `cache_read / input_total` (RFC-0015
     /// §5.2; never added to `cache_write`).
+    #[must_use]
     pub fn reported_hit_rate(&self) -> Option<f64> {
         match (self.usage.cache_read, self.usage.input_total) {
             (Some(r), Some(t)) if t > 0 => Some(r as f64 / t as f64),
@@ -94,6 +95,7 @@ impl TraceRecord {
     }
 
     /// Client-side upper bound hit rate — token estimate / input_total.
+    #[must_use]
     pub fn client_upper_bound_hit_rate(&self) -> Option<f64> {
         let t = self.usage.input_total?;
         if t == 0 {

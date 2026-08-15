@@ -43,11 +43,18 @@ impl FirecrawlConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    /// Create from the `FIRECRAWL_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "FIRECRAWL_API_KEY", "Firecrawl")?;
         Ok(Self::new(api_key))
@@ -60,10 +67,12 @@ pub struct FirecrawlProvider {
 }
 
 impl FirecrawlProvider {
+    #[must_use]
     pub fn new(config: FirecrawlConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn search_model(&self) -> FirecrawlSearchModel {
         FirecrawlSearchModel::new(self.config.clone())
     }
@@ -134,6 +143,7 @@ pub struct FirecrawlSearchModel {
 }
 
 impl FirecrawlSearchModel {
+    #[must_use]
     pub fn new(config: FirecrawlConfig) -> Self {
         Self { config }
     }

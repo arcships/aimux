@@ -54,15 +54,14 @@ fn assert_other_warning(warnings: &[Warning], message: &str) {
     });
     assert!(
         found,
-        "expected a Warning::Other with message {:?}, got {:?}",
-        message, warnings
+        "expected a Warning::Other with message {message:?}, got {warnings:?}"
     );
 }
 
 fn reasoning_part(text: &str, signature: Option<&str>) -> ContentPart {
     ContentPart::Reasoning {
         text: text.to_string(),
-        signature: signature.map(|s| s.to_string()),
+        signature: signature.map(std::string::ToString::to_string),
         provider_options: None,
     }
 }

@@ -52,7 +52,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -148,8 +148,7 @@ mod anthropic_conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }
@@ -183,8 +182,7 @@ mod anthropic_conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }
@@ -230,8 +228,7 @@ mod openai_conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }
@@ -262,8 +259,7 @@ mod openai_conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }
@@ -312,7 +308,7 @@ mod deepseek_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -355,7 +351,7 @@ mod xai_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -405,7 +401,7 @@ mod groq_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -448,7 +444,7 @@ mod mistral_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -496,7 +492,7 @@ mod perplexity_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -538,7 +534,7 @@ mod gemini_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -566,7 +562,7 @@ mod gemini_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -609,7 +605,7 @@ mod openrouter_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -660,7 +656,7 @@ mod copilot_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -711,7 +707,7 @@ mod doubleword_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -755,7 +751,7 @@ mod llamafile_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -799,7 +795,7 @@ mod mistralrs_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -843,7 +839,7 @@ mod bedrock_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -871,7 +867,7 @@ mod bedrock_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -921,7 +917,7 @@ mod cerebras_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -964,7 +960,7 @@ mod cohere_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -1009,7 +1005,7 @@ mod huggingface_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -1059,7 +1055,7 @@ mod zai_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -1086,7 +1082,7 @@ mod zai_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -1131,7 +1127,7 @@ mod ollama_conformance {
                     panic!("request did not match any cassette (404): {e:?}");
                 }
                 let msg = e.to_string();
-                assert!(!msg.contains("panic"), "unexpected error: {}", msg);
+                assert!(!msg.contains("panic"), "unexpected error: {msg}");
             }
         }
     }
@@ -1177,8 +1173,7 @@ mod chatgpt_conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }
@@ -1209,8 +1204,7 @@ mod chatgpt_conformance {
                 let msg = e.to_string();
                 assert!(
                     !msg.contains("panic") && !msg.contains("unwrap"),
-                    "unexpected error: {}",
-                    msg
+                    "unexpected error: {msg}"
                 );
             }
         }

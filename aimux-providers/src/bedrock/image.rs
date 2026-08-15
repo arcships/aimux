@@ -42,6 +42,7 @@ pub struct BedrockImageModel {
 }
 
 impl BedrockImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: BedrockConfig) -> Self {
         Self { model_id, config }
     }
@@ -64,7 +65,7 @@ impl BedrockImageModel {
         }
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".into(), format!("Bearer {}", token))];
+                let mut headers = vec![("Authorization".into(), format!("Bearer {token}"))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -241,8 +242,7 @@ impl ImageModel for BedrockImageModel {
                 }
                 _ => {
                     return Err(AiMuxError::InvalidArgument(format!(
-                        "Unsupported task type: {}",
-                        task_type
+                        "Unsupported task type: {task_type}"
                     )));
                 }
             }
@@ -317,7 +317,7 @@ impl ImageModel for BedrockImageModel {
             return Err(AiMuxError::ApiCall(ApiCallError {
                 status_code: Some(resp.status),
                 provider_code: Some(s.to_string()),
-                message: format!("Amazon Bedrock request was moderated: {}", reasons_str),
+                message: format!("Amazon Bedrock request was moderated: {reasons_str}"),
                 response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
                 ..Default::default()
             }));

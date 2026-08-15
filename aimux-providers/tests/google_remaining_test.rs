@@ -84,7 +84,7 @@ mod is_supported_file_url_tests {
             "https://youtu.be/dQw4w9WgXcQ?t=42",
         ];
         for url in valid {
-            assert!(is_supported_file_url(url), "should be supported: {}", url);
+            assert!(is_supported_file_url(url), "should be supported: {url}");
         }
     }
 
@@ -100,8 +100,7 @@ mod is_supported_file_url_tests {
         for url in invalid {
             assert!(
                 !is_supported_file_url(url),
-                "should NOT be supported: {}",
-                url
+                "should NOT be supported: {url}"
             );
         }
     }
@@ -119,8 +118,7 @@ mod is_supported_file_url_tests {
         for url in cases {
             assert!(
                 !is_supported_file_url(url),
-                "should NOT be supported: {}",
-                url
+                "should NOT be supported: {url}"
             );
         }
     }
@@ -518,11 +516,7 @@ mod schema_conversion_tests {
             json!({ "type": "object", "properties": {} }),
         ];
         for schema in &cases {
-            assert!(
-                convert_root(schema).is_null(),
-                "expected null for {}",
-                schema
-            );
+            assert!(convert_root(schema).is_null(), "expected null for {schema}");
         }
     }
 

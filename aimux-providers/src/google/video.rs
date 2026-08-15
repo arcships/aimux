@@ -39,6 +39,7 @@ pub struct GoogleVideoModel {
 }
 
 impl GoogleVideoModel {
+    #[must_use]
     pub fn new(model_id: String, config: GoogleConfig) -> Self {
         Self { model_id, config }
     }
@@ -186,13 +187,13 @@ impl VideoModel for GoogleVideoModel {
                     provider_code: err
                         .get("status")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     message: msg.to_string(),
                     response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
                     ..Default::default()
                 }));
             }
-            if raw_body.get("done").and_then(|v| v.as_bool()) == Some(true) {
+            if raw_body.get("done").and_then(serde_json::Value::as_bool) == Some(true) {
                 break;
             }
         }

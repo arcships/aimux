@@ -78,6 +78,7 @@ pub fn auto_init_from_env() {
 }
 
 /// Whether request/response body trace logging is enabled (`AIMUX_LOG_BODY=1`).
+#[must_use]
 pub fn body_logging_enabled() -> bool {
     std::env::var("AIMUX_LOG_BODY")
         .map(|v| v == "1")
@@ -119,6 +120,7 @@ fn truncate(body: &str) -> &str {
 /// contains `authorization` / `api-key` / `apikey` / `key` / `token` have
 /// their (string) values replaced with `***`. Non-JSON bodies pass through
 /// unchanged. Always truncated to [`BODY_LOG_LIMIT`].
+#[must_use]
 pub fn redact_body(body: &str) -> String {
     let truncated = truncate(body);
     match serde_json::from_str::<serde_json::Value>(truncated) {

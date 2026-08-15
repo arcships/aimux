@@ -31,7 +31,7 @@ async fn mock_audio_response(server: &MockServer, format: &str) {
         .and(path_regex(r"^/v1/text-to-speech/.+$"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", format!("audio/{}", format))
+                .insert_header("content-type", format!("audio/{format}"))
                 .set_body_bytes(mock_audio_bytes()),
         )
         .mount(server)
@@ -72,8 +72,7 @@ async fn should_generate_speech_with_required_parameters() {
     let url = &requests[0].url;
     assert!(
         url.as_str().contains("output_format=mp3_44100_128"),
-        "expected output_format=mp3_44100_128 in URL, got {}",
-        url
+        "expected output_format=mp3_44100_128 in URL, got {url}"
     );
 }
 
@@ -101,8 +100,7 @@ async fn should_handle_custom_output_format() {
     let url = &requests[0].url;
     assert!(
         url.as_str().contains("output_format=pcm_44100"),
-        "expected output_format=pcm_44100 in URL, got {}",
-        url
+        "expected output_format=pcm_44100 in URL, got {url}"
     );
 }
 
@@ -131,8 +129,7 @@ async fn should_handle_language_parameter() {
     let url = &requests[0].url;
     assert!(
         url.as_str().contains("output_format=mp3_44100_128"),
-        "expected output_format=mp3_44100_128 in URL, got {}",
-        url
+        "expected output_format=mp3_44100_128 in URL, got {url}"
     );
 }
 
@@ -186,7 +183,7 @@ async fn should_warn_about_unsupported_instructions_parameter() {
                     .contains("do not support instructions")
             );
         }
-        other => panic!("expected Unsupported warning, got {:?}", other),
+        other => panic!("expected Unsupported warning, got {other:?}"),
     }
 }
 
@@ -229,8 +226,7 @@ async fn should_pass_provider_specific_options() {
     let url = &requests[0].url;
     assert!(
         url.as_str().contains("output_format=mp3_44100_128"),
-        "expected output_format=mp3_44100_128 in URL, got {}",
-        url
+        "expected output_format=mp3_44100_128 in URL, got {url}"
     );
 }
 

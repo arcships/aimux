@@ -90,13 +90,14 @@ impl OpenResponsesConfig {
                 use std::sync::atomic::{AtomicU64, Ordering};
                 static COUNTER: AtomicU64 = AtomicU64::new(0);
                 let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-                format!("id-{}", n)
+                format!("id-{n}")
             }),
             api_key_source: None,
         }
     }
 
     /// Set a header factory.
+    #[must_use]
     pub fn with_headers<F>(mut self, headers: F) -> Self
     where
         F: Fn() -> HashMap<String, String> + Send + Sync + 'static,
@@ -106,6 +107,7 @@ impl OpenResponsesConfig {
     }
 
     /// Set a generate-id factory.
+    #[must_use]
     pub fn with_generate_id<F>(mut self, generate_id: F) -> Self
     where
         F: Fn() -> String + Send + Sync + 'static,
@@ -117,8 +119,9 @@ impl OpenResponsesConfig {
     /// 标注凭证来源(RFC-0023 回放重建用)。Open Responses 的认证由调用方经
     /// `headers` 闭包管理;此 setter 让调用方显式标注来源(如 `env:VAR`),
     /// 覆盖 `config_snapshot` 对闭包的推断。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 }
@@ -131,11 +134,13 @@ pub struct OpenResponsesProvider {
 }
 
 impl OpenResponsesProvider {
+    #[must_use]
     pub fn new(config: OpenResponsesConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given model id.
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenResponsesModel {
         OpenResponsesModel::new(model_id.to_string(), &self.config)
     }
@@ -160,6 +165,7 @@ pub struct OpenResponsesModel {
 }
 
 impl OpenResponsesModel {
+    #[must_use]
     pub fn new(model_id: String, config: &OpenResponsesConfig) -> Self {
         Self {
             model_id,
@@ -296,7 +302,7 @@ impl LanguageModel for OpenResponsesModel {
                     .get("code")
                     .or_else(|| error.get("type"))
                     .and_then(|c| c.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 message: message.to_string(),
                 response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
                 ..Default::default()
@@ -305,14 +311,14 @@ impl LanguageModel for OpenResponsesModel {
 
         // Check for null/missing output.
         let output = raw.get("output");
-        if output.map(|o| o.is_null()).unwrap_or(true) {
+        if output.map(serde_json::Value::is_null).unwrap_or(true) {
             let detail = raw
                 .get("incomplete_details")
                 .and_then(|d| d.get("reason"))
                 .and_then(|r| r.as_str())
                 .or_else(|| raw.get("status").and_then(|s| s.as_str()));
             let message = match detail {
-                Some(d) => format!("Responses API returned no output ({})", d),
+                Some(d) => format!("Responses API returned no output ({d})"),
                 None => "Responses API returned no output".to_string(),
             };
             return Err(AiMuxError::InvalidResponseData(message));
@@ -393,22 +399,22 @@ impl LanguageModel for OpenResponsesModel {
 
         let finish_reason = FinishReason {
             unified: map_open_responses_finish_reason(incomplete_reason, has_tool_calls),
-            raw: incomplete_reason.map(|s| s.to_string()),
+            raw: incomplete_reason.map(std::string::ToString::to_string),
         };
 
         let response = ResponseMetadata {
             id: raw
                 .get("id")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
             timestamp: raw
                 .get("created_at")
-                .and_then(|v| v.as_u64())
-                .map(|ts| format!("{}", ts)),
+                .and_then(serde_json::Value::as_u64)
+                .map(|ts| format!("{ts}")),
             model_id: raw
                 .get("model")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
         };
 
         Ok(GenerateResult {
@@ -473,7 +479,7 @@ impl LanguageModel for OpenResponsesModel {
                     .get("code")
                     .or_else(|| err_obj.get("type"))
                     .and_then(|c| c.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 message: message.to_string(),
                 response_body: Some(event.data.clone()),
                 ..Default::default()
@@ -539,15 +545,15 @@ impl LanguageModel for OpenResponsesModel {
                                                     tool_name: item
                                                         .get("name")
                                                         .and_then(|v| v.as_str())
-                                                        .map(|s| s.to_string()),
+                                                        .map(std::string::ToString::to_string),
                                                     tool_call_id: item
                                                         .get("call_id")
                                                         .and_then(|v| v.as_str())
-                                                        .map(|s| s.to_string()),
+                                                        .map(std::string::ToString::to_string),
                                                     arguments: item
                                                         .get("arguments")
                                                         .and_then(|v| v.as_str())
-                                                        .map(|s| s.to_string()),
+                                                        .map(std::string::ToString::to_string),
                                                 },
                                             );
                                         }
@@ -640,7 +646,7 @@ impl LanguageModel for OpenResponsesModel {
                                                 .or_else(|| {
                                                     item.get("name")
                                                         .and_then(|v| v.as_str())
-                                                        .map(|s| s.to_string())
+                                                        .map(std::string::ToString::to_string)
                                                 })
                                                 .unwrap_or_default();
                                             let tool_call_id = accum
@@ -649,7 +655,7 @@ impl LanguageModel for OpenResponsesModel {
                                                 .or_else(|| {
                                                     item.get("call_id")
                                                         .and_then(|v| v.as_str())
-                                                        .map(|s| s.to_string())
+                                                        .map(std::string::ToString::to_string)
                                                 })
                                                 .unwrap_or_default();
                                             let arguments = accum
@@ -658,7 +664,7 @@ impl LanguageModel for OpenResponsesModel {
                                                 .or_else(|| {
                                                     item.get("arguments")
                                                         .and_then(|v| v.as_str())
-                                                        .map(|s| s.to_string())
+                                                        .map(std::string::ToString::to_string)
                                                 })
                                                 .unwrap_or_default();
                                             let input: Value =
@@ -746,7 +752,7 @@ impl LanguageModel for OpenResponsesModel {
                                             reason,
                                             has_tool_calls,
                                         ),
-                                        raw: reason.map(|s| s.to_string()),
+                                        raw: reason.map(std::string::ToString::to_string),
                                     };
                                     if let Some(usage_val) = response.get("usage") {
                                         final_usage = extract_usage_from_value(usage_val);
@@ -764,7 +770,7 @@ impl LanguageModel for OpenResponsesModel {
                                         });
                                     finish_reason = FinishReason {
                                         unified: FinishReasonUnified::Error,
-                                        raw: raw.map(|s| s.to_string()),
+                                        raw: raw.map(std::string::ToString::to_string),
                                     };
                                     if let Some(usage_val) = response.get("usage") {
                                         final_usage = extract_usage_from_value(usage_val);
@@ -821,6 +827,7 @@ struct ToolCallAccum {
 /// Map an Open Responses finish reason to the unified enum.
 ///
 /// Mirrors the TS `mapOpenResponsesFinishReason`.
+#[must_use]
 pub fn map_open_responses_finish_reason(
     finish_reason: Option<&str>,
     has_tool_calls: bool,
@@ -977,7 +984,7 @@ fn build_request_body(
         .and_then(|m| m.get(provider_options_name))
         .and_then(|o| o.get("reasoningSummary"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     // Build reasoning object.
     let reasoning: Option<Value> =
@@ -1038,6 +1045,7 @@ fn build_request_body(
 ///
 /// Mirrors the TS `convertToOpenResponsesInput`. System messages become
 /// `instructions`; user/assistant/tool messages become `input` items.
+#[must_use]
 pub fn convert_to_open_responses_input(
     prompt: &LanguageModelPrompt,
 ) -> (Value, Option<String>, Vec<Warning>) {
@@ -1349,21 +1357,21 @@ fn extract_usage(raw: &Value) -> Usage {
 fn extract_usage_from_value(usage: &Value) -> Usage {
     let input_tokens = usage
         .get("input_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|n| n as u32);
     let cached_input_tokens = usage
         .get("input_tokens_details")
         .and_then(|d| d.get("cached_tokens"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|n| n as u32);
     let output_tokens = usage
         .get("output_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|n| n as u32);
     let reasoning_tokens = usage
         .get("output_tokens_details")
         .and_then(|d| d.get("reasoning_tokens"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|n| n as u32);
 
     Usage {

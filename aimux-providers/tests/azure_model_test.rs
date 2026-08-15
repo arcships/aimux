@@ -114,7 +114,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -149,7 +149,7 @@ struct CountingToken {
 impl TokenProvider for CountingToken {
     async fn get_token(&self) -> Result<String, AiMuxError> {
         let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
-        Ok(format!("token-{}", n))
+        Ok(format!("token-{n}"))
     }
 }
 
@@ -437,7 +437,7 @@ async fn should_extract_text_response() {
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     // Finish reason + response metadata.
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
@@ -676,7 +676,7 @@ async fn should_extract_tool_call() {
             assert_eq!(tool_name, "get-weather");
             assert_eq!(input, &json!({"city": "SF"}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }

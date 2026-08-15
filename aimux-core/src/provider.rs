@@ -20,6 +20,11 @@ pub trait Provider: Send + Sync {
     /// Stability, Recraft) do not implement this and get the default
     /// `Unsupported` error. Only providers that actually expose a language
     /// model override it (issue M9).
+    ///
+    /// # Errors
+    ///
+    /// The default implementation returns `AiMuxError::UnsupportedFunctionality`;
+    /// implementations return lookup/auth errors for model ids they cannot serve.
     fn language_model(&self, _model_id: &str) -> Result<Box<dyn LanguageModel>, AiMuxError> {
         Err(AiMuxError::UnsupportedFunctionality(format!(
             "provider '{}' does not provide language models",

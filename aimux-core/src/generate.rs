@@ -84,6 +84,7 @@ pub struct GenerateTextOptions {
 
 impl GenerateTextOptions {
     /// Build the provider-facing `CallOptions` from user-facing options.
+    #[must_use]
     pub fn into_call_options(
         self,
         prompt: crate::language_model_message::LanguageModelPrompt,
@@ -222,6 +223,11 @@ impl std::fmt::Debug for StreamTextResult {
 
 impl StreamTextResult {
     /// Consume the stream and collect all text deltas into a single `String`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the stream's error part or transport error, propagated from the
+    /// underlying model stream.
     pub async fn text(self) -> Result<String, AiMuxError> {
         use futures::StreamExt;
         let mut result = String::new();
@@ -242,6 +248,11 @@ impl StreamTextResult {
     /// Unlike [`text`](Self::text) (which returns only the concatenated text),
     /// this collects reasoning, tool calls, sources, files, usage, finish
     /// reason, and builds `response_messages` for the next turn.
+    ///
+    /// # Errors
+    ///
+    /// Returns the stream's error part or transport error, propagated from the
+    /// underlying model stream.
     pub async fn consume(self) -> Result<StreamTextResultAggregated, AiMuxError> {
         use futures::StreamExt;
 
@@ -443,6 +454,11 @@ impl StreamTextResult {
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns the error produced by the model's `do_generate` call (provider API,
+/// network, or abort).
 pub async fn generate_text(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
@@ -687,6 +703,11 @@ pub async fn generate_text(
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Propagates `generate_text` failures; additionally returns `JsonParse` when
+/// the (repaired) model output is not valid JSON.
 pub async fn generate_object(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
@@ -763,6 +784,12 @@ fn extract_reasoning_signature(provider_metadata: Option<&Value>) -> Option<Stri
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Returns the error produced by the model's `do_stream` call (provider API,
+/// network, or abort); errors raised mid-stream surface as `StreamPart::Error`
+/// items instead.
 pub async fn stream_text(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
@@ -936,6 +963,10 @@ use crate::openai_output::{
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Propagates any error from the underlying `generate_text` call.
 pub async fn generate_text_as_openai(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
@@ -979,6 +1010,10 @@ pub async fn generate_text_as_openai(
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Errors
+///
+/// Propagates any error from the underlying `stream_text` call.
 pub async fn stream_text_as_openai(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,

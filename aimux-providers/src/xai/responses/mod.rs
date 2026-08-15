@@ -57,6 +57,7 @@ pub struct XaiResponsesModel {
 }
 
 impl XaiResponsesModel {
+    #[must_use]
     pub fn new(model_id: String, config: XAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -133,7 +134,7 @@ impl LanguageModel for XaiResponsesModel {
                 provider_code: raw_value
                     .get("code")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 message: error_msg.to_string(),
                 response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
                 ..Default::default()
@@ -289,7 +290,7 @@ impl LanguageModel for XaiResponsesModel {
                                 .filter_map(|s| {
                                     s.get("text")
                                         .and_then(|v| v.as_str())
-                                        .map(|t| t.to_string())
+                                        .map(std::string::ToString::to_string)
                                 })
                                 .filter(|t| !t.is_empty())
                                 .collect()
@@ -300,7 +301,7 @@ impl LanguageModel for XaiResponsesModel {
                                         .filter_map(|s| {
                                             s.get("text")
                                                 .and_then(|v| v.as_str())
-                                                .map(|t| t.to_string())
+                                                .map(std::string::ToString::to_string)
                                         })
                                         .filter(|t| !t.is_empty())
                                         .collect()
@@ -407,7 +408,7 @@ impl LanguageModel for XaiResponsesModel {
         // Check for JSON error (200-status).
         let content_type = response_headers
             .get("content-type")
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .unwrap_or("");
         if content_type.contains("application/json") {
             // Collect the (non-SSE) JSON body and check for an error object.
@@ -425,7 +426,7 @@ impl LanguageModel for XaiResponsesModel {
                     provider_code: val
                         .get("code")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     message: err_msg.to_string(),
                     response_body: Some(String::from_utf8_lossy(&buf).into_owned()),
                     ..Default::default()
@@ -484,9 +485,9 @@ impl LanguageModel for XaiResponsesModel {
                             if is_first_chunk {
                                 is_first_chunk = false;
                                 let response = parsed.get("response").cloned().unwrap_or(Value::Null);
-                                let id = response.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
-                                let model = response.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
-                                let created_at = response.get("created_at").and_then(|v| v.as_u64());
+                                let id = response.get("id").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
+                                let model = response.get("model").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
+                                let created_at = response.get("created_at").and_then(serde_json::Value::as_u64);
                                 let timestamp = created_at.and_then(|c| {
                                     chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339())
                                 });
@@ -498,7 +499,7 @@ impl LanguageModel for XaiResponsesModel {
                         // ── reasoning_summary_part.added ──
                         if event_type == "response.reasoning_summary_part.added" {
                             let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("reasoning-{}", item_id);
+                            let block_id = format!("reasoning-{item_id}");
                             if !active_reasoning.contains_key(item_id) {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
@@ -513,7 +514,7 @@ impl LanguageModel for XaiResponsesModel {
                         if event_type == "response.reasoning_summary_text.delta" {
                             let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
                             let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("reasoning-{}", item_id);
+                            let block_id = format!("reasoning-{item_id}");
                             yield Ok(StreamPart::ReasoningDelta {
                                 id: block_id,
                                 delta: delta.to_string(),
@@ -531,7 +532,7 @@ impl LanguageModel for XaiResponsesModel {
                         if event_type == "response.reasoning_text.delta" {
                             let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
                             let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("reasoning-{}", item_id);
+                            let block_id = format!("reasoning-{item_id}");
                             if !active_reasoning.contains_key(item_id) {
                                 active_reasoning.insert(item_id.to_string(), ());
                                 yield Ok(StreamPart::ReasoningStart {
@@ -556,7 +557,7 @@ impl LanguageModel for XaiResponsesModel {
                         if event_type == "response.output_text.delta" {
                             let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
                             let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("text-{}", item_id);
+                            let block_id = format!("text-{item_id}");
                             if !content_blocks.contains_key(&block_id) {
                                 content_blocks.insert(block_id.clone(), false);
                                 yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});
@@ -627,7 +628,7 @@ impl LanguageModel for XaiResponsesModel {
                                     unified: reason
                                         .map(map_xai_responses_finish_reason)
                                         .unwrap_or(FinishReasonUnified::Other),
-                                    raw: reason.map(|s| s.to_string()).or(Some("incomplete".to_string())),
+                                    raw: reason.map(std::string::ToString::to_string).or(Some("incomplete".to_string())),
                                 };
                             } else if let Some(status) = response.get("status").and_then(|v| v.as_str()) {
                                 final_finish_reason = FinishReason {
@@ -653,7 +654,7 @@ impl LanguageModel for XaiResponsesModel {
                                 unified: reason
                                     .map(map_xai_responses_finish_reason)
                                     .unwrap_or(FinishReasonUnified::Error),
-                                raw: reason.map(|s| s.to_string()).or(Some("error".to_string())),
+                                raw: reason.map(std::string::ToString::to_string).or(Some("error".to_string())),
                             };
                             if let Some(usage) = response.get("usage")
                                 && let Ok(u) = serde_json::from_value::<types::XaiResponsesUsage>(usage.clone()) {
@@ -667,7 +668,7 @@ impl LanguageModel for XaiResponsesModel {
                             let message = parsed.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
                             yield Ok(StreamPart::Error {
                                 error: AiMuxError::ApiCall(ApiCallError {
-                                    provider_code: parsed.get("code").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                    provider_code: parsed.get("code").and_then(|v| v.as_str()).map(std::string::ToString::to_string),
                                     message: message.to_string(),
                                     response_body: Some(sse_event.data.clone()),
                                     ..Default::default()
@@ -685,7 +686,7 @@ impl LanguageModel for XaiResponsesModel {
 
                         // ── function_call_arguments.delta ──
                         if event_type == "response.function_call_arguments.delta" {
-                            let output_index = parsed.get("output_index").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let output_index = parsed.get("output_index").and_then(serde_json::Value::as_u64).unwrap_or(0);
                             let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
                             if let Some((tool_call_id, _)) = ongoing_tool_calls.get(&output_index) {
                                 yield Ok(StreamPart::ToolInputDelta {
@@ -708,13 +709,13 @@ impl LanguageModel for XaiResponsesModel {
                         {
                             let item = parsed.get("item").cloned().unwrap_or(Value::Null);
                             let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                            let output_index = parsed.get("output_index").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let output_index = parsed.get("output_index").and_then(serde_json::Value::as_u64).unwrap_or(0);
 
                             // ── reasoning item ──
                             if item_type == "reasoning" {
                                 if event_type == "response.output_item.done" {
                                     let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                    let block_id = format!("reasoning-{}", part_id);
+                                    let block_id = format!("reasoning-{part_id}");
                                     let encrypted = item.get("encrypted_content").and_then(|v| v.as_str());
 
                                     if !active_reasoning.contains_key(part_id) {
@@ -869,7 +870,7 @@ impl LanguageModel for XaiResponsesModel {
                                     if let Some(text) = cp.get("text").and_then(|v| v.as_str())
                                         && !text.is_empty() {
                                             let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                            let block_id = format!("text-{}", part_id);
+                                            let block_id = format!("text-{part_id}");
                                             if !content_blocks.contains_key(&block_id) {
                                                 content_blocks.insert(block_id.clone(), false);
                                                 yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});

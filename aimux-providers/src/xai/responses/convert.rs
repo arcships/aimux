@@ -24,6 +24,7 @@ use crate::xai::convert::{
 
 // ── Finish reason ────────────────────────────────────────────────────────────
 
+#[must_use]
 pub fn map_xai_responses_finish_reason(s: &str) -> FinishReasonUnified {
     match s {
         "stop" | "completed" => FinishReasonUnified::Stop,
@@ -37,6 +38,7 @@ pub fn map_xai_responses_finish_reason(s: &str) -> FinishReasonUnified {
 
 // ── Usage conversion ─────────────────────────────────────────────────────────
 
+#[must_use]
 pub fn convert_xai_responses_usage(usage: &XaiResponsesUsage) -> aimux_core::types::Usage {
     let cache_read = usage
         .input_tokens_details
@@ -91,6 +93,7 @@ pub struct PreparedResponsesTools {
     pub provider_tool_names: std::collections::HashMap<String, String>,
 }
 
+#[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&ToolChoice>,
@@ -281,6 +284,12 @@ fn xai_option(
 
 // ── Input conversion ─────────────────────────────────────────────────────────
 
+/// Convert a [`LanguageModelPrompt`] into the xAI Responses `input` array,
+/// returning warnings.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when a part cannot be converted.
 pub fn convert_to_xai_responses_input(
     prompt: &LanguageModelPrompt,
 ) -> Result<(Vec<Value>, Vec<Warning>), AiMuxError> {
@@ -401,7 +410,7 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|po| po.get("xai"))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
+                                .map(std::string::ToString::to_string);
                             let mut msg_obj = json!({ "role": "assistant", "content": text });
                             if let Some(id) = id {
                                 msg_obj["id"] = json!(id);
@@ -420,7 +429,7 @@ pub fn convert_to_xai_responses_input(
                                 .as_ref()
                                 .and_then(|po| po.get("xai"))
                                 .and_then(|x| x.get("providerExecuted"))
-                                .and_then(|v| v.as_bool())
+                                .and_then(serde_json::Value::as_bool)
                                 .unwrap_or(false);
                             if is_provider_executed {
                                 continue;
@@ -430,7 +439,7 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|po| po.get("xai"))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
+                                .map(std::string::ToString::to_string);
                             let item_id = id.unwrap_or_else(|| tool_call_id.clone());
                             let arguments = if tool_input.is_null() {
                                 "{}".to_string()
@@ -457,13 +466,13 @@ pub fn convert_to_xai_responses_input(
                                 .and_then(|po| po.get("xai"))
                                 .and_then(|x| x.get("itemId"))
                                 .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
+                                .map(std::string::ToString::to_string);
                             let encrypted_content = provider_options
                                 .as_ref()
                                 .and_then(|po| po.get("xai"))
                                 .and_then(|x| x.get("reasoningEncryptedContent"))
                                 .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
+                                .map(std::string::ToString::to_string);
 
                             if item_id.is_some() || encrypted_content.is_some() {
                                 let mut summary: Vec<Value> = Vec::new();
@@ -530,7 +539,7 @@ fn convert_image_part(
         url_str.to_string()
     } else if let Some(b64) = b64_data {
         let full_mt = resolve_full_media_type(media_type, b64);
-        format!("data:{};base64,{}", full_mt, b64)
+        format!("data:{full_mt};base64,{b64}")
     } else {
         String::new()
     };
@@ -561,6 +570,12 @@ pub struct ResponsesRequestBodyResult {
     pub provider_tool_names: std::collections::HashMap<String, String>,
 }
 
+/// Build the xAI Responses request body, returning warnings and provider tool
+/// names.
+///
+/// # Errors
+///
+/// Propagates conversion errors from `convert_to_xai_responses_input`.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -585,8 +600,11 @@ pub fn build_responses_request_body(
     }
 
     // Reasoning effort.
-    let mut reasoning_effort: Option<String> = xai_option(xai_opts, "reasoningEffort")
-        .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()));
+    let mut reasoning_effort: Option<String> = xai_option(xai_opts, "reasoningEffort").map(|v| {
+        v.as_str()
+            .map(std::string::ToString::to_string)
+            .unwrap_or(v.to_string())
+    });
 
     if reasoning_effort.is_none() && options.reasoning.is_some_and(ReasoningEffort::is_custom) {
         let reasoning = options.reasoning.unwrap();
@@ -594,8 +612,7 @@ pub fn build_responses_request_body(
             warnings.push(Warning::Unsupported {
                 feature: "reasoning".to_string(),
                 details: Some(format!(
-                    "reasoning \"{}\" is not supported by this model.",
-                    reasoning
+                    "reasoning \"{reasoning}\" is not supported by this model."
                 )),
             });
         } else if reasoning == ReasoningEffort::None {
@@ -621,7 +638,7 @@ pub fn build_responses_request_body(
     let mut include: Option<Vec<String>> = xai_option(xai_opts, "include").and_then(|v| {
         v.as_array().map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                 .collect()
         })
     });
@@ -636,8 +653,8 @@ pub fn build_responses_request_body(
         };
     }
 
-    let previous_response_id =
-        xai_option(xai_opts, "previousResponseId").and_then(|v| v.as_str().map(|s| s.to_string()));
+    let previous_response_id = xai_option(xai_opts, "previousResponseId")
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     // Logprobs.
     let logprobs = xai_option(xai_opts, "logprobs")
@@ -751,6 +768,7 @@ pub const X_SEARCH_SUB_TOOLS: &[&str] = &[
 
 /// Resolve the tool name for a server-side tool call, using the user-provided
 /// provider tool name if available, falling back to a default.
+#[must_use]
 pub fn resolve_tool_name(
     part_type: &str,
     part_name: Option<&str>,
@@ -799,6 +817,7 @@ pub fn resolve_tool_name(
 }
 
 /// Get the tool input for a server-side tool call.
+#[must_use]
 pub fn get_tool_input(part_type: &str, part: &Value) -> String {
     match part_type {
         "custom_tool_call" => part

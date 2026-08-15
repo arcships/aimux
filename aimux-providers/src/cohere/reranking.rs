@@ -35,10 +35,13 @@ fn parse_cohere_reranking_options(
     if let Some(po) = provider_options
         && let Some(cohere) = po.get("cohere")
     {
-        if let Some(v) = cohere.get("maxTokensPerDoc").and_then(|v| v.as_u64()) {
+        if let Some(v) = cohere
+            .get("maxTokensPerDoc")
+            .and_then(serde_json::Value::as_u64)
+        {
             opts.max_tokens_per_doc = Some(v);
         }
-        if let Some(v) = cohere.get("priority").and_then(|v| v.as_u64()) {
+        if let Some(v) = cohere.get("priority").and_then(serde_json::Value::as_u64) {
             opts.priority = Some(v);
         }
     }
@@ -66,6 +69,7 @@ pub struct CohereRerankingModel {
 }
 
 impl CohereRerankingModel {
+    #[must_use]
     pub fn new(model_id: String, config: CohereConfig) -> Self {
         Self { model_id, config }
     }
@@ -115,7 +119,10 @@ impl RerankingModel for CohereRerankingModel {
                     feature: "object documents".to_string(),
                     details: Some("Object documents are converted to strings.".to_string()),
                 });
-                values.iter().map(|v| v.to_string()).collect()
+                values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect()
             }
         };
 

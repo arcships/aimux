@@ -63,6 +63,7 @@ pub struct AnthropicFiles {
 }
 
 impl AnthropicFiles {
+    #[must_use]
     pub fn new(config: AnthropicConfig) -> Self {
         Self { config }
     }
@@ -111,7 +112,7 @@ impl Files for AnthropicFiles {
 
         // Build multipart/form-data body manually.
         let (body, content_type) = build_multipart_form(
-            &format!("form-data; name=\"file\"; filename=\"{}\"", filename),
+            &format!("form-data; name=\"file\"; filename=\"{filename}\""),
             &options.media_type,
             &file_bytes,
             &[],

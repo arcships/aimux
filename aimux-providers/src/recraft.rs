@@ -48,18 +48,24 @@ impl RecraftConfig {
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Set additional static HTTP headers sent with every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Create from the `RECRAFT_API_TOKEN` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `RECRAFT_API_TOKEN` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, ENV_VAR, "Recraft")?;
         Ok(Self::new(api_key))
@@ -72,11 +78,13 @@ pub struct RecraftProvider {
 }
 
 impl RecraftProvider {
+    #[must_use]
     pub fn new(config: RecraftConfig) -> Self {
         Self { config }
     }
 
     /// Create an image generation model instance (e.g. `"recraftv3"`).
+    #[must_use]
     pub fn image(&self, model_id: &str) -> RecraftImageModel {
         RecraftImageModel::new(model_id.to_string(), self.config.clone())
     }
@@ -95,6 +103,7 @@ pub struct RecraftImageModel {
 }
 
 impl RecraftImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: RecraftConfig) -> Self {
         Self { model_id, config }
     }

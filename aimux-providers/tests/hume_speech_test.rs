@@ -31,7 +31,7 @@ async fn mock_audio_response(server: &MockServer, format: &str) {
         .and(path("/v0/tts/file"))
         .respond_with(
             ResponseTemplate::new(200)
-                .insert_header("content-type", format!("audio/{}", format))
+                .insert_header("content-type", format!("audio/{format}"))
                 .set_body_bytes(mock_audio_bytes()),
         )
         .mount(server)
@@ -44,7 +44,7 @@ async fn mock_audio_response_with_headers(
     headers: &[(&str, &str)],
 ) {
     let mut template = ResponseTemplate::new(200)
-        .insert_header("content-type", format!("audio/{}", format))
+        .insert_header("content-type", format!("audio/{format}"))
         .set_body_bytes(mock_audio_bytes());
     for (k, v) in headers {
         template = template.insert_header(*k, *v);
@@ -262,8 +262,7 @@ async fn should_handle_different_audio_formats() {
 
         assert!(
             matches!(result.audio, AudioData::Binary(ref b) if b == &mock_audio_bytes()),
-            "format {} should return mock audio bytes",
-            format
+            "format {format} should return mock audio bytes"
         );
     }
 }

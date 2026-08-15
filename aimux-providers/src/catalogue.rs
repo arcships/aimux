@@ -70,6 +70,7 @@ const PROVIDER_ALIASES: &[(&str, &str)] = &[
 ];
 
 /// Map an anya2a provider id to an aimux registry name.
+#[must_use]
 pub fn normalize_provider_name(anya2a_id: &str) -> String {
     for (from, to) in PROVIDER_ALIASES {
         if *from == anya2a_id {
@@ -95,15 +96,21 @@ pub struct Catalogue {
 
 impl Catalogue {
     /// Look up the portrait for `(provider, model_id)`.
+    #[must_use]
     pub fn lookup(&self, provider: &str, model_id: &str) -> Option<ModelSpec> {
         self.specs.get(provider)?.get(model_id).cloned()
     }
 
+    #[must_use]
     pub fn provider_count(&self) -> usize {
         self.specs.len()
     }
+    #[must_use]
     pub fn model_count(&self) -> usize {
-        self.specs.values().map(|m| m.len()).sum()
+        self.specs
+            .values()
+            .map(std::collections::HashMap::len)
+            .sum()
     }
 }
 
@@ -118,6 +125,11 @@ impl Catalogue {
 /// host decides how to manage the result.
 ///
 /// `source_url` defaults to [`DEFAULT_ANYA2A_URL`] (anya2a `dist/all.json`).
+///
+/// # Errors
+///
+/// Returns `ApiCall` when the fetch fails and `JsonParse` when the source
+/// JSON does not deserialize into a [`Catalogue`].
 pub async fn get_model_specs(source_url: Option<&str>) -> Result<Catalogue, AiMuxError> {
     let url = source_url.unwrap_or(DEFAULT_ANYA2A_URL);
     let body = fetch_text(url).await?;
@@ -127,6 +139,11 @@ pub async fn get_model_specs(source_url: Option<&str>) -> Result<Catalogue, AiMu
 }
 
 /// Parse anya2a `dist/all.json` into a [`Catalogue`].
+///
+/// # Errors
+///
+/// Returns `AiMuxError::JsonParse` when the JSON lacks the expected
+/// `providers` object.
 pub fn parse_anya2a_all(json: &Value) -> Result<Catalogue, AiMuxError> {
     let providers = json
         .get("providers")
@@ -245,7 +262,9 @@ fn num_field(m: &Value, path: &[&str]) -> Option<u64> {
 }
 
 fn bool_field(m: &Value, key: &str) -> bool {
-    m.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+    m.get(key)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 fn modality_list(m: &Value, path: &[&str]) -> Vec<Modality> {
@@ -270,14 +289,14 @@ fn build_reasoning_spec(m: &Value) -> Option<ReasoningSpec> {
         Some(Value::Bool(b)) => *b,
         Some(obj) => obj
             .get("supported")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
         None => false,
     };
     let default_enabled = m
         .get("reasoning")
         .and_then(|v| v.get("default"))
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     let ec = m.get("extra_capabilities").and_then(|v| v.get("reasoning"));
@@ -303,7 +322,7 @@ fn build_reasoning_spec(m: &Value) -> Option<ReasoningSpec> {
     let budget_min = ec
         .and_then(|v| v.get("budget"))
         .and_then(|v| v.get("min"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .or_else(|| {
             m.get("reasoning_options")
                 .and_then(|v| v.as_array())
@@ -314,7 +333,7 @@ fn build_reasoning_spec(m: &Value) -> Option<ReasoningSpec> {
                             .and_then(|t| t.as_str())
                             .is_some_and(|t| t == "budget_tokens");
                         if is_budget {
-                            o.get("min").and_then(|v| v.as_u64())
+                            o.get("min").and_then(serde_json::Value::as_u64)
                         } else {
                             None
                         }
@@ -323,7 +342,7 @@ fn build_reasoning_spec(m: &Value) -> Option<ReasoningSpec> {
         });
     let interleaved = ec
         .and_then(|v| v.get("interleaved"))
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     let visibility = ec
         .and_then(|v| v.get("visibility"))
@@ -381,10 +400,10 @@ fn build_cost(m: &Value) -> Option<ModelCost> {
         return None;
     }
     Some(ModelCost {
-        input: cost.get("input").and_then(|v| v.as_f64()),
-        output: cost.get("output").and_then(|v| v.as_f64()),
-        cache_read: cost.get("cache_read").and_then(|v| v.as_f64()),
-        cache_write: cost.get("cache_write").and_then(|v| v.as_f64()),
+        input: cost.get("input").and_then(serde_json::Value::as_f64),
+        output: cost.get("output").and_then(serde_json::Value::as_f64),
+        cache_read: cost.get("cache_read").and_then(serde_json::Value::as_f64),
+        cache_write: cost.get("cache_write").and_then(serde_json::Value::as_f64),
     })
 }
 

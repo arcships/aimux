@@ -30,6 +30,13 @@ impl OobaboobaConfig {
         )
     }
 
+    /// Create from the `OOBABOOBA_BASE_URL` environment variable, falling back to
+    /// `http://127.0.0.1:5000/v1`.
+    ///
+    /// # Errors
+    ///
+    /// Never returns an error; an unset or empty variable falls back to the
+    /// default local endpoint.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let config = Self::new(PLACEHOLDER_API_KEY);
         match std::env::var(ENV_VAR) {
@@ -38,6 +45,7 @@ impl OobaboobaConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -47,10 +55,12 @@ impl OobaboobaConfig {
 pub struct OobaboobaProvider(OpenAIProvider);
 
 impl OobaboobaProvider {
+    #[must_use]
     pub fn new(config: OobaboobaConfig) -> Self {
         Self(OpenAIProvider::new(config.0))
     }
 
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         self.0.model(model_id)
     }

@@ -63,6 +63,7 @@ pub struct OpenAIResponsesModel {
 }
 
 impl OpenAIResponsesModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -169,7 +170,7 @@ impl LanguageModel for OpenAIResponsesModel {
             .as_ref()
             .and_then(|m| m.get("openai"))
             .and_then(|o| o.get("store"))
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             == Some(true);
 
         let resp = send_stream_timed(

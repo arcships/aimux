@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK OpenAI embedding model tests.
+//! Rust translations of the AI SDK OpenAI embedding model tests.
 //!
 //! Source: `reference/ai/packages/openai/src/embedding/openai-embedding-model.test.ts`
 //! (164 lines, 7 cases).
@@ -45,7 +45,10 @@ fn embedding_response_body() -> Value {
 }
 
 fn test_values() -> Vec<String> {
-    TEST_VALUES.iter().map(|s| s.to_string()).collect()
+    TEST_VALUES
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect()
 }
 
 fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
@@ -132,7 +135,7 @@ async fn should_expose_raw_response_headers() {
         .and_then(|r| r.headers.as_ref())
         .expect("response headers should be present");
     assert_eq!(
-        headers.get("test-header").map(|s| s.as_str()),
+        headers.get("test-header").map(std::string::String::as_str),
         Some("test-value")
     );
 }

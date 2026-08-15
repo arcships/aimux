@@ -49,6 +49,11 @@ impl MistralrsConfig {
     /// inference server that does not require authentication. When the variable
     /// is unset (or empty), the default local endpoint
     /// (`http://127.0.0.1:8080/v1`) is used.
+    ///
+    /// # Errors
+    ///
+    /// Never returns an error; an unset `MISTRALRS_BASE_URL` falls back to the
+    /// default local endpoint.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let config = Self::new(PLACEHOLDER_API_KEY);
         match std::env::var(ENV_VAR) {
@@ -58,6 +63,7 @@ impl MistralrsConfig {
     }
 
     /// Override the base URL (useful for tests / non-default ports).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
@@ -68,12 +74,14 @@ impl MistralrsConfig {
 pub struct MistralrsProvider(OpenAIProvider);
 
 impl MistralrsProvider {
+    #[must_use]
     pub fn new(config: MistralrsConfig) -> Self {
         Self(OpenAIProvider::new(config.0))
     }
 
     /// Create a model instance for the given mistral.rs model id
     /// (e.g. `"Qwen/Qwen3-4B"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         self.0.model(model_id)
     }

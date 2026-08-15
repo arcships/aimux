@@ -210,7 +210,7 @@ async fn mock_sse_response_with_headers(
 
 /// Build an SSE event string from a JSON value.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events and append `[DONE]`.
@@ -230,7 +230,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -291,7 +291,7 @@ mod do_generate {
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
     }
 
@@ -739,7 +739,7 @@ mod do_generate {
                 assert_eq!(tool_name, "test-tool");
                 assert_eq!(input, &json!({"value": "Spark"}));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 }
@@ -843,13 +843,13 @@ mod do_stream {
                 );
                 assert_eq!(model_id.as_deref(), Some("gpt-3.5-turbo-0613"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
 
         // text-start with id "0"
         match &parts[2] {
             StreamPart::TextStart { id, .. } => assert_eq!(id, "0"),
-            other => panic!("expected TextStart, got {:?}", other),
+            other => panic!("expected TextStart, got {other:?}"),
         }
 
         // text-deltas: "", "Hello", ", ", "World!"
@@ -870,7 +870,7 @@ mod do_stream {
             .find(|p| matches!(p, StreamPart::TextEnd { .. }));
         match text_end {
             Some(StreamPart::TextEnd { id, .. }) => assert_eq!(id, "0"),
-            other => panic!("expected TextEnd, got {:?}", other),
+            other => panic!("expected TextEnd, got {other:?}"),
         }
 
         // finish with stop reason and usage
@@ -888,7 +888,7 @@ mod do_stream {
                 assert_eq!(usage.input_tokens.total, Some(17));
                 assert_eq!(usage.output_tokens.total, Some(227));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1007,7 +1007,7 @@ mod do_stream {
                 assert_eq!(usage.input_tokens.total, Some(53));
                 assert_eq!(usage.output_tokens.total, Some(17));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1147,7 +1147,7 @@ mod do_stream {
                 assert_eq!(tool_name, "searchGoogle");
                 assert_eq!(input, &json!({"query": "latest news on ai"}));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1205,18 +1205,17 @@ mod do_stream {
                     Value::String(s) => {
                         assert!(
                             s.contains("query") && s.contains("limit"),
-                            "input string should contain both 'query' and 'limit': {}",
-                            s
+                            "input string should contain both 'query' and 'limit': {s}"
                         );
                     }
                     Value::Object(_) => {
                         // If it somehow parsed, still check for both keys
                         assert!(input.get("query").is_some(), "should have 'query'");
                     }
-                    other => panic!("expected String or Object, got {:?}", other),
+                    other => panic!("expected String or Object, got {other:?}"),
                 }
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1349,7 +1348,7 @@ mod do_stream {
                 let msg = msg_d.to_string();
                 assert!(msg.contains("The server had an error processing your request."));
             }
-            other => panic!("expected Provider error, got {:?}", other),
+            other => panic!("expected Provider error, got {other:?}"),
         }
     }
 
@@ -1381,7 +1380,7 @@ mod do_stream {
                 assert!(msg.contains("bad request"));
                 assert!(msg.contains("400"));
             }
-            other => panic!("expected Provider error, got {:?}", other),
+            other => panic!("expected Provider error, got {other:?}"),
         }
     }
 
@@ -1431,7 +1430,7 @@ mod do_stream {
             Some(StreamPart::Finish { finish_reason, .. }) => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1467,7 +1466,7 @@ mod do_stream {
             Some(StreamPart::Finish { finish_reason, .. }) => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1548,7 +1547,7 @@ mod do_stream {
                 // TS: outputTokens.total=20
                 assert_eq!(usage.output_tokens.total, Some(20));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1592,7 +1591,7 @@ mod do_stream {
             StreamPart::ResponseMetadata { model_id, .. } => {
                 assert_eq!(model_id.as_deref(), Some("o4-mini"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
 
         // Verify text deltas
@@ -1613,7 +1612,7 @@ mod do_stream {
                 assert_eq!(usage.input_tokens.total, Some(17));
                 assert_eq!(usage.output_tokens.total, Some(227));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
 
         // RFC-0016 M10: streaming usage also carries the provider raw usage.

@@ -100,7 +100,7 @@ fn provider_at(uri: &str) -> GoogleProvider {
 /// Mock a JSON `generateContent` response for `model`.
 async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:generateContent", model)))
+        .and(path(format!("/models/{model}:generateContent")))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .mount(server)
         .await;
@@ -109,7 +109,7 @@ async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
 /// Mock an SSE `streamGenerateContent` response for `model`.
 async fn mock_sse_response(server: &MockServer, model: &str, sse_body: String) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:streamGenerateContent", model)))
+        .and(path(format!("/models/{model}:streamGenerateContent")))
         .and(query_param("alt", "sse"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -124,7 +124,7 @@ async fn mock_sse_response(server: &MockServer, model: &str, sse_body: String) {
 fn sse_body(chunks: &[Value]) -> String {
     let mut body = String::new();
     for chunk in chunks {
-        body.push_str(&format!("data: {}\n\n", chunk));
+        body.push_str(&format!("data: {chunk}\n\n"));
     }
     body
 }
@@ -136,7 +136,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -766,7 +766,7 @@ mod do_generate {
                 && url.as_deref() == Some("https://source.example.com")
                 && title.as_deref() == Some("Source Title")
         });
-        assert!(has_url, "expected a url source, got {:?}", sources);
+        assert!(has_url, "expected a url source, got {sources:?}");
     }
 
     #[tokio::test]
@@ -1107,8 +1107,7 @@ mod do_generate {
         });
         assert!(
             has_call,
-            "expected a code_execution tool-call, got {:?}",
-            calls
+            "expected a code_execution tool-call, got {calls:?}"
         );
         // NOTE: TS also asserts a tool-result content item { outcome, output }
         // with providerExecuted=true — not expressible until GenerateContent
@@ -1196,8 +1195,7 @@ mod do_generate {
         let has_call = calls.iter().any(|(_, name, _)| name == "code_execution");
         assert!(
             has_call,
-            "expected a code_execution tool-call, got {:?}",
-            calls
+            "expected a code_execution tool-call, got {calls:?}"
         );
         // NOTE: TS asserts the result's output defaults to "" when missing —
         // pending GenerateContent::ToolResult.
@@ -1740,8 +1738,7 @@ mod do_stream {
         });
         assert!(
             has_call,
-            "expected a code_execution tool-call, got {:?}",
-            calls
+            "expected a code_execution tool-call, got {calls:?}"
         );
 
         let results = stream_tool_results(&parts);
@@ -1750,8 +1747,7 @@ mod do_stream {
             .any(|(_, output)| *output == json!({ "outcome": "OUTCOME_OK", "output": "hello\n" }));
         assert!(
             has_result,
-            "expected a code_execution tool-result, got {:?}",
-            results
+            "expected a code_execution tool-result, got {results:?}"
         );
         // NOTE: TS also asserts toolName: "code_execution" on the result and
         // providerExecuted: true on the call — not expressible on current
@@ -1811,8 +1807,7 @@ mod do_stream {
             .any(|(_, output)| *output == json!({ "outcome": "OUTCOME_OK", "output": "" }));
         assert!(
             has_empty,
-            "expected a tool-result with empty output, got {:?}",
-            results
+            "expected a tool-result with empty output, got {results:?}"
         );
     }
 
@@ -1977,7 +1972,7 @@ mod do_stream {
                 && url.as_deref() == Some("https://source.example.com")
                 && title.as_deref() == Some("Source Title")
         });
-        assert!(has, "expected a url source event, got {:?}", sources);
+        assert!(has, "expected a url source event, got {sources:?}");
     }
 
     #[tokio::test]
@@ -2018,7 +2013,7 @@ mod do_stream {
                 && url.as_deref() == Some("https://example.com/article")
                 && title.as_deref() == Some("Image Source")
         });
-        assert!(has, "expected an image url source event, got {:?}", sources);
+        assert!(has, "expected an image url source event, got {sources:?}");
     }
 
     #[tokio::test]
@@ -2113,8 +2108,7 @@ mod do_stream {
         assert_eq!(
             example.len(),
             1,
-            "duplicate source should be emitted once, got {:?}",
-            sources
+            "duplicate source should be emitted once, got {sources:?}"
         );
         assert_eq!(example[0].3.as_deref(), Some("Example"));
 
@@ -2132,8 +2126,7 @@ mod do_stream {
         assert_eq!(
             sources.len(),
             3,
-            "expected 3 deduplicated sources, got {:?}",
-            sources
+            "expected 3 deduplicated sources, got {sources:?}"
         );
     }
 }

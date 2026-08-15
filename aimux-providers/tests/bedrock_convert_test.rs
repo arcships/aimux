@@ -77,7 +77,7 @@ fn file_base64(
     ContentPart::FileBase64 {
         data: data.to_string(),
         media_type: media_type.to_string(),
-        filename: filename.map(|s| s.to_string()),
+        filename: filename.map(std::string::ToString::to_string),
         provider_options,
     }
 }
@@ -97,7 +97,7 @@ fn text_with_cache(text: &str, cache_type: &str, ttl: Option<&str>) -> ContentPa
 fn reasoning(text: &str, signature: Option<&str>) -> ContentPart {
     ContentPart::Reasoning {
         text: text.to_string(),
-        signature: signature.map(|s| s.to_string()),
+        signature: signature.map(std::string::ToString::to_string),
         provider_options: None,
     }
 }
@@ -953,7 +953,7 @@ fn media_type_route_to_document_text_plain() {
 fn func_tool(name: &str, description: Option<&str>, input_schema: Value) -> FunctionTool {
     FunctionTool {
         name: name.to_string(),
-        description: description.map(|s| s.to_string()),
+        description: description.map(std::string::ToString::to_string),
         input_schema,
         strict: None,
         provider_options: None,
@@ -969,7 +969,7 @@ fn func_tool_strict(
 ) -> FunctionTool {
     FunctionTool {
         name: name.to_string(),
-        description: description.map(|s| s.to_string()),
+        description: description.map(std::string::ToString::to_string),
         input_schema,
         strict,
         provider_options: None,

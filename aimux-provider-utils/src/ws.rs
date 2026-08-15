@@ -108,6 +108,12 @@ async fn connect_with_timeout(
 
 /// Open a WebSocket connection. The connect phase races abort and the
 /// `first_chunk_ms` timeout (which doubles as the connect timeout).
+///
+/// # Errors
+///
+/// Returns `InvalidArgument` for a bad URL or header value, `Aborted` when
+/// cancellation wins the connect race, and `Timeout` when `first_chunk_ms`
+/// expires while connecting.
 pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
     let mut http_req = req
         .url
@@ -181,6 +187,12 @@ pub async fn ws_connect(req: &WebSocketRequest) -> Result<WsConnection, AiMuxErr
 impl WsConnection {
     /// Send a text message. Aborted / timed out sends surface as errors; the
     /// pending-while-buffer-full behavior is the socket-level backpressure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Aborted` on cancellation, `Timeout` when the send exceeds the
+    /// total timeout, and a WebSocket error mapped to `ApiCall` when the socket
+    /// write fails.
     pub async fn send_text(&mut self, text: &str) -> Result<(), AiMuxError> {
         tokio::select! {
             biased;
@@ -195,6 +207,12 @@ impl WsConnection {
     }
 
     /// Send a binary message (same abort/timeout semantics as `send_text`).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Aborted` on cancellation, `Timeout` when the send exceeds the
+    /// total timeout, and a WebSocket error mapped to `ApiCall` when the socket
+    /// write fails.
     pub async fn send_binary(&mut self, bytes: &[u8]) -> Result<(), AiMuxError> {
         tokio::select! {
             biased;

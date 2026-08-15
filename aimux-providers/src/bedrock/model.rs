@@ -51,6 +51,7 @@ pub struct BedrockConfig {
 }
 
 impl BedrockModel {
+    #[must_use]
     pub fn new(model_id: String, config: BedrockConfig) -> Self {
         Self { model_id, config }
     }
@@ -86,7 +87,7 @@ impl BedrockModel {
 
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
+                let mut headers = vec![("Authorization".to_string(), format!("Bearer {token}"))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -305,7 +306,7 @@ impl LanguageModel for BedrockModel {
                     "contentBlockStart" => {
                         let idx = payload
                             .get("contentBlockIndex")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(block_counter as u64) as usize;
 
                         // Check if this is a tool use block.
@@ -322,7 +323,7 @@ impl LanguageModel for BedrockModel {
                                     .unwrap_or("")
                                     .to_string();
                                 let id = if id.is_empty() {
-                                    format!("call-{}", idx)
+                                    format!("call-{idx}")
                                 } else {
                                     id
                                 };
@@ -352,7 +353,7 @@ impl LanguageModel for BedrockModel {
                     "contentBlockDelta" => {
                         let idx = payload
                             .get("contentBlockIndex")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0) as usize;
 
                         if let Some(delta) = payload.get("delta") {
@@ -425,7 +426,7 @@ impl LanguageModel for BedrockModel {
                     "contentBlockStop" => {
                         let idx = payload
                             .get("contentBlockIndex")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0) as usize;
 
                         if let Some((id, name, acc)) = tool_blocks.remove(&idx) {
