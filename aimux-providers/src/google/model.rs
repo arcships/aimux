@@ -394,7 +394,7 @@ impl LanguageModel for GoogleModel {
                                             }
                                         }
                                     } else {
-                                        let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        let is_thought = part.get("thought").and_then(serde_json::Value::as_bool).unwrap_or(false);
                                         if is_thought {
                                             // Close any open text block before starting reasoning
                                             if let Some(id) = text_id.take() {
@@ -402,7 +402,7 @@ impl LanguageModel for GoogleModel {
                                             }
                                             // Start a reasoning block if not already active
                                             if reasoning_id.is_none() {
-                                                let id = format!("{}", block_counter);
+                                                let id = format!("{block_counter}");
                                                 block_counter += 1;
                                                 reasoning_id = Some(id.clone());
                                                 yield Ok(StreamPart::ReasoningStart {
@@ -423,7 +423,7 @@ impl LanguageModel for GoogleModel {
                                                 yield Ok(StreamPart::ReasoningEnd { id, provider_metadata: None });
                                             }
                                             if text_id.is_none() {
-                                                let id = format!("{}", block_counter);
+                                                let id = format!("{block_counter}");
                                                 block_counter += 1;
                                                 text_id = Some(id.clone());
                                                 yield Ok(StreamPart::TextStart { id, provider_metadata: thought_sig_meta.clone() });
@@ -578,7 +578,7 @@ impl LanguageModel for GoogleModel {
                                     }
                                     yield Ok(StreamPart::ToolResult {
                                         tool_call_id: id,
-                                        tool_name: format!("server:{}", tool_type),
+                                        tool_name: format!("server:{tool_type}"),
                                         result: response,
                                         is_error: None,
                                         preliminary: None,
@@ -744,7 +744,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     let output = cer
                         .get("output")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .unwrap_or_default();
                     content.push(GenerateContent::ToolResult {
                         tool_call_id: call_id,
@@ -766,7 +766,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 } else {
                     let is_thought = part
                         .get("thought")
-                        .and_then(|v| v.as_bool())
+                        .and_then(serde_json::Value::as_bool)
                         .unwrap_or(false);
                     if is_thought {
                         content.push(GenerateContent::Reasoning {
@@ -835,7 +835,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 let thought_signature = part
                     .get("thoughtSignature")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                    .map(std::string::ToString::to_string);
                 let mut server_meta = json!({
                     "google": { "serverToolCallId": id, "serverToolType": tool_type }
                 });
@@ -857,7 +857,11 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 let tool_type = tr.get("toolType").and_then(|v| v.as_str()).unwrap_or("");
                 let id = last_server_tool_call_id
                     .take()
-                    .or_else(|| tr.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                    .or_else(|| {
+                        tr.get("id")
+                            .and_then(|v| v.as_str())
+                            .map(std::string::ToString::to_string)
+                    })
                     .unwrap_or_default();
                 let response = tr.get("response").cloned().unwrap_or(json!({}));
                 let mut server_meta = json!({
@@ -868,7 +872,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 }
                 content.push(GenerateContent::ToolResult {
                     tool_call_id: id,
-                    tool_name: format!("server:{}", tool_type),
+                    tool_name: format!("server:{tool_type}"),
                     result: response,
                     is_error: None,
                     preliminary: None,

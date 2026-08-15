@@ -86,6 +86,12 @@ pub fn convert_prompt_to_anthropic_full_fallible(
 /// `code_execution_tool_result`, …). Anthropic rejects a bare `tool_result`
 /// block inside an assistant message with HTTP 400, so a result whose tool
 /// cannot be resolved is dropped with a warning rather than emitted.
+///
+/// # Errors
+///
+/// Same as [`convert_prompt_to_anthropic_full_fallible`]: `AiMuxError::InvalidArgument`
+/// / `UnsupportedFunctionality` when a message part cannot be represented in the
+/// Anthropic wire format.
 pub fn convert_prompt_to_anthropic_full_with_tools(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,

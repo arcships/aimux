@@ -740,16 +740,16 @@ pub async fn execute_stream(
                                     && let Some(uc) = ann.get("url_citation")
                                 {
                                     yield Ok(StreamPart::Source {
-                                        id: format!("annotation-{}", i),
+                                        id: format!("annotation-{i}"),
                                         source_type: "url".to_string(),
                                         url: uc
                                             .get("url")
                                             .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string()),
+                                            .map(std::string::ToString::to_string),
                                         title: uc
                                             .get("title")
                                             .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string()),
+                                            .map(std::string::ToString::to_string),
                                         provider_metadata: None,
                                     });
                                 }

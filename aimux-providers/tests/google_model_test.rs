@@ -1283,8 +1283,7 @@ mod do_stream {
         });
         assert!(
             sig_delta.is_some(),
-            "empty-text thoughtSignature must ride the open reasoning block, got {:?}",
-            parts
+            "empty-text thoughtSignature must ride the open reasoning block, got {parts:?}"
         );
     }
 

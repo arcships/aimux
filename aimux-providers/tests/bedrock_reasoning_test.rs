@@ -195,7 +195,7 @@ fn reasoning_signatures(parts: &[StreamPart]) -> Vec<String> {
                 .get("amazonBedrock")
                 .and_then(|b| b.get("signature"))
                 .and_then(|s| s.as_str())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
             _ => None,
         })
         .collect()

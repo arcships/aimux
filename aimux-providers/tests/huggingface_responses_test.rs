@@ -555,19 +555,19 @@ async fn should_handle_mcp_tools_with_annotations() {
             assert_eq!(tool_call_id, "mcp_search_test");
             assert_eq!(tool_name, "search");
         }
-        other => panic!("expected ToolResult at [1], got {:?}", other),
+        other => panic!("expected ToolResult at [1], got {other:?}"),
     }
     match &result.content[2] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the search results."),
-        other => panic!("expected Text at [2], got {:?}", other),
+        other => panic!("expected Text at [2], got {other:?}"),
     }
     match &result.content[3] {
         GenerateContent::Source { id, .. } => assert_eq!(id, "id-0"),
-        other => panic!("expected Source at [3], got {:?}", other),
+        other => panic!("expected Source at [3], got {other:?}"),
     }
     match &result.content[4] {
         GenerateContent::Source { id, .. } => assert_eq!(id, "id-1"),
-        other => panic!("expected Source at [4], got {:?}", other),
+        other => panic!("expected Source at [4], got {other:?}"),
     }
 }
 

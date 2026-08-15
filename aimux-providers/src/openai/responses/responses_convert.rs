@@ -364,7 +364,7 @@ fn generate_source_id() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("source-{}", n)
+    format!("source-{n}")
 }
 
 /// Build the streaming event reducer shared by the OpenAI and Azure providers.
@@ -895,11 +895,11 @@ where
                                     url: ann
                                         .get("url")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string()),
+                                        .map(std::string::ToString::to_string),
                                     title: ann
                                         .get("title")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string()),
+                                        .map(std::string::ToString::to_string),
                                     provider_metadata: None,
                                 });
                             }

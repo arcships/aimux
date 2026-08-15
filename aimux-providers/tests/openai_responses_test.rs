@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK OpenAI Responses API tests.
+//! Rust translations of the AI SDK OpenAI Responses API tests.
 //!
 //! Sources (TS -> Rust):
 //! - `packages/openai/src/responses/openai-responses-language-model.test.ts`
@@ -1289,7 +1289,7 @@ mod do_stream {
                     json!("enc-blob-123")
                 );
             }
-            other => panic!("ReasoningStart must carry metadata, got {:?}", other),
+            other => panic!("ReasoningStart must carry metadata, got {other:?}"),
         }
 
         let end = parts
@@ -1309,7 +1309,7 @@ mod do_stream {
                     "encrypted_content must ride ReasoningEnd so consume() can round-trip it"
                 );
             }
-            other => panic!("ReasoningEnd must carry metadata, got {:?}", other),
+            other => panic!("ReasoningEnd must carry metadata, got {other:?}"),
         }
     }
 
@@ -1359,10 +1359,7 @@ mod do_stream {
                     json!("enc-no-summary")
                 );
             }
-            other => panic!(
-                "ReasoningEnd must carry metadata even without summary, got {:?}",
-                other
-            ),
+            other => panic!("ReasoningEnd must carry metadata even without summary, got {other:?}"),
         }
     }
 

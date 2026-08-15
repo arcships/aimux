@@ -1045,7 +1045,7 @@ async fn should_extract_text_from_mixed_thinking_and_text() {
                 "both thinking parts must survive, in order"
             );
         }
-        other => panic!("expected Reasoning at [0], got {:?}", other),
+        other => panic!("expected Reasoning at [0], got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::Text { text, .. } => {

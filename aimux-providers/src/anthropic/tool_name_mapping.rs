@@ -61,6 +61,7 @@ pub struct ToolNameMapping {
 
 impl ToolNameMapping {
     /// Build the mapping from the tools passed on this call.
+    #[must_use]
     pub fn new(tools: Option<&[Tool]>) -> Self {
         let mut mapping = ToolNameMapping::default();
         for tool in tools.unwrap_or(&[]) {

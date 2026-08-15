@@ -641,7 +641,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 let thought_signature = part
                     .get("thoughtSignature")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                    .map(std::string::ToString::to_string);
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: name,
