@@ -2728,8 +2728,9 @@ pub extern "C" fn aimux_trace_new_audited(handle: u64, strict: i32, err: *mut CA
 }
 
 /// Query: aggregated probe statistics, filtered by `filter_json` (a serialized
-/// `TraceFilter`, NULL = all). Returns JSON `TraceStats[]` or NULL on failure;
-/// caller frees with `aimux_free_string`.
+/// `TraceFilter`; pass `"{}"` for all rows — NULL is rejected as an invalid
+/// argument). Returns JSON `TraceStats[]` or NULL on failure; caller frees
+/// with `aimux_free_string`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_trace_aggregate(
     handle: u64,

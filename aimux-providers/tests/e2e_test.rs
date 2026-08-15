@@ -1,5 +1,10 @@
 //! End-to-end tests: verify generate_text / stream_text user-facing API
-//! works with both OpenAI and Anthropic providers via wiremock.
+//! works with multiple native-protocol providers via wiremock.
+//!
+//! Covers openai + anthropic + google + mistral + cohere full round-trips
+//! (request shape → JSON / SSE response → aggregated assertions). Protocol
+//! response fixtures mirror the per-provider wiremock test files
+//! (`google_model_test.rs` / `mistral_model_test.rs` / `cohere_model_test.rs`).
 
 use aimux_core::content::ContentPart;
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
@@ -7,10 +12,23 @@ use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool, ToolChoice};
 use aimux_core::types::FinishReasonUnified;
-use aimux_providers::{AnthropicConfig, AnthropicProvider, OpenAIConfig, OpenAIProvider};
+use aimux_providers::{
+    AnthropicConfig, AnthropicProvider, CohereConfig, CohereProvider, GoogleConfig, GoogleProvider,
+    MistralConfig, MistralProvider, OpenAIConfig, OpenAIProvider,
+};
 use futures::StreamExt;
 use serde_json::json;
 use wiremock::{Mock, MockServer, ResponseTemplate, matchers::*};
+
+/// Deserialize the (first) recorded request body of a wiremock server.
+async fn received_json_body(server: &MockServer) -> serde_json::Value {
+    let requests = server
+        .received_requests()
+        .await
+        .expect("requests should be recorded");
+    assert!(!requests.is_empty(), "expected at least one request");
+    serde_json::from_slice(&requests[0].body).expect("request body is JSON")
+}
 
 // ─────────────────────────────────────────────────────────────────
 // OpenAI end-to-end
@@ -842,4 +860,268 @@ async fn e2e_openai_stream_tool_calls() {
         assert_eq!(tool_name, "get_weather");
         assert_eq!(input["location"], "Tokyo");
     }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Google (Gemini native protocol) end-to-end
+// ─────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn e2e_google_generate_text() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/models/gemini-2.0-flash:generateContent"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "candidates": [{
+                "content": {
+                    "parts": [{ "text": "Rust is memory-safe without a GC." }],
+                    "role": "model"
+                },
+                "finishReason": "STOP",
+                "index": 0
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 10,
+                "candidatesTokenCount": 8,
+                "totalTokenCount": 18
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let provider = GoogleProvider::new(GoogleConfig::new("test-key").with_base_url(server.uri()));
+    let model = provider.model("gemini-2.0-flash");
+
+    let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default())
+        .await
+        .expect("generate_text should succeed");
+
+    assert_eq!(result.text, "Rust is memory-safe without a GC.");
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(result.usage.input_tokens.total, Some(10));
+    assert_eq!(result.usage.output_tokens.total, Some(8));
+
+    // Request body shape: Gemini `contents[].parts[].text`.
+    let body = received_json_body(&server).await;
+    assert_eq!(body["contents"][0]["role"], "user");
+    assert_eq!(body["contents"][0]["parts"][0]["text"], "What is Rust?");
+}
+
+#[tokio::test]
+async fn e2e_google_stream_text() {
+    let server = MockServer::start().await;
+
+    // Gemini SSE: one JSON object per `data:` event, no [DONE] sentinel.
+    let sse_body = concat!(
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}],\"role\":\"model\"},\"index\":0}],\"responseId\":\"resp-1\"}\n\n",
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\", World\"}],\"role\":\"model\"},\"index\":0}],\"responseId\":\"resp-1\"}\n\n",
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"!\"}],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"usageMetadata\":{\"promptTokenCount\":5,\"candidatesTokenCount\":3,\"totalTokenCount\":8},\"responseId\":\"resp-1\"}\n\n"
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/models/gemini-2.0-flash:streamGenerateContent"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(sse_body),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = GoogleProvider::new(GoogleConfig::new("test-key").with_base_url(server.uri()));
+    let model = provider.model("gemini-2.0-flash");
+
+    let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
+        .await
+        .expect("stream_text should succeed");
+
+    let request_body = result.request_body.clone();
+    let text = result.text().await.expect("should collect text");
+    assert_eq!(text, "Hello, World!");
+
+    // Streaming request body shape: same contents[] structure.
+    let body = request_body.expect("stream request body should be recorded");
+    assert_eq!(body["contents"][0]["role"], "user");
+    assert_eq!(body["contents"][0]["parts"][0]["text"], "Say hello");
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Mistral (OpenAI-compatible variant) end-to-end
+// ─────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn e2e_mistral_generate_text() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "5319bd0299614c679a0068a4f2c8ffd0",
+            "object": "chat.completion",
+            "created": 1769088720,
+            "model": "mistral-small-latest",
+            "choices": [{
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "Rust compiles fast."}
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18}
+        })))
+        .mount(&server)
+        .await;
+
+    let provider = MistralProvider::new(MistralConfig::new("test-key").with_base_url(server.uri()));
+    let model = provider.model("mistral-small-latest");
+
+    let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default())
+        .await
+        .expect("generate_text should succeed");
+
+    assert_eq!(result.text, "Rust compiles fast.");
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(result.usage.input_tokens.total, Some(10));
+    assert_eq!(result.usage.output_tokens.total, Some(8));
+
+    // Request body shape: Mistral sends content as a parts array.
+    let body = received_json_body(&server).await;
+    assert_eq!(body["model"], "mistral-small-latest");
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert_eq!(body["messages"][0]["content"][0]["type"], "text");
+    assert_eq!(body["messages"][0]["content"][0]["text"], "What is Rust?");
+}
+
+#[tokio::test]
+async fn e2e_mistral_stream_text() {
+    let server = MockServer::start().await;
+
+    let sse_body = concat!(
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\" world\"}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"\"}]},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
+        "data: [DONE]\n\n"
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(sse_body),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = MistralProvider::new(MistralConfig::new("test-key").with_base_url(server.uri()));
+    let model = provider.model("mistral-small-latest");
+
+    let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
+        .await
+        .expect("stream_text should succeed");
+
+    let request_body = result.request_body.clone();
+    let text = result.text().await.expect("should collect text");
+    assert_eq!(text, "Hello world");
+
+    // Streaming request body shape: stream=true + the user message.
+    let body = request_body.expect("stream request body should be recorded");
+    assert_eq!(body["model"], "mistral-small-latest");
+    assert_eq!(body["stream"], json!(true));
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert_eq!(body["messages"][0]["content"][0]["text"], "Say hello");
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Cohere (native protocol) end-to-end
+// ─────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn e2e_cohere_generate_text() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "e7592632-1e3d-424f-b129-bd5f9f980f7b",
+            "message": {
+                "role": "assistant",
+                "content": [{ "type": "text", "text": "Rust is fearless concurrency." }]
+            },
+            "finish_reason": "COMPLETE",
+            "usage": {
+                "billed_units": { "input_tokens": 10, "output_tokens": 8 },
+                "tokens": { "input_tokens": 12, "output_tokens": 9 }
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let provider = CohereProvider::new(CohereConfig::new("test-key").with_base_url(server.uri()));
+    let model = provider.model("command-r-plus");
+
+    let result = generate_text(&model, "What is Rust?", GenerateTextOptions::default())
+        .await
+        .expect("generate_text should succeed");
+
+    assert_eq!(result.text, "Rust is fearless concurrency.");
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+    // Cohere maps the `tokens` pair (not `billed_units`) into usage.
+    assert_eq!(result.usage.input_tokens.total, Some(12));
+    assert_eq!(result.usage.output_tokens.total, Some(9));
+
+    // Request body shape: Cohere sends plain-string message content.
+    let body = received_json_body(&server).await;
+    assert_eq!(body["model"], "command-r-plus");
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert_eq!(body["messages"][0]["content"], "What is Rust?");
+}
+
+#[tokio::test]
+async fn e2e_cohere_stream_text() {
+    let server = MockServer::start().await;
+
+    // Cohere SSE: typed `event:` lines + `data:` payloads.
+    let sse_body = concat!(
+        "event: message-start\n",
+        "data: {\"id\":\"321d178c\",\"type\":\"message-start\",\"delta\":{\"message\":{\"role\":\"assistant\",\"content\":[],\"tool_plan\":\"\",\"tool_calls\":[],\"citations\":[]}}}\n\n",
+        "event: content-start\n",
+        "data: {\"type\":\"content-start\",\"index\":0,\"delta\":{\"message\":{\"content\":{\"type\":\"text\",\"text\":\"\"}}}}\n\n",
+        "event: content-delta\n",
+        "data: {\"type\":\"content-delta\",\"index\":0,\"delta\":{\"message\":{\"content\":{\"text\":\"Hello\"}}}}\n\n",
+        "event: content-delta\n",
+        "data: {\"type\":\"content-delta\",\"index\":0,\"delta\":{\"message\":{\"content\":{\"text\":\" world\"}}}}\n\n",
+        "event: content-end\n",
+        "data: {\"type\":\"content-end\",\"index\":0}\n\n",
+        "event: message-end\n",
+        "data: {\"type\":\"message-end\",\"delta\":{\"finish_reason\":\"COMPLETE\",\"usage\":{\"billed_units\":{\"input_tokens\":5,\"output_tokens\":2},\"tokens\":{\"input_tokens\":7,\"output_tokens\":3}}}}\n\n"
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/chat"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(sse_body),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = CohereProvider::new(CohereConfig::new("test-key").with_base_url(server.uri()));
+    let model = provider.model("command-r-plus");
+
+    let result = stream_text(&model, "Say hello", GenerateTextOptions::default())
+        .await
+        .expect("stream_text should succeed");
+
+    let request_body = result.request_body.clone();
+    let text = result.text().await.expect("should collect text");
+    assert_eq!(text, "Hello world");
+
+    // Streaming request body shape: stream=true + plain-string content.
+    let body = request_body.expect("stream request body should be recorded");
+    assert_eq!(body["model"], "command-r-plus");
+    assert_eq!(body["stream"], json!(true));
+    assert_eq!(body["messages"][0]["role"], "user");
+    assert_eq!(body["messages"][0]["content"], "Say hello");
 }
