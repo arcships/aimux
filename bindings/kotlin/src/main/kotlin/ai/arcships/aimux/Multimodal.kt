@@ -285,7 +285,11 @@ class TranscriptionSession internal constructor(handle: Long) : Closeable {
      *                  indefinitely.
      * @return the part JSON.
      * @throws AimuxTranscriptionEndedException   the stream finished normally.
-     * @throws AimuxTranscriptionTimeoutException no part in time (retryable).
+     * @throws AimuxTranscriptionTimeoutException no part arrived in time —
+     *                  **retryable**: the session stays live, call again
+     *                  (RFC-0028: `AIMUX_E_TIMEOUT`). This is NOT an
+     *                  [AimuxException] / [TimeoutError]; catch the sentinel
+     *                  explicitly.
      * @throws AimuxException                     the stream failed.
      */
     fun nextPart(timeoutMs: Long): String {
@@ -298,9 +302,13 @@ class TranscriptionSession internal constructor(handle: Long) : Closeable {
             return s
         }
         if (err.code == AIMUX_E_TIMEOUT) {
-            // throwFromC consumes (frees) the message strings, then we swap
-            // in the retryable sentinel.
-            throwFromC(err)
+            // Consume (free) the FFI-allocated message strings exactly as
+            // throwFromC would (RFC-0028 D5: the timeout path must consume
+            // the error strings to avoid leaking) — but swap the generic
+            // TimeoutError for the retryable session sentinel: the session
+            // is still live and nextPart may be called again.
+            FFI.lib.aimux_free_string(err.message)
+            FFI.lib.aimux_free_string(err.error_value)
             throw AimuxTranscriptionTimeoutException()
         }
         if (err.code == AIMUX_OK) {
@@ -313,7 +321,13 @@ class TranscriptionSession internal constructor(handle: Long) : Closeable {
     class AimuxTranscriptionEndedException :
         RuntimeException("transcription stream ended")
 
-    /** No transcription part arrived within the timeout (retryable). */
+    /**
+     * No transcription part arrived within the timeout — **retryable**: the
+     * session stays live, call [nextPart] again (RFC-0028). Deliberately not
+     * an [AimuxException]: a timeout is not a stream failure, so generic
+     * engine-error handling must not swallow it — same shape as the Go / Java
+     * / Swift / Flutter sentinels.
+     */
     class AimuxTranscriptionTimeoutException :
         RuntimeException("transcription part timeout")
 }
