@@ -153,6 +153,12 @@ fn client_init_error(source: &str) -> AiMuxError {
 /// 成功返回 `&'static Client`——provider **拿引用即用**，不持有、不 clone、
 /// 不传参；首次构建失败（及之后的每次调用）返回 [`AiMuxError::ApiCall`]
 /// （message 带 "client initialization failed"，status 为 None）。
+///
+/// # Errors
+///
+/// Returns a sticky, non-retryable [`AiMuxError::ApiCall`] (no HTTP status)
+/// when the shared client could not be built, e.g. TLS backend or resource
+/// initialization failures in restricted environments.
 pub fn shared_client() -> Result<&'static Client, AiMuxError> {
     SHARED
         .get_or_init(|| {
@@ -167,6 +173,11 @@ pub fn shared_client() -> Result<&'static Client, AiMuxError> {
 }
 
 /// 获取（或惰性初始化）流式共享 reqwest Client（无整体超时，流式用）。
+///
+/// # Errors
+///
+/// Same sticky-failure semantics as [`shared_client`]: a non-retryable
+/// [`AiMuxError::ApiCall`] without an HTTP status when the build failed.
 pub fn shared_streaming_client() -> Result<&'static Client, AiMuxError> {
     SHARED_STREAMING
         .get_or_init(|| {
