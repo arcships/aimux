@@ -58,6 +58,7 @@ impl ProviderName {{
     ];
 
     /// The registry name (snake_case), e.g. `ProviderName::Groq -> "groq"`.
+    #[must_use]
     pub fn as_str(self) -> &'static str {{
         match self {{
 {arms_str}
@@ -65,6 +66,7 @@ impl ProviderName {{
     }}
 
     /// All registry names (for error messages / docs).
+    #[must_use]
     pub const fn all_names() -> &'static str {{
         "{','.join(names)}"
     }}
