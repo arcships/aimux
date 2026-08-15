@@ -31,18 +31,18 @@
 | R4-H1/H2 | P0 | recording writer 磁盘 I/O 错误静默 + completion barrier 缺 input 条件（取证失真，recording.rs:829/94） | 🔶 待修 |
 | R4-H3 | P0 | google 非流式 tool_result 用 tool_call_id 冒充 functionResponse.name → 多轮工具调用 400（google/convert.rs:228） | 🔶 待修 |
 | R4-H4 | P0 | anthropic 流错误不发 Finish part，违反 Final chunk 契约（anthropic/stream.rs:481） | 🔶 待修 |
-| R4-H5 | P1 | JSON 线格式解析器 FFI/Python/Node 三份等价、"空/null=默认"约定 20 份拷贝——建共享 wire 层（4d 规则表） | 🔶 待修 |
+| R4-H5 | — | wire 层统一经维护者评审关闭（痛点为零，重开条件见 #114 wontfix 注） | ❌ 关闭 |
 | R4-H6 | P1 | http.rs:177 Client 构建 expect（panic=abort 放大）；mutex "中毒 DoS" 经校验不成立，降为锁错误处理统一（#115） | 🔶 待修 |
 | R4-H7 | P0 | bedrock 流式丢弃 reasoning signature（注释矛盾掩盖）；anthropic 流式同类缺陷（校验扩大，#113） | 🔶 待修 |
 | R4-H8 | P1 | Kotlin nextPart 超时哨兵死代码，retryable 契约破坏（Multimodal.kt:303） | 🔶 待修 |
 | R4-T1 | P1 | coverage CI job（报告模式）+ rustdoc 47 error（4 crate，校验修正）修复后入 CI（#117） | 🔶 待做 |
 | R4-T2 | P1 | RFC-0028 错误路径补测（connect 失败/error 事件/peer close/双超时/abort；8 绑定无行为测试） | 🔶 待做 |
-| R4-T3 | P1 | 统一 e2e 套件扩协议（各家已有独立 wiremock 测试）；FFI 全导出冒烟遍历；c 绑定零测试、swift e2e 命名统一（校验修正，#119） | 🔶 待做 |
+| R4-T3 | P1→#119 | 统一 e2e 套件扩协议 + FFI 全导出冒烟（c 绑定项已移除） | 🔶 待做 |
 | R4-T4 | P1 | clippy lint 子集永久开启（uninlined_format_args/must_use_candidate/return_self_not_must_use/redundant_closure_for_method_calls/missing_errors_doc，≈1,721 处；needless_lifetimes 校验为 0 处移出）（#120） | 🔶 待做 |
-| R4-S1 | P2→P1 | Chat 族 3 份 SSE 引擎下沉（cohere 不宜并入）；vertex 功能缺失（工具可启用但流式结果静默丢弃，校验升级 medium）；top_level_media_type 9 处收敛；净删 600–900 行（#121） | 🔶 待做 |
-| R4-S2 | P2 | ffi/lib.rs（3,767 行）/ recording.rs / http.rs 拆分；266 行 rebuild_stream_result | 🔶 待做 |
+| R4-S1 | 拆分 | 引擎下沉部分关闭（#121 wontfix）；vertex 功能缺失拆出为 #141 待修 | 🔶 部分 |
+| R4-S2 | — | 大文件拆分经维护者评审关闭（无痛点不重构，#122 wontfix） | ❌ 关闭 |
 | R4-S3 | P2 | 依赖清理 5 处（bytes 校验为整体移除）；dead_code 清单校验修正（item 10 + 模块级 9 + 测试 5；store.rs:73 属过期属性）（#123） | 🔶 待做 |
-| R4-S4 | P2 | 15 个零覆盖本地 provider registry 化或补 smoke；contract-tests fixtures 扩面 | 🔶 待做 |
+| R4-S4 | — | 本地 provider registry 化经维护者评审关闭（零逻辑模板，#124 wontfix） | ❌ 关闭 |
 | R4-F1 | P1 | SigV4 签名 host 头缺端口（真实签名缺陷）+ 环境代理触发回环 502；"时间敏感"机理经校验推翻；cassette_full 移出（#125） | 🔶 待做 |
 | R4-D1 | P1→#135 | 绑定层跟进（node/python/go 本地全绿，flutter 既有覆盖，swift/kotlin/java 检视通过；另修复 anthropic 输入回显缺口）| ✅ PR #138 |
 | R4-D2 | P1→#136 | FFI aimux_recording_try_flush + 3 错误码 + 头文件/c.md + 测试 | ✅ PR #137（叠加 #133）|
