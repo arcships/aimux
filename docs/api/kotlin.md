@@ -142,6 +142,48 @@ println(result.usage?.inputTokens?.total)
 `TypedModel` is `Closeable` (use `use { }`); engine errors surface as
 typed `AimuxException` subclasses (see [Errors](#errors)).
 
+## Streaming Transcription (STT)
+
+Realtime transcription models (e.g. OpenAI `gpt-realtime-whisper`) support
+streaming sessions (RFC-0028): push audio chunks, then pull transcription
+parts. `TranscriptionModel.startStream` returns a `TranscriptionSession`
+(`Closeable`):
+
+```kotlin
+TranscriptionModel.openai("sk-...", "gpt-realtime-whisper").use { model ->
+    model.startStream().use { session ->
+        session.pushAudio(chunk)          // blocking (backpressure)
+        session.inputDone()               // end-of-audio (idempotent)
+        while (true) {
+            try {
+                val part = session.nextPart(timeoutMs = 500)
+                println(part)             // JSON TranscriptionStreamPart
+            } catch (e: TranscriptionSession.AimuxTranscriptionEndedException) {
+                break                     // stream finished normally
+            } catch (e: TranscriptionSession.AimuxTranscriptionTimeoutException) {
+                // No part within timeoutMs — retryable: the session stays
+                // live, just call nextPart again.
+            }
+        }
+    }
+}
+```
+
+`nextPart(timeoutMs)`: `timeoutMs > 0` waits at most that long; `0` polls
+immediately; `< 0` waits indefinitely. Outcomes:
+
+| Exception | Meaning |
+|-----------|---------|
+| returns a `String` | the next part (JSON `TranscriptionStreamPart`) |
+| `AimuxTranscriptionEndedException` | the stream finished normally |
+| `AimuxTranscriptionTimeoutException` | no part in time — **retryable**, the session stays live |
+| `AimuxException` subclasses | the stream failed (typed hierarchy) |
+
+The timeout sentinel is deliberately **not** an `AimuxException` / `TimeoutError`
+— a timeout is not a stream failure, so catch it explicitly (same shape as the
+Go / Java / Swift / Flutter bindings). `close()` aborts and releases the
+session (idempotent).
+
 ## Types
 
 `bindings/kotlin/src/main/kotlin/aimux/Types.kt` declares the typed model
@@ -154,7 +196,8 @@ surface: `Role`, `FinishReasonUnified`, `ReasoningEffort`, `TokenUsage`,
 
 ## Coverage
 
-Full multimodal surface — text generation, streaming, embedding, TTS, STT,
-image, video, rerank, search, and file upload (`Multimodal.kt` +
-`MultimodalTypes.kt`), verified by mock-server end-to-end tests (no real
-network). See the [coverage matrix](../API.md#feature-coverage).
+Full multimodal surface — text generation, streaming, embedding, TTS, STT
+(incl. streaming `TranscriptionSession`), image, video, rerank, search, and
+file upload (`Multimodal.kt` + `MultimodalTypes.kt`), verified by
+mock-server end-to-end tests (no real network). See the
+[coverage matrix](../API.md#feature-coverage).
