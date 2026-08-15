@@ -999,10 +999,10 @@ async fn e2e_mistral_stream_text() {
     let server = MockServer::start().await;
 
     let sse_body = concat!(
-        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n",
-        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n",
-        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}]}\n\n",
-        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"\"}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\" world\"}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"model\":\"mistral-small-latest\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"\"}]},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
         "data: [DONE]\n\n"
     );
 

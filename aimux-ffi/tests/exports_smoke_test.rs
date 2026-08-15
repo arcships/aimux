@@ -10,6 +10,10 @@
 //!   API key + `base_url` pointing at a loopback port nothing listens on
 //!   (`http://127.0.0.1:1`) → must return a non-zero handle, which is then
 //!   released with [`aimux_ffi::aimux_drop_handle`]. Constructors that cannot
+//!
+//! Note: multimodal session smoke calls use the default RetryConfig
+//! (2 retries) against a refused port; under `--test-threads=1` this adds
+//! roughly a minute of backoff sleep — run the default parallel profile.
 //!   take a base URL (e.g. `aimux_provider_from_env`) are only checked for a
 //!   clean handle-or-error outcome.
 //! - **Utility class**: called directly with minimal/empty arguments; asserts
@@ -122,8 +126,9 @@ fn release_err(err: &mut CAimuxError) {
     err.error_value = ptr::null_mut();
 }
 
-fn expect_handle(h: u64, name: &str) {
+fn expect_handle(h: u64, name: &str) -> u64 {
     assert_ne!(h, 0, "{name}: expected a non-zero handle");
+    h
 }
 
 /// The smoke contract for failure returns: failure sentinel + `err` filled
@@ -201,6 +206,8 @@ extern "C" fn smoke_on_done(_ctx: *mut c_void) {
 
 #[test]
 fn constructor_exports_build_and_release_handles() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let key = c(FAKE_KEY);
     let secret = c("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
     let region = c("us-east-1");
@@ -212,11 +219,11 @@ fn constructor_exports_build_and_release_handles() {
     let mut err = fresh_err();
 
     // Simple key constructors + with_base variants.
-    expect_handle(
+    handles.push(expect_handle(
         aimux_openai_new(key.as_ptr(), c("gpt-4o-mini").as_ptr(), &mut err),
         "openai_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_new_with_base(
             key.as_ptr(),
             c("gpt-4o-mini").as_ptr(),
@@ -224,16 +231,16 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "openai_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_anthropic_new(
             key.as_ptr(),
             c("claude-3-5-sonnet-latest").as_ptr(),
             &mut err,
         ),
         "anthropic_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_anthropic_new_with_base(
             key.as_ptr(),
             c("claude-3-5-sonnet-latest").as_ptr(),
@@ -241,12 +248,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "anthropic_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_cohere_new(key.as_ptr(), c("command-r-plus").as_ptr(), &mut err),
         "cohere_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_cohere_new_with_base(
             key.as_ptr(),
             c("command-r-plus").as_ptr(),
@@ -254,12 +261,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "cohere_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_mistral_new(key.as_ptr(), c("mistral-small-latest").as_ptr(), &mut err),
         "mistral_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_mistral_new_with_base(
             key.as_ptr(),
             c("mistral-small-latest").as_ptr(),
@@ -267,18 +274,18 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "mistral_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_xai_new(key.as_ptr(), c("grok-3").as_ptr(), &mut err),
         "xai_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_xai_new_with_base(key.as_ptr(), c("grok-3").as_ptr(), base.as_ptr(), &mut err),
         "xai_new_with_base",
-    );
+    ));
 
     // Credential constructors.
-    expect_handle(
+    handles.push(expect_handle(
         aimux_anthropic_aws_new(
             key.as_ptr(),
             region.as_ptr(),
@@ -286,8 +293,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "anthropic_aws_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_anthropic_aws_new_with_base(
             key.as_ptr(),
             region.as_ptr(),
@@ -296,8 +303,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "anthropic_aws_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_azure_new(
             key.as_ptr(),
             resource.as_ptr(),
@@ -306,8 +313,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "azure_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_azure_new_with_base(
             key.as_ptr(),
             base.as_ptr(),
@@ -316,8 +323,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "azure_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_bedrock_new(
             key.as_ptr(),
             secret.as_ptr(),
@@ -326,8 +333,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "bedrock_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_bedrock_new_with_base(
             key.as_ptr(),
             secret.as_ptr(),
@@ -337,8 +344,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "bedrock_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_vertex_new(
             token.as_ptr(),
             project.as_ptr(),
@@ -347,8 +354,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "vertex_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_vertex_new_with_base(
             token.as_ptr(),
             project.as_ptr(),
@@ -358,14 +365,14 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "vertex_new_with_base",
-    );
+    ));
 
     // Multimodal constructors.
-    expect_handle(
+    handles.push(expect_handle(
         aimux_openai_embedding_new(key.as_ptr(), c("text-embedding-3-small").as_ptr(), &mut err),
         "openai_embedding_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_embedding_new_with_base(
             key.as_ptr(),
             c("text-embedding-3-small").as_ptr(),
@@ -373,12 +380,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "openai_embedding_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_cohere_embedding_new(key.as_ptr(), c("embed-english-v3.0").as_ptr(), &mut err),
         "cohere_embedding_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_cohere_embedding_new_with_base(
             key.as_ptr(),
             c("embed-english-v3.0").as_ptr(),
@@ -386,12 +393,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "cohere_embedding_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_google_embedding_new(key.as_ptr(), c("text-embedding-004").as_ptr(), &mut err),
         "google_embedding_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_google_embedding_new_with_base(
             key.as_ptr(),
             c("text-embedding-004").as_ptr(),
@@ -399,12 +406,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "google_embedding_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_speech_new(key.as_ptr(), c("tts-1").as_ptr(), &mut err),
         "openai_speech_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_speech_new_with_base(
             key.as_ptr(),
             c("tts-1").as_ptr(),
@@ -412,12 +419,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "openai_speech_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_image_new(key.as_ptr(), c("gpt-image-1").as_ptr(), &mut err),
         "openai_image_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_image_new_with_base(
             key.as_ptr(),
             c("gpt-image-1").as_ptr(),
@@ -425,16 +432,16 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "openai_image_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_google_image_new(
             key.as_ptr(),
             c("imagen-4.0-generate-001").as_ptr(),
             &mut err,
         ),
         "google_image_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_google_image_new_with_base(
             key.as_ptr(),
             c("imagen-4.0-generate-001").as_ptr(),
@@ -442,12 +449,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "google_image_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_transcription_new(key.as_ptr(), c("whisper-1").as_ptr(), &mut err),
         "openai_transcription_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_transcription_new_with_base(
             key.as_ptr(),
             c("whisper-1").as_ptr(),
@@ -455,20 +462,20 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "openai_transcription_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_files_new(key.as_ptr(), &mut err),
         "openai_files_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_openai_files_new_with_base(key.as_ptr(), base.as_ptr(), &mut err),
         "openai_files_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_cohere_reranking_new(key.as_ptr(), c("rerank-v3.5").as_ptr(), &mut err),
         "cohere_reranking_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_cohere_reranking_new_with_base(
             key.as_ptr(),
             c("rerank-v3.5").as_ptr(),
@@ -476,12 +483,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "cohere_reranking_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_google_video_new(key.as_ptr(), c("veo-3.0-generate-001").as_ptr(), &mut err),
         "google_video_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_google_video_new_with_base(
             key.as_ptr(),
             c("veo-3.0-generate-001").as_ptr(),
@@ -489,12 +496,12 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "google_video_new_with_base",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_tavily_search_new(key.as_ptr(), c("tavily").as_ptr(), &mut err),
         "tavily_search_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_tavily_search_new_with_base(
             key.as_ptr(),
             c("tavily").as_ptr(),
@@ -502,11 +509,11 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "tavily_search_new_with_base",
-    );
+    ));
 
     // Registry-backed constructors (RFC-0017 / RFC-0027).
     let provider_opts = c(r#"{"base_url":"http://127.0.0.1:1","max_retries":0}"#);
-    expect_handle(
+    handles.push(expect_handle(
         aimux_provider_new(
             c("groq").as_ptr(),
             key.as_ptr(),
@@ -515,8 +522,8 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "provider_new",
-    );
-    expect_handle(
+    ));
+    handles.push(expect_handle(
         aimux_provider_handle_new(
             c("groq").as_ptr(),
             key.as_ptr(),
@@ -524,18 +531,21 @@ fn constructor_exports_build_and_release_handles() {
             &mut err,
         ),
         "provider_handle_new",
-    );
+    ));
 
     // Composite wrappers over an unreachable model handle.
     let model = unreachable_model(&mut err);
-    expect_handle(model, "openai_new_with_base (composite base)");
+    handles.push(expect_handle(
+        model,
+        "openai_new_with_base (composite base)",
+    ));
     let traced = aimux_trace_new(model, &mut err);
-    expect_handle(traced, "trace_new");
+    handles.push(expect_handle(traced, "trace_new"));
     let audited = aimux_trace_new_audited(model, 0, &mut err);
-    expect_handle(audited, "trace_new_audited");
+    handles.push(expect_handle(audited, "trace_new_audited"));
     let children = [traced, audited];
     let router = aimux_router_new(children.as_ptr(), children.len(), ptr::null(), &mut err);
-    expect_handle(router, "router_new");
+    handles.push(expect_handle(router, "router_new"));
     let moa = aimux_moa_new(
         children.as_ptr(),
         children.len(),
@@ -543,8 +553,8 @@ fn constructor_exports_build_and_release_handles() {
         ptr::null(),
         &mut err,
     );
-    expect_handle(moa, "moa_new");
-    expect_handle(aimux_abort_signal_new(), "abort_signal_new");
+    handles.push(expect_handle(moa, "moa_new"));
+    handles.push(expect_handle(aimux_abort_signal_new(), "abort_signal_new"));
 
     // Release every handle created above (aimux_drop_handle is safe with 0).
     for h in [traced, audited, router, moa, model] {
@@ -563,6 +573,9 @@ fn constructor_exports_build_and_release_handles() {
         err.code, AIMUX_OK,
         "successful constructors must not fill err"
     );
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 /// `provider_from_env` reads the provider's env var, which the harness cannot
@@ -586,9 +599,11 @@ fn provider_from_env_handle_or_clean_failure() {
 
 #[test]
 fn text_generation_exports_fail_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = unreachable_model(&mut err);
-    expect_handle(h, "model handle");
+    handles.push(expect_handle(h, "model handle"));
 
     let prompt = c("\"ffi smoke\"");
     let opts = c(r#"{"max_retries":0}"#);
@@ -610,15 +625,20 @@ fn text_generation_exports_fail_cleanly_on_unreachable_host() {
     release_err(&mut err);
 
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 // ── session class: streaming with callbacks (4 exports) ─────────────────────
 
 #[test]
 fn streaming_exports_fail_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = unreachable_model(&mut err);
-    expect_handle(h, "model handle");
+    handles.push(expect_handle(h, "model handle"));
 
     let prompt = c("\"ffi smoke\"");
     let opts = c(r#"{"max_retries":0}"#);
@@ -676,6 +696,9 @@ fn streaming_exports_fail_cleanly_on_unreachable_host() {
 
     aimux_abort_signal_drop(abort);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 // ── session class: multimodal generation (8 exports, one per test to
@@ -684,6 +707,8 @@ fn streaming_exports_fail_cleanly_on_unreachable_host() {
 
 #[test]
 fn embed_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = aimux_openai_embedding_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -691,7 +716,7 @@ fn embed_fails_cleanly_on_unreachable_host() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(h, "embedding handle");
+    handles.push(expect_handle(h, "embedding handle"));
     let out = aimux_embed(
         h,
         c(r#"["hello"]"#).as_ptr(),
@@ -701,10 +726,15 @@ fn embed_fails_cleanly_on_unreachable_host() {
     expect_ptr_failure(out, &err, "embed");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 #[test]
 fn speech_generate_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = aimux_openai_speech_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -712,15 +742,20 @@ fn speech_generate_fails_cleanly_on_unreachable_host() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(h, "speech handle");
+    handles.push(expect_handle(h, "speech handle"));
     let out = aimux_speech_generate(h, c(r#"{"text":"ffi smoke"}"#).as_ptr(), &mut err);
     expect_ptr_failure(out, &err, "speech_generate");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 #[test]
 fn image_generate_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = aimux_openai_image_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -728,16 +763,21 @@ fn image_generate_fails_cleanly_on_unreachable_host() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(h, "image handle");
+    handles.push(expect_handle(h, "image handle"));
     let opts = c(r#"{"prompt":"a rust crab","n":1,"provider_options":{}}"#);
     let out = aimux_image_generate(h, opts.as_ptr(), &mut err);
     expect_ptr_failure(out, &err, "image_generate");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 #[test]
 fn transcription_generate_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = aimux_openai_transcription_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -745,7 +785,7 @@ fn transcription_generate_fails_cleanly_on_unreachable_host() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(h, "transcription handle");
+    handles.push(expect_handle(h, "transcription handle"));
     let out = aimux_transcription_generate(
         h,
         c("ZmFrZS1hdWRpbw==").as_ptr(),
@@ -756,14 +796,19 @@ fn transcription_generate_fails_cleanly_on_unreachable_host() {
     expect_ptr_failure(out, &err, "transcription_generate");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 #[test]
 fn file_upload_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h =
         aimux_openai_files_new_with_base(c(FAKE_KEY).as_ptr(), c(UNREACHABLE).as_ptr(), &mut err);
-    expect_handle(h, "files handle");
+    handles.push(expect_handle(h, "files handle"));
     let out = aimux_file_upload(
         h,
         c("ZmFrZS1maWxl").as_ptr(),
@@ -774,10 +819,15 @@ fn file_upload_fails_cleanly_on_unreachable_host() {
     expect_ptr_failure(out, &err, "file_upload");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 #[test]
 fn rerank_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = aimux_cohere_reranking_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -785,16 +835,21 @@ fn rerank_fails_cleanly_on_unreachable_host() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(h, "reranking handle");
+    handles.push(expect_handle(h, "reranking handle"));
     let opts = c(r#"{"query":"rust","documents":{"Text":{"values":["a","b"]}}}"#);
     let out = aimux_rerank(h, opts.as_ptr(), &mut err);
     expect_ptr_failure(out, &err, "rerank");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 #[test]
 fn video_generate_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = aimux_google_video_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -802,16 +857,21 @@ fn video_generate_fails_cleanly_on_unreachable_host() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(h, "video handle");
+    handles.push(expect_handle(h, "video handle"));
     let opts = c(r#"{"prompt":"waves","n":1,"provider_options":{}}"#);
     let out = aimux_video_generate(h, opts.as_ptr(), &mut err);
     expect_ptr_failure(out, &err, "video_generate");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 #[test]
 fn search_fails_cleanly_on_unreachable_host() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let h = aimux_tavily_search_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -819,17 +879,22 @@ fn search_fails_cleanly_on_unreachable_host() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(h, "search handle");
+    handles.push(expect_handle(h, "search handle"));
     let out = aimux_search(h, c(r#"{"query":"ffi smoke"}"#).as_ptr(), &mut err);
     expect_ptr_failure(out, &err, "search");
     release_err(&mut err);
     aimux_drop_handle(h);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 // ── session class: transcription streaming session (5 exports) ──────────────
 
 #[test]
 fn transcription_session_reaches_clean_terminal_error() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let model = aimux_openai_transcription_new_with_base(
         c(FAKE_KEY).as_ptr(),
@@ -837,10 +902,10 @@ fn transcription_session_reaches_clean_terminal_error() {
         c(UNREACHABLE).as_ptr(),
         &mut err,
     );
-    expect_handle(model, "transcription handle");
+    handles.push(expect_handle(model, "transcription handle"));
 
     let session = aimux_transcription_session_new(model, 0, ptr::null(), &mut err);
-    expect_handle(session, "transcription_session_new");
+    handles.push(expect_handle(session, "transcription_session_new"));
 
     // The driver fails on the unreachable host; pull parts until the stream
     // reaches its terminal NULL (error or end) within a bounded number of
@@ -884,12 +949,17 @@ fn transcription_session_reaches_clean_terminal_error() {
     );
     release_err(&mut err);
     aimux_drop_handle(model);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 // ── session class: provider discovery + catalogue + codex (4 exports) ───────
 
 #[test]
 fn provider_discovery_and_catalogue_exports_fail_cleanly() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     // Provider handle bound to the unreachable host with retries disabled.
     let provider = aimux_provider_handle_new(
@@ -898,14 +968,14 @@ fn provider_discovery_and_catalogue_exports_fail_cleanly() {
         c(r#"{"base_url":"http://127.0.0.1:1","max_retries":0}"#).as_ptr(),
         &mut err,
     );
-    expect_handle(provider, "provider_handle_new");
+    handles.push(expect_handle(provider, "provider_handle_new"));
 
     let models = aimux_provider_list_models(provider, &mut err);
     expect_ptr_failure(models, &err, "provider_list_models");
     release_err(&mut err);
 
     let model = aimux_provider_model(provider, c("llama-3.3-70b-versatile").as_ptr(), &mut err);
-    expect_handle(model, "provider_model");
+    handles.push(expect_handle(model, "provider_model"));
     aimux_drop_handle(model);
     aimux_drop_handle(provider);
 
@@ -919,6 +989,9 @@ fn provider_discovery_and_catalogue_exports_fail_cleanly() {
     let out = aimux_codex_refresh(ptr::null(), ptr::null(), &mut err);
     expect_ptr_failure(out, &err, "codex_refresh (null args)");
     release_err(&mut err);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 // ── utility class: lifecycle, sessions, config (10 exports) ─────────────────
@@ -981,11 +1054,13 @@ fn utility_exports_return_clean_values() {
 
 #[test]
 fn trace_query_exports_return_clean_values() {
+    // Collect every created handle so the release path is exercised too.
+    let mut handles: Vec<u64> = Vec::new();
     let mut err = fresh_err();
     let model = unreachable_model(&mut err);
-    expect_handle(model, "model handle");
+    handles.push(expect_handle(model, "model handle"));
     let traced = aimux_trace_new(model, &mut err);
-    expect_handle(traced, "trace handle");
+    handles.push(expect_handle(traced, "trace handle"));
 
     // Empty filter `{}` = all (TraceFilter is all-Option).
     let stats = aimux_trace_aggregate(traced, c("{}").as_ptr(), &mut err);
@@ -1033,6 +1108,9 @@ fn trace_query_exports_return_clean_values() {
 
     aimux_drop_handle(traced);
     aimux_drop_handle(model);
+    for h in handles {
+        aimux_drop_handle(h);
+    }
 }
 
 // ── utility class: recording (6 exports) ────────────────────────────────────
