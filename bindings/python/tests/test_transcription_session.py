@@ -154,6 +154,10 @@ class FakeRealtimeServer:
     def __exit__(self, *args):
         self.proc.terminate()
         self.proc.join(timeout=2)
+        if self.proc.is_alive():
+            # SIGTERM missed the deadline — SIGKILL so tests never leak the
+            # fake-server process.
+            self.proc.kill()
 
 
 SESSION_CREATED = '{"type":"session.created"}'
