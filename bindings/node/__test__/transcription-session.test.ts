@@ -163,6 +163,8 @@ test.serial('server error event rejects with a typed APICallError', async (t) =>
     t.true(err instanceof APICallError)
     // The provider's own message, verbatim (the error adds its prefix).
     t.regex(err.message, /insufficient quota for realtime transcription$/)
+    // The retry verdict stays decidable on the typed error.
+    t.is(err.retryable, false)
 
     // The error terminated the stream: the channel ends normally.
     t.is(await session.nextPart(3000), null)

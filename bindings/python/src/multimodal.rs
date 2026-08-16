@@ -636,7 +636,14 @@ pub fn start_transcription_session(
                     let part = match item {
                         Ok(p) => p,
                         Err(e) => {
-                            let _ = tx.send(Err(e)).await;
+                            // Terminal by contract: providers end the stream
+                            // after an Error part (openai transcription
+                            // breaks right after), so nothing is dropped by
+                            // returning here. New providers must uphold this.
+                            tokio::select! {
+                                res = tx.send(Err(e)) => { let _ = res; }
+                                _ = effective.cancelled() => {}
+                            }
                             return;
                         }
                     };

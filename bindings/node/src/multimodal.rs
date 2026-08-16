@@ -801,7 +801,13 @@ pub async fn start_transcription_session(
                             let part = match item {
                                 Ok(p) => p,
                                 Err(e) => {
-                                    let _ = tx.send(Err(MappedError::from(&e))).await;
+                                    // Terminal by contract: providers end
+                                    // the stream after an Error part, so
+                                    // nothing is dropped by returning here.
+                                    tokio::select! {
+                                        res = tx.send(Err(MappedError::from(&e))) => { let _ = res; }
+                                        _ = effective.cancelled() => {}
+                                    }
                                     return;
                                 }
                             };

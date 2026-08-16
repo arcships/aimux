@@ -220,6 +220,8 @@ class TestTranscriptionSessionBehavior:
                 assert ei.value.args[0].endswith(
                     "insufficient quota for realtime transcription"
                 )
+                # The retry verdict stays decidable on the typed error.
+                assert ei.value.retryable is False
 
                 # The error terminated the stream: the channel ends normally.
                 assert session.next_part(timeout_ms=3000) is None
