@@ -529,10 +529,10 @@ async fn should_handle_mcp_tools_with_annotations() {
         .await
         .expect("should succeed");
 
-    // content: tool-call, text, source, source
-    // (Rust GenerateContent has no ToolResult variant — the TS tool-result is
-    // omitted.)
-    assert_eq!(result.content.len(), 4);
+    // content: tool-call, tool-result, text, source, source — the `mcp_call`
+    // carries an `output`, which is surfaced as the paired ToolResult (the TS
+    // emits it as a separate content item too).
+    assert_eq!(result.content.len(), 5);
     match &result.content[0] {
         GenerateContent::ToolCall {
             tool_call_id,
@@ -547,16 +547,27 @@ async fn should_handle_mcp_tools_with_annotations() {
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the search results."),
-        other => panic!("expected Text at [1], got {other:?}"),
+        GenerateContent::ToolResult {
+            tool_call_id,
+            tool_name,
+            ..
+        } => {
+            assert_eq!(tool_call_id, "mcp_search_test");
+            assert_eq!(tool_name, "search");
+        }
+        other => panic!("expected ToolResult at [1], got {other:?}"),
     }
     match &result.content[2] {
-        GenerateContent::Source { id, .. } => assert_eq!(id, "id-0"),
-        other => panic!("expected Source at [2], got {other:?}"),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the search results."),
+        other => panic!("expected Text at [2], got {other:?}"),
     }
     match &result.content[3] {
-        GenerateContent::Source { id, .. } => assert_eq!(id, "id-1"),
+        GenerateContent::Source { id, .. } => assert_eq!(id, "id-0"),
         other => panic!("expected Source at [3], got {other:?}"),
+    }
+    match &result.content[4] {
+        GenerateContent::Source { id, .. } => assert_eq!(id, "id-1"),
+        other => panic!("expected Source at [4], got {other:?}"),
     }
 }
 
@@ -1067,7 +1078,8 @@ async fn should_handle_function_call_tool_responses() {
         .await
         .expect("should succeed");
 
-    // content: tool-call, text (Rust has no ToolResult in GenerateContent)
+    // content: tool-call, text — a client-executed `function_call` carries no
+    // output, so there is no paired ToolResult.
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
         GenerateContent::ToolCall {

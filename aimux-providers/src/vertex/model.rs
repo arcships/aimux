@@ -211,6 +211,9 @@ impl LanguageModel for VertexModel {
         let provider_metadata = Some(serde_json::json!({
             "googleVertex": {
                 "promptFeedback": data.prompt_feedback,
+                "groundingMetadata": candidate.grounding_metadata,
+                "urlContextMetadata": candidate.url_context_metadata,
+                "safetyRatings": candidate.safety_ratings,
                 "usageMetadata": data.usage_metadata,
                 "finishMessage": candidate.finish_message,
             }
@@ -610,47 +613,52 @@ impl LanguageModel for VertexModel {
 fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
     let mut has_tool_calls = false;
+    let mut source_id = 0usize;
 
-    let Some(parts) = candidate.content.as_ref().and_then(|c| c.parts.as_ref()) else {
-        return (content, has_tool_calls);
-    };
+    let parts = candidate.content.as_ref().and_then(|c| c.parts.as_ref());
 
-    for part in parts {
-        if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-            if !text.is_empty() {
-                content.push(GenerateContent::Text {
-                    text: text.to_string(),
+    if let Some(parts) = parts {
+        for part in parts {
+            if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    content.push(GenerateContent::Text {
+                        text: text.to_string(),
+                        provider_metadata: None,
+                    });
+                }
+            } else if let Some(fc) = part.get("functionCall") {
+                let name = fc
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let id = fc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let input = fc.get("args").cloned().unwrap_or(json!({}));
+                let thought_signature = part
+                    .get("thoughtSignature")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string);
+                content.push(GenerateContent::ToolCall {
+                    tool_call_id: id,
+                    tool_name: name,
+                    input,
+                    provider_executed: None,
+                    dynamic: None,
+                    thought_signature,
                     provider_metadata: None,
                 });
+                has_tool_calls = true;
             }
-        } else if let Some(fc) = part.get("functionCall") {
-            let name = fc
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let id = fc
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let input = fc.get("args").cloned().unwrap_or(json!({}));
-            let thought_signature = part
-                .get("thoughtSignature")
-                .and_then(|v| v.as_str())
-                .map(std::string::ToString::to_string);
-            content.push(GenerateContent::ToolCall {
-                tool_call_id: id,
-                tool_name: name,
-                input,
-                provider_executed: None,
-                dynamic: None,
-                thought_signature,
-                provider_metadata: None,
-            });
-            has_tool_calls = true;
         }
     }
+
+    // Sources are appended after the parts (mirrors TS / google provider).
+    let mut sources = extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
+    content.append(&mut sources);
 
     (content, has_tool_calls)
 }

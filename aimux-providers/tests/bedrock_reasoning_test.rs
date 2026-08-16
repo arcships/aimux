@@ -16,23 +16,6 @@
 //! - `convert-to-amazon-bedrock-chat-messages.test.ts` — the reasoning
 //!   `it(...)` cases (prompt-side replay of signed/unsigned reasoning).
 //!
-//! ## TDD status
-//!
-//! Bedrock reasoning is not yet implemented on the Rust side:
-//! - **Request-side enabling** — `build_request_body` does not translate
-//!   `providerOptions.bedrock.reasoningConfig` into
-//!   `additionalModelRequestFields.thinking` (nor bump `inferenceConfig.maxTokens`
-//!   by `budgetTokens`). The request-body tests below are therefore expected to
-//!   **fail (red)** until that lands.
-//! - **Response-side extraction** — `extract_content` (non-streaming) and the
-//!   `do_stream` event loop ignore `reasoningContent` blocks, so no
-//!   `GenerateContent::Reasoning` / `StreamPart::Reasoning*` is ever emitted.
-//!   Those tests are also expected to **fail (red)**.
-//! - **Prompt-side replay** (`convert_prompt_to_bedrock`) — already implemented
-//!   for *signed* reasoning (it emits `reasoningContent.reasoningText`). Those
-//!   convert tests pass today (green). Unsigned reasoning is omitted, matching
-//!   the TS behaviour.
-//!
 //! Tests that require a data model the Rust crate does not expose are marked
 //! `#[ignore]` with an inline reason:
 //! - **Redacted reasoning replay** — `ContentPart::Reasoning` has no
@@ -41,13 +24,6 @@
 //! - **Foreign-provider reasoning replay** — `ContentPart::Reasoning.signature`
 //!   is provider-agnostic; the converter cannot distinguish an `anthropic`
 //!   signature (which must be dropped) from a `bedrock` one (which is kept).
-//!
-//! Another data-model gap: `StreamPart::ReasoningDelta { id, delta,
-//! provider_metadata }` carries no
-//! `provider_metadata`, so the thinking-block `signature` that the TS stream
-//! attaches to the final (empty) reasoning delta cannot be asserted here. The
-//! streaming tests assert the reasoning *text* deltas and the start/end markers
-//! instead; a comment marks the dropped signature assertion.
 
 use std::collections::HashMap;
 
@@ -190,6 +166,36 @@ fn reasoning_deltas(parts: &[StreamPart]) -> Vec<String> {
         .iter()
         .filter_map(|p| match p {
             StreamPart::ReasoningDelta { delta, .. } => Some(delta.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Reasoning deltas that carry actual text, i.e. excluding the zero-length
+/// deltas that only transport a `signature` / `redactedData` in
+/// `provider_metadata` (upstream emits those with `delta: ''`).
+fn reasoning_text_deltas(parts: &[StreamPart]) -> Vec<String> {
+    reasoning_deltas(parts)
+        .into_iter()
+        .filter(|d| !d.is_empty())
+        .collect()
+}
+
+/// The `signature` values carried on reasoning-block ends, in emission order.
+/// The signature arrives on a trailing text-less delta and is attached to the
+/// concluding `ReasoningEnd`.
+fn reasoning_signatures(parts: &[StreamPart]) -> Vec<String> {
+    parts
+        .iter()
+        .filter_map(|p| match p {
+            StreamPart::ReasoningEnd {
+                provider_metadata: Some(pm),
+                ..
+            } => pm
+                .get("amazonBedrock")
+                .and_then(|b| b.get("signature"))
+                .and_then(|s| s.as_str())
+                .map(std::string::ToString::to_string),
             _ => None,
         })
         .collect()
@@ -631,9 +637,8 @@ async fn bedrock_stream_reasoning_and_text() {
             "contentBlockDelta",
             json!({ "contentBlockIndex": 0, "delta": { "reasoningContent": { "text": "" } } }),
         ),
-        // Signature-only delta — TS emits a reasoning-delta with delta="" and
-        // providerMetadata.signature. `StreamPart::ReasoningDelta` has no
-        // provider_metadata field, so the signature cannot be asserted here.
+        // Signature-only delta — emitted as a reasoning-delta with delta=""
+        // carrying providerMetadata.signature, matching TS.
         (
             "event",
             "contentBlockDelta",
@@ -717,7 +722,7 @@ async fn bedrock_stream_reasoning_and_text() {
     // Reasoning block (id "0"): start, non-empty text deltas, end.
     assert!(has_reasoning_start(&parts), "expected a ReasoningStart");
     assert_eq!(
-        reasoning_deltas(&parts),
+        reasoning_text_deltas(&parts),
         vec![
             "Let me count the r",
             "'s in \"",
@@ -796,8 +801,8 @@ async fn bedrock_stream_reasoning_text_deltas() {
             "contentBlockDelta",
             json!({ "contentBlockIndex": 0, "delta": { "reasoningContent": { "text": " about this problem..." } } }),
         ),
-        // Signature-only delta — TS emits a reasoning-delta with delta="" and
-        // providerMetadata.signature. Not representable on the Rust delta part.
+        // Signature-only delta — emitted as a reasoning-delta with delta=""
+        // carrying providerMetadata.signature, matching TS.
         (
             "event",
             "contentBlockDelta",
@@ -825,12 +830,15 @@ async fn bedrock_stream_reasoning_text_deltas() {
 
     assert!(has_reasoning_start(&parts), "expected a ReasoningStart");
     assert_eq!(
-        reasoning_deltas(&parts),
+        reasoning_text_deltas(&parts),
         vec!["I am thinking", " about this problem..."]
     );
+    assert_eq!(
+        reasoning_signatures(&parts),
+        vec!["abc123signature"],
+        "the thinking-block signature must reach the caller"
+    );
     assert!(has_reasoning_end(&parts), "expected a ReasoningEnd");
-    // NOTE: signature "abc123signature" on the final empty reasoning delta is
-    // not assertable (StreamPart::ReasoningDelta has no provider_metadata).
 
     assert_eq!(
         text_deltas(&parts),

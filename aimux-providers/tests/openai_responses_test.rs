@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK OpenAI Responses API tests.
+//! Rust translations of the AI SDK OpenAI Responses API tests.
 //!
 //! Sources (TS -> Rust):
 //! - `packages/openai/src/responses/openai-responses-language-model.test.ts`
@@ -1234,6 +1234,132 @@ mod do_stream {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
             }
             other => panic!("expected Finish, got {other:?}"),
+        }
+    }
+
+    // -- should carry encrypted reasoning content in stream metadata --
+
+    /// Regression: the streaming reducer captured `encrypted_content` into
+    /// state and then discarded it (`let _ = encrypted;`) — every
+    /// ReasoningEnd carried `provider_metadata: None`, so encrypted
+    /// reasoning could not cross a turn with store=false.
+    #[tokio::test]
+    async fn should_stream_reasoning_encrypted_content_in_metadata() {
+        let server = MockServer::start().await;
+        let chunks = sse_body(&[
+            &sse_event(
+                r#"{"type":"response.created","response":{"id":"resp_enc","created_at":1741269019,"model":"o3-mini-2025-01-31"}}"#,
+            ),
+            &sse_event(
+                r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"rs_1","type":"reasoning","encrypted_content":"enc-blob-123"}}"#,
+            ),
+            &sse_event(
+                r#"{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","summary_index":0,"delta":"thinking"}"#,
+            ),
+            &sse_event(
+                r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"rs_1","type":"reasoning","encrypted_content":"enc-blob-123","summary":[{"type":"summary_text","text":"thinking"}]}}"#,
+            ),
+            &sse_event(
+                r#"{"type":"response.completed","response":{"id":"resp_enc","created_at":1741269019,"model":"o3-mini-2025-01-31","incomplete_details":null,"usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":20,"output_tokens_details":{"reasoning_tokens":20}}}}"#,
+            ),
+        ]);
+        mock_sse_response(&server, &chunks).await;
+
+        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
+        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("should succeed");
+        let parts = collect_stream(result).await;
+
+        let start = parts
+            .iter()
+            .find(|p| matches!(p, StreamPart::ReasoningStart { .. }))
+            .expect("ReasoningStart");
+        match start {
+            StreamPart::ReasoningStart {
+                provider_metadata: Some(m),
+                ..
+            } => {
+                assert_eq!(m["openai"]["itemId"], json!("rs_1"));
+                assert_eq!(
+                    m["openai"]["reasoningEncryptedContent"],
+                    json!("enc-blob-123")
+                );
+            }
+            other => panic!("ReasoningStart must carry metadata, got {other:?}"),
+        }
+
+        let end = parts
+            .iter()
+            .find(|p| matches!(p, StreamPart::ReasoningEnd { .. }))
+            .expect("ReasoningEnd");
+        match end {
+            StreamPart::ReasoningEnd {
+                id,
+                provider_metadata: Some(m),
+            } => {
+                assert_eq!(id, "rs_1:0");
+                assert_eq!(m["openai"]["itemId"], json!("rs_1"));
+                assert_eq!(
+                    m["openai"]["reasoningEncryptedContent"],
+                    json!("enc-blob-123"),
+                    "encrypted_content must ride ReasoningEnd so consume() can round-trip it"
+                );
+            }
+            other => panic!("ReasoningEnd must carry metadata, got {other:?}"),
+        }
+    }
+
+    /// Same path with no summary text at all: the ReasoningEnd must still
+    /// carry the metadata so `consume()` can keep the part in
+    /// response_messages.
+    #[tokio::test]
+    async fn should_stream_reasoning_encrypted_content_without_summary() {
+        let server = MockServer::start().await;
+        let chunks = sse_body(&[
+            &sse_event(
+                r#"{"type":"response.created","response":{"id":"resp_enc2","created_at":1741269019,"model":"o3-mini-2025-01-31"}}"#,
+            ),
+            &sse_event(
+                r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"rs_9","type":"reasoning","encrypted_content":"enc-no-summary"}}"#,
+            ),
+            &sse_event(
+                r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"rs_9","type":"reasoning","encrypted_content":"enc-no-summary","summary":[]}}"#,
+            ),
+            &sse_event(
+                r#"{"type":"response.completed","response":{"id":"resp_enc2","created_at":1741269019,"model":"o3-mini-2025-01-31","incomplete_details":null,"usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0},"output_tokens":20,"output_tokens_details":{"reasoning_tokens":20}}}}"#,
+            ),
+        ]);
+        mock_sse_response(&server, &chunks).await;
+
+        let config = OpenAIConfig::new("test-key").with_base_url(server.uri());
+        let model = OpenAIProvider::new(config).responses_model("o3-mini");
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("should succeed");
+        let parts = collect_stream(result).await;
+
+        let end = parts
+            .iter()
+            .find(|p| matches!(p, StreamPart::ReasoningEnd { .. }))
+            .expect("ReasoningEnd even without any summary text");
+        match end {
+            StreamPart::ReasoningEnd {
+                provider_metadata: Some(m),
+                ..
+            } => {
+                assert_eq!(m["openai"]["itemId"], json!("rs_9"));
+                assert_eq!(
+                    m["openai"]["reasoningEncryptedContent"],
+                    json!("enc-no-summary")
+                );
+            }
+            other => panic!("ReasoningEnd must carry metadata even without summary, got {other:?}"),
         }
     }
 

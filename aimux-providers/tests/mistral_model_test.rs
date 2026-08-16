@@ -995,9 +995,10 @@ async fn should_extract_content_when_message_content_is_object() {
     }
 }
 
-/// TS: "should preserve ordering of mixed thinking and text" — the Rust
-/// `GenerateContent` enum has no reasoning variant, so thinking parts are
-/// skipped and only text parts are surfaced.
+/// TS: "should preserve ordering of mixed thinking and text".
+///
+/// Thinking parts become a `Reasoning` item, pushed ahead of the text to match
+/// the upstream ordering; the text parts are joined as before.
 #[tokio::test]
 async fn should_extract_text_from_mixed_thinking_and_text() {
     let server = MockServer::start().await;
@@ -1035,14 +1036,22 @@ async fn should_extract_text_from_mixed_thinking_and_text() {
         .await
         .expect("should succeed");
 
-    // The Rust `GenerateContent` enum has no reasoning variant; the impl joins
-    // all text parts into a single Text content (thinking parts are skipped).
-    assert_eq!(result.content.len(), 1);
+    // Reasoning first, then the joined text.
+    assert_eq!(result.content.len(), 2);
     match &result.content[0] {
+        GenerateContent::Reasoning { text, .. } => {
+            assert_eq!(
+                text, "First thought.Second thought.",
+                "both thinking parts must survive, in order"
+            );
+        }
+        other => panic!("expected Reasoning at [0], got {other:?}"),
+    }
+    match &result.content[1] {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Partial answer.Final answer.");
         }
-        other => panic!("expected Text, got {other:?}"),
+        other => panic!("expected Text at [1], got {other:?}"),
     }
 }
 

@@ -165,9 +165,44 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
     let mut parts = Vec::new();
     for part in content {
         match part {
-            ContentPart::Text { text, .. } => {
+            ContentPart::Text {
+                text,
+                provider_options,
+            } => {
                 if !text.is_empty() {
-                    parts.push(json!({ "text": text }));
+                    let mut p = json!({ "text": text });
+                    // Echo thoughtSignature from provider_options if present
+                    // (upstream convert-to-google-messages.ts:355-377).
+                    if let Some(sig) = provider_options
+                        .as_ref()
+                        .and_then(|o| o.get("google"))
+                        .and_then(|g| g.get("thoughtSignature"))
+                        .and_then(|v| v.as_str())
+                    {
+                        p["thoughtSignature"] = json!(sig);
+                    }
+                    parts.push(p);
+                }
+            }
+            ContentPart::Reasoning {
+                text,
+                signature,
+                provider_options,
+            } => {
+                if !text.is_empty() {
+                    let mut p = json!({ "text": text, "thought": true });
+                    // Prefer explicit signature field, then fall back to provider_options.
+                    if let Some(sig) = signature.as_ref() {
+                        p["thoughtSignature"] = json!(sig);
+                    } else if let Some(sig) = provider_options
+                        .as_ref()
+                        .and_then(|o| o.get("google"))
+                        .and_then(|g| g.get("thoughtSignature"))
+                        .and_then(|v| v.as_str())
+                    {
+                        p["thoughtSignature"] = json!(sig);
+                    }
+                    parts.push(p);
                 }
             }
             ContentPart::ToolCall {
@@ -194,9 +229,35 @@ fn convert_assistant_parts(content: &[ContentPart]) -> Vec<Value> {
                 }
                 parts.push(part_value);
             }
+            ContentPart::ToolResult {
+                tool_call_id: _,
+                tool_name: _,
+                result,
+                is_error: _,
+                preliminary: _,
+                dynamic: _,
+                provider_options,
+            } => {
+                // Provider-executed tool result in an assistant message —
+                // upstream convert-to-google-messages.ts:518-540.
+                // If it carries serverToolCallId + serverToolType, emit as
+                // a toolResponse; otherwise skip (upstream returns undefined).
+                if let Some(opts) = provider_options.as_ref().and_then(|o| o.get("google")) {
+                    let server_id = opts.get("serverToolCallId").and_then(|v| v.as_str());
+                    let server_type = opts.get("serverToolType").and_then(|v| v.as_str());
+                    if let (Some(sid), Some(st)) = (server_id, server_type) {
+                        parts.push(json!({
+                            "toolResponse": {
+                                "toolType": st,
+                                "response": result,
+                                "id": sid,
+                            }
+                        }));
+                    }
+                }
+            }
             _ => {
-                // Files / images in assistant messages aren't supported by
-                // the Rust data model in a meaningful way here; skip them.
+                // Files / images in assistant messages: skip.
             }
         }
     }

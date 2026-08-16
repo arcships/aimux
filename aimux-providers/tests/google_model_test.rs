@@ -1231,6 +1231,62 @@ mod do_stream {
         );
     }
 
+    // ── empty-text thoughtSignature while a reasoning block is open ───────────
+    // Regression: the signature used to be silently dropped unless a *text*
+    // block was open. Gemini thinking models emit the signature on an
+    // empty-text part right after the thought text — while the reasoning
+    // block is the open one.
+
+    #[tokio::test]
+    async fn should_stream_empty_text_signature_onto_open_reasoning_block() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"text":"Thinking hard","thought":true}],"role":"model"},"index":0}],"responseId":"resp-3"}"#,
+            ),
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"text":"","thoughtSignature":"sig-on-empty-text"}],"role":"model"},"index":0}],"responseId":"resp-3"}"#,
+            ),
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"text":"The answer"}],"role":"model"},"finishReason":"STOP","index":0}],"responseId":"resp-3"}"#,
+            ),
+        ]);
+        mock_sse_response(&server, "gemini-2.5-pro", &body).await;
+
+        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = GoogleProvider::new(config);
+        let model = provider.model("gemini-2.5-pro");
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        // The reasoning block opens with id "0" and receives the thought text.
+        let reasoning_delta = parts.iter().find(
+            |p| matches!(p, StreamPart::ReasoningDelta { delta, .. } if delta == "Thinking hard"),
+        );
+        assert!(
+            reasoning_delta.is_some(),
+            "thought text should stream as ReasoningDelta"
+        );
+
+        // The signature on the empty-text part must attach to the open
+        // reasoning block as a zero-length ReasoningDelta — not be dropped.
+        let sig_delta = parts.iter().find(|p| {
+            matches!(p, StreamPart::ReasoningDelta { id, delta, provider_metadata }
+                if id == "0"
+                && delta.is_empty()
+                && provider_metadata.as_ref().and_then(|m| m["google"]["thoughtSignature"].as_str())
+                    == Some("sig-on-empty-text"))
+        });
+        assert!(
+            sig_delta.is_some(),
+            "empty-text thoughtSignature must ride the open reasoning block, got {parts:?}"
+        );
+    }
+
     // ── should expose usage from the final chunk ──────────────────────────────
 
     #[tokio::test]

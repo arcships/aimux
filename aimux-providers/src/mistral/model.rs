@@ -265,6 +265,17 @@ impl LanguageModel for MistralModel {
         // Build content array.
         let mut content = Vec::new();
 
+        // Reasoning content (from thinking parts in array content).
+        // Pushed before text to match upstream ordering (reasoning → text).
+        if let Some(r) = extract_reasoning_content(&choice.message.content)
+            && !r.is_empty()
+        {
+            content.push(GenerateContent::Reasoning {
+                text: r,
+                provider_metadata: None,
+            });
+        }
+
         // Content can be a string (legacy) or an array of typed parts.
         if let Some(text) = extract_text_content(&choice.message.content)
             && !text.is_empty()
