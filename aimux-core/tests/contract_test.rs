@@ -6,7 +6,8 @@
 
 use aimux_core::generate::GenerateTextOptions;
 use aimux_core::message::{ModelMessage, Role};
-use aimux_core::options::ToolChoice;
+use aimux_core::options::{TimeoutConfiguration, ToolChoice};
+use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 use serde_json::Value;
@@ -16,7 +17,6 @@ use serde_json::Value;
 struct Fixture {
     name: String,
     #[serde(rename = "type")]
-    #[allow(dead_code)]
     ty: String,
     json: String,
     #[allow(dead_code)]
@@ -172,6 +172,56 @@ fn generate_text_options_session_id_wire_format() {
     assert_eq!(back.session_id.as_deref(), Some("sess-1"));
 }
 
+/// Look up a fixture's expected JSON by name, failing loudly if it is gone.
+///
+/// This is the seam that makes Rust — the wire authority — actually consume the
+/// shared fixture file instead of only hardcoding its own expectations. Without
+/// it a fixture can drift away from Rust's real output and only the *other*
+/// bindings go red, which points the blame at exactly the wrong side.
+fn fixture_json(name: &str) -> String {
+    load_fixtures()
+        .into_iter()
+        .find(|f| f.name == name)
+        .unwrap_or_else(|| panic!("fixture '{name}' not found in wire-format.json"))
+        .json
+}
+
+/// Every numeric field carries a non-null value, so each binding's declared
+/// types are exercised rather than hidden behind `null`.
+///
+/// `top_k` is deliberately fractional. Rust is `Option<f64>` — matching the
+/// upstream AI SDK, whose `topK?: number` carries no integer constraint — so a
+/// binding that declares it as an integer cannot round-trip this fixture.
+#[test]
+fn generate_text_options_numeric_types_wire_format() {
+    let opts = GenerateTextOptions {
+        max_output_tokens: Some(256),
+        temperature: Some(0.7),
+        top_p: Some(0.95),
+        top_k: Some(40.5),
+        presence_penalty: Some(0.5),
+        frequency_penalty: Some(-0.5),
+        seed: Some(42),
+        max_retries: Some(3),
+        ..Default::default()
+    };
+    let expected = fixture_json("generate_text_options_numeric_types");
+    assert_serialize(&opts, &expected, "generate_text_options_numeric_types");
+
+    // Round-trip: the fractional top_k must survive as a fraction. An integer
+    // field would truncate 40.5 to 40 and still "pass" a name-only check.
+    let back: GenerateTextOptions = serde_json::from_str(&expected).unwrap();
+    assert_eq!(back.top_k, Some(40.5), "top_k must round-trip as f64");
+    assert_eq!(
+        back.frequency_penalty,
+        Some(-0.5),
+        "penalties must stay signed"
+    );
+    assert_eq!(back.max_output_tokens, Some(256));
+    assert_eq!(back.seed, Some(42));
+    assert_eq!(back.max_retries, Some(3));
+}
+
 #[test]
 fn stream_part_text_delta_wire_format() {
     let part = StreamPart::TextDelta {
@@ -222,14 +272,61 @@ fn model_message_text_wire_format() {
     );
 }
 
+/// Deserialize one fixture into its Rust type, re-serialize, and compare the
+/// result against the fixture's own JSON.
+fn assert_fixture_matches_rust<T>(fixture: &Fixture)
+where
+    T: serde::Serialize + serde::de::DeserializeOwned,
+{
+    let parsed: T = serde_json::from_str(&fixture.json).unwrap_or_else(|e| {
+        panic!(
+            "fixture '{}' ({}) does not deserialize into its Rust type: {e}\n  fixture: {}",
+            fixture.name, fixture.ty, fixture.json
+        )
+    });
+    let rust_json = serde_json::to_string(&parsed).unwrap();
+    let actual: Value = serde_json::from_str(&rust_json).unwrap();
+    let expected: Value = serde_json::from_str(&fixture.json).unwrap();
+    assert_eq!(
+        actual, expected,
+        "fixture '{}' does not match Rust's own serialization\n  fixture: {}\n  rust:    {}",
+        fixture.name, fixture.json, rust_json
+    );
+}
+
+/// Every fixture must round-trip through the Rust type it claims to describe.
+///
+/// Rust is the wire authority: the other bindings validate themselves against
+/// this file, so a fixture describing a shape Rust never emits sends four
+/// bindings chasing a fiction. The predecessor of this test only checked that
+/// the fixture's JSON *parsed*, which is why the `session_id: null` drift
+/// survived — `session_id` is `skip_serializing_if = "Option::is_none"`, so
+/// Rust omits the key entirely.
+///
+/// A fixture whose `type` has no arm here fails rather than being skipped:
+/// silent skipping is how a net grows holes.
 #[test]
-fn all_fixtures_have_matching_rust_serialization() {
+fn all_fixtures_match_rust_serialization() {
     let fixtures = load_fixtures();
     assert!(!fixtures.is_empty(), "no fixtures loaded");
 
-    for fixture in &fixtures {
-        // Verify the expected JSON is valid
-        let _: Value = serde_json::from_str(&fixture.json)
-            .unwrap_or_else(|e| panic!("fixture '{}' has invalid JSON: {e}", fixture.name));
+    for f in &fixtures {
+        match f.ty.as_str() {
+            "ToolChoice" => assert_fixture_matches_rust::<ToolChoice>(f),
+            "StreamPart" => assert_fixture_matches_rust::<StreamPart>(f),
+            "GenerateContent" => assert_fixture_matches_rust::<GenerateContent>(f),
+            "GenerateTextOptions" => assert_fixture_matches_rust::<GenerateTextOptions>(f),
+            "TimeoutConfiguration" => assert_fixture_matches_rust::<TimeoutConfiguration>(f),
+            "Role" => assert_fixture_matches_rust::<Role>(f),
+            "ModelMessage" => assert_fixture_matches_rust::<ModelMessage>(f),
+            "FinishReasonUnified" => assert_fixture_matches_rust::<FinishReasonUnified>(f),
+            "ReasoningEffort" => assert_fixture_matches_rust::<ReasoningEffort>(f),
+            other => panic!(
+                "fixture '{}' declares type '{other}', which has no round-trip arm in \
+                 all_fixtures_match_rust_serialization — wire it up so the fixture is \
+                 actually pinned to Rust",
+                f.name
+            ),
+        }
     }
 }

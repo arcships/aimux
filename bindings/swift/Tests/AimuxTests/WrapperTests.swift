@@ -273,6 +273,15 @@ final class WrapperTests: XCTestCase {
           "finish_reason": {"unified":"stop","raw":"stop"},
           "usage": {"input_tokens":{"total":3},"output_tokens":{"total":2}},
           "warnings": [],
+          "reasoning": [],
+          "reasoning_text": "",
+          "sources": [],
+          "files": [],
+          "response_messages": [],
+          "raw_finish_reason": "stop",
+          "provider_metadata": null,
+          "response": {"id":"resp_1","timestamp":null,"model_id":"gpt-4o"},
+          "total_usage": {"input_tokens":{"total":3},"output_tokens":{"total":2}},
           "raw": {
             "content": [
               {"Text":{"text":"hello"}},
@@ -306,11 +315,11 @@ final class WrapperTests: XCTestCase {
 
 // MARK: - Helpers
 
-/// Drain an `AsyncStream<StreamPart>` into an array (the mock stream completes
+/// Drain an `AsyncThrowingStream<StreamPart, Error>` into an array (the mock stream completes
 /// synchronously inside `streamText`, so this returns promptly).
-private func collect(_ stream: AsyncStream<StreamPart>) async throws -> [StreamPart] {
+private func collect(_ stream: AsyncThrowingStream<StreamPart, Error>) async throws -> [StreamPart] {
     var parts: [StreamPart] = []
-    for await part in stream { parts.append(part) }
+    for try await part in stream { parts.append(part) }
     return parts
 }
 

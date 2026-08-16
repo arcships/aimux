@@ -1665,7 +1665,7 @@ public final class Types {
         @JsonProperty("temperature") private Double temperature;
         @JsonProperty("stop_sequences") private List<String> stopSequences;
         @JsonProperty("top_p") private Double topP;
-        @JsonProperty("top_k") private Long topK;
+        @JsonProperty("top_k") private Double topK;
         @JsonProperty("presence_penalty") private Double presencePenalty;
         @JsonProperty("frequency_penalty") private Double frequencyPenalty;
         @JsonProperty("response_format") private JsonNode responseFormat;
@@ -1686,7 +1686,7 @@ public final class Types {
         GenerateTextOptions() {}
 
         private GenerateTextOptions(Long maxOutputTokens, Double temperature, List<String> stopSequences,
-                                    Double topP, Long topK, Double presencePenalty, Double frequencyPenalty,
+                                    Double topP, Double topK, Double presencePenalty, Double frequencyPenalty,
                                     JsonNode responseFormat, Long seed, List<Tool> tools, ToolChoice toolChoice,
                                     Map<String, String> headers, Map<String, JsonNode> providerOptions,
                                     ReasoningEffort reasoning, String instructions,
@@ -1718,7 +1718,7 @@ public final class Types {
         public Double getTemperature() { return temperature; }
         public List<String> getStopSequences() { return stopSequences; }
         public Double getTopP() { return topP; }
-        public Long getTopK() { return topK; }
+        public Double getTopK() { return topK; }
         public Double getPresencePenalty() { return presencePenalty; }
         public Double getFrequencyPenalty() { return frequencyPenalty; }
         public JsonNode getResponseFormat() { return responseFormat; }
@@ -1742,7 +1742,7 @@ public final class Types {
             private Double temperature;
             private List<String> stopSequences;
             private Double topP;
-            private Long topK;
+            private Double topK;
             private Double presencePenalty;
             private Double frequencyPenalty;
             private JsonNode responseFormat;
@@ -1763,7 +1763,7 @@ public final class Types {
             public Builder temperature(Double v) { this.temperature = v; return this; }
             public Builder stopSequences(List<String> v) { this.stopSequences = v; return this; }
             public Builder topP(Double v) { this.topP = v; return this; }
-            public Builder topK(Long v) { this.topK = v; return this; }
+            public Builder topK(Double v) { this.topK = v; return this; }
             public Builder presencePenalty(Double v) { this.presencePenalty = v; return this; }
             public Builder frequencyPenalty(Double v) { this.frequencyPenalty = v; return this; }
             public Builder responseFormat(JsonNode v) { this.responseFormat = v; return this; }

@@ -36,8 +36,8 @@
   {
     "name": "stream_part_finish",
     "type": "StreamPart",
-    "json": "{\"Finish\":{\"finish_reason\":{\"unified\":{\"stop\":null},\"raw\":null},\"usage\":{\"input_tokens\":{\"total\":10},\"output_tokens\":{\"total\":20}},\"provider_metadata\":null}}",
-    "description": "Finish stream part with usage"
+    "json": "{\"Finish\":{\"finish_reason\":{\"unified\":\"stop\",\"raw\":null},\"usage\":{\"input_tokens\":{\"total\":10},\"output_tokens\":{\"total\":20}},\"provider_metadata\":null}}",
+    "description": "Finish stream part with usage. `unified` is the bare string \"stop\" — the same shape the finish_reason_unified_stop fixture pins — not an externally-tagged object; Rust never emits the object form."
   },
   {
     "name": "stream_part_stream_start",
@@ -55,21 +55,75 @@
   {
     "name": "generate_text_options_default",
     "type": "GenerateTextOptions",
-    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":null,\"session_id\":null}",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":null}",
     "description": "Default GenerateTextOptions with all fields null"
   },
   {
     "name": "generate_text_options_with_session_id",
     "type": "GenerateTextOptions",
-    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"session_id\":\"sess-1\"}",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"session_id\":\"sess-1\",\"include_raw_chunks\":null}",
     "description": "GenerateTextOptions with explicit session_id (RFC-0024)"
   },
   {
     "name": "generate_text_options_include_raw_chunks_true",
     "type": "GenerateTextOptions",
     "rust_value": "",
-    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":true,\"session_id\":null}",
+    "json": "{\"max_output_tokens\":null,\"temperature\":null,\"stop_sequences\":null,\"top_p\":null,\"top_k\":null,\"presence_penalty\":null,\"frequency_penalty\":null,\"response_format\":null,\"seed\":null,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":null,\"timeout\":null,\"include_raw_chunks\":true}",
     "description": "GenerateTextOptions with include_raw_chunks=true (RFC-0016 M2 true-case)"
+  },
+  {
+    "name": "generate_text_options_numeric_types",
+    "type": "GenerateTextOptions",
+    "json": "{\"max_output_tokens\":256,\"temperature\":0.7,\"stop_sequences\":null,\"top_p\":0.95,\"top_k\":40.5,\"presence_penalty\":0.5,\"frequency_penalty\":-0.5,\"response_format\":null,\"seed\":42,\"tools\":null,\"tool_choice\":null,\"headers\":null,\"provider_options\":null,\"reasoning\":null,\"instructions\":null,\"body_overrides\":null,\"max_retries\":3,\"timeout\":null,\"include_raw_chunks\":null}",
+    "description": "Numeric fields carry non-null, type-discriminating values so every binding's declared types are exercised. top_k is deliberately FRACTIONAL: Rust is Option<f64> (matching the upstream AI SDK's `topK?: number`), so a binding that declares it as an integer cannot hold this value. Integer fields (max_output_tokens u32, seed u64, max_retries u32) and a negative penalty pin the signedness. This case exists to lock TYPES, not to model a realistic call."
+  },
+  {
+    "name": "generate_content_text",
+    "type": "GenerateContent",
+    "json": "{\"Text\":{\"text\":\"Hello\",\"provider_metadata\":{\"openai\":{\"itemId\":\"msg_1\"}}}}",
+    "description": "Text content with provider_metadata present. GenerateContent is externally tagged, so every binding sees a single-key object whose key is the variant name."
+  },
+  {
+    "name": "generate_content_text_no_metadata",
+    "type": "GenerateContent",
+    "json": "{\"Text\":{\"text\":\"Hello\"}}",
+    "description": "Text without provider_metadata: the key is ABSENT, not null (the field is skip_serializing_if = Option::is_none). Pins the omission so a binding that expects a required field is caught."
+  },
+  {
+    "name": "generate_content_reasoning_no_metadata",
+    "type": "GenerateContent",
+    "json": "{\"Reasoning\":{\"text\":\"Thinking\",\"provider_metadata\":null}}",
+    "description": "KNOWN ASYMMETRY, pinned deliberately: Reasoning.provider_metadata has NO skip_serializing_if, so unlike Text (see generate_content_text_no_metadata) it emits an explicit null. The two neighbouring fixtures therefore disagree on purpose — that is the drift, recorded rather than hidden. The ticket that makes the attributes symmetric must update this fixture in the same commit; if you are here because this case went red, that is the sentinel working, not a broken test."
+  },
+  {
+    "name": "generate_content_tool_call",
+    "type": "GenerateContent",
+    "json": "{\"ToolCall\":{\"tool_call_id\":\"call_1\",\"tool_name\":\"get_weather\",\"input\":{\"city\":\"Paris\"},\"provider_executed\":true,\"thought_signature\":\"sig_abc\"}}",
+    "description": "Tool call with provider_executed and thought_signature set; dynamic and provider_metadata unset and therefore absent. `input` is an object here — the ticket that moves tool-call input to a JSON string will change this fixture, which is the point."
+  },
+  {
+    "name": "generate_content_source",
+    "type": "GenerateContent",
+    "json": "{\"Source\":{\"id\":\"src_1\",\"source_type\":\"url\",\"url\":\"https://example.com/a\",\"title\":\"Example\"}}",
+    "description": "Source/citation. Note url and title carry no skip_serializing_if, so they are always emitted (null when unset) — unlike provider_metadata, which is omitted when unset."
+  },
+  {
+    "name": "generate_content_source_unset_optionals",
+    "type": "GenerateContent",
+    "json": "{\"Source\":{\"id\":\"src_2\",\"source_type\":\"document\",\"url\":null,\"title\":null}}",
+    "description": "Source with url and title unset. They carry no skip_serializing_if, so they must appear as explicit nulls — while provider_metadata, which does carry it, stays absent in the same object. Pinning the unset form is what makes that difference load-bearing: without this case, adding skip_serializing_if to url/title would silently turn null into an omitted key and no fixture would notice."
+  },
+  {
+    "name": "generate_content_file",
+    "type": "GenerateContent",
+    "json": "{\"File\":{\"data\":{\"Data\":{\"data\":{\"Base64\":\"aGk=\"}}},\"media_type\":\"image/png\"}}",
+    "description": "Generated file. `data` is a doubly-nested externally-tagged union (FileData::Data wrapping FileBytes::Base64) — the shape every binding must reproduce, and the one the four-file-variant merge will collapse."
+  },
+  {
+    "name": "generate_content_tool_result",
+    "type": "GenerateContent",
+    "json": "{\"ToolResult\":{\"tool_call_id\":\"call_1\",\"tool_name\":\"web_search\",\"result\":{\"answer\":42},\"is_error\":false}}",
+    "description": "Provider-executed tool result. is_error is false (present); preliminary, dynamic and provider_metadata are unset and absent."
   },
   {
     "name": "timeout_configuration_values",

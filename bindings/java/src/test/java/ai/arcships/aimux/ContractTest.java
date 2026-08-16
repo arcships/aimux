@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,8 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * shared fixtures in {@code contract-tests/fixtures/wire-format.json} (the same
  * fixtures used by the Rust contract tests and the Node runner).
  *
- * <p>Two deliberate deviations from a strict "deserialize → re-serialize == fixture"
- * round-trip, documented here because they reflect the binding's real behavior:
+ * <p>One deliberate deviation from a strict "deserialize → re-serialize == fixture"
+ * round-trip, documented here because it reflects the binding's real behavior:
  *
  * <ol>
  *   <li><b>Null-field omission.</b> {@link Types.AimuxJson} uses
@@ -24,17 +26,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       encode. {@code stream_part_stream_start} carries {@code "warnings": []},
  *       an empty (non-null) list, so re-serialization keeps it — the round-trip
  *       is exact.</li>
- *   <li><b>Finish's {@code {"unified":{"stop":null}}}.</b> The
- *       {@code stream_part_finish} fixture encodes the finish reason as an
- *       externally-tagged object, but the actual Rust wire format for
- *       {@code FinishReasonUnified} is the bare string {@code "stop"} (see
- *       {@code aimux-core/tests/contract_test.rs::finish_reason_unified_wire_format}),
- *       and the Java enum mirrors that string form. The fixture therefore cannot
- *       be deserialized by <em>any</em> binding (Rust serde would reject the
- *       object form too). This test asserts the fixture's JSON shape at the
- *       wire level and separately proves the Java {@link Types.StreamPart.Finish}
- *       round-trips with the binding's own {@code "unified":"stop"} encoding.</li>
  * </ol>
+ *
+ * <p>A second "deviation" used to be documented here: the {@code stream_part_finish}
+ * fixture encoded the finish reason as an externally-tagged object,
+ * {@code {"unified":{"stop":null}}}, which no binding could deserialize. That was
+ * not a deviation — the fixture described a shape Rust never emits (its wire form
+ * is the bare string {@code "stop"}), and nothing pinned the fixture to Rust's real
+ * output, so the drift survived as a documented "expected failure". The fixture is
+ * now correct and this test deserializes it like any other.
  *
  * <p>These tests are pure serialization tests: no native library is loaded.
  */
@@ -204,6 +204,84 @@ class ContractTest {
         assertThat(decoded.getSessionId()).isEqualTo("sess-1");
     }
 
+    /**
+     * Every {@code GenerateContent} fixture decodes into its concrete variant.
+     *
+     * <p>The variant type is asserted, not merely the absence of an exception.
+     * {@code GenerateContent} falls back to {@link Types.GenerateContent.Unknown}
+     * for forward compatibility, so a variant whose shape drifted would still
+     * decode — silently, as {@code Unknown}. Only naming the expected class
+     * catches that. The fixture count is asserted so a newly added fixture
+     * cannot slip past this test unnoticed.
+     */
+    @Test
+    void generateContentFixturesDecodeIntoTheirVariants() throws Exception {
+        JsonNode fixtures = loadFixtures();
+        Map<String, Types.GenerateContent> byName = new LinkedHashMap<>();
+        for (JsonNode f : fixtures) {
+            if (!"GenerateContent".equals(f.get("type").asText())) {
+                continue;
+            }
+            String json = f.get("json").asText();
+            byName.put(
+                f.get("name").asText(),
+                Types.AimuxJson.MAPPER.readValue(json, Types.GenerateContent.class));
+        }
+        assertThat(byName).hasSize(8);
+
+        assertThat(byName.get("generate_content_text"))
+            .isInstanceOf(Types.GenerateContent.Text.class);
+        assertThat(byName.get("generate_content_reasoning_no_metadata"))
+            .isInstanceOf(Types.GenerateContent.Reasoning.class);
+
+        // The shapes a parse-only check leaves invisible: the tool-call input,
+        // the nested file union, and Source's optionals.
+        Types.GenerateContent.ToolCall toolCall =
+            (Types.GenerateContent.ToolCall) byName.get("generate_content_tool_call");
+        assertThat(toolCall.getToolCallId()).isEqualTo("call_1");
+        assertThat(toolCall.getInput().path("city").asText()).isEqualTo("Paris");
+        assertThat(toolCall.getProviderExecuted()).isTrue();
+
+        Types.GenerateContent.File file =
+            (Types.GenerateContent.File) byName.get("generate_content_file");
+        assertThat(file.getMediaType()).isEqualTo("image/png");
+        assertThat(file.getData()).isNotNull();
+
+        Types.GenerateContent.Source source =
+            (Types.GenerateContent.Source) byName.get("generate_content_source_unset_optionals");
+        assertThat(source.getUrl()).isNull();
+        assertThat(source.getTitle()).isNull();
+    }
+
+    /**
+     * The regression lock for {@code topK}, which this binding declared as
+     * {@code Long} against an {@code f64} wire.
+     *
+     * <p>The values are asserted explicitly, and for Java that is not a
+     * stylistic choice: Jackson coerces a {@code 40.5} token into a
+     * {@code Long} by truncating it to {@code 40} rather than by failing, so a
+     * decode-only test would still pass if someone restored the integer type.
+     * Only comparing the decoded value catches that. {@code topK} is the field
+     * that was wrong; the rest are asserted so narrowing any single numeric
+     * type is caught here too.
+     */
+    @Test
+    void generateTextOptionsNumericTypesDecodeWithFullPrecision() throws Exception {
+        JsonNode fixtures = loadFixtures();
+        String json = fixtureJson(fixtures, "generate_text_options_numeric_types");
+        Types.GenerateTextOptions opts =
+            Types.AimuxJson.MAPPER.readValue(json, Types.GenerateTextOptions.class);
+
+        assertThat(opts.getTopK()).isEqualTo(40.5);
+        assertThat(opts.getFrequencyPenalty()).isEqualTo(-0.5);
+        assertThat(opts.getTemperature()).isEqualTo(0.7);
+        assertThat(opts.getTopP()).isEqualTo(0.95);
+        assertThat(opts.getPresencePenalty()).isEqualTo(0.5);
+        assertThat(opts.getMaxOutputTokens()).isEqualTo(256L);
+        assertThat(opts.getSeed()).isEqualTo(42L);
+        assertThat(opts.getMaxRetries()).isEqualTo(3L);
+    }
+
     @Test
     void streamPartFinishWireShapeAndJavaRoundTrip() throws Exception {
         JsonNode fixtures = loadFixtures();
@@ -214,20 +292,23 @@ class ContractTest {
         assertThat(finishNode.size()).isEqualTo(1);
         JsonNode inner = finishNode.get("Finish");
         assertThat(inner).isNotNull();
-        assertThat(inner.path("finish_reason").path("unified").path("stop").isNull()).isTrue();
+        assertThat(inner.path("finish_reason").path("unified").asText()).isEqualTo("stop");
         assertThat(inner.path("usage").path("input_tokens").path("total").asInt()).isEqualTo(10);
         assertThat(inner.path("usage").path("output_tokens").path("total").asInt()).isEqualTo(20);
         assertThat(inner.path("provider_metadata").isNull()).isTrue();
 
-        // 2) The Java binding cannot deserialize the fixture's object-form enum
-        //    ({"unified":{"stop":null}}); its FinishReasonUnified is the string
-        //    wire format "stop" — the same as Rust's actual serialization.
-        try {
+        // 2) The Java binding deserializes the shared fixture itself. It could not
+        //    before: the fixture carried an externally-tagged enum form,
+        //    {"unified":{"stop":null}}, that Rust never emits, and this test used
+        //    to assert that failure as if it were the contract.
+        Types.StreamPart fromFixture =
             Types.AimuxJson.MAPPER.readValue(json, Types.StreamPart.class);
-            throw new AssertionError("expected MismatchedInputException for object-form enum");
-        } catch (com.fasterxml.jackson.databind.exc.MismatchedInputException expected) {
-            // expected: the fixture's externally-tagged enum form is not the wire format
-        }
+        assertThat(fromFixture).isInstanceOf(Types.StreamPart.Finish.class);
+        Types.StreamPart.Finish fixtureFinish = (Types.StreamPart.Finish) fromFixture;
+        assertThat(fixtureFinish.getFinishReason().getUnified())
+            .isEqualTo(Types.FinishReasonUnified.STOP);
+        assertThat(fixtureFinish.getUsage().getInputTokens().getTotal()).isEqualTo(10L);
+        assertThat(fixtureFinish.getUsage().getOutputTokens().getTotal()).isEqualTo(20L);
 
         // 3) Java-native Finish round-trips with the binding's own encoding.
         Types.StreamPart.Finish nativeFinish = Types.StreamPart.Finish.builder()

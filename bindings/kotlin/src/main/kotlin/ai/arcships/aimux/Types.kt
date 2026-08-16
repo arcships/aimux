@@ -583,7 +583,7 @@ data class GenerateTextOptions(
     val temperature: Double? = null,
     @SerialName("stop_sequences") val stopSequences: List<String>? = null,
     @SerialName("top_p") val topP: Double? = null,
-    @SerialName("top_k") val topK: Long? = null,
+    @SerialName("top_k") val topK: Double? = null,
     @SerialName("presence_penalty") val presencePenalty: Double? = null,
     @SerialName("frequency_penalty") val frequencyPenalty: Double? = null,
     /** Response format. Untyped ([JsonElement]) — use a `ResponseFormat` JSON object if needed. */
