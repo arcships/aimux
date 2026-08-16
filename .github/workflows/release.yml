@@ -345,6 +345,62 @@ jobs:
           name: ${{ matrix.artifact }}
           path: staging/${{ matrix.artifact }}
 
+  # ── aimux-web console + CLI: self-contained binaries with the embedded
+  #    frontend, shipped on the GitHub Release so users download one file and
+  #    run it (no cargo / npm step). The CLI tools ride along on the same
+  #    matrix — they share the heavy provider dependency tree. ───────────────
+  console-build:
+    name: aimux-web (${{ matrix.settings.target }})
+    runs-on: ${{ matrix.settings.host }}
+    if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: -linux-x64
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            suffix: -macos-arm64
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: -windows-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build frontend
+        working-directory: tools/aimux-web/web
+        run: |
+          npm ci
+          npm run build
+      - name: Build console (embedded frontend)
+        run: cargo build --release --target ${{ matrix.settings.target }} -p aimux-web --features embed-frontend
+      - name: Build CLI tools
+        run: cargo build --release --target ${{ matrix.settings.target }} -p aimux-cli -p aimux-replay
+      - name: Stage binaries with platform suffix
+        shell: bash
+        run: |
+          mkdir -p staging
+          EXT=""; [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
+          cp "target/${{ matrix.settings.target }}/release/aimux-web$EXT" "staging/aimux-web${{ matrix.settings.suffix }}"
+          for tool in aimux-cli aimux-replay; do
+            if [ -f "target/${{ matrix.settings.target }}/release/$tool$EXT" ]; then
+              cp "target/${{ matrix.settings.target }}/release/$tool$EXT" "staging/$tool${{ matrix.settings.suffix }}"
+            fi
+          done
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aimux-web-${{ matrix.settings.target }}
+          path: staging/*
+
   # ── Flutter mobile artifacts: Android .so per ABI + iOS .xcframework ──────
   # Built at release time and embedded into the Flutter plugin package by the
   # flutter-publish job, so the pub.dev artifact ships with its native core.
@@ -494,7 +550,7 @@ jobs:
   # ── GitHub Release: aggregate all binary artifacts (C ABI libs + Go .a) ──
   github-release:
     name: Create GitHub Release
-    needs: [go-build, ffi-build, flutter-ffi-mobile]
+    needs: [go-build, ffi-build, console-build, flutter-ffi-mobile]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event.inputs.artifacts == 'true'
     steps:

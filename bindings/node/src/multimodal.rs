@@ -792,7 +792,25 @@ pub async fn start_transcription_session(
                         // Immediate delivery when capacity allows (terminal
                         // errors are never preempted); abort only unblocks a
                         // full channel.
-                        while let Some(part) = stream.next().await {
+                        while let Some(item) = stream.next().await {
+                            // In-stream errors reject from `nextPart` (issue
+                            // #145, option A) instead of being smuggled through
+                            // the data channel as a serialized `{"Err": ...}`
+                            // part — matching the FFI session (Err items) and
+                            // the other six bindings' exception sentinels.
+                            let part = match item {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    // Terminal by contract: providers end
+                                    // the stream after an Error part, so
+                                    // nothing is dropped by returning here.
+                                    tokio::select! {
+                                        res = tx.send(Err(MappedError::from(&e))) => { let _ = res; }
+                                        _ = effective.cancelled() => {}
+                                    }
+                                    return;
+                                }
+                            };
                             let json = match serde_json::to_string(&part) {
                                 Ok(j) => j,
                                 Err(e) => {

@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use ts_rs::TS;
 
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
 
@@ -31,7 +32,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub const RECORDING_SCHEMA: u32 = 1;
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Recording {
     /// 格式版本。
     pub schema: u32,
@@ -107,7 +109,8 @@ impl Recording {
 }
 
 /// ① 输入侧:完整调用参数,足以重建 generate_text 调用。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct InputRecord {
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
@@ -129,7 +132,8 @@ impl InputRecord {
 }
 
 /// ② 配置侧:provider 身份(请求回放重建用)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ProviderRecord {
     /// `model.provider()`,如 "openai"。
     pub provider: String,
@@ -161,7 +165,8 @@ impl ProviderRecord {
 }
 
 /// ③ HTTP 侧:单次 attempt 的 wire 交换。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct HttpExchange {
     /// 第几次重试(0=首次);per-attempt 递增。
     pub attempt: u32,
@@ -179,7 +184,8 @@ fn default_finalized() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
@@ -189,7 +195,8 @@ pub struct HttpRecord {
     pub body: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ResponseRecord {
     pub status: u16,
     pub headers: Vec<(String, String)>,
@@ -198,18 +205,24 @@ pub struct ResponseRecord {
     pub stream_chunks: Option<usize>,
     /// 首字节延迟(流式)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null")]
     pub ttfb_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TimingRecord {
+    /// ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
+    #[ts(type = "number")]
     pub latency_ms: u64,
+    #[ts(type = "number | null")]
     pub ttfb_ms: Option<u64>,
 }
 
 /// 调用终结状态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum OutcomeStatus {
     /// 未到(内部哨兵,不作为最终输出)。
     #[default]
@@ -224,7 +237,8 @@ pub enum OutcomeStatus {
 }
 
 /// 最终结果摘要。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct OutcomeRecord {
     pub status: OutcomeStatus,
     pub finish_reason: Option<String>,
@@ -1189,6 +1203,28 @@ impl RingRecorder {
         }
         Ok(())
     }
+
+    /// 全部已完成录制(最旧在前)。Web 控制台列表用(RFC-0029)。
+    pub fn completed(&self) -> Vec<Recording> {
+        self.inner
+            .lock()
+            .unwrap()
+            .completed
+            .iter()
+            .cloned()
+            .collect()
+    }
+
+    /// 按 `call_id` 取一条已完成录制。Web 控制台详情用(RFC-0029)。
+    pub fn get(&self, call_id: &str) -> Option<Recording> {
+        self.inner
+            .lock()
+            .unwrap()
+            .completed
+            .iter()
+            .find(|r| r.call_id == call_id)
+            .cloned()
+    }
 }
 
 impl RingInner {
@@ -1281,6 +1317,15 @@ impl Recorder for RingRecorder {
         if rec.provider.provider.is_empty() {
             rec.provider = ProviderRecord::minimal(provider, model_id);
         }
+    }
+
+    /// RFC-0024 会话归组写入 pending 条目(与 JsonlRecorder 同语义)。
+    /// 乱序到达安全:session/step 独立于 input/provider 字段,直接覆盖。
+    fn record_session(&self, call_id: &str, session_id: &str, step: u32) {
+        let mut inner = self.inner.lock().unwrap();
+        let rec = inner.entry_or_init_bounded(call_id);
+        rec.session_id = Some(session_id.to_string());
+        rec.step = Some(step);
     }
 
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord) {
@@ -2040,6 +2085,27 @@ mod tests {
         assert_eq!(parsed.exchanges.len(), 1);
         assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
         assert!(parsed.complete);
+    }
+
+    #[test]
+    fn ring_records_session_fields_and_get_by_call_id() {
+        let ring = RingRecorder::new();
+        ring.record_input("call-s", &sample_options(), "openai", "gpt-4o");
+        ring.record_session("call-s", "sess-1", 3);
+        ring.record_outcome("call-s", &success_outcome());
+        ring.record_transport_closed("call-s");
+        ring.flush();
+
+        let rec = ring
+            .get("call-s")
+            .expect("recording retrievable by call_id");
+        assert_eq!(rec.session_id.as_deref(), Some("sess-1"));
+        assert_eq!(rec.step, Some(3));
+
+        let all = ring.completed();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].call_id, "call-s");
+        assert!(ring.get("missing").is_none());
     }
 
     #[test]
