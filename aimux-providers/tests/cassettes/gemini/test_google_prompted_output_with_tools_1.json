@@ -3,13 +3,13 @@
   "provider": "gemini",
   "scenario": "test_google_prompted_output_with_tools_1",
   "request": {
-    "path": "/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent",
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
     "method": "POST",
     "headers": {
       "accept": "*/*",
-      "accept-encoding": "gzip, deflate",
+      "accept-encoding": "gzip, deflate, br, zstd",
       "connection": "keep-alive",
-      "content-length": "1019",
+      "content-length": "3244",
       "content-type": "application/json",
       "host": "generativelanguage.googleapis.com"
     },
@@ -28,9 +28,10 @@
             {
               "functionCall": {
                 "args": {},
-                "id": "pyd_ai_091a167f1bfb4ed0ac689961ea5c264a",
+                "id": "pyd_ai_0e72b083e46d4a90a9dc734ddbf78806",
                 "name": "get_user_country"
-              }
+              },
+              "thoughtSignature": "CoYMARFNMg9QOHK_-WeO6yW6CS_btSARMucqvbLKKdnePnxBJ-SQX9N6qwx1kLiq3LwfhUFxIAGq3EYl_fVT17SsYhiYrggO24R1_MN2CoO4scYPpKP-Kdb1VxQ4eGpBfjbu7-xnt0PWhHogBhegq6FRuf4D03lkPCfaOuroG7sq-ky0huctsU-VWi9gqtS2LRl47dUZMz7LlSJu6VZdsOnl0V330H_oRRL_jCqpB6UxLTsn4J88wSVnBxKROX8IHVgH2TiC0W83bfjtB0DP-zoYLdCdAGjmWgSvpNcMORwTw-xYUVegh57731J_gAJJ3xCFfpNOtfFs8cxJFUCfwyCFBPuxUZgeMXsMYFKID5Ha4Kw-sKfSJsryJXiqdsv4TQIIzCT7V2n8Mf2MEwBmBAWxYF2_oIrsXe12JjzAaG630BmsY2McZrUE68pxGKmr8aho5NXXMVlOBMRS5-jsdcUzoat6ZNt7hatEdvuCWEyfLEMO-U5JJWITmjGKDfllOtUyJnG_hJTmIczyXFfjBTk08nl-LoObR504e0A28Rle8o3h78uVYHe9-hmhruGMTKqMiz4mtPXVUok5HXnMJtl0M5nYaZWc_bVfw00aVif8u3C7eTcyzCgw8akRcPJeOOw7kN9UpDNEowfG1yi4jrdRphRpN8NkD4Xof9Id9iwq3OdGDB_ZwykPkk8XLUVeIxpFboulpm9BMiqt8TCIZiM2KzxPPkGayyIM-4JsyU51IwA-LMtBXR4yF7xpYqMBdGWarKat8E9I95BbBwkAZ2r6mL06-CWTejgBnl1itM4oVEOV3nSTbuaLoYCkxIsVFqfsHS0WXkIT60-rwSB4sKzt5U5KD1PfML9vLQLRlGHSYg6GY5PBNGZnRl0go7R52g12-uM-rTYQ9gL2MaTLIgb91s3te-3ufaoG2jYVObtz31bsnvJcC62idtlYaRDCpp5K5S67a5KoV_FZHML-vlNlBVNWKsd5dFh7HvB_klISzVZq9Spz0ZxOoZ3yRG0hdPX86Ou-VSJ4b2WErC6lBprbEfOFJ-ns6FZhM5zB2Vij2mUrYSJSP5u7IQBjYsg_zIshNTdFJ2alakstuAC7KhV9W8zAZ6Vg70pncQWzPetQ--OuvkgnWKuf7FGknFbawUL11uXhmCvtu_wtkqFSGgNPAupZrxNXgaxVj0ZGrdddwSKAOL1uDxvre_NMm-aXWL3CDMj44ClxsNm3lNlHojxPXekPzzPJ0kgmz9zvuZnM4ItiBtaBTrPZS7qwU9x3cTmD4DtYRqo-_tPpb-yoj74h8UWfTyvvlcXfxH-VQ4r13obC1ajkDxb011rLanbfd82w8p_p7WMMGBrlbj1PpwUpA4TjkVFD1TDFNJ67lhXMihDL0RXcEWykAvDiywPQT4gYTOUsTchN1IZBON0NrtvU4-ZOyYCuPDxKG4MIpD6Ns8Zitm_es_Kb6r_r7gW91T6W45r8-zKVH0ttnrBL4AwM6DlO6teEVuDEI8W5GX2dyNyH9q_o7NYr2B76rM3HGeswBqm39z1Jk2mOV9LLnkbYsvXiKaNPxDgNp0SePM3YSwvMubWdTC9b3PZZoh5bmUtfNWEYd-ab5Oa6iSuPvEN1-MbXVF3R1E49Gm_F0wpoAHOItDBqTkQ5M1Ekyj47RC4VckB8IPaNyd1SGQpw9bh1k0EXwJQ15q241yeShjQcrWf0onp-Rb49WEDsF-txtxFJ_NZxxkOgE-CqQSlv1JKZieHbUGbj06sQU_6jhgydEDdaYmUFBtFRYsNAxT1t_jOV7Hq8FBOen4r3qTz5K_1maBnbRjQjlqD2peEdU3hjaMg6eOfv8T_sD0QavWj7a_FNF5TYCcUP-0eG357zxhSW7mEn0GIFs4M7BXRxNjgfowNJ-WK5W4wmCF4fMoXf8s406z3ei3w5OUGmIuaCJyERwbvhH-M1sXy05IWQBUoDtAIWLjHRZNirQaazq8MsoDZ-prUJ7xHL3CwQzJ_EeocWjWoo04trYgjNSmxCdPc3H1S0lP_0OKOza2FdEqG8RMcEFILBvQ9X"
             }
           ],
           "role": "model"
@@ -39,7 +40,7 @@
           "parts": [
             {
               "functionResponse": {
-                "id": "pyd_ai_091a167f1bfb4ed0ac689961ea5c264a",
+                "id": "pyd_ai_0e72b083e46d4a90a9dc734ddbf78806",
                 "name": "get_user_country",
                 "response": {
                   "return_value": "Mexico"
@@ -50,14 +51,23 @@
           "role": "user"
         }
       ],
-      "generationConfig": {},
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
       "systemInstruction": {
         "parts": [
           {
-            "text": "Always respond with a JSON object that's compatible with this schema:\n\n{\"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}}, \"required\": [\"city\", \"country\"], \"title\": \"CityLocation\", \"type\": \"object\"}\n\nDon't include any text or Markdown fencing before or after."
+            "text": "\nAlways respond with a JSON object that's compatible with this schema:\n\n{\"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}}, \"required\": [\"city\", \"country\"], \"type\": \"object\", \"title\": \"CityLocation\"}\n\nDon't include any text or Markdown fencing before or after.\n"
           }
         ],
         "role": "user"
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "VALIDATED"
+        }
       },
       "tools": [
         {
@@ -65,9 +75,10 @@
             {
               "description": "",
               "name": "get_user_country",
-              "parameters": {
+              "parameters_json_schema": {
+                "additionalProperties": false,
                 "properties": {},
-                "type": "OBJECT"
+                "type": "object"
               }
             }
           ]
@@ -80,9 +91,9 @@
     "headers": {
       "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
       "content-type": "application/json; charset=UTF-8",
-      "server-timing": "gfet4t7; dur=3536",
+      "server-timing": "gfet4t7; dur=1918",
       "vary": "Origin"
     },
-    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"{\\\"city\\\": \\\"Mexico City\\\", \\\"country\\\": \\\"Mexico\\\"}\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"models/gemini-2.5-pro\", \"responseId\": \"R1teaJezFJzqkdUPtrjmqQY\", \"usageMetadata\": {\"candidatesTokenCount\": 13, \"promptTokenCount\": 154, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 154}], \"thoughtsTokenCount\": 153, \"totalTokenCount\": 320}}"
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"{\\\"city\\\": \\\"Mexico City\\\", \\\"country\\\": \\\"Mexico\\\"}\", \"thoughtSignature\": \"CqsDARFNMg/vlepSvb2pG4k5KFwTBqi3T3VxwOU/qAmGbn4rDU3DyDB1fRjECcKxFJtP93ele31bUFtVQVvFgw7CUSPbBMsonje7tIee8Wy0vzT0AWMBXCnX4+/UM2Kj3XBIHjj27WpjHlZnXm90HEl1zMYGQSbYpk4UwPphrzNQyv1FS71rCE1Qh/mSlZrNMLVMkPuSLpqXuTIQRKphweAqOXMi16ce3u6uSeandXVetn0PQMHZjljvA4iq+aQkIB+/zk0Y0/jgl02QUal0I+7Ng4svSwfMwVR2ezfiQ0ipRrenZUWRoNVT3ODz4x1dsgg7LKdypmSlpeMSpwf5LjE7yroMXvdoRBzPn/7ARuDvEBys/cVp7KrGbkpCcREAY2NUT0NqhRTkxeEnTMwEjYqlMCvaNRtJfdAxHt1XPaVEt98zBDvJYDkwexd9QLOpgxXyspRFqe+TZeaeQnsN5svuwvMkX8AohgcDBvPhSzcRKoqZlGahC0TeZUEje8BDH3LijJfvMsBSv+43s/RfD8ahCfpmHM88bU4Jkr/XAtiSKN/mK+8+6Dc169LufwpfARFNMg8VSgf8nhj2AVuL8xOjXodbnZLXSkvpNzzLnCJB0FL7bXnZxw8j1YNL+t6Jq+xoXETqqqqzB68B/Bplgey3zu1Hz8HyCMFGw+EhERAGAVkhVCxMixO1eH2xRUY=\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"60JaapPiFMGez7IP_7aOUA\", \"usageMetadata\": {\"candidatesTokenCount\": 13, \"promptTokenCount\": 156, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 156}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 121, \"totalTokenCount\": 290}}"
   }
 }

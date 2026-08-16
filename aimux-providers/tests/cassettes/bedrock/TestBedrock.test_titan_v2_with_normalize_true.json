@@ -12,7 +12,10 @@
       "content-length": "63",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "inputText": "Test explicit normalization",
+      "normalize": true
+    }
   },
   "response": {
     "status": 200,

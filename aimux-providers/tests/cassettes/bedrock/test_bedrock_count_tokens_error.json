@@ -11,7 +11,23 @@
       "content-length": "103",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "input": {
+        "converse": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "text": "hello"
+                }
+              ]
+            }
+          ],
+          "system": []
+        }
+      }
+    }
   },
   "response": {
     "status": 400,

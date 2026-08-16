@@ -1,0 +1,196 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_live_tool_search_handoff_anthropic_openai_anthropic_4",
+  "request": {
+    "path": "/v1/messages",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br",
+      "connection": "keep-alive",
+      "content-length": "2365",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "max_tokens": 4096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is the USD/EUR exchange rate?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "Let me look up the USD/EUR exchange rate for you!",
+              "type": "text"
+            },
+            {
+              "id": "srvtoolu_01U7MY7od7kCtLUQAveyY6qx",
+              "input": {
+                "query": "get exchange rate"
+              },
+              "name": "tool_search_tool_bm25",
+              "type": "server_tool_use"
+            },
+            {
+              "content": {
+                "tool_references": [
+                  {
+                    "tool_name": "get_exchange_rate",
+                    "type": "tool_reference"
+                  }
+                ],
+                "type": "tool_search_tool_search_result"
+              },
+              "tool_use_id": "srvtoolu_01U7MY7od7kCtLUQAveyY6qx",
+              "type": "tool_search_tool_result"
+            },
+            {
+              "id": "toolu_01P4f8oPjzXznuWr5VzTVe4N",
+              "input": {
+                "pair": "USD/EUR"
+              },
+              "name": "get_exchange_rate",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "USD/EUR: 0.92",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "toolu_01P4f8oPjzXznuWr5VzTVe4N",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "The current **USD/EUR exchange rate is 0.92**, meaning that **1 US Dollar (USD) is equal to 0.92 Euros (EUR)**. In other words, the Euro is slightly stronger than the US Dollar at this time.",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "text": "Now call get_exchange_rate for GBP/USD without searching again.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "id": "call_qp0rFvaLHTVc3Gre8X109sUq",
+              "input": {
+                "pair": "GBP/USD"
+              },
+              "name": "get_exchange_rate",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "GBP/USD: 0.92",
+                  "type": "text"
+                }
+              ],
+              "is_error": false,
+              "tool_use_id": "call_qp0rFvaLHTVc3Gre8X109sUq",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "**GBP/USD: 0.92**",
+              "type": "text"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "text": "Now call get_exchange_rate for CAD/USD without searching again.",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-6",
+      "stream": false,
+      "system": [
+        {
+          "text": "Always use get_exchange_rate to answer exchange-rate questions.",
+          "type": "text"
+        }
+      ],
+      "tool_choice": {
+        "type": "auto"
+      },
+      "tools": [
+        {
+          "defer_loading": true,
+          "description": "Look up the exchange rate for a currency pair.",
+          "input_schema": {
+            "additionalProperties": false,
+            "properties": {
+              "pair": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "pair"
+            ],
+            "type": "object"
+          },
+          "name": "get_exchange_rate"
+        },
+        {
+          "name": "tool_search_tool_bm25",
+          "type": "tool_search_tool_bm25_20251119"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-ec8762fd139d6a4cbe06ae139cf1a70a-c1c029f38ec30eb3-01",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"content\": [{\"caller\": {\"type\": \"direct\"}, \"id\": \"toolu_01Q5DW4z7dK9cYaLFbZ9yHRZ\", \"input\": {\"pair\": \"CAD/USD\"}, \"name\": \"get_exchange_rate\", \"type\": \"tool_use\"}], \"id\": \"msg_011CdV6iLggz5ttn6ubDGQmT\", \"model\": \"claude-sonnet-4-6\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"global\", \"input_tokens\": 1149, \"output_tokens\": 58, \"service_tier\": \"standard\"}}"
+  }
+}

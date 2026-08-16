@@ -11,7 +11,87 @@
       "content-length": "1119",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the capital of France?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "<thinking> To determine the capital of France, I can use the provided tool that returns the capital of a given country. Since the country in question is France, I will use the tool with the country parameter set to \"France\". </thinking>\n"
+            },
+            {
+              "toolUse": {
+                "toolUseId": "tooluse_Ze_bgl9CSqu8aJv7XD-_Dw",
+                "name": "get_capital",
+                "input": {
+                  "country": "France"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_Ze_bgl9CSqu8aJv7XD-_Dw",
+                "content": [
+                  {
+                    "text": "The country is not supported.\n\nFix the errors and try again."
+                  }
+                ],
+                "status": "error"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful chatbot."
+        }
+      ],
+      "inferenceConfig": {
+        "temperature": 0.0
+      },
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_capital",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "country": {
+                      "description": "The country name.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "country"
+                  ],
+                  "type": "object"
+                }
+              },
+              "description": "Get the capital of a country."
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -12,7 +12,13 @@
       "content-length": "90",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "texts": [
+        "Test input type setting"
+      ],
+      "input_type": "classification",
+      "truncate": "NONE"
+    }
   },
   "response": {
     "status": 200,

@@ -11,7 +11,72 @@
       "content-length": "686",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Tell me about Paris"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_weather",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "object"
+                }
+              },
+              "description": "Get the current weather for a city."
+            }
+          },
+          {
+            "toolSpec": {
+              "name": "final_result",
+              "inputSchema": {
+                "json": {
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city",
+                    "summary"
+                  ],
+                  "type": "object"
+                }
+              },
+              "description": "The final response which ends this conversation"
+            }
+          }
+        ],
+        "toolChoice": {
+          "tool": {
+            "name": "final_result"
+          }
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

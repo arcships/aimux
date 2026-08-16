@@ -11,7 +11,24 @@
       "content-length": "231",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the capital of France? Give me an answer that contains the word \"Paris\", but is not the first word."
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {
+        "stopSequences": [
+          "Paris"
+        ]
+      }
+    }
   },
   "response": {
     "status": 200,

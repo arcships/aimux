@@ -7,9 +7,9 @@
     "method": "POST",
     "headers": {
       "accept": "application/json",
-      "accept-encoding": "gzip, deflate, br, zstd",
+      "accept-encoding": "gzip, deflate, br",
       "connection": "keep-alive",
-      "content-length": "2763",
+      "content-length": "2649",
       "content-type": "application/json",
       "host": "api.anthropic.com"
     },
@@ -28,11 +28,26 @@
         {
           "content": [
             {
-              "id": "call_cz5QL7hm3knhkMdvj2tcF03U",
+              "id": "call_twBJEEhJmhYlK4noeBJeztyd",
               "input": {
                 "id": "refunds"
               },
               "name": "load_capability",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "id": "auto_load_97d4a2341e6817ea",
+              "input": {
+                "queries": [
+                  "lookup_refund_policy"
+                ]
+              },
+              "name": "search_tools",
               "type": "tool_use"
             }
           ],
@@ -48,29 +63,9 @@
                 }
               ],
               "is_error": false,
-              "tool_use_id": "call_cz5QL7hm3knhkMdvj2tcF03U",
+              "tool_use_id": "call_twBJEEhJmhYlK4noeBJeztyd",
               "type": "tool_result"
-            }
-          ],
-          "role": "user"
-        },
-        {
-          "content": [
-            {
-              "id": "auto_load_0f10f8b659c3c105",
-              "input": {
-                "queries": [
-                  "refunds"
-                ]
-              },
-              "name": "search_tools",
-              "type": "tool_use"
-            }
-          ],
-          "role": "assistant"
-        },
-        {
-          "content": [
+            },
             {
               "content": [
                 {
@@ -79,7 +74,7 @@
                 }
               ],
               "is_error": false,
-              "tool_use_id": "auto_load_0f10f8b659c3c105",
+              "tool_use_id": "auto_load_97d4a2341e6817ea",
               "type": "tool_result"
             }
           ],
@@ -88,7 +83,7 @@
         {
           "content": [
             {
-              "id": "call_XgAI2Xlk59yqy1uZbzoELun5",
+              "id": "call_rVVbdIkdGQuKDslbcJIRpCkV",
               "input": {
                 "order_id": "order-123"
               },
@@ -108,7 +103,7 @@
                 }
               ],
               "is_error": false,
-              "tool_use_id": "call_XgAI2Xlk59yqy1uZbzoELun5",
+              "tool_use_id": "call_rVVbdIkdGQuKDslbcJIRpCkV",
               "type": "tool_result"
             }
           ],
@@ -117,7 +112,7 @@
         {
           "content": [
             {
-              "text": "Yes -- order-123 is eligible for a refund. The policy allows refunds for 30 days.",
+              "text": "Yes -- order-123 is eligible for a refund within 30 days.",
               "type": "text"
             }
           ],
@@ -135,7 +130,7 @@
         {
           "content": [
             {
-              "id": "toolu_019WP6oSKcMB6RrproJHP536",
+              "id": "toolu_01VKV4PpXPhW9Y2eojnKNcEL",
               "input": {
                 "order_id": "order-456"
               },
@@ -155,7 +150,7 @@
                 }
               ],
               "is_error": false,
-              "tool_use_id": "toolu_019WP6oSKcMB6RrproJHP536",
+              "tool_use_id": "toolu_01VKV4PpXPhW9Y2eojnKNcEL",
               "type": "tool_result"
             }
           ],
@@ -177,7 +172,7 @@
         {
           "description": "Load a capability to access its full instructions and tools.",
           "input_schema": {
-            "description": "Typed arguments for a `load_capability` call.",
+            "description": "Typed arguments for a `load_capability` tool call.",
             "properties": {
               "id": {
                 "description": "The id of the capability to load.",
@@ -207,10 +202,6 @@
             "type": "object"
           },
           "name": "lookup_refund_policy"
-        },
-        {
-          "name": "tool_search_tool_bm25",
-          "type": "tool_search_tool_bm25_20251119"
         }
       ]
     }
@@ -222,9 +213,9 @@
       "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
       "content-type": "application/json",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
-      "traceresponse": "00-9af2cf7fffc3ba7952cc81ff3273cde7-4fa63da40d6631b5-01",
+      "traceresponse": "00-54382e718e4060129d5651570dd7c048-1262cffacb65d510-01",
       "vary": "Accept-Encoding"
     },
-    "body": "{\"content\": [{\"text\": \"Yes -- order-456 is also eligible for a refund. The policy allows refunds for 30 days for this order as well.\", \"type\": \"text\"}], \"id\": \"msg_011XD9iGkgVn1jdvNCDy97xj\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 1256, \"output_tokens\": 33, \"service_tier\": \"standard\"}}"
+    "body": "{\"content\": [{\"text\": \"Yes -- order-456 is also eligible for a refund within 30 days.\", \"type\": \"text\"}], \"id\": \"msg_011CdYrpNqE4yAz2gXd48GWR\", \"model\": \"claude-sonnet-4-5-20250929\", \"role\": \"assistant\", \"stop_details\": null, \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"type\": \"message\", \"usage\": {\"cache_creation\": {\"ephemeral_1h_input_tokens\": 0, \"ephemeral_5m_input_tokens\": 0}, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"inference_geo\": \"not_available\", \"input_tokens\": 1081, \"output_tokens\": 22, \"service_tier\": \"standard\"}}"
   }
 }

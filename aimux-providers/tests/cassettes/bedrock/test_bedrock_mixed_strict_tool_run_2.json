@@ -11,7 +11,124 @@
       "content-length": "1333",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Use the registered tools and respond exactly as `Capital: <city>`."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "I'll help you find the capital city using the available tools."
+            },
+            {
+              "toolUse": {
+                "toolUseId": "tooluse_YFo0dGJWt2BxnVmdQ8qPQt",
+                "name": "country_source",
+                "input": {}
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_YFo0dGJWt2BxnVmdQ8qPQt",
+                "content": [
+                  {
+                    "text": "Japan"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "toolUseId": "tooluse_k5WHQUrqFgm8eDWkXPCheP",
+                "name": "capital_lookup",
+                "input": {
+                  "country": "Japan"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_k5WHQUrqFgm8eDWkXPCheP",
+                "content": [
+                  {
+                    "text": "Tokyo"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "Always call `country_source` first, then call `capital_lookup` with that result before replying."
+        }
+      ],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "country_source",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                }
+              },
+              "strict": true
+            }
+          },
+          {
+            "toolSpec": {
+              "name": "capital_lookup",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "country": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "country"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

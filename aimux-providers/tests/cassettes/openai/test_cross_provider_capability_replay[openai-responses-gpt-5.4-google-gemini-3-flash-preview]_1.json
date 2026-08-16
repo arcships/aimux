@@ -7,9 +7,9 @@
     "method": "POST",
     "headers": {
       "accept": "application/json",
-      "accept-encoding": "gzip, deflate, br, zstd",
+      "accept-encoding": "gzip, deflate, br",
       "connection": "keep-alive",
-      "content-length": "2220",
+      "content-length": "1469",
       "content-type": "application/json",
       "host": "api.openai.com"
     },
@@ -24,34 +24,20 @@
         },
         {
           "arguments": "{\"id\":\"refunds\"}",
-          "call_id": "call_GkGaq5FN2UxKl6A1sAGhOHLe",
-          "id": "fc_0c7eb226bb1dfaa7006a104d674788819480a6a61b93a46d36",
+          "call_id": "call_30QT8TKHJVZ7ktawZDPtvzjf",
+          "id": "fc_06824304db5cc80d006a6bb18eec8081909f18f9ffc8fa8e35",
           "name": "load_capability",
           "type": "function_call"
         },
         {
-          "call_id": "call_GkGaq5FN2UxKl6A1sAGhOHLe",
+          "call_id": "call_30QT8TKHJVZ7ktawZDPtvzjf",
           "output": "{\"instructions\":\"Use the refund policy tool before answering refund questions.\"}",
           "type": "function_call_output"
         },
         {
-          "arguments": {
-            "queries": [
-              "refunds"
-            ]
-          },
-          "call_id": "auto_load_0f10f8b659c3c105",
-          "execution": "client",
-          "status": "completed",
-          "type": "tool_search_call"
-        },
-        {
-          "call_id": "auto_load_0f10f8b659c3c105",
-          "execution": "client",
-          "status": "completed",
+          "role": "developer",
           "tools": [
             {
-              "defer_loading": true,
               "description": "Look up the refund policy for an order.",
               "name": "lookup_refund_policy",
               "parameters": {
@@ -70,40 +56,23 @@
               "type": "function"
             }
           ],
-          "type": "tool_search_output"
+          "type": "additional_tools"
         }
       ],
       "instructions": "The following capabilities are deferred and can be loaded using the `load_capability` tool:\n- refunds: Refund policy tools.",
       "model": "gpt-5.4",
+      "reasoning": {
+        "context": "all_turns"
+      },
       "stream": false,
       "tool_choice": "auto",
       "tools": [
-        {
-          "description": "Search for relevant tools.",
-          "execution": "client",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "queries": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "queries"
-            ],
-            "type": "object"
-          },
-          "type": "tool_search"
-        },
         {
           "description": "Load a capability to access its full instructions and tools.",
           "name": "load_capability",
           "parameters": {
             "additionalProperties": false,
-            "description": "Typed arguments for a `load_capability` call.",
+            "description": "Typed arguments for a `load_capability` tool call.",
             "properties": {
               "id": {
                 "description": "The id of the capability to load.",
@@ -117,25 +86,6 @@
           },
           "strict": true,
           "type": "function"
-        },
-        {
-          "defer_loading": true,
-          "description": "Look up the refund policy for an order.",
-          "name": "lookup_refund_policy",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "order_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "order_id"
-            ],
-            "type": "object"
-          },
-          "strict": true,
-          "type": "function"
         }
       ]
     }
@@ -143,14 +93,14 @@
   "response": {
     "status": 200,
     "headers": {
-      "access-control-expose-headers": "CF-Ray",
+      "access-control-expose-headers": "X-Request-ID",
       "alt-svc": "h3=\":443\"; ma=86400",
       "connection": "keep-alive",
       "content-type": "application/json",
-      "openai-processing-ms": "1056",
+      "openai-processing-ms": "1187",
       "openai-version": "2020-10-01",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload"
     },
-    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1779453288, \"created_at\": 1779453288, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_0c7eb226bb1dfaa7006a104d6822188194ac20e5e52f78af21\", \"incomplete_details\": null, \"instructions\": \"The following capabilities are deferred and can be loaded using the `load_capability` tool:\\n- refunds: Refund policy tools.\", \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5.4-2026-03-05\", \"moderation\": null, \"object\": \"response\", \"output\": [{\"arguments\": \"{\\\"order_id\\\":\\\"order-123\\\"}\", \"call_id\": \"call_nFvTJF6mTDkJLFiWT5u9Z8X9\", \"id\": \"fc_0c7eb226bb1dfaa7006a104d68ca808194b22da6cb6c65d6fb\", \"name\": \"lookup_refund_policy\", \"namespace\": \"lookup_refund_policy\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": \"in_memory\", \"reasoning\": {\"effort\": \"none\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tools\": [{\"description\": \"Load a capability to access its full instructions and tools.\", \"name\": \"load_capability\", \"parameters\": {\"additionalProperties\": false, \"description\": \"Typed arguments for a `load_capability` call.\", \"properties\": {\"id\": {\"description\": \"The id of the capability to load.\", \"type\": \"string\"}}, \"required\": [\"id\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}, {\"description\": \"Search for relevant tools.\", \"execution\": \"client\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"queries\": {\"items\": {\"type\": \"string\"}, \"type\": \"array\"}}, \"required\": [\"queries\"], \"type\": \"object\"}, \"type\": \"tool_search\"}, {\"description\": \"Look up the refund policy for an order.\", \"name\": \"lookup_refund_policy\", \"tools\": [{\"description\": \"Look up the refund policy for an order.\", \"name\": \"lookup_refund_policy\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"order_id\": {\"type\": \"string\"}}, \"required\": [\"order_id\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}], \"type\": \"namespace\"}], \"top_logprobs\": 0, \"top_p\": 0.98, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 366, \"input_tokens_details\": {\"cached_tokens\": 0}, \"output_tokens\": 26, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 392}, \"user\": null}"
+    "body": "{\"background\": false, \"billing\": {\"payer\": \"developer\"}, \"completed_at\": 1785442704, \"created_at\": 1785442703, \"error\": null, \"frequency_penalty\": 0.0, \"id\": \"resp_06824304db5cc80d006a6bb18f3aac8190a6078b756bce8a4f\", \"incomplete_details\": null, \"instructions\": \"The following capabilities are deferred and can be loaded using the `load_capability` tool:\\n- refunds: Refund policy tools.\", \"max_output_tokens\": null, \"max_tool_calls\": null, \"metadata\": {}, \"model\": \"gpt-5.4-2026-03-05\", \"moderation\": null, \"object\": \"response\", \"output\": [{\"arguments\": \"{\\\"order_id\\\":\\\"order-123\\\"}\", \"call_id\": \"call_ZIYh6lTGNz01q0XHRAcH4lfw\", \"id\": \"fc_06824304db5cc80d006a6bb1901a1481909268031f9a95c975\", \"name\": \"lookup_refund_policy\", \"namespace\": \"lookup_refund_policy\", \"status\": \"completed\", \"type\": \"function_call\"}], \"parallel_tool_calls\": true, \"presence_penalty\": 0.0, \"previous_response_id\": null, \"prompt_cache_key\": null, \"prompt_cache_retention\": \"24h\", \"reasoning\": {\"context\": \"all_turns\", \"effort\": \"none\", \"mode\": \"standard\", \"summary\": null}, \"safety_identifier\": null, \"service_tier\": \"default\", \"status\": \"completed\", \"store\": true, \"temperature\": 1.0, \"text\": {\"format\": {\"type\": \"text\"}, \"verbosity\": \"medium\"}, \"tool_choice\": \"auto\", \"tool_usage\": {\"image_gen\": {\"input_tokens\": 0, \"input_tokens_details\": {\"image_tokens\": 0, \"text_tokens\": 0}, \"output_tokens\": 0, \"output_tokens_details\": {\"image_tokens\": 0, \"text_tokens\": 0}, \"total_tokens\": 0}, \"web_search\": {\"num_requests\": 0}}, \"tools\": [{\"description\": \"Load a capability to access its full instructions and tools.\", \"name\": \"load_capability\", \"output_schema\": null, \"parameters\": {\"additionalProperties\": false, \"description\": \"Typed arguments for a `load_capability` tool call.\", \"properties\": {\"id\": {\"description\": \"The id of the capability to load.\", \"type\": \"string\"}}, \"required\": [\"id\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}, {\"description\": \"Look up the refund policy for an order.\", \"name\": \"lookup_refund_policy\", \"tools\": [{\"description\": \"Look up the refund policy for an order.\", \"name\": \"lookup_refund_policy\", \"output_schema\": null, \"parameters\": {\"additionalProperties\": false, \"properties\": {\"order_id\": {\"type\": \"string\"}}, \"required\": [\"order_id\"], \"type\": \"object\"}, \"strict\": true, \"type\": \"function\"}], \"type\": \"namespace\"}], \"top_logprobs\": 0, \"top_p\": 0.98, \"truncation\": \"disabled\", \"usage\": {\"input_tokens\": 282, \"input_tokens_details\": {\"cache_write_tokens\": 0, \"cached_tokens\": 0}, \"output_tokens\": 26, \"output_tokens_details\": {\"reasoning_tokens\": 0}, \"total_tokens\": 308}, \"user\": null}"
   }
 }

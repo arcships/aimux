@@ -14,8 +14,8 @@ contains deepseek requests).
 Usage: uv run python scripts/convert_pydantic_ai.py
 """
 
+import base64
 import json
-import shutil
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -49,6 +49,21 @@ HOST_TO_PROVIDER: list[tuple[str, str]] = [
 ]
 
 
+def raw_body(record: dict) -> str | bytes | None:
+    """Extract the raw wire body from a VCR request/response record.
+
+    VCR.py stores it as ``body: {string: ...}``; older/hand-edited entries use a
+    plain ``body: <str>``. YAML ``!!binary`` values come back as ``bytes``.
+    Returns ``None`` when there is no usable raw body.
+    """
+    body = record.get("body")
+    if isinstance(body, dict):
+        body = body.get("string")
+    if isinstance(body, (str, bytes)) and body:
+        return body
+    return None
+
+
 def provider_for_uri(uri: str) -> str | None:
     host = urlparse(uri).netloc.lower()
     for needle, provider in HOST_TO_PROVIDER:
@@ -68,9 +83,21 @@ def convert_interaction(
     method = (req.get("method") or "POST").upper()
 
     # request body: parsed_body is already a JSON object; keep as-is so the
-    # replay scorer can match on scalar fields (model, stream, ...).
+    # replay scorer can match on scalar fields (model, stream, ...). When the
+    # upstream record has no parsed_body (bedrock and other non-OpenAI shapes),
+    # fall back to parsing the raw wire body so the scorer still has fields to
+    # match on.
     req_body = req.get("parsed_body")
     if req_body is None:
+        raw = raw_body(req)
+        if isinstance(raw, bytes):
+            raw = None  # multipart/binary uploads: nothing useful to score on
+        if raw is not None:
+            try:
+                req_body = json.loads(raw)
+            except json.JSONDecodeError:
+                req_body = None
+    if not isinstance(req_body, dict):
         req_body = {}
 
     # request headers: {name: [val, ...]} -> {name: val}
@@ -84,12 +111,23 @@ def convert_interaction(
     # response status
     status = (resp.get("status") or {}).get("code", 200)
 
-    # response body: prefer the raw `body` string (SSE text) when non-empty;
-    # otherwise serialize parsed_body to JSON.
-    raw_body = resp.get("body")
-    if isinstance(raw_body, str) and raw_body:
-        resp_body = raw_body
-    else:
+    # response body: prefer the raw wire body (SSE frames, binary eventstream)
+    # and only fall back to parsed_body when there is none. VCR stores it under
+    # `body.string`; reading only `parsed_body` used to blank out every stream
+    # cassette, since streaming responses never carry a parsed_body.
+    #
+    # Bodies that are not valid UTF-8 (bedrock's amazon eventstream, media
+    # downloads) are emitted as `body_base64` instead of `body`, because our
+    # JSON cassette format can only carry text in `body`.
+    resp_body = raw_body(resp)
+    resp_body_base64 = None
+    if isinstance(resp_body, bytes):
+        try:
+            resp_body = resp_body.decode("utf-8")
+        except UnicodeDecodeError:
+            resp_body_base64 = base64.b64encode(resp_body).decode("ascii")
+            resp_body = None
+    if resp_body is None and resp_body_base64 is None:
         parsed = resp.get("parsed_body")
         resp_body = json.dumps(parsed, default=str) if parsed is not None else ""
 
@@ -109,6 +147,12 @@ def convert_interaction(
     for h in ("content-length", "transfer-encoding", "content-encoding"):
         resp_headers.pop(h, None)
 
+    response: dict = {"status": status, "headers": resp_headers}
+    if resp_body_base64 is not None:
+        response["body_base64"] = resp_body_base64
+    else:
+        response["body"] = resp_body
+
     turn_suffix = f"_{turn}" if turn > 0 else ""
     return {
         "source": SOURCE_TAG,
@@ -120,11 +164,7 @@ def convert_interaction(
             "headers": req_headers,
             "body": req_body,
         },
-        "response": {
-            "status": status,
-            "headers": resp_headers,
-            "body": resp_body,
-        },
+        "response": response,
     }
 
 

@@ -11,7 +11,50 @@
       "content-length": "2080",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "How do I cross the street?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "reasoningContent": {
+                "reasoningText": {
+                  "text": "This is a straightforward question about crossing the street safely. I should provide practical safety advice for pedestrians.",
+                  "signature": "EqkCCkgIDRABGAIqQPUBXddf5oFtfQISm87nRz74H7uUTwDgg+h0YLLc3p/go3gpEXMfNHOTi6XbIIf1FqzmzRwPO3I5tNQwel4zDJsSDOH8dHCSFsa5/5wMgxoMyoNuL2Mch7do4OwvIjDiWYuBAMh88j45otVaBLl+sSioadFLRUSCdFo+QijHmwPPHprY7iqGWMetqej36OwqjgEuNJ2lzEjUXHRBfTWq7dVwpaidYPB8hwr5h6dakncxCcFTee4AtrwY8Wcq4dojKqGo/13KzWowF7k5SLmQhMOSAyPIyribxMEDS0TWBudZ9TmnNP2PpltcgueyrqsCubSG7/AISHrrqyADMOCPgGycPkE5TJALqh7tgxcBze3bb5hDTZSyt1F6MZjd6J7zGAE="
+                }
+              }
+            },
+            {
+              "text": "Here's how to cross the street safely:\n\n## Basic Steps\n\n1. **Find a safe crossing spot**\n   - Use crosswalks, intersections, or pedestrian signals when available\n   - Avoid crossing between parked cars or on curves where drivers can't see you\n\n2. **Stop at the curb/edge**\n   - Don't step into the street yet\n\n3. **Look left, right, then left again**\n   - Keep looking while you cross\n\n4. **Listen for traffic**\n   - Remove headphones or turn down volume\n   - Listen for engines, horns, or warning sounds\n\n5. **Make eye contact with drivers**\n   - Ensure they see you before crossing\n\n6. **Wait for a safe gap in traffic**\n   - If there's a signal, wait for the \"walk\" signal\n   - Don't assume cars will stop\n\n7. **Walk, don't run**\n   - Stay alert and keep watching for cars\n   - Be visible—wear bright colors at night\n\n## Extra Tips\n- Put your phone away while crossing\n- Watch for turning vehicles\n- Be extra careful in bad weather or low light\n- Teach children to hold an adult's hand\n\nIs there a specific crossing situation you're dealing with?"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Considering the way to cross the street, analogously, how do I cross the river?"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 10000
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

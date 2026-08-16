@@ -72,6 +72,6 @@
       "server-timing": "gfet4t7; dur=1204",
       "vary": "Origin"
     },
-    "body": ""
+    "body": "data: {\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"name\": \"get_user_country\",\"args\": {},\"id\": \"96c1su3s\"},\"thoughtSignature\": \"EpIDCo8DAQw51scL+dHffCC+bznOIyXjDPleN5yQL1zqs+4M/VtZCHcJrN8gh786ZjK9OZKuD6RdZHgfpv79cXyMPcENDzPM2VrQF0ZLkLBwpq98X6zkYNVkwocL/mdRCLNt7H+Stxu1kojfyFhLSEYUx2w5Ep0gOuF2lOdXs9nG0j5qO0osghTXqDz2AUUbinuJ4bX/34maQqECBO4g58rN+8/bKW1CW2CWWtJfSsfVNLutBS/NpJ/REk3cm3RT3viJU9YdruAMAC9K95vW5gGPkFbZ4weFTplNS9FBUjue7usTmrYTH0P+59L3xdXkn0X0QMHt1ACkOOl84cIscvYukdz9AC+a56q2kZPNEHxfHudLT5kbuYzL9ujEmJ79YWOG2cFfS2yjBXinkM6mjxraEXzt4sc1kOI2c37TGqlsFZH9UIRoNUm60rl5ligkxyDyGgrFXoVdEAPuM42SUr6KkhdOnR4Kjxf9vsqMaXUX2Br5ZyyRT1/PZBCnPSxe1bq7eTqAtvGUQJoG9L0tnpbDR9Eg\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 29,\"candidatesTokenCount\": 12,\"totalTokenCount\": 110,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 29}],\"thoughtsTokenCount\": 69},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"g1P6aZnMMZq5qtsPj9fyuQ8\"}\r\n\r\ndata: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"\"}],\"role\": \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 29,\"candidatesTokenCount\": 12,\"totalTokenCount\": 110,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 29}],\"thoughtsTokenCount\": 69},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"g1P6aZnMMZq5qtsPj9fyuQ8\"}\r\n\r\n"
   }
 }

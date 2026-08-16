@@ -1,0 +1,69 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "anthropic",
+  "scenario": "test_anthropic_count_tokens_with_adaptive_thinking_and_output_tools",
+  "request": {
+    "path": "/v1/messages/count_tokens",
+    "method": "POST",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "446",
+      "content-type": "application/json",
+      "host": "api.anthropic.com"
+    },
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is the capital of France?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-opus-4-6",
+      "thinking": {
+        "type": "adaptive"
+      },
+      "tool_choice": {
+        "type": "any"
+      },
+      "tools": [
+        {
+          "description": "The final response which ends this conversation",
+          "input_schema": {
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "country": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city",
+              "country"
+            ],
+            "type": "object"
+          },
+          "name": "final_result"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "connection": "keep-alive",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "server-timing": "x-originResponse;dur=65",
+      "vary": "Accept-Encoding"
+    },
+    "body": "{\"input_tokens\": 671}"
+  }
+}

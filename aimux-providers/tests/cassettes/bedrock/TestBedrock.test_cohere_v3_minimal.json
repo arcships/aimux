@@ -12,7 +12,13 @@
       "content-length": "78",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "texts": [
+        "Hello, world!"
+      ],
+      "input_type": "search_query",
+      "truncate": "NONE"
+    }
   },
   "response": {
     "status": 200,

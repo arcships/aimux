@@ -12,7 +12,13 @@
       "content-length": "94",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "texts": [
+        "Hello from regional endpoint!"
+      ],
+      "input_type": "search_query",
+      "truncate": "NONE"
+    }
   },
   "response": {
     "status": 200,

@@ -11,7 +11,118 @@
       "content-length": "1377",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What was the temperature in London 1st January 2022?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "toolUse": {
+                "toolUseId": "tooluse_Mj06ft-ITJik1Otgpkc1uA",
+                "name": "temperature",
+                "input": {
+                  "date": "2022-01-01",
+                  "city": "London"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "tooluse_Mj06ft-ITJik1Otgpkc1uA",
+                "content": [
+                  {
+                    "text": "30°C"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful chatbot."
+        }
+      ],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "temperature",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "description": "The city name.",
+                      "type": "string"
+                    },
+                    "date": {
+                      "description": "The date.",
+                      "format": "date",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city",
+                    "date"
+                  ],
+                  "type": "object"
+                }
+              },
+              "description": "<summary>Get the temperature in a city on a specific date.</summary>\n<returns>\n<description>The temperature in degrees Celsius.</description>\n</returns>"
+            }
+          },
+          {
+            "toolSpec": {
+              "name": "final_result",
+              "inputSchema": {
+                "json": {
+                  "properties": {
+                    "temperature": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "format": "date",
+                      "type": "string"
+                    },
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "temperature",
+                    "date",
+                    "city"
+                  ],
+                  "title": "Response",
+                  "type": "object"
+                }
+              },
+              "description": "The final response which ends this conversation"
+            }
+          }
+        ],
+        "toolChoice": {
+          "any": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -11,7 +11,50 @@
       "content-length": "2331",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "How do I cross the street?"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "reasoningContent": {
+                "reasoningText": {
+                  "text": "This is a straightforward question about crossing the street safely. I should provide clear, practical safety advice that applies generally, while noting that specific rules may vary by location.",
+                  "signature": "Eu4CCkgIBxABGAIqQCc4A+JUj/DJn5X49FRHzzGDqrWoZCEii+cINeYRllo7Bo/OAwNyoXVhdYlz6QWIvPH6vI4DjESc8A+763hdOrsSDGdnYb2cUg2snS0JHhoMNmdJjpWvdqyx3ZLsIjCckLSkej9YJ8DPw0O0oZVKk2lislUos8h5RxV0hY4VqRMGJURQDdIsCdAfaAiIERoq0wEPzjKdWsopjbXYav/Uf/WryRkQBlVHa3M2YSrTSyQQknCmVwQ2OHN/sm+pKw/mEvEm4Qu5xHyD4R65iHAPqzHvu7O+clxFaZHacaaD7tCkJycs5V3F1zD4JofRXoDu/CXu//xdQdkd3v22JQiKk9xNGT4ZbLF46c7gwVLxCuJys14p2c406ehsb0/8AkZC9JmRD2od7ZH+CXd030TQPcXqf11M/Y2p3BHXRxyFXpkjQdrrsLWTBHbUnPkjl8YDNAyF5Bz4mVQtRXb3u8QXSrrGvCwrGAE="
+                }
+              }
+            },
+            {
+              "text": "Here are the basic steps for crossing the street safely:\n\n**At intersections with traffic lights:**\n1. Wait for the pedestrian \"Walk\" signal\n2. Look both ways before stepping into the street\n3. Make eye contact with drivers when possible\n4. Cross briskly but don't run\n5. Stay alert for turning vehicles\n\n**At intersections without signals:**\n1. Stop at the curb or edge of the road\n2. Look left, then right, then left again\n3. Listen for approaching vehicles\n4. Wait for a clear gap in traffic\n5. Cross quickly but carefully\n\n**General safety tips:**\n- Use crosswalks and intersections when available\n- Avoid crossing between parked cars\n- Put away distractions like phones\n- Wear bright or reflective clothing in low light\n- Make yourself visible to drivers\n- Follow local traffic laws (some places may have specific rules)\n\n**If there's no crosswalk nearby:**\n- Find the shortest, straightest path across\n- Choose a spot with good visibility in both directions\n- Be extra cautious and patient\n\nAlways remember that even when you have the right of way, it's important to stay alert and defensive since not all drivers follow traffic rules perfectly."
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Considering the way to cross the street, analogously, how do I cross the river?"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 1024
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

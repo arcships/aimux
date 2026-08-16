@@ -11,7 +11,84 @@
       "content-length": "1115",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the temperature in London? Use the tool."
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "<think>\n The user is asking for the current temperature in London. They've explicitly requested the use of a tool for this purpose. I have a tool called `get_temperature` that can provide this information. It requires a single parameter \"city\" which should be \"London\" in this case.\n</think>"
+            },
+            {
+              "toolUse": {
+                "toolUseId": "functions.get_temperature:0",
+                "name": "get_temperature",
+                "input": {
+                  "city": "London"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "toolResult": {
+                "toolUseId": "functions.get_temperature:0",
+                "content": [
+                  {
+                    "text": "30°C"
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful chatbot. Use tools when helpful."
+        }
+      ],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "get_temperature",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "object"
+                }
+              },
+              "description": "Get the current temperature in a city."
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -82,6 +82,6 @@
       "server-timing": "gfet4t7; dur=477",
       "vary": "Origin"
     },
-    "body": ""
+    "body": "data: {\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"name\": \"get_capital\",\"args\": {\"country\": \"France\"}}}],\"role\": \"model\"},\"finishReason\": \"STOP\"}],\"usageMetadata\": {\"promptTokenCount\": 52,\"candidatesTokenCount\": 5,\"totalTokenCount\": 57,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 52}],\"candidatesTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 5}]},\"modelVersion\": \"gemini-2.0-flash\",\"responseId\": \"1lpeaMTxIpW1nvgP-O3vwQY\"}\r\n\r\n"
   }
 }

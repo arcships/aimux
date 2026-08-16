@@ -11,7 +11,47 @@
       "content-length": "1965",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "ANTHROPIC_MAGIC_STRING_TRIGGER_REDACTED_THINKING_46C9A13E193C177646C7398A98432ECCCE4C1253D5E2D82641AC0E52CC2876CB"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "reasoningContent": {
+                "redactedContent": "RXU4RUNrZ0lCeEFCR0FJcVFJaGtJYVN0OHBFZXF5N3pOYUVLL0thRC9rWnVKVVMrcEJnaU1tdVFWbzRWMzJIc3lwK3R6elBndHNFWVptQzRKNlVza3JROThFU1ZCM0UzT2xMaFRTa1NER2NycncxRE8xR1ZhQUNoakJvTUJhVU5kSzBBcHdYZTVJVG1JakI4YUt6dGQ0UVUxVUVyN1pUMzNkWXVOTU9KdURGMllrcmhrTWR5R1JSMnNNZ1I4UzR0ZEQzSFp2eDlkbmlUZnFvcTFBTy9zQXdsL2NTK0NxVXcxTi91UmZaWU9IMEV2UDljdDVOTjdrNGhTWEV1b3FyZTFpbzArTDNJYWZnaGJMNDFmNHhtd1pKbmpib2I5SHFmMmJJVG04V2N1dWtzTTNFL0plb1EvWUViMWtvV1VOTG9KeDF3R0t5RTlMckNJOHkwYmRjOFN0SVkvS1VlVGpIdkd3SjBZK3UzSlVqTi92Q2lRSTNUOTZIVThWdVNzckwzdXUrVHFDOXc2Y3RVdGg4ejMrZUx4cEpYb2d6Vk9sVFZidXM5N2ZXU1JqcjlzZjQ0TFBOWmgySTBpanRGYVZid0FCZzJJRU14VW5sRUtxUzRTNGtQd2tuTEtodGxVWWhXeTlpQlI1VnFLK29PazRJKzQ2QXVOQWZ6SFhvRGs5d1diSlJaV25BZEJ5ZXMvbnRzNTZsZTBsQkJPVlZGUnlPSnRwVlg5ME1CeHYrOStDZ243TXU1UUM3U0dRbTkxOVEremFwdzBQdUxualdNR0tYbkd6RkhwcEdhZ3ozeiszYzA4QTl6NGJMY29YRnlpVGNMQ2plbzN4NHVNL281UFBZODBnVk92T01HYXNSaXV3Q0tTYjhHd3AxYTN4S3hPZFVGVUo4L1pyVjFEazdVNy9zamZ3YUFybUVDc0RmbHB1NzRhb0U4MWRMcU5Na2tXRlJNUFl2REpIaitnTnVXVzN1U2lOQ3MxeWtCTjVQMnExWXEwbSs2SGluRlFYeXhUM0VEODJUbzZHdUFhU3luVS9MbDdtMTFxdnJYVkRZUGJPZnkxRTk0WDF2NE40L3ZkUnJRTUpURDcrMWU5UnpZR2Y0YXlyc1lBUT09"
+              }
+            },
+            {
+              "text": "I notice you've sent what appears to be some kind of trigger or command string. I can't respond to attempts to access internal systems or manipulate how I process information. \n\nInstead, I'd be happy to have a normal conversation with you. Is there something specific I can help you with today? I'm here to provide information, have discussions, or assist with tasks within my guidelines."
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What was that?"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 1024
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

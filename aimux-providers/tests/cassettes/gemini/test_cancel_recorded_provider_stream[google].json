@@ -1,15 +1,15 @@
 {
   "source": "pydantic-ai (MIT)",
   "provider": "gemini",
-  "scenario": "test_stream_cancel",
+  "scenario": "test_cancel_recorded_provider_stream[google]",
   "request": {
-    "path": "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+    "path": "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
     "method": "POST",
     "headers": {
       "accept": "*/*",
-      "accept-encoding": "gzip, deflate, br",
+      "accept-encoding": "gzip, deflate, br, zstd",
       "connection": "keep-alive",
-      "content-length": "251",
+      "content-length": "156",
       "content-type": "application/json",
       "host": "generativelanguage.googleapis.com"
     },
@@ -18,7 +18,7 @@
         {
           "parts": [
             {
-              "text": "What is the capital of France?"
+              "text": "Reply with exactly: Paris"
             }
           ],
           "role": "user"
@@ -29,14 +29,6 @@
           "TEXT"
         ],
         "temperature": 0.0
-      },
-      "systemInstruction": {
-        "parts": [
-          {
-            "text": "You are a helpful chatbot."
-          }
-        ],
-        "role": "user"
       }
     }
   },
@@ -46,9 +38,9 @@
       "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
       "content-disposition": "attachment",
       "content-type": "text/event-stream",
-      "server-timing": "gfet4t7; dur=851",
+      "server-timing": "gfet4t7; dur=866",
       "vary": "Origin"
     },
-    "body": ""
+    "body": "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Paris\"}],\"role\": \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 6,\"candidatesTokenCount\": 1,\"totalTokenCount\": 42,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 6}],\"thoughtsTokenCount\": 35,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-2.5-flash\",\"responseId\": \"8e97asPMLaS4qtsP7oGv4Ag\"}\r\n\r\n"
   }
 }

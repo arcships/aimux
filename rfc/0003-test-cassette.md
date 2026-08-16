@@ -68,6 +68,7 @@ Use JSON, one file per scenario. Structure:
 Key points:
 
 - **The response body stores raw text**. For non-streaming it is a JSON string; for streaming it is the raw SSE text. This way it is sent back as-is during replay, and our parsing code processes real data.
+- **Binary bodies use `response.body_base64` instead.** Some providers do not stream text at all: Bedrock's `converse-stream` returns `application/vnd.amazon.eventstream`, length-prefixed binary frames that are not valid UTF-8 and therefore cannot be stored in a JSON string. Those cassettes carry `"body_base64": "<standard base64>"` in place of `"body"`, and the replay service decodes it and serves the original bytes untouched. Exactly one of the two keys is present; a cassette with neither replays an empty body.
 - **No sensitive information is stored**. rig has already replaced IDs with `REDACTED`; we keep this practice.
 - **Scenario names in plain language**. For example "streaming tool calling", "structured output", "empty finish round", rather than rig's directory names.
 

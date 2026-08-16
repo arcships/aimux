@@ -12,7 +12,23 @@
       "amz-sdk-invocation-id": "b'7499ca95-3810-498d-b1f9-c03b9d49c24e'",
       "amz-sdk-request": "b'attempt=1'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Reply with the single word: ok"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "reasoning_effort": "medium"
+      }
+    }
   },
   "response": {
     "status": 200,
@@ -22,6 +38,6 @@
       "via": "1.1 google",
       "x-amzn-requestid": "c46eb10b-f3d1-4838-bd57-8720009f5e0b"
     },
-    "body": ""
+    "body": "{\"metrics\": {\"latencyMs\": 391}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"text\": \"User wants reply with the single word: ok. So just \\\"ok\\\".\"}}}, {\"text\": \"ok\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 74, \"outputTokens\": 26, \"serverToolUsage\": {}, \"totalTokens\": 100}}"
   }
 }

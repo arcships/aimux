@@ -11,7 +11,90 @@
       "content-length": "3416",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Newer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\nNewer response with something except single number\n"
+            },
+            {
+              "document": {
+                "name": "Document 1",
+                "format": "txt",
+                "source": {
+                  "bytes": "WW91IGFyZSBhIGdyZWF0IG1hdGhlbWF0aWNpYW4="
+                }
+              }
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "cachePoint": {
+                "type": "default"
+              }
+            },
+            {
+              "text": "What is 10 + 11?"
+            },
+            {
+              "cachePoint": {
+                "type": "default"
+              }
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "YOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\nYOU MUST RESPONSE ONLY WITH SINGLE NUMBER\n"
+        },
+        {
+          "cachePoint": {
+            "type": "default"
+          }
+        }
+      ],
+      "inferenceConfig": {},
+      "toolConfig": {
+        "tools": [
+          {
+            "toolSpec": {
+              "name": "catalog_lookup",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "toolSpec": {
+              "name": "diagnostics",
+              "inputSchema": {
+                "json": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "cachePoint": {
+              "type": "default"
+            }
+          }
+        ],
+        "toolChoice": {
+          "auto": {}
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

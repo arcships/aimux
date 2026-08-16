@@ -12,7 +12,23 @@
       "amz-sdk-invocation-id": "b'39bb84e7-de8b-4806-b61c-faab66fea3dd'",
       "amz-sdk-request": "b'attempt=1'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Reply with the single word: ok"
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "additionalModelRequestFields": {
+        "reasoning_effort": "high"
+      }
+    }
   },
   "response": {
     "status": 200,
@@ -22,6 +38,6 @@
       "via": "1.1 google",
       "x-amzn-requestid": "3768e7a9-35c7-4831-84dd-e4641ffb978a"
     },
-    "body": ""
+    "body": "{\"metrics\": {\"latencyMs\": 844}, \"output\": {\"message\": {\"content\": [{\"reasoningContent\": {\"reasoningText\": {\"text\": \"The user says: \\\"Reply with the single word: ok\\\". That means they want a response that is exactly the word \\\"ok\\\". The instruction is to \\\"Reply with the single word: ok\\\". So respond with \\\"ok\\\". However there might be nuance: The instruction: \\\"Reply with the single word: ok\\\". Likely they expect exactly \\\"ok\\\". Should we add punctuation? Probably not, just \\\"ok\\\". ChatGPT must respond with that single word.\\n\\nThus final answer: ok.\"}}}, {\"text\": \"ok\"}], \"role\": \"assistant\"}}, \"stopReason\": \"end_turn\", \"usage\": {\"inputTokens\": 74, \"outputTokens\": 110, \"serverToolUsage\": {}, \"totalTokens\": 184}}"
   }
 }

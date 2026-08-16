@@ -10,7 +10,18 @@
       "user-agent": "google-genai-sdk/1.26.0 gl-python/3.12.7",
       "x-goog-api-client": "google-genai-sdk/1.26.0 gl-python/3.12.7"
     },
-    "body": {}
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "The quick brown fox jumps over the lazydog."
+            }
+          ],
+          "role": "user"
+        }
+      ]
+    }
   },
   "response": {
     "status": 200,
@@ -25,6 +36,6 @@
       "x-frame-options": "SAMEORIGIN",
       "x-xss-protection": "0"
     },
-    "body": ""
+    "body": "{\n  \"totalTokens\": 12,\n  \"promptTokensDetails\": [\n    {\n      \"modality\": \"TEXT\",\n      \"tokenCount\": 12\n    }\n  ]\n}\n"
   }
 }

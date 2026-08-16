@@ -11,7 +11,35 @@
       "content-length": "448",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Where is the Eiffel Tower?"
+            }
+          ]
+        }
+      ],
+      "system": [
+        {
+          "text": "You are a helpful chatbot."
+        }
+      ],
+      "inferenceConfig": {},
+      "outputConfig": {
+        "textFormat": {
+          "type": "json_schema",
+          "structure": {
+            "jsonSchema": {
+              "name": "City",
+              "schema": "{\"properties\":{\"city\":{\"type\":\"string\"},\"country\":{\"type\":\"string\"}},\"required\":[\"city\",\"country\"],\"type\":\"object\",\"additionalProperties\":false}"
+            }
+          }
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

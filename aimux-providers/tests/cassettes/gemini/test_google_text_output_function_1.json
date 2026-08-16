@@ -3,13 +3,13 @@
   "provider": "gemini",
   "scenario": "test_google_text_output_function_1",
   "request": {
-    "path": "/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent",
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
     "method": "POST",
     "headers": {
       "accept": "*/*",
-      "accept-encoding": "gzip, deflate",
+      "accept-encoding": "gzip, deflate, br, zstd",
       "connection": "keep-alive",
-      "content-length": "640",
+      "content-length": "1569",
       "content-type": "application/json",
       "host": "generativelanguage.googleapis.com"
     },
@@ -28,9 +28,10 @@
             {
               "functionCall": {
                 "args": {},
-                "id": "pyd_ai_d6249f6c261544df9841f532be446f03",
+                "id": "pyd_ai_de82f159fb30408c98704a7bbeeb9c43",
                 "name": "get_user_country"
-              }
+              },
+              "thoughtSignature": "CrwEARFNMg9kt50r8JWztiQv5EbaHEi9upzlu0Rb1dqVBXKFsp6Vl2LqdQYneurc2UGzFWXwa-lnyMw9Cl4_yeC3Vx-h96Ds2DagCO401yYYBuMZ0yAPLoDyTpJXCkB7e2Gfx8RMTjIA96lx0SC9_npeB-mxnvOBWqwGJsvMKVIsXIE7JcjhCD265-56xbl5zST65buBk4shjbxwVxAFFiSLhKYE6kspbh9F9wOc4peoPdMHtXGquGaAGkaVRQIbTVy2MeCN_LVgWRKSFqWP8OAZ1MXCVloIIL9uhjjREmVTme1kaUESIUvYFlUIXZRSmXDOStZiv1fsIaHe-YV82sEMi6ij8V0lCnCWSBWNcocEe89I43W_2nZLE8lpcWFiHVGMdBTJvbtpeLgTUPTvwi17B60UbQZxYvkDAq5sNUCAvtYXcGOvwMHeilR6VdBOaauqpuVDE-PHEjY0hY6U7YEXy0Gez67Rd7wgr-7Dt3BQdwdBhVJH-CBbs3JjbG0fTrEHICBhQ7m2TqPaiBuTW8v36tkHZhVZjFaZItrvgCywX_Up2KzFsBRLyETXpMpQRlYwQvtH14Z_-HYUJufwiWgMDwe72wIvdyn7AprbOFyts6DFJwDzIjO-g5e-DSvlQht-3xbx54iRbk8kxhOrTGzrd4vGKjsJ-ocbANgzfAS5BEgVcwn8n-_YgbABE8QLlxEthVSzUM4pQLbtxOizw4w6usvjD2968ds0rif-oTwQejfI1yVzTY_lPeBYoe8="
             }
           ],
           "role": "model"
@@ -39,7 +40,7 @@
           "parts": [
             {
               "functionResponse": {
-                "id": "pyd_ai_d6249f6c261544df9841f532be446f03",
+                "id": "pyd_ai_de82f159fb30408c98704a7bbeeb9c43",
                 "name": "get_user_country",
                 "response": {
                   "return_value": "Mexico"
@@ -50,16 +51,26 @@
           "role": "user"
         }
       ],
-      "generationConfig": {},
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "VALIDATED"
+        }
+      },
       "tools": [
         {
           "functionDeclarations": [
             {
               "description": "",
               "name": "get_user_country",
-              "parameters": {
+              "parameters_json_schema": {
+                "additionalProperties": false,
                 "properties": {},
-                "type": "OBJECT"
+                "type": "object"
               }
             }
           ]
@@ -72,9 +83,9 @@
     "headers": {
       "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
       "content-type": "application/json; charset=UTF-8",
-      "server-timing": "gfet4t7; dur=8049",
+      "server-timing": "gfet4t7; dur=1531",
       "vary": "Origin"
     },
-    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The largest city in Mexico is Mexico City.\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"models/gemini-2.5-pro\", \"responseId\": \"PVteaKv3JtK2nsEPq97emQ0\", \"usageMetadata\": {\"candidatesTokenCount\": 9, \"promptTokenCount\": 80, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 80}], \"thoughtsTokenCount\": 150, \"totalTokenCount\": 239}}"
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The largest city in Mexico is Mexico City.\", \"thoughtSignature\": \"CrcCARFNMg+cYyWgxFYmMB2VHuVlPCZtnPoBf+LOFe1Ri22ptyBE/KNHpIe0nSTPNDqxhDXzYjH00gV6doJGdEVtseQRvxvZk+wm/Eka3H8vjrld0LriwJ+fUHuUldLRn6EHJmU42p4Vg6VbBd4jIzSNt/EQfxjPVmWi/IptqozGjtXTdfx4EW87xiAS7Ukbng2Ng8w5itar3TqsSSjoJ4MsZ2G1JSXqZWN2ilGTdcESoKw0BUwbNQavfqKKKy+7Y5vouovKP/vA1At4NUHWm7PvsznfEcoxR8Oeq8B3QTmh9dTrCI0iorin2M0FDkb2M+1+UZQE7Sag2cfcyLdBUGIr366FjSUDb88bVzuQKCQqj8mz4ri66uAcAf0B0/QZck2gfbLypq4uCvoNyJaDMgLmXtdtXAuRcM4=\"}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"70JaaritNpKHz7IPs4SL8Qw\", \"usageMetadata\": {\"candidatesTokenCount\": 9, \"promptTokenCount\": 80, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 80}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 64, \"totalTokenCount\": 153}}"
   }
 }

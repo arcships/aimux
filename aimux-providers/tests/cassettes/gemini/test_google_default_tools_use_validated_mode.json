@@ -1,0 +1,87 @@
+{
+  "source": "pydantic-ai (MIT)",
+  "provider": "gemini",
+  "scenario": "test_google_default_tools_use_validated_mode",
+  "request": {
+    "path": "/v1beta/models/gemini-2.5-flash:generateContent",
+    "method": "POST",
+    "headers": {
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate, br, zstd",
+      "connection": "keep-alive",
+      "content-length": "642",
+      "content-type": "application/json",
+      "host": "generativelanguage.googleapis.com"
+    },
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "What is the weather and the time in Paris? Use the tools."
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "VALIDATED"
+        }
+      },
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "get_weather",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            },
+            {
+              "description": "",
+              "name": "get_time",
+              "parameters_json_schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "city": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+      "content-type": "application/json; charset=UTF-8",
+      "server-timing": "gfet4t7; dur=1231",
+      "vary": "Origin"
+    },
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {\"city\": \"Paris\"}, \"name\": \"get_weather\"}, \"thoughtSignature\": \"CtACARFNMg80aCiOORUSWSvBQLE+xqJvrmLZ+IrKWPLiDg1zbxrL2WAiyOJB1HSjMhqZMa3xm9F6ja7CfHpM3JHGe9IY8vXm2sCkwrBQWwWXLdYp5LXi1X8ik3MugY8EQe2VQXf+qbkrnyNHvUpc3xo9PEnnBtCYfa5uDNS4FlUeKQe5efM4gsclFW3ngnVL5KHJIfe2ADmwjnV7jnItQBSZc7pQKOjxI8CGW4MxhcEZx7wdtAYOjXWtfZt86aR5l+DdKyHbIyDZjAY1acjBnY3CN283pkuXuNVn3k2DtdY8XJhZqTzjmr22gYb14NvRkNOuXxS7dk/OxDa3KGFG5cbwp92jQikWU4eGb+V6YqxyXoHCqbFt4YuNEDKx/yKl2Tr0bx5rsuHZ8dsNiZ+nbTJvf9fRhKzw7wvQPpEp65kACwkdHw6g4PjjbWnYkpI4+KGq\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-flash\", \"responseId\": \"WKNOarSwGpjhz7IP99bVwQU\", \"usageMetadata\": {\"candidatesTokenCount\": 15, \"promptTokenCount\": 79, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 79}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 69, \"totalTokenCount\": 163}}"
+  }
+}

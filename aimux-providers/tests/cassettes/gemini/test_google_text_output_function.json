@@ -3,13 +3,13 @@
   "provider": "gemini",
   "scenario": "test_google_text_output_function",
   "request": {
-    "path": "/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent",
+    "path": "/v1beta/models/gemini-2.5-pro:generateContent",
     "method": "POST",
     "headers": {
       "accept": "*/*",
-      "accept-encoding": "gzip, deflate",
+      "accept-encoding": "gzip, deflate, br, zstd",
       "connection": "keep-alive",
-      "content-length": "331",
+      "content-length": "468",
       "content-type": "application/json",
       "host": "generativelanguage.googleapis.com"
     },
@@ -24,16 +24,26 @@
           "role": "user"
         }
       ],
-      "generationConfig": {},
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT"
+        ]
+      },
+      "toolConfig": {
+        "functionCallingConfig": {
+          "mode": "VALIDATED"
+        }
+      },
       "tools": [
         {
           "functionDeclarations": [
             {
               "description": "",
               "name": "get_user_country",
-              "parameters": {
+              "parameters_json_schema": {
+                "additionalProperties": false,
                 "properties": {},
-                "type": "OBJECT"
+                "type": "object"
               }
             }
           ]
@@ -46,9 +56,9 @@
     "headers": {
       "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
       "content-type": "application/json; charset=UTF-8",
-      "server-timing": "gfet4t7; dur=5967",
+      "server-timing": "gfet4t7; dur=1953",
       "vary": "Origin"
     },
-    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_user_country\"}}], \"role\": \"model\"}, \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"models/gemini-2.5-pro\", \"responseId\": \"NVteaJuxIuikkdUP1L_2sAY\", \"usageMetadata\": {\"candidatesTokenCount\": 12, \"promptTokenCount\": 49, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 49}], \"thoughtsTokenCount\": 264, \"totalTokenCount\": 325}}"
+    "body": "{\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"args\": {}, \"name\": \"get_user_country\"}, \"thoughtSignature\": \"CrwEARFNMg9kt50r8JWztiQv5EbaHEi9upzlu0Rb1dqVBXKFsp6Vl2LqdQYneurc2UGzFWXwa+lnyMw9Cl4/yeC3Vx+h96Ds2DagCO401yYYBuMZ0yAPLoDyTpJXCkB7e2Gfx8RMTjIA96lx0SC9/npeB+mxnvOBWqwGJsvMKVIsXIE7JcjhCD265+56xbl5zST65buBk4shjbxwVxAFFiSLhKYE6kspbh9F9wOc4peoPdMHtXGquGaAGkaVRQIbTVy2MeCN/LVgWRKSFqWP8OAZ1MXCVloIIL9uhjjREmVTme1kaUESIUvYFlUIXZRSmXDOStZiv1fsIaHe+YV82sEMi6ij8V0lCnCWSBWNcocEe89I43W/2nZLE8lpcWFiHVGMdBTJvbtpeLgTUPTvwi17B60UbQZxYvkDAq5sNUCAvtYXcGOvwMHeilR6VdBOaauqpuVDE+PHEjY0hY6U7YEXy0Gez67Rd7wgr+7Dt3BQdwdBhVJH+CBbs3JjbG0fTrEHICBhQ7m2TqPaiBuTW8v36tkHZhVZjFaZItrvgCywX/Up2KzFsBRLyETXpMpQRlYwQvtH14Z/+HYUJufwiWgMDwe72wIvdyn7AprbOFyts6DFJwDzIjO+g5e+DSvlQht+3xbx54iRbk8kxhOrTGzrd4vGKjsJ+ocbANgzfAS5BEgVcwn8n+/YgbABE8QLlxEthVSzUM4pQLbtxOizw4w6usvjD2968ds0rif+oTwQejfI1yVzTY/lPeBYoe8=\"}], \"role\": \"model\"}, \"finishMessage\": \"Model generated function call(s).\", \"finishReason\": \"STOP\", \"index\": 0}], \"modelVersion\": \"gemini-2.5-pro\", \"responseId\": \"7UJaaubyNKDXz7IP_9HOUA\", \"usageMetadata\": {\"candidatesTokenCount\": 12, \"promptTokenCount\": 49, \"promptTokensDetails\": [{\"modality\": \"TEXT\", \"tokenCount\": 49}], \"serviceTier\": \"standard\", \"thoughtsTokenCount\": 136, \"totalTokenCount\": 197}}"
   }
 }

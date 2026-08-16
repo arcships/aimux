@@ -11,7 +11,32 @@
       "content-length": "580",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "What is the capital of France? Give me the city name, country, and population."
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {},
+      "outputConfig": {
+        "textFormat": {
+          "type": "json_schema",
+          "structure": {
+            "jsonSchema": {
+              "name": "CityInfo",
+              "schema": "{\"additionalProperties\": false, \"properties\": {\"city\": {\"type\": \"string\"}, \"country\": {\"type\": \"string\"}, \"population\": {\"type\": \"integer\"}}, \"required\": [\"city\", \"country\", \"population\"], \"type\": \"object\"}",
+              "description": "Information about a city."
+            }
+          }
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

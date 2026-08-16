@@ -11,7 +11,28 @@
       "content-length": "174",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "messages": [
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "Hello there!"
+            }
+          ]
+        },
+        {
+          "role": "user",
+          "content": [
+            {
+              "text": "Now say goodbye."
+            }
+          ]
+        }
+      ],
+      "system": [],
+      "inferenceConfig": {}
+    }
   },
   "response": {
     "status": 200,

@@ -12,7 +12,16 @@
       "content-length": "164",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "taskType": "SINGLE_EMBEDDING",
+      "singleEmbeddingParams": {
+        "embeddingPurpose": "TEXT_RETRIEVAL",
+        "text": {
+          "value": "Test Nova settings",
+          "truncationMode": "NONE"
+        }
+      }
+    }
   },
   "response": {
     "status": 200,

@@ -12,7 +12,10 @@
       "content-length": "64",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "inputText": "Test normalization disabled",
+      "normalize": false
+    }
   },
   "response": {
     "status": 200,

@@ -110,6 +110,6 @@
       "server-timing": "gfet4t7; dur=493",
       "vary": "Origin"
     },
-    "body": ""
+    "body": "data: {\"candidates\": [{\"content\": {\"parts\": [{\"functionCall\": {\"name\": \"get_temperature\",\"args\": {\"city\": \"Paris\"}}}],\"role\": \"model\"},\"finishReason\": \"STOP\"}],\"usageMetadata\": {\"promptTokenCount\": 64,\"candidatesTokenCount\": 5,\"totalTokenCount\": 69,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 64}],\"candidatesTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 5}]},\"modelVersion\": \"gemini-2.0-flash\",\"responseId\": \"11peaOXwBPH_2PgPh_z--AY\"}\r\n\r\n"
   }
 }

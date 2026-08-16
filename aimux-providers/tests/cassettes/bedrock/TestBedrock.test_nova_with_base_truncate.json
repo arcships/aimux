@@ -12,7 +12,16 @@
       "content-length": "166",
       "content-type": "b'application/json'"
     },
-    "body": {}
+    "body": {
+      "taskType": "SINGLE_EMBEDDING",
+      "singleEmbeddingParams": {
+        "embeddingPurpose": "GENERIC_RETRIEVAL",
+        "text": {
+          "value": "Test base truncate",
+          "truncationMode": "END"
+        }
+      }
+    }
   },
   "response": {
     "status": 200,
