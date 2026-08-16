@@ -50,6 +50,7 @@ pub struct TraceRecord {
     /// RFC-0023).
     pub call_id: String,
     /// When the call was sent (epoch ms).
+    #[ts(type = "number")]
     pub sent_at_unix_ms: i64,
     /// Monotonic clock ms (same domain as the store's TTL lookups; internal
     /// bookkeeping, not part of the wire contract).
@@ -62,6 +63,7 @@ pub struct TraceRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lcp_token_upper: Option<u64>,
     /// Time to first streamed token (ms). Non-streaming: `None`.
+    #[ts(type = "number | null")]
     pub ttft_ms: Option<u64>,
     pub fingerprint: Fingerprint,
     pub usage: UsageSnapshot,
