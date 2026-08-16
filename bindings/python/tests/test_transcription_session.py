@@ -185,7 +185,7 @@ class TestTranscriptionSessionBehavior:
             try:
                 first = session.next_part(timeout_ms=3000)
                 assert first is not None
-                assert "StreamStart" in json.loads(first)["Ok"]
+                assert "StreamStart" in json.loads(first)
 
                 with pytest.raises(APITimeoutError) as ei:
                     session.next_part(timeout_ms=250)
@@ -197,33 +197,29 @@ class TestTranscriptionSessionBehavior:
                 # The session stayed live across the timeout.
                 late = session.next_part(timeout_ms=5000)
                 assert late is not None
-                assert "TranscriptDelta" in json.loads(late)["Ok"]
+                assert "TranscriptDelta" in json.loads(late)
             finally:
                 session.close()
 
-    def test_server_error_event_propagates_verbatim(self):
-        # NOTE on contract: in-stream errors (a server `error` event) are
-        # delivered by the Python driver as a serialized
-        # `{"Err": {...}}` *part* — only connect failures and next_part
-        # timeouts raise (see the FFI session, which returns Err items).
+    def test_server_error_event_raises(self):
+        # Contract (issue #145, option A): in-stream errors RAISE from
+        # next_part as the typed hierarchy — matching the docstring, the FFI
+        # session (Err items), and the other six bindings.
         with FakeRealtimeServer([(50, ("event", ERROR_EVENT))]) as mock:
             model = openai_transcription("k", "gpt-realtime-whisper", mock.url)
             session = start_transcription_session(model, None)
             try:
                 first = session.next_part(timeout_ms=5000)
                 assert first is not None
-                assert "StreamStart" in json.loads(first)["Ok"]
+                assert "StreamStart" in json.loads(first)
 
-                err_part = session.next_part(timeout_ms=5000)
-                assert err_part is not None
-                api = json.loads(err_part)["Err"]["ApiCall"]
-                # The provider's own message, verbatim, not transport noise.
-                assert (
-                    api["message"] == "insufficient quota for realtime transcription"
+                with pytest.raises(APICallError) as ei:
+                    session.next_part(timeout_ms=5000)
+                # The provider's own message, verbatim (the exception adds
+                # its "API call error: " prefix), not transport noise.
+                assert ei.value.args[0].endswith(
+                    "insufficient quota for realtime transcription"
                 )
-                # The retry verdict is decidable from the part.
-                assert api["is_retryable"] is False
-                assert api["status_code"] is None
 
                 # The error terminated the stream: the channel ends normally.
                 assert session.next_part(timeout_ms=3000) is None
