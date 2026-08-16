@@ -2,7 +2,7 @@
 
 export type HttpRecord = { method: string, url: string, 
 /**
- * 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "[REDACTED]"。
+ * 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
  */
 headers: Array<[string, string]>, 
 /**
