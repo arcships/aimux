@@ -42,16 +42,24 @@ impl FalConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
+    /// Create from the `FAL_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "FAL_KEY", "Fal")?;
         Ok(Self::new(api_key))
@@ -63,22 +71,26 @@ pub struct FalProvider {
 }
 
 impl FalProvider {
+    #[must_use]
     pub fn new(config: FalConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn transcription(&self, model_id: &str) -> FalTranscriptionModel {
         FalTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a video generation model instance for the given model name
     /// (e.g. `"fal-ai/kling-video"`).
+    #[must_use]
     pub fn video(&self, model_id: &str) -> FalVideoModel {
         FalVideoModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an image generation model instance for the given model name
     /// (e.g. `"fal-ai/flux/schnell"`).
+    #[must_use]
     pub fn image(&self, model_id: &str) -> FalImageModel {
         FalImageModel::new(model_id.to_string(), self.config.clone())
     }
@@ -125,6 +137,7 @@ pub struct FalTranscriptionModel {
 }
 
 impl FalTranscriptionModel {
+    #[must_use]
     pub fn new(model_id: String, config: FalConfig) -> Self {
         Self { model_id, config }
     }
@@ -201,7 +214,7 @@ impl TranscriptionModel for FalTranscriptionModel {
             if let Some(v) = fal.get("numSpeakers") {
                 body.insert("num_speakers".to_string(), v.clone());
             }
-            if let Some(v) = fal.get("diarize").and_then(|v| v.as_bool()) {
+            if let Some(v) = fal.get("diarize").and_then(serde_json::Value::as_bool) {
                 body.insert("diarize".to_string(), json!(v));
             }
             if let Some(v) = fal.get("chunkLevel") {
@@ -356,6 +369,7 @@ pub struct FalImageModel {
 }
 
 impl FalImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: FalConfig) -> Self {
         Self { model_id, config }
     }
@@ -453,7 +467,7 @@ impl ImageModel for FalImageModel {
         {
             let multi = fal_opts
                 .and_then(|o| o.get("useMultipleImages"))
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             if multi {
                 let uris: Result<Vec<String>, _> =
@@ -634,6 +648,7 @@ pub struct FalVideoModel {
 }
 
 impl FalVideoModel {
+    #[must_use]
     pub fn new(model_id: String, config: FalConfig) -> Self {
         Self { model_id, config }
     }

@@ -50,6 +50,7 @@
 #ifndef AIMUX_FFI_H
 #define AIMUX_FFI_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "aimux-error.h"
@@ -434,6 +435,43 @@ uint64_t aimux_openai_transcription_new_with_base(const char *api_key, const cha
 /* opts_json is currently IGNORED (reserved for future options). */
 char *aimux_transcription_generate(uint64_t handle, const char *audio_base64, const char *media_type, const char *opts_json, AimuxError *err);
 
+/* ── Transcription streaming sessions (RFC-0028) ─────────────────────────── */
+
+/* Start a streaming transcription session. The driver task spawns
+   immediately; push audio with aimux_transcription_push_audio, then pull
+   parts with aimux_transcription_next_part. model_handle must support
+   streaming (models without do_stream fail on the first next_part).
+   abort_handle: 0 = no cancellation, or an aimux_abort_signal_new handle.
+   opts_json (all optional): { "input_audio_format": {"format_type","rate"},
+   "provider_options", "headers", "include_raw_chunks" }; NULL/empty/"null"
+   = defaults. Returns session handle > 0 or 0 on failure (fills *err). */
+uint64_t aimux_transcription_session_new(uint64_t model_handle, uint64_t abort_handle,
+                                         const char *opts_json, AimuxError *err);
+
+/* Push one binary audio chunk. BLOCKING: waits while the internal channel is
+   full (backpressure propagation). data may be NULL only when len == 0
+   (no-op). Pushing after aimux_transcription_input_done or after the session
+   ended fails. Not callable from within an aimux callback (re-entrancy
+   guard — applies to next_part too). Returns 1 on success, 0 on failure
+   (fills *err). */
+int32_t aimux_transcription_push_audio(uint64_t session, const uint8_t *data, size_t len,
+                                       AimuxError *err);
+
+/* Signal end-of-audio (idempotent). Returns 1, or 0 on invalid handle. */
+int32_t aimux_transcription_input_done(uint64_t session, AimuxError *err);
+
+/* Pull the next part (JSON TranscriptionStreamPart; free with
+   aimux_free_string). timeout_ms: >0 = wait at most; 0 = immediate poll;
+   <0 = wait indefinitely. NULL return is disambiguated via err (caller MUST
+   pass non-NULL err): AIMUX_E_TIMEOUT = retry (free err.message!), AIMUX_E_OK
+   (untouched) = stream ended normally, other codes = stream failed.
+   opts_json of session_new accepts an optional "timeout" object
+   {"total_ms","first_chunk_ms","chunk_ms"} bounding the WS session. */
+char *aimux_transcription_next_part(uint64_t session, int64_t timeout_ms, AimuxError *err);
+
+/* Terminate and release the session (aborts the driver; safe with 0). */
+void aimux_transcription_session_drop(uint64_t session);
+
 /* ── Files ──────────────────────────────────────────────────────────────── */
 
 uint64_t aimux_openai_files_new(const char *api_key, AimuxError *err);
@@ -553,6 +591,14 @@ int aimux_recording_stop(void);
    ring recorder). Returns 0. */
 int aimux_recording_flush(void);
 
+/* Flush the global recorder and report write failures. Returns
+   AIMUX_OK (0) when the JSONL is confirmed on disk (also when recording was
+   never initialized), or one of:
+     AIMUX_E_RECORDING_WRITE (15) — a prior write failed (sticky, e.g. ENOSPC)
+     AIMUX_E_RECORDING_WRITER_GONE (16) — writer unavailable (unwritable dir)
+     AIMUX_E_RECORDING_FLUSH_TIMEOUT (17) — no writer ack within 30s */
+int aimux_recording_try_flush(void);
+
 /* Register external OpenAI-compatible providers from a JSON config string
    (RFC-0020). config_json is { "providers": [ { "name", "base_url", ... } ] }.
    Entries override same-named built-ins or add new ones.
@@ -571,6 +617,36 @@ int aimux_init_proxy(const char *config_json, AimuxError *err);
    aimux_generate_text / aimux_stream_text (no real API sent); caller frees
    with aimux_free_string. */
 uint64_t aimux_mock_replay_new(const char *recordings_jsonl, AimuxError *err);
+
+/* ── Composite models (RFC-0021 / RFC-0022) ─────────────────────────── */
+
+/* Create a RouterModel (RFC-0021) over the given child-model handles. The
+   returned handle is itself a model handle (works with aimux_generate_text /
+   aimux_stream_text); release with aimux_drop_handle.
+
+   handles: array of `len` existing model handles (e.g. from aimux_openai_new).
+   Unknown handles are silently dropped; the call only fails if all are
+   unknown (or len == 0). config_json selects the router + fallback policy:
+   { "router": "rule"|"weighted", "weights": [..], "fallback": "on_error"|"none",
+     "provider_name": "router", "model_id": "router" } — all optional; defaults
+   are rule / on_error / "router" / "router".
+   Returns handle > 0 or 0 on failure (fills *err). */
+uint64_t aimux_router_new(const uint64_t *handles, size_t len,
+                          const char *config_json, AimuxError *err);
+
+/* Create a MoaModel (RFC-0022) over reference handles + one aggregator handle.
+   The returned handle is a model handle (works with aimux_generate_text /
+   aimux_stream_text); release with aimux_drop_handle.
+
+   reference_handles: array of `ref_len` existing handles (may be NULL/0 —
+   MoaModel then runs just the aggregator). aggregator: a single existing
+   handle (must be valid). Unknown reference handles are dropped; an unknown
+   aggregator handle fails. config_json is a serialized MoaConfig (all fields
+   optional): { "provider_name", "model_id", "aggregator_instructions",
+   "strip_reference_tools", "fail_mode": "best_effort"|"fail_fast" }.
+   Returns handle > 0 or 0 on failure (fills *err). */
+uint64_t aimux_moa_new(const uint64_t *reference_handles, size_t ref_len,
+                       uint64_t aggregator, const char *config_json, AimuxError *err);
 
 #ifdef __cplusplus
 } /* extern "C" */

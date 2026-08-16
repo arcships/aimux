@@ -89,9 +89,9 @@ fn cohere_event(json_str: &str) -> String {
             .get("type")
             .and_then(|t| t.as_str())
             .unwrap_or("message");
-        format!("event: {}\ndata: {}\n\n", event_type, json_str)
+        format!("event: {event_type}\ndata: {json_str}\n\n")
     } else {
-        format!("event: unknown\ndata: {}\n\n", json_str)
+        format!("event: unknown\ndata: {json_str}\n\n")
     }
 }
 
@@ -110,7 +110,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -167,7 +167,7 @@ async fn should_extract_text_response() {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "The capital of France is Paris.");
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
     assert_eq!(result.finish_reason.raw.as_deref(), Some("COMPLETE"));
@@ -265,7 +265,7 @@ async fn should_extract_tool_calls() {
             assert_eq!(tool_name, "weather");
             assert_eq!(input, &json!({"location": "San Francisco"}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::ToolCall {
@@ -274,7 +274,7 @@ async fn should_extract_tool_calls() {
             assert_eq!(tool_name, "cityAttractions");
             assert_eq!(input, &json!({"city": "San Francisco"}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -322,7 +322,7 @@ async fn should_handle_null_tool_call_arguments() {
             // "null" should be replaced with "{}".
             assert_eq!(input, &json!({}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
 }
 
@@ -504,7 +504,7 @@ async fn should_stream_text_deltas() {
             assert_eq!(usage.input_tokens.total, Some(507));
             assert_eq!(usage.output_tokens.total, Some(10));
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 
@@ -565,7 +565,7 @@ async fn should_stream_tool_call_deltas() {
         StreamPart::Finish { finish_reason, .. } => {
             assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 
@@ -1037,7 +1037,7 @@ async fn should_extract_citations_from_response() {
                  3. Cost reduction"
             );
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     for (i, c) in result.content[1..].iter().enumerate() {
         match c {
@@ -1048,12 +1048,12 @@ async fn should_extract_citations_from_response() {
                 title,
                 ..
             } => {
-                assert_eq!(id, &format!("citation-{}", i));
+                assert_eq!(id, &format!("citation-{i}"));
                 assert_eq!(source_type, "document");
                 assert_eq!(url, &None);
                 assert_eq!(title, &Some("benefits.txt".to_string()));
             }
-            other => panic!("expected Source, got {:?}", other),
+            other => panic!("expected Source, got {other:?}"),
         }
     }
 
@@ -1464,7 +1464,7 @@ async fn should_stream_empty_tool_call_arguments() {
         StreamPart::Finish { finish_reason, .. } => {
             assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 

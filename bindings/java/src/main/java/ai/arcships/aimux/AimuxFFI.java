@@ -251,4 +251,34 @@ public interface AimuxFFI extends Library {
 
     /** Set the global proxy configuration (M6, RFC-0016). Returns 1 on success, 0 on failure (fills {@code err}). */
     int aimux_init_proxy(String configJson, AimuxCError err);
+
+    /** Create a RouterModel (RFC-0021) over child handles. {@code handles} is pinned by
+     *  JNA to a {@code uint64_t*}; unknown handles are dropped. {@code configJson} may be
+     *  null. Returns handle &gt; 0 or 0 on failure (fills {@code err}). */
+    long aimux_router_new(long[] handles, long len, String configJson, AimuxCError err);
+
+    /** Create a MoaModel (RFC-0022) over reference handles + one aggregator handle.
+     *  {@code referenceHandles} may be null/empty (degrades to aggregator-only). Returns
+     *  handle &gt; 0 or 0 on failure (fills {@code err}). */
+    long aimux_moa_new(long[] referenceHandles, long refLen, long aggregator, String configJson, AimuxCError err);
+
+    // ── Transcription streaming sessions (RFC-0028) ─────────────────────────
+
+    /** Start a streaming transcription session. {@code abortHandle} 0 = none.
+     *  {@code optsJson} nullable. Returns session handle &gt; 0 or 0 (fills err). */
+    long aimux_transcription_session_new(long modelHandle, long abortHandle, String optsJson, AimuxCError err);
+
+    /** Push one binary audio chunk (BLOCKS while the channel is full).
+     *  Returns 1 on success, 0 on failure. */
+    int aimux_transcription_push_audio(long session, byte[] data, long len, AimuxCError err);
+
+    /** Signal end-of-audio (idempotent). Returns 1, or 0 on invalid handle. */
+    int aimux_transcription_input_done(long session, AimuxCError err);
+
+    /** Pull the next part (JSON string, free with {@link #aimux_free_string}); NULL
+     *  = ended (AIMUX_OK) / timeout (AIMUX_E_TIMEOUT) / error, per err.code. */
+    Pointer aimux_transcription_next_part(long session, long timeoutMs, AimuxCError err);
+
+    /** Terminate and release the session (safe with 0). */
+    void aimux_transcription_session_drop(long session);
 }

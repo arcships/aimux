@@ -88,7 +88,7 @@ fn sse_body(events: &[&str]) -> String {
 fn sse_json_body(chunks: &[&str]) -> String {
     let mut body = String::new();
     for c in chunks {
-        body.push_str(&format!("data: {}\n\n", c));
+        body.push_str(&format!("data: {c}\n\n"));
     }
     body.push_str("data: [DONE]\n\n");
     body
@@ -100,7 +100,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -161,7 +161,7 @@ async fn should_extract_text_response() {
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
     assert_eq!(result.finish_reason.raw.as_deref(), Some("stop"));
@@ -312,7 +312,7 @@ async fn should_extract_tool_call() {
             assert_eq!(tool_name, "weather");
             assert_eq!(input, &json!({"location": "San Francisco"}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -567,7 +567,7 @@ async fn should_stream_text() {
             assert_eq!(usage.input_tokens.total, Some(13));
             assert_eq!(usage.output_tokens.total, Some(8));
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 
@@ -991,13 +991,14 @@ async fn should_extract_content_when_message_content_is_object() {
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Hello from object"),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
 }
 
-/// TS: "should preserve ordering of mixed thinking and text" — the Rust
-/// `GenerateContent` enum has no reasoning variant, so thinking parts are
-/// skipped and only text parts are surfaced.
+/// TS: "should preserve ordering of mixed thinking and text".
+///
+/// Thinking parts become a `Reasoning` item, pushed ahead of the text to match
+/// the upstream ordering; the text parts are joined as before.
 #[tokio::test]
 async fn should_extract_text_from_mixed_thinking_and_text() {
     let server = MockServer::start().await;
@@ -1035,14 +1036,22 @@ async fn should_extract_text_from_mixed_thinking_and_text() {
         .await
         .expect("should succeed");
 
-    // The Rust `GenerateContent` enum has no reasoning variant; the impl joins
-    // all text parts into a single Text content (thinking parts are skipped).
-    assert_eq!(result.content.len(), 1);
+    // Reasoning first, then the joined text.
+    assert_eq!(result.content.len(), 2);
     match &result.content[0] {
+        GenerateContent::Reasoning { text, .. } => {
+            assert_eq!(
+                text, "First thought.Second thought.",
+                "both thinking parts must survive, in order"
+            );
+        }
+        other => panic!("expected Reasoning at [0], got {other:?}"),
+    }
+    match &result.content[1] {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Partial answer.Final answer.");
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text at [1], got {other:?}"),
     }
 }
 
@@ -1085,7 +1094,7 @@ async fn should_handle_empty_thinking_content() {
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "Just the answer."),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
 }
 
@@ -1128,7 +1137,7 @@ async fn should_return_raw_text_with_think_tags() {
     assert_eq!(result.content.len(), 1);
     match &result.content[0] {
         GenerateContent::Text { text, .. } => assert_eq!(text, raw),
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
 }
 
@@ -1216,7 +1225,7 @@ async fn should_extract_multiple_tool_calls() {
             assert_eq!(tool_name, "weather");
             assert_eq!(input, &json!({"city": "SF"}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::ToolCall {
@@ -1229,7 +1238,7 @@ async fn should_extract_multiple_tool_calls() {
             assert_eq!(tool_name, "time");
             assert_eq!(input, &json!({"zone": "PST"}));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }

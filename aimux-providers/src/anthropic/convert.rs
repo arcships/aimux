@@ -18,7 +18,7 @@
 //!   conversion with `send_reasoning = false`, discarding the betas and
 //!   warnings.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
@@ -30,6 +30,7 @@ use serde_json::{Map, Value, json};
 
 use crate::anthropic::cache_control::CacheControlValidator;
 use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_with_provider};
+use crate::anthropic::tool_name_mapping::ToolNameMapping;
 
 /// Beta header emitted when a PDF file part is present.
 const BETA_PDFS: &str = "pdfs-2024-09-25";
@@ -63,10 +64,45 @@ pub struct AnthropicPromptConversion {
 /// `send_reasoning` controls whether assistant `Reasoning` parts are converted
 /// into Anthropic `thinking` blocks (when `true`) or dropped with a warning
 /// (when `false`).
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` / `UnsupportedFunctionality` when a
+/// message part cannot be represented in the Anthropic wire format (e.g. an
+/// unresolvable file reference or an unsupported media type).
 pub fn convert_prompt_to_anthropic_full_fallible(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
+    convert_prompt_to_anthropic_full_with_tools(prompt, send_reasoning, &ToolNameMapping::default())
+}
+
+/// [`convert_prompt_to_anthropic_full_fallible`] with the call's tool-name
+/// mapping.
+///
+/// The mapping is only consulted for **assistant-role** `ToolResult` parts,
+/// where the caller's tool name has to be resolved back to Anthropic's wire
+/// name to pick the right provider-executed result block (`web_search_tool_result`,
+/// `code_execution_tool_result`, …). Anthropic rejects a bare `tool_result`
+/// block inside an assistant message with HTTP 400, so a result whose tool
+/// cannot be resolved is dropped with a warning rather than emitted.
+///
+/// # Errors
+///
+/// Same as [`convert_prompt_to_anthropic_full_fallible`]: `AiMuxError::InvalidArgument`
+/// / `UnsupportedFunctionality` when a message part cannot be represented in the
+/// Anthropic wire format.
+pub fn convert_prompt_to_anthropic_full_with_tools(
+    prompt: &LanguageModelPrompt,
+    send_reasoning: bool,
+    tool_names: &ToolNameMapping,
+) -> Result<AnthropicPromptConversion, AiMuxError> {
+    // Ids of tool calls that were executed over MCP. Their results must be sent
+    // back as `mcp_tool_result`, not as a provider-tool result block. Upstream
+    // scopes this set to one merged assistant block; scanning the whole prompt
+    // is a superset of that and is safe because tool call ids are unique.
+    let mcp_tool_use_ids = collect_mcp_tool_use_ids(prompt);
+
     let mut system: Vec<Value> = Vec::new();
     let mut messages: Vec<Value> = Vec::new();
     let mut betas: BTreeSet<String> = BTreeSet::new();
@@ -184,17 +220,33 @@ pub fn convert_prompt_to_anthropic_full_fallible(
                 let n = msg.content.len();
                 for (idx, p) in msg.content.iter().enumerate() {
                     let is_last_part = idx + 1 == n;
-                    if let Some(block) = convert_part_to_anthropic(
-                        p,
-                        send_reasoning,
-                        &mut betas,
-                        &mut warnings,
-                        &mut validator,
-                        is_last_part,
-                        msg.provider_options.as_ref(),
-                        "assistant message part",
-                        "assistant message",
-                    )? {
+                    // Assistant-role tool results are provider-executed results;
+                    // Anthropic only accepts a bare `tool_result` in a *user*
+                    // message, so they take a dedicated path.
+                    let block = if let ContentPart::ToolResult { .. } = p {
+                        convert_assistant_tool_result(
+                            p,
+                            tool_names,
+                            &mcp_tool_use_ids,
+                            &mut warnings,
+                            &mut validator,
+                            is_last_part,
+                            msg.provider_options.as_ref(),
+                        )
+                    } else {
+                        convert_part_to_anthropic(
+                            p,
+                            send_reasoning,
+                            &mut betas,
+                            &mut warnings,
+                            &mut validator,
+                            is_last_part,
+                            msg.provider_options.as_ref(),
+                            "assistant message part",
+                            "assistant message",
+                        )?
+                    };
+                    if let Some(block) = block {
                         acc.push(block);
                     }
                 }
@@ -247,6 +299,7 @@ pub fn convert_prompt_to_anthropic_full_fallible(
     since = "0.2.1",
     note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
 )]
+#[must_use]
 pub fn convert_prompt_to_anthropic_full(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
@@ -268,6 +321,7 @@ pub fn convert_prompt_to_anthropic_full(
     since = "0.2.1",
     note = "panics on failure; use convert_prompt_to_anthropic_full_fallible instead (issue #90 R1)"
 )]
+#[must_use]
 pub fn convert_prompt_to_anthropic(
     prompt: &LanguageModelPrompt,
 ) -> (Option<Vec<Value>>, Vec<Value>) {
@@ -414,7 +468,7 @@ fn convert_part_to_anthropic(
                 .as_ref()
                 .and_then(|o| o.get("anthropic"))
                 .and_then(|a| a.get("containerUpload"))
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             let block = if container_upload {
                 json!({ "type": "container_upload", "file_id": file_id })
@@ -518,6 +572,343 @@ fn convert_part_to_anthropic(
     }))
 }
 
+// ── assistant-role tool results (provider-executed) ─────────────────────────
+
+/// Collect the tool call ids that were executed over MCP.
+///
+/// Their results have to go back as `mcp_tool_result`, so they are indexed
+/// before any message is converted. The marker is the one the response side
+/// writes on an `mcp_tool_use` block (`stream.rs`):
+/// `providerOptions.anthropic.type == "mcp-tool-use"`.
+fn collect_mcp_tool_use_ids(prompt: &LanguageModelPrompt) -> HashSet<&str> {
+    let mut ids = HashSet::new();
+    for msg in prompt {
+        if msg.role != Role::Assistant {
+            continue;
+        }
+        for part in &msg.content {
+            if let ContentPart::ToolCall {
+                tool_call_id,
+                provider_options: Some(opts),
+                ..
+            } = part
+                && opts
+                    .get("anthropic")
+                    .and_then(|a| a.get("type"))
+                    .and_then(|t| t.as_str())
+                    == Some("mcp-tool-use")
+            {
+                ids.insert(tool_call_id.as_str());
+            }
+        }
+    }
+    ids
+}
+
+/// Clone `key` out of `value`, defaulting to `null`.
+fn field(value: &Value, key: &str) -> Value {
+    value.get(key).cloned().unwrap_or(Value::Null)
+}
+
+/// The error code carried by a result payload.
+///
+/// The response side emits `errorCode`; wire-shaped payloads that passed
+/// through unmapped keep `error_code`. Both are accepted so a replayed result
+/// round-trips either way.
+fn result_error_code(value: &Value, fallback: &str) -> String {
+    value
+        .get("errorCode")
+        .or_else(|| value.get("error_code"))
+        .and_then(|c| c.as_str())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+/// Convert an assistant-role `ContentPart::ToolResult` into the matching
+/// Anthropic provider-executed result block.
+///
+/// Anthropic only accepts a bare `tool_result` block inside a **user** message;
+/// emitting one on an assistant message is a hard HTTP 400. This mirrors the TS
+/// `convertToAnthropicPrompt` assistant `tool-result` branch (:871-1285): the
+/// tool name is resolved back to Anthropic's wire name and dispatched to the
+/// typed result block, and anything unrecognised is dropped with a warning
+/// rather than sent as a bare `tool_result`.
+///
+/// Returns `None` when the part is skipped.
+fn convert_assistant_tool_result(
+    part: &ContentPart,
+    tool_names: &ToolNameMapping,
+    mcp_tool_use_ids: &HashSet<&str>,
+    warnings: &mut Vec<Warning>,
+    validator: &mut CacheControlValidator,
+    is_last_part: bool,
+    message_provider_options: Option<&Value>,
+) -> Option<Value> {
+    let ContentPart::ToolResult {
+        tool_call_id,
+        tool_name,
+        result,
+        is_error,
+        provider_options,
+        ..
+    } = part
+    else {
+        return None;
+    };
+
+    // cache_control: part ?? output ?? (is_last_part ? message) — the same
+    // resolution order the bare `tool_result` path uses.
+    let cache_control = match validator.get_cache_control(
+        provider_options.as_ref(),
+        "assistant message part",
+        true,
+    ) {
+        Some(v) => Some(v),
+        None => match extract_tool_result_output_provider_options(result) {
+            Some(out_opts) => {
+                validator.get_cache_control(Some(out_opts), "tool result output", true)
+            }
+            None => {
+                if is_last_part {
+                    validator.get_cache_control(message_provider_options, "assistant message", true)
+                } else {
+                    None
+                }
+            }
+        },
+    };
+
+    // The payload is carried bare, with the error flag alongside it. Upstream
+    // reads both off a `{ type, value }` envelope instead; reconstructing that
+    // envelope here would mean guessing, and a legitimate payload that happens
+    // to look like one (`{"type":"error","value":...}`) would be unwrapped and
+    // have its `is_error` overwritten. The envelope belongs on the type.
+    let value = result;
+    let is_error = is_error.unwrap_or(false);
+    let tool_name = tool_name.as_deref().unwrap_or_default();
+    let payload_type = value.get("type").and_then(|t| t.as_str());
+
+    let mut block = if mcp_tool_use_ids.contains(tool_call_id.as_str()) {
+        json!({
+            "type": "mcp_tool_result",
+            "tool_use_id": tool_call_id,
+            "is_error": is_error,
+            "content": value,
+        })
+    } else {
+        let (block_type, content) = match tool_names.to_provider_tool_name(tool_name) {
+            "code_execution" => match assistant_code_execution_content(value, payload_type) {
+                Some(v) => v,
+                None => {
+                    warnings.push(Warning::Other {
+                        message: format!(
+                            "provider executed tool result output value is not a valid code execution result for tool {tool_name}"
+                        ),
+                    });
+                    return None;
+                }
+            },
+            "web_fetch" => (
+                "web_fetch_tool_result",
+                assistant_web_fetch_content(value, is_error),
+            ),
+            "web_search" => (
+                "web_search_tool_result",
+                assistant_web_search_content(value),
+            ),
+            "tool_search_tool_regex" | "tool_search_tool_bm25" => (
+                "tool_search_tool_result",
+                assistant_tool_search_content(value),
+            ),
+            "advisor" => (
+                "advisor_tool_result",
+                assistant_advisor_content(value, payload_type),
+            ),
+            _ => {
+                warnings.push(Warning::Other {
+                    message: format!(
+                        "provider executed tool result for tool {tool_name} is not supported"
+                    ),
+                });
+                return None;
+            }
+        };
+        json!({
+            "type": block_type,
+            "tool_use_id": tool_call_id,
+            "content": content,
+        })
+    };
+
+    if let Some(cc) = cache_control {
+        block["cache_control"] = cc;
+    }
+    Some(block)
+}
+
+/// `code_execution` result payload → `(block type, wire content)`.
+///
+/// The three code-execution tool versions and the bash / text-editor subtools
+/// all report through this one caller-facing tool name, so the payload's own
+/// `type` selects the block (upstream :928-1064).
+fn assistant_code_execution_content(
+    value: &Value,
+    payload_type: Option<&str>,
+) -> Option<(&'static str, Value)> {
+    let content = || value.get("content").cloned().unwrap_or(json!([]));
+    Some(match payload_type {
+        Some("code_execution_result") => (
+            "code_execution_tool_result",
+            json!({
+                "type": "code_execution_result",
+                "stdout": field(value, "stdout"),
+                "stderr": field(value, "stderr"),
+                "return_code": field(value, "return_code"),
+                "content": content(),
+            }),
+        ),
+        Some("encrypted_code_execution_result") => (
+            "code_execution_tool_result",
+            json!({
+                "type": "encrypted_code_execution_result",
+                "encrypted_stdout": field(value, "encrypted_stdout"),
+                "stderr": field(value, "stderr"),
+                "return_code": field(value, "return_code"),
+                "content": content(),
+            }),
+        ),
+        Some("code_execution_tool_result_error") => (
+            "code_execution_tool_result",
+            json!({
+                "type": "code_execution_tool_result_error",
+                "error_code": result_error_code(value, "unknown"),
+            }),
+        ),
+        Some("bash_code_execution_result") => (
+            "bash_code_execution_tool_result",
+            json!({
+                "type": "bash_code_execution_result",
+                "stdout": field(value, "stdout"),
+                "stderr": field(value, "stderr"),
+                "return_code": field(value, "return_code"),
+                "content": content(),
+            }),
+        ),
+        Some("bash_code_execution_tool_result_error") => (
+            "bash_code_execution_tool_result",
+            json!({
+                "type": "bash_code_execution_tool_result_error",
+                "error_code": result_error_code(value, "unknown"),
+            }),
+        ),
+        // The response side passes text-editor results through unmapped, so
+        // they are already in wire shape.
+        Some(t) if t.starts_with("text_editor_code_execution") => {
+            ("text_editor_code_execution_tool_result", value.clone())
+        }
+        _ => return None,
+    })
+}
+
+/// `web_fetch` result payload → wire `web_fetch_tool_result.content`
+/// (upstream :1070-1130). Re-snake-cases the camelCase response shape.
+fn assistant_web_fetch_content(value: &Value, is_error: bool) -> Value {
+    if is_error || value.get("type").and_then(|t| t.as_str()) == Some("web_fetch_tool_result_error")
+    {
+        return json!({
+            "type": "web_fetch_tool_result_error",
+            "error_code": result_error_code(value, "unavailable"),
+        });
+    }
+    let inner = value.get("content").cloned().unwrap_or(Value::Null);
+    let source = inner.get("source").cloned().unwrap_or(Value::Null);
+    json!({
+        "type": "web_fetch_result",
+        "url": field(value, "url"),
+        "retrieved_at": field(value, "retrievedAt"),
+        "content": {
+            "type": "document",
+            "title": field(&inner, "title"),
+            "citations": field(&inner, "citations"),
+            "source": {
+                "type": field(&source, "type"),
+                "media_type": field(&source, "mediaType"),
+                "data": field(&source, "data"),
+            },
+        },
+    })
+}
+
+/// `web_search` result payload → wire `web_search_tool_result.content`
+/// (upstream :1133-1196). A success payload is the result array.
+fn assistant_web_search_content(value: &Value) -> Value {
+    match value.as_array() {
+        Some(results) => Value::Array(
+            results
+                .iter()
+                .map(|r| {
+                    json!({
+                        "url": field(r, "url"),
+                        "title": field(r, "title"),
+                        "page_age": field(r, "pageAge"),
+                        "encrypted_content": field(r, "encryptedContent"),
+                        "type": field(r, "type"),
+                    })
+                })
+                .collect(),
+        ),
+        None => json!({
+            "type": "web_search_tool_result_error",
+            "error_code": result_error_code(value, "unavailable"),
+        }),
+    }
+}
+
+/// `tool_search_tool_*` result payload → wire `tool_search_tool_result.content`
+/// (upstream :1198-1233).
+fn assistant_tool_search_content(value: &Value) -> Value {
+    match value.as_array() {
+        Some(refs) => json!({
+            "type": "tool_search_tool_search_result",
+            "tool_references": refs
+                .iter()
+                .map(|r| json!({ "type": "tool_reference", "tool_name": field(r, "toolName") }))
+                .collect::<Vec<_>>(),
+        }),
+        None => json!({
+            "type": "tool_search_tool_result_error",
+            "error_code": result_error_code(value, "unavailable"),
+        }),
+    }
+}
+
+/// `advisor` result payload → wire `advisor_tool_result.content`
+/// (upstream :1235-1285).
+fn assistant_advisor_content(value: &Value, payload_type: Option<&str>) -> Value {
+    let with_stop_reason = |mut v: Value| {
+        if let Some(sr) = value.get("stopReason")
+            && !sr.is_null()
+        {
+            v["stop_reason"] = sr.clone();
+        }
+        v
+    };
+    match payload_type {
+        Some("advisor_result") => with_stop_reason(json!({
+            "type": "advisor_result",
+            "text": field(value, "text"),
+        })),
+        Some("advisor_redacted_result") => with_stop_reason(json!({
+            "type": "advisor_redacted_result",
+            "encrypted_content": field(value, "encryptedContent"),
+        })),
+        _ => json!({
+            "type": "advisor_tool_result_error",
+            "error_code": result_error_code(value, "unavailable"),
+        }),
+    }
+}
+
 /// Extract provider_options from a tool-result `output` value, mirroring the TS
 /// `outputProviderOptions` resolution.
 ///
@@ -585,8 +976,7 @@ fn route_file_bytes(
             Ok(block)
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "media type: {}",
-            full_media_type
+            "media type: {full_media_type}"
         ))),
     }
 }
@@ -630,8 +1020,7 @@ fn route_file_base64(
             Ok(block)
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "media type: {}",
-            full_media_type
+            "media type: {full_media_type}"
         ))),
     }
 }
@@ -655,8 +1044,7 @@ fn route_file_url(
             Ok(json!({ "type": "document", "source": { "type": "url", "url": url } }))
         }
         _ => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "media type: {}",
-            media_type
+            "media type: {media_type}"
         ))),
     }
 }
@@ -722,8 +1110,7 @@ fn resolve_full_media_type(media_type: &str, bytes: &[u8]) -> Result<String, AiM
     match detect_media_type(bytes, top) {
         Some(detected) => Ok(detected.to_string()),
         None => Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file of media type \"{}\" must specify subtype since it could not be auto-detected",
-            media_type
+            "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
         ))),
     }
 }
@@ -757,7 +1144,16 @@ fn convert_reasoning_part(
         .and_then(|a| a.get("redactedData"))
         .and_then(|v| v.as_str());
 
-    if let Some(sig) = signature {
+    // #6: Fall back to `providerOptions.anthropic.signature` when the
+    // `signature` field is None (upstream convert-to-anthropic-prompt.ts:669-690).
+    let effective_signature = signature.or_else(|| {
+        provider_options
+            .and_then(|o| o.get("anthropic"))
+            .and_then(|a| a.get("signature"))
+            .and_then(|v| v.as_str())
+    });
+
+    if let Some(sig) = effective_signature {
         // Thinking blocks cannot carry cache_control directly — they are cached
         // implicitly when in previous assistant turns. Validate to emit a
         // helpful warning if a value was set.
@@ -964,8 +1360,7 @@ fn map_reasoning_to_effort(
             warnings.push(Warning::Unsupported {
                 feature: "reasoning".to_string(),
                 details: Some(format!(
-                    "reasoning \"{}\" is not supported by this model.",
-                    level
+                    "reasoning \"{level}\" is not supported by this model."
                 )),
             });
             return None;
@@ -976,8 +1371,7 @@ fn map_reasoning_to_effort(
         warnings.push(Warning::Compatibility {
             feature: "reasoning".to_string(),
             details: Some(format!(
-                "reasoning \"{}\" is not directly supported by this model. mapped to effort \"{}\".",
-                level, mapped
+                "reasoning \"{level}\" is not directly supported by this model. mapped to effort \"{mapped}\"."
             )),
         });
     }
@@ -1012,8 +1406,7 @@ fn map_reasoning_to_budget(
             warnings.push(Warning::Unsupported {
                 feature: "reasoning".to_string(),
                 details: Some(format!(
-                    "reasoning \"{}\" is not supported by this model.",
-                    reasoning
+                    "reasoning \"{reasoning}\" is not supported by this model."
                 )),
             });
             return None;
@@ -1107,6 +1500,11 @@ fn strip_null_fields(value: &mut Value) {
 /// Build the Anthropic request body (without warnings). Returns an error when
 /// provider-option resolution fails (e.g. a custom skill provider reference
 /// that does not include the `anthropic` key).
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when provider-option resolution
+/// fails (e.g. a custom skill reference missing the `anthropic` key).
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -1132,8 +1530,7 @@ fn strip_anthropic_sampling_params(
             warnings.push(Warning::Unsupported {
                 feature: "temperature".to_string(),
                 details: Some(format!(
-                    "temperature is not supported by {} and will be ignored",
-                    model_id
+                    "temperature is not supported by {model_id} and will be ignored"
                 )),
             });
             temperature = None;
@@ -1142,8 +1539,7 @@ fn strip_anthropic_sampling_params(
             warnings.push(Warning::Unsupported {
                 feature: "topK".to_string(),
                 details: Some(format!(
-                    "topK is not supported by {} and will be ignored",
-                    model_id
+                    "topK is not supported by {model_id} and will be ignored"
                 )),
             });
             top_k = None;
@@ -1152,8 +1548,7 @@ fn strip_anthropic_sampling_params(
             warnings.push(Warning::Unsupported {
                 feature: "topP".to_string(),
                 details: Some(format!(
-                    "topP is not supported by {} and will be ignored",
-                    model_id
+                    "topP is not supported by {model_id} and will be ignored"
                 )),
             });
             top_p = None;
@@ -1180,7 +1575,7 @@ fn resolve_anthropic_thinking(
     let mut thinking_config: Option<Value> =
         anthropic_option(&options.provider_options, "thinking");
     let mut effort: Option<String> = anthropic_option(&options.provider_options, "effort")
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     if let Some(reasoning) = options.reasoning
         && reasoning.is_custom()
@@ -1243,7 +1638,7 @@ fn derive_anthropic_thinking(
         .as_ref()
         .and_then(|t| t.get("type"))
         .and_then(|t| t.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     let is_thinking =
         thinking_type.as_deref() == Some("enabled") || thinking_type.as_deref() == Some("adaptive");
@@ -1253,7 +1648,7 @@ fn derive_anthropic_thinking(
         thinking_config
             .as_ref()
             .and_then(|t| t.get("budgetTokens"))
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|n| n as u32)
     } else {
         None
@@ -1531,8 +1926,7 @@ fn append_anthropic_container(
                     Some(id) => id.clone(),
                     None => {
                         return Err(AiMuxError::UnsupportedFunctionality(format!(
-                            "skill provider reference is missing the 'anthropic' key: {}",
-                            skill
+                            "skill provider reference is missing the 'anthropic' key: {skill}"
                         )));
                     }
                 }
@@ -1590,6 +1984,12 @@ fn append_anthropic_container(
 /// effort mapping (provider options take precedence), and thinking-enabled
 /// default budget. The single oversized function was split into focused
 /// helpers (issue M11); behavior is unchanged.
+///
+/// # Errors
+///
+/// Propagates prompt/provider-option conversion errors, e.g.
+/// `AiMuxError::InvalidArgument` for an unresolvable file reference or
+/// container option.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -1624,7 +2024,19 @@ pub fn build_request_body_with_warnings(
 
     let max_tokens = options.max_output_tokens.unwrap_or(caps.max_output_tokens);
 
-    let conversion = convert_prompt_to_anthropic_full_fallible(&options.prompt, false)?;
+    // Extended-thinking multi-turn: when thinking is enabled/adaptive, the
+    // prior assistant turns' reasoning parts (carrying their signatures)
+    // must be echoed back as thinking blocks — Anthropic rejects tool-use
+    // continuations that omit them, and the reasoning context is lost
+    // otherwise. With thinking disabled the blocks would be rejected, so
+    // the parts are omitted with a warning instead.
+    let send_input_reasoning =
+        matches!(thinking_type.as_deref(), Some("enabled") | Some("adaptive"));
+    let conversion = convert_prompt_to_anthropic_full_with_tools(
+        &options.prompt,
+        send_input_reasoning,
+        &ToolNameMapping::new(options.tools.as_deref()),
+    )?;
     let system = conversion.system;
     let messages = conversion.messages;
     betas.extend(conversion.betas);
@@ -1695,6 +2107,7 @@ pub fn build_request_body_with_warnings(
 }
 
 /// Parse Anthropic stop_reason into `FinishReason`.
+#[must_use]
 pub fn parse_stop_reason(s: &str) -> FinishReason {
     let unified = match s {
         "end_turn" => FinishReasonUnified::Stop,

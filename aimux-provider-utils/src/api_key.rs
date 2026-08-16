@@ -6,7 +6,11 @@ use aimux_core::AiMuxError;
 ///
 /// If `api_key` is `Some`, returns it directly.
 /// Otherwise reads from `environment_variable_name`.
-/// Returns `LoadAPIKeyError` if neither is available.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when neither the `api_key` value nor
+/// the environment variable yields a key.
 pub fn load_api_key(
     api_key: Option<&str>,
     environment_variable_name: &str,
@@ -20,10 +24,9 @@ pub fn load_api_key(
 
     std::env::var(environment_variable_name).map_err(|_| {
         AiMuxError::InvalidArgument(format!(
-            "No API key found for {}. \
+            "No API key found for {description}. \
              Please provide it via the `api_key` parameter \
-             or set the `{}` environment variable.",
-            description, environment_variable_name
+             or set the `{environment_variable_name}` environment variable."
         ))
     })
 }

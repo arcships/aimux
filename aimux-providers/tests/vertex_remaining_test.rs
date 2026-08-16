@@ -218,7 +218,7 @@ async fn with_api_key_selects_apikey_auth_variant() {
     let config = VertexProviderConfig::with_api_key("express-key");
     match &config.auth {
         VertexAuth::ApiKey(k) => assert_eq!(k, "express-key"),
-        other => panic!("expected ApiKey auth, got {:?}", other),
+        other => panic!("expected ApiKey auth, got {other:?}"),
     }
 }
 
@@ -228,7 +228,7 @@ async fn new_selects_bearer_token_auth_variant() {
     let config = VertexProviderConfig::new("the-token", "proj", "us-central1");
     match &config.auth {
         VertexAuth::BearerToken(t) => assert_eq!(t, "the-token"),
-        other => panic!("expected BearerToken auth, got {:?}", other),
+        other => panic!("expected BearerToken auth, got {other:?}"),
     }
 }
 
@@ -376,7 +376,7 @@ async fn from_env_uses_api_key_when_set() {
     let config = VertexProviderConfig::from_env().expect("from_env");
     match config.auth {
         VertexAuth::ApiKey(k) => assert_eq!(k, "env-api-key"),
-        other => panic!("expected ApiKey auth, got {:?}", other),
+        other => panic!("expected ApiKey auth, got {other:?}"),
     }
     clear_vertex_env();
 }
@@ -400,7 +400,7 @@ async fn from_env_prefers_api_key_over_access_token() {
     );
     match config.auth {
         VertexAuth::ApiKey(k) => assert_eq!(k, "env-api-key"),
-        other => panic!("expected ApiKey auth, got {:?}", other),
+        other => panic!("expected ApiKey auth, got {other:?}"),
     }
     clear_vertex_env();
 }
@@ -418,7 +418,7 @@ async fn from_env_uses_access_token_project_location() {
     let config = VertexProviderConfig::from_env().expect("from_env");
     match config.auth {
         VertexAuth::BearerToken(t) => assert_eq!(t, "env-token"),
-        other => panic!("expected BearerToken auth, got {:?}", other),
+        other => panic!("expected BearerToken auth, got {other:?}"),
     }
     assert!(config.base_url.contains("/projects/env-project/"));
     assert!(config.base_url.contains("/locations/europe-west1/"));
@@ -498,7 +498,7 @@ async fn from_env_empty_api_key_falls_through_to_access_token() {
     let config = VertexProviderConfig::from_env().expect("from_env");
     match config.auth {
         VertexAuth::BearerToken(t) => assert_eq!(t, "env-token"),
-        other => panic!("expected BearerToken auth, got {:?}", other),
+        other => panic!("expected BearerToken auth, got {other:?}"),
     }
     clear_vertex_env();
 }

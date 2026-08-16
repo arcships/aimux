@@ -352,7 +352,7 @@ fn item_id(provider_options: &Option<Value>) -> Option<String> {
         .and_then(|v| v.get("openai"))
         .and_then(|o| o.get("itemId"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 /// Read the `phase` from a content part's `providerOptions.openai.phase`.
@@ -362,7 +362,7 @@ fn phase_from_provider_options(provider_options: &Option<Value>) -> Option<Strin
         .and_then(|v| v.get("openai"))
         .and_then(|o| o.get("phase"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 /// Read the `namespace` from a content part's `providerOptions.openai.namespace`.
@@ -372,7 +372,7 @@ fn namespace_from_provider_options(provider_options: &Option<Value>) -> Option<S
         .and_then(|v| v.get("openai"))
         .and_then(|o| o.get("namespace"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 /// Read a sub-key from `providerOptions.openai.<key>` on a content part.
@@ -399,6 +399,7 @@ pub struct PreparedResponsesTools {
 /// Mirrors the function-tool path of TS `prepareResponsesTools`. Built-in
 /// provider tools (web_search, file_search, etc.) are out of scope for the
 /// core implementation and emit an `unsupported` warning.
+#[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&ToolChoice>,
@@ -519,7 +520,7 @@ fn resolve_responses_reasoning(
     let resolved_reasoning_effort: Option<String> = openai_option(provider_opts, "reasoningEffort")
         .map(|v| {
             v.as_str()
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .unwrap_or_else(|| v.to_string())
         })
         .or_else(|| {
@@ -534,7 +535,7 @@ fn resolve_responses_reasoning(
         openai_option(provider_opts, "reasoningSummary")
             .map(|v| {
                 v.as_str()
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| v.to_string())
             })
             .or_else(|| {
@@ -582,7 +583,7 @@ fn resolve_responses_system_message_mode(
     caps: &ModelCapabilities,
 ) -> SystemMessageMode {
     openai_option(provider_opts, "systemMessageMode")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string))
         .map(|s| match s.as_str() {
             "developer" => SystemMessageMode::Developer,
             "remove" => SystemMessageMode::Remove,
@@ -763,8 +764,8 @@ fn apply_responses_service_tier(
     caps: &ModelCapabilities,
     warnings: &mut Vec<Warning>,
 ) {
-    if let Some(st) =
-        openai_option(provider_opts, "serviceTier").and_then(|v| v.as_str().map(|s| s.to_string()))
+    if let Some(st) = openai_option(provider_opts, "serviceTier")
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string))
     {
         match st.as_str() {
             "flex" if !caps.supports_flex_processing => {
@@ -803,9 +804,9 @@ fn apply_responses_reasoning_block(
     let effort = resolved_reasoning_effort.as_ref();
     let summary = resolved_reasoning_summary.as_ref();
     let mode = openai_option(provider_opts, "reasoningMode")
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string));
     let context = openai_option(provider_opts, "reasoningContext")
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string));
 
     if effort.is_some() || summary.is_some() || mode.is_some() || context.is_some() {
         let mut reasoning = json!({});
@@ -829,6 +830,7 @@ fn apply_responses_reasoning_block(
 ///
 /// Splits the original ~380-line function into focused helpers (issue M11);
 /// behavior is unchanged.
+#[must_use]
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -946,9 +948,18 @@ pub fn build_responses_request_body(
 /// - `output.total = output_tokens`
 /// - `output.text = output_tokens - reasoning_tokens`
 /// - `output.reasoning = reasoning_tokens`
-pub fn convert_responses_usage(usage: Option<&ResponsesUsage>) -> Usage {
+///
+/// `raw` is the untouched wire `usage` object; it is stored on `Usage.raw`
+/// (RFC-0015 P0-3). Re-serializing the typed struct instead would drop the
+/// `orchestration_*` counters and add explicit nulls, so the caller passes the
+/// original value through — matching the TS `raw: usage`.
+#[must_use]
+pub fn convert_responses_usage(usage: Option<&ResponsesUsage>, raw: Option<Value>) -> Usage {
     let Some(usage) = usage else {
-        return Usage::default();
+        return Usage {
+            raw,
+            ..Default::default()
+        };
     };
 
     let input_tokens = usage.input_tokens;
@@ -986,12 +997,12 @@ pub fn convert_responses_usage(usage: Option<&ResponsesUsage>) -> Usage {
             reasoning: Some(reasoning_tokens),
             ..Default::default()
         },
-        // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(serde_json::to_value(usage).unwrap_or(serde_json::Value::Null)),
+        raw,
     }
 }
 
 /// Helper: build a `ResponsesUsage` from a raw JSON `usage` object.
+#[must_use]
 pub fn parse_usage(raw: &Value) -> Option<ResponsesUsage> {
     serde_json::from_value(raw.clone()).ok()
 }
@@ -1005,6 +1016,7 @@ pub fn parse_usage(raw: &Value) -> Option<ResponsesUsage> {
 /// calls, else `stop`. `"max_output_tokens"` -> `length`,
 /// `"content_filter"` -> `content-filter`; otherwise `tool-calls` if there
 /// were function calls, else `other`.
+#[must_use]
 pub fn map_responses_finish_reason(
     finish_reason: Option<&str>,
     has_function_call: bool,
@@ -1029,6 +1041,6 @@ pub fn map_responses_finish_reason(
     };
     FinishReason {
         unified,
-        raw: finish_reason.map(|s| s.to_string()),
+        raw: finish_reason.map(std::string::ToString::to_string),
     }
 }

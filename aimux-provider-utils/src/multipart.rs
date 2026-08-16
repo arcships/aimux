@@ -18,6 +18,7 @@ pub struct MultipartForm {
 
 impl MultipartForm {
     /// Create a new multipart form with a unique boundary.
+    #[must_use]
     pub fn new() -> Self {
         let boundary = format!(
             "----formdata-aimux-{}",
@@ -32,7 +33,12 @@ impl MultipartForm {
     /// Add a text field.
     ///
     /// `name` is validated before it is interpolated into the MIME headers; see
-    /// [`validate_multipart_param`] for the rules.
+    /// `validate_multipart_param` for the rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `name` fails MIME-header
+    /// validation (see `validate_multipart_param`).
     pub fn text(&mut self, name: &str, value: &str) -> Result<&mut Self, AiMuxError> {
         validate_multipart_param(name, "name")?;
         self.parts
@@ -48,8 +54,13 @@ impl MultipartForm {
     /// Add a binary file field with a filename and media type.
     ///
     /// `name`, `filename` and `media_type` are validated before they are
-    /// interpolated into the MIME headers; see [`validate_multipart_param`] for
+    /// interpolated into the MIME headers; see `validate_multipart_param` for
     /// the rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `name`, `filename`, or
+    /// `media_type` fails MIME-header validation.
     pub fn file(
         &mut self,
         name: &str,
@@ -75,6 +86,7 @@ impl MultipartForm {
 
     /// Finalize the body, returning the raw bytes and the content-type header
     /// value.
+    #[must_use]
     pub fn finish(mut self) -> (Vec<u8>, String) {
         self.parts
             .extend_from_slice(format!("--{}--\r\n", self.boundary).as_bytes());
@@ -90,6 +102,7 @@ impl Default for MultipartForm {
 }
 
 /// Convert a media type (e.g. `"audio/wav"`) to a file extension (e.g. `"wav"`).
+#[must_use]
 pub fn media_type_to_extension(media_type: &str) -> String {
     media_type
         .strip_prefix("audio/")

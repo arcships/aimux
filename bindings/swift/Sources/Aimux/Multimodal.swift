@@ -212,6 +212,23 @@ public final class TranscriptionModel: @unchecked Sendable {
             aimux_transcription_generate(h, audioBase64, mediaType, options, $0)
         }
     }
+
+    /// Start a streaming transcription session (RFC-0028) on this model.
+    /// Requires a model that supports `do_stream` (realtime models).
+    ///
+    /// - Parameters:
+    ///   - options: Optional session options JSON
+    ///     (`{"input_audio_format": {...}, "provider_options", "headers",
+    ///     "include_raw_chunks"}`).
+    ///   - abortHandle: Optional abort handle (`aimux_abort_signal_new`);
+    ///     firing it aborts the session.
+    public func startStream(options: String? = nil, abortHandle: UInt64 = 0) throws -> TranscriptionSession {
+        let h = handle
+        let session = try Model.wrapHandle { err in
+            aimux_transcription_session_new(h, abortHandle, options, err)
+        }
+        return TranscriptionSession(handle: session)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1039,5 +1056,111 @@ public struct UploadFileResult: Codable, Equatable {
         self.providerReference = providerReference
         self.mediaType = mediaType; self.filename = filename
         self.providerMetadata = providerMetadata; self.warnings = warnings
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TranscriptionSession (RFC-0028 streaming)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Error for `TranscriptionSession.nextPart`: the stream ended normally (a
+/// `Finish` part was delivered earlier).
+public struct AimuxTranscriptionEndedError: Error {}
+
+/// Error for `TranscriptionSession.nextPart`: no part arrived within the
+/// timeout. The session stays live — call again.
+public struct AimuxTranscriptionTimeoutError: Error {}
+
+/// A live streaming-transcription session (RFC-0028): push audio chunks,
+/// mark end-of-audio, then pull transcription parts (JSON
+/// `TranscriptionStreamPart`s).
+public final class TranscriptionSession: @unchecked Sendable {
+
+    // The opaque session handle from aimux-ffi. 0 means invalid/freed.
+    private var handle: UInt64
+
+    // Internal: sessions are created via `TranscriptionModel.startStream`.
+    init(handle: UInt64) {
+        self.handle = handle
+    }
+
+    deinit {
+        if handle != 0 {
+            aimux_transcription_session_drop(handle)
+        }
+    }
+
+    // The handle read + nil-check must stay on one thread with the call;
+    // sessions are single-threaded (like Model).
+    private func withHandle<T>(_ body: (UInt64) throws -> T) throws -> T {
+        guard handle != 0 else {
+            throw AimuxError.invalidHandle
+        }
+        return try body(handle)
+    }
+
+    /// Push one binary audio chunk. Blocks while the internal channel is full
+    /// (backpressure propagation).
+    public func pushAudio(_ audio: [UInt8]) throws {
+        try withHandle { h in
+            var cerr = CAimuxFFI.AimuxError()
+            aimux_error_clear(&cerr)
+            let rc = audio.withUnsafeBufferPointer { buf -> Int32 in
+                let base = buf.baseAddress.map { UnsafeRawPointer($0) }
+                return aimux_transcription_push_audio(
+                    h, base?.assumingMemoryBound(to: UInt8.self), audio.count, &cerr)
+            }
+            if rc == 0 {
+                throw AimuxError.fromC(cerr)
+            }
+        }
+    }
+
+    /// Signal end-of-audio (idempotent).
+    public func inputDone() throws {
+        try withHandle { h in
+            var cerr = CAimuxFFI.AimuxError()
+            aimux_error_clear(&cerr)
+            let rc = aimux_transcription_input_done(h, &cerr)
+            if rc == 0 {
+                throw AimuxError.fromC(cerr)
+            }
+        }
+    }
+
+    /// Pull the next transcription part (JSON `TranscriptionStreamPart`).
+    ///
+    /// Throws `AimuxTranscriptionEndedError` when the stream finished
+    /// normally, `AimuxTranscriptionTimeoutError` when no part arrived in
+    /// time (retryable). `timeoutMs`: >0 wait at most; 0 immediate poll;
+    /// negative = wait indefinitely.
+    public func nextPart(timeoutMs: Int64) throws -> String {
+        try withHandle { h in
+            var cerr = CAimuxFFI.AimuxError()
+            aimux_error_clear(&cerr)
+            let ptr = aimux_transcription_next_part(h, timeoutMs, &cerr)
+            if let ptr {
+                defer { aimux_free_string(ptr) }
+                return String(cString: ptr)
+            }
+            if cerr.code == AIMUX_E_TIMEOUT {
+                // fromC consumes (frees) the message strings, then we swap in
+                // the retryable sentinel.
+                _ = AimuxError.fromC(cerr)
+                throw AimuxTranscriptionTimeoutError()
+            }
+            if cerr.code == AIMUX_OK {
+                throw AimuxTranscriptionEndedError()
+            }
+            throw AimuxError.fromC(cerr)
+        }
+    }
+
+    /// Terminate and release the session (aborts the driver; idempotent).
+    public func close() {
+        if handle != 0 {
+            aimux_transcription_session_drop(handle)
+            handle = 0
+        }
     }
 }

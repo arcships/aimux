@@ -31,6 +31,11 @@ use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 /// 可插拔匹配策略:从录制集中选一次命中。
 pub trait ReplayMatcher: Send + Sync {
     /// 按输入侧匹配;未命中返回明确错误。
+    ///
+    /// # Errors
+    ///
+    /// `Err` means no recording in the set matches the call; implementations
+    /// choose the matching strictness and error text.
     fn r#match<'a>(
         &self,
         options: &CallOptions,
@@ -44,9 +49,9 @@ pub trait ReplayMatcher: Send + Sync {
 /// (call_id/abort_signal/recording_context)不参与比较。
 ///
 /// headers/provider_options/body_overrides 用**脱敏感知比较**:录制侧这些
-/// 字段经 [`recording::redact_json`](crate::recording::redact_json) 脱敏
+/// 字段经 `recording::redact_json` 脱敏
 /// (敏感键值→`"[REDACTED]"`),脱敏值视为通配,匹配任意显式请求值;非脱敏
-/// 部分仍精确比较。规则见 [`redaction_aware_eq`]。
+/// 部分仍精确比较。规则见 `redaction_aware_eq`。
 pub struct ExactMatcher {
     provider: String,
     model_id: String,
@@ -126,7 +131,7 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
 
 /// 脱敏感知比较(用于 headers/provider_options/body_overrides)。
 ///
-/// 录制侧这些字段经 [`recording::redact_json`](crate::recording::redact_json)
+/// 录制侧这些字段经 `recording::redact_json`
 /// 脱敏:敏感键(authorization/api-key/apikey/key/token/cookie/...)的**值**
 /// 被替换为字符串 `"[REDACTED]"`(键名保留)。比较规则(**保守原则——宁可 miss
 /// 不可误 hit**):
@@ -290,7 +295,7 @@ fn match_score(options: &CallOptions, rec: &Recording) -> u64 {
             .input
             .options
             .get("temperature")
-            .and_then(|v| v.as_f64())
+            .and_then(serde_json::Value::as_f64)
     {
         score += 1;
     }
@@ -392,6 +397,11 @@ impl MockReplayModel {
 
     /// 从 jsonl 录制文件加载(每行一条 `Recording`)。
     /// provider/model_id 取首条录制;同一文件应同源录制。
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the file cannot be read or
+    /// contains no recordings, and `JsonParse` when a line is not valid JSON.
     pub fn from_jsonl(path: &str) -> Result<Self, AiMuxError> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| AiMuxError::InvalidArgument(format!("mock replay: {e}")))?;
@@ -415,6 +425,7 @@ impl MockReplayModel {
     }
 
     /// 已加载的录制(只读)。
+    #[must_use]
     pub fn recordings(&self) -> &[Recording] {
         &self.recordings
     }
@@ -475,7 +486,7 @@ fn parse_finish(raw: Option<&str>) -> (FinishReasonUnified, Option<String>) {
         Some("error") => FinishReasonUnified::Error,
         _ => FinishReasonUnified::Other,
     };
-    (unified, raw.map(|s| s.to_string()))
+    (unified, raw.map(std::string::ToString::to_string))
 }
 
 /// 从 `serde_json::Value` 取一个 u64 usage 计数并转 u32;溢出返回明确错误
@@ -605,7 +616,7 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
 
     let raw_finish = v["choices"][0]["finish_reason"]
         .as_str()
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let (unified, raw) = parse_finish(raw_finish.as_deref());
 
     Ok(GenerateResult {
@@ -615,9 +626,9 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         warnings: Vec::new(),
         provider_metadata: None,
         response: ResponseMetadata {
-            id: v["id"].as_str().map(|s| s.to_string()),
+            id: v["id"].as_str().map(std::string::ToString::to_string),
             timestamp: None,
-            model_id: v["model"].as_str().map(|s| s.to_string()),
+            model_id: v["model"].as_str().map(std::string::ToString::to_string),
         },
         request_body: None,
         response_headers: None,
@@ -689,9 +700,9 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
         {
             response_meta_emitted = true;
             parts.push(Ok(StreamPart::ResponseMetadata {
-                id: v["id"].as_str().map(|s| s.to_string()),
+                id: v["id"].as_str().map(std::string::ToString::to_string),
                 timestamp: None,
-                model_id: v["model"].as_str().map(|s| s.to_string()),
+                model_id: v["model"].as_str().map(std::string::ToString::to_string),
             }));
         }
 
@@ -764,7 +775,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                     for dtc in tcs {
                         let idx = dtc
                             .get("index")
-                            .and_then(|x| x.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .map(|n| n as usize)
                             .unwrap_or(0);
                         let func = dtc.get("function").cloned().unwrap_or_default();
@@ -941,6 +952,12 @@ pub struct ReplayOverrides {
 ///     重发会用脱敏后的 `[REDACTED]` 值——需要真实头时用 `overrides` 或
 ///     重建 provider 时补充。
 ///   - 逐消息 `provider_options`(如 anthropic cacheControl)不参与重建。
+///
+/// # Errors
+///
+/// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
+/// deserialized, and propagates any error from the re-sent `generate_text`
+/// call.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,

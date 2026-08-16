@@ -56,12 +56,14 @@ impl GooglePseConfig {
     }
 
     /// Set the search-engine ID (`cx`).
+    #[must_use]
     pub fn with_cx(mut self, cx: impl Into<String>) -> Self {
         self.cx = Some(cx.into());
         self
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
@@ -70,6 +72,10 @@ impl GooglePseConfig {
     /// Create from the `GOOGLE_API_KEY` and (optional) `GOOGLE_CSE_ID`
     /// environment variables. `GOOGLE_API_KEY` is required; `GOOGLE_CSE_ID`
     /// may be omitted if `cx` is supplied per-call via `provider_options`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `GOOGLE_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "GOOGLE_API_KEY", "Google PSE")?;
         let cx = std::env::var("GOOGLE_CSE_ID").ok();
@@ -90,11 +96,13 @@ pub struct GooglePseProvider {
 }
 
 impl GooglePseProvider {
+    #[must_use]
     pub fn new(config: GooglePseConfig) -> Self {
         Self { config }
     }
 
     /// Create a search model instance.
+    #[must_use]
     pub fn search_model(&self) -> GooglePseSearchModel {
         GooglePseSearchModel::new(self.config.clone())
     }
@@ -163,6 +171,7 @@ pub struct GooglePseSearchModel {
 }
 
 impl GooglePseSearchModel {
+    #[must_use]
     pub fn new(config: GooglePseConfig) -> Self {
         Self { config }
     }

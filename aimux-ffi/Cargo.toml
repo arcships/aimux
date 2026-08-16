@@ -23,9 +23,12 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 # Needed to drive `Stream::next` while consuming `stream_text` output.
 futures = { workspace = true }
+# Mock transcription stream construction in tests (RFC-0028).
+async-stream = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+async-trait = { workspace = true }
 
 [lints]
 workspace = true

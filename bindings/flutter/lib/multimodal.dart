@@ -15,6 +15,7 @@
 // Engine failures throw [AimuxException] (see errors.dart).
 
 import 'dart:ffi';
+import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'errors.dart';
@@ -72,6 +73,26 @@ typedef _GenerateOpts3Dart = Pointer<Utf8> Function(
     Pointer<Utf8> b,
     Pointer<Utf8>? optsJson,
     Pointer<AimuxCError> err);
+
+// Transcription streaming sessions (RFC-0028).
+typedef _TranscriptionSessionNewC = Uint64 Function(
+    Uint64 modelHandle, Uint64 abortHandle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
+typedef _TranscriptionSessionNewDart = int Function(
+    int modelHandle, int abortHandle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
+typedef _TranscriptionPushAudioC = Int32 Function(
+    Uint64 session, Pointer<Uint8> data, IntPtr len, Pointer<AimuxCError> err);
+typedef _TranscriptionPushAudioDart = int Function(
+    int session, Pointer<Uint8> data, int len, Pointer<AimuxCError> err);
+typedef _TranscriptionInputDoneC = Int32 Function(
+    Uint64 session, Pointer<AimuxCError> err);
+typedef _TranscriptionInputDoneDart = int Function(
+    int session, Pointer<AimuxCError> err);
+typedef _TranscriptionNextPartC = Pointer<Utf8> Function(
+    Uint64 session, Int64 timeoutMs, Pointer<AimuxCError> err);
+typedef _TranscriptionNextPartDart = Pointer<Utf8> Function(
+    int session, int timeoutMs, Pointer<AimuxCError> err);
+typedef _VoidU64C = Void Function(Uint64);
+typedef _VoidU64Dart = void Function(int);
 
 // Resource management (same as aimux.dart).
 typedef _DropHandleC = Void Function(Uint64);
@@ -164,6 +185,23 @@ final class _MultimodalFFI {
   late final transcriptionGenerate = _lib
       .lookupFunction<_GenerateOpts3C, _GenerateOpts3Dart>(
           'aimux_transcription_generate');
+
+  // Transcription streaming sessions (RFC-0028).
+  late final transcriptionSessionNew = _lib.lookupFunction<
+      _TranscriptionSessionNewC,
+      _TranscriptionSessionNewDart>('aimux_transcription_session_new');
+  late final transcriptionPushAudio = _lib.lookupFunction<
+      _TranscriptionPushAudioC,
+      _TranscriptionPushAudioDart>('aimux_transcription_push_audio');
+  late final transcriptionInputDone = _lib.lookupFunction<
+      _TranscriptionInputDoneC,
+      _TranscriptionInputDoneDart>('aimux_transcription_input_done');
+  late final transcriptionNextPart = _lib.lookupFunction<
+      _TranscriptionNextPartC,
+      _TranscriptionNextPartDart>('aimux_transcription_next_part');
+  late final transcriptionSessionDrop = _lib.lookupFunction<
+      _VoidU64C,
+      _VoidU64Dart>('aimux_transcription_session_drop');
   late final fileUpload = _lib
       .lookupFunction<_GenerateOpts3C, _GenerateOpts3Dart>('aimux_file_upload');
 
@@ -328,6 +366,29 @@ class TranscriptionModel {
         });
       });
     });
+  }
+
+  /// Start a streaming transcription session (RFC-0028) on this model.
+  /// Requires a model that supports streaming (realtime models such as
+  /// gpt-realtime-whisper).
+  ///
+  /// [optsJson] — optional session options JSON
+  /// (`{"input_audio_format": {...}, "provider_options", "headers",
+  /// "include_raw_chunks"}`).
+  /// [abortHandle] — optional abort handle; firing it aborts the session.
+  TranscriptionSession startStream({String? optsJson, int abortHandle = 0}) {
+    _checkOpen();
+    final handle = withAimuxCError((err) {
+      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+      try {
+        return takeHandle(
+            _ffi.transcriptionSessionNew(_handle, abortHandle, optsPtr, err),
+            err);
+      } finally {
+        if (optsPtr != nullptr) calloc.free(optsPtr);
+      }
+    });
+    return TranscriptionSession._(handle);
   }
 
   /// Release the native handle. Safe to call multiple times.
@@ -591,5 +652,136 @@ class Files {
 
   void _checkOpen() {
     if (_closed) throw StateError('Files has been closed');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TranscriptionSession (RFC-0028 streaming)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Thrown by [TranscriptionSession.nextPart] when the stream ended normally
+/// (a `Finish` part was delivered earlier).
+class AimuxTranscriptionEndedException implements Exception {
+  @override
+  String toString() => 'AimuxTranscriptionEndedException: stream ended';
+}
+
+/// Thrown by [TranscriptionSession.nextPart] when no part arrived within the
+/// timeout. The session stays live — call again.
+class AimuxTranscriptionTimeoutException implements Exception {
+  @override
+  String toString() => 'AimuxTranscriptionTimeoutException: part timeout';
+}
+
+/// A live streaming-transcription session (RFC-0028): push audio chunks with
+/// [pushAudio], mark end-of-audio with [inputDone], then pull transcription
+/// parts (JSON `TranscriptionStreamPart`s) with [nextPart].
+///
+/// Call [close] to terminate (aborts the driver; idempotent).
+class TranscriptionSession {
+  final int _handle;
+  bool _closed = false;
+
+  TranscriptionSession._(this._handle);
+
+  void _checkOpen() {
+    if (_closed) throw StateError('TranscriptionSession has been closed');
+  }
+
+  /// Push one binary audio chunk. Blocks while the internal channel is full
+  /// (backpressure propagation).
+  void pushAudio(Uint8List audio) {
+    _checkOpen();
+    final ptr = audio.isEmpty
+        ? Pointer<Uint8>.fromAddress(0)
+        : calloc<Uint8>(audio.length);
+    final allocated = audio.isNotEmpty;
+    try {
+      if (allocated) {
+        ptr.asTypedList(audio.length).setAll(0, audio);
+      }
+      withAimuxCError((err) {
+        final rc = _ffi.transcriptionPushAudio(
+            _handle, ptr, audio.length, err);
+        if (rc == 0) {
+          // Build the exception FIRST (it reads the message), then free.
+          final ex = AimuxException.fromC(err.ref);
+          _freeCError(err);
+          throw ex;
+        }
+        return 0;
+      });
+    } finally {
+      if (allocated) calloc.free(ptr);
+    }
+  }
+
+  /// Signal end-of-audio (idempotent).
+  void inputDone() {
+    _checkOpen();
+    withAimuxCError((err) {
+      final rc = _ffi.transcriptionInputDone(_handle, err);
+      if (rc == 0) {
+        final ex = AimuxException.fromC(err.ref);
+        _freeCError(err);
+        throw ex;
+      }
+      return 0;
+    });
+  }
+
+  /// Pull the next transcription part (JSON string).
+  ///
+  /// Throws [AimuxTranscriptionEndedException] when the stream finished
+  /// normally, [AimuxTranscriptionTimeoutException] when no part arrived in
+  /// time (retryable). `timeoutMs`: >0 wait at most; 0 immediate poll;
+  /// negative = wait indefinitely.
+  String nextPart(int timeoutMs) {
+    _checkOpen();
+    return withAimuxCError((err) {
+      final ptr = _ffi.transcriptionNextPart(_handle, timeoutMs, err);
+      if (ptr != nullptr) {
+        try {
+          return ptr.toDartString();
+        } finally {
+          aimuxFreeString(ptr);
+        }
+      }
+      // NULL: disambiguate via err.code. Build the failure exception FIRST
+      // (it reads the message), then free before the sentinel checks.
+      final failure = err.ref.code == AimuxErrorCode.timeout ||
+              err.ref.code == AimuxErrorCode.ok
+          ? null
+          : AimuxException.fromC(err.ref);
+      _freeCError(err);
+      if (err.ref.code == AimuxErrorCode.timeout) {
+        throw AimuxTranscriptionTimeoutException();
+      }
+      if (err.ref.code == AimuxErrorCode.ok) {
+        throw AimuxTranscriptionEndedException();
+      }
+      throw failure!;
+    });
+  }
+
+  /// Terminate and release the session (aborts the driver; idempotent).
+  void close() {
+    if (!_closed) {
+      _ffi.transcriptionSessionDrop(_handle);
+      _closed = true;
+    }
+  }
+
+  /// Free a filled error's message/errorValue strings (they leak otherwise
+  /// when we swallow the error and use sentinel exceptions instead).
+  void _freeCError(Pointer<AimuxCError> err) {
+    if (err.ref.message != nullptr) {
+      aimuxFreeString(err.ref.message);
+      err.ref.message = nullptr;
+    }
+    if (err.ref.errorValue != nullptr) {
+      aimuxFreeString(err.ref.errorValue);
+      err.ref.errorValue = nullptr;
+    }
   }
 }

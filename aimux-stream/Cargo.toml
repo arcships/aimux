@@ -11,7 +11,6 @@ documentation = "https://docs.rs/aimux-stream"
 [dependencies]
 futures = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 pin-project-lite = { workspace = true }
 bytes = { workspace = true }
 serde = { workspace = true }

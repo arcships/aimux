@@ -74,7 +74,7 @@ async fn mock_messages_sse(server: &MockServer, sse_body: &str) {
 }
 
 fn sse(data: &Value) -> String {
-    format!("data: {}\n\n", data)
+    format!("data: {data}\n\n")
 }
 
 fn sse_stream(events: &[Value]) -> String {
@@ -84,7 +84,7 @@ fn sse_stream(events: &[Value]) -> String {
 fn as_text(item: &GenerateContent) -> &str {
     match item {
         GenerateContent::Text { text, .. } => text,
-        _ => panic!("expected Text content, got {:?}", item),
+        _ => panic!("expected Text content, got {item:?}"),
     }
 }
 
@@ -96,7 +96,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             input,
             ..
         } => (tool_call_id, tool_name, input),
-        _ => panic!("expected ToolCall content, got {:?}", item),
+        _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
 
@@ -106,7 +106,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts

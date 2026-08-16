@@ -50,18 +50,24 @@ impl ElevenLabsConfig {
     }
 
     /// Override the base URL (for testing or proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into().trim_end_matches('/').to_string();
         self
     }
 
     /// Attach extra headers merged into every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Create from environment variable `ELEVENLABS_API_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `ELEVENLABS_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "ELEVENLABS_API_KEY", "ElevenLabs")?;
         Ok(Self::new(api_key))
@@ -76,18 +82,21 @@ pub struct ElevenLabsProvider {
 }
 
 impl ElevenLabsProvider {
+    #[must_use]
     pub fn new(config: ElevenLabsConfig) -> Self {
         Self { config }
     }
 
     /// Create a speech (TTS) model instance for the given model name (e.g.
     /// `"eleven_multilingual_v2"`).
+    #[must_use]
     pub fn speech(&self, model_id: &str) -> ElevenLabsSpeechModel {
         ElevenLabsSpeechModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a transcription (STT) model instance for the given model name
     /// (e.g. `"scribe_v1"`). Uses the `/v1/speech-to-text` endpoint.
+    #[must_use]
     pub fn transcription(&self, model_id: &str) -> ElevenLabsTranscriptionModel {
         ElevenLabsTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
@@ -108,6 +117,7 @@ pub struct ElevenLabsSpeechModel {
 }
 
 impl ElevenLabsSpeechModel {
+    #[must_use]
     pub fn new(model_id: String, config: ElevenLabsConfig) -> Self {
         Self { model_id, config }
     }
@@ -153,7 +163,7 @@ impl SpeechModel for ElevenLabsSpeechModel {
         } else {
             let qs: Vec<String> = query_params
                 .iter()
-                .map(|(k, v)| format!("{}={}", k, v))
+                .map(|(k, v)| format!("{k}={v}"))
                 .collect();
             format!("{}?{}", self.endpoint(&voice_id), qs.join("&"))
         };
@@ -417,10 +427,14 @@ fn parse_elevenlabs_provider_options(
         .get("voiceSettings")
         .and_then(|vs| vs.as_object())
         .map(|vs| ElevenLabsVoiceSettings {
-            stability: vs.get("stability").and_then(|v| v.as_f64()),
-            similarity_boost: vs.get("similarityBoost").and_then(|v| v.as_f64()),
-            style: vs.get("style").and_then(|v| v.as_f64()),
-            use_speaker_boost: vs.get("useSpeakerBoost").and_then(|v| v.as_bool()),
+            stability: vs.get("stability").and_then(serde_json::Value::as_f64),
+            similarity_boost: vs
+                .get("similarityBoost")
+                .and_then(serde_json::Value::as_f64),
+            style: vs.get("style").and_then(serde_json::Value::as_f64),
+            use_speaker_boost: vs
+                .get("useSpeakerBoost")
+                .and_then(serde_json::Value::as_bool),
         });
 
     let pronunciation_dictionary_locators = opts
@@ -438,7 +452,7 @@ fn parse_elevenlabs_provider_options(
                     version_id: loc
                         .get("versionId")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                 })
                 .collect()
         });
@@ -447,25 +461,25 @@ fn parse_elevenlabs_provider_options(
         language_code: opts
             .get("languageCode")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         voice_settings,
         pronunciation_dictionary_locators,
-        seed: opts.get("seed").and_then(|v| v.as_u64()),
+        seed: opts.get("seed").and_then(serde_json::Value::as_u64),
         previous_text: opts
             .get("previousText")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         next_text: opts
             .get("nextText")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         previous_request_ids: opts
             .get("previousRequestIds")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             }),
         next_request_ids: opts
@@ -474,17 +488,19 @@ fn parse_elevenlabs_provider_options(
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             }),
         apply_text_normalization: opts
             .get("applyTextNormalization")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         apply_language_text_normalization: opts
             .get("applyLanguageTextNormalization")
-            .and_then(|v| v.as_bool()),
-        enable_logging: opts.get("enableLogging").and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
+        enable_logging: opts
+            .get("enableLogging")
+            .and_then(serde_json::Value::as_bool),
     })
 }
 
@@ -532,6 +548,7 @@ pub struct ElevenLabsTranscriptionModel {
 }
 
 impl ElevenLabsTranscriptionModel {
+    #[must_use]
     pub fn new(model_id: String, config: ElevenLabsConfig) -> Self {
         Self { model_id, config }
     }
@@ -596,16 +613,19 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         if let Some(ref po) = options.provider_options
             && let Some(el) = po.get("elevenlabs")
         {
-            if let Some(v) = el.get("diarize").and_then(|v| v.as_bool()) {
+            if let Some(v) = el.get("diarize").and_then(serde_json::Value::as_bool) {
                 form.text("diarize", &v.to_string())?;
             }
             if let Some(v) = el.get("languageCode").and_then(|v| v.as_str()) {
                 form.text("language_code", v)?;
             }
-            if let Some(v) = el.get("tagAudioEvents").and_then(|v| v.as_bool()) {
+            if let Some(v) = el
+                .get("tagAudioEvents")
+                .and_then(serde_json::Value::as_bool)
+            {
                 form.text("tag_audio_events", &v.to_string())?;
             }
-            if let Some(v) = el.get("numSpeakers").and_then(|v| v.as_u64()) {
+            if let Some(v) = el.get("numSpeakers").and_then(serde_json::Value::as_u64) {
                 form.text("num_speakers", &v.to_string())?;
             }
             if let Some(v) = el.get("timestampsGranularity").and_then(|v| v.as_str()) {

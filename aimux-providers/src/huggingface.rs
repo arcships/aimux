@@ -36,18 +36,25 @@ impl HuggingFaceConfig {
     }
 
     /// Create from the `HUGGINGFACE_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `HUGGINGFACE_API_KEY` is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let key = load_api_key(None, ENV_VAR, "Hugging Face")?;
         Ok(Self::new(key).with_api_key_source(Some("env:HUGGINGFACE_API_KEY")))
     }
 
     /// Override the base URL (useful for tests / self-hosted endpoints).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.0 = self.0.with_base_url(url);
         self
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。透传到内部 `OpenAIConfig`。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
         self.0 = self.0.with_api_key_source(source);
         self
@@ -66,12 +73,14 @@ pub struct HuggingFaceProvider {
 }
 
 impl HuggingFaceProvider {
+    #[must_use]
     pub fn new(config: HuggingFaceConfig) -> Self {
         Self { config }
     }
 
     /// Create a chat model instance for the given Hugging Face model id
     /// (e.g. `"meta-llama/Llama-3.3-70B-Instruct"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> OpenAIModel {
         OpenAIModel::new(model_id.to_string(), self.config.0.clone())
     }
@@ -81,6 +90,7 @@ impl HuggingFaceProvider {
     /// The Hugging Face Responses API is the lightest Responses implementation:
     /// it supports function tools only (no built-in tools), and uses the
     /// `text.format` field for structured output.
+    #[must_use]
     pub fn responses_model(&self, model_id: &str) -> responses::HuggingFaceResponsesModel {
         responses::HuggingFaceResponsesModel::new(model_id.to_string(), self.config.clone())
     }

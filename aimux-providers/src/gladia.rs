@@ -44,16 +44,24 @@ impl GladiaConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
+    /// Create from the `GLADIA_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "GLADIA_API_KEY", "Gladia")?;
         Ok(Self::new(api_key))
@@ -65,10 +73,12 @@ pub struct GladiaProvider {
 }
 
 impl GladiaProvider {
+    #[must_use]
     pub fn new(config: GladiaConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn transcription(&self, model_id: &str) -> GladiaTranscriptionModel {
         GladiaTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
@@ -136,6 +146,7 @@ pub struct GladiaTranscriptionModel {
 }
 
 impl GladiaTranscriptionModel {
+    #[must_use]
     pub fn new(model_id: String, config: GladiaConfig) -> Self {
         Self { model_id, config }
     }

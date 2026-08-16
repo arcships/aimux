@@ -28,6 +28,7 @@ pub struct CohereEmbeddingModel {
 }
 
 impl CohereEmbeddingModel {
+    #[must_use]
     pub fn new(model_id: String, config: CohereConfig) -> Self {
         Self { model_id, config }
     }
@@ -146,7 +147,7 @@ impl EmbeddingModel for CohereEmbeddingModel {
             .get("meta")
             .and_then(|m| m.get("billed_units"))
             .and_then(|b| b.get("input_tokens"))
-            .and_then(|t| t.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|tokens| EmbeddingUsage {
                 tokens: tokens as u32,
             })
@@ -181,14 +182,14 @@ fn parse_cohere_provider_options(
         input_type: provider_opts
             .and_then(|o| o.get("inputType"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         truncate: provider_opts
             .and_then(|o| o.get("truncate"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         output_dimension: provider_opts
             .and_then(|o| o.get("outputDimension"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
     }
 }

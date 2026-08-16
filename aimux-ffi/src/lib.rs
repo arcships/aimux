@@ -26,7 +26,7 @@
 //! not allow a panic to propagate — the process terminates (and under this
 //! workspace's release profile, `panic = "abort"`, it terminates at the panic
 //! site). Either way the re-entrant call must be rejected before it reaches
-//! the runtime; the thread-local guard in [`ffi_block_on`] does that
+//! the runtime; the thread-local guard in `ffi_block_on` does that
 //! (issue M7).
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 // `extern "C"` entry points dereference raw pointers (`*const c_char`) by
@@ -85,6 +85,8 @@ enum ModelHandle {
     Video(Arc<dyn aimux_core::video_model::VideoModel>),
     Search(Arc<dyn aimux_core::search_model::SearchModel>),
     Files(Arc<dyn aimux_core::files_model::Files>),
+    /// Live transcription streaming session (RFC-0028 Phase 2).
+    TranscriptionSession(Arc<transcription_session::TranscriptionFfiSession>),
     Abort(AbortSignal),
 }
 
@@ -179,6 +181,9 @@ fn drop_abort_signal(handle: u64) {
     }
 }
 
+/// Transcription streaming sessions (RFC-0028 Phase 2).
+mod transcription_session;
+
 /// The shared tokio runtime driving all async provider calls.
 fn runtime() -> &'static Runtime {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -197,7 +202,7 @@ thread_local! {
     /// this thread. tokio rejects nested `block_on` with a **panic**; Rust's
     /// non-unwind `extern "C"` ABI terminates the process rather than letting
     /// the panic propagate (and `panic = "abort"` terminates at the panic site).
-    /// [`ffi_block_on`] checks this guard and turns that re-entrant call into
+    /// `ffi_block_on` checks this guard and turns that re-entrant call into
     /// a failure sentinel + optional AimuxError instead (issue M7).
     static IN_FFI_BLOCK_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -316,11 +321,17 @@ pub const AIMUX_E_API_CALL: i32 = 11;
 pub const AIMUX_E_TIMEOUT: i32 = 12;
 pub const AIMUX_E_ABORTED: i32 = 13;
 pub const AIMUX_E_OTHER: i32 = 14;
+/// Recording write failed (sticky) — see `aimux_recording_try_flush`.
+pub const AIMUX_E_RECORDING_WRITE: i32 = 15;
+/// Recording writer thread unavailable — see `aimux_recording_try_flush`.
+pub const AIMUX_E_RECORDING_WRITER_GONE: i32 = 16;
+/// Recording flush ack timed out — see `aimux_recording_try_flush`.
+pub const AIMUX_E_RECORDING_FLUSH_TIMEOUT: i32 = 17;
 
 /// Layout must match `aimux-error.h` `AimuxError` (40 bytes).
 ///
 /// On failure the callee overwrites every field; `message` is allocated with
-/// [`into_cstring_raw`] and the caller releases it with `aimux_free_string`.
+/// `into_cstring_raw` and the caller releases it with `aimux_free_string`.
 /// `error_value` is the lossless externally-tagged serde JSON of the source
 /// [`AiMuxError`] (null when the failure was synthesized at the FFI boundary
 /// and has no core error value). `reserved` is future ABI room (the
@@ -566,6 +577,26 @@ fn parse_provider_options(
                 .map_err(|e| (AIMUX_E_JSON_PARSE, format!("invalid config_json: {e}")))
         }
         _ => Ok(None),
+    }
+}
+
+/// Read a config_json C string and normalize it for lenient deserialization.
+///
+/// NULL, empty, whitespace-only, and `"null"` all become `"{}"` (defaults),
+/// matching `parse_provider_options` / `parse_opts` convention so direct C
+/// callers get the documented "empty = defaults" behavior. Invalid UTF-8
+/// (cstr_to_string returns None) is still an error.
+fn normalize_config_json(config_json: *const c_char, err: *mut CAimuxError) -> Option<String> {
+    if config_json.is_null() {
+        return Some(String::from("{}"));
+    }
+    match cstr_to_string(config_json) {
+        None => unsafe {
+            fill_error(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, INVALID_ARGS);
+            None
+        },
+        Some(s) if s.trim().is_empty() || s.trim() == "null" => Some(String::from("{}")),
+        Some(s) => Some(s),
     }
 }
 
@@ -1556,11 +1587,11 @@ fn stream_text_as_openai_with_signal(
         .map(|v| OpenAiStreamOptions {
             include_usage: v
                 .get("include_usage")
-                .and_then(|b| b.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true),
             include_reasoning: v
                 .get("include_reasoning")
-                .and_then(|b| b.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true),
         })
         .unwrap_or_default();
@@ -2103,6 +2134,196 @@ pub extern "C" fn aimux_transcription_generate(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// C ABI: transcription streaming sessions (RFC-0028 Phase 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// JSON options for `aimux_transcription_session_new` (all fields optional):
+/// `{ "input_audio_format": { "format_type": "audio/pcm", "rate": 24000 },
+///    "provider_options": { … }, "headers": { … }, "include_raw_chunks": false }`.
+#[derive(serde::Deserialize, Default)]
+struct TranscriptionSessionFfiOptions {
+    input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
+    provider_options: Option<HashMap<String, serde_json::Value>>,
+    headers: Option<HashMap<String, String>>,
+    include_raw_chunks: Option<bool>,
+    timeout: Option<aimux_core::options::TimeoutConfiguration>,
+}
+
+/// Look up a transcription streaming session handle.
+fn get_transcription_session(
+    handle: u64,
+    err: *mut CAimuxError,
+) -> Option<Arc<transcription_session::TranscriptionFfiSession>> {
+    match get_handle(handle) {
+        Some(ModelHandle::TranscriptionSession(s)) => Some(s),
+        _ => {
+            // Statement position: annotate the sentinel return type.
+            let _: i32 = unsafe { fail_invalid_handle(err, "transcription session") };
+            None
+        }
+    }
+}
+
+/// Start a transcription streaming session (RFC-0028 Phase 2). Internally
+/// spawns the driver task immediately; audio is then pushed with
+/// `aimux_transcription_push_audio` and parts pulled with
+/// `aimux_transcription_next_part`.
+///
+/// `model_handle` must be a transcription model handle that supports
+/// streaming (e.g. OpenAI `gpt-realtime-whisper`); models without `do_stream`
+/// fail on the first `next_part` (the connect/establishment error surfaces
+/// there). `abort_handle` may be 0 (no cancellation) or an
+/// `aimux_abort_signal_new` handle — firing it aborts the session.
+///
+/// Returns a non-zero session handle, or 0 with `*err` filled.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_transcription_session_new(
+    model_handle: u64,
+    abort_handle: u64,
+    opts_json: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
+    let model = match get_handle(model_handle) {
+        Some(ModelHandle::Transcription(m)) => m,
+        _ => return unsafe { fail_invalid_handle(err, "transcription") },
+    };
+    let abort = if abort_handle == 0 {
+        None
+    } else {
+        match get_handle(abort_handle) {
+            Some(ModelHandle::Abort(signal)) => Some(signal),
+            _ => return unsafe { fail_invalid_handle(err, "abort signal") },
+        }
+    };
+    // NULL / empty / "null" = defaults (shared convention).
+    let Some(opts_json) = normalize_config_json(opts_json, err) else {
+        return 0;
+    };
+    let ffi_opts: TranscriptionSessionFfiOptions = match serde_json::from_str(&opts_json) {
+        Ok(o) => o,
+        Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
+    };
+    let session = transcription_session::TranscriptionFfiSession::spawn(
+        model,
+        transcription_session::SessionOptions {
+            input_audio_format: ffi_opts.input_audio_format,
+            provider_options: ffi_opts.provider_options,
+            headers: ffi_opts.headers,
+            include_raw_chunks: ffi_opts.include_raw_chunks.unwrap_or(false),
+            timeout: ffi_opts.timeout,
+        },
+        abort,
+    );
+    intern_handle(ModelHandle::TranscriptionSession(session))
+}
+
+/// Push one binary audio chunk into the session. **Blocking**: waits while
+/// the internal channel is full (backpressure propagation; the caller's
+/// capture loop throttles). Must not be called from within an aimux callback
+/// (re-entrancy guard rejects it).
+///
+/// `data` may be NULL only when `len == 0` (no-op). Returns 1 on success, 0
+/// with `*err` filled (session ended / input already finished / invalid args).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_transcription_push_audio(
+    session: u64,
+    data: *const u8,
+    len: usize,
+    err: *mut CAimuxError,
+) -> i32 {
+    let Some(session) = get_transcription_session(session, err) else {
+        return 0;
+    };
+    if data.is_null() {
+        if len == 0 {
+            return 1; // no-op
+        }
+        return unsafe { fail_invalid_args(err) };
+    }
+    // SAFETY: caller guarantees `data` points to `len` valid bytes; the copy
+    // happens synchronously before any await.
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    match ffi_block_on(session.push_audio(bytes)) {
+        Ok(Ok(())) => 1,
+        Ok(Err(e)) | Err(e) => unsafe {
+            let _: i32 = fail_ai(err, &e);
+            0
+        },
+    }
+}
+
+/// Signal end-of-audio (the audio stream ends; the provider flushes). Safe to
+/// call multiple times. Returns 1 on success, 0 with `*err` filled when the
+/// session handle is invalid.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_transcription_input_done(session: u64, err: *mut CAimuxError) -> i32 {
+    let Some(session) = get_transcription_session(session, err) else {
+        return 0;
+    };
+    session.input_done();
+    1
+}
+
+/// Pull the next transcription part (JSON-serialized `TranscriptionStreamPart`;
+/// free with `aimux_free_string`).
+///
+/// `timeout_ms`: >0 = wait at most that long; 0 = immediate poll; <0 = wait
+/// indefinitely. Returns NULL in three distinguishable cases — the caller
+/// MUST pass a non-NULL `err`:
+/// - `err.code == AIMUX_E_TIMEOUT` — no part in time; the session is still
+///   live, call again.
+/// - `err.code == AIMUX_OK` (untouched on success by convention; callers
+///   following clear-then-call see 0) — the stream ended normally (a
+///   `Finish` part was delivered earlier).
+/// - any other error code — the stream failed (abort / API error), details
+///   in `err`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_transcription_next_part(
+    session: u64,
+    timeout_ms: i64,
+    err: *mut CAimuxError,
+) -> *mut c_char {
+    let Some(session) = get_transcription_session(session, err) else {
+        return std::ptr::null_mut();
+    };
+    let timeout = if timeout_ms < 0 {
+        None
+    } else {
+        Some(std::time::Duration::from_millis(timeout_ms as u64))
+    };
+    match ffi_block_on(session.next_part(timeout)) {
+        // A part arrived.
+        Ok(Ok(Some(Ok(part)))) => match serde_json::to_string(&part) {
+            Ok(json) => into_cstring_raw(json),
+            Err(e) => unsafe { fail_json(err, format!("serialize transcription part: {e}")) },
+        },
+        // The part stream itself errored (abort / API error) — final error.
+        Ok(Ok(Some(Err(e)))) | Ok(Err(e)) | Err(e) => unsafe {
+            let _: *mut c_char = fail_ai(err, &e);
+            std::ptr::null_mut()
+        },
+        // Channel closed: normal end. NULL with err left untouched (OK by
+        // the clear-then-call convention).
+        Ok(Ok(None)) => std::ptr::null_mut(),
+    }
+}
+
+/// Terminate a transcription session and release it: aborts the driver,
+/// joins (bounded), and drops the handle. Safe with 0 or an unknown handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_transcription_session_drop(session: u64) {
+    // Remove from the registry FIRST (the join below must not hold the
+    // registry mutex).
+    let removed = registry()
+        .lock()
+        .expect("aimux-ffi: registry mutex poisoned")
+        .remove(&session);
+    if let Some(ModelHandle::TranscriptionSession(s)) = removed {
+        s.terminate();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // C ABI: Files
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2507,8 +2728,9 @@ pub extern "C" fn aimux_trace_new_audited(handle: u64, strict: i32, err: *mut CA
 }
 
 /// Query: aggregated probe statistics, filtered by `filter_json` (a serialized
-/// `TraceFilter`, NULL = all). Returns JSON `TraceStats[]` or NULL on failure;
-/// caller frees with `aimux_free_string`.
+/// `TraceFilter`; pass `"{}"` for all rows — NULL is rejected as an invalid
+/// argument). Returns JSON `TraceStats[]` or NULL on failure; caller frees
+/// with `aimux_free_string`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_trace_aggregate(
     handle: u64,
@@ -2666,6 +2888,34 @@ pub extern "C" fn aimux_recording_flush() -> i32 {
     0
 }
 
+/// Flush the global recorder and **report write failures** (see #136).
+///
+/// Unlike [`aimux_recording_flush`] — which always returns 0 for
+/// compatibility — this surface makes the recorder's durability observable
+/// across the C ABI:
+/// - `AIMUX_OK` — data confirmed on disk (also when recording was never
+///   initialized: nothing to flush).
+/// - `AIMUX_E_RECORDING_WRITE` — a prior write failed (e.g. ENOSPC); the
+///   first error is sticky and every later flush keeps reporting it.
+/// - `AIMUX_E_RECORDING_WRITER_GONE` — the writer thread is unavailable
+///   (e.g. recording was initialized with an unwritable directory and
+///   downgraded to a no-op recorder).
+/// - `AIMUX_E_RECORDING_FLUSH_TIMEOUT` — no writer ack within 30s.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_recording_try_flush() -> i32 {
+    let Some(rec) = aimux_core::recording::recorder() else {
+        return AIMUX_OK;
+    };
+    use aimux_core::recording::RecordingError;
+    match rec.try_flush() {
+        Ok(()) => AIMUX_OK,
+        Err(RecordingError::Write(_)) => AIMUX_E_RECORDING_WRITE,
+        Err(RecordingError::WriterGone) => AIMUX_E_RECORDING_WRITER_GONE,
+        Err(RecordingError::FlushTimeout) => AIMUX_E_RECORDING_FLUSH_TIMEOUT,
+        Err(_) => AIMUX_E_UNKNOWN,
+    }
+}
+
 /// Register external OpenAI-compatible providers from a JSON config string
 /// (RFC-0020). `config_json` is `{ "providers": [ { "name": ..., "base_url":
 /// ..., ... }, ... ] }`. Entries override same-named built-ins or add new
@@ -2754,6 +3004,133 @@ pub extern "C" fn aimux_mock_replay_new(
         recordings,
     );
     intern_model(Arc::new(model))
+}
+
+/// Create a `RouterModel` (RFC-0021) over the given child-model handles. The
+/// returned handle is itself a model handle (works with `aimux_generate_text` /
+/// `aimux_stream_text`); free it with `aimux_drop_handle`.
+///
+/// `handles` is an array of `len` existing model handles (e.g. returned by
+/// `aimux_openai_new`). `config_json` selects the router + fallback policy:
+/// `{ "router": "rule" | "weighted", "weights": [..], "fallback": "on_error" |
+/// "none", "provider_name": "router", "model_id": "router" }`. All keys are
+/// optional; defaults are `rule` / `on_error` / `"router"` / `"router"`.
+///
+/// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
+/// pointer, bad JSON, zero-length `handles`, or an unknown child handle
+/// (which is dropped from the child list — the call only fails if **all**
+/// handles are unknown).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_router_new(
+    handles: *const u64,
+    len: usize,
+    config_json: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
+    if handles.is_null() || len == 0 {
+        return unsafe { fail_invalid_args(err) };
+    }
+    let handle_slice = unsafe { std::slice::from_raw_parts(handles, len) };
+    let mut models: Vec<Arc<dyn aimux_core::LanguageModel>> = Vec::with_capacity(len);
+    for &h in handle_slice {
+        if let Some(m) = get_model(h) {
+            models.push(m);
+        }
+    }
+    if models.is_empty() {
+        return unsafe { fail_other(err, "router: no valid child handles") };
+    }
+    // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
+    // convention). Invalid UTF-8 → invalid args.
+    let Some(config_json) = normalize_config_json(config_json, err) else {
+        return 0;
+    };
+    let cfg: RouterFfiConfig = match serde_json::from_str::<RouterFfiConfig>(&config_json) {
+        Ok(c) => c,
+        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
+    };
+    let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
+        Some("weighted") => {
+            let weights = cfg.weights.unwrap_or_else(|| vec![1.0; models.len()]);
+            Box::new(aimux_core::router::WeightedRouter::new(weights))
+        }
+        // "rule", None, and any unknown value fall back to RuleRouter (safest
+        // default: child 0 + ordered fallback).
+        _ => Box::new(aimux_core::router::RuleRouter),
+    };
+    let fallback = if cfg.fallback.as_deref() == Some("none") {
+        aimux_core::router::FallbackPolicy::None
+    } else {
+        aimux_core::router::FallbackPolicy::OnError
+    };
+    let router_cfg = aimux_core::router::RouterConfig {
+        provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
+        model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
+    };
+    let model = aimux_core::router::RouterModel::new(models, router, fallback, router_cfg);
+    intern_model(Arc::new(model))
+}
+
+/// Create a `MoaModel` (RFC-0022) over the given reference handles + one
+/// aggregator handle. The returned handle is a model handle (works with
+/// `aimux_generate_text` / `aimux_stream_text`); free it with
+/// `aimux_drop_handle`.
+///
+/// `reference_handles` is an array of `ref_len` existing model handles (may be
+/// 0 — MoaModel then degrades to running just the aggregator). `aggregator`
+/// is a single existing model handle. `config_json` is a serialized `MoaConfig`
+/// (all fields optional): `{ "provider_name": "moa", "model_id": "moa",
+/// "aggregator_instructions": null, "strip_reference_tools": true,
+/// "fail_mode": "best_effort" | "fail_fast" }`.
+///
+/// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
+/// pointer, bad JSON, an unknown aggregator handle, or all-unknown references
+/// (references may be empty; aggregator may not).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_moa_new(
+    reference_handles: *const u64,
+    ref_len: usize,
+    aggregator: u64,
+    config_json: *const c_char,
+    err: *mut CAimuxError,
+) -> u64 {
+    let Some(aggregator_model) = get_model(aggregator) else {
+        return unsafe { fail_other(err, "moa: invalid aggregator handle") };
+    };
+    let references: Vec<Arc<dyn aimux_core::LanguageModel>> =
+        if reference_handles.is_null() || ref_len == 0 {
+            Vec::new()
+        } else {
+            let slice = unsafe { std::slice::from_raw_parts(reference_handles, ref_len) };
+            let mut v = Vec::with_capacity(ref_len);
+            for &h in slice {
+                if let Some(m) = get_model(h) {
+                    v.push(m);
+                }
+            }
+            v
+        };
+    // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
+    // convention). Invalid UTF-8 → invalid args.
+    let Some(config_json) = normalize_config_json(config_json, err) else {
+        return 0;
+    };
+    let cfg: aimux_core::moa::MoaConfig = match serde_json::from_str(&config_json) {
+        Ok(c) => c,
+        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
+    };
+    let model = aimux_core::moa::MoaModel::new(references, aggregator_model, cfg);
+    intern_model(Arc::new(model))
+}
+
+/// FFI-side router config (lenient: all fields optional).
+#[derive(Default, serde::Deserialize)]
+struct RouterFfiConfig {
+    router: Option<String>,
+    weights: Option<Vec<f64>>,
+    fallback: Option<String>,
+    provider_name: Option<String>,
+    model_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -2968,5 +3345,458 @@ mod tests {
             }
             other => panic!("expected AiMuxError::Other, got {other:?}"),
         }
+    }
+
+    /// A tiny mock model for composite-FFI tests (returns fixed text).
+    struct MockText {
+        provider: &'static str,
+        model_id: &'static str,
+        text: &'static str,
+    }
+    #[async_trait::async_trait]
+    impl aimux_core::LanguageModel for MockText {
+        fn provider(&self) -> &str {
+            self.provider
+        }
+        fn model_id(&self) -> &str {
+            self.model_id
+        }
+        async fn do_generate(
+            &self,
+            _options: &aimux_core::options::CallOptions,
+        ) -> Result<aimux_core::result::GenerateResult, AiMuxError> {
+            Ok(aimux_core::result::GenerateResult {
+                content: vec![aimux_core::result::GenerateContent::Text {
+                    text: self.text.into(),
+                    provider_metadata: None,
+                }],
+                finish_reason: aimux_core::types::FinishReason {
+                    unified: aimux_core::types::FinishReasonUnified::Stop,
+                    raw: None,
+                },
+                usage: aimux_core::types::Usage::default(),
+                warnings: vec![],
+                provider_metadata: None,
+                response: aimux_core::types::ResponseMetadata {
+                    model_id: Some(self.model_id.into()),
+                    ..Default::default()
+                },
+                request_body: None,
+                response_headers: None,
+            })
+        }
+        async fn do_stream(
+            &self,
+            _options: &aimux_core::options::CallOptions,
+        ) -> Result<aimux_core::result::StreamResult, AiMuxError> {
+            unimplemented!()
+        }
+    }
+
+    fn mock_handle(provider: &'static str, model_id: &'static str, text: &'static str) -> u64 {
+        intern_model(Arc::new(MockText {
+            provider,
+            model_id,
+            text,
+        }))
+    }
+
+    #[test]
+    fn router_new_builds_router_model() {
+        let handles = [
+            mock_handle("mock", "primary", "primary-out"),
+            mock_handle("mock", "backup", "backup-out"),
+        ];
+        let h = aimux_router_new(
+            handles.as_ptr(),
+            handles.len(),
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
+        assert!(h != 0, "router handle must be non-zero");
+        // Confirm it resolves to a model.
+        let model = get_model(h).expect("router handle resolves");
+        assert_eq!(model.provider(), "router");
+        assert_eq!(model.model_id(), "router");
+    }
+
+    fn zero_err() -> CAimuxError {
+        CAimuxError {
+            code: AIMUX_OK,
+            status: 0,
+            retry_ms: 0,
+            message: std::ptr::null_mut(),
+            error_value: std::ptr::null_mut(),
+            reserved: [std::ptr::null_mut(); 1],
+        }
+    }
+
+    #[test]
+    fn router_new_rejects_empty_handles() {
+        let mut err = zero_err();
+        let h = aimux_router_new(std::ptr::null(), 0, std::ptr::null(), &mut err);
+        assert_eq!(h, 0);
+        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn router_new_rejects_bad_json() {
+        let handles = [mock_handle("mock", "m", "x")];
+        let bad = std::ffi::CString::new("{not json").unwrap();
+        let mut err = zero_err();
+        let h = aimux_router_new(handles.as_ptr(), handles.len(), bad.as_ptr(), &mut err);
+        assert_eq!(h, 0);
+        assert_eq!(err.code, AIMUX_E_JSON_PARSE);
+    }
+
+    #[test]
+    fn router_new_treats_empty_config_as_defaults() {
+        // S1 guard: empty string / "null" config must NOT be a JSON_PARSE error
+        // (consistent with other config-bearing FFI entry points).
+        let handles = [mock_handle("mock", "m", "x")];
+        for cfg in ["", "  ", "null"] {
+            let c = std::ffi::CString::new(cfg).unwrap();
+            let h = aimux_router_new(
+                handles.as_ptr(),
+                handles.len(),
+                c.as_ptr(),
+                std::ptr::null_mut(),
+            );
+            assert!(
+                h != 0,
+                "router with config {cfg:?} should succeed (defaults)"
+            );
+        }
+    }
+
+    #[test]
+    fn moa_new_builds_moa_model() {
+        let refs = [
+            mock_handle("mock", "ref-a", "A"),
+            mock_handle("mock", "ref-b", "B"),
+        ];
+        let agg = mock_handle("mock", "aggregator", "agg");
+        let h = aimux_moa_new(
+            refs.as_ptr(),
+            refs.len(),
+            agg,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
+        assert!(h != 0, "moa handle must be non-zero");
+        let model = get_model(h).expect("moa handle resolves");
+        assert_eq!(model.provider(), "moa");
+        assert_eq!(model.model_id(), "moa");
+    }
+
+    #[test]
+    fn moa_new_rejects_bad_aggregator() {
+        let refs = [mock_handle("mock", "ref-a", "A")];
+        let mut err = zero_err();
+        // aggregator handle 999999 does not exist.
+        let h = aimux_moa_new(
+            refs.as_ptr(),
+            refs.len(),
+            999_999,
+            std::ptr::null(),
+            &mut err,
+        );
+        assert_eq!(h, 0);
+        assert_eq!(err.code, AIMUX_E_OTHER);
+    }
+
+    #[test]
+    fn moa_new_allows_zero_references() {
+        // 0 references is valid (degrades to aggregator-only).
+        let agg = mock_handle("mock", "aggregator", "agg");
+        let h = aimux_moa_new(
+            std::ptr::null(),
+            0,
+            agg,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        );
+        assert!(h != 0, "moa with 0 references should succeed");
+    }
+
+    // ── Transcription streaming sessions (RFC-0028 Phase 2) ──────────────
+
+    /// A mock transcription model whose `do_stream` echoes: one delta per
+    /// received audio chunk, then final + finish after the audio ends.
+    /// Honors the abort signal.
+    struct MockStreamingTranscriber;
+
+    #[async_trait::async_trait]
+    impl aimux_core::transcription_model::TranscriptionModel for MockStreamingTranscriber {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "mock-stream-stt"
+        }
+        async fn do_generate(
+            &self,
+            _options: &aimux_core::transcription_model::TranscriptionCallOptions,
+        ) -> Result<aimux_core::transcription_model::TranscriptionResult, AiMuxError> {
+            unimplemented!()
+        }
+        async fn do_stream(
+            &self,
+            options: aimux_core::transcription_model::TranscriptionStreamOptions,
+        ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>
+        {
+            use aimux_core::transcription_model::{
+                AudioChunk, TranscriptionStreamPart, TranscriptionStreamResult,
+            };
+            use futures::StreamExt;
+            let mut audio = options.audio;
+            let abort = options.abort_signal.clone();
+            let stream = async_stream::stream! {
+                yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
+                let mut text = String::new();
+                loop {
+                    let aborted = async {
+                        match &abort {
+                            Some(s) => s.cancelled().await,
+                            None => std::future::pending().await,
+                        }
+                    };
+                    tokio::select! {
+                        _ = aborted => {
+                            yield Err(AiMuxError::Aborted);
+                            break;
+                        }
+                        chunk = audio.next() => match chunk {
+                            Some(AudioChunk::Binary(b)) => {
+                                let s = format!("{} ", b.len());
+                                text.push_str(&s);
+                                yield Ok(TranscriptionStreamPart::TranscriptDelta {
+                                    id: None,
+                                    delta: s,
+                                    provider_metadata: None,
+                                });
+                            }
+                            Some(AudioChunk::Base64(s)) => {
+                                text.push_str(&s);
+                                yield Ok(TranscriptionStreamPart::TranscriptDelta {
+                                    id: None,
+                                    delta: s,
+                                    provider_metadata: None,
+                                });
+                            }
+                            None => {
+                                yield Ok(TranscriptionStreamPart::TranscriptFinal {
+                                    id: None,
+                                    text: text.clone(),
+                                    start_second: None,
+                                    end_second: None,
+                                    channel_index: None,
+                                    provider_metadata: None,
+                                });
+                                yield Ok(TranscriptionStreamPart::Finish {
+                                    text,
+                                    segments: vec![],
+                                    language: None,
+                                    duration_in_seconds: None,
+                                    provider_metadata: None,
+                                });
+                                break;
+                            }
+                        },
+                    }
+                }
+            };
+            Ok(TranscriptionStreamResult {
+                stream: Box::pin(stream),
+                request: None,
+                response: None,
+            })
+        }
+    }
+
+    fn mock_transcriber_handle() -> u64 {
+        intern_handle(ModelHandle::Transcription(Arc::new(
+            MockStreamingTranscriber,
+        )))
+    }
+
+    /// Read a returned JSON string and free it.
+    fn free_json(ptr: *mut c_char) -> String {
+        unsafe {
+            let s = std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned();
+            crate::aimux_free_string(ptr);
+            s
+        }
+    }
+
+    #[test]
+    fn transcription_session_full_lifecycle() {
+        let model = mock_transcriber_handle();
+        let mut err = zero_err();
+        let session = aimux_transcription_session_new(model, 0, std::ptr::null(), &mut err);
+        assert!(session != 0, "session should start");
+
+        // Push two chunks + end-of-input.
+        let chunk1 = [1u8, 2, 3];
+        let chunk2 = [4u8, 5];
+        assert_eq!(
+            aimux_transcription_push_audio(session, chunk1.as_ptr(), 3, std::ptr::null_mut()),
+            1
+        );
+        assert_eq!(
+            aimux_transcription_push_audio(session, chunk2.as_ptr(), 2, std::ptr::null_mut()),
+            1
+        );
+        assert_eq!(
+            aimux_transcription_input_done(session, std::ptr::null_mut()),
+            1
+        );
+
+        // Pull parts: StreamStart, delta("3 "), delta("2 "), Final, Finish,
+        // then NULL + OK (ended).
+        let mut err = zero_err();
+        let p1 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        assert!(p1.contains("StreamStart"), "part 1: {p1}");
+        let p2 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        assert!(p2.contains("3 "), "part 2: {p2}");
+        let p3 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        assert!(p3.contains("2 "), "part 3: {p3}");
+        let p4 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        assert!(p4.contains("TranscriptFinal"), "part 4: {p4}");
+        let p5 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        assert!(p5.contains("Finish"), "part 5: {p5}");
+        assert!(p5.contains("3 2 "), "finish text: {p5}");
+
+        // Stream ended: NULL with err untouched (AIMUX_OK).
+        let mut err = zero_err();
+        let end = aimux_transcription_next_part(session, 2_000, &mut err);
+        assert!(end.is_null());
+        assert_eq!(err.code, AIMUX_OK, "normal end must read as AIMUX_OK");
+
+        aimux_transcription_session_drop(session);
+    }
+
+    #[test]
+    fn transcription_session_timeout_is_retryable() {
+        let model = mock_transcriber_handle();
+        let session =
+            aimux_transcription_session_new(model, 0, std::ptr::null(), std::ptr::null_mut());
+        // Consume StreamStart, then DON'T push audio: next_part times out
+        // (the mock waits for more audio).
+        let _ = free_json(aimux_transcription_next_part(
+            session,
+            2_000,
+            std::ptr::null_mut(),
+        ));
+        let mut err = zero_err();
+        let timed_out = aimux_transcription_next_part(session, 50, &mut err);
+        assert!(timed_out.is_null());
+        assert_eq!(err.code, AIMUX_E_TIMEOUT);
+        unsafe {
+            crate::aimux_free_string(err.message);
+        }
+
+        // Session still alive: push + finish works after the timeout.
+        let chunk = [9u8];
+        assert_eq!(
+            aimux_transcription_push_audio(session, chunk.as_ptr(), 1, std::ptr::null_mut()),
+            1
+        );
+        assert_eq!(
+            aimux_transcription_input_done(session, std::ptr::null_mut()),
+            1
+        );
+        let p = free_json(aimux_transcription_next_part(
+            session,
+            2_000,
+            &mut zero_err(),
+        ));
+        assert!(p.contains("1 "), "post-timeout part: {p}");
+        aimux_transcription_session_drop(session);
+    }
+
+    #[test]
+    fn transcription_session_abort_via_signal() {
+        let model = mock_transcriber_handle();
+        let abort = crate::aimux_abort_signal_new();
+        let session =
+            aimux_transcription_session_new(model, abort, std::ptr::null(), std::ptr::null_mut());
+        // Drain StreamStart.
+        let _ = free_json(aimux_transcription_next_part(
+            session,
+            2_000,
+            std::ptr::null_mut(),
+        ));
+
+        // Abort; the mock yields Err(Aborted).
+        crate::aimux_abort_signal_abort(abort);
+        let mut err = zero_err();
+        let p = aimux_transcription_next_part(session, 2_000, &mut err);
+        assert!(p.is_null());
+        assert_eq!(err.code, AIMUX_E_ABORTED);
+        unsafe {
+            crate::aimux_free_string(err.message);
+        }
+
+        // Push after abort fails (the session's channels are closing).
+        let chunk = [1u8];
+        let mut err = zero_err();
+        let _ = aimux_transcription_push_audio(session, chunk.as_ptr(), 1, &mut err);
+        aimux_transcription_session_drop(session);
+    }
+
+    #[test]
+    fn transcription_session_drop_is_safe_and_idempotent() {
+        let model = mock_transcriber_handle();
+        let session =
+            aimux_transcription_session_new(model, 0, std::ptr::null(), std::ptr::null_mut());
+        aimux_transcription_session_drop(session);
+        aimux_transcription_session_drop(session); // idempotent
+        aimux_transcription_session_drop(0); // safe with 0
+        aimux_transcription_session_drop(999_999); // safe with unknown
+
+        // Operations on a dropped session fail with invalid handle.
+        let mut err = zero_err();
+        assert_eq!(
+            aimux_transcription_push_audio(session, std::ptr::null(), 0, &mut err),
+            0
+        );
+        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+    }
+
+    #[test]
+    fn transcription_session_new_rejects_bad_inputs() {
+        let model = mock_transcriber_handle();
+        // Bad JSON.
+        let bad = std::ffi::CString::new("{not json").unwrap();
+        let mut err = zero_err();
+        assert_eq!(
+            aimux_transcription_session_new(model, 0, bad.as_ptr(), &mut err),
+            0
+        );
+        assert_eq!(err.code, AIMUX_E_JSON_PARSE);
+        unsafe {
+            crate::aimux_free_string(err.message);
+        }
+
+        // Non-transcription model handle.
+        let lang = mock_handle("mock", "m", "x");
+        let mut err = zero_err();
+        assert_eq!(
+            aimux_transcription_session_new(lang, 0, std::ptr::null(), &mut err),
+            0
+        );
+        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+        unsafe {
+            crate::aimux_free_string(err.message);
+        }
+
+        // Bad abort handle.
+        let mut err = zero_err();
+        assert_eq!(
+            aimux_transcription_session_new(model, 999_999, std::ptr::null(), &mut err),
+            0
+        );
+        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
     }
 }

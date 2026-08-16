@@ -1,4 +1,4 @@
-﻿//! Retry with exponential backoff.
+//! Retry with exponential backoff.
 //!
 //! Two flavours are provided:
 //! - [`retry_with_exponential_backoff`] — a plain exponential-backoff retry
@@ -23,6 +23,11 @@ use rand::Rng;
 /// - `max_retries`: maximum number of retry attempts (0 = no retry).
 /// - `initial_delay`: initial delay between retries (doubled each time).
 /// - Only retries on `AiMuxError::is_retryable()` errors.
+///
+/// # Errors
+///
+/// Returns the operation's last error once retries are exhausted (or
+/// immediately for non-retryable errors).
 pub async fn retry_with_exponential_backoff<F, T>(
     max_retries: u32,
     initial_delay: Duration,
@@ -83,6 +88,11 @@ impl Default for RetryConfig {
 /// Only retries on `AiMuxError::is_retryable()` errors. The delay for each
 /// retry is chosen by [`get_retry_delay_ms`], fed from
 /// [`AiMuxError::retry_after_hint`].
+///
+/// # Errors
+///
+/// Returns the operation's last error once retries are exhausted (or
+/// immediately for non-retryable errors).
 pub async fn retry_with_exponential_backoff_respecting_retry_headers<F, T>(
     config: RetryConfig,
     mut f: F,
@@ -127,6 +137,7 @@ where
 /// used when it is present, non-negative, and either shorter than 60 seconds
 /// or shorter than the exponential backoff would be. Otherwise the exponential
 /// backoff delay is used.
+#[must_use]
 pub fn get_retry_delay_ms(hint: Option<i64>, exponential_delay_ms: i64) -> i64 {
     match hint {
         // Use the hint when it is non-negative AND (shorter than 60s OR shorter
@@ -165,6 +176,7 @@ pub fn get_retry_delay_ms_with_jitter(
 /// `now` is the reference instant used to compute the delay for HTTP-date
 /// values. Returns `None` when no header is present or none parse to a usable
 /// value. Mirrors the TS `getRetryDelayInMs` header-reading branch.
+#[must_use]
 pub fn parse_retry_after(
     retry_after_ms_header: Option<&str>,
     retry_after_header: Option<&str>,

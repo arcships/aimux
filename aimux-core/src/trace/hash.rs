@@ -9,6 +9,7 @@
 //! guarantee and NOT an HMAC.
 
 #[inline(always)]
+#[must_use]
 pub fn mix(mut x: u64) -> u64 {
     x ^= x >> 30;
     x = x.wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -20,6 +21,7 @@ pub fn mix(mut x: u64) -> u64 {
 
 /// Keyed 64-bit hash: 8-byte word folding + rotation + finalization (length
 /// prefix included).
+#[must_use]
 pub fn hash64(key: u64, data: &[u8]) -> u64 {
     let mut h = key ^ 0x9e37_79b9_7f4a_7c15;
     let mut chunks = data.chunks_exact(8);
@@ -38,6 +40,7 @@ pub fn hash64(key: u64, data: &[u8]) -> u64 {
 }
 
 /// 128-bit keyed hash = two 64-bit hashes under two derived keys.
+#[must_use]
 pub fn hash128(key: u64, data: &[u8]) -> u128 {
     let k1 = mix(key ^ 0x243f_6a88_85a3_08d3);
     let k2 = mix(k1 ^ 0x1319_8a2e_0370_7344);
@@ -47,12 +50,14 @@ pub fn hash128(key: u64, data: &[u8]) -> u128 {
 /// Low 64 bits of a 128-bit hash (reverse-index key; collisions are rejected
 /// by full 128-bit chain verification).
 #[inline(always)]
+#[must_use]
 pub fn low64(h: u128) -> u64 {
     (h & 0xffff_ffff_ffff_ffff) as u64
 }
 
 /// Hex representation of a 128-bit hash (stable across JSON boundaries —
 /// `u128` cannot be serialized by serde_json).
+#[must_use]
 pub fn hex128(h: u128) -> String {
     format!("{h:032x}")
 }

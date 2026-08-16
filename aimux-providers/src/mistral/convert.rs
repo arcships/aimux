@@ -1,4 +1,4 @@
-﻿//! Conversion between `LanguageModelPrompt` and Mistral API format.
+//! Conversion between `LanguageModelPrompt` and Mistral API format.
 //!
 //! Mirrors the TS `convert-to-mistral-chat-messages.ts`,
 //! `mistral-prepare-tools.ts`, and `map-mistral-finish-reason.ts`.
@@ -26,6 +26,7 @@ pub struct PreparedTools {
 /// Key difference from OpenAI: `ToolChoice::Required` maps to `"any"` (not
 /// `"required"`), and `ToolChoice::Tool` filters the tools array and also uses
 /// `"any"`.
+#[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
     tool_choice: Option<&ToolChoice>,
@@ -100,6 +101,7 @@ pub fn prepare_tools(
 ///   message if it is an assistant message (continuation mode).
 /// - Tool messages include `tool_call_id` (no `name` — the Rust data model
 ///   does not carry the tool name on `ToolResult` parts).
+#[must_use]
 pub fn convert_prompt_to_mistral_messages(prompt: &LanguageModelPrompt) -> Vec<Value> {
     let mut result = Vec::new();
     let last_idx = prompt.len().saturating_sub(1);
@@ -278,6 +280,7 @@ fn convert_part_to_mistral(part: &ContentPart) -> Value {
 // ── Request body ────────────────────────────────────────────────────────────
 
 /// Convert `CallOptions` to a Mistral request body.
+#[must_use]
 pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -> Value {
     let messages = convert_prompt_to_mistral_messages(&options.prompt);
 
@@ -367,6 +370,7 @@ pub fn build_request_body(model_id: &str, options: &CallOptions, stream: bool) -
 /// Parse Mistral finish reason string into `FinishReason`.
 ///
 /// Differences from OpenAI: `model_length` is also mapped to `Length`.
+#[must_use]
 pub fn parse_finish_reason(s: &str) -> FinishReason {
     let unified = match s {
         "stop" => FinishReasonUnified::Stop,

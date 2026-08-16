@@ -41,6 +41,7 @@ pub struct Verdict {
 }
 
 impl Verdict {
+    #[must_use]
     pub fn describe(&self) -> String {
         format!(
             "kind={:?} conf={:?} violated={:?} U={} claimed={} lcp={}B notes={:?}",
@@ -97,6 +98,7 @@ pub mod matrix {
     const HOUR: u64 = 3_600_000;
 
     /// OpenAI Chat/Responses, gpt-5.6+ (byte-exact, no quantization).
+    #[must_use]
     pub fn openai_56() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::OpenAi,
@@ -109,6 +111,7 @@ pub mod matrix {
     }
 
     /// OpenAI legacy (< 5.6) / compatible: 128-token quantization.
+    #[must_use]
     pub fn openai_legacy() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::OpenAi,
@@ -122,6 +125,7 @@ pub mod matrix {
 
     /// Azure: 128-token granularity across the board (differs from OpenAI
     /// 5.6+ byte-exact — matrix-verified).
+    #[must_use]
     pub fn azure() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::OpenAi,
@@ -134,6 +138,7 @@ pub mod matrix {
     }
 
     /// DeepSeek: 64-token granularity + equality invariant (hit+miss==prompt).
+    #[must_use]
     pub fn deepseek() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::DeepSeek,
@@ -146,6 +151,7 @@ pub mod matrix {
     }
 
     /// Mistral: 64-token granularity.
+    #[must_use]
     pub fn mistral() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::Generic,
@@ -159,6 +165,7 @@ pub mod matrix {
 
     /// Anthropic: qualitative (breakpoint + 20-block lookback), no strict
     /// quantization; conservative 1h TTL upper bound.
+    #[must_use]
     pub fn anthropic() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::Anthropic,
@@ -172,6 +179,7 @@ pub mod matrix {
 
     /// Bedrock Converse: usage-layer equality (total == input+read+write);
     /// quota burndown needs raw usage and is best-effort.
+    #[must_use]
     pub fn bedrock() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::Bedrock,
@@ -184,6 +192,7 @@ pub mod matrix {
     }
 
     /// Gemini/Vertex: 24h TTL, no quantization (24h conservative).
+    #[must_use]
     pub fn gemini() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::Gemini,
@@ -196,6 +205,7 @@ pub mod matrix {
     }
 
     /// vLLM: 16-token granularity, no wall-clock TTL (LRU).
+    #[must_use]
     pub fn vllm() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::Vllm,
@@ -209,6 +219,7 @@ pub mod matrix {
 
     /// Default for providers without a matrix entry (e.g. OpenRouter passthrough
     /// behaves like the upstream; start conservative).
+    #[must_use]
     pub fn generic() -> ProviderAuditSpec {
         ProviderAuditSpec {
             family: ProviderFamily::Generic,
@@ -221,6 +232,7 @@ pub mod matrix {
     }
 
     /// Resolve by provider name (best-effort; `None` → generic).
+    #[must_use]
     pub fn for_provider(provider: &str, model: &str) -> ProviderAuditSpec {
         let p = provider.to_ascii_lowercase();
         let m = model.to_ascii_lowercase();
@@ -324,6 +336,7 @@ pub struct JudgmentInput {
     pub session_stats: Option<SessionStats>,
 }
 
+#[must_use]
 pub fn quantize_down(x: u64, gran: Option<u64>) -> u64 {
     match gran {
         Some(g) if g > 0 => x / g * g,
@@ -362,6 +375,7 @@ fn is_byte_proxy_rule(rule: &str) -> bool {
 /// The built-in rule auditor (RFC-0015 §4.2: 8 hard invariants + diagnosis).
 ///
 /// Pure function over evidence; no state, no IO.
+#[must_use]
 pub fn judge(inp: &JudgmentInput) -> Verdict {
     let mut v = Verdict {
         kind: VerdictKind::Trusted,

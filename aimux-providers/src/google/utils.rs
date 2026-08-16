@@ -12,11 +12,12 @@ use serde_json::{Map, Value};
 /// - Ids that already contain a `/` (e.g. `models/foo`, `tunedModels/bar`) are
 ///   passed through unchanged.
 /// - Bare ids are prefixed with `models/`.
+#[must_use]
 pub fn get_model_path(model_id: &str) -> String {
     if model_id.contains('/') {
         model_id.to_string()
     } else {
-        format!("models/{}", model_id)
+        format!("models/{model_id}")
     }
 }
 
@@ -26,6 +27,7 @@ pub fn get_model_path(model_id: &str) -> String {
 /// - `https://generativelanguage.googleapis.com/v1beta/files/...` → true
 /// - YouTube watch / youtu.be URLs → true
 /// - everything else → false
+#[must_use]
 pub fn is_supported_file_url(url: &str) -> bool {
     if url.starts_with("https://generativelanguage.googleapis.com/v1beta/files/") {
         return true;
@@ -175,6 +177,7 @@ enum Segment {
 }
 
 impl GoogleJsonAccumulator {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             accumulated: Value::Object(Map::new()),
@@ -189,6 +192,11 @@ impl GoogleJsonAccumulator {
     /// already-accumulated structure (e.g. `$.a` was a string, then `$.a[0]`
     /// arrives). `partialArgs` is provider-controlled input, so such conflicts
     /// must not panic.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::JsonParse` when a partial-arg JSON path conflicts
+    /// with the already-accumulated structure.
     pub fn process_partial_args(
         &mut self,
         args: &[PartialArg],
@@ -216,7 +224,7 @@ impl GoogleJsonAccumulator {
                 // String continuation chunk.
                 let escaped = escape_json_string_inner(s);
                 let new_val = match existing_val {
-                    Value::String(prev) => Value::String(format!("{}{}", prev, s)),
+                    Value::String(prev) => Value::String(format!("{prev}{s}")),
                     _ => Value::String(s.clone()),
                 };
                 set_nested_value(&mut self.accumulated, &segments, new_val)?;
@@ -242,6 +250,7 @@ impl GoogleJsonAccumulator {
 
     /// Finalize the accumulator, producing the complete JSON string and the
     /// closing delta.
+    #[must_use]
     pub fn finalize(&self) -> FinalizeResult {
         let final_json = serde_json::to_string(&self.accumulated).unwrap_or_default();
         let closing_delta = if final_json.len() >= self.json_text.len() {
@@ -524,14 +533,14 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
                 .ok_or_else(|| parent_must_be(seg))?
                 .get_mut(k)
                 .ok_or_else(|| {
-                    AiMuxError::JsonParse(format!("partial args path conflict at {:?}", seg))
+                    AiMuxError::JsonParse(format!("partial args path conflict at {seg:?}"))
                 })?,
             Segment::Index(i) => current
                 .as_array_mut()
                 .ok_or_else(|| parent_must_be(seg))?
                 .get_mut(*i)
                 .ok_or_else(|| {
-                    AiMuxError::JsonParse(format!("partial args path conflict at {:?}", seg))
+                    AiMuxError::JsonParse(format!("partial args path conflict at {seg:?}"))
                 })?,
             Segment::Root => current,
         };
@@ -563,8 +572,7 @@ fn set_nested_value(obj: &mut Value, segments: &[Segment], value: Value) -> Resu
 /// does not match the path's expectation (e.g. an index into a string).
 fn parent_must_be(seg: &Segment) -> AiMuxError {
     AiMuxError::JsonParse(format!(
-        "partial args path type conflict at {:?}: accumulated value does not match the path",
-        seg
+        "partial args path type conflict at {seg:?}: accumulated value does not match the path"
     ))
 }
 

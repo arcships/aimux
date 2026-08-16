@@ -46,16 +46,24 @@ impl DeepgramConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
+    /// Create from the `DEEPGRAM_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "DEEPGRAM_API_KEY", "Deepgram")?;
         Ok(Self::new(api_key))
@@ -68,10 +76,12 @@ pub struct DeepgramProvider {
 }
 
 impl DeepgramProvider {
+    #[must_use]
     pub fn new(config: DeepgramConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn transcription(&self, model_id: &str) -> DeepgramTranscriptionModel {
         DeepgramTranscriptionModel::new(model_id.to_string(), self.config.clone())
     }
@@ -101,22 +111,26 @@ fn parse_deepgram_options(provider_options: Option<&HashMap<String, Value>>) -> 
     if let Some(po) = provider_options
         && let Some(dg) = po.get("deepgram")
     {
-        opts.detect_entities = dg.get("detectEntities").and_then(|v| v.as_bool());
-        opts.detect_language = dg.get("detectLanguage").and_then(|v| v.as_bool());
-        opts.filler_words = dg.get("fillerWords").and_then(|v| v.as_bool());
+        opts.detect_entities = dg
+            .get("detectEntities")
+            .and_then(serde_json::Value::as_bool);
+        opts.detect_language = dg
+            .get("detectLanguage")
+            .and_then(serde_json::Value::as_bool);
+        opts.filler_words = dg.get("fillerWords").and_then(serde_json::Value::as_bool);
         opts.language = dg
             .get("language")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        opts.punctuate = dg.get("punctuate").and_then(|v| v.as_bool());
+            .map(std::string::ToString::to_string);
+        opts.punctuate = dg.get("punctuate").and_then(serde_json::Value::as_bool);
         opts.redact = dg.get("redact").cloned();
         opts.search = dg.get("search").cloned();
-        opts.smart_format = dg.get("smartFormat").and_then(|v| v.as_bool());
-        opts.summarize = dg.get("summarize").and_then(|v| v.as_bool());
+        opts.smart_format = dg.get("smartFormat").and_then(serde_json::Value::as_bool);
+        opts.summarize = dg.get("summarize").and_then(serde_json::Value::as_bool);
         opts.topics = dg.get("topics").cloned();
-        opts.utterances = dg.get("utterances").and_then(|v| v.as_bool());
-        opts.utt_split = dg.get("uttSplit").and_then(|v| v.as_f64());
-        opts.diarize = dg.get("diarize").and_then(|v| v.as_bool());
+        opts.utterances = dg.get("utterances").and_then(serde_json::Value::as_bool);
+        opts.utt_split = dg.get("uttSplit").and_then(serde_json::Value::as_f64);
+        opts.diarize = dg.get("diarize").and_then(serde_json::Value::as_bool);
     }
     opts
 }
@@ -182,6 +196,7 @@ pub struct DeepgramTranscriptionModel {
 }
 
 impl DeepgramTranscriptionModel {
+    #[must_use]
     pub fn new(model_id: String, config: DeepgramConfig) -> Self {
         Self { model_id, config }
     }

@@ -42,11 +42,18 @@ impl TavilyConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    /// Create from the `TAVILY_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "TAVILY_API_KEY", "Tavily")?;
         Ok(Self::new(api_key))
@@ -59,10 +66,12 @@ pub struct TavilyProvider {
 }
 
 impl TavilyProvider {
+    #[must_use]
     pub fn new(config: TavilyConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn search_model(&self) -> TavilySearchModel {
         TavilySearchModel::new(self.config.clone())
     }
@@ -136,6 +145,7 @@ pub struct TavilySearchModel {
 }
 
 impl TavilySearchModel {
+    #[must_use]
     pub fn new(config: TavilyConfig) -> Self {
         Self { config }
     }

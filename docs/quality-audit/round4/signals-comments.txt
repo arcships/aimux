@@ -1,0 +1,93 @@
+# Comment signals (production code), baseline cf2cea5
+
+## TODO/FIXME/HACK/XXX (1)
+aimux-providers/src/google/convert.rs:77: // TODO: change the signature to `Result` to match TS semantics.
+
+## #[allow(...)] (28)
+aimux-core/src/openai_output.rs:471: #[allow(dead_code)]
+aimux-core/src/stream_part.rs:135: #[allow(unused)]
+aimux-core/src/stream_part.rs:142: #[allow(unused)]
+aimux-core/src/stream_part.rs:148: #[allow(unused)]
+aimux-core/src/trace/store.rs:66: #[allow(dead_code)]
+aimux-core/src/trace/store.rs:73: #[allow(dead_code)]
+aimux-providers/src/assemblyai.rs:99: #[allow(dead_code)]
+aimux-providers/src/aws_polly.rs:477: #[allow(dead_code)]
+aimux-providers/src/aws_polly.rs:489: /// migration to the shared http layer), so marked `#[allow(dead_code)]`.
+aimux-providers/src/aws_polly.rs:490: #[allow(dead_code)]
+aimux-providers/src/elevenlabs.rs:217: #[allow(clippy::type_complexity)]
+aimux-providers/src/elevenlabs.rs:516: #[allow(dead_code)]
+aimux-providers/src/google/model.rs:698: #[allow(dead_code)]
+aimux-providers/src/google/model.rs:727: #[allow(unused_imports)]
+aimux-providers/src/bedrock/event_stream.rs:56: #[allow(dead_code)]
+aimux-providers/src/bedrock/model.rs:568: #[allow(unused)]
+aimux-providers/src/bedrock/reranking.rs:59: #[allow(non_snake_case)]
+aimux-providers/src/anthropic/convert.rs:295: #[allow(clippy::too_many_arguments)]
+aimux-providers/src/anthropic/convert.rs:1306: #[allow(clippy::too_many_arguments)]
+aimux-providers/src/anthropic/prepare_tools.rs:267: #[allow(clippy::collapsible_if, reason = "let-chain not stable on 1.97")]
+aimux-providers/src/anthropic/prepare_tools.rs:290: #[allow(clippy::collapsible_if, reason = "let-chain not stable on 1.97")]
+aimux-providers/src/anthropic/stream.rs:154: #[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
+aimux-providers/src/anthropic/stream.rs:239: #[allow(clippy::too_many_arguments)] // core plumbing: endpoint/retry/body/warnings/auth/encoding/abort/timeout
+aimux-providers/src/vertex/model.rs:493: #[allow(unused_imports)]
+aimux-providers/src/openai/types.rs:173: #[allow(unused_imports)]
+aimux-providers/src/openai/responses/responses_convert.rs:293: #[allow(dead_code)]
+aimux-ffi/src/lib.rs:1535: #[allow(clippy::too_many_arguments)]
+aimux-ffi/src/lib.rs:1655: #[allow(clippy::too_many_arguments)]
+
+## Duplicate // comments (>=3 occurrences): 54
+x192 [aimux-core/src/generate.rs:33] ─────────────────────────────────────────────────────────────────────────────
+x22 [aimux-providers/src/cartesia.rs:586] ════════════════════════════════════════════════════════════════════════════
+x16 [aimux-providers/src/cybertron.rs:5] ! variable holds a *base URL* (not an API key); when unset, the default
+x16 [aimux-providers/src/cybertron.rs:6] ! endpoint is used. A placeholder API key is sent in the `Authorization`
+x16 [aimux-providers/src/cybertron.rs:7] ! header — the shared `OpenAIProvider` requires a non-empty key string.
+x12 [aimux-providers/src/aws_polly.rs:410] ── Provider options parsing ─────────────────────────────────────────────────
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:3] ! Vertex AI serves partner and open models (Anthropic, AI21, DeepSeek, Llama,
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:4] ! MiniMax, Mistral, Moonshot, OpenAI, Qwen, Z.AI) through an OpenAI-compatible
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:5] ! Chat Completions endpoint — the "Model as a Service" (MaaS) OpenAPI surface
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:6] ! — rather than the native `rawPredict` path:
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:8] ! `https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi`
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:10] ! The host is derived from the location: `global` uses
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:11] ! `aiplatform.googleapis.com`, `eu`/`us` use `aiplatform.{loc}.rep.googleapis.com`,
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:12] ! and any other location uses `{loc}-aiplatform.googleapis.com`. Authentication
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:13] ! uses a Google Cloud OAuth2 Bearer token (the same `GOOGLE_VERTEX_ACCESS_TOKEN`
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:14] ! used by the native Vertex provider), sent as `Authorization: Bearer <token>`.
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:16] ! Because the endpoint is OpenAI-compatible, this provider is a thin wrapper
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:17] ! over [`OpenAIProvider`](crate::openai::OpenAIProvider): only the base URL,
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:18] ! the Bearer-token env var, and the provider name differ. The shared
+x10 [aimux-providers/src/vertex_ai_ai21_models.rs:19] ! `OpenAIProvider` appends `/chat/completions` to the configured base URL.
+x9 [aimux-providers/src/assemblyai.rs:126] ── Model ───────────────────────────────────────────────────────────────────
+x9 [aimux-providers/src/aws_polly.rs:69] ── Config ───────────────────────────────────────────────────────────────────
+x9 [aimux-providers/src/aws_polly.rs:179] ── Provider ─────────────────────────────────────────────────────────────────
+x9 [aimux-providers/src/dataforseo.rs:272] Capture response headers.
+x9 [aimux-providers/src/open_responses.rs:1383] RFC-0015 P0-3: keep the raw provider usage payload.
+x8 [aimux-providers/src/assemblyai.rs:78] ── Response schema ─────────────────────────────────────────────────────────
+x8 [aimux-providers/src/aws_polly.rs:298] ── Request builder ──────────────────────────────────────────────────────────
+x7 [aimux-providers/src/assemblyai.rs:30] ── Config ──────────────────────────────────────────────────────────────────
+x7 [aimux-providers/src/klingai.rs:309] Poll for completion.
+x6 [aimux-providers/src/open_responses.rs:484] First part: StreamStart.
+x6 [aimux-providers/src/cohere/types.rs:8] ── Non-streaming response ──
+x5 [aimux-providers/src/aws_polly.rs:204] ── Speech model ─────────────────────────────────────────────────────────────
+x5 [aimux-providers/src/huggingface.rs:6] ! [`OpenAIProvider`](crate::openai::OpenAIProvider) appends `/chat/completions`
+x5 [aimux-providers/src/klingai.rs:77] ── Helpers ─────────────────────────────────────────────────────────────────
+x5 [aimux-providers/src/cohere/model.rs:64] ── Usage conversion ─────────────────────────────────────────────────────────
+x4 [aimux-core/src/json_repair.rs:8] ===========================================================================
+x4 [aimux-providers/src/cartesia.rs:697] Parse provider options.
+x4 [aimux-providers/src/cohere/convert.rs:294] ── Request body ────────────────────────────────────────────────────────────
+x4 [aimux-providers/src/cohere/model.rs:157] Build content array.
+x4 [aimux-providers/src/cohere/types.rs:70] ── Streaming response ──
+x4 [aimux-providers/src/google/model.rs:442] provider-executed → does NOT set has_tool_calls
+x4 [aimux-providers/src/xai/model.rs:666] Final part: Finish.
+x3 [aimux-providers/src/dataforseo.rs:151] ── Response types ───────────────────────────────────────────────────────────
+x3 [aimux-providers/src/dataforseo.rs:200] ── Search model ─────────────────────────────────────────────────────────────
+x3 [aimux-providers/src/llamafile.rs:12] ! and falls back to the default local endpoint when it is unset. A placeholder
+x3 [aimux-providers/src/open_responses.rs:460] Peek at the first SSE event to detect early errors.
+x3 [aimux-providers/src/cohere/convert.rs:14] ── Prepared tools ──────────────────────────────────────────────────────────
+x3 [aimux-providers/src/google/files.rs:324] Build provider metadata.
+x3 [aimux-providers/src/xai/model.rs:461] Process choices.
+x3 [aimux-providers/src/anthropic/files.rs:128] `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
+x3 [aimux-providers/src/anthropic/files.rs:240] Closing boundary.
+x3 [aimux-providers/src/anthropic/prepare_tools.rs:86] Anthropic does not support 'none' tool choice, so the tools are removed.
+x3 [aimux-providers/src/voyage/embedding.rs:6] ! Endpoint: `POST {base_url}/embeddings`
+x3 [aimux-ffi/src/lib.rs:2922] `init_proxy` returns false when the shared client is already up; treat
+
+## Dead RFC refs in comments: {'3339': 1, '1123': 2}
+All refs: {'0003': 1, '0007': 1, '0009': 4, '0012': 3, '0014': 8, '0015': 30, '0016': 9, '0017': 5, '0018': 5, '0019': 1, '0020': 4, '0021': 3, '0022': 3, '0023': 14, '0024': 9, '0026': 2, '0027': 8, '0028': 12, '1123': 2, '3339': 1}

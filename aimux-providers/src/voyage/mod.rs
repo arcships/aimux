@@ -30,12 +30,17 @@ impl VoyageConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Create from the `VOYAGE_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `VOYAGE_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "VOYAGE_API_KEY", "Voyage")?;
         Ok(Self::new(api_key))
@@ -48,18 +53,21 @@ pub struct VoyageProvider {
 }
 
 impl VoyageProvider {
+    #[must_use]
     pub fn new(config: VoyageConfig) -> Self {
         Self { config }
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"voyage-3.5"`).
+    #[must_use]
     pub fn embedding_model(&self, model_id: &str) -> VoyageEmbeddingModel {
         VoyageEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a reranking model instance for the given model name (e.g.
     /// `"rerank-2.5"`).
+    #[must_use]
     pub fn reranking_model(&self, model_id: &str) -> reranking::VoyageRerankingModel {
         reranking::VoyageRerankingModel::new(model_id.to_string(), self.config.clone())
     }

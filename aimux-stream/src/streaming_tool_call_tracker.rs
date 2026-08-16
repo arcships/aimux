@@ -46,26 +46,31 @@ pub struct StreamingToolCallDelta {
 }
 
 impl StreamingToolCallDelta {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn index(mut self, index: usize) -> Self {
         self.index = Some(index);
         self
     }
 
+    #[must_use]
     pub fn id(mut self, id: impl Into<String>) -> Self {
         self.id = Some(id.into());
         self
     }
 
     /// Set the `type` field (named `tool_type` because `type` is reserved).
+    #[must_use]
     pub fn tool_type(mut self, t: impl Into<String>) -> Self {
         self.r#type = Some(t.into());
         self
     }
 
+    #[must_use]
     pub fn function_name(mut self, name: impl Into<String>) -> Self {
         self.function.get_or_insert_with(Default::default).name = Some(name.into());
         self
@@ -73,11 +78,13 @@ impl StreamingToolCallDelta {
 
     /// Set the `function.arguments` fragment. Pass `""` for an explicit empty
     /// fragment; omit the call entirely for `None` (TS `arguments: null`).
+    #[must_use]
     pub fn arguments(mut self, args: impl Into<String>) -> Self {
         self.function.get_or_insert_with(Default::default).arguments = Some(args.into());
         self
     }
 
+    #[must_use]
     pub fn extra(mut self, extra: Value) -> Self {
         self.extra = extra;
         self
@@ -181,6 +188,7 @@ impl Default for StreamingToolCallTracker<()> {
 
 impl<M> StreamingToolCallTracker<M> {
     /// Create a new tracker with no metadata handling and default settings.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tool_calls: Vec::new(),
@@ -194,12 +202,14 @@ impl<M> StreamingToolCallTracker<M> {
     }
 
     /// Set a custom id generator (the TS `generateId` option).
+    #[must_use]
     pub fn with_generate_id<F: Fn() -> String + 'static>(mut self, f: F) -> Self {
         self.generate_id = Box::new(f);
         self
     }
 
     /// Set the `type` validation mode (the TS `typeValidation` option).
+    #[must_use]
     pub fn with_type_validation(mut self, v: TypeValidation) -> Self {
         self.type_validation = v;
         self
@@ -209,6 +219,7 @@ impl<M> StreamingToolCallTracker<M> {
     /// whose resolved `index` exceeds `max_index` returns
     /// [`TrackerError::IndexOutOfRange`] instead of resizing `tool_calls` to
     /// `index + 1` slots.
+    #[must_use]
     pub fn with_max_index(mut self, max_index: usize) -> Self {
         self.max_index = max_index;
         self
@@ -217,6 +228,7 @@ impl<M> StreamingToolCallTracker<M> {
     /// Set the metadata extractor (the TS `extractMetadata` option). Called
     /// once when a new tool call is detected; the returned metadata is stored
     /// on the tool call and passed to the builder at finalization.
+    #[must_use]
     pub fn with_extract_metadata<F: Fn(&StreamingToolCallDelta) -> Option<M> + 'static>(
         mut self,
         f: F,
@@ -228,6 +240,7 @@ impl<M> StreamingToolCallTracker<M> {
     /// Set the provider-metadata builder (the TS `buildToolCallProviderMetadata`
     /// option). Receives the metadata previously extracted; if `None` is
     /// returned, no `provider_metadata` is included in the `tool-call` event.
+    #[must_use]
     pub fn with_build_provider_metadata<F: Fn(Option<&M>) -> Option<M> + 'static>(
         mut self,
         f: F,
@@ -238,6 +251,11 @@ impl<M> StreamingToolCallTracker<M> {
 
     /// Process a tool call delta from a streaming response chunk. Emits events
     /// into the internal buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TrackerError::IndexOutOfRange` when the delta's tool index
+    /// exceeds the configured maximum.
     pub fn process_delta(&mut self, delta: &StreamingToolCallDelta) -> Result<(), TrackerError> {
         let index = delta.index.unwrap_or(self.tool_calls.len());
         // Guard against a remote `index` resizing `tool_calls` to a huge vector.
@@ -247,7 +265,7 @@ impl<M> StreamingToolCallTracker<M> {
         let is_new = self
             .tool_calls
             .get(index)
-            .map(|o| o.is_none())
+            .map(std::option::Option::is_none)
             .unwrap_or(true);
         if is_new {
             self.process_new_tool_call(index, delta)?;
@@ -274,6 +292,7 @@ impl<M> StreamingToolCallTracker<M> {
     }
 
     /// The events emitted so far (accumulated across `process_delta`/`flush`).
+    #[must_use]
     pub fn parts(&self) -> &[ToolCallStreamPart<M>] {
         &self.parts
     }

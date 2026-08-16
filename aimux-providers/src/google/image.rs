@@ -53,6 +53,7 @@ pub struct GoogleImageModel {
 }
 
 impl GoogleImageModel {
+    #[must_use]
     pub fn new(model_id: String, settings: GoogleImageSettings, config: GoogleConfig) -> Self {
         Self {
             model_id,
@@ -438,7 +439,7 @@ fn extract_imagen_metadata(response: &Value) -> SharedProviderMetadata {
     let predictions = response
         .get("predictions")
         .and_then(|p| p.as_array())
-        .map(|arr| arr.len())
+        .map(std::vec::Vec::len)
         .unwrap_or(0);
 
     let images: Vec<Value> = (0..predictions).map(|_| json!({})).collect();
@@ -485,15 +486,15 @@ fn extract_gemini_result(
     let usage = response.get("usageMetadata").map(|u| {
         let input = u
             .get("promptTokenCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|x| x as u32);
         let output = u
             .get("candidatesTokenCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|x| x as u32);
         let total = u
             .get("totalTokenCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|x| x as u32);
         ImageUsage {
             input_tokens: input,

@@ -100,7 +100,7 @@ fn provider_at(uri: &str) -> GoogleProvider {
 /// Mock a JSON `generateContent` response for `model`.
 async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:generateContent", model)))
+        .and(path(format!("/models/{model}:generateContent")))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .mount(server)
         .await;
@@ -109,7 +109,7 @@ async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
 /// Mock an SSE `streamGenerateContent` response for `model`.
 async fn mock_sse_response(server: &MockServer, model: &str, sse_body: String) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:streamGenerateContent", model)))
+        .and(path(format!("/models/{model}:streamGenerateContent")))
         .and(query_param("alt", "sse"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -124,7 +124,7 @@ async fn mock_sse_response(server: &MockServer, model: &str, sse_body: String) {
 fn sse_body(chunks: &[Value]) -> String {
     let mut body = String::new();
     for chunk in chunks {
-        body.push_str(&format!("data: {}\n\n", chunk));
+        body.push_str(&format!("data: {chunk}\n\n"));
     }
     body
 }
@@ -136,7 +136,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -204,6 +204,43 @@ fn gen_tool_calls(content: &[GenerateContent]) -> Vec<(String, String, Value)> {
                 input,
                 ..
             } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Extract `(tool_call_id, tool_name, result)` from `GenerateContent::ToolResult`.
+fn gen_tool_results(content: &[GenerateContent]) -> Vec<(String, String, Value)> {
+    content
+        .iter()
+        .filter_map(|c| match c {
+            GenerateContent::ToolResult {
+                tool_call_id,
+                tool_name,
+                result,
+                ..
+            } => Some((tool_call_id.clone(), tool_name.clone(), result.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `provider_metadata` of the `GenerateContent::ToolCall` / `ToolResult`
+/// whose `tool_name` is `name`.
+fn gen_server_metadata(content: &[GenerateContent], name: &str) -> Vec<Value> {
+    content
+        .iter()
+        .filter_map(|c| match c {
+            GenerateContent::ToolCall {
+                tool_name,
+                provider_metadata,
+                ..
+            }
+            | GenerateContent::ToolResult {
+                tool_name,
+                provider_metadata,
+                ..
+            } if tool_name == name => provider_metadata.clone(),
             _ => None,
         })
         .collect()
@@ -766,7 +803,7 @@ mod do_generate {
                 && url.as_deref() == Some("https://source.example.com")
                 && title.as_deref() == Some("Source Title")
         });
-        assert!(has_url, "expected a url source, got {:?}", sources);
+        assert!(has_url, "expected a url source, got {sources:?}");
     }
 
     #[tokio::test]
@@ -1107,20 +1144,19 @@ mod do_generate {
         });
         assert!(
             has_call,
-            "expected a code_execution tool-call, got {:?}",
-            calls
+            "expected a code_execution tool-call, got {calls:?}"
         );
-        // NOTE: TS also asserts a tool-result content item { outcome, output }
-        // with providerExecuted=true — not expressible until GenerateContent
-        // gains a ToolResult variant (see `code_execution_tool_result_content`).
+        // The tool-result half of the TS assertion lives in
+        // `code_execution_tool_result_content` below.
     }
 
     /// TS: "should handle code execution tool calls" — the `tool-result` portion.
     ///
-    /// `GenerateContent` has no `ToolResult` variant and `ToolCall` has no
-    /// `provider_executed` flag, so the full TS assertion cannot be expressed.
+    /// `GenerateContent::ToolResult` now exists, so the TS assertion is
+    /// expressible: the `codeExecutionResult` part becomes a `ToolResult`
+    /// named `code_execution` carrying `{ outcome, output }`, paired with the
+    /// id of the `executableCode` call it answers.
     #[tokio::test]
-    #[ignore = "GenerateContent has no ToolResult variant; ToolCall lacks provider_executed"]
     async fn code_execution_tool_result_content() {
         let server = MockServer::start().await;
         mock_json_response(
@@ -1150,12 +1186,34 @@ mod do_generate {
             .await
             .expect("do_generate should succeed");
 
-        // Once GenerateContent::ToolResult exists, assert:
-        //   a ToolResult { tool_name: "code_execution",
-        //                  output: { "outcome": "OUTCOME_OK", "output": "2" } }
-        // and the ToolCall carries provider_executed: true.
-        let _ = result;
-        panic!("placeholder until GenerateContent::ToolResult exists");
+        let calls = gen_tool_calls(&result.content);
+        assert_eq!(calls.len(), 1, "one executableCode part → one tool-call");
+        assert_eq!(calls[0].1, "code_execution");
+        assert_eq!(
+            calls[0].2,
+            json!({ "language": "PYTHON", "code": "print(1+1)" })
+        );
+
+        let results = gen_tool_results(&result.content);
+        assert_eq!(
+            results.len(),
+            1,
+            "one codeExecutionResult part → one tool-result"
+        );
+        assert_eq!(results[0].1, "code_execution");
+        assert_eq!(
+            results[0].2,
+            json!({ "outcome": "OUTCOME_OK", "output": "2" }),
+            "the TS `{{ outcome, output }}` result shape"
+        );
+        assert_eq!(
+            results[0].0, calls[0].0,
+            "the result must carry the id of the call it answers"
+        );
+        assert!(
+            !results[0].0.is_empty(),
+            "tool_call_id must not be the empty string"
+        );
     }
 
     #[tokio::test]
@@ -1196,8 +1254,7 @@ mod do_generate {
         let has_call = calls.iter().any(|(_, name, _)| name == "code_execution");
         assert!(
             has_call,
-            "expected a code_execution tool-call, got {:?}",
-            calls
+            "expected a code_execution tool-call, got {calls:?}"
         );
         // NOTE: TS asserts the result's output defaults to "" when missing —
         // pending GenerateContent::ToolResult.
@@ -1360,12 +1417,12 @@ mod do_generate {
     // ── server-side toolCall / toolResponse parts ─────────────────────────────
     //
     // Gemini 3 can return `toolCall` + `toolResponse` parts for provider tools
-    // (e.g. GOOGLE_SEARCH_WEB). These are not parsed by the Rust port yet.
-    // `GenerateContent::ToolCall` also lacks the TS `dynamic` / `providerExecuted`
-    // / per-call `providerMetadata` fields, and there is no `ToolResult` variant.
+    // (e.g. GOOGLE_SEARCH_WEB). Both are parsed now: the call becomes a
+    // `ToolCall` named `server:<toolType>` and the response a `ToolResult` with
+    // the same name, each carrying
+    // `providerMetadata.google.{serverToolCallId,serverToolType,thoughtSignature}`.
 
     #[tokio::test]
-    #[ignore = "server-side toolCall/toolResponse parts need ToolCall dynamic/providerMetadata fields and a ToolResult variant"]
     async fn handle_server_side_tool_call_and_tool_response_parts() {
         // TS: "should handle server-side toolCall and toolResponse parts (tool combination)"
         let server = MockServer::start().await;
@@ -1415,13 +1472,50 @@ mod do_generate {
             c,
             GenerateContent::Text { text, .. } if text == "The weather in San Francisco is sunny."
         )));
-        // Server tool call with toolName "server:GOOGLE_SEARCH_WEB" (red).
-        assert!(
-            gen_tool_calls(&result.content)
-                .iter()
-                .any(|(_, name, _)| name == "server:GOOGLE_SEARCH_WEB"),
-            "expected a server-side tool-call"
+
+        // Server tool call with toolName "server:GOOGLE_SEARCH_WEB".
+        let calls = gen_tool_calls(&result.content);
+        assert_eq!(calls.len(), 1, "one toolCall part → one tool-call");
+        assert_eq!(calls[0].0, "server-call-1", "the server-assigned id");
+        assert_eq!(calls[0].1, "server:GOOGLE_SEARCH_WEB");
+        assert_eq!(calls[0].2, json!({ "query": "San Francisco weather" }));
+
+        // The matching toolResponse part.
+        let results = gen_tool_results(&result.content);
+        assert_eq!(results.len(), 1, "one toolResponse part → one tool-result");
+        assert_eq!(
+            results[0].0, "server-call-1",
+            "the result is paired with its call"
         );
+        assert_eq!(results[0].1, "server:GOOGLE_SEARCH_WEB");
+        assert_eq!(
+            results[0].2,
+            json!({ "results": [{ "title": "Weather in SF" }] }),
+            "the server tool's response payload must survive verbatim"
+        );
+
+        // Per-part providerMetadata: server ids/types plus the thoughtSignature
+        // (which must be echoed back on the follow-up turn).
+        let meta = gen_server_metadata(&result.content, "server:GOOGLE_SEARCH_WEB");
+        assert_eq!(meta.len(), 2, "both the call and the result carry metadata");
+        assert_eq!(
+            meta[0]["google"],
+            json!({
+                "serverToolCallId": "server-call-1",
+                "serverToolType": "GOOGLE_SEARCH_WEB",
+                "thoughtSignature": "sig-abc",
+            })
+        );
+        assert_eq!(
+            meta[1]["google"],
+            json!({
+                "serverToolCallId": "server-call-1",
+                "serverToolType": "GOOGLE_SEARCH_WEB",
+                "thoughtSignature": "sig-def",
+            })
+        );
+
+        // Provider-executed tools do NOT flip the finish reason to tool-calls.
         assert_eq!(
             result.finish_reason.unified,
             aimux_core::types::FinishReasonUnified::Stop
@@ -1740,8 +1834,7 @@ mod do_stream {
         });
         assert!(
             has_call,
-            "expected a code_execution tool-call, got {:?}",
-            calls
+            "expected a code_execution tool-call, got {calls:?}"
         );
 
         let results = stream_tool_results(&parts);
@@ -1750,8 +1843,7 @@ mod do_stream {
             .any(|(_, output)| *output == json!({ "outcome": "OUTCOME_OK", "output": "hello\n" }));
         assert!(
             has_result,
-            "expected a code_execution tool-result, got {:?}",
-            results
+            "expected a code_execution tool-result, got {results:?}"
         );
         // NOTE: TS also asserts toolName: "code_execution" on the result and
         // providerExecuted: true on the call — not expressible on current
@@ -1811,8 +1903,7 @@ mod do_stream {
             .any(|(_, output)| *output == json!({ "outcome": "OUTCOME_OK", "output": "" }));
         assert!(
             has_empty,
-            "expected a tool-result with empty output, got {:?}",
-            results
+            "expected a tool-result with empty output, got {results:?}"
         );
     }
 
@@ -1875,12 +1966,10 @@ mod do_stream {
 
     /// TS: "should stream server-side toolCall and toolResponse parts (tool combination)".
     ///
-    /// Server-side `toolCall`/`toolResponse` parts need `ToolCall` dynamic /
-    /// providerMetadata fields and a `ToolResult` variant to fully express; the
-    /// core assertion (server tool call + result streamed) is kept but ignored
-    /// until those land.
+    /// Both parts are streamed now: `StreamPart::ToolCall` /
+    /// `StreamPart::ToolResult` named `server:<toolType>`, each carrying
+    /// `providerMetadata.google.{serverToolCallId,serverToolType,thoughtSignature}`.
     #[tokio::test]
-    #[ignore = "server-side toolCall/toolResponse streaming needs ToolCall dynamic/providerMetadata fields and a ToolResult tool_name"]
     async fn stream_server_side_tool_call_and_tool_response_parts() {
         let server = MockServer::start().await;
         mock_sse_response(
@@ -1931,12 +2020,82 @@ mod do_stream {
             .expect("do_stream should succeed");
         let parts = collect_stream(result).await;
 
-        assert!(
-            stream_tool_calls(&parts)
-                .iter()
-                .any(|(_, name, _)| name == "server:GOOGLE_SEARCH_WEB"),
-            "expected a server-side tool-call in the stream"
+        let calls = stream_tool_calls(&parts);
+        assert_eq!(calls.len(), 1, "one toolCall part → one streamed tool-call");
+        assert_eq!(calls[0].0, "server-call-1");
+        assert_eq!(calls[0].1, "server:GOOGLE_SEARCH_WEB");
+        assert_eq!(calls[0].2, json!({ "query": "San Francisco weather" }));
+
+        let results = stream_tool_results(&parts);
+        assert_eq!(
+            results.len(),
+            1,
+            "one toolResponse part → one streamed tool-result"
         );
+        assert_eq!(
+            results[0].0, "server-call-1",
+            "the streamed result is paired with its call"
+        );
+        assert_eq!(
+            results[0].1,
+            json!({ "results": [{ "title": "Weather in SF" }] }),
+            "the server tool's response payload must survive verbatim"
+        );
+
+        // Per-part providerMetadata (ids/types + the thoughtSignature that must
+        // be echoed back on the follow-up turn).
+        let meta: Vec<Value> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::ToolCall {
+                    tool_name,
+                    provider_metadata,
+                    ..
+                }
+                | StreamPart::ToolResult {
+                    tool_name,
+                    provider_metadata,
+                    ..
+                } if tool_name == "server:GOOGLE_SEARCH_WEB" => provider_metadata.clone(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(meta.len(), 2, "both the call and the result carry metadata");
+        assert_eq!(
+            meta[0]["google"],
+            json!({
+                "serverToolCallId": "server-call-1",
+                "serverToolType": "GOOGLE_SEARCH_WEB",
+                "thoughtSignature": "sig-abc",
+            })
+        );
+        assert_eq!(
+            meta[1]["google"],
+            json!({
+                "serverToolCallId": "server-call-1",
+                "serverToolType": "GOOGLE_SEARCH_WEB",
+                "thoughtSignature": "sig-def",
+            })
+        );
+
+        // The trailing text is still streamed, and the finish reason is Stop
+        // (provider-executed tools do not flip it to tool-calls).
+        let text: String = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::TextDelta { delta, .. } => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "The weather in San Francisco is sunny.");
+        let finish = parts
+            .iter()
+            .find_map(|p| match p {
+                StreamPart::Finish { finish_reason, .. } => Some(finish_reason),
+                _ => None,
+            })
+            .expect("finish part");
+        assert_eq!(finish.unified, aimux_core::types::FinishReasonUnified::Stop);
     }
 
     // ── streaming source events ───────────────────────────────────────────────
@@ -1977,7 +2136,7 @@ mod do_stream {
                 && url.as_deref() == Some("https://source.example.com")
                 && title.as_deref() == Some("Source Title")
         });
-        assert!(has, "expected a url source event, got {:?}", sources);
+        assert!(has, "expected a url source event, got {sources:?}");
     }
 
     #[tokio::test]
@@ -2018,7 +2177,7 @@ mod do_stream {
                 && url.as_deref() == Some("https://example.com/article")
                 && title.as_deref() == Some("Image Source")
         });
-        assert!(has, "expected an image url source event, got {:?}", sources);
+        assert!(has, "expected an image url source event, got {sources:?}");
     }
 
     #[tokio::test]
@@ -2113,8 +2272,7 @@ mod do_stream {
         assert_eq!(
             example.len(),
             1,
-            "duplicate source should be emitted once, got {:?}",
-            sources
+            "duplicate source should be emitted once, got {sources:?}"
         );
         assert_eq!(example[0].3.as_deref(), Some("Example"));
 
@@ -2132,8 +2290,7 @@ mod do_stream {
         assert_eq!(
             sources.len(),
             3,
-            "expected 3 deduplicated sources, got {:?}",
-            sources
+            "expected 3 deduplicated sources, got {sources:?}"
         );
     }
 }

@@ -51,6 +51,7 @@ pub struct BedrockConfig {
 }
 
 impl BedrockModel {
+    #[must_use]
     pub fn new(model_id: String, config: BedrockConfig) -> Self {
         Self { model_id, config }
     }
@@ -86,7 +87,7 @@ impl BedrockModel {
 
         match &self.config.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
+                let mut headers = vec![("Authorization".to_string(), format!("Bearer {token}"))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }
@@ -259,6 +260,9 @@ impl LanguageModel for BedrockModel {
             .get("x-amzn-requestid")
             .cloned()
             .or_else(|| response_headers.get("x-amzn-request-id").cloned());
+        // Same source as the non-stream path: the response `Date` header
+        // (RFC1123). Keeps stream/non-stream timestamps consistent.
+        let response_timestamp = response_headers.get("date").cloned();
 
         let model_id = self.model_id.clone();
 
@@ -267,7 +271,7 @@ impl LanguageModel for BedrockModel {
 
             yield Ok(StreamPart::ResponseMetadata {
                 id: request_id,
-                timestamp: None,
+                timestamp: response_timestamp,
                 model_id: Some(model_id.clone()),
             });
 
@@ -275,11 +279,22 @@ impl LanguageModel for BedrockModel {
 
             let mut text_id: Option<String> = None;
             let mut reasoning_id: Option<String> = None;
+            // Reasoning signatures arrive in their own reasoningContent delta
+            // (usually with no text); accumulated here and attached to the
+            // concluding ReasoningEnd.
+            let mut reasoning_signature: Option<String> = None;
             let mut block_counter = 0usize;
             // Tool call state: block_index → (id, name, accumulated_json)
             let mut tool_blocks: HashMap<usize, (String, String, String)> = HashMap::new();
             let mut final_usage: Usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
+            // Provider metadata accumulated for the Finish chunk from `metadata`
+            // and `messageStop` events (findings #26, #27). Mirrors the TS
+            // `providerMetadata` / `stopSequence` accumulation in
+            // `amazon-bedrock-chat-language-model.ts` (`doStream`).
+            let mut finish_meta: serde_json::Map<String, serde_json::Value> =
+                serde_json::Map::new();
+            let mut stop_sequence: Option<String> = None;
 
             for msg in &messages {
                 if msg.message_type != "event" {
@@ -298,7 +313,7 @@ impl LanguageModel for BedrockModel {
                     "contentBlockStart" => {
                         let idx = payload
                             .get("contentBlockIndex")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(block_counter as u64) as usize;
 
                         // Check if this is a tool use block.
@@ -315,7 +330,7 @@ impl LanguageModel for BedrockModel {
                                     .unwrap_or("")
                                     .to_string();
                                 let id = if id.is_empty() {
-                                    format!("call-{}", idx)
+                                    format!("call-{idx}")
                                 } else {
                                     id
                                 };
@@ -345,7 +360,7 @@ impl LanguageModel for BedrockModel {
                     "contentBlockDelta" => {
                         let idx = payload
                             .get("contentBlockIndex")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0) as usize;
 
                         if let Some(delta) = payload.get("delta") {
@@ -381,32 +396,44 @@ impl LanguageModel for BedrockModel {
                                         }
                             // Reasoning delta — `reasoningContent.text` carries
                             // incremental reasoning text; `reasoningContent.signature`
-                            // carries the final signature. The signature cannot be
-                            // represented on `StreamPart::ReasoningDelta` (no
-                            // provider_metadata field), so it is intentionally not
-                            // emitted. Empty text deltas are skipped.
-                            if let Some(rc) = delta.get("reasoningContent")
-                                && let Some(text) = rc.get("text").and_then(|v| v.as_str())
-                                    && !text.is_empty() {
-                                        let id = idx.to_string();
-                                        if reasoning_id.as_deref() != Some(id.as_str()) {
-                                            reasoning_id = Some(id.clone());
-                                            yield Ok(StreamPart::ReasoningStart { id,
-                provider_metadata: None,
-            });
-                                        }
-                                        yield Ok(StreamPart::ReasoningDelta {
-                                            id: idx.to_string(),
-                                            delta: text.to_string(),
-                provider_metadata: None,
-            });
+                            // carries the reasoning signature (typically in a
+                            // final, text-less delta). The signature is attached
+                            // to the concluding ReasoningEnd via provider_metadata
+                            // so extended-thinking multi-turn can echo it back —
+                            // same shape as the non-streaming path. Empty text
+                            // deltas are skipped.
+                            if let Some(rc) = delta.get("reasoningContent") {
+                                if let Some(text) = rc.get("text").and_then(|v| v.as_str())
+                                    && !text.is_empty()
+                                {
+                                    let id = idx.to_string();
+                                    if reasoning_id.as_deref() != Some(id.as_str()) {
+                                        reasoning_id = Some(id.clone());
+                                        yield Ok(StreamPart::ReasoningStart {
+                                            id,
+                                            provider_metadata: None,
+                                        });
                                     }
+                                    yield Ok(StreamPart::ReasoningDelta {
+                                        id: idx.to_string(),
+                                        delta: text.to_string(),
+                                        provider_metadata: None,
+                                    });
+                                }
+                                if let Some(sig) =
+                                    rc.get("signature").and_then(|v| v.as_str())
+                                {
+                                    reasoning_signature
+                                        .get_or_insert_with(String::new)
+                                        .push_str(sig);
+                                }
+                            }
                         }
                     }
                     "contentBlockStop" => {
                         let idx = payload
                             .get("contentBlockIndex")
-                            .and_then(|v| v.as_u64())
+                            .and_then(serde_json::Value::as_u64)
                             .unwrap_or(0) as usize;
 
                         if let Some((id, name, acc)) = tool_blocks.remove(&idx) {
@@ -428,9 +455,12 @@ impl LanguageModel for BedrockModel {
                         } else if reasoning_id.is_some() {
                             let id = idx.to_string();
                             if reasoning_id.as_deref() == Some(id.as_str()) {
-                                yield Ok(StreamPart::ReasoningEnd { id,
-                provider_metadata: None,
-            });
+                                let provider_metadata =
+                                    reasoning_signature_meta(reasoning_signature.take());
+                                yield Ok(StreamPart::ReasoningEnd {
+                                    id,
+                                    provider_metadata,
+                                });
                                 reasoning_id = None;
                             }
                         } else if text_id.is_some() {
@@ -450,11 +480,24 @@ impl LanguageModel for BedrockModel {
                                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
                             }
                             if let Some(id) = reasoning_id.take() {
-                                yield Ok(StreamPart::ReasoningEnd { id,
-                provider_metadata: None,
-            });
+                                let provider_metadata =
+                                    reasoning_signature_meta(reasoning_signature.take());
+                                yield Ok(StreamPart::ReasoningEnd {
+                                    id,
+                                    provider_metadata,
+                                });
                             }
                             final_finish_reason = Some(map_finish_reason(reason));
+                        }
+                        // #26: surface which stop sequence sentinel fired
+                        // (additionalModelResponseFields.delta.stop_sequence), if any.
+                        if let Some(seq) = payload
+                            .get("additionalModelResponseFields")
+                            .and_then(|f| f.get("delta"))
+                            .and_then(|d| d.get("stop_sequence"))
+                            .and_then(|v| v.as_str())
+                        {
+                            stop_sequence = Some(seq.to_string());
                         }
                     }
                     "metadata" => {
@@ -462,6 +505,19 @@ impl LanguageModel for BedrockModel {
                             let bedrock_usage: super::types::BedrockUsage =
                                 serde_json::from_value(usage.clone()).unwrap_or_default();
                             final_usage = convert_usage(Some(&bedrock_usage));
+                        }
+                        // #27: surface guardrails trace, performanceConfig, and
+                        // serviceTier into the Finish chunk's provider_metadata
+                        // (mirrors TS `doStream` metadata handling).
+                        if let Some(trace) = payload.get("trace") {
+                            finish_meta.insert("trace".to_string(), trace.clone());
+                        }
+                        if let Some(pc) = payload.get("performanceConfig") {
+                            finish_meta
+                                .insert("performanceConfig".to_string(), pc.clone());
+                        }
+                        if let Some(st) = payload.get("serviceTier") {
+                            finish_meta.insert("serviceTier".to_string(), st.clone());
                         }
                     }
                     _ => {}
@@ -472,12 +528,34 @@ impl LanguageModel for BedrockModel {
             if let Some(id) = text_id.take() {
                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
-            // Close any remaining reasoning block.
+            // Close any remaining reasoning block (truncated stream without
+            // contentBlockStop): still attach the accumulated signature.
             if let Some(id) = reasoning_id.take() {
+                let provider_metadata =
+                    reasoning_signature_meta(reasoning_signature.take());
                 yield Ok(StreamPart::ReasoningEnd { id,
-                provider_metadata: None,
+                provider_metadata,
             });
             }
+
+            // #26: merge the stop sentinel into the metadata payload, then build
+            // the Finish provider_metadata under both `amazonBedrock` and
+            // `bedrock` keys (mirrors the TS `doStream` flush handler).
+            if let Some(seq) = stop_sequence {
+                finish_meta.insert(
+                    "stopSequence".to_string(),
+                    serde_json::Value::String(seq),
+                );
+            }
+            let provider_metadata = if finish_meta.is_empty() {
+                None
+            } else {
+                let payload = serde_json::Value::Object(finish_meta);
+                Some(json!({
+                    "amazonBedrock": payload,
+                    "bedrock": payload,
+                }))
+            };
 
             yield Ok(StreamPart::Finish {
                 finish_reason: final_finish_reason.unwrap_or(FinishReason {
@@ -485,7 +563,7 @@ impl LanguageModel for BedrockModel {
                     raw: None,
                 }),
                 usage: final_usage,
-                provider_metadata: None,
+                provider_metadata,
             });
         };
 
@@ -495,6 +573,18 @@ impl LanguageModel for BedrockModel {
             response_headers: Some(response_headers),
         })
     }
+}
+
+/// Wrap the accumulated reasoning signature as provider_metadata in the same
+/// dual-key shape the non-streaming path emits (`amazonBedrock` + `bedrock`),
+/// so consumers reading either key see it.
+fn reasoning_signature_meta(sig: Option<String>) -> Option<serde_json::Value> {
+    sig.map(|s| {
+        json!({
+            "amazonBedrock": { "signature": &s },
+            "bedrock": { "signature": s }
+        })
+    })
 }
 
 /// Extract `GenerateContent` items from a non-streaming content block.

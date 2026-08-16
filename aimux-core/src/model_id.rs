@@ -20,10 +20,12 @@ impl ModelId {
         }
     }
 
+    #[must_use]
     pub fn provider(&self) -> &str {
         &self.provider
     }
 
+    #[must_use]
     pub fn model(&self) -> &str {
         &self.model
     }

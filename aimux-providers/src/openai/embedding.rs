@@ -31,6 +31,7 @@ pub struct OpenAIEmbeddingModel {
 }
 
 impl OpenAIEmbeddingModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -163,7 +164,7 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
         let usage = raw_value
             .get("usage")
             .and_then(|u| u.get("prompt_tokens"))
-            .and_then(|t| t.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|tokens| EmbeddingUsage {
                 tokens: tokens as u32,
             });
@@ -199,12 +200,12 @@ fn parse_openai_provider_options(
     OpenAIEmbeddingProviderOptions {
         dimensions: provider_opts
             .and_then(|o| o.get("dimensions"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
         user: provider_opts
             .and_then(|o| o.get("user"))
             .and_then(|u| u.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
     }
 }
 

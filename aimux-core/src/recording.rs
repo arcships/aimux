@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use ts_rs::TS;
 
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
 
@@ -31,7 +32,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub const RECORDING_SCHEMA: u32 = 1;
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Recording {
     /// 格式版本。
     pub schema: u32,
@@ -72,6 +74,7 @@ pub struct Recording {
 
 impl Recording {
     /// 以 call_id 开一条新录制(字段由事件流填充)。
+    #[must_use]
     pub fn new(call_id: &str, input: InputRecord, provider: ProviderRecord) -> Self {
         Self {
             schema: RECORDING_SCHEMA,
@@ -88,18 +91,26 @@ impl Recording {
         }
     }
 
-    /// completion barrier:outcome 非 Pending && 传输层已封闭 &&
-    /// 全部 exchange 已终结。缺封闭信号时(层 B 未发)不提前写出,
-    /// 防止 outcome 先到时误以为"无 exchange"而早写。
+    /// completion barrier:input ✅ + outcome ✅ + 传输层已封闭 + 全部 exchange
+    /// 已终结。缺封闭信号时(层 B 未发)不提前写出,防止 outcome 先到时误以为
+    /// "无 exchange"而早写;缺 input(事件先于 Input 到达的占位条目,或 Input
+    /// 被 drop-newest 丢弃)同样不得定稿——否则会写出 complete=true 但 input
+    /// 为空占位的失真取证记录(RFC-0023 §3.1 completion barrier)。
+    ///
+    /// 权衡:合法的空 prompt 调用(`prompt: Vec::new()`)与"input 丢失"在此
+    /// 不可区分,会落到 shutdown 兜底以 incomplete 写出——取证失真远轻于
+    /// 反向错误(空占位被标 complete),可接受。
     fn ready(&self) -> bool {
         self.transport_closed
             && self.outcome.status != OutcomeStatus::Pending
+            && !self.input.prompt.is_empty()
             && self.exchanges.iter().all(|e| e.finalized)
     }
 }
 
 /// ① 输入侧:完整调用参数,足以重建 generate_text 调用。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct InputRecord {
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
@@ -110,6 +121,7 @@ pub struct InputRecord {
 
 impl InputRecord {
     /// 从 CallOptions 提取输入侧快照(options 序列化后递归脱敏)。
+    #[must_use]
     pub fn from_call_options(options: &CallOptions) -> Self {
         let value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
         Self {
@@ -120,7 +132,8 @@ impl InputRecord {
 }
 
 /// ② 配置侧:provider 身份(请求回放重建用)。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ProviderRecord {
     /// `model.provider()`,如 "openai"。
     pub provider: String,
@@ -138,6 +151,7 @@ pub struct ProviderRecord {
 
 impl ProviderRecord {
     /// 最小快照(provider/model_id)——`config_snapshot` 默认实现;cover 的部分放结构方法。
+    #[must_use]
     pub fn minimal(provider: &str, model_id: &str) -> Self {
         Self {
             provider: provider.to_string(),
@@ -151,7 +165,8 @@ impl ProviderRecord {
 }
 
 /// ③ HTTP 侧:单次 attempt 的 wire 交换。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct HttpExchange {
     /// 第几次重试(0=首次);per-attempt 递增。
     pub attempt: u32,
@@ -169,17 +184,19 @@ fn default_finalized() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct HttpRecord {
     pub method: String,
     pub url: String,
-    /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "[REDACTED]"。
+    /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
     pub body: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ResponseRecord {
     pub status: u16,
     pub headers: Vec<(String, String)>,
@@ -188,18 +205,24 @@ pub struct ResponseRecord {
     pub stream_chunks: Option<usize>,
     /// 首字节延迟(流式)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null")]
     pub ttfb_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TimingRecord {
+    /// ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
+    #[ts(type = "number")]
     pub latency_ms: u64,
+    #[ts(type = "number | null")]
     pub ttfb_ms: Option<u64>,
 }
 
 /// 调用终结状态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum OutcomeStatus {
     /// 未到(内部哨兵,不作为最终输出)。
     #[default]
@@ -214,7 +237,8 @@ pub enum OutcomeStatus {
 }
 
 /// 最终结果摘要。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct OutcomeRecord {
     pub status: OutcomeStatus,
     pub finish_reason: Option<String>,
@@ -225,18 +249,20 @@ pub struct OutcomeRecord {
 
 impl OutcomeRecord {
     /// 非流式成功。
+    #[must_use]
     pub fn from_generate_result(r: &crate::result::GenerateResult) -> Self {
         Self {
             status: OutcomeStatus::Success,
             finish_reason: serde_json::to_value(r.finish_reason.unified)
                 .ok()
-                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
             error: None,
             usage: serde_json::to_value(&r.usage).ok(),
         }
     }
 
     /// 失败(非流式 / 流式立即失败)。
+    #[must_use]
     pub fn from_error(e: &crate::error::AiMuxError) -> Self {
         Self {
             status: OutcomeStatus::Error,
@@ -281,6 +307,10 @@ pub enum RecordingError {
     /// flush 在 30s 内未收到 writer 回执。
     #[error("recording flush timed out")]
     FlushTimeout,
+    /// writer 写行 / flush 失败(首个错误,粘性)。此前磁盘满等 I/O 失败被
+    /// 静默丢弃且 `try_flush` 仍返回 `Ok`,违反"flush 阻塞至落盘"契约。
+    #[error("recording write failed: {0}")]
+    Write(String),
 }
 
 /// 录制器 trait。
@@ -318,6 +348,12 @@ pub trait Recorder: Send + Sync {
     fn flush(&self);
     /// 显式 flush:同 [`flush`](Self::flush) 但把 writer 退出/超时等写失败作为
     /// `Result` 返回(A9/N4)。默认 `Ok(())`(无 I/O 的实现,如 `RingRecorder`)。
+    ///
+    /// # Errors
+    ///
+    /// The default (I/O-free) implementation always returns `Ok(())`;
+    /// file-backed implementations return `RecordingError` on write or timeout
+    /// failures.
     fn try_flush(&self) -> Result<(), RecordingError> {
         Ok(())
     }
@@ -353,6 +389,7 @@ pub fn init_recording(recorder: Option<Arc<dyn Recorder>>) {
 
 /// 从环境变量初始化:`AIMUX_RECORD=1` 开启,`AIMUX_RECORD_DIR` 指定目录(默认 `./recordings`)。
 /// 未开启返回 false(静默)。
+#[must_use]
 pub fn init_recording_from_env() -> bool {
     if std::env::var("AIMUX_RECORD").as_deref() != Ok("1") {
         return false;
@@ -408,6 +445,7 @@ pub fn new_call_id() -> String {
 /// 精确匹配 AWS Bedrock sigv4 真实写入的凭据头 `x-amz-security-token`(name 已
 /// lowercase 归一化,直接 `==` 比较即可)。其余 needle 维持 contains,以覆盖
 /// `x-goog-api-key`/`proxy-authorization` 等变体。
+#[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n == "cookie"
@@ -478,7 +516,11 @@ enum RecordEvent {
     /// 传输层封闭:该调用不再会有 exchange(层 B 发;P1 由层 A 收尾发)。
     TransportClosed { call_id: String },
     /// 刷盘命令;完成后经 ack 回执(SyncSender,容量 0 即 rendezvous)。
-    Flush { ack: SyncSender<()> },
+    /// 回执携带粘性写错误状态:writer 端发生过的 I/O 失败以
+    /// `Err(RecordingError::Write)` 暴露给 `try_flush`。
+    Flush {
+        ack: SyncSender<Result<(), RecordingError>>,
+    },
 }
 
 /// JsonlRecorder 事件通道容量(有界,A4):防止 writer 跟不上时录制热路径
@@ -499,12 +541,20 @@ pub struct JsonlRecorder {
     /// 存于 recorder 侧而非 `Recording` 字段——后者被 `replay.rs` 以全字段
     /// 字面量构造,新增 serde 字段会破坏其它模块编译,故用旁路集合标记。
     inconsistent: Arc<Mutex<HashSet<String>>>,
+    /// writer 的首个写失败(粘性):`try_flush` 据此返回
+    /// [`RecordingError::Write`],磁盘满等 I/O 错误不再静默。
+    write_error: Arc<Mutex<Option<String>>>,
 }
 
 impl JsonlRecorder {
     /// 显式构造(`try_new`,A9/N4):`create_dir_all` / 打开文件 / 派生 writer
     /// 线程失败均返回 `Err`(替代原 `.ok()` 静默与 `.expect` panic)。
     /// 文件:`{dir}/recordings.jsonl`。
+    ///
+    /// # Errors
+    ///
+    /// Returns `RecordingError::Init` / `OpenFile` / `Spawn` when creating the
+    /// directory, opening `recordings.jsonl`, or spawning the writer thread fails.
     pub fn try_new(dir: impl Into<PathBuf>) -> Result<Self, RecordingError> {
         let dir = dir.into();
         std::fs::create_dir_all(&dir).map_err(|source| RecordingError::Init {
@@ -524,9 +574,11 @@ impl JsonlRecorder {
         let (tx, rx) = sync_channel::<RecordEvent>(JSONL_CHANNEL_CAPACITY);
         let inconsistent = Arc::new(Mutex::new(HashSet::new()));
         let writer_inconsistent = inconsistent.clone();
+        let write_error = Arc::new(Mutex::new(None));
+        let writer_write_error = write_error.clone();
         let handle = std::thread::Builder::new()
             .name("aimux-recording".into())
-            .spawn(move || writer_loop(rx, w, writer_inconsistent))
+            .spawn(move || writer_loop(rx, w, writer_inconsistent, writer_write_error))
             .map_err(|source| RecordingError::Spawn { source })?;
         Ok(Self {
             tx: Some(tx),
@@ -534,11 +586,12 @@ impl JsonlRecorder {
             thread: Some(handle),
             dropped: AtomicU64::new(0),
             inconsistent,
+            write_error,
         })
     }
 
     /// 在 `dir` 下创建录制器并启动 writer 线程(兼容入口:FFI `aimux_init_recording`
-    /// 及绑定均以 infallible `new` 调用,A9 要求保持兼容)。内部委托 [`try_new`],
+    /// 及绑定均以 infallible `new` 调用,A9 要求保持兼容)。内部委托 [`JsonlRecorder::try_new`],
     /// 失败时降级为无 writer 的 no-op recorder(`tx = None`,事件静默丢弃),
     /// 行为等价于原先 `create_dir_all().ok()` + writer 打开文件失败早退。
     pub fn new(dir: impl Into<PathBuf>) -> Self {
@@ -554,6 +607,7 @@ impl JsonlRecorder {
             thread: None,
             dropped: AtomicU64::new(0),
             inconsistent: Arc::new(Mutex::new(HashSet::new())),
+            write_error: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -576,19 +630,40 @@ impl JsonlRecorder {
         v
     }
 
-    /// 显式 flush(A9/N4):把 writer 退出 / 超时作为 `Result` 返回。阻塞至落盘。
+    /// 显式 flush(A9/N4):把 writer 退出 / 超时 / **写失败** 作为 `Result`
+    /// 返回。阻塞至落盘——writer 端发生过的首个 I/O 错误会让本次(及后续)
+    /// flush 返回 [`RecordingError::Write`],磁盘满不再静默。
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecordingError::Write`] when the writer hit an I/O error,
+    /// `WriterGone` when the writer thread has exited, and `FlushTimeout` when the
+    /// flush deadline expires.
     pub fn try_flush(&self) -> Result<(), RecordingError> {
         let Some(tx) = &self.tx else {
-            return Err(RecordingError::WriterGone);
+            // The writer is gone, but it may have recorded a terminal write
+            // error into the shared slot before exiting (shutdown drain) —
+            // surface the specific failure over the generic WriterGone.
+            return Err(self.write_error.lock().unwrap().as_ref().map_or_else(
+                || RecordingError::WriterGone,
+                |msg| RecordingError::Write(msg.clone()),
+            ));
         };
-        let (ack_tx, ack_rx) = sync_channel::<()>(0);
+        let (ack_tx, ack_rx) = sync_channel::<Result<(), RecordingError>>(0);
         // Flush 事件必须送达 writer(不可 drop-newest),故用阻塞 send 等待空位;
         // writer 断开时立即返回 Err。30s 回执超时兜底 writer 卡死。
         tx.send(RecordEvent::Flush { ack: ack_tx })
             .map_err(|_| RecordingError::WriterGone)?;
-        ack_rx
-            .recv_timeout(Duration::from_secs(30))
-            .map_err(|_| RecordingError::FlushTimeout)
+        match ack_rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(status) => status,
+            Err(_) => Err(RecordingError::FlushTimeout),
+        }
+    }
+
+    /// recorder 侧可见的 writer 粘性首错(如 ENOSPC),无则 `None`。
+    /// 与 writer 线程共享;首次写行/flush 失败时写入。
+    pub fn last_write_error(&self) -> Option<String> {
+        self.write_error.lock().unwrap().clone()
     }
 
     /// 录制文件路径。
@@ -709,8 +784,9 @@ fn entry_or_init<'a>(
 /// recorder 共享的旁路集合,用于标记 C4-7 检测到的不一致 call_id。
 fn writer_loop(
     rx: Receiver<RecordEvent>,
-    mut w: BufWriter<std::fs::File>,
+    mut w: impl Write,
     inconsistent: Arc<Mutex<HashSet<String>>>,
+    write_error: Arc<Mutex<Option<String>>>,
 ) {
     let mut pending: HashMap<String, Recording> = HashMap::new();
 
@@ -739,7 +815,7 @@ fn writer_loop(
                 let rec = entry_or_init(&mut pending, &call_id);
                 rec.session_id = Some(session_id);
                 rec.step = Some(step);
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             // C4-6:用 entry_or_init(而非 get_mut)兜底建条目,保证乱序
             // (先于 Input 到达)的 Provider 快照不丢。
@@ -752,7 +828,7 @@ fn writer_loop(
                 if insert_exchange(rec, exchange) {
                     mark_inconsistent(&inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::ExchangeUpdate {
                 call_id,
@@ -769,21 +845,28 @@ fn writer_loop(
                 ) {
                     mark_inconsistent(&inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::TransportClosed { call_id } => {
                 entry_or_init(&mut pending, &call_id).transport_closed = true;
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::Outcome { call_id, outcome } => {
                 entry_or_init(&mut pending, &call_id).outcome = outcome;
-                try_finalize(&mut w, &mut pending, &call_id);
+                try_finalize(&mut w, &mut pending, &call_id, &write_error);
             }
             RecordEvent::Flush { ack } => {
-                write_ready_all(&mut w, &mut pending);
-                let _ = w.flush();
-                // 阻塞 send:rendezvous 语义,确保 ack 一定被调用方收到。
-                let _ = ack.send(());
+                write_ready_all(&mut w, &mut pending, &write_error);
+                if let Err(e) = w.flush() {
+                    note_write_error(&write_error, &e);
+                }
+                // 阻塞 send:rendezvous 语义,确保 ack 一定被调用方收到;
+                // ack 携带粘性写错误,磁盘满等失败对 try_flush 可见。
+                let status = match write_error.lock().unwrap().as_ref() {
+                    Some(msg) => Err(RecordingError::Write(msg.clone())),
+                    None => Ok(()),
+                };
+                let _ = ack.send(status);
             }
         }
     }
@@ -795,24 +878,35 @@ fn writer_loop(
         if rec.outcome.status == OutcomeStatus::Pending {
             rec.outcome.status = OutcomeStatus::Incomplete;
         }
-        write_line(&mut w, rec);
+        write_line(&mut w, rec, &write_error);
     }
-    let _ = w.flush();
+    if let Err(e) = w.flush() {
+        note_write_error(&write_error, &e);
+    }
 }
 
 /// 若该 call 的所有分片到齐(barrier 满足)则写出,并标记 complete=true。
-fn try_finalize(w: &mut impl Write, pending: &mut HashMap<String, Recording>, call_id: &str) {
-    if pending.get(call_id).map(|r| r.ready()).unwrap_or(false)
+fn try_finalize(
+    w: &mut impl Write,
+    pending: &mut HashMap<String, Recording>,
+    call_id: &str,
+    write_error: &Mutex<Option<String>>,
+) {
+    if pending.get(call_id).map(Recording::ready).unwrap_or(false)
         && let Some(mut rec) = pending.remove(call_id)
     {
         if !rec.exchanges.is_empty() || rec.transport_closed {
             rec.complete = true;
         }
-        write_line(w, rec);
+        write_line(w, rec, write_error);
     }
 }
 
-fn write_ready_all(w: &mut impl Write, pending: &mut HashMap<String, Recording>) {
+fn write_ready_all(
+    w: &mut impl Write,
+    pending: &mut HashMap<String, Recording>,
+    write_error: &Mutex<Option<String>>,
+) {
     let ids: Vec<String> = pending
         .iter()
         .filter(|(_, r)| r.ready())
@@ -821,15 +915,29 @@ fn write_ready_all(w: &mut impl Write, pending: &mut HashMap<String, Recording>)
     for id in ids {
         if let Some(mut rec) = pending.remove(&id) {
             rec.complete = true;
-            write_line(w, rec);
+            write_line(w, rec, write_error);
         }
     }
 }
 
-fn write_line(w: &mut impl Write, rec: Recording) {
-    if let Ok(line) = serde_json::to_string(&rec) {
-        let _ = writeln!(w, "{line}");
-        let _ = w.flush(); // 每行落盘,保证崩溃前已写行可见。
+fn write_line(w: &mut impl Write, rec: Recording, write_error: &Mutex<Option<String>>) {
+    match serde_json::to_string(&rec) {
+        Ok(line) => {
+            // 每行落盘,保证崩溃前已写行可见;失败记入粘性错误槽,
+            // 由 try_flush 显式暴露。
+            if let Err(e) = writeln!(w, "{line}").and_then(|()| w.flush()) {
+                note_write_error(write_error, &e);
+            }
+        }
+        Err(e) => note_write_error(write_error, &e),
+    }
+}
+
+/// 记录首个写失败(粘性):后续 flush 据此返回 [`RecordingError::Write`]。
+fn note_write_error(slot: &Mutex<Option<String>>, e: &impl std::fmt::Display) {
+    let mut guard = slot.lock().unwrap();
+    if guard.is_none() {
+        *guard = Some(e.to_string());
     }
 }
 
@@ -1010,10 +1118,12 @@ struct RingInner {
 
 impl RingRecorder {
     /// 默认容量(2048 条)。
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_RING_CAPACITY)
     }
 
+    #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         assert!(cap > 0, "RingRecorder capacity must be > 0");
         Self {
@@ -1080,6 +1190,11 @@ impl RingRecorder {
 
     /// 导出全部已完成录制(每行一个 `Recording`)。pending 未完成条目不导出
     /// (但被 A3 淘汰的 pending 会以 incomplete 形式进 ring,可导出)。
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error (JSON serialization failures included) when
+    /// serializing a record or writing a line fails.
     pub fn export_jsonl(&self, w: &mut impl Write) -> std::io::Result<()> {
         let inner = self.inner.lock().unwrap();
         for rec in &inner.completed {
@@ -1087,6 +1202,28 @@ impl RingRecorder {
             writeln!(w, "{line}")?;
         }
         Ok(())
+    }
+
+    /// 全部已完成录制(最旧在前)。Web 控制台列表用(RFC-0029)。
+    pub fn completed(&self) -> Vec<Recording> {
+        self.inner
+            .lock()
+            .unwrap()
+            .completed
+            .iter()
+            .cloned()
+            .collect()
+    }
+
+    /// 按 `call_id` 取一条已完成录制。Web 控制台详情用(RFC-0029)。
+    pub fn get(&self, call_id: &str) -> Option<Recording> {
+        self.inner
+            .lock()
+            .unwrap()
+            .completed
+            .iter()
+            .find(|r| r.call_id == call_id)
+            .cloned()
     }
 }
 
@@ -1140,7 +1277,7 @@ impl RingInner {
 
     /// 合并一个已 ready 的分片(barrier 满足则入 ring)。
     fn finalize(&mut self, call_id: &str) {
-        if self.pending.get(call_id).is_some_and(|r| r.ready())
+        if self.pending.get(call_id).is_some_and(Recording::ready)
             && let Some(mut rec) = self.pending.remove(call_id)
         {
             if !rec.exchanges.is_empty() || rec.transport_closed {
@@ -1180,6 +1317,15 @@ impl Recorder for RingRecorder {
         if rec.provider.provider.is_empty() {
             rec.provider = ProviderRecord::minimal(provider, model_id);
         }
+    }
+
+    /// RFC-0024 会话归组写入 pending 条目(与 JsonlRecorder 同语义)。
+    /// 乱序到达安全:session/step 独立于 input/provider 字段,直接覆盖。
+    fn record_session(&self, call_id: &str, session_id: &str, step: u32) {
+        let mut inner = self.inner.lock().unwrap();
+        let rec = inner.entry_or_init_bounded(call_id);
+        rec.session_id = Some(session_id.to_string());
+        rec.step = Some(step);
     }
 
     fn record_provider(&self, call_id: &str, snapshot: &ProviderRecord) {
@@ -1326,7 +1472,7 @@ where
                             status: OutcomeStatus::Success,
                             finish_reason: serde_json::to_value(finish_reason.unified)
                                 .ok()
-                                .and_then(|v| v.as_str().map(|s| s.to_string())),
+                                .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
                             error: None,
                             usage: serde_json::to_value(usage).ok(),
                         };
@@ -1502,6 +1648,123 @@ mod tests {
         assert!(parsed.exchanges.is_empty()); // 无 exchange 也算 ready(非流式仅层 A)
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── #110:barrier input 条件 + writer I/O 错误可见 ──────────────────────
+
+    #[test]
+    fn barrier_requires_input_record() {
+        // 事件先于 Input 到达(或 Input 被 drop-newest 丢弃)的占位条目:
+        // 即便 outcome + transport_closed 都到齐,也不得定稿。
+        let mut rec = Recording::new(
+            "call-x",
+            InputRecord {
+                prompt: Vec::new(),
+                options: serde_json::Value::Null,
+            },
+            ProviderRecord::minimal("openai", "gpt-4o"),
+        );
+        rec.transport_closed = true;
+        rec.outcome = OutcomeRecord {
+            status: OutcomeStatus::Success,
+            finish_reason: Some("stop".into()),
+            error: None,
+            usage: None,
+        };
+        assert!(!rec.ready(), "empty-prompt placeholder must not finalize");
+        rec.input = InputRecord::from_call_options(&sample_options());
+        assert!(rec.ready(), "real input satisfies the barrier");
+    }
+
+    #[test]
+    fn missing_input_writes_incomplete_on_shutdown() {
+        let dir = std::env::temp_dir().join(format!("aimux-rec-noinput-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rec = JsonlRecorder::new(&dir);
+
+        // 只来 outcome + transport_closed,Input 事件丢失(模拟 drop-newest)。
+        rec.record_outcome(
+            "call-noinput",
+            &OutcomeRecord {
+                status: OutcomeStatus::Success,
+                finish_reason: Some("stop".into()),
+                error: None,
+                usage: None,
+            },
+        );
+        rec.record_transport_closed("call-noinput");
+        rec.flush();
+        // flush 不应定稿(barrier 缺 input);shutdown 兜底写出 incomplete。
+        drop(rec);
+        let content = std::fs::read_to_string(dir.join("recordings.jsonl")).unwrap();
+        let parsed: Recording = serde_json::from_str(content.trim()).unwrap();
+        assert!(
+            !parsed.complete,
+            "must not be marked complete without input"
+        );
+        assert!(parsed.input.prompt.is_empty());
+        assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 恒定失败的 sink:模拟磁盘满(ENOSPC)等 writer I/O 错误。
+    struct FailingWriter;
+
+    impl std::io::Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("simulated disk full"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("simulated disk full"))
+        }
+    }
+
+    #[test]
+    fn try_flush_reports_writer_io_error() {
+        let (tx, rx) = sync_channel(16);
+        let write_error = Arc::new(Mutex::new(None));
+        let handle = {
+            let inconsistent = Arc::new(Mutex::new(HashSet::new()));
+            let w_err = write_error.clone();
+            std::thread::spawn(move || writer_loop(rx, FailingWriter, inconsistent, w_err))
+        };
+
+        tx.send(RecordEvent::Input {
+            call_id: "c1".into(),
+            input: InputRecord::from_call_options(&sample_options()),
+            provider: ProviderRecord::minimal("openai", "gpt-4o"),
+        })
+        .unwrap();
+        tx.send(RecordEvent::TransportClosed {
+            call_id: "c1".into(),
+        })
+        .unwrap();
+        tx.send(RecordEvent::Outcome {
+            call_id: "c1".into(),
+            outcome: OutcomeRecord {
+                status: OutcomeStatus::Success,
+                finish_reason: Some("stop".into()),
+                error: None,
+                usage: None,
+            },
+        })
+        .unwrap();
+
+        let (ack_tx, ack_rx) = sync_channel(0);
+        tx.send(RecordEvent::Flush { ack: ack_tx }).unwrap();
+        let status = ack_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("flush ack within timeout");
+        assert!(
+            matches!(&status, Err(RecordingError::Write(m)) if m.contains("disk full")),
+            "expected Err(Write) carrying the io error, got {status:?}"
+        );
+
+        drop(tx);
+        handle.join().unwrap();
+        // 粘性:错误状态在 writer 侧保留,后续 flush 继续报错。
+        assert!(write_error.lock().unwrap().is_some());
     }
 
     // ── RFC-0024 P3: session 归组信息进 Recording ─────────────────────────
@@ -1822,6 +2085,27 @@ mod tests {
         assert_eq!(parsed.exchanges.len(), 1);
         assert_eq!(parsed.outcome.status, OutcomeStatus::Success);
         assert!(parsed.complete);
+    }
+
+    #[test]
+    fn ring_records_session_fields_and_get_by_call_id() {
+        let ring = RingRecorder::new();
+        ring.record_input("call-s", &sample_options(), "openai", "gpt-4o");
+        ring.record_session("call-s", "sess-1", 3);
+        ring.record_outcome("call-s", &success_outcome());
+        ring.record_transport_closed("call-s");
+        ring.flush();
+
+        let rec = ring
+            .get("call-s")
+            .expect("recording retrievable by call_id");
+        assert_eq!(rec.session_id.as_deref(), Some("sess-1"));
+        assert_eq!(rec.step, Some(3));
+
+        let all = ring.completed();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].call_id, "call-s");
+        assert!(ring.get("missing").is_none());
     }
 
     #[test]

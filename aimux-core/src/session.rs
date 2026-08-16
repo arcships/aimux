@@ -101,11 +101,13 @@ struct Entry {
 
 impl SessionStore {
     /// A store with default bounds (256 sessions × 64 calls/session).
+    #[must_use]
     pub fn new() -> Self {
         Self::with_capacity(DEFAULT_MAX_SESSIONS, DEFAULT_MAX_CALLS_PER_SESSION)
     }
 
     /// A store with explicit bounds. Panics if either bound is zero.
+    #[must_use]
     pub fn with_capacity(max_sessions: usize, max_calls_per_session: usize) -> Self {
         assert!(
             max_sessions > 0 && max_calls_per_session > 0,
@@ -244,12 +246,14 @@ pub struct SessionInferer {
 
 impl SessionInferer {
     /// Inferer with the default capacity, enabled or disabled.
+    #[must_use]
     pub fn new(enabled: bool) -> Self {
         Self::with_capacity(enabled, DEFAULT_INFERER_CAPACITY)
     }
 
     /// Inferer with an explicit capacity (recent calls remembered). Panics if
     /// the capacity is zero.
+    #[must_use]
     pub fn with_capacity(enabled: bool, capacity: usize) -> Self {
         assert!(capacity > 0, "SessionInferer capacity must be positive");
         Self {
@@ -360,6 +364,7 @@ pub fn ensure_inferer_from_env() {
 ///
 /// Returns `(session_id, source)` or `None` when no explicit id is present
 /// and inference is off (or not registered).
+#[must_use]
 pub fn resolve_session_id(
     explicit: Option<&str>,
     prompt: &LanguageModelPrompt,
@@ -373,6 +378,7 @@ pub fn resolve_session_id(
 
 /// Query: all calls of a session (by step). Empty if the session is unknown
 /// or no store is registered.
+#[must_use]
 pub fn session_calls(session_id: &str) -> Vec<SessionCall> {
     session_store()
         .map(|s| s.session_calls(session_id))
@@ -380,6 +386,7 @@ pub fn session_calls(session_id: &str) -> Vec<SessionCall> {
 }
 
 /// Query: all known sessions.
+#[must_use]
 pub fn list_sessions() -> Vec<SessionView> {
     session_store()
         .map(|s| s.list_sessions())

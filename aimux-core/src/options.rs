@@ -166,6 +166,7 @@ impl CallOptions {
     /// struct-update syntax (`CallOptions { tools: Some(..), ..CallOptions::new(prompt) }`)
     /// it avoids spelling out every `None` field, so adding a new optional
     /// field to `CallOptions` no longer requires batch-editing every test.
+    #[must_use]
     pub fn new(prompt: LanguageModelPrompt) -> Self {
         CallOptions {
             prompt,

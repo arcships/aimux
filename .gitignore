@@ -40,3 +40,9 @@ bindings/kotlin/build/
 *.exe
 *.pdb
 dist/
+.zcode/
+
+# aimux-web console (RFC-0029) — frontend build artifacts
+/tools/aimux-web/web/node_modules/
+/tools/aimux-web/web/dist/
+tsconfig.tsbuildinfo

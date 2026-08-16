@@ -113,6 +113,17 @@ typedef _InitProxyC = Int32 Function(
 typedef _InitProxyDart = int Function(
     Pointer<Utf8> configJson, Pointer<AimuxCError> err);
 
+// Composite models (RFC-0021 / RFC-0022). Take a pointer to an array of
+// handles + a length, plus an optional JSON config (nullptr = defaults).
+typedef _RouterNewC = Uint64 Function(Pointer<Uint64> handles, IntPtr len,
+    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+typedef _RouterNewDart = int Function(
+    Pointer<Uint64> handles, int len, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+typedef _MoaNewC = Uint64 Function(Pointer<Uint64> referenceHandles, IntPtr refLen,
+    Uint64 aggregator, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+typedef _MoaNewDart = int Function(Pointer<Uint64> referenceHandles, int refLen,
+    int aggregator, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+
 // Multi-arg constructor C signatures (bedrock/vertex/azure).
 typedef _FourStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
     Pointer<Utf8>, Pointer<AimuxCError>);
@@ -261,6 +272,10 @@ final class _AimuxFFI {
       _RegisterProvidersDart>('aimux_register_providers');
   late final initProxy = _lib
       .lookupFunction<_InitProxyC, _InitProxyDart>('aimux_init_proxy');
+  late final routerNew = _lib
+      .lookupFunction<_RouterNewC, _RouterNewDart>('aimux_router_new');
+  late final moaNew =
+      _lib.lookupFunction<_MoaNewC, _MoaNewDart>('aimux_moa_new');
 }
 
 /// Process-wide FFI table. Lazily created on first use; shared by every
@@ -349,6 +364,14 @@ class Model implements Finalizable {
     // Register a native finalizer so the handle is released even if close()
     // is never called. The token is the handle value as a Pointer.
     _handleFinalizer.attach(this, Pointer<Void>.fromAddress(_handle));
+  }
+
+  /// Handle read for composite-model factories (router/moa). Throws if closed.
+  int _requireHandle() {
+    if (_closed) {
+      throw StateError('Model is closed');
+    }
+    return _handle;
   }
 
   /// Create an OpenAI model instance.
@@ -997,4 +1020,78 @@ void initProxy(String configJSON) {
       return takeHandle(_ffi.initProxy(ptr, err), err);
     });
   });
+}
+
+/// Create a RouterModel (RFC-0021) over the given child models. The returned
+/// model routes each call to one child and falls back across the rest on error
+/// (per `configJson`).
+///
+/// `configJson` (optional): `{"router": "rule"|"weighted", "weights": [...],
+/// "fallback": "on_error"|"none", "provider_name", "model_id"}`.
+Model router(List<Model> models, {String? configJson}) {
+  if (models.isEmpty) {
+    throw ArgumentError('router: models must be non-empty');
+  }
+  final handles = models.map((m) => m._requireHandle()).toList();
+  final handle = withAimuxCError((err) {
+    final ptr = calloc<Uint64>(handles.length);
+    try {
+      ptr.asTypedList(handles.length).setAll(0, handles);
+      Pointer<Utf8> cfgPtr = nullptr;
+      if (configJson != null) {
+        cfgPtr = configJson.toNativeUtf8();
+      }
+      try {
+        return takeHandle(_ffi.routerNew(ptr, handles.length, cfgPtr, err), err);
+      } finally {
+        if (cfgPtr != nullptr) {
+          calloc.free(cfgPtr);
+        }
+      }
+    } finally {
+      calloc.free(ptr);
+    }
+  });
+  return Model._(handle);
+}
+
+/// Create a MoaModel (RFC-0022) over reference models + one aggregator.
+/// References fan out in parallel, then the aggregator synthesizes a final
+/// answer.
+///
+/// `references` may be empty (runs aggregator only). `configJson` (optional) is
+/// a serialized MoaConfig.
+Model moa(List<Model> references, Model aggregator, {String? configJson}) {
+  final aggregatorHandle = aggregator._requireHandle();
+  final handle = withAimuxCError((err) {
+    // Allocate the reference-handle array (NULL when there are no references).
+    final refPtr = references.isEmpty
+        ? Pointer<Uint64>.fromAddress(0)
+        : calloc<Uint64>(references.length);
+    final shouldFree = !references.isEmpty;
+    try {
+      if (shouldFree) {
+        final handles = references.map((m) => m._requireHandle()).toList();
+        refPtr.asTypedList(references.length).setAll(0, handles);
+      }
+      Pointer<Utf8> cfgPtr = nullptr;
+      if (configJson != null) {
+        cfgPtr = configJson.toNativeUtf8();
+      }
+      try {
+        return takeHandle(
+            _ffi.moaNew(refPtr, references.length, aggregatorHandle, cfgPtr, err),
+            err);
+      } finally {
+        if (cfgPtr != nullptr) {
+          calloc.free(cfgPtr);
+        }
+      }
+    } finally {
+      if (shouldFree) {
+        calloc.free(refPtr);
+      }
+    }
+  });
+  return Model._(handle);
 }

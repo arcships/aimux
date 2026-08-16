@@ -57,6 +57,7 @@ pub struct HuggingFaceResponsesModel {
 }
 
 impl HuggingFaceResponsesModel {
+    #[must_use]
     pub fn new(model_id: String, config: HuggingFaceConfig) -> Self {
         Self { model_id, config }
     }
@@ -139,7 +140,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                     .get("code")
                     .or_else(|| error.get("type"))
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 message: message.to_string(),
                 response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
                 ..Default::default()
@@ -153,15 +154,15 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let response_id = response
             .get("id")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
         let created_at = response
             .get("created_at")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
         let model = response
             .get("model")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         Ok(GenerateResult {
             content,
@@ -252,15 +253,15 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                     response_id = resp
                                         .get("id")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string());
+                                        .map(std::string::ToString::to_string);
                                     let created_at = resp
                                         .get("created_at")
-                                        .and_then(|v| v.as_u64())
+                                        .and_then(serde_json::Value::as_u64)
                                         .unwrap_or(0);
                                     let model = resp
                                         .get("model")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string());
+                                        .map(std::string::ToString::to_string);
                                     yield Ok(StreamPart::ResponseMetadata {
                                         id: response_id.clone(),
                                         timestamp: format_timestamp(created_at),
@@ -287,7 +288,12 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("")
                                                     .to_string();
-                                                yield Ok(StreamPart::TextStart { id, provider_metadata: None});
+                                                yield Ok(StreamPart::TextStart {
+                                                    id: id.clone(),
+                                                    provider_metadata: Some(json!({
+                                                        "huggingface": { "itemId": id }
+                                                    })),
+                                                });
                                             }
                                         }
                                         "function_call" => {
@@ -450,7 +456,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                     response_id = resp
                                         .get("id")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string());
+                                        .map(std::string::ToString::to_string);
 
                                     let incomplete_reason = resp
                                         .get("incomplete_details")
@@ -461,7 +467,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                         unified: map_finish_reason(
                                             incomplete_reason.unwrap_or("stop"),
                                         ),
-                                        raw: incomplete_reason.map(|s| s.to_string()),
+                                        raw: incomplete_reason.map(std::string::ToString::to_string),
                                     };
 
                                     if let Some(usage) = resp.get("usage")
@@ -524,6 +530,11 @@ pub struct RequestBodyResult {
 ///
 /// Mirrors the TS `getArgs` + `doGenerate`/`doStream` body assembly. The
 /// `stream` flag controls the `stream` field in the body.
+///
+/// # Errors
+///
+/// Propagates prompt-conversion errors from
+/// `convert_to_huggingface_responses_messages`.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -575,15 +586,15 @@ pub fn build_request_body_with_warnings(
     let instructions = hf_options
         .and_then(|o| o.get("instructions"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     let strict_json_schema = hf_options
         .and_then(|o| o.get("strictJsonSchema"))
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     let reasoning_effort = hf_options
         .and_then(|o| o.get("reasoningEffort"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     // Prepare tools.
     let (tools, tool_choice, tool_warnings) =
@@ -665,6 +676,11 @@ pub fn build_request_body_with_warnings(
 /// Mirrors the TS `convertToHuggingFaceResponsesMessages`. Returns an error
 /// for unsupported file part variants (provider references, non-image media
 /// types) — matching the TS `UnsupportedFunctionalityError`.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::UnsupportedFunctionality` for file parts with no
+/// Responses representation (provider references, non-image media types).
 pub fn convert_to_huggingface_responses_messages(
     prompt: &LanguageModelPrompt,
 ) -> Result<(Value, Vec<Warning>), AiMuxError> {
@@ -779,8 +795,7 @@ fn convert_file_part_base64(media_type: &str, data: &str) -> Result<Value, AiMux
         }))
     } else {
         Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file part media type {}",
-            media_type
+            "file part media type {media_type}"
         )))
     }
 }
@@ -795,8 +810,7 @@ fn convert_file_part_url(media_type: &str, url: &str) -> Result<Value, AiMuxErro
         }))
     } else {
         Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file part media type {}",
-            media_type
+            "file part media type {media_type}"
         )))
     }
 }
@@ -842,8 +856,7 @@ fn resolve_full_media_type_base64(media_type: &str, data: &str) -> Result<String
     }
 
     Err(AiMuxError::UnsupportedFunctionality(format!(
-        "file of media type \"{}\" must specify subtype since it could not be auto-detected",
-        media_type
+        "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
     )))
 }
 
@@ -957,6 +970,7 @@ fn detect_media_type_from_base64(data: &str, top_level: &str) -> Option<String> 
 ///
 /// Returns `(tools, tool_choice, warnings)`. Only function tools are supported;
 /// provider-defined tools produce a warning.
+#[must_use]
 pub fn prepare_responses_tools(
     tools: &Option<Vec<Tool>>,
     tool_choice: &ToolChoice,
@@ -1030,9 +1044,12 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     .unwrap_or(&empty_vec);
                 for cp in content_parts {
                     let text = cp.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                    let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: None,
+                        provider_metadata: Some(json!({
+                            "huggingface": { "itemId": item_id }
+                        })),
                     });
 
                     // Process annotations → source parts.
@@ -1041,10 +1058,10 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                             let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                             let title = ann.get("title").and_then(|v| v.as_str());
                             content.push(GenerateContent::Source {
-                                id: format!("id-{}", source_id_counter),
+                                id: format!("id-{source_id_counter}"),
                                 source_type: "url".to_string(),
                                 url: Some(url.to_string()),
-                                title: title.map(|s| s.to_string()),
+                                title: title.map(std::string::ToString::to_string),
                                 provider_metadata: None,
                             });
                             source_id_counter += 1;
@@ -1088,9 +1105,6 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     thought_signature: None,
                     provider_metadata: None,
                 });
-                // Tool result — the Rust GenerateContent enum has no ToolResult
-                // variant, so it is omitted (the TS emits it as a separate
-                // content item).
             }
 
             "mcp_call" => {
@@ -1111,6 +1125,18 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     thought_signature: None,
                     provider_metadata: None,
                 });
+
+                if let Some(output) = part.get("output").filter(|v| !v.is_null()) {
+                    content.push(GenerateContent::ToolResult {
+                        tool_call_id: id.to_string(),
+                        tool_name: name.to_string(),
+                        result: output.clone(),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    });
+                }
             }
 
             "mcp_list_tools" => {
@@ -1125,6 +1151,18 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     thought_signature: None,
                     provider_metadata: None,
                 });
+
+                if let Some(tools) = part.get("tools").filter(|v| !v.is_null()) {
+                    content.push(GenerateContent::ToolResult {
+                        tool_call_id: id.to_string(),
+                        tool_name: "list_tools".to_string(),
+                        result: json!({ "tools": tools }),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    });
+                }
             }
 
             _ => {}
@@ -1143,7 +1181,7 @@ fn parse_finish_reason(response: &Value) -> FinishReason {
 
     FinishReason {
         unified: map_finish_reason(incomplete_reason.unwrap_or("stop")),
-        raw: incomplete_reason.map(|s| s.to_string()),
+        raw: incomplete_reason.map(std::string::ToString::to_string),
     }
 }
 
@@ -1173,17 +1211,23 @@ fn convert_usage(usage: Option<&Value>) -> Usage {
         Some(u) => u,
     };
 
-    let input_tokens = u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-    let output_tokens = u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let input_tokens = u
+        .get("input_tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as u32;
+    let output_tokens = u
+        .get("output_tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as u32;
     let cached_tokens = u
         .get("input_tokens_details")
         .and_then(|d| d.get("cached_tokens"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0) as u32;
     let reasoning_tokens = u
         .get("output_tokens_details")
         .and_then(|d| d.get("reasoning_tokens"))
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(0) as u32;
 
     Usage {

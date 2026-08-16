@@ -1,21 +1,22 @@
 //! Shared Anthropic request/streaming core.
 //!
 //! The standard Anthropic provider ([`crate::anthropic::model`]) and the
-//! Anthropic-AWS provider ([`crate::anthropic_aws::model`]) speak the exact
+//! Anthropic-AWS provider (`crate::anthropic_aws::model`) speak the exact
 //! same Messages API. The only differences are endpoint, authentication
 //! (Bearer/x-api-key vs AWS SigV4) and the wire body encoding (`Json` vs
 //! `Bytes`, the latter preventing re-serialization from invalidating the SigV4
 //! signature).
 //!
 //! This module factors out the parts that are identical across both providers:
-//! - [`build_anthropic_request`] — serialize the body once, build auth headers
+//! - `build_anthropic_request` — serialize the body once, build auth headers
 //!   via a closure, and choose the wire encoding.
-//! - [`anthropic_generate_core`] — non-streaming send + response parsing.
-//! - [`anthropic_stream_core`] — streaming send + the Anthropic SSE event loop.
-//! - [`parse_anthropic_content`] — shared content-block → `GenerateContent`
+//! - `anthropic_generate_core` — non-streaming send + response parsing.
+//! - `anthropic_stream_core` — streaming send + the Anthropic SSE event loop.
+//! - `parse_anthropic_content` — shared content-block → `GenerateContent`
 //!   mapping used by the non-streaming path.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
 
@@ -31,9 +32,10 @@ use aimux_provider_utils::{
     HttpBody, HttpMethod, HttpRequest, RequestTimeout, RetryConfig, send_stream_timed, send_timed,
 };
 use aimux_stream::SseStream;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::convert::parse_stop_reason;
+use super::tool_name_mapping::ToolNameMapping;
 use super::types::{AnthropicResponse, ContentBlock, StreamEvent};
 
 /// How the request body is sent over the wire.
@@ -86,15 +88,350 @@ fn build_anthropic_request(
     })
 }
 
+/// Read a string field, dropping absent / non-string values.
+fn str_field(v: &Value, key: &str) -> Option<String> {
+    v.get(key).and_then(|x| x.as_str()).map(str::to_string)
+}
+
+/// Process-wide counter backing [`generate_source_id`].
+static SOURCE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Unique id for a `Source` derived from a web-search result. Upstream calls
+/// `this.generateId()` at the same points.
+fn generate_source_id() -> String {
+    format!(
+        "anthropic-source-{}",
+        SOURCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+/// `web_search_result` → the camel-cased shape upstream exposes (:1243-1249).
+fn map_web_search_result(result: &Value) -> Value {
+    json!({
+        "url": result.get("url").cloned().unwrap_or(Value::Null),
+        "title": result.get("title").cloned().unwrap_or(Value::Null),
+        "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+        "encryptedContent": result.get("encrypted_content").cloned().unwrap_or(Value::Null),
+        "type": result.get("type").cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// `web_fetch_tool_result.content` → `(result, is_error)` (upstream :1196-1231).
+fn map_web_fetch_result(payload: &Value) -> (Value, Option<bool>) {
+    if payload.get("type").and_then(|t| t.as_str()) != Some("web_fetch_result") {
+        return (
+            json!({
+                "type": "web_fetch_tool_result_error",
+                "errorCode": payload.get("error_code").cloned().unwrap_or(Value::Null),
+            }),
+            Some(true),
+        );
+    }
+    let inner = payload.get("content").cloned().unwrap_or(Value::Null);
+    let source = inner.get("source").cloned().unwrap_or(Value::Null);
+    (
+        json!({
+            "type": "web_fetch_result",
+            "url": payload.get("url").cloned().unwrap_or(Value::Null),
+            "retrievedAt": payload.get("retrieved_at").cloned().unwrap_or(Value::Null),
+            "content": {
+                "type": "document",
+                "title": inner.get("title").cloned().unwrap_or(Value::Null),
+                "citations": inner.get("citations").cloned().unwrap_or(Value::Null),
+                "source": {
+                    "type": source.get("type").cloned().unwrap_or(Value::Null),
+                    "mediaType": source.get("media_type").cloned().unwrap_or(Value::Null),
+                    "data": source.get("data").cloned().unwrap_or(Value::Null),
+                },
+            },
+        }),
+        None,
+    )
+}
+
+/// `code_execution_tool_result.content` → `(result, is_error)`
+/// (upstream :1281-1320, covering the plain and encrypted result shapes).
+fn map_code_execution_result(payload: &Value) -> (Value, Option<bool>) {
+    let content = payload.get("content").cloned().unwrap_or(json!([]));
+    match payload.get("type").and_then(|t| t.as_str()) {
+        Some("code_execution_result") => (
+            json!({
+                "type": "code_execution_result",
+                "stdout": payload.get("stdout").cloned().unwrap_or(Value::Null),
+                "stderr": payload.get("stderr").cloned().unwrap_or(Value::Null),
+                "return_code": payload.get("return_code").cloned().unwrap_or(Value::Null),
+                "content": content,
+            }),
+            None,
+        ),
+        Some("encrypted_code_execution_result") => (
+            json!({
+                "type": "encrypted_code_execution_result",
+                "encrypted_stdout": payload.get("encrypted_stdout").cloned()
+                    .unwrap_or(Value::Null),
+                "stderr": payload.get("stderr").cloned().unwrap_or(Value::Null),
+                "return_code": payload.get("return_code").cloned().unwrap_or(Value::Null),
+                "content": content,
+            }),
+            None,
+        ),
+        _ => (
+            json!({
+                "type": "code_execution_tool_result_error",
+                "errorCode": payload.get("error_code").cloned().unwrap_or(Value::Null),
+            }),
+            Some(true),
+        ),
+    }
+}
+
+/// `tool_search_tool_result.content` → `(result, is_error)` (upstream :1355-1370).
+///
+/// The success payload collapses to the tool-reference array itself.
+fn map_tool_search_result(payload: &Value) -> (Value, Option<bool>) {
+    let refs = payload
+        .get("content")
+        .and_then(|c| c.as_array())
+        .or_else(|| payload.get("tool_references").and_then(|r| r.as_array()));
+    match refs {
+        Some(refs) => (
+            Value::Array(
+                refs.iter()
+                    .map(|r| {
+                        json!({
+                            "type": r.get("type").cloned().unwrap_or(Value::Null),
+                            "toolName": r.get("tool_name").cloned().unwrap_or(Value::Null),
+                        })
+                    })
+                    .collect(),
+            ),
+            None,
+        ),
+        None => (
+            json!({
+                "type": "tool_search_tool_result_error",
+                "errorCode": payload.get("error_code").cloned().unwrap_or(Value::Null),
+            }),
+            Some(true),
+        ),
+    }
+}
+
+/// `advisor_tool_result.content` → `(result, is_error)` (upstream :1382-1400).
+fn map_advisor_result(payload: &Value) -> (Value, Option<bool>) {
+    let stop_reason = payload.get("stop_reason").cloned();
+    let with_stop_reason = |mut v: Value| {
+        if let Some(sr) = stop_reason.clone()
+            && !sr.is_null()
+        {
+            v["stopReason"] = sr;
+        }
+        v
+    };
+    match payload.get("type").and_then(|t| t.as_str()) {
+        Some("advisor_result") => (
+            with_stop_reason(json!({
+                "type": "advisor_result",
+                "text": payload.get("text").cloned().unwrap_or(Value::Null),
+            })),
+            None,
+        ),
+        Some("advisor_redacted_result") => (
+            with_stop_reason(json!({
+                "type": "advisor_redacted_result",
+                "encryptedContent": payload.get("encrypted_content").cloned()
+                    .unwrap_or(Value::Null),
+            })),
+            None,
+        ),
+        _ => (
+            json!({
+                "type": "advisor_tool_result_error",
+                "errorCode": payload.get("error_code").cloned().unwrap_or(Value::Null),
+            }),
+            Some(true),
+        ),
+    }
+}
+
+/// Which `tool_search_*` provider name this call registered.
+///
+/// Anthropic reports both regex and bm25 searches through one result block, so
+/// upstream probes which variant the caller renamed and defaults to regex
+/// (:1337-1352).
+fn tool_search_provider_name(names: &ToolNameMapping) -> &'static str {
+    if names.to_custom_tool_name("tool_search_tool_bm25") != "tool_search_tool_bm25" {
+        "tool_search_tool_bm25"
+    } else {
+        "tool_search_tool_regex"
+    }
+}
+
+/// Stream parts for a server-tool result block.
+///
+/// Result blocks arrive complete on `content_block_start`, so the payload
+/// mapping is shared with [`parse_anthropic_content`]; only the part type
+/// differs. Returns an empty vec for blocks that are not results.
+pub(crate) fn stream_parts_for_result_block(
+    block: &ContentBlock,
+    names: &ToolNameMapping,
+    mcp_tool_calls: &HashMap<String, (String, String)>,
+) -> Vec<StreamPart> {
+    let tool_result =
+        |tool_name: String, (result, is_error): (Value, Option<bool>), tool_use_id: &str| {
+            StreamPart::ToolResult {
+                tool_call_id: tool_use_id.to_string(),
+                tool_name,
+                result,
+                is_error,
+                preliminary: None,
+                dynamic: None,
+                provider_metadata: None,
+            }
+        };
+
+    match block {
+        ContentBlock::WebSearchToolResult {
+            tool_use_id,
+            content,
+        } => {
+            let name = names.to_custom_tool_name("web_search").to_string();
+            let Some(results) = content.as_array() else {
+                return vec![StreamPart::ToolResult {
+                    tool_call_id: tool_use_id.clone(),
+                    tool_name: name,
+                    result: json!({
+                        "type": "web_search_tool_result_error",
+                        "errorCode": content.get("error_code").cloned().unwrap_or(Value::Null),
+                    }),
+                    is_error: Some(true),
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                }];
+            };
+            // The tool result, then one Source per hit — the same pair the
+            // non-streaming path emits.
+            let mut parts = vec![tool_result(
+                name,
+                (
+                    Value::Array(results.iter().map(map_web_search_result).collect()),
+                    None,
+                ),
+                tool_use_id,
+            )];
+            parts.extend(results.iter().map(|result| StreamPart::Source {
+                id: generate_source_id(),
+                source_type: "url".to_string(),
+                url: str_field(result, "url"),
+                title: str_field(result, "title"),
+                provider_metadata: Some(json!({
+                    "anthropic": {
+                        "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+                    }
+                })),
+            }));
+            parts
+        }
+        ContentBlock::WebFetchToolResult {
+            tool_use_id,
+            content,
+        } => vec![tool_result(
+            names.to_custom_tool_name("web_fetch").to_string(),
+            map_web_fetch_result(content),
+            tool_use_id,
+        )],
+        ContentBlock::CodeExecutionToolResult {
+            tool_use_id,
+            content,
+        } => vec![tool_result(
+            names.to_custom_tool_name("code_execution").to_string(),
+            map_code_execution_result(content),
+            tool_use_id,
+        )],
+        ContentBlock::BashCodeExecutionToolResult {
+            tool_use_id,
+            content,
+        }
+        | ContentBlock::TextEditorCodeExecutionToolResult {
+            tool_use_id,
+            content,
+        } => vec![tool_result(
+            names.to_custom_tool_name("code_execution").to_string(),
+            (content.clone(), None),
+            tool_use_id,
+        )],
+        ContentBlock::ToolSearchToolResult {
+            tool_use_id,
+            content,
+        } => vec![tool_result(
+            names
+                .to_custom_tool_name(tool_search_provider_name(names))
+                .to_string(),
+            map_tool_search_result(content),
+            tool_use_id,
+        )],
+        ContentBlock::AdvisorToolResult {
+            tool_use_id,
+            content,
+        } => vec![tool_result(
+            names.to_custom_tool_name("advisor").to_string(),
+            map_advisor_result(content),
+            tool_use_id,
+        )],
+        ContentBlock::McpToolResult {
+            tool_use_id,
+            content,
+            is_error,
+        } => {
+            let call = mcp_tool_calls.get(tool_use_id);
+            vec![StreamPart::ToolResult {
+                tool_call_id: tool_use_id.clone(),
+                tool_name: call.map(|(name, _)| name.clone()).unwrap_or_default(),
+                result: content.clone(),
+                is_error: *is_error,
+                preliminary: None,
+                dynamic: Some(true),
+                provider_metadata: call.map(|(_, server)| {
+                    json!({
+                        "anthropic": { "type": "mcp-tool-use", "serverName": server }
+                    })
+                }),
+            }]
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Map Anthropic response content blocks into `GenerateContent` items.
 ///
-/// Text / tool_use / thinking / server_tool_use blocks are surfaced; result
-/// blocks (web_search_tool_result, code_execution_tool_result, ...) and any
-/// unknown block type are intentionally dropped — `GenerateContent` has no
-/// provider-tool-result variant, and none of the current tests assert on their
-/// content.
-fn parse_anthropic_content(blocks: &[ContentBlock]) -> Vec<GenerateContent> {
+/// Text / tool_use / thinking / server_tool_use blocks are surfaced, and every
+/// server-tool result block becomes a `ToolResult` whose payload is reshaped to
+/// match the upstream contract. `web_search` results additionally produce
+/// `Source` items, which is how their URLs reach `result.sources`.
+///
+/// `names` maps Anthropic's wire tool names back to the names the caller used;
+/// pass the mapping built from `CallOptions.tools`.
+pub(crate) fn parse_anthropic_content(
+    blocks: &[ContentBlock],
+    names: &ToolNameMapping,
+) -> Vec<GenerateContent> {
     let mut content = Vec::new();
+    // `mcp_tool_result` inherits the name and server of the `mcp_tool_use` it
+    // answers, so index those first (upstream keeps the same lookup table).
+    let mut mcp_tool_calls: HashMap<&str, (&str, &str)> = HashMap::new();
+    for block in blocks {
+        if let ContentBlock::McpToolUse {
+            id,
+            name,
+            server_name,
+            ..
+        } = block
+        {
+            mcp_tool_calls.insert(id.as_str(), (name.as_str(), server_name.as_str()));
+        }
+    }
+
     for block in blocks {
         match block {
             ContentBlock::Text { text } => {
@@ -138,6 +475,196 @@ fn parse_anthropic_content(blocks: &[ContentBlock]) -> Vec<GenerateContent> {
                     provider_metadata: None,
                 });
             }
+            // MCP tool use — provider-executed + dynamic (upstream :1166-1182).
+            ContentBlock::McpToolUse {
+                id,
+                name,
+                input,
+                server_name,
+            } => {
+                content.push(GenerateContent::ToolCall {
+                    tool_call_id: id.clone(),
+                    tool_name: name.clone(),
+                    input: input.clone(),
+                    provider_executed: Some(true),
+                    dynamic: Some(true),
+                    thought_signature: None,
+                    provider_metadata: Some(json!({
+                        "anthropic": { "type": "mcp-tool-use", "serverName": server_name }
+                    })),
+                });
+            }
+            // Redacted thinking — upstream emits as reasoning with redactedData
+            ContentBlock::RedactedThinking { data } => {
+                content.push(GenerateContent::Reasoning {
+                    text: String::new(),
+                    provider_metadata: Some(json!({
+                        "anthropic": { "redactedData": data }
+                    })),
+                });
+            }
+            // ── Server-tool result blocks → GenerateContent::ToolResult ──
+            // Payload shapes mirror the TS `doGenerate` switch one-for-one
+            // (anthropic-language-model.ts:1196-1400): keys are camel-cased and
+            // optional members normalized, so a caller written against the
+            // upstream contract reads the same fields.
+            ContentBlock::WebSearchToolResult {
+                tool_use_id,
+                content: payload,
+            } => {
+                // Success is an array of results; anything else is the error
+                // object (upstream branches on `Array.isArray`).
+                match payload.as_array() {
+                    Some(results) => {
+                        content.push(GenerateContent::ToolResult {
+                            tool_call_id: tool_use_id.clone(),
+                            tool_name: names.to_custom_tool_name("web_search").to_string(),
+                            result: Value::Array(
+                                results.iter().map(map_web_search_result).collect(),
+                            ),
+                            is_error: None,
+                            preliminary: None,
+                            dynamic: None,
+                            provider_metadata: None,
+                        });
+                        // Each result also becomes a `Source` — that is how the
+                        // URLs and titles reach `result.sources`.
+                        for result in results {
+                            content.push(GenerateContent::Source {
+                                id: generate_source_id(),
+                                source_type: "url".to_string(),
+                                url: str_field(result, "url"),
+                                title: str_field(result, "title"),
+                                provider_metadata: Some(json!({
+                                    "anthropic": {
+                                        "pageAge": result.get("page_age").cloned()
+                                            .unwrap_or(Value::Null),
+                                    }
+                                })),
+                            });
+                        }
+                    }
+                    None => content.push(GenerateContent::ToolResult {
+                        tool_call_id: tool_use_id.clone(),
+                        tool_name: names.to_custom_tool_name("web_search").to_string(),
+                        result: json!({
+                            "type": "web_search_tool_result_error",
+                            "errorCode": payload.get("error_code").cloned()
+                                .unwrap_or(Value::Null),
+                        }),
+                        is_error: Some(true),
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    }),
+                }
+            }
+            ContentBlock::WebFetchToolResult {
+                tool_use_id,
+                content: payload,
+            } => {
+                let (result, is_error) = map_web_fetch_result(payload);
+                content.push(GenerateContent::ToolResult {
+                    tool_call_id: tool_use_id.clone(),
+                    tool_name: names.to_custom_tool_name("web_fetch").to_string(),
+                    result,
+                    is_error,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                });
+            }
+            ContentBlock::CodeExecutionToolResult {
+                tool_use_id,
+                content: payload,
+            } => {
+                let (result, is_error) = map_code_execution_result(payload);
+                content.push(GenerateContent::ToolResult {
+                    tool_call_id: tool_use_id.clone(),
+                    tool_name: names.to_custom_tool_name("code_execution").to_string(),
+                    result,
+                    is_error,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                });
+            }
+            // Upstream shares one arm for these two and passes `content`
+            // through unmapped (anthropic-language-model.ts:1323-1334).
+            ContentBlock::BashCodeExecutionToolResult {
+                tool_use_id,
+                content: payload,
+            }
+            | ContentBlock::TextEditorCodeExecutionToolResult {
+                tool_use_id,
+                content: payload,
+            } => {
+                content.push(GenerateContent::ToolResult {
+                    tool_call_id: tool_use_id.clone(),
+                    tool_name: names.to_custom_tool_name("code_execution").to_string(),
+                    result: payload.clone(),
+                    is_error: None,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                });
+            }
+            ContentBlock::ToolSearchToolResult {
+                tool_use_id,
+                content: payload,
+            } => {
+                let (result, is_error) = map_tool_search_result(payload);
+                content.push(GenerateContent::ToolResult {
+                    tool_call_id: tool_use_id.clone(),
+                    tool_name: names
+                        .to_custom_tool_name(tool_search_provider_name(names))
+                        .to_string(),
+                    result,
+                    is_error,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                });
+            }
+            ContentBlock::AdvisorToolResult {
+                tool_use_id,
+                content: payload,
+            } => {
+                let (result, is_error) = map_advisor_result(payload);
+                content.push(GenerateContent::ToolResult {
+                    tool_call_id: tool_use_id.clone(),
+                    tool_name: names.to_custom_tool_name("advisor").to_string(),
+                    result,
+                    is_error,
+                    preliminary: None,
+                    dynamic: None,
+                    provider_metadata: None,
+                });
+            }
+            // MCP tool result — dynamic, and it inherits the name and metadata
+            // of the `mcp_tool_use` block it answers (upstream :1184-1194).
+            ContentBlock::McpToolResult {
+                tool_use_id,
+                content: payload,
+                is_error,
+            } => {
+                let call = mcp_tool_calls.get(tool_use_id.as_str());
+                content.push(GenerateContent::ToolResult {
+                    tool_call_id: tool_use_id.clone(),
+                    tool_name: call
+                        .map(|(name, _)| (*name).to_string())
+                        .unwrap_or_default(),
+                    result: payload.clone(),
+                    is_error: *is_error,
+                    preliminary: None,
+                    dynamic: Some(true),
+                    provider_metadata: call.map(|(_, server)| {
+                        json!({
+                            "anthropic": { "type": "mcp-tool-use", "serverName": server }
+                        })
+                    }),
+                });
+            }
             _ => {}
         }
     }
@@ -162,6 +689,7 @@ pub(crate) async fn anthropic_generate_core(
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
+    tool_names: &ToolNameMapping,
 ) -> Result<GenerateResult, AiMuxError> {
     let request = build_anthropic_request(
         endpoint,
@@ -175,7 +703,7 @@ pub(crate) async fn anthropic_generate_core(
 
     let data: AnthropicResponse = serde_json::from_slice(&resp.body)?;
 
-    let content = parse_anthropic_content(&data.content);
+    let content = parse_anthropic_content(&data.content, tool_names);
 
     let finish_reason = data
         .stop_reason
@@ -224,6 +752,8 @@ enum BlockState {
     },
     Thinking {
         started: bool,
+        /// Accumulated `signature_delta` pieces for the thinking block.
+        signature: Option<String>,
     },
 }
 
@@ -247,6 +777,7 @@ pub(crate) async fn anthropic_stream_core(
     abort_signal: Option<AbortSignal>,
     timeout: Option<RequestTimeout>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
+    tool_names: ToolNameMapping,
 ) -> Result<StreamResult, AiMuxError> {
     let request = build_anthropic_request(
         endpoint,
@@ -270,6 +801,10 @@ pub(crate) async fn anthropic_stream_core(
         let mut final_usage = Usage::default();
         let mut final_finish_reason: Option<FinishReason> = None;
         let mut response_meta_emitted = false;
+        let mut stream_errored = false;
+        // id → (tool name, server name), so `mcp_tool_result` can inherit them
+        // from the `mcp_tool_use` it answers.
+        let mut mcp_tool_calls: HashMap<String, (String, String)> = HashMap::new();
 
         while let Some(event) = sse.next().await {
             match event {
@@ -297,7 +832,13 @@ pub(crate) async fn anthropic_stream_core(
                                     blocks.insert(index, BlockState::Text { started: false });
                                 }
                                 ContentBlock::Thinking { .. } => {
-                                    blocks.insert(index, BlockState::Thinking { started: false });
+                                    blocks.insert(
+                                        index,
+                                        BlockState::Thinking {
+                                            started: false,
+                                            signature: None,
+                                        },
+                                    );
                                 }
                                 ContentBlock::ToolUse { id, name, .. } => {
                                     yield Ok(StreamPart::ToolInputStart {
@@ -314,12 +855,70 @@ pub(crate) async fn anthropic_stream_core(
                                         accumulated_json: String::new(),
                                     });
                                 }
-                                // Server-side / provider-executed tool blocks
-                                // (server_tool_use, mcp_tool_use, result
-                                // blocks, ...) are not yet streamed as
-                                // first-class parts; ignore them here so an
-                                // unknown block type never aborts the stream.
-                                _ => {}
+                                // Server-side tool use — emit as ToolCall.
+                                ContentBlock::ServerToolUse { id, name, input } => {
+                                    yield Ok(StreamPart::ToolCall {
+                                        tool_call_id: id.clone(),
+                                        tool_name: tool_names
+                                            .to_custom_tool_name(&name)
+                                            .to_string(),
+                                        input: input.clone(),
+                                        provider_executed: Some(true),
+                                        dynamic: None,
+                                        thought_signature: None,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                // MCP tool use — provider-executed + dynamic.
+                                ContentBlock::McpToolUse { id, name, input, server_name } => {
+                                    mcp_tool_calls
+                                        .insert(id.clone(), (name.clone(), server_name.clone()));
+                                    yield Ok(StreamPart::ToolCall {
+                                        tool_call_id: id.clone(),
+                                        tool_name: name.clone(),
+                                        input: input.clone(),
+                                        provider_executed: Some(true),
+                                        dynamic: Some(true),
+                                        thought_signature: None,
+                                        provider_metadata: Some(json!({
+                                            "anthropic": {
+                                                "type": "mcp-tool-use",
+                                                "serverName": server_name,
+                                            }
+                                        })),
+                                    });
+                                }
+                                // Redacted thinking — emit as ReasoningStart.
+                                ContentBlock::RedactedThinking { data } => {
+                                    let id = index.to_string();
+                                    yield Ok(StreamPart::ReasoningStart {
+                                        id: id.clone(),
+                                        provider_metadata: Some(json!({
+                                            "anthropic": { "redactedData": data }
+                                        })),
+                                    });
+                                    blocks.insert(
+                                        index,
+                                        BlockState::Thinking {
+                                            started: true,
+                                            signature: None,
+                                        },
+                                    );
+                                }
+                                // Server-tool result blocks arrive whole on
+                                // `content_block_start`, so they reuse the
+                                // non-streaming payload mapping. Upstream
+                                // mirrors its `doGenerate` switch here too
+                                // (anthropic-language-model.ts:1901-2178).
+                                other => {
+                                    for part in stream_parts_for_result_block(
+                                        &other,
+                                        &tool_names,
+                                        &mcp_tool_calls,
+                                    ) {
+                                        yield Ok(part);
+                                    }
+                                }
                             }
                         }
                         Ok(StreamEvent::ContentBlockDelta { index, delta }) => {
@@ -380,8 +979,8 @@ pub(crate) async fn anthropic_stream_core(
                                 // thinking delta. The id is the stringified
                                 // content-block index, matching the TS SDK.
                                 let start_id: Option<String> = match blocks.get_mut(&index) {
-                                    Some(BlockState::Thinking { started: false }) => {
-                                        if let Some(BlockState::Thinking { started }) =
+                                    Some(BlockState::Thinking { started: false, .. }) => {
+                                        if let Some(BlockState::Thinking { started, .. }) =
                                             blocks.get_mut(&index)
                                         {
                                             *started = true;
@@ -402,6 +1001,26 @@ pub(crate) async fn anthropic_stream_core(
                                     provider_metadata: None,
                                 });
                             }
+                            if let Some(sig) = delta.signature {
+                                // `signature_delta`: incremental pieces of the
+                                // thinking-block signature. Accumulated on the
+                                // block state and attached to ReasoningEnd, so
+                                // the aggregated Reasoning part can echo it
+                                // back on extended-thinking multi-turn — same
+                                // shape as the non-streaming path.
+                                //
+                                // Edge: a thinking block carrying only a
+                                // signature (no text deltas) stays
+                                // `started: false` and emits nothing — the
+                                // protocol always sends text first, and the
+                                // core aggregator gates on non-empty text
+                                // anyway, so there is nothing to attach to.
+                                if let Some(BlockState::Thinking { signature, .. }) =
+                                    blocks.get_mut(&index)
+                                {
+                                    signature.get_or_insert_with(String::new).push_str(&sig);
+                                }
+                            }
                         }
                         Ok(StreamEvent::ContentBlockStop { index }) => {
                             // Removing the block releases the borrow before any
@@ -417,13 +1036,18 @@ pub(crate) async fn anthropic_stream_core(
                                     BlockState::Text { started: false } => {
                                         // Text block with no deltas — nothing to emit.
                                     }
-                                    BlockState::Thinking { started: true } => {
+                                    BlockState::Thinking {
+                                        started: true,
+                                        signature,
+                                    } => {
                                         yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
-                                            provider_metadata: None,
+                                            provider_metadata: signature.map(|s| {
+                                                json!({ "anthropic": { "signature": s } })
+                                            }),
                                         });
                                     }
-                                    BlockState::Thinking { started: false } => {
+                                    BlockState::Thinking { started: false, .. } => {
                                         // Thinking block with no deltas — nothing to emit.
                                     }
                                     BlockState::ToolUse {
@@ -491,7 +1115,12 @@ pub(crate) async fn anthropic_stream_core(
                                     ..Default::default()
                                 }),
                             });
-                            return;
+                            // Finish is the final-chunk contract: it must
+                            // still terminate the stream after an in-stream
+                            // error (openai and google do the same), so
+                            // downstream aggregators see a well-formed end.
+                            stream_errored = true;
+                            break;
                         }
                         Ok(_) | Err(_) => {}
                     }
@@ -500,18 +1129,30 @@ pub(crate) async fn anthropic_stream_core(
                     yield Ok(StreamPart::Error {
                         error: AiMuxError::InvalidResponseData(e.to_string()),
                     });
-                    return;
+                    stream_errored = true;
+                    break;
                 }
             }
         }
 
         // Final part: Finish.
         yield Ok(StreamPart::Finish {
-            finish_reason: final_finish_reason.unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Stop,
-                raw: None,
-            }),
-            usage: final_usage,
+            finish_reason: if stream_errored {
+                FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                }
+            } else {
+                final_finish_reason.unwrap_or(FinishReason {
+                    unified: FinishReasonUnified::Stop,
+                    raw: None,
+                })
+            },
+            usage: if stream_errored {
+                Usage::default()
+            } else {
+                final_usage
+            },
             provider_metadata: None,
         });
     };

@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Google Vertex AI provider.
+//! Wiremock tests for the Google Vertex AI provider.
 //!
 //! Tests cover:
 //! - Non-streaming text generation (generateContent JSON response)
@@ -83,7 +83,7 @@ async fn mock_stream_content(server: &MockServer, sse_body: &str) {
 }
 
 fn sse(data: &Value) -> String {
-    format!("data: {}\n\n", data)
+    format!("data: {data}\n\n")
 }
 
 fn sse_stream(events: &[Value]) -> String {
@@ -93,7 +93,7 @@ fn sse_stream(events: &[Value]) -> String {
 fn as_text(item: &GenerateContent) -> &str {
     match item {
         GenerateContent::Text { text, .. } => text,
-        _ => panic!("expected Text content, got {:?}", item),
+        _ => panic!("expected Text content, got {item:?}"),
     }
 }
 
@@ -105,7 +105,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             input,
             ..
         } => (tool_call_id, tool_name, input),
-        _ => panic!("expected ToolCall content, got {:?}", item),
+        _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
 
@@ -115,7 +115,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -257,7 +257,7 @@ async fn vertex_generate_tool_call_with_thought_signature() {
                 Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
             );
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -623,5 +623,466 @@ async fn vertex_generate_rate_limit() {
     assert!(
         matches!(result, Err(ref e) if e.status_code() == Some(429)),
         "expected RateLimited, got {result:?}"
+    );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// doStream — provider tool results & metadata (mirrors the google provider's
+// do_stream tests in google_provider_tools_test.rs; issue #141).
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A single SSE chunk carrying `content.parts: [{ text }]`, optional
+/// `finishReason`, and optional `groundingMetadata` / `urlContextMetadata`.
+fn stream_chunk(
+    text: &str,
+    finish_reason: Option<&str>,
+    grounding: Option<Value>,
+    url_context: Option<Value>,
+) -> Value {
+    let mut candidate = json!({
+        "content": { "parts": [{ "text": text }], "role": "model" }
+    });
+    if let Some(r) = finish_reason {
+        candidate["finishReason"] = json!(r);
+    }
+    if let Some(g) = grounding {
+        candidate["groundingMetadata"] = g;
+    }
+    if let Some(u) = url_context {
+        candidate["urlContextMetadata"] = u;
+    }
+    json!({ "candidates": [candidate] })
+}
+
+/// Extract the `Finish` part's provider metadata from a collected stream.
+fn finish_provider_metadata(parts: &[StreamPart]) -> Option<Value> {
+    parts.iter().find_map(|p| match p {
+        StreamPart::Finish {
+            provider_metadata, ..
+        } => provider_metadata.clone(),
+        _ => None,
+    })
+}
+
+/// Collect `(tool_call_id, tool_name, input)` from streamed `ToolCall` parts.
+fn stream_tool_calls(parts: &[StreamPart]) -> Vec<(String, String, Value)> {
+    parts
+        .iter()
+        .filter_map(|p| match p {
+            StreamPart::ToolCall {
+                tool_call_id,
+                tool_name,
+                input,
+                ..
+            } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Collect `(tool_call_id, result)` from streamed `ToolResult` parts.
+fn stream_tool_results(parts: &[StreamPart]) -> Vec<(String, Value)> {
+    parts
+        .iter()
+        .filter_map(|p| match p {
+            StreamPart::ToolResult {
+                tool_call_id,
+                result,
+                ..
+            } => Some((tool_call_id.clone(), result.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Collect `(id, source_type, url, title)` from streamed `Source` parts.
+fn stream_sources(parts: &[StreamPart]) -> Vec<(String, String, Option<String>, Option<String>)> {
+    parts
+        .iter()
+        .filter_map(|p| match p {
+            StreamPart::Source {
+                id,
+                source_type,
+                url,
+                title,
+                ..
+            } => Some((id.clone(), source_type.clone(), url.clone(), title.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// TS: "should stream code execution tool calls and results" — the Vertex
+/// stream must not silently drop provider-executed code results (#141).
+#[tokio::test]
+async fn vertex_stream_code_execution_tool_calls_and_results() {
+    let server = MockServer::start().await;
+    mock_stream_content(
+        &server,
+        &sse_stream(&[
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [{ "executableCode": { "language": "PYTHON", "code": "print(\"hello\")" } }]
+                    }
+                }]
+            }),
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [{ "codeExecutionResult": { "outcome": "OUTCOME_OK", "output": "hello\n" } }]
+                    },
+                    "finishReason": "STOP"
+                }]
+            }),
+        ]),
+    )
+    .await;
+
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .expect("do_stream should succeed");
+    let parts = collect_stream(result).await;
+
+    let calls = stream_tool_calls(&parts);
+    let has_call = calls.iter().any(|(_, name, input)| {
+        name == "code_execution"
+            && *input == json!({ "language": "PYTHON", "code": "print(\"hello\")" })
+    });
+    assert!(
+        has_call,
+        "expected a code_execution tool-call, got {calls:?}"
+    );
+
+    // The ToolResult must reference the preceding executableCode call id.
+    let results = stream_tool_results(&parts);
+    let call_id = calls
+        .iter()
+        .find(|(_, name, _)| name == "code_execution")
+        .map(|(id, _, _)| id.clone())
+        .expect("code_execution call id");
+    let has_result = results.iter().any(|(id, output)| {
+        *id == call_id && *output == json!({ "outcome": "OUTCOME_OK", "output": "hello\n" })
+    });
+    assert!(
+        has_result,
+        "expected a code_execution tool-result, got {results:?}"
+    );
+
+    // Provider-executed tool → Stop, not ToolCalls.
+    let finish = parts.iter().find_map(|p| match p {
+        StreamPart::Finish { finish_reason, .. } => Some(finish_reason.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        finish.expect("finish part").unified,
+        FinishReasonUnified::Stop
+    );
+}
+
+/// TS: "should stream code execution result with missing output field".
+#[tokio::test]
+async fn vertex_stream_code_execution_result_missing_output() {
+    let server = MockServer::start().await;
+    mock_stream_content(
+        &server,
+        &sse_stream(&[
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [{ "executableCode": {
+                            "language": "PYTHON",
+                            "code": "img = PIL.Image.open('input.png')\nimg.save('output.png')\n"
+                        } }]
+                    }
+                }]
+            }),
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [{ "codeExecutionResult": { "outcome": "OUTCOME_OK" } }]
+                    },
+                    "finishReason": "STOP"
+                }]
+            }),
+        ]),
+    )
+    .await;
+
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .expect("do_stream should succeed");
+    let parts = collect_stream(result).await;
+
+    assert!(
+        stream_tool_calls(&parts)
+            .iter()
+            .any(|(_, name, _)| name == "code_execution"),
+        "expected a code_execution tool-call"
+    );
+    // Missing output defaults to "".
+    let results = stream_tool_results(&parts);
+    let has_empty = results
+        .iter()
+        .any(|(_, output)| *output == json!({ "outcome": "OUTCOME_OK", "output": "" }));
+    assert!(
+        has_empty,
+        "expected a tool-result with empty output, got {results:?}"
+    );
+}
+
+/// TS: "should stream server-side toolCall and toolResponse parts (tool
+/// combination)" — server tools are provider-executed and must be streamed.
+#[tokio::test]
+async fn vertex_stream_server_tool_call_and_response() {
+    let server = MockServer::start().await;
+    mock_stream_content(
+        &server,
+        &sse_stream(&[
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [{ "toolCall": {
+                            "toolType": "GOOGLE_SEARCH_WEB",
+                            "args": { "query": "San Francisco weather" },
+                            "id": "server-call-1"
+                        }, "thoughtSignature": "sig-abc" }]
+                    }
+                }]
+            }),
+            json!({
+                "candidates": [{
+                    "content": {
+                        "parts": [
+                            { "toolResponse": {
+                                "toolType": "GOOGLE_SEARCH_WEB",
+                                "response": { "results": [{ "title": "Weather in SF" }] },
+                                "id": "server-call-1"
+                            }, "thoughtSignature": "sig-def" },
+                            { "text": "The weather in San Francisco is sunny." }
+                        ]
+                    },
+                    "finishReason": "STOP"
+                }]
+            }),
+        ]),
+    )
+    .await;
+
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .expect("do_stream should succeed");
+    let parts = collect_stream(result).await;
+
+    let calls = stream_tool_calls(&parts);
+    assert!(
+        calls
+            .iter()
+            .any(|(_, name, _)| name == "server:GOOGLE_SEARCH_WEB"),
+        "expected a server-side tool-call in the stream, got {calls:?}"
+    );
+
+    let results = stream_tool_results(&parts);
+    assert!(
+        results.iter().any(|(id, output)| *id == "server-call-1"
+            && *output == json!({ "results": [{ "title": "Weather in SF" }] })),
+        "expected a server tool-response keyed to server-call-1, got {results:?}"
+    );
+
+    // Provider-executed server tools → stop, not tool-calls.
+    let finish = parts.iter().find_map(|p| match p {
+        StreamPart::Finish { finish_reason, .. } => Some(finish_reason.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        finish.expect("finish part").unified,
+        FinishReasonUnified::Stop
+    );
+}
+
+/// TS: "should stream source events" + "should deduplicate sources across
+/// chunks" — groundingMetadata is processed, not dropped.
+#[tokio::test]
+async fn vertex_stream_grounding_metadata_sources() {
+    let server = MockServer::start().await;
+    mock_stream_content(
+        &server,
+        &sse_stream(&[
+            stream_chunk(
+                "first chunk",
+                None,
+                Some(json!({
+                    "groundingChunks": [
+                        { "web": { "uri": "https://example.com", "title": "Example" } },
+                        { "web": { "uri": "https://unique.com", "title": "Unique" } }
+                    ]
+                })),
+                None,
+            ),
+            stream_chunk(
+                "second chunk",
+                None,
+                Some(json!({
+                    "groundingChunks": [
+                        { "web": { "uri": "https://example.com", "title": "Example Duplicate" } },
+                        { "web": { "uri": "https://another.com", "title": "Another" } }
+                    ]
+                })),
+                None,
+            ),
+            stream_chunk("final chunk", Some("STOP"), None, None),
+        ]),
+    )
+    .await;
+
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .expect("do_stream should succeed");
+    let parts = collect_stream(result).await;
+
+    let sources = stream_sources(&parts);
+    // The duplicate https://example.com appears in two chunks but should be
+    // emitted only once (keeping the first title).
+    let example: Vec<_> = sources
+        .iter()
+        .filter(|(_, _, url, _)| url.as_deref() == Some("https://example.com"))
+        .collect();
+    assert_eq!(
+        example.len(),
+        1,
+        "duplicate source should be emitted once, got {sources:?}"
+    );
+    assert_eq!(example[0].1, "url");
+    assert_eq!(example[0].3.as_deref(), Some("Example"));
+    assert_eq!(
+        sources.len(),
+        3,
+        "expected 3 deduplicated sources, got {sources:?}"
+    );
+}
+
+/// TS: "should preserve grounding/url context metadata when it arrives before
+/// the finishReason chunk" — Finish provider_metadata is non-empty with all
+/// six fields under the `googleVertex` key.
+#[tokio::test]
+async fn vertex_stream_finish_provider_metadata() {
+    let server = MockServer::start().await;
+    mock_stream_content(
+        &server,
+        &sse_stream(&[
+            {
+                let mut c = stream_chunk(
+                    "hello",
+                    None,
+                    Some(json!({
+                        "webSearchQueries": ["super bowl 2026 halftime show"],
+                        "groundingChunks": [{
+                            "web": { "uri": "https://example.com/superbowl", "title": "Super Bowl 2026" }
+                        }]
+                    })),
+                Some(json!({
+                    "urlMetadata": [{
+                        "retrievedUrl": "https://example.com/page",
+                        "urlRetrievalStatus": "URL_RETRIEVAL_STATUS_SUCCESS"
+                    }]
+                })),
+                );
+                // Carry a valued promptFeedback so the assertion below locks
+                // the captured value, not just key presence.
+                c["promptFeedback"] = json!({ "promptTokenCount": 12 });
+                c
+            },
+            {
+                let mut c = stream_chunk(" world", Some("STOP"), None, None);
+                c["candidates"][0]["safetyRatings"] = json!([
+                    { "category": "HARM_CATEGORY_HARASSMENT", "probability": "NEGLIGIBLE" }
+                ]);
+                c["candidates"][0]["finishMessage"] = json!("natural stop");
+                c["usageMetadata"] = json!({
+                    "promptTokenCount": 38,
+                    "candidatesTokenCount": 1335,
+                    "totalTokenCount": 1890
+                });
+                c
+            },
+        ]),
+    )
+    .await;
+
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .expect("do_stream should succeed");
+    let parts = collect_stream(result).await;
+
+    let pm = finish_provider_metadata(&parts).expect("finish part");
+    let vertex = &pm["googleVertex"];
+    assert!(
+        !vertex.is_null() && vertex.as_object().map(|o| !o.is_empty()).unwrap_or(false),
+        "googleVertex provider metadata should be non-empty, got {pm}"
+    );
+    assert_eq!(
+        vertex["groundingMetadata"],
+        json!({
+            "webSearchQueries": ["super bowl 2026 halftime show"],
+            "groundingChunks": [{
+                "web": { "uri": "https://example.com/superbowl", "title": "Super Bowl 2026" }
+            }]
+        })
+    );
+    assert_eq!(
+        vertex["urlContextMetadata"],
+        json!({
+            "urlMetadata": [{
+                "retrievedUrl": "https://example.com/page",
+                "urlRetrievalStatus": "URL_RETRIEVAL_STATUS_SUCCESS"
+            }]
+        })
+    );
+    // usageMetadata is the serialized GoogleUsageMetadata (includes null
+    // optional fields, mirroring the google provider).
+    assert_eq!(vertex["usageMetadata"]["promptTokenCount"], json!(38));
+    assert_eq!(vertex["usageMetadata"]["candidatesTokenCount"], json!(1335));
+    assert_eq!(vertex["usageMetadata"]["totalTokenCount"], json!(1890));
+    // All six keys are always present (null when absent), matching google.
+    for key in [
+        "promptFeedback",
+        "groundingMetadata",
+        "urlContextMetadata",
+        "safetyRatings",
+        "usageMetadata",
+        "finishMessage",
+    ] {
+        assert!(
+            vertex.get(key).is_some(),
+            "expected key `{key}` in googleVertex metadata, got {pm}"
+        );
+    }
+    // …and the three snapshot fields carry their captured values, not just
+    // key presence (locks the capture code, not the key scaffold).
+    assert_eq!(vertex["promptFeedback"], json!({ "promptTokenCount": 12 }));
+    assert_eq!(
+        vertex["safetyRatings"],
+        json!([{ "category": "HARM_CATEGORY_HARASSMENT", "probability": "NEGLIGIBLE" }])
+    );
+    assert_eq!(vertex["finishMessage"], json!("natural stop"));
+
+    // Usage also lands on the Finish part itself.
+    let finish_usage = parts.iter().find_map(|p| match p {
+        StreamPart::Finish { usage, .. } => Some(usage.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        finish_usage.expect("finish usage").input_tokens.total,
+        Some(38)
     );
 }

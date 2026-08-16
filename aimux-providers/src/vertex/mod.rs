@@ -4,7 +4,7 @@
 //! (`{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/publishers/google/models/{model}:generateContent`).
 //!
 //! Vertex AI uses the same request/response format as the Google Gemini API,
-//! so this provider reuses the shared [`google::convert`] message conversion
+//! so this provider reuses the shared `google::convert` message conversion
 //! logic. The differences are:
 //! - **Endpoint**: Vertex uses a project/location-scoped URL instead of the
 //!   public Gemini API URL.
@@ -12,7 +12,7 @@
 //!   (obtained from a service account or `gcloud auth print-access-token`)
 //!   instead of an API key. Express mode (API key) is also supported.
 //!
-//! Reference: https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-gemini
+//! Reference: <https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-gemini>
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -99,18 +99,21 @@ impl VertexProviderConfig {
     }
 
     /// Override the base URL (useful for tests / proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// 标注凭证来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
@@ -121,6 +124,12 @@ impl VertexProviderConfig {
     /// Checks for `GOOGLE_VERTEX_API_KEY` (Express mode) first, then falls
     /// back to `GOOGLE_VERTEX_ACCESS_TOKEN` + `GOOGLE_VERTEX_PROJECT` +
     /// `GOOGLE_VERTEX_LOCATION`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when neither `GOOGLE_VERTEX_API_KEY`
+    /// nor the `GOOGLE_VERTEX_ACCESS_TOKEN` + `GOOGLE_VERTEX_PROJECT` pair is
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         // Express mode with API key.
         if let Ok(key) = std::env::var("GOOGLE_VERTEX_API_KEY")
@@ -159,13 +168,10 @@ impl VertexProviderConfig {
 fn build_base_url(project: &str, location: &str, _endpoint: bool) -> String {
     let host = match location {
         "global" => "aiplatform.googleapis.com".to_string(),
-        "eu" | "us" => format!("aiplatform.{}.rep.googleapis.com", location),
-        _ => format!("{}-aiplatform.googleapis.com", location),
+        "eu" | "us" => format!("aiplatform.{location}.rep.googleapis.com"),
+        _ => format!("{location}-aiplatform.googleapis.com"),
     };
-    format!(
-        "https://{}/v1beta1/projects/{}/locations/{}/publishers/google",
-        host, project, location
-    )
+    format!("https://{host}/v1beta1/projects/{project}/locations/{location}/publishers/google")
 }
 
 /// Google Vertex AI provider — creates [`VertexModel`] instances.
@@ -177,6 +183,7 @@ pub struct VertexProvider {
 }
 
 impl VertexProvider {
+    #[must_use]
     pub fn new(config: VertexProviderConfig) -> Self {
         Self { config }
     }
@@ -186,6 +193,12 @@ impl VertexProvider {
     ///
     /// Returns an error when Express Mode (API key auth) is used with a tuned
     /// model (`endpoints/…`), which the Vertex AI API does not support.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when Express Mode (API key auth) is
+    /// combined with a tuned model (`endpoints/…`), which the Vertex AI API does
+    /// not support.
     pub fn model(&self, model_id: &str) -> Result<VertexModel, AiMuxError> {
         if model_id.starts_with("endpoints/") && matches!(self.config.auth, VertexAuth::ApiKey(_)) {
             return Err(AiMuxError::InvalidArgument(
@@ -211,12 +224,17 @@ impl VertexProvider {
     /// `/publishers/google` suffix (if present) is stripped so the
     /// `/publishers/anthropic` suffix can be appended by the model. Auth is
     /// reused from this provider (Bearer token or API key).
+    ///
+    /// # Errors
+    ///
+    /// Propagates configuration errors of the underlying `VertexAnthropicModel`
+    /// construction (none in the current implementation).
     pub fn anthropic_model(&self, model_id: &str) -> Result<VertexAnthropicModel, AiMuxError> {
         let base_url = self
             .config
             .base_url
             .strip_suffix("/publishers/google")
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_else(|| self.config.base_url.clone());
         Ok(VertexAnthropicModel::new(
             model_id.to_string(),
@@ -231,6 +249,7 @@ impl VertexProvider {
 
     /// Create an embedding model instance for the given Vertex AI model name
     /// (e.g. `"textembedding-gecko@001"`).
+    #[must_use]
     pub fn embedding_model(&self, model_id: &str) -> VertexEmbeddingModel {
         VertexEmbeddingModel::new(
             model_id.to_string(),
@@ -245,6 +264,7 @@ impl VertexProvider {
 
     /// Create an image generation model instance for the given Vertex AI model
     /// name (e.g. `"imagen-4.0-generate-001"` or `"gemini-2.5-flash-image"`).
+    #[must_use]
     pub fn image(&self, model_id: &str) -> VertexImageModel {
         VertexImageModel::new(
             model_id.to_string(),
@@ -260,6 +280,11 @@ impl VertexProvider {
     /// Create a transcription (STT) model instance for the given Speech-to-Text
     /// model name (e.g. `"chirp_3"`). Requires project and location to be set
     /// in the config (use [`VertexProviderConfig::new`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `project` is not set in the
+    /// config.
     pub fn transcription(&self, model_id: &str) -> Result<VertexTranscriptionModel, AiMuxError> {
         let project = self.config.project.clone().ok_or_else(|| {
             AiMuxError::InvalidArgument(
@@ -283,6 +308,11 @@ impl VertexProvider {
 
     /// Create a video generation model instance for the given Vertex AI model
     /// name (e.g. `"veo-3.0-generate-001"`).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `project` is not set in the
+    /// config.
     pub fn video(&self, model_id: &str) -> Result<VertexVideoModel, AiMuxError> {
         let project = self.config.project.clone().ok_or_else(|| {
             AiMuxError::InvalidArgument(

@@ -61,7 +61,7 @@ impl BedrockProviderConfig {
         region: impl Into<String>,
     ) -> Self {
         let region = region.into();
-        let base_url = format!("https://bedrock-runtime.{}.amazonaws.com", region);
+        let base_url = format!("https://bedrock-runtime.{region}.amazonaws.com");
         Self {
             base_url,
             auth: BedrockAuth::SigV4(AwsCredentials {
@@ -79,7 +79,7 @@ impl BedrockProviderConfig {
     /// Create a config using a Bearer token.
     pub fn with_bearer_token(token: impl Into<String>, region: impl Into<String>) -> Self {
         let region = region.into();
-        let base_url = format!("https://bedrock-runtime.{}.amazonaws.com", region);
+        let base_url = format!("https://bedrock-runtime.{region}.amazonaws.com");
         Self {
             base_url,
             auth: BedrockAuth::BearerToken(token.into()),
@@ -90,24 +90,28 @@ impl BedrockProviderConfig {
     }
 
     /// Override the base URL (useful for tests / proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// 标注凭证来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
     /// Add a session token for temporary STS credentials.
+    #[must_use]
     pub fn with_session_token(mut self, token: impl Into<String>) -> Self {
         if let BedrockAuth::SigV4(ref mut creds) = self.auth {
             creds.session_token = Some(token.into());
@@ -119,6 +123,11 @@ impl BedrockProviderConfig {
     ///
     /// Checks for `AWS_BEARER_TOKEN_BEDROCK` first (Bearer auth), then falls
     /// back to `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `AWS_REGION`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when neither `AWS_BEARER_TOKEN_BEDROCK`
+    /// nor the `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` pair is present.
     pub fn from_env() -> Result<Self, AiMuxError> {
         // Check for bearer token first.
         if let Ok(token) = std::env::var("AWS_BEARER_TOKEN_BEDROCK")
@@ -152,6 +161,7 @@ impl BedrockProviderConfig {
     }
 
     /// The Bedrock Agent Runtime base URL for this region (used for reranking).
+    #[must_use]
     pub fn agent_runtime_url(&self) -> String {
         format!(
             "https://bedrock-agent-runtime.{}.amazonaws.com",
@@ -169,12 +179,14 @@ pub struct BedrockProvider {
 }
 
 impl BedrockProvider {
+    #[must_use]
     pub fn new(config: BedrockProviderConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given Bedrock model id
     /// (e.g. `"anthropic.claude-3-5-sonnet-20240620-v1:0"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> BedrockModel {
         BedrockModel::new(
             model_id.to_string(),
@@ -189,6 +201,7 @@ impl BedrockProvider {
 
     /// Create an embedding model instance for the given Bedrock model id
     /// (e.g. `"amazon.titan-embed-text-v2:0"`).
+    #[must_use]
     pub fn embedding_model(&self, model_id: &str) -> BedrockEmbeddingModel {
         BedrockEmbeddingModel::new(
             model_id.to_string(),
@@ -203,6 +216,7 @@ impl BedrockProvider {
 
     /// Create an image generation model instance for the given Bedrock model id
     /// (e.g. `"amazon.titan-image-generator-v1"` or `"amazon.nova-canvas-v1:0"`).
+    #[must_use]
     pub fn image(&self, model_id: &str) -> BedrockImageModel {
         BedrockImageModel::new(
             model_id.to_string(),
@@ -218,6 +232,7 @@ impl BedrockProvider {
     /// Create a reranking model instance for the given Bedrock model id
     /// (e.g. `"cohere.rerank-v3-5:0"`). Uses the Bedrock Agent Runtime
     /// `/rerank` endpoint.
+    #[must_use]
     pub fn reranking_model(&self, model_id: &str) -> BedrockRerankingModel {
         // Derive the agent-runtime URL from the base URL by replacing
         // `bedrock-runtime` with `bedrock-agent-runtime`. When the base URL

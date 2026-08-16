@@ -8,8 +8,8 @@
 //! This module implements just enough of the format to decode Bedrock stream
 //! events and to encode them in tests.
 //!
-//! Reference: https://docs.aws.amazon.com/transcribe/latest/dg/event-stream.md
-//!            https://github.com/smithy-lang/smithy-typescript/tree/main/packages/eventstream-codec
+//! Reference: <https://docs.aws.amazon.com/transcribe/latest/dg/event-stream.md>
+//!            <https://github.com/smithy-lang/smithy-typescript/tree/main/packages/eventstream-codec>
 
 /// CRC32 lookup table (IEEE polynomial 0xEDB88320).
 const CRC32_TABLE: [u32; 256] = {
@@ -62,6 +62,7 @@ enum HeaderValue {
 /// Encode a single event stream message.
 ///
 /// Returns the binary frame ready to be sent on the wire.
+#[must_use]
 pub fn encode_message(message_type: &str, event_type: &str, payload: &str) -> Vec<u8> {
     // Headers: :message-type, :event-type, :content-type
     let headers = vec![
@@ -120,6 +121,7 @@ pub fn encode_message(message_type: &str, event_type: &str, payload: &str) -> Ve
 }
 
 /// Encode multiple messages into a single byte stream.
+#[must_use]
 pub fn encode_messages(messages: &[(&str, &str, &str)]) -> Vec<u8> {
     let mut buf = Vec::new();
     for (msg_type, event_type, payload) in messages {
@@ -132,6 +134,7 @@ pub fn encode_messages(messages: &[(&str, &str, &str)]) -> Vec<u8> {
 ///
 /// Returns a vector of decoded messages. Malformed frames — including those
 /// that fail the prelude CRC or message CRC check — are skipped.
+#[must_use]
 pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
     let mut messages = Vec::new();
     let mut offset = 0;

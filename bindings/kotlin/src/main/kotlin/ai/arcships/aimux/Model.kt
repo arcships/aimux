@@ -161,6 +161,27 @@ internal interface AimuxFFI : Library {
 
     // Set the global proxy configuration (M6, RFC-0016). Returns 1 on success, 0 on failure.
     fun aimux_init_proxy(configJson: String, err: AimuxCError?): Int
+
+    // Create a RouterModel (RFC-0021) over child handles (LongArray is pinned to
+    // uint64_t* by JNA). configJson may be null. Returns handle > 0 or 0 on failure.
+    fun aimux_router_new(handles: LongArray, len: Long, configJson: String?, err: AimuxCError?): Long
+
+    // Create a MoaModel (RFC-0022) over reference handles + one aggregator.
+    // referenceHandles may be null/empty (degrades to aggregator-only). Returns
+    // handle > 0 or 0 on failure.
+    fun aimux_moa_new(referenceHandles: LongArray?, refLen: Long, aggregator: Long, configJson: String?, err: AimuxCError?): Long
+
+    // Transcription streaming sessions (RFC-0028).
+
+    fun aimux_transcription_session_new(modelHandle: Long, abortHandle: Long, optsJson: String?, err: AimuxCError?): Long
+
+    fun aimux_transcription_push_audio(session: Long, data: ByteArray?, len: Long, err: AimuxCError?): Int
+
+    fun aimux_transcription_input_done(session: Long, err: AimuxCError?): Int
+
+    fun aimux_transcription_next_part(session: Long, timeoutMs: Long, err: AimuxCError?): Pointer?
+
+    fun aimux_transcription_session_drop(session: Long)
 }
 
 internal object FFI {
@@ -172,10 +193,15 @@ internal object FFI {
  * Frees the FFI-allocated [AimuxCError.message] and [AimuxCError.error_value]
  * exactly once each (fromC itself is a pure mapping and never frees).
  */
-internal fun throwFromC(err: AimuxCError): Nothing {
-    val ex = AimuxException.fromC(err)
+/** Free the FFI-allocated error strings, per the RFC-0028 D5 release contract. */
+internal fun consumeErrorStrings(err: AimuxCError) {
     FFI.lib.aimux_free_string(err.message)
     FFI.lib.aimux_free_string(err.error_value)
+}
+
+internal fun throwFromC(err: AimuxCError): Nothing {
+    val ex = AimuxException.fromC(err)
+    consumeErrorStrings(err)
     throw ex
 }
 
@@ -276,6 +302,16 @@ class Model internal constructor(handle: Long) : Closeable {
     private fun requireHandleLocked(): Long {
         check(!closed && handle != 0L) { "Model is closed" }
         return handle
+    }
+
+    /** Internal handle read for composite-model factories (router/moa). */
+    internal fun handle(): Long {
+        lock.readLock().lock()
+        try {
+            return requireHandleLocked()
+        } finally {
+            lock.readLock().unlock()
+        }
     }
 
     protected fun finalize() {
@@ -692,6 +728,47 @@ class Model internal constructor(handle: Long) : Closeable {
             Model(withCErrorHandle { err ->
                 FFI.lib.aimux_mock_replay_new(recordingsJsonl, err)
             })
+
+        /**
+         * Create a RouterModel (RFC-0021) over the given child models. The
+         * returned model routes each call to one child and falls back across
+         * the rest on error (per `configJson`).
+         *
+         * @param models     child models (must be non-empty).
+         * @param configJson optional config: `{"router": "rule"|"weighted",
+         *                   "weights": [...], "fallback": "on_error"|"none",
+         *                   "provider_name", "model_id"}` — all optional.
+         */
+        fun router(models: List<Model>, configJson: String? = null): Model {
+            require(models.isNotEmpty()) { "router: models must be non-empty" }
+            val handles = LongArray(models.size) { models[it].handle() }
+            return Model(withCErrorHandle { err ->
+                FFI.lib.aimux_router_new(handles, handles.size.toLong(), configJson, err)
+            })
+        }
+
+        /**
+         * Create a MoaModel (RFC-0022) over reference models + one aggregator.
+         * References fan out in parallel, then the aggregator synthesizes a
+         * final answer.
+         *
+         * @param references reference models (may be empty — runs aggregator only).
+         * @param aggregator the aggregator model.
+         * @param configJson optional MoaConfig.
+         */
+        fun moa(
+            references: List<Model>,
+            aggregator: Model,
+            configJson: String? = null,
+        ): Model {
+            val refHandles =
+                if (references.isEmpty()) null
+                else LongArray(references.size) { references[it].handle() }
+            val refLen = refHandles?.size?.toLong() ?: 0L
+            return Model(withCErrorHandle { err ->
+                FFI.lib.aimux_moa_new(refHandles, refLen, aggregator.handle(), configJson, err)
+            })
+        }
 
         /**
          * Register external OpenAI-compatible providers from a JSON config string

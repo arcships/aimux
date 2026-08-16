@@ -44,6 +44,7 @@ pub struct PreparedTools {
 }
 
 /// Prepare `FunctionTool`s into the OpenAI `tools` / `tool_choice` JSON shape.
+#[must_use]
 pub fn prepare_tools(
     tools: &Option<Vec<FunctionTool>>,
     tool_choice: Option<&ToolChoice>,
@@ -211,6 +212,7 @@ fn prepare_tools_groq(
     since = "0.2.1",
     note = "panics on failure; use convert_prompt_to_openai_messages_with_mode_fallible instead (issue #90 R1)"
 )]
+#[must_use]
 pub fn convert_prompt_to_openai_messages(prompt: &LanguageModelPrompt) -> Vec<Value> {
     convert_prompt_to_openai_messages_with_mode_fallible(prompt, SystemMessageMode::System)
         .expect("convert_prompt_to_openai_messages: conversion failed")
@@ -218,6 +220,12 @@ pub fn convert_prompt_to_openai_messages(prompt: &LanguageModelPrompt) -> Vec<Va
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
 /// message mode.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when a message part cannot be
+/// converted (e.g. an unsupported file part shape or a missing provider
+/// reference).
 pub fn convert_prompt_to_openai_messages_with_mode_fallible(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
@@ -240,6 +248,7 @@ pub fn convert_prompt_to_openai_messages_with_mode_fallible(
     since = "0.2.1",
     note = "panics on failure; use convert_prompt_to_openai_messages_with_mode_fallible instead (issue #90 R1)"
 )]
+#[must_use]
 pub fn convert_prompt_to_openai_messages_with_mode(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
@@ -250,6 +259,12 @@ pub fn convert_prompt_to_openai_messages_with_mode(
 
 /// Convert a `LanguageModelPrompt` to OpenAI `messages` array with a system
 /// message mode and provider name (for provider-specific message conversion).
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when a message part cannot be
+/// converted (e.g. an unsupported file part shape or a missing provider
+/// reference).
 pub fn convert_prompt_to_openai_messages_with_provider(
     prompt: &LanguageModelPrompt,
     system_message_mode: SystemMessageMode,
@@ -398,7 +413,7 @@ fn convert_file_part_to_openai(
         let format = match full_mt.as_str() {
             "audio/wav" => "wav",
             "audio/mp3" | "audio/mpeg" => "mp3",
-            _ => return Err(format!("audio content parts with media type {}", full_mt)),
+            _ => return Err(format!("audio content parts with media type {full_mt}")),
         };
         let mut part = json!({
             "type": "input_audio",
@@ -418,7 +433,7 @@ fn convert_file_part_to_openai(
     };
 
     if full_mt != "application/pdf" {
-        return Err(format!("file part media type {}", full_mt));
+        return Err(format!("file part media type {full_mt}"));
     }
 
     if url.is_some() {
@@ -427,8 +442,8 @@ fn convert_file_part_to_openai(
 
     let b64 = data_b64.ok_or("PDF part has no data")?;
     let fname = filename
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("part-{}.pdf", part_index));
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| format!("part-{part_index}.pdf"));
     let mut part = json!({
         "type": "file",
         "file": {
@@ -646,10 +661,20 @@ fn convert_message_to_openai(
     // all plain text (without providerOptions), collapse to a string — matching
     // the Vercel AI SDK `openai-compatible` assistant conversion
     // (`content: toolCalls.length > 0 ? text || null : text`).
+    //
+    // Provider-executed tool results are dropped from assistant messages: the
+    // OpenAI chat wire format has no content part for them, and upstream's
+    // assistant branch handles only `text` and `tool-call`
+    // (convert-to-openai-chat-messages.ts:246-300). Emitting one produces a
+    // part type the API rejects.
     let content_parts: Vec<&ContentPart> = msg
         .content
         .iter()
-        .filter(|p| !matches!(p, ContentPart::Reasoning { .. }))
+        .filter(|p| match p {
+            ContentPart::Reasoning { .. } => false,
+            ContentPart::ToolResult { .. } => msg.role != Role::Assistant,
+            _ => true,
+        })
         .collect();
     let all_plain_text = content_parts.iter().all(|p| {
         matches!(
@@ -676,7 +701,10 @@ fn convert_message_to_openai(
             .iter()
             .enumerate()
             .map(|(i, part)| convert_part_to_openai(part, i))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|p| !p.is_null())
+            .collect();
         json!({ "role": role, "content": parts })
     };
     if has_reasoning {
@@ -853,15 +881,10 @@ fn convert_part_to_openai(part: &ContentPart, index: usize) -> Result<Value, AiM
                 "arguments": input.to_string(),
             }
         })),
-        ContentPart::ToolResult {
-            tool_call_id,
-            result,
-            ..
-        } => Ok(json!({
-            "type": "tool_result",
-            "tool_call_id": tool_call_id,
-            "content": result,
-        })),
+        // Tool results reach the wire as a separate `role: "tool"` message
+        // (built by `convert_message_to_openai`), never as a content part —
+        // there is no such part type in the OpenAI chat format.
+        ContentPart::ToolResult { .. } => Ok(Value::Null),
     }
 }
 
@@ -889,6 +912,11 @@ fn openai_option(
 
 /// Convert `CallOptions` to an OpenAI request body (without warnings), or an
 /// [`AiMuxError`] describing what failed.
+///
+/// # Errors
+///
+/// Returns the first conversion error from `build_request_body_with_warnings`
+/// (e.g. `InvalidArgument` for an unconvertible prompt part).
 pub fn build_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -940,7 +968,11 @@ fn resolve_reasoning_effort(
     reasoning: &Option<ReasoningEffort>,
 ) -> Option<String> {
     provider_option(provider_opts, provider, "reasoningEffort")
-        .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()))
+        .map(|v| {
+            v.as_str()
+                .map(std::string::ToString::to_string)
+                .unwrap_or(v.to_string())
+        })
         .or_else(|| {
             if reasoning.is_some_and(ReasoningEffort::is_custom) {
                 reasoning.map(|r| r.to_string())
@@ -967,7 +999,7 @@ fn resolve_system_message_mode(
     caps: &ModelCapabilities,
 ) -> SystemMessageMode {
     provider_option(provider_opts, provider, "systemMessageMode")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string))
         .map(|s| match s.as_str() {
             "developer" => SystemMessageMode::Developer,
             "remove" => SystemMessageMode::Remove,
@@ -1254,7 +1286,7 @@ fn apply_service_tier(
         return;
     }
     let service_tier = provider_option(provider_opts, provider, "serviceTier")
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+        .and_then(|v| v.as_str().map(std::string::ToString::to_string));
     if let Some(ref st) = service_tier {
         match st.as_str() {
             "flex" => {
@@ -1359,6 +1391,11 @@ fn apply_tools(
 /// Conversion errors propagate to the caller (fail-fast, issue H2): the old
 /// behaviour of silently returning `body: null` sent empty requests upstream
 /// and made conversion failures invisible.
+///
+/// # Errors
+///
+/// Propagates conversion errors, fail-fast: e.g. `InvalidArgument` for an
+/// unconvertible prompt part or an invalid option combination.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -1485,6 +1522,7 @@ pub fn deep_merge_json(target: &mut Value, patch: &Value) {
 }
 
 /// Parse OpenAI finish reason string into `FinishReason`.
+#[must_use]
 pub fn parse_finish_reason(s: &str) -> FinishReason {
     let unified = match s {
         "stop" => FinishReasonUnified::Stop,

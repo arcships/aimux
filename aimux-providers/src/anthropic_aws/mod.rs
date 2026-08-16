@@ -13,7 +13,7 @@
 //! - **Authentication**: AWS SigV4 signing (service name
 //!   `aws-external-anthropic`) or `x-api-key` header.
 //!
-//! Reference: https://docs.anthropic.com/en/api/messages
+//! Reference: <https://docs.anthropic.com/en/api/messages>
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -59,7 +59,7 @@ impl AnthropicAwsProviderConfig {
         region: impl Into<String>,
     ) -> Self {
         let region = region.into();
-        let base_url = format!("https://aws-external-anthropic.{}.api.aws/v1", region);
+        let base_url = format!("https://aws-external-anthropic.{region}.api.aws/v1");
         Self {
             base_url,
             auth: AnthropicAwsAuth::SigV4(AwsCredentials {
@@ -78,7 +78,7 @@ impl AnthropicAwsProviderConfig {
     /// Create a config using an API key (`x-api-key` auth).
     pub fn with_api_key(api_key: impl Into<String>, region: impl Into<String>) -> Self {
         let region = region.into();
-        let base_url = format!("https://aws-external-anthropic.{}.api.aws/v1", region);
+        let base_url = format!("https://aws-external-anthropic.{region}.api.aws/v1");
         Self {
             base_url,
             auth: AnthropicAwsAuth::ApiKey(api_key.into()),
@@ -90,36 +90,42 @@ impl AnthropicAwsProviderConfig {
     }
 
     /// Override the base URL (useful for tests / proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Set the Anthropic API version header.
+    #[must_use]
     pub fn with_api_version(mut self, version: impl Into<String>) -> Self {
         self.api_version = version.into();
         self
     }
 
     /// Set the workspace ID.
+    #[must_use]
     pub fn with_workspace_id(mut self, workspace_id: impl Into<String>) -> Self {
         self.workspace_id = Some(workspace_id.into());
         self
     }
 
     /// 标注凭证来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// Add a session token for temporary STS credentials.
+    #[must_use]
     pub fn with_session_token(mut self, token: impl Into<String>) -> Self {
         if let AnthropicAwsAuth::SigV4(ref mut creds) = self.auth {
             creds.session_token = Some(token.into());
@@ -131,6 +137,11 @@ impl AnthropicAwsProviderConfig {
     ///
     /// Checks for `ANTHROPIC_AWS_API_KEY` first (API key auth), then falls
     /// back to `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `AWS_REGION`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when neither `ANTHROPIC_AWS_API_KEY`
+    /// nor the `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` pair is present.
     pub fn from_env() -> Result<Self, AiMuxError> {
         if let Ok(key) = std::env::var("ANTHROPIC_AWS_API_KEY")
             && !key.trim().is_empty()
@@ -172,12 +183,14 @@ pub struct AnthropicAwsProvider {
 }
 
 impl AnthropicAwsProvider {
+    #[must_use]
     pub fn new(config: AnthropicAwsProviderConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given Anthropic model id
     /// (e.g. `"claude-sonnet-4-20250514"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> AnthropicAwsModel {
         AnthropicAwsModel::new(
             model_id.to_string(),

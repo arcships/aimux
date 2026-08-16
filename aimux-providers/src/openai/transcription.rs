@@ -11,9 +11,11 @@
 //! `segments`, `words`, `language`, and `duration`.
 //!
 //! Realtime transcription models (`gpt-realtime-whisper*`) stream over
-//! WebSocket and do not support the REST endpoint; `do_generate` returns
-//! [`AiMuxError::UnsupportedFunctionality`] for those model IDs. Streaming (`do_stream`)
-//! is not implemented in the Rust port.
+//! WebSocket (`wss://{base}/realtime?intent=transcription`) and do not support
+//! the REST endpoint: `do_generate` returns
+//! [`AiMuxError::UnsupportedFunctionality`] for those model IDs, and `do_stream`
+//! (RFC-0028, requires the `realtime` feature) is realtime-models-only — the
+//! inverse gating.
 
 use std::collections::HashMap;
 
@@ -131,7 +133,7 @@ fn parse_openai_options(
             opts.include = Some(
                 include
                     .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                     .collect(),
             );
         }
@@ -141,7 +143,10 @@ fn parse_openai_options(
         if let Some(prompt) = openai.get("prompt").and_then(|v| v.as_str()) {
             opts.prompt = Some(prompt.to_string());
         }
-        if let Some(temp) = openai.get("temperature").and_then(|v| v.as_f64()) {
+        if let Some(temp) = openai
+            .get("temperature")
+            .and_then(serde_json::Value::as_f64)
+        {
             opts.temperature = Some(temp);
         }
         if let Some(tg) = openai
@@ -150,7 +155,7 @@ fn parse_openai_options(
         {
             opts.timestamp_granularities = Some(
                 tg.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                     .collect(),
             );
         }
@@ -219,6 +224,7 @@ pub struct OpenAITranscriptionModel {
 }
 
 impl OpenAITranscriptionModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -363,7 +369,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             .language
             .as_deref()
             .and_then(language_name_to_code)
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         // Segments: prefer `segments`, fall back to `words`.
         let segments: Vec<TranscriptionSegment> = if let Some(segs) = parsed.segments {
@@ -404,5 +410,284 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             },
             provider_metadata: None,
         })
+    }
+
+    /// Streaming transcription over the realtime WebSocket (RFC-0028 §3.2).
+    ///
+    /// Only realtime model IDs (`gpt-realtime-whisper*`) support streaming;
+    /// other models return `UnsupportedFunctionality` (inverse of the
+    /// `do_generate` gating).
+    #[cfg(feature = "realtime")]
+    async fn do_stream(
+        &self,
+        options: aimux_core::transcription_model::TranscriptionStreamOptions,
+    ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
+        use aimux_core::transcription_model::{
+            AudioChunk, TranscriptionStreamPart, TranscriptionStreamResult,
+        };
+        use aimux_provider_utils::ws::{WebSocketRequest, WsMessage, ws_connect};
+        use futures::StreamExt;
+
+        if !is_realtime_transcription_model_id(&self.model_id) {
+            return Err(AiMuxError::UnsupportedFunctionality(format!(
+                "streaming transcription is not supported by `{}` (realtime models such as gpt-realtime-whisper only)",
+                self.model_id
+            )));
+        }
+
+        let openai_options = parse_openai_options(options.provider_options.as_ref());
+
+        // wss URL from the REST base URL (https→wss / http→ws), matching the
+        // AI SDK's toWebSocketUrl.
+        let ws_url = {
+            let base = self.config.base_url.trim_end_matches('/');
+            if let Some(rest) = base.strip_prefix("https://") {
+                format!("wss://{rest}/realtime?intent=transcription")
+            } else if let Some(rest) = base.strip_prefix("http://") {
+                format!("ws://{rest}/realtime?intent=transcription")
+            } else {
+                format!("{base}/realtime?intent=transcription")
+            }
+        };
+
+        // session.update — exact upstream wire shape (RFC-0028 §3.2 B1): the
+        // model rides in session.audio.input.transcription.model, NOT in the
+        // URL; turn_detection nests under audio.input.
+        let mut session_update = serde_json::json!({
+            "type": "session.update",
+            "session": {
+                "type": "transcription",
+                "audio": {
+                    "input": {
+                        "format": {
+                            "type": options.input_audio_format.format_type,
+                        },
+                        "transcription": {
+                            "model": self.model_id,
+                        },
+                        "turn_detection": null,
+                    },
+                },
+            },
+        });
+        if let Some(rate) = options.input_audio_format.rate {
+            session_update["session"]["audio"]["input"]["format"]["rate"] = serde_json::json!(rate);
+        }
+        if let Some(lang) = &openai_options.language {
+            session_update["session"]["audio"]["input"]["transcription"]["language"] =
+                serde_json::json!(lang);
+        }
+        if let Some(include) = &openai_options.include {
+            session_update["session"]["include"] = serde_json::json!(include);
+        }
+
+        let mut header_list: Vec<(String, String)> = self
+            .build_headers(options.headers.as_ref())
+            .into_iter()
+            .collect();
+
+        let abort = options.abort_signal.clone();
+        let include_raw = options.include_raw_chunks;
+        let language = openai_options.language.clone();
+        let model_id = self.model_id.clone();
+
+        // Spawn the connect before entering the stream so connection errors
+        // surface from do_stream's Result (clear contract: connect failure =
+        // Err, not an in-stream error part).
+        let req = WebSocketRequest {
+            url: ws_url,
+            headers: std::mem::take(&mut header_list),
+            subprotocols: Vec::new(),
+            abort_signal: abort.clone(),
+            timeout: options.timeout,
+        };
+        let mut ws = ws_connect(&req).await?;
+
+        // Session establishment (send session.update). Send errors are
+        // abort-aware inside ws.send_text.
+        ws.send_text(
+            &serde_json::to_string(&session_update)
+                .map_err(|e| AiMuxError::JsonParse(format!("serialize session.update: {e}")))?,
+        )
+        .await?;
+
+        let mut audio = options.audio;
+        let mut audio_done = false;
+        let mut committed = false;
+
+        let stream = async_stream::stream! {
+            yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
+
+            loop {
+                // Audio arm disabled once exhausted (select! precondition).
+                let audio_next = async {
+                    if audio_done {
+                        // Permanently pending arm — exhausted.
+                        std::future::pending::<()>().await;
+                        None
+                    } else {
+                        audio.next().await
+                    }
+                };
+
+                tokio::select! {
+                    biased;
+                    // Audio arm first: a backpressured send parks the loop
+                    // (socket-level backpressure), which is the correct
+                    // throttle for a saturated pre-recorded source. Inbound
+                    // events wait until the send completes; live-mic rates
+                    // interleave naturally.
+
+                    chunk = audio_next => {
+                        match chunk {
+                            Some(AudioChunk::Binary(bytes)) => {
+                                let b64 = base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD, &bytes);
+                                if let Err(e) = ws.send_text(&serde_json::json!({
+                                    "type": "input_audio_buffer.append",
+                                    "audio": b64,
+                                }).to_string()).await {
+                                    yield Err(e);
+                                    break;
+                                }
+                            }
+                            Some(AudioChunk::Base64(b64)) => {
+                                if let Err(e) = ws.send_text(&serde_json::json!({
+                                    "type": "input_audio_buffer.append",
+                                    "audio": b64,
+                                }).to_string()).await {
+                                    yield Err(e);
+                                    break;
+                                }
+                            }
+                            None => {
+                                audio_done = true;
+                                if !committed {
+                                    committed = true;
+                                    if let Err(e) = ws.send_text(
+                                        r#"{"type":"input_audio_buffer.commit"}"#).await {
+                                        yield Err(e);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    event = ws.next() => {
+                        match event {
+                            None => {
+                                // Peer closed. If we never got `completed`,
+                                // this is a truncated session — surface it
+                                // rather than ending silently.
+                                yield Err(AiMuxError::ApiCall(
+                                    aimux_core::error::ApiCallError {
+                                        message: "realtime transcription socket closed before completion".into(),
+                                        ..Default::default()
+                                    }));
+                                break;
+                            }
+                            Some(Err(e)) => {
+                                yield Err(e);
+                                break;
+                            }
+                            Some(Ok(WsMessage::Binary(_))) => {
+                                // Realtime transcription events are JSON text;
+                                // ignore binary frames.
+                            }
+                            Some(Ok(WsMessage::Text(text))) => {
+                                let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                                    continue;
+                                };
+                                if include_raw {
+                                    yield Ok(TranscriptionStreamPart::Raw {
+                                        raw_value: value.clone(),
+                                    });
+                                }
+                                let event_type = value.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                                match event_type {
+                                    "conversation.item.input_audio_transcription.delta" => {
+                                        yield Ok(TranscriptionStreamPart::TranscriptDelta {
+                                            id: value.get("item_id").and_then(|v| v.as_str()).map(std::string::ToString::to_string),
+                                            delta: value.get("delta").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                            provider_metadata: None,
+                                        });
+                                    }
+                                    "conversation.item.input_audio_transcription.completed" => {
+                                        let transcript = value.get("transcript")
+                                            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        let item_id = value.get("item_id")
+                                            .and_then(|v| v.as_str()).map(std::string::ToString::to_string);
+                                        yield Ok(TranscriptionStreamPart::TranscriptFinal {
+                                            id: item_id.clone(),
+                                            text: transcript.clone(),
+                                            start_second: None,
+                                            end_second: None,
+                                            channel_index: None,
+                                            provider_metadata: None,
+                                        });
+                                        yield Ok(TranscriptionStreamPart::Finish {
+                                            text: transcript,
+                                            segments: vec![],
+                                            language: language.clone(),
+                                            duration_in_seconds: None,
+                                            provider_metadata: None,
+                                        });
+                                        // Termination: the realtime session is
+                                        // long-lived by design; the SERVER will
+                                        // not close after one transcript. Close
+                                        // client-side (1000) like upstream
+                                        // (RFC-0028 §3.2 B2).
+                                        ws.close().await;
+                                        break;
+                                    }
+                                    "error" => {
+                                        let msg = value.pointer("/error/message")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("realtime transcription error");
+                                        yield Err(AiMuxError::ApiCall(
+                                            aimux_core::error::ApiCallError {
+                                                message: msg.to_string(),
+                                                ..Default::default()
+                                            }));
+                                        ws.close().await;
+                                        break;
+                                    }
+                                    // session.created / session.updated /
+                                    // input_audio_buffer.committed / rate_limits
+                                    // etc. — no part mapping.
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(TranscriptionStreamResult {
+            stream: Box::pin(stream),
+            request: Some(TranscriptionRequest {
+                body: Some(serde_json::to_string(&session_update).unwrap_or_default()),
+            }),
+            response: Some(TranscriptionResponse {
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                model_id: Some(model_id),
+                headers: None,
+                body: None,
+            }),
+        })
+    }
+
+    /// Without the `realtime` feature the WebSocket path is compiled out.
+    #[cfg(not(feature = "realtime"))]
+    async fn do_stream(
+        &self,
+        _options: aimux_core::transcription_model::TranscriptionStreamOptions,
+    ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError> {
+        Err(AiMuxError::UnsupportedFunctionality(
+            "transcription streaming requires building aimux-providers with the `realtime` feature"
+                .into(),
+        ))
     }
 }

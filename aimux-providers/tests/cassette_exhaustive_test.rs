@@ -77,7 +77,7 @@ fn load_all_cassettes() -> Vec<Cassette> {
             let req_body = req["body"].clone();
             let is_stream = req_body
                 .get("stream")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
 
             let file_name = file_path.file_name().unwrap().to_string_lossy().to_string();

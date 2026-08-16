@@ -188,10 +188,8 @@ impl LanguageModel for CohereModel {
         // Mirrors TS `cohere-chat-language-model.ts`: each citation becomes a
         // `{ type: 'source', sourceType: 'document', title, providerMetadata:
         // { cohere: { start, end, text, sources, citationType } } }` content
-        // item. The Rust `GenerateContent::Source` variant carries no
-        // `mediaType` / `providerMetadata`, so only `source_type` and `title`
-        // are preserved here; the rich per-citation metadata (start/end/text/
-        // sources/citationType) is dropped — a documented data-model gap.
+        // item. The per-citation metadata (start/end/text/sources/citationType)
+        // is preserved in `provider_metadata`.
         if let Some(citations) = &data.message.citations {
             for (i, citation) in citations.iter().enumerate() {
                 let title = citation
@@ -201,14 +199,33 @@ impl LanguageModel for CohereModel {
                     .and_then(|src| src.get("document"))
                     .and_then(|d| d.get("title"))
                     .and_then(|t| t.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .unwrap_or_else(|| "Document".to_string());
+
+                // Build `providerMetadata.cohere` from the citation's fields.
+                // Only present fields are included (matching TS, where `undefined`
+                // values are dropped); `citationType` mirrors the TS spread
+                // `...(citation.type && { citationType: citation.type })` and is
+                // included only when `citation.type` is a non-empty string.
+                let mut cohere_meta = serde_json::Map::new();
+                for field in ["start", "end", "text", "sources"] {
+                    if let Some(v) = citation.get(field) {
+                        cohere_meta.insert(field.to_string(), v.clone());
+                    }
+                }
+                if let Some(t) = citation
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                {
+                    cohere_meta.insert("citationType".to_string(), Value::String(t.to_string()));
+                }
                 content.push(GenerateContent::Source {
-                    id: format!("citation-{}", i),
+                    id: format!("citation-{i}"),
                     source_type: "document".to_string(),
                     url: None,
                     title: Some(title),
-                    provider_metadata: None,
+                    provider_metadata: Some(json!({ "cohere": cohere_meta })),
                 });
             }
         }
@@ -337,12 +354,12 @@ impl LanguageModel for CohereModel {
                                 if content_type == Some("thinking") {
                                     is_reasoning = true;
                                     yield Ok(StreamPart::ReasoningStart {
-                                        id: format!("reasoning-{}", idx),
+                                        id: format!("reasoning-{idx}"),
                                         provider_metadata: None,
                                     });
                                 } else {
                                     yield Ok(StreamPart::TextStart {
-                                        id: format!("{}", idx),
+                                        id: format!("{idx}"),
                                         provider_metadata: None,
                                     });
                                 }
@@ -362,7 +379,7 @@ impl LanguageModel for CohereModel {
                                         content.get("thinking").and_then(|t| t.as_str())
                                     {
                                         yield Ok(StreamPart::ReasoningDelta {
-                                            id: format!("reasoning-{}", idx),
+                                            id: format!("reasoning-{idx}"),
                                             delta: thinking.to_string(),
                                             provider_metadata: None,
                                         });
@@ -372,7 +389,7 @@ impl LanguageModel for CohereModel {
                                         content.get("text").and_then(|t| t.as_str())
                                     {
                                         yield Ok(StreamPart::TextDelta {
-                                            id: format!("{}", idx),
+                                            id: format!("{idx}"),
                                             delta: text.to_string(),
                                             provider_metadata: None,
                                         });
@@ -384,13 +401,13 @@ impl LanguageModel for CohereModel {
                                 let idx = parsed.index.unwrap_or(0);
                                 if is_reasoning {
                                     yield Ok(StreamPart::ReasoningEnd {
-                                        id: format!("reasoning-{}", idx),
+                                        id: format!("reasoning-{idx}"),
                                         provider_metadata: None,
                                     });
                                     is_reasoning = false;
                                 } else {
                                     yield Ok(StreamPart::TextEnd {
-                                        id: format!("{}", idx),
+                                        id: format!("{idx}"),
                                         provider_metadata: None,
                                     });
                                 }

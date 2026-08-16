@@ -63,19 +63,21 @@ aimux 的 `openai` 模块**不是**薄封装的 openai-compatible 等价物,而�
 | M10 | **usage.raw 未填充** | ✅ `raw: usage` | ❌ 写死 None | core | `convert_usage` 把 `raw` 写死 None([model.rs:111-126](../aimux-providers/src/openai/model.rs#L111)),丢失 provider 原始 usage(额外字段无法透传) |
 | M11 | **streamText 高层聚合器** | ✅ `.text`/`.fullStream`/`.toUIMessageStream()`/`.consumeStream()` | ❌ 只 yield 原始 StreamPart | binding | `streamText` 只 `yield` 原始 StreamPart,缺少高层聚合 |
 | M12 | **结构化 output / generateObject** | ✅ | ❌ | core | 只有 `response_format` JSON,无类型化 `output` 返回路径 |
-| M13 | **生命周期 callbacks** | ✅ onStart/onStepStart/onStepFinish/onEnd/onToolExecution* | ❌ | core | 无生成生命周期回调 |
+| ~~M13~~ | **生命周期 callbacks** | ✅ onStart/onStepStart/onStepFinish/onEnd/onToolExecution* | ❌ **经核对不做** | core | 用户外包调用(非流式)或 `consume()`(流式)零成本等价;详见 §7.8 |
 
 ### 2.3 低优先级
 
+> 2026-08-14 逐项核对 AI SDK 源码后核定,详见 [§7.2](#72-未落地清单逐条追踪)。结论:L1 落地,L3/L5/L6/L7 经核对不做(架构差异或已超出)。
+
 | # | 缺口 | Vercel | aimux | 证据 |
 |---|------|--------|-------|------|
-| L1 | `response-metadata.timestamp` 恒 None | ✅ 用 `created*1000` 填充 | ❌ | [stream_part.rs](../aimux-core/src/stream_part.rs) |
-| L2 | `tool-call.input` 类型为 `Value`(解析后 JSON) vs V4 规范的 `string` | ✅ string | ⚠️ Value | 可能是 aimux 有意设计(Node 侧消费更友好),非确认缺口 |
-| L3 | supportsStructuredOutputs / includeUsage 可配置化 | ✅ | ❌ 硬编码 | [openai/mod.rs](../aimux-providers/src/openai/mod.rs) |
-| L4 | env 自动读取 apiKey/baseUrl | ✅ `OPENAI_API_KEY`/`OPENAI_BASE_URL` | ❌ Node 强制传参(Rust 有 `from_env()` 但 Node 未用) | [lib.rs:165](../bindings/node/src/lib.rs#L165) |
-| L5 | telemetry | ✅ | ❌ | — |
-| L6 | toolApproval | ✅ | ❌ | — |
-| L7 | queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage | ✅ | ❌ | [openai-compatible-provider.ts:49-118](../reference/ai/packages/openai-compatible/src/openai-compatible-provider.ts#L49) |
+| ~~L1~~ | `response-metadata.timestamp` 恒 None | ✅ 用 `created*1000` 填充 | ✅ 已落地(2026-08-14) | [model.rs](../aimux-providers/src/openai/model.rs) |
+| L2 | `tool-call.input` 类型为 `Value`(解析后 JSON) vs V4 规范的 `string` | ✅ string | ⚠️ Value | aimux 有意设计(Node 侧消费更友好),非缺口 |
+| L3 | supportsStructuredOutputs / includeUsage 可配置化 | ✅(openai-compatible 框架) | ❌ 经核对**不做** | aimux 非 openai-compatible 框架,已用 per-provider 特判 + body_overrides 覆盖 |
+| ~~L4~~ | env 自动读取 apiKey/baseUrl | ✅ `OPENAI_API_KEY`/`OPENAI_BASE_URL` | ✅ 已落地 | `provider()`/`deepseek()` 走注册表读 env |
+| L5 | telemetry | ✅ | ❌ 经核对**不做** | aimux 已有 RFC-0014 `tracing` span 体系,不重复造 JS 式 telemetry 子系统 |
+| L6 | toolApproval | ✅ | ❌ 经核对**不做** | provider-executed tool 多步交互,与 H4(不做 agent loop)冲突 |
+| L7 | queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage | ✅(openai-compatible 框架) | ❌ 经核对**不做**(大部分已超出) | metadataExtractor/convertUsage aimux 已超出(usage.raw + per-provider convert_usage) |
 
 ---
 
@@ -128,7 +130,7 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 - **M4/M5** 通用 providerOptions 透传 + transformRequestBody 钩子:从白名单改为"已知项特殊处理 + 未知项透传",并开放 `RequestBodyOverride` 为闭包/trait
 - **M6** 自定义 fetch / proxy:设计注入点(reqwest client builder 或 trait 抽象)
 - **H4** 多步工具循环:设计 agent 层(steps/stopWhen/toolResults/responseMessages/callbacks),这是最大的架构增量
-- **M7/M11/M12/M13** 顶层结果聚合、streamText 聚合器、结构化 output、callbacks:依赖多步循环或独立设计
+- **M7/M11/M12** 顶层结果聚合、streamText 聚合器、结构化 output:依赖多步循环或独立设计(均已落地,见 §7.1);~~M13 callbacks~~ 经核对不做(2026-08-14,见 §7.2)
 
 ---
 
@@ -187,13 +189,18 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 - ~~**M10** usage.raw~~ — 已落地,见 [§7.1](#71-已落地相对本-rfc-起草时)(2026-08-05)
 - **M11** streamText 聚合器 — Node 仍 yield 原始 StreamPart JSON([lib.rs:63](../bindings/node/src/lib.rs#L63));core 仅 `StreamTextResult::text()`
 - **M12** 结构化 output / generateObject — 无
-- **M13** 生命周期 callbacks — 无
+- ~~**M13** 生命周期 callbacks~~ — **经核对不做**(2026-08-14)。onStart/onEnd 为编排层语法糖,用户外包调用(非流式)或 `consume()`(流式,§7.1)零成本等价。AI SDK 该设计服务于其多步循环 + telemetry 生态(参见 `GenerateTextStartEvent` 携带 `activeTools`/`toolOrder`/`steps`、与 OTel dispatcher 绑定);前者 aimux 不做(H4 §7.5),后者已有 RFC-0014 `tracing` span 覆盖。做它需 FFI 宿主回调 wire 改动 + 8 语言 wrapper(类别②最高成本),收益无新能力。
 
-**低优先级:**
-- **L1** response-metadata.timestamp 恒 None(非流式 [model.rs:387](../aimux-providers/src/openai/model.rs#L387)、流式 [model.rs:539](../aimux-providers/src/openai/model.rs#L539))
-- **L3** supportsStructuredOutputs / includeUsage 仍硬编码
-- **L5** telemetry、**L6** toolApproval — 无
-- **L7** queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage — 均未做(注:error structure 有 `DEFAULT_ERROR_STRUCTURE` 常量但写死不可配)
+**低优先级(2026-08-14 核对 AI SDK 源码后逐项核定):**
+- ~~**L1** response-metadata.timestamp 恒 None~~ — **已落地**(2026-08-14)。`created` 已在 `ChatCompletionResponse`/`ChatCompletionStreamChunk` 解析([openai/types.rs:16](../aimux-providers/src/openai/types.rs#L16)、[:112](../aimux-providers/src/openai/types.rs#L112);mistral 同),只是 model.rs 填了 None。现填 RFC3339 字符串(`created` Unix 秒 → `DateTime` → RFC3339),对齐 AI SDK `createLanguageModelResponseMetadata` 的 `timestamp: created != null ? new Date(created*1000) : undefined`。覆盖面:OpenAI(含 Azure/openai-compatible 全系)/Mistral/xAI 填 `created`;Bedrock/Vertex Gemini 从响应 `Date` header 填(非流式原有,流式补齐);Cohere/Anthropic/Google(Gemini 直连)响应无时间戳字段,保持 None。
+- **L3** supportsStructuredOutputs / includeUsage — **经核对不做**。这是 AI SDK **openai-compatible provider**(第三方代理框架)的配置项([openai-compatible-provider.ts](https://github.com/vercel/ai/blob/main/packages/openai-compatible/src/openai-compatible-provider.ts)),让用户创建第三方 provider 时声明能力。aimux 不是 openai-compatible 框架(用户不通过 aimux 创建 provider),而是**内置 provider 集合**——已用 per-provider 特判(groq structuredOutputs、stream_options)处理,且 `body_overrides`(RFC-0017)可覆盖任意请求体字段。做成可配是过度工程。
+- **L5** telemetry — **经核对不做**。AI SDK telemetry 是独立子系统([packages/ai/src/telemetry/](https://github.com/vercel/ai/tree/main/packages/ai/src/telemetry):tracing channel publisher、OTel 集成、事件钩子),绑定在其 `generateText`/`streamText` 编排层。aimux 已有 RFC-0014 的 `tracing` span 体系(`generate` span + `generate_end` event),走 Rust `tracing` crate。重复造 JS 式 telemetry 子系统无意义。
+- **L6** toolApproval — **经核对不做**。`tool-approval-request` 是 stream part + content type,用于 provider-executed tool(MCP)需用户批准的多步交互。与 H4(不做 agent loop,§7.5)冲突,属编排层语义。
+- **L7** queryParams / errorStructure / supportedUrls / metadataExtractor / convertUsage — **经核对不做(大部分已超出)**:
+  - `queryParams` / `supportedUrls`:openai-compatible 框架的活(URL 拼装/白名单),aimux 非 openai-compatible。
+  - `errorStructure`:aimux 有 `DEFAULT_ERROR_STRUCTURE`(#94 结构化错误),写死但覆盖主流;做成可配是过度工程。
+  - `metadataExtractor`:**已超出**——aimux 的 `usage.raw`(M10)保留原始 JSON,比 AI SDK extractor 更通用。
+  - `convertUsage`:**已超出**——aimux 的 `convert_usage` 是 per-provider 实现(含 Moonshot/DeepSeek 缓存格式特判),比 AI SDK 的单一 convertUsage 更细。
 
 ### 7.3 下游 wrapper 影响矩阵
 
@@ -202,7 +209,7 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | 类别 | 改动量 | 涉及缺口 |
 |------|--------|---------|
 | ① 加字段(机械性,每 wrapper 类型层同步;Node/Python JSON 直传可不加字段仅丢类型提示) | 小 | H3、M2、M3(options 字段);M7、M9、M10、L1(结果/StreamPart 字段) |
-| ② 动 FFI + 全 wrapper(结构性) | 大 | H1(2026-08-02:**Node 已落地**——`AbortBridge` 类桥接 JS signal;FFI/C-ABI 仍未做 `aimux_cancel(handle)` 类入口,其他语言暂无取消);H4(明确不做,见 §7.5);M13(宿主回调注册);M12(若新增独立入口 `aimux_generate_object` 则全链改动,若复用 generate_text + options 字段则降级为 ①) |
+| ② 动 FFI + 全 wrapper(结构性) | 大 | H1(2026-08-02:**Node 已落地**——`AbortBridge` 类桥接 JS signal;FFI/C-ABI 仍未做 `aimux_cancel(handle)` 类入口,其他语言暂无取消);H4(明确不做,见 §7.5);~~M13(宿主回调注册)~~ — **经核对不做**(2026-08-14,见 §7.2);M12(若新增独立入口 `aimux_generate_object` 则全链改动,若复用 generate_text + options 字段则降级为 ①) |
 | ③ wrapper 自实现(wire 不动) | 中 | M11(streamText 聚合器,宿主语言便利层);M6(跨语言注入宿主 fetch 不现实,大概率 core 内 reqwest 配置,归 ① 或不涉及) |
 | ④ 契约测试同步 | 小 | 所有新增字段需同步 `contract-tests/fixtures/wire-format.json` 及各 binding wire 测试(go `wire_format_test.go`、python `test_wrapper.py`、node `__test__`)。H3 的 `timeout` 字段已入 fixture(2026-08-02) |
 
@@ -259,7 +266,7 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | M7 | **实锤差距**:Vercel `generateText` 返回**顶层**含 `reasoning`/`reasoningText`/`sources`/`files`/`responseMessages`——与多步 loop 无关(loop 专属字段是 `steps`/`finalStep`);aimux 只提 text/tool_calls | ai-sdk.dev generate-text 文档 Returns |
 | M11 | **澄清,非做错**:aimux streamText yield StreamPart 等价 Vercel `fullStream`(底层流,对标正确);缺的是上层聚合器(`.text`/`.reasoning`/usage 汇总)——core 已有 `StreamTextResult::text()`,Node 侧补齐即可 | — |
 | M12 | **澄清,非缺类型**:aimux 类型齐全;缺的是结构化 output 的**类型化路径**(SDK 层 parse + schema 校验 + 类型化返回)。可做纯绑定层(复用 generate_text + options 字段,§7.3 降级为类别①) | — |
-| M13 | **不全是 loop 的**:`onStart`/`onEnd`/`onFinish`/`onLanguageModelCallStart`/`onLanguageModelCallEnd` **单步 generateText 就有**;仅 `onStepStart`/`onStepEnd`/`onStepFinish`/`onToolExecution*` 依赖 step/tool(与 H4 一并排除) | ai-sdk.dev generate-text 文档 callbacks |
+| ~~M13~~ | **经核对不做**(2026-08-14,见 §7.2):原分析"`onStart`/`onEnd`/`onFinish` 单步即有,仅 step 系列依赖 loop"成立,但这些单步 callback 收到的数据 = `generate_text` 返回值本身(`GenerateTextEndEvent` 字段与返回值一一对应),用户外包调用零成本等价;流式 `consume()` 同样提供聚合结果。AI SDK 该设计绑定其 telemetry 生态(`GenerateTextStartEvent` 携 `activeTools`/`toolOrder`/与 OTel dispatcher 分发),aimux 有 RFC-0014 `tracing` span 覆盖可观测性,无 telemetry 子系统需求。成本类别②(FFI 宿主回调 + 8 语言 wrapper,最高),收益无新能力 → won't fix | [generate-text-events.ts](https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/generate-text-events.ts) |
 
 **用户影响与实施排序:**
 
@@ -273,7 +280,7 @@ aimux 的 `OpenAIResponsesModel`([responses/mod.rs](../aimux-providers/src/opena
 | 第二批 | M6(proxy) | 企业 mTLS/自签证书场景 TLS 失败无法注入;env 已覆盖 80% 场景 | 特定场景硬阻塞 | `ProxyConfig` + ProviderConfig 透传;TLS 证书注入另议 |
 | 第二批 | M12 | response_format 可用,缺 parse/校验/类型化便利 | DX/安全 | 纯绑定层 generateObject |
 | 第二批 | M11 | 流式聚合样板代码 | DX | Node 便利函数 |
-| 最后 | M13 | 埋点/耗时自包(流式可自推断) | DX/可观测性 | 需宿主回调注册(类别②,全 wrapper 成本最高);只做 onStart/onEnd/onFinish |
+| ~~最后~~ | ~~M13~~ | ~~埋点/耗时自包(流式可自推断)~~ | — | **不做**(2026-08-14):语法糖,用户外包/`consume()` 零成本等价,已由 RFC-0014 tracing 覆盖;成本类别②无收益 → won't fix |
 
 **下一步建议**:第一批(M3→M10→M9→M2)与第二批(M7→M6→M12→M11)均不碰 FFI wire(类别①/③/④),可走与 H1/H3 相同的双 agent review 流程。
 

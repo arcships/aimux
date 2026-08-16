@@ -35,10 +35,16 @@ fn parse_voyage_reranking_options(
     if let Some(po) = provider_options
         && let Some(voyage) = po.get("voyage")
     {
-        if let Some(v) = voyage.get("returnDocuments").and_then(|v| v.as_bool()) {
+        if let Some(v) = voyage
+            .get("returnDocuments")
+            .and_then(serde_json::Value::as_bool)
+        {
             opts.return_documents = Some(v);
         }
-        if let Some(v) = voyage.get("truncation").and_then(|v| v.as_bool()) {
+        if let Some(v) = voyage
+            .get("truncation")
+            .and_then(serde_json::Value::as_bool)
+        {
             opts.truncation = Some(v);
         }
     }
@@ -64,6 +70,7 @@ pub struct VoyageRerankingModel {
 }
 
 impl VoyageRerankingModel {
+    #[must_use]
     pub fn new(model_id: String, config: VoyageConfig) -> Self {
         Self { model_id, config }
     }
@@ -113,7 +120,10 @@ impl RerankingModel for VoyageRerankingModel {
                     feature: "object documents".to_string(),
                     details: Some("Object documents are converted to strings.".to_string()),
                 });
-                values.iter().map(|v| v.to_string()).collect()
+                values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect()
             }
         };
 

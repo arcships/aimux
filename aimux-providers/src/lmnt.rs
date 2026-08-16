@@ -50,18 +50,24 @@ impl LMNTConfig {
     }
 
     /// Override the base URL (for testing or proxies).
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into().trim_end_matches('/').to_string();
         self
     }
 
     /// Attach extra headers merged into every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Create from environment variable `LMNT_API_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `LMNT_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "LMNT_API_KEY", "LMNT")?;
         Ok(Self::new(api_key))
@@ -76,12 +82,14 @@ pub struct LMNTProvider {
 }
 
 impl LMNTProvider {
+    #[must_use]
     pub fn new(config: LMNTConfig) -> Self {
         Self { config }
     }
 
     /// Create a speech (TTS) model instance for the given model name (e.g.
     /// `"aurora"`).
+    #[must_use]
     pub fn speech(&self, model_id: &str) -> LMNTSpeechModel {
         LMNTSpeechModel::new(model_id.to_string(), self.config.clone())
     }
@@ -102,6 +110,7 @@ pub struct LMNTSpeechModel {
 }
 
 impl LMNTSpeechModel {
+    #[must_use]
     pub fn new(model_id: String, config: LMNTConfig) -> Self {
         Self { model_id, config }
     }
@@ -216,8 +225,7 @@ fn build_request(
         warnings.push(Warning::Unsupported {
             feature: "outputFormat".to_string(),
             details: Some(format!(
-                "Unsupported output format: {}. Using mp3 instead.",
-                output_format
+                "Unsupported output format: {output_format}. Using mp3 instead."
             )),
         });
     }
@@ -283,19 +291,21 @@ fn parse_lmnt_provider_options(
     let opts = provider_opts.as_object()?;
 
     Some(LMNTSpeechProviderOptions {
-        conversational: opts.get("conversational").and_then(|v| v.as_bool()),
-        length: opts.get("length").and_then(|v| v.as_f64()),
-        seed: opts.get("seed").and_then(|v| v.as_u64()),
-        speed: opts.get("speed").and_then(|v| v.as_f64()),
-        temperature: opts.get("temperature").and_then(|v| v.as_f64()),
-        top_p: opts.get("topP").and_then(|v| v.as_f64()),
+        conversational: opts
+            .get("conversational")
+            .and_then(serde_json::Value::as_bool),
+        length: opts.get("length").and_then(serde_json::Value::as_f64),
+        seed: opts.get("seed").and_then(serde_json::Value::as_u64),
+        speed: opts.get("speed").and_then(serde_json::Value::as_f64),
+        temperature: opts.get("temperature").and_then(serde_json::Value::as_f64),
+        top_p: opts.get("topP").and_then(serde_json::Value::as_f64),
         sample_rate: opts
             .get("sampleRate")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|n| n as u32),
         format: opts
             .get("format")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
     })
 }

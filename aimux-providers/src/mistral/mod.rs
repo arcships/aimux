@@ -41,24 +41,31 @@ impl MistralConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// Create from environment variable `MISTRAL_API_KEY`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `MISTRAL_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "MISTRAL_API_KEY", "Mistral")?;
         Ok(Self::new(api_key).with_api_key_source(Some("env:MISTRAL_API_KEY")))
@@ -71,17 +78,20 @@ pub struct MistralProvider {
 }
 
 impl MistralProvider {
+    #[must_use]
     pub fn new(config: MistralConfig) -> Self {
         Self { config }
     }
 
     /// Create a model instance for the given model name (e.g. `"mistral-small-latest"`).
+    #[must_use]
     pub fn model(&self, model_id: &str) -> model::MistralModel {
         model::MistralModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create an embedding model instance for the given model name (e.g.
     /// `"mistral-embed"`).
+    #[must_use]
     pub fn embedding_model(&self, model_id: &str) -> embedding::MistralEmbeddingModel {
         embedding::MistralEmbeddingModel::new(model_id.to_string(), self.config.clone())
     }

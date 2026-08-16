@@ -23,7 +23,9 @@ use aimux_provider_utils::{
 };
 use aimux_stream::SseStream;
 
-use crate::google::convert::{build_request_body, convert_usage, parse_finish_reason};
+use crate::google::convert::{
+    build_request_body, convert_usage, extract_sources, parse_finish_reason,
+};
 use crate::google::types::{Candidate, GenerateContentResponse, GoogleUsageMetadata, StreamChunk};
 
 use super::VertexAuth;
@@ -55,6 +57,7 @@ pub struct VertexModel {
 }
 
 impl VertexModel {
+    #[must_use]
     pub fn new(model_id: String, config: VertexConfig) -> Self {
         Self { model_id, config }
     }
@@ -63,7 +66,7 @@ impl VertexModel {
         let mut headers = vec![("Content-Type".to_string(), "application/json".to_string())];
         match &self.config.auth {
             VertexAuth::BearerToken(token) => {
-                headers.push(("Authorization".to_string(), format!("Bearer {}", token)));
+                headers.push(("Authorization".to_string(), format!("Bearer {token}")));
             }
             VertexAuth::ApiKey(key) => {
                 headers.push(("x-goog-api-key".to_string(), key.clone()));
@@ -208,6 +211,9 @@ impl LanguageModel for VertexModel {
         let provider_metadata = Some(serde_json::json!({
             "googleVertex": {
                 "promptFeedback": data.prompt_feedback,
+                "groundingMetadata": candidate.grounding_metadata,
+                "urlContextMetadata": candidate.url_context_metadata,
+                "safetyRatings": candidate.safety_ratings,
                 "usageMetadata": data.usage_metadata,
                 "finishMessage": candidate.finish_message,
             }
@@ -221,7 +227,9 @@ impl LanguageModel for VertexModel {
             provider_metadata,
             response: ResponseMetadata {
                 id: data.response_id,
-                timestamp: None,
+                // Gemini responses carry no timestamp field; use the response
+                // `Date` header (RFC1123) like Bedrock does.
+                timestamp: response_headers.get("date").cloned(),
                 model_id: data.model_version,
             },
             request_body: Some(body),
@@ -255,6 +263,8 @@ impl LanguageModel for VertexModel {
         .await?;
 
         let response_headers = resp.headers;
+        // Same source as the non-stream path: the response `Date` header.
+        let response_timestamp = response_headers.get("date").cloned();
 
         let sse_stream = SseStream::new(resp.body);
 
@@ -269,6 +279,26 @@ impl LanguageModel for VertexModel {
             let mut has_tool_calls = false;
             let mut response_metadata_emitted = false;
             let mut stream_errored = false;
+
+            // Provider-metadata accumulators (mirrors TS `lastGroundingMetadata` /
+            // `lastUrlContextMetadata` + the finishReason-chunk snapshot). Same
+            // behaviour as the public Gemini API provider.
+            let mut last_grounding_metadata: Option<Value> = None;
+            let mut last_url_context_metadata: Option<Value> = None;
+            let mut last_prompt_feedback: Option<Value> = None;
+            let mut last_safety_ratings: Option<Value> = None;
+            let mut last_finish_message: Option<Value> = None;
+            let mut last_usage_metadata_value: Option<Value> = None;
+
+            // Source dedup across chunks (url sources only).
+            let mut emitted_source_urls: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            let mut source_id = 0usize;
+
+            // Associates code-execution results / server tool responses with
+            // their preceding call.
+            let mut last_code_execution_tool_call_id: Option<String> = None;
+            let mut last_server_tool_call_id: Option<String> = None;
 
             while let Some(event) = sse_stream.next().await {
                 if stream_errored {
@@ -303,13 +333,17 @@ impl LanguageModel for VertexModel {
                                 response_metadata_emitted = true;
                                 yield Ok(StreamPart::ResponseMetadata {
                                     id: Some(id.clone()),
-                                    timestamp: None,
+                                    timestamp: response_timestamp.clone(),
                                     model_id: chunk.model_version.clone(),
                                 });
                             }
 
                         if let Some(usage) = &chunk.usage_metadata {
                             final_usage = convert_usage(usage);
+                            last_usage_metadata_value = serde_json::to_value(usage).ok();
+                        }
+                        if let Some(pf) = &chunk.prompt_feedback {
+                            last_prompt_feedback = Some(pf.clone());
                         }
 
                         let Some(candidates) = chunk.candidates else {
@@ -319,6 +353,37 @@ impl LanguageModel for VertexModel {
                             continue;
                         };
 
+                        if let Some(gm) = &candidate.grounding_metadata {
+                            last_grounding_metadata = Some(gm.clone());
+                        }
+                        if let Some(ucm) = &candidate.url_context_metadata {
+                            last_url_context_metadata = Some(ucm.clone());
+                        }
+
+                        // Extract url sources from this chunk's grounding metadata
+                        // (deduplicated across chunks; document sources are not
+                        // emitted in the stream, matching TS).
+                        let chunk_sources =
+                            extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
+                        for src in chunk_sources {
+                            if let GenerateContent::Source {
+                                url: Some(url),
+                                source_type,
+                                id,
+                                title,
+                                provider_metadata: None,
+                            } = src
+                                && emitted_source_urls.insert(url.clone()) {
+                                    yield Ok(StreamPart::Source {
+                                        id,
+                                        source_type,
+                                        url: Some(url),
+                                        title,
+                                        provider_metadata: None,
+                                    });
+                                }
+                        }
+
                         if let Some(parts) =
                             candidate.content.as_ref().and_then(|c| c.parts.as_ref())
                         {
@@ -326,7 +391,7 @@ impl LanguageModel for VertexModel {
                                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
                                     if !text.is_empty() {
                                         if text_id.is_none() {
-                                            let id = format!("{}", block_counter);
+                                            let id = format!("{block_counter}");
                                             block_counter += 1;
                                             text_id = Some(id.clone());
                                             yield Ok(StreamPart::TextStart { id, provider_metadata: None});
@@ -347,14 +412,14 @@ impl LanguageModel for VertexModel {
                                     let id = fc
                                         .get("id")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_else(|| format!("call-{}", block_counter));
+                                        .map(std::string::ToString::to_string)
+                                        .unwrap_or_else(|| format!("call-{block_counter}"));
                                     block_counter += 1;
                                     let args = fc.get("args").cloned().unwrap_or(json!({}));
                                     let thought_signature = part
                                         .get("thoughtSignature")
                                         .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string());
+                                        .map(std::string::ToString::to_string);
 
                                     yield Ok(StreamPart::ToolInputStart {
                                         id: id.clone(),
@@ -381,6 +446,97 @@ impl LanguageModel for VertexModel {
                                         provider_metadata: None,
                                     });
                                     has_tool_calls = true;
+                                } else if let Some(ec) = part.get("executableCode") {
+                                    // Provider-executed code execution.
+                                    let has_code = ec
+                                        .get("code")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| !s.is_empty())
+                                        .unwrap_or(false);
+                                    if has_code {
+                                        let id = format!("call-{block_counter}");
+                                        block_counter += 1;
+                                        last_code_execution_tool_call_id = Some(id.clone());
+                                        yield Ok(StreamPart::ToolCall {
+                                            tool_call_id: id,
+                                            tool_name: "code_execution".to_string(),
+                                            input: ec.clone(),
+                                            provider_executed: None,
+                                            dynamic: None,
+                                            thought_signature: None,
+                                            provider_metadata: None,
+                                        });
+                                        // provider-executed → does NOT set has_tool_calls
+                                    }
+                                } else if let Some(cer) = part.get("codeExecutionResult") {
+                                    // Result corresponds to the most recent
+                                    // executableCode part.
+                                    if let Some(call_id) =
+                                        last_code_execution_tool_call_id.take()
+                                    {
+                                        let outcome =
+                                            cer.get("outcome").cloned().unwrap_or(json!(null));
+                                        let output = cer
+                                            .get("output")
+                                            .and_then(|v| v.as_str())
+                                            .map(std::string::ToString::to_string)
+                                            .unwrap_or_default();
+                                        yield Ok(StreamPart::ToolResult {
+                                            tool_call_id: call_id,
+                                            tool_name: String::new(),
+                                            result: json!({ "outcome": outcome, "output": output }),
+                                            is_error: None,
+                                            preliminary: None,
+                                            dynamic: None,
+                                            provider_metadata: None,
+                                        });
+                                    }
+                                } else if let Some(tc) = part.get("toolCall") {
+                                    // Server-side tool call (provider-executed).
+                                    let tool_type = tc
+                                        .get("toolType")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    let id = tc
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .map(std::string::ToString::to_string)
+                                        .unwrap_or_else(|| format!("call-{block_counter}"));
+                                    block_counter += 1;
+                                    last_server_tool_call_id = Some(id.clone());
+                                    let args = tc.get("args").cloned().unwrap_or(json!({}));
+                                    yield Ok(StreamPart::ToolCall {
+                                        tool_call_id: id,
+                                        tool_name: format!("server:{tool_type}"),
+                                        input: args,
+                                        provider_executed: None,
+                                        dynamic: None,
+                                        thought_signature: None,
+                                        provider_metadata: None,
+                                    });
+                                    // provider-executed → does NOT set has_tool_calls
+                                } else if let Some(tr) = part.get("toolResponse") {
+                                    // Server-side tool response.
+                                    let id = last_server_tool_call_id
+                                        .take()
+                                        .or_else(|| {
+                                            tr.get("id")
+                                                .and_then(|v| v.as_str())
+                                                .map(std::string::ToString::to_string)
+                                        })
+                                        .unwrap_or_else(|| format!("call-{block_counter}"));
+                                    block_counter += 1;
+                                    let response =
+                                        tr.get("response").cloned().unwrap_or(json!({}));
+                                    yield Ok(StreamPart::ToolResult {
+                                        tool_call_id: id,
+                                        tool_name: String::new(),
+                                        result: response,
+                                        is_error: None,
+                                        preliminary: None,
+                                        dynamic: None,
+                                        provider_metadata: None,
+                                    });
                                 }
                             }
                         }
@@ -388,6 +544,14 @@ impl LanguageModel for VertexModel {
                         if let Some(reason) = candidate.finish_reason.as_deref() {
                             if let Some(id) = text_id.take() {
                                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
+                            }
+                            // Snapshot the finishReason-chunk metadata.
+                            if let Some(sr) = &candidate.safety_ratings {
+                                last_safety_ratings =
+                                    Some(serde_json::to_value(sr).unwrap_or(Value::Null));
+                            }
+                            if let Some(fm) = &candidate.finish_message {
+                                last_finish_message = Some(json!(fm));
                             }
                             final_finish_reason =
                                 Some(parse_finish_reason(reason, has_tool_calls));
@@ -407,7 +571,16 @@ impl LanguageModel for VertexModel {
                 yield Ok(StreamPart::TextEnd { id, provider_metadata: None});
             }
 
-            let provider_metadata = Some(serde_json::json!({ "googleVertex": {} }));
+            let provider_metadata = Some(serde_json::json!({
+                "googleVertex": {
+                    "promptFeedback": last_prompt_feedback,
+                    "groundingMetadata": last_grounding_metadata,
+                    "urlContextMetadata": last_url_context_metadata,
+                    "safetyRatings": last_safety_ratings,
+                    "usageMetadata": last_usage_metadata_value,
+                    "finishMessage": last_finish_message,
+                }
+            }));
 
             yield Ok(StreamPart::Finish {
                 finish_reason: if stream_errored {
@@ -440,47 +613,52 @@ impl LanguageModel for VertexModel {
 fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
     let mut has_tool_calls = false;
+    let mut source_id = 0usize;
 
-    let Some(parts) = candidate.content.as_ref().and_then(|c| c.parts.as_ref()) else {
-        return (content, has_tool_calls);
-    };
+    let parts = candidate.content.as_ref().and_then(|c| c.parts.as_ref());
 
-    for part in parts {
-        if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-            if !text.is_empty() {
-                content.push(GenerateContent::Text {
-                    text: text.to_string(),
+    if let Some(parts) = parts {
+        for part in parts {
+            if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+                if !text.is_empty() {
+                    content.push(GenerateContent::Text {
+                        text: text.to_string(),
+                        provider_metadata: None,
+                    });
+                }
+            } else if let Some(fc) = part.get("functionCall") {
+                let name = fc
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let id = fc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let input = fc.get("args").cloned().unwrap_or(json!({}));
+                let thought_signature = part
+                    .get("thoughtSignature")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string);
+                content.push(GenerateContent::ToolCall {
+                    tool_call_id: id,
+                    tool_name: name,
+                    input,
+                    provider_executed: None,
+                    dynamic: None,
+                    thought_signature,
                     provider_metadata: None,
                 });
+                has_tool_calls = true;
             }
-        } else if let Some(fc) = part.get("functionCall") {
-            let name = fc
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let id = fc
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let input = fc.get("args").cloned().unwrap_or(json!({}));
-            let thought_signature = part
-                .get("thoughtSignature")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            content.push(GenerateContent::ToolCall {
-                tool_call_id: id,
-                tool_name: name,
-                input,
-                provider_executed: None,
-                dynamic: None,
-                thought_signature,
-                provider_metadata: None,
-            });
-            has_tool_calls = true;
         }
     }
+
+    // Sources are appended after the parts (mirrors TS / google provider).
+    let mut sources = extract_sources(candidate.grounding_metadata.as_ref(), &mut source_id);
+    content.append(&mut sources);
 
     (content, has_tool_calls)
 }

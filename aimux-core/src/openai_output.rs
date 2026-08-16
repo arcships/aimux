@@ -224,6 +224,7 @@ impl Default for OpenAiStreamOptions {
 /// `model` is the model ID to place in the response (usually the model the
 /// caller invoked). If `result.response.model_id` is present it takes
 /// precedence.
+#[must_use]
 pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletion {
     let mut content_text = String::new();
     let mut reasoning_text = String::new();
@@ -297,9 +298,9 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                     content_text.push('\n');
                 }
                 let prefix = if is_error.unwrap_or(false) {
-                    format!("[tool error: {}] ", tool_name)
+                    format!("[tool error: {tool_name}] ")
                 } else {
-                    format!("[tool result: {}] ", tool_name)
+                    format!("[tool result: {tool_name}] ")
                 };
                 content_text.push_str(&prefix);
                 content_text.push_str(&result.to_string());
@@ -399,6 +400,7 @@ impl std::fmt::Debug for ChatCompletionStream {
 /// the first chunk carries `delta.role = "assistant"`, content/reasoning/tool
 /// deltas follow, and the final chunk carries `finish_reason` (and `usage` if
 /// `include_usage` is set).
+#[must_use]
 pub fn to_chat_completion_stream(
     stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>>,
     model: &str,
@@ -745,7 +747,7 @@ impl StreamState {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = format!("[tool result: {}] {}", tool_name, result);
+                let text = format!("[tool result: {tool_name}] {result}");
                 let mut chunk = self.base_chunk();
                 chunk.choices = vec![ChatCompletionChunkChoice {
                     index: 0,
@@ -834,7 +836,7 @@ impl StreamState {
         chunk.choices = vec![ChatCompletionChunkChoice {
             index: 0,
             delta: ChatCompletionDelta {
-                content: Some(format!("[error] {}", error)),
+                content: Some(format!("[error] {error}")),
                 ..Default::default()
             },
             finish_reason: None,
@@ -889,9 +891,10 @@ impl StreamState {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Encode a [`ChatCompletionChunk`] as an SSE `data:` line: `data: {json}\n\n`.
+#[must_use]
 pub fn encode_chunk_sse(chunk: &ChatCompletionChunk) -> String {
     let json = serde_json::to_string(chunk).unwrap_or_else(|_| "{}".to_string());
-    format!("data: {}\n\n", json)
+    format!("data: {json}\n\n")
 }
 
 /// The SSE terminator frame.
@@ -943,12 +946,12 @@ fn file_data_to_text(data: &FileData, media_type: &str) -> String {
         FileData::Url { url } => url.clone(),
         FileData::Data { data } => match data {
             crate::shared::FileBytes::Base64(b64) => {
-                format!("data:{};base64,{}", media_type, b64)
+                format!("data:{media_type};base64,{b64}")
             }
             crate::shared::FileBytes::Binary(bytes) => {
                 use base64::Engine;
                 let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-                format!("data:{};base64,{}", media_type, b64)
+                format!("data:{media_type};base64,{b64}")
             }
         },
         FileData::Reference { reference } => serde_json::to_string(reference).unwrap_or_default(),
@@ -973,7 +976,7 @@ fn random_id() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let count = COUNTER.fetch_add(1, Ordering::Relaxed);
     let ts = now_unix();
-    format!("{:012x}{:012x}", ts, count)
+    format!("{ts:012x}{count:012x}")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

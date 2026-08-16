@@ -11,10 +11,8 @@
 //! therefore verify that a timestamp is present and that `model_id` matches,
 //! rather than asserting an exact timestamp value.
 //!
-//! The TS `doStream` tests use a mock WebSocket which is not practical to
-//! translate to Rust (the Rust port does not implement realtime WebSocket
-//! streaming). Those tests are omitted; the `do_stream` trait default returns
-//! `AiMuxError::UnsupportedFunctionality`.
+//! The TS `doStream` tests are translated in
+//! `openai_transcription_stream_test.rs` (RFC-0028: local WebSocket server).
 
 use std::collections::HashMap;
 

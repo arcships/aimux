@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (python / node bindings)**: streaming-transcription sessions
+  now surface in-stream errors by raising (`next_part`) / rejecting
+  (`nextPart`) the typed error hierarchy instead of returning a serialized
+  `{"Err": ...}` part through the data channel, and part payloads are no
+  longer wrapped in a `{"Ok": ...}` envelope — both now match the C-ABI
+  session shape and the other six bindings (#145). Code that parsed the
+  envelope manually must catch the exception instead.
+
 ## [0.3.0] - 2026-08-10
 
 **Breaking release.** Reworks the error model across the C ABI and every

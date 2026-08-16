@@ -48,6 +48,7 @@ pub struct XaiModel {
 }
 
 impl XaiModel {
+    #[must_use]
     pub fn new(model_id: String, config: super::XAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -138,7 +139,7 @@ impl LanguageModel for XaiModel {
                 provider_code: raw_value
                     .get("code")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
                 message: error_msg.to_string(),
                 response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
                 ..Default::default()
@@ -255,11 +256,9 @@ impl LanguageModel for XaiModel {
             raw: None,
         });
 
-        let timestamp = data.created.map(|c| {
-            chrono::DateTime::from_timestamp(c as i64, 0)
-                .map(|dt| dt.to_rfc3339())
-                .unwrap_or_default()
-        });
+        let timestamp = data
+            .created
+            .and_then(|c| chrono::DateTime::from_timestamp(c as i64, 0).map(|dt| dt.to_rfc3339()));
 
         Ok(GenerateResult {
             content,
@@ -306,7 +305,7 @@ impl LanguageModel for XaiModel {
         // errors with 200 status and content-type application/json.
         let content_type = response_headers
             .get("content-type")
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .unwrap_or("");
         if content_type.contains("application/json") {
             // Collect the (non-SSE) JSON body and check for an error object.
@@ -324,7 +323,7 @@ impl LanguageModel for XaiModel {
                     provider_code: val
                         .get("code")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     message: err_msg.to_string(),
                     response_body: Some(String::from_utf8_lossy(&buf).into_owned()),
                     ..Default::default()
@@ -349,7 +348,7 @@ impl LanguageModel for XaiModel {
                     provider_code: val
                         .get("code")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     message: err_msg.to_string(),
                     response_body: Some(event.data.clone()),
                     ..Default::default()
@@ -493,7 +492,7 @@ impl LanguageModel for XaiModel {
                                         == Some(text_content.as_str());
 
                                 if !is_dup {
-                                    let block_id = format!("text-{}", chunk_id);
+                                    let block_id = format!("text-{chunk_id}");
                                     if !content_blocks.contains_key(&block_id) {
                                         content_blocks.insert(block_id.clone(), false);
                                         yield Ok(StreamPart::TextStart {
@@ -513,10 +512,10 @@ impl LanguageModel for XaiModel {
                             if let Some(reasoning_content) = &delta.reasoning_content
                                 && !reasoning_content.is_empty()
                             {
-                                let block_id = format!("reasoning-{}", chunk_id);
+                                let block_id = format!("reasoning-{chunk_id}");
 
                                 // Skip if duplicates last delta.
-                                if last_reasoning_deltas.get(&block_id).map(|s| s.as_str())
+                                if last_reasoning_deltas.get(&block_id).map(std::string::String::as_str)
                                     != Some(reasoning_content.as_str())
                                 {
                                     last_reasoning_deltas

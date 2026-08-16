@@ -56,18 +56,24 @@ impl JinaAiConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Attach extra default headers sent with every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Create from the `JINA_AI_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `JINA_AI_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "JINA_AI_API_KEY", "Jina AI")?;
         Ok(Self::new(api_key))
@@ -82,12 +88,14 @@ pub struct JinaAiProvider {
 }
 
 impl JinaAiProvider {
+    #[must_use]
     pub fn new(config: JinaAiConfig) -> Self {
         Self { config }
     }
 
     /// Create a reranking model instance for the given model name (e.g.
     /// `"jina-reranker-v2-base-multilingual"` or `"jina-reranker-v3"`).
+    #[must_use]
     pub fn reranking_model(&self, model_id: &str) -> JinaAiRerankingModel {
         JinaAiRerankingModel::new(model_id.to_string(), self.config.clone())
     }
@@ -111,7 +119,9 @@ fn parse_jina_reranking_options(
     let mut opts = JinaRerankingOptions::default();
     if let Some(po) = provider_options
         && let Some(jina) = po.get("jina")
-        && let Some(v) = jina.get("returnDocuments").and_then(|v| v.as_bool())
+        && let Some(v) = jina
+            .get("returnDocuments")
+            .and_then(serde_json::Value::as_bool)
     {
         opts.return_documents = Some(v);
     }
@@ -135,7 +145,10 @@ fn build_request_body(
                 feature: "object documents".to_string(),
                 details: Some("Object documents are converted to strings.".to_string()),
             });
-            values.iter().map(|v| v.to_string()).collect()
+            values
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect()
         }
     };
 
@@ -178,6 +191,7 @@ pub struct JinaAiRerankingModel {
 }
 
 impl JinaAiRerankingModel {
+    #[must_use]
     pub fn new(model_id: String, config: JinaAiConfig) -> Self {
         Self { model_id, config }
     }

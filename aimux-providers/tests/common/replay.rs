@@ -1,4 +1,4 @@
-﻿//! Cassette replay infrastructure for offline provider tests.
+//! Cassette replay infrastructure for offline provider tests.
 //!
 //! Loads JSON cassette files (see RFC 0003) describing recorded HTTP exchanges
 //! and mounts them onto a [`wiremock`] `MockServer`. A provider under test is
@@ -221,7 +221,7 @@ fn load_cassettes(dir: &Path) -> Vec<Cassette> {
     };
 
     let mut files: Vec<_> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("json"))
         .collect();
@@ -233,29 +233,29 @@ fn load_cassettes(dir: &Path) -> Vec<Cassette> {
 
         let text = match fs::read_to_string(&f) {
             Ok(t) => t,
-            Err(e) => panic!("replay: cannot read {}: {}", label, e),
+            Err(e) => panic!("replay: cannot read {label}: {e}"),
         };
         let v: Value = match serde_json::from_str(&text) {
             Ok(v) => v,
-            Err(e) => panic!("replay: invalid JSON in {}: {}", label, e),
+            Err(e) => panic!("replay: invalid JSON in {label}: {e}"),
         };
 
         let req = v
             .get("request")
-            .unwrap_or_else(|| panic!("replay: {} missing `request` object", label));
+            .unwrap_or_else(|| panic!("replay: {label} missing `request` object"));
         let resp = v
             .get("response")
-            .unwrap_or_else(|| panic!("replay: {} missing `response` object", label));
+            .unwrap_or_else(|| panic!("replay: {label} missing `response` object"));
 
         let method = req
             .get("method")
             .and_then(|m| m.as_str())
-            .unwrap_or_else(|| panic!("replay: {} missing `request.method`", label))
+            .unwrap_or_else(|| panic!("replay: {label} missing `request.method`"))
             .to_ascii_uppercase();
         let req_path = req
             .get("path")
             .and_then(|p| p.as_str())
-            .unwrap_or_else(|| panic!("replay: {} missing `request.path`", label))
+            .unwrap_or_else(|| panic!("replay: {label} missing `request.path`"))
             // Percent-decode the recorded path so it matches the path the HTTP
             // client actually sends. Cassettes sourced from rig record paths
             // verbatim from the wire, where characters like `:` in Bedrock model
@@ -266,18 +266,17 @@ fn load_cassettes(dir: &Path) -> Vec<Cassette> {
         let req_path = percent_decode(&req_path);
         let status = resp
             .get("status")
-            .and_then(|s| s.as_u64())
-            .unwrap_or_else(|| panic!("replay: {} missing numeric `response.status`", label))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| panic!("replay: {label} missing numeric `response.status`"))
             as u16;
         let req_body = req.get("body").cloned().unwrap_or(Value::Null);
 
         let body_str = match resp.get("body") {
             None => "",
             Some(Value::String(s)) => s.as_str(),
-            Some(other) => panic!(
-                "replay: {} `response.body` must be a raw string, got {}",
-                label, other
-            ),
+            Some(other) => {
+                panic!("replay: {label} `response.body` must be a raw string, got {other}")
+            }
         };
 
         // `set_body_bytes` sets the body without forcing a content-type, so the

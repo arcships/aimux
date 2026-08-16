@@ -31,8 +31,7 @@ fn assert_unsupported_warning(warnings: &[Warning], feature: &str) {
     });
     assert!(
         found,
-        "expected Unsupported warning for {:?}, got {:?}",
-        feature, warnings
+        "expected Unsupported warning for {feature:?}, got {warnings:?}"
     );
 }
 

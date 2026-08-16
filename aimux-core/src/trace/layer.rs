@@ -122,6 +122,7 @@ impl TraceLayer {
 
     /// Default session id (used when `CallOptions.session_id` is absent) +
     /// session key (32-byte HMAC-style salt for fingerprint scoping).
+    #[must_use]
     pub fn with_default_session(mut self, session_id: String, key: [u8; 32]) -> Self {
         self.default_session = Some(session_id);
         let mut acc = 0x9e37_79b9_7f4a_7c15u64;
@@ -137,12 +138,14 @@ impl TraceLayer {
     }
 
     /// Attach an auditor (default: none — verdict stays `None`).
+    #[must_use]
     pub fn with_auditor(mut self, auditor: Arc<dyn CacheAuditor>) -> Self {
         self.auditor = Some(auditor);
         self
     }
 
     /// Convenience: attach the built-in rules auditor in strict/shared mode.
+    #[must_use]
     pub fn with_rules_auditor(mut self, strict: bool) -> Self {
         self.strict = strict;
         self.auditor = Some(Arc::new(RuleAuditor));
@@ -338,12 +341,12 @@ impl RecordCtx {
                     .raw
                     .as_ref()
                     .and_then(|r| r.get("prompt_cache_hit_tokens"))
-                    .and_then(|v| v.as_u64()),
+                    .and_then(serde_json::Value::as_u64),
                 miss: usage
                     .raw
                     .as_ref()
                     .and_then(|r| r.get("prompt_cache_miss_tokens"))
-                    .and_then(|v| v.as_u64()),
+                    .and_then(serde_json::Value::as_u64),
                 usage_present,
                 response_cache_header_hit: self
                     .response_headers
@@ -512,6 +515,12 @@ impl LanguageModel for TraceLayer {
 
     fn model_id(&self) -> &str {
         self.inner.model_id()
+    }
+
+    /// RFC-0023 §3.3: transparent decorators must forward the inner snapshot
+    /// (otherwise recording sees the decorator's minimal record).
+    fn config_snapshot(&self) -> crate::recording::ProviderRecord {
+        self.inner.config_snapshot()
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

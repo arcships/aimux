@@ -1,4 +1,4 @@
-﻿//! Anthropic `cache_control` validation.
+//! Anthropic `cache_control` validation.
 //!
 //! Rust port of the TS `get-cache-control.ts` `CacheControlValidator`. The
 //! validator is constructed once per prompt conversion and tracks the number of
@@ -18,6 +18,7 @@ const MAX_CACHE_BREAKPOINTS: u32 = 4;
 /// snake_case `cache_control` keys under `providerOptions.anthropic`.
 ///
 /// The value is passed through unchanged (the Anthropic API validates it).
+#[must_use]
 pub fn extract_cache_control(provider_options: Option<&Value>) -> Option<Value> {
     let opts = provider_options?;
     let anthropic = opts.get("anthropic")?;
@@ -37,6 +38,7 @@ pub struct CacheControlValidator {
 }
 
 impl CacheControlValidator {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -68,8 +70,7 @@ impl CacheControlValidator {
             self.warnings.push(Warning::Unsupported {
                 feature: "cache_control on non-cacheable context".to_string(),
                 details: Some(format!(
-                    "cache_control cannot be set on {}. It will be ignored.",
-                    context_type
+                    "cache_control cannot be set on {context_type}. It will be ignored."
                 )),
             });
             return None;

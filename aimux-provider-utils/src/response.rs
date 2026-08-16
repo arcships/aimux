@@ -23,6 +23,7 @@ pub const DEFAULT_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
 /// caller the way the AI SDK reads `APICallError.statusCode`.
 /// Retryability (408/409/429/5xx) is stored in `is_retryable` at
 /// construction, as the AI SDK stores `APICallError.isRetryable`.
+#[must_use]
 pub fn parse_provider_error(status: u16, body: &str, structure: &ErrorStructure) -> AiMuxError {
     // Empty: `ApiCallError`'s Display shows the status on its own.
     let mut message = String::new();
@@ -82,6 +83,7 @@ pub fn parse_provider_error(status: u16, body: &str, structure: &ErrorStructure)
 /// `APICallError.statusCode`. The retry hint is stored only when the provider
 /// actually sent one (`retry-after-ms`/`retry-after`) — no fallback is
 /// fabricated; a hint-less 429 gets the retry loop's exponential backoff.
+#[must_use]
 pub fn error_for_status(
     status: u16,
     provider_code: Option<String>,
@@ -115,32 +117,33 @@ pub fn error_for_status(
 /// `provider_code`. Reading a string `code` as a status was the M3 bug, and so
 /// was defaulting a missing one to 500 — a mid-stream error arrives on a
 /// *successful* response, so "no status" is the truth.
+#[must_use]
 pub fn parse_stream_error(err_obj: &serde_json::Value) -> AiMuxError {
     let str_field = |k: &str| {
         err_obj
             .get(k)
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
     };
     let message = str_field("message").unwrap_or_else(|| "Unknown stream error".to_string());
     let code = err_obj.get("code");
     let status = code
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .filter(|c| (100..=599).contains(c))
         .map(|c| c as u16);
     let provider_code = code
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .or_else(|| str_field("type"));
     // Retry hint from the payload when the provider sends one (ms wins over
     // whole seconds); absent means absent — nothing is fabricated.
     let retry_after_ms = err_obj
         .get("retry_after_ms")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .or_else(|| {
             err_obj
                 .get("retry_after")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .map(|s| s * 1000)
         });
 

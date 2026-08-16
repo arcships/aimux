@@ -37,11 +37,18 @@ impl SerperConfig {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
+    /// Create from the `SERPER_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "SERPER_API_KEY", "Serper")?;
         Ok(Self::new(api_key))
@@ -54,10 +61,12 @@ pub struct SerperProvider {
 }
 
 impl SerperProvider {
+    #[must_use]
     pub fn new(config: SerperConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn search_model(&self) -> SerperSearchModel {
         SerperSearchModel::new(self.config.clone())
     }
@@ -115,6 +124,7 @@ pub struct SerperSearchModel {
 }
 
 impl SerperSearchModel {
+    #[must_use]
     pub fn new(config: SerperConfig) -> Self {
         Self { config }
     }

@@ -55,10 +55,16 @@ fn parse_google_files_options(
         if let Some(display_name) = google.get("displayName").and_then(|v| v.as_str()) {
             opts.display_name = Some(display_name.to_string());
         }
-        if let Some(interval) = google.get("pollIntervalMs").and_then(|v| v.as_u64()) {
+        if let Some(interval) = google
+            .get("pollIntervalMs")
+            .and_then(serde_json::Value::as_u64)
+        {
             opts.poll_interval_ms = Some(interval);
         }
-        if let Some(timeout) = google.get("pollTimeoutMs").and_then(|v| v.as_u64()) {
+        if let Some(timeout) = google
+            .get("pollTimeoutMs")
+            .and_then(serde_json::Value::as_u64)
+        {
             opts.poll_timeout_ms = Some(timeout);
         }
     }
@@ -116,6 +122,7 @@ pub struct GoogleFiles {
 }
 
 impl GoogleFiles {
+    #[must_use]
     pub fn new(config: GoogleConfig) -> Self {
         Self { config }
     }

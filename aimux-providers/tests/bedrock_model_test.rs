@@ -61,7 +61,7 @@ async fn mock_converse_json(server: &MockServer, status: u16, body: Value) {
 fn as_text(item: &GenerateContent) -> &str {
     match item {
         GenerateContent::Text { text, .. } => text,
-        _ => panic!("expected Text content, got {:?}", item),
+        _ => panic!("expected Text content, got {item:?}"),
     }
 }
 
@@ -73,7 +73,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             input,
             ..
         } => (tool_call_id, tool_name, input),
-        _ => panic!("expected ToolCall content, got {:?}", item),
+        _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
 
@@ -83,7 +83,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -202,8 +202,7 @@ async fn bedrock_generate_error_status() {
     let err = result.unwrap_err().to_string();
     assert!(
         err.contains("invalid") || err.contains("ValidationException") || err.contains("model ID"),
-        "error should contain the error message, got: {}",
-        err
+        "error should contain the error message, got: {err}"
     );
 }
 
@@ -245,8 +244,7 @@ async fn bedrock_generate_request_body() {
     let temp = body["inferenceConfig"]["temperature"].as_f64().unwrap();
     assert!(
         (temp - 0.7).abs() < 0.001,
-        "temperature should be ~0.7, got {}",
-        temp
+        "temperature should be ~0.7, got {temp}"
     );
 }
 

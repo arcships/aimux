@@ -40,6 +40,7 @@ pub struct OpenAIModel {
 }
 
 impl OpenAIModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -62,8 +63,9 @@ impl OpenAIModel {
 
 /// Build the auth + provider-level headers from a config (no per-call headers).
 ///
-/// Shared by [`OpenAIModel::build_headers`] and the model-listing path
+/// Shared by `OpenAIModel::build_headers` and the model-listing path
 /// ([`execute_list_models`]) so both use identical auth wiring.
+#[must_use]
 pub fn build_auth_headers(config: &super::OpenAIConfig) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     headers.insert(
@@ -212,7 +214,7 @@ impl LanguageModel for OpenAIModel {
     /// Provider identity for recording/routing. Uses `config.provider` (the
     /// registry entry name, e.g. `"deepseek"`/`"groq"`) rather than a hardcoded
     /// `"openai"`, so OpenAI-compatible providers keep their real identity —
-    /// mirroring the Responses path ([`OpenAIResponsesModel::provider`]).
+    /// mirroring the Responses path (`OpenAIResponsesModel::provider`).
     /// Direct `OpenAIProvider` use defaults to `"openai"`.
     fn provider(&self) -> &str {
         &self.config.provider
@@ -282,6 +284,12 @@ fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, String)>
 /// `endpoint` is the full chat-completions URL; `headers` carries the auth
 /// headers (and any extra/request headers); `model_id` is placed in the
 /// request body's `model` field.
+///
+/// # Errors
+///
+/// Returns request-build conversion errors, `ApiCall` for HTTP/transport
+/// failures, `JsonParse` for a malformed body, and `InvalidResponseData` when
+/// `choices` is empty.
 pub async fn execute_generate(
     endpoint: &str,
     headers: &HashMap<String, String>,
@@ -371,16 +379,16 @@ pub async fn execute_generate(
                 && let Some(uc) = ann.get("url_citation")
             {
                 content.push(GenerateContent::Source {
-                    id: format!("annotation-{}", i),
+                    id: format!("annotation-{i}"),
                     source_type: "url".to_string(),
                     url: uc
                         .get("url")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     title: uc
                         .get("title")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                     provider_metadata: None,
                 });
             }
@@ -424,7 +432,10 @@ pub async fn execute_generate(
         provider_metadata,
         response: ResponseMetadata {
             id: Some(data.id),
-            timestamp: None,
+            timestamp: data
+                .created
+                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                .map(|dt| dt.to_rfc3339()),
             model_id: Some(data.model),
         },
         request_body: Some(body),
@@ -437,6 +448,11 @@ pub async fn execute_generate(
 /// `endpoint` is the full chat-completions URL; `headers` carries the auth
 /// headers (and any extra/request headers); `model_id` is placed in the
 /// request body's `model` field.
+///
+/// # Errors
+///
+/// Returns request-build conversion errors and `ApiCall` when establishing the
+/// stream fails; transport errors surface as `Err` items in the stream.
 pub async fn execute_stream(
     endpoint: &str,
     headers: &HashMap<String, String>,
@@ -590,7 +606,10 @@ pub async fn execute_stream(
                         response_metadata_emitted = true;
                         yield Ok(StreamPart::ResponseMetadata {
                             id: chunk.id.clone(),
-                            timestamp: None,
+                            timestamp: chunk
+                                .created
+                                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                                .map(|dt| dt.to_rfc3339()),
                             model_id: chunk.model.clone(),
                         });
                     }
@@ -645,12 +664,12 @@ pub async fn execute_stream(
                             if !text_started {
                                 text_started = true;
                                 yield Ok(StreamPart::TextStart {
-                                    id: format!("{}", text_id),
+                                    id: format!("{text_id}"),
                                     provider_metadata: None,
                                 });
                             }
                             yield Ok(StreamPart::TextDelta {
-                                id: format!("{}", text_id),
+                                id: format!("{text_id}"),
                                 delta: content,
                                 provider_metadata: None,
                             });
@@ -713,6 +732,30 @@ pub async fn execute_stream(
                             }
                         }
 
+                        // Annotations / citations (URL citations → Source).
+                        if let Some(annotations) = choice.delta.annotations {
+                            for (i, ann) in annotations.iter().enumerate() {
+                                if ann.get("type").and_then(|v| v.as_str())
+                                    == Some("url_citation")
+                                    && let Some(uc) = ann.get("url_citation")
+                                {
+                                    yield Ok(StreamPart::Source {
+                                        id: format!("annotation-{i}"),
+                                        source_type: "url".to_string(),
+                                        url: uc
+                                            .get("url")
+                                            .and_then(|v| v.as_str())
+                                            .map(std::string::ToString::to_string),
+                                        title: uc
+                                            .get("title")
+                                            .and_then(|v| v.as_str())
+                                            .map(std::string::ToString::to_string),
+                                        provider_metadata: None,
+                                    });
+                                }
+                            }
+                        }
+
                         // Finish reason.
                         if let Some(reason) = choice.finish_reason {
                             // Close any open reasoning segment.
@@ -727,7 +770,7 @@ pub async fn execute_stream(
                             // Close any open text segment.
                             if text_started {
                                 yield Ok(StreamPart::TextEnd {
-                                    id: format!("{}", text_id),
+                                    id: format!("{text_id}"),
                                     provider_metadata: None,
                                 });
                                 text_started = false;
@@ -782,7 +825,7 @@ pub async fn execute_stream(
         // Close any remaining open text segment.
         if text_started {
             yield Ok(StreamPart::TextEnd {
-                id: format!("{}", text_id),
+                id: format!("{text_id}"),
                 provider_metadata: None,
             });
         }
@@ -877,6 +920,11 @@ struct ModelEntry {
 ///
 /// `headers` carries the auth headers (Bearer key etc.); `base_url` is the
 /// provider's API base (e.g. `https://api.openai.com/v1`).
+///
+/// # Errors
+///
+/// Returns `ApiCall` for HTTP/transport failures and `JsonParse` when the
+/// body does not deserialize into the models list.
 pub async fn execute_list_models(
     base_url: &str,
     headers: &HashMap<String, String>,

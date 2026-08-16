@@ -84,7 +84,7 @@ async fn mock_sse(server: &MockServer, body: String) {
 
 /// Build a single SSE `data: <json>\n\n` event string.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events (no `[DONE]` sentinel — HF Responses SSE has none).
@@ -103,7 +103,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -172,7 +172,7 @@ async fn should_generate_text() {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Hello! How can I help you today?");
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
 }
 
@@ -252,7 +252,7 @@ async fn should_extract_text_from_output_array_when_output_text_missing() {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Extracted from output array");
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
 }
 
@@ -447,7 +447,7 @@ async fn should_generate_text_and_sources_from_annotations() {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "Here are some recent articles about AI.");
         }
-        other => panic!("expected Text at [0], got {:?}", other),
+        other => panic!("expected Text at [0], got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::Source { id, url, title, .. } => {
@@ -455,7 +455,7 @@ async fn should_generate_text_and_sources_from_annotations() {
             assert_eq!(url.as_deref(), Some("https://example.com/article1"));
             assert_eq!(title.as_deref(), Some("AI Developments Article"));
         }
-        other => panic!("expected Source at [1], got {:?}", other),
+        other => panic!("expected Source at [1], got {other:?}"),
     }
     match &result.content[2] {
         GenerateContent::Source { id, url, title, .. } => {
@@ -463,7 +463,7 @@ async fn should_generate_text_and_sources_from_annotations() {
             assert_eq!(url.as_deref(), Some("https://test.com/article2"));
             assert_eq!(title.as_deref(), Some("Industry Trends Report"));
         }
-        other => panic!("expected Source at [2], got {:?}", other),
+        other => panic!("expected Source at [2], got {other:?}"),
     }
 }
 
@@ -529,10 +529,10 @@ async fn should_handle_mcp_tools_with_annotations() {
         .await
         .expect("should succeed");
 
-    // content: tool-call, text, source, source
-    // (Rust GenerateContent has no ToolResult variant — the TS tool-result is
-    // omitted.)
-    assert_eq!(result.content.len(), 4);
+    // content: tool-call, tool-result, text, source, source — the `mcp_call`
+    // carries an `output`, which is surfaced as the paired ToolResult (the TS
+    // emits it as a separate content item too).
+    assert_eq!(result.content.len(), 5);
     match &result.content[0] {
         GenerateContent::ToolCall {
             tool_call_id,
@@ -544,19 +544,30 @@ async fn should_handle_mcp_tools_with_annotations() {
             assert_eq!(tool_name, "search");
             assert_eq!(input, &json!({ "query": "San Francisco tech events" }));
         }
-        other => panic!("expected ToolCall at [0], got {:?}", other),
+        other => panic!("expected ToolCall at [0], got {other:?}"),
     }
     match &result.content[1] {
-        GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the search results."),
-        other => panic!("expected Text at [1], got {:?}", other),
+        GenerateContent::ToolResult {
+            tool_call_id,
+            tool_name,
+            ..
+        } => {
+            assert_eq!(tool_call_id, "mcp_search_test");
+            assert_eq!(tool_name, "search");
+        }
+        other => panic!("expected ToolResult at [1], got {other:?}"),
     }
     match &result.content[2] {
-        GenerateContent::Source { id, .. } => assert_eq!(id, "id-0"),
-        other => panic!("expected Source at [2], got {:?}", other),
+        GenerateContent::Text { text, .. } => assert_eq!(text, "Based on the search results."),
+        other => panic!("expected Text at [2], got {other:?}"),
     }
     match &result.content[3] {
+        GenerateContent::Source { id, .. } => assert_eq!(id, "id-0"),
+        other => panic!("expected Source at [3], got {other:?}"),
+    }
+    match &result.content[4] {
         GenerateContent::Source { id, .. } => assert_eq!(id, "id-1"),
-        other => panic!("expected Source at [3], got {:?}", other),
+        other => panic!("expected Source at [4], got {other:?}"),
     }
 }
 
@@ -614,12 +625,12 @@ async fn should_stream_text_deltas() {
             assert_eq!(id.as_deref(), Some("resp_test"));
             assert_eq!(model_id.as_deref(), Some("deepseek-ai/DeepSeek-V3-0324"));
         }
-        other => panic!("expected ResponseMetadata, got {:?}", other),
+        other => panic!("expected ResponseMetadata, got {other:?}"),
     }
 
     match &parts[2] {
         StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_test"),
-        other => panic!("expected TextStart, got {:?}", other),
+        other => panic!("expected TextStart, got {other:?}"),
     }
 
     match &parts[3] {
@@ -627,18 +638,18 @@ async fn should_stream_text_deltas() {
             assert_eq!(id, "msg_test");
             assert_eq!(delta, "Hello,");
         }
-        other => panic!("expected TextDelta, got {:?}", other),
+        other => panic!("expected TextDelta, got {other:?}"),
     }
     match &parts[4] {
         StreamPart::TextDelta { id, delta, .. } => {
             assert_eq!(id, "msg_test");
             assert_eq!(delta, " World!");
         }
-        other => panic!("expected TextDelta, got {:?}", other),
+        other => panic!("expected TextDelta, got {other:?}"),
     }
     match &parts[5] {
         StreamPart::TextEnd { id, .. } => assert_eq!(id, "msg_test"),
-        other => panic!("expected TextEnd, got {:?}", other),
+        other => panic!("expected TextEnd, got {other:?}"),
     }
     match &parts[6] {
         StreamPart::Finish {
@@ -650,7 +661,7 @@ async fn should_stream_text_deltas() {
             assert_eq!(usage.input_tokens.total, Some(12));
             assert_eq!(usage.output_tokens.total, Some(25));
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 
@@ -892,8 +903,7 @@ async fn should_throw_for_file_parts_with_provider_references() {
     assert!(
         err.to_string()
             .contains("file parts with provider references"),
-        "error should mention provider references, got: {}",
-        err
+        "error should mention provider references, got: {err}"
     );
 }
 
@@ -1068,7 +1078,8 @@ async fn should_handle_function_call_tool_responses() {
         .await
         .expect("should succeed");
 
-    // content: tool-call, text (Rust has no ToolResult in GenerateContent)
+    // content: tool-call, text — a client-executed `function_call` carries no
+    // output, so there is no paired ToolResult.
     assert_eq!(result.content.len(), 2);
     match &result.content[0] {
         GenerateContent::ToolCall {
@@ -1081,13 +1092,13 @@ async fn should_handle_function_call_tool_responses() {
             assert_eq!(tool_name, "getWeather");
             assert_eq!(input, &json!({ "location": "New York" }));
         }
-        other => panic!("expected ToolCall at [0], got {:?}", other),
+        other => panic!("expected ToolCall at [0], got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "The weather in New York is 72°F and sunny.");
         }
-        other => panic!("expected Text at [1], got {:?}", other),
+        other => panic!("expected Text at [1], got {other:?}"),
     }
 }
 
@@ -1138,7 +1149,7 @@ async fn should_stream_tool_calls() {
             assert_eq!(id.as_deref(), Some("resp_tool_stream"));
             assert_eq!(model_id.as_deref(), Some("deepseek-ai/DeepSeek-V3-0324"));
         }
-        other => panic!("expected ResponseMetadata, got {:?}", other),
+        other => panic!("expected ResponseMetadata, got {other:?}"),
     }
 
     match &parts[2] {
@@ -1146,11 +1157,11 @@ async fn should_stream_tool_calls() {
             assert_eq!(id, "call_456");
             assert_eq!(tool_name, "calculator");
         }
-        other => panic!("expected ToolInputStart, got {:?}", other),
+        other => panic!("expected ToolInputStart, got {other:?}"),
     }
     match &parts[3] {
         StreamPart::ToolInputEnd { id, .. } => assert_eq!(id, "call_456"),
-        other => panic!("expected ToolInputEnd, got {:?}", other),
+        other => panic!("expected ToolInputEnd, got {other:?}"),
     }
     match &parts[4] {
         StreamPart::ToolCall {
@@ -1163,7 +1174,7 @@ async fn should_stream_tool_calls() {
             assert_eq!(tool_name, "calculator");
             assert_eq!(input, &json!({ "operation": "add", "a": 5, "b": 3 }));
         }
-        other => panic!("expected ToolCall, got {:?}", other),
+        other => panic!("expected ToolCall, got {other:?}"),
     }
     match &parts[5] {
         StreamPart::ToolResult {
@@ -1174,7 +1185,7 @@ async fn should_stream_tool_calls() {
             assert_eq!(tool_call_id, "call_456");
             assert_eq!(result, &json!("8"));
         }
-        other => panic!("expected ToolResult, got {:?}", other),
+        other => panic!("expected ToolResult, got {other:?}"),
     }
     match &parts[6] {
         StreamPart::Finish {
@@ -1186,7 +1197,7 @@ async fn should_stream_tool_calls() {
             assert_eq!(usage.input_tokens.total, Some(20));
             assert_eq!(usage.output_tokens.total, Some(15));
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 
@@ -1393,11 +1404,11 @@ async fn should_handle_reasoning_content_in_responses() {
                 Some(&json!({ "huggingface": { "itemId": "reasoning_1" } }))
             );
         }
-        other => panic!("expected Reasoning at [0], got {:?}", other),
+        other => panic!("expected Reasoning at [0], got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::Text { text, .. } => assert_eq!(text, "The answer is 42."),
-        other => panic!("expected Text at [1], got {:?}", other),
+        other => panic!("expected Text at [1], got {other:?}"),
     }
 }
 
@@ -1464,7 +1475,7 @@ async fn should_stream_reasoning_content() {
             assert_eq!(id.as_deref(), Some("resp_reasoning_stream"));
             assert_eq!(model_id.as_deref(), Some("deepseek-ai/DeepSeek-R1"));
         }
-        other => panic!("expected ResponseMetadata, got {:?}", other),
+        other => panic!("expected ResponseMetadata, got {other:?}"),
     }
 
     match &parts[2] {
@@ -1478,47 +1489,47 @@ async fn should_stream_reasoning_content() {
                 Some(&json!({ "huggingface": { "itemId": "reasoning_stream" } }))
             );
         }
-        other => panic!("expected ReasoningStart, got {:?}", other),
+        other => panic!("expected ReasoningStart, got {other:?}"),
     }
     match &parts[3] {
         StreamPart::ReasoningDelta { id, delta, .. } => {
             assert_eq!(id, "reasoning_stream");
             assert_eq!(delta, "Thinking about");
         }
-        other => panic!("expected ReasoningDelta, got {:?}", other),
+        other => panic!("expected ReasoningDelta, got {other:?}"),
     }
     match &parts[4] {
         StreamPart::ReasoningDelta { id, delta, .. } => {
             assert_eq!(id, "reasoning_stream");
             assert_eq!(delta, " the problem...");
         }
-        other => panic!("expected ReasoningDelta, got {:?}", other),
+        other => panic!("expected ReasoningDelta, got {other:?}"),
     }
     match &parts[5] {
         StreamPart::ReasoningEnd { id, .. } => assert_eq!(id, "reasoning_stream"),
-        other => panic!("expected ReasoningEnd, got {:?}", other),
+        other => panic!("expected ReasoningEnd, got {other:?}"),
     }
     match &parts[6] {
         StreamPart::TextStart { id, .. } => assert_eq!(id, "msg_stream"),
-        other => panic!("expected TextStart, got {:?}", other),
+        other => panic!("expected TextStart, got {other:?}"),
     }
     match &parts[7] {
         StreamPart::TextDelta { id, delta, .. } => {
             assert_eq!(id, "msg_stream");
             assert_eq!(delta, "The solution is");
         }
-        other => panic!("expected TextDelta, got {:?}", other),
+        other => panic!("expected TextDelta, got {other:?}"),
     }
     match &parts[8] {
         StreamPart::TextDelta { id, delta, .. } => {
             assert_eq!(id, "msg_stream");
             assert_eq!(delta, " simple.");
         }
-        other => panic!("expected TextDelta, got {:?}", other),
+        other => panic!("expected TextDelta, got {other:?}"),
     }
     match &parts[9] {
         StreamPart::TextEnd { id, .. } => assert_eq!(id, "msg_stream"),
-        other => panic!("expected TextEnd, got {:?}", other),
+        other => panic!("expected TextEnd, got {other:?}"),
     }
     match &parts[10] {
         StreamPart::Finish {
@@ -1530,7 +1541,7 @@ async fn should_stream_reasoning_content() {
             assert_eq!(usage.input_tokens.total, Some(10));
             assert_eq!(usage.output_tokens.total, Some(20));
         }
-        other => panic!("expected Finish, got {:?}", other),
+        other => panic!("expected Finish, got {other:?}"),
     }
 }
 

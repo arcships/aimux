@@ -1,0 +1,41 @@
+[package]
+name = "aimux-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "aimux Web 控制台 — 浏览器端的 model call 验证与 trace 可视化 (RFC-0029)"
+keywords = ["llm", "ai", "console", "web", "debug"]
+categories = ["command-line-utilities"]
+documentation = "https://docs.rs/aimux-web"
+
+[[bin]]
+name = "aimux-web"
+path = "src/main.rs"
+
+[features]
+# Release / distribution builds: embed the built frontend (web/dist) into the
+# binary so users get a self-contained console with no npm step. Requires
+# `web/dist` to exist at compile time (run `npm run build` first). Dev builds
+# (default) keep serving from disk so the frontend can hot-reload.
+embed-frontend = ["dep:rust-embed"]
+
+[dependencies]
+aimux-core = { workspace = true }
+aimux-providers = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+async-stream = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+clap = { workspace = true }
+rust-embed = { version = "8", optional = true, features = ["mime-guess"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -133,7 +133,7 @@ fn prepare_tools_provider_tool_warns() {
         aimux_core::types::Warning::Unsupported { feature, .. } => {
             assert_eq!(feature, "provider-defined tool provider.tool");
         }
-        other => panic!("expected Unsupported warning, got {:?}", other),
+        other => panic!("expected Unsupported warning, got {other:?}"),
     }
 }
 
@@ -593,13 +593,13 @@ async fn should_extract_reasoning_from_response() {
                 "Okay, so I need to figure out what 2 + 2 is. Let me start by recalling what addition means."
             );
         }
-        other => panic!("expected Reasoning, got {:?}", other),
+        other => panic!("expected Reasoning, got {other:?}"),
     }
     match &result.content[1] {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "2 + 2 = 4");
         }
-        other => panic!("expected Text, got {:?}", other),
+        other => panic!("expected Text, got {other:?}"),
     }
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
 }

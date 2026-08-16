@@ -93,7 +93,7 @@ fn ok_converse_body() -> Value {
 fn as_text(item: &GenerateContent) -> &str {
     match item {
         GenerateContent::Text { text, .. } => text,
-        _ => panic!("expected Text content, got {:?}", item),
+        _ => panic!("expected Text content, got {item:?}"),
     }
 }
 
@@ -105,7 +105,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             input,
             ..
         } => (tool_call_id, tool_name, input),
-        _ => panic!("expected ToolCall content, got {:?}", item),
+        _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
 
@@ -115,7 +115,7 @@ async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamP
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -574,7 +574,7 @@ async fn arn_model_id_encoded_generate_route() {
     let arn = "arn:aws:bedrock:eu-west-1:474668406012:inference-profile/eu.amazon.nova-lite-v1:0";
     let encoded =
         percent_encoding::utf8_percent_encode(arn, percent_encoding::NON_ALPHANUMERIC).to_string();
-    let encoded_path = format!("/model/{}/converse", encoded);
+    let encoded_path = format!("/model/{encoded}/converse");
 
     Mock::given(method("POST"))
         .and(path(&encoded_path))
@@ -611,7 +611,7 @@ async fn arn_model_id_encoded_stream_route() {
     let arn = "arn:aws:bedrock:eu-west-1:474668406012:inference-profile/eu.amazon.nova-lite-v1:0";
     let encoded =
         percent_encoding::utf8_percent_encode(arn, percent_encoding::NON_ALPHANUMERIC).to_string();
-    let encoded_path = format!("/model/{}/converse-stream", encoded);
+    let encoded_path = format!("/model/{encoded}/converse-stream");
 
     let events: Vec<(&str, &str, &str)> = vec![
         ("event", "messageStart", r#"{"role":"assistant"}"#),
@@ -764,8 +764,7 @@ async fn temperature_not_clamped_in_range() {
     let temp = body["inferenceConfig"]["temperature"].as_f64().unwrap();
     assert!(
         (temp - 0.7).abs() < 1e-6,
-        "temperature should be 0.7, got {}",
-        temp
+        "temperature should be 0.7, got {temp}"
     );
     assert!(result.warnings.is_empty(), "no warnings expected");
 }

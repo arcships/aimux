@@ -91,7 +91,7 @@ fn weather_tool() -> FunctionTool {
 /// Mock a JSON `generateContent` response.
 async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:generateContent", model)))
+        .and(path(format!("/models/{model}:generateContent")))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .mount(server)
         .await;
@@ -100,7 +100,7 @@ async fn mock_json_response(server: &MockServer, model: &str, body: Value) {
 /// Mock a JSON `generateContent` response with a custom status code.
 async fn mock_json_error(server: &MockServer, model: &str, status: u16, body: Value) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:generateContent", model)))
+        .and(path(format!("/models/{model}:generateContent")))
         .respond_with(ResponseTemplate::new(status).set_body_json(body))
         .mount(server)
         .await;
@@ -109,7 +109,7 @@ async fn mock_json_error(server: &MockServer, model: &str, status: u16, body: Va
 /// Mock an SSE `streamGenerateContent` response.
 async fn mock_sse_response(server: &MockServer, model: &str, sse_body: &str) {
     Mock::given(method("POST"))
-        .and(path(format!("/models/{}:streamGenerateContent", model)))
+        .and(path(format!("/models/{model}:streamGenerateContent")))
         .and(query_param("alt", "sse"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -122,7 +122,7 @@ async fn mock_sse_response(server: &MockServer, model: &str, sse_body: &str) {
 
 /// Build an SSE event string from a JSON value.
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 
 /// Concatenate SSE events (no `[DONE]` sentinel — Gemini doesn't use one).
@@ -141,7 +141,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -203,7 +203,7 @@ mod do_generate {
         assert_eq!(result.content.len(), 1);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "Hello, World!"),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
     }
 
@@ -428,7 +428,7 @@ mod do_generate {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &json!({ "location": "San Francisco" }));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
         // STOP + has_tool_calls -> ToolCalls
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
@@ -488,7 +488,7 @@ mod do_generate {
                     Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
                 );
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -880,7 +880,7 @@ mod do_generate {
                 assert_eq!(tool_name, "weather");
                 assert_eq!(input, &json!({ "location": "SF" }));
             }
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
@@ -927,7 +927,7 @@ mod do_generate {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
             }
-            other => panic!("expected first ToolCall, got {:?}", other),
+            other => panic!("expected first ToolCall, got {other:?}"),
         }
         match &result.content[1] {
             GenerateContent::ToolCall {
@@ -940,7 +940,7 @@ mod do_generate {
                 assert_eq!(tool_name, "calendar");
                 assert_eq!(input, &json!({ "date": "2024-01-01" }));
             }
-            other => panic!("expected second ToolCall, got {:?}", other),
+            other => panic!("expected second ToolCall, got {other:?}"),
         }
     }
 
@@ -979,11 +979,11 @@ mod do_generate {
         assert_eq!(result.content.len(), 2);
         match &result.content[0] {
             GenerateContent::Text { text, .. } => assert_eq!(text, "Let me check the weather."),
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
         match &result.content[1] {
             GenerateContent::ToolCall { tool_name, .. } => assert_eq!(tool_name, "weather"),
-            other => panic!("expected ToolCall, got {:?}", other),
+            other => panic!("expected ToolCall, got {other:?}"),
         }
     }
 
@@ -1103,7 +1103,7 @@ mod do_stream {
             StreamPart::ResponseMetadata { id, .. } => {
                 assert_eq!(id.as_deref(), Some("resp-1"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
 
         // text-start
@@ -1128,7 +1128,7 @@ mod do_stream {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
                 assert_eq!(finish_reason.raw.as_deref(), Some("STOP"));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1189,7 +1189,7 @@ mod do_stream {
             Some(StreamPart::Finish { finish_reason, .. }) => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::ToolCalls);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1231,6 +1231,62 @@ mod do_stream {
         );
     }
 
+    // ── empty-text thoughtSignature while a reasoning block is open ───────────
+    // Regression: the signature used to be silently dropped unless a *text*
+    // block was open. Gemini thinking models emit the signature on an
+    // empty-text part right after the thought text — while the reasoning
+    // block is the open one.
+
+    #[tokio::test]
+    async fn should_stream_empty_text_signature_onto_open_reasoning_block() {
+        let server = MockServer::start().await;
+        let body = sse_body(&[
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"text":"Thinking hard","thought":true}],"role":"model"},"index":0}],"responseId":"resp-3"}"#,
+            ),
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"text":"","thoughtSignature":"sig-on-empty-text"}],"role":"model"},"index":0}],"responseId":"resp-3"}"#,
+            ),
+            &sse_event(
+                r#"{"candidates":[{"content":{"parts":[{"text":"The answer"}],"role":"model"},"finishReason":"STOP","index":0}],"responseId":"resp-3"}"#,
+            ),
+        ]);
+        mock_sse_response(&server, "gemini-2.5-pro", &body).await;
+
+        let config = GoogleConfig::new("test-api-key").with_base_url(server.uri());
+        let provider = GoogleProvider::new(config);
+        let model = provider.model("gemini-2.5-pro");
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        // The reasoning block opens with id "0" and receives the thought text.
+        let reasoning_delta = parts.iter().find(
+            |p| matches!(p, StreamPart::ReasoningDelta { delta, .. } if delta == "Thinking hard"),
+        );
+        assert!(
+            reasoning_delta.is_some(),
+            "thought text should stream as ReasoningDelta"
+        );
+
+        // The signature on the empty-text part must attach to the open
+        // reasoning block as a zero-length ReasoningDelta — not be dropped.
+        let sig_delta = parts.iter().find(|p| {
+            matches!(p, StreamPart::ReasoningDelta { id, delta, provider_metadata }
+                if id == "0"
+                && delta.is_empty()
+                && provider_metadata.as_ref().and_then(|m| m["google"]["thoughtSignature"].as_str())
+                    == Some("sig-on-empty-text"))
+        });
+        assert!(
+            sig_delta.is_some(),
+            "empty-text thoughtSignature must ride the open reasoning block, got {parts:?}"
+        );
+    }
+
     // ── should expose usage from the final chunk ──────────────────────────────
 
     #[tokio::test]
@@ -1264,7 +1320,7 @@ mod do_stream {
                 assert_eq!(usage.input_tokens.total, Some(10));
                 assert_eq!(usage.output_tokens.total, Some(3));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1319,7 +1375,7 @@ mod do_stream {
                 assert_eq!(usage.input_tokens.total, Some(10));
                 assert_eq!(usage.output_tokens.total, Some(20));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1355,7 +1411,7 @@ mod do_stream {
             Some(StreamPart::Finish { usage, .. }) => {
                 assert_eq!(usage.input_tokens.total, Some(5));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1393,7 +1449,7 @@ mod do_stream {
                 assert_eq!(id.as_deref(), Some("resp-xyz"));
                 assert_eq!(model_id.as_deref(), Some("gemini-2.0-flash-001"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
     }
 
@@ -1573,7 +1629,7 @@ mod error_handling {
 
         match err {
             AiMuxError::ApiCall(d) => assert!(d.to_string().contains("Internal error")),
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -1625,9 +1681,9 @@ mod error_handling {
         match err {
             AiMuxError::ApiCall(msg_d) => {
                 let msg = msg_d.to_string();
-                assert!(msg.contains("Invalid request"), "msg was: {}", msg)
+                assert!(msg.contains("Invalid request"), "msg was: {msg}")
             }
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -1653,9 +1709,9 @@ mod error_handling {
         match err {
             AiMuxError::ApiCall(msg_d) => {
                 let msg = msg_d.to_string();
-                assert!(msg.contains("Permission denied"), "msg was: {}", msg)
+                assert!(msg.contains("Permission denied"), "msg was: {msg}")
             }
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -1684,9 +1740,9 @@ mod error_handling {
         match err {
             AiMuxError::ApiCall(msg_d) => {
                 let msg = msg_d.to_string();
-                assert!(msg.contains("Internal error"), "msg was: {}", msg)
+                assert!(msg.contains("Internal error"), "msg was: {msg}")
             }
-            other => panic!("expected Provider, got {:?}", other),
+            other => panic!("expected Provider, got {other:?}"),
         }
     }
 
@@ -1885,9 +1941,60 @@ mod request_body {
         assert_eq!(tool_msg["role"], "user");
         let fr = &tool_msg["parts"][0]["functionResponse"];
         assert_eq!(fr["id"], "call-1");
+        // Without a tool_name the call id is used as the required `name`
+        // (fallback path).
+        assert_eq!(fr["name"], "call-1");
+        assert_eq!(fr["response"]["name"], "call-1");
         // The serialized JSON output is a string under response.content.
         let content_str = fr["response"]["content"].as_str().unwrap();
         assert!(content_str.contains("\"temp\":70"));
+    }
+
+    #[test]
+    fn tool_result_uses_tool_name_for_function_response() {
+        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
+            role: Role::Tool,
+            content: vec![ContentPart::ToolResult {
+                tool_call_id: "call-9".to_string(),
+                result: json!({ "temp": 21 }),
+                tool_name: Some("weather".to_string()),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            }],
+            ..Default::default()
+        }];
+        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+
+        let fr = &body["contents"][0]["parts"][0]["functionResponse"];
+        assert_eq!(fr["id"], "call-9");
+        // `name` carries the real tool name, not the opaque call id —
+        // Gemini pairs functionResponse with the prior functionCall by name.
+        assert_eq!(fr["name"], "weather");
+        assert_eq!(fr["response"]["name"], "weather");
+    }
+
+    #[test]
+    fn tool_result_blank_tool_name_falls_back_to_call_id() {
+        // An explicitly blank tool_name is treated as unset and falls back
+        // to the call id (locks the empty-string filter branch).
+        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
+            role: Role::Tool,
+            content: vec![ContentPart::ToolResult {
+                tool_call_id: "call-blank".to_string(),
+                result: json!({ "ok": true }),
+                tool_name: Some(String::new()),
+                is_error: None,
+                preliminary: None,
+                dynamic: None,
+                provider_options: None,
+            }],
+            ..Default::default()
+        }];
+        let body = build_request_body("gemini-2.0-flash", &default_options(prompt));
+        let fr = &body["contents"][0]["parts"][0]["functionResponse"];
+        assert_eq!(fr["name"], "call-blank");
     }
 
     // ── tools → tools array with functionDeclarations ─────────────────────────
@@ -1970,7 +2077,7 @@ mod request_body {
         assert_eq!(gc["temperature"], 0.5);
         // f32 -> f64 round-trip introduces tiny error; compare with tolerance.
         let top_p = gc["topP"].as_f64().unwrap();
-        assert!((top_p - 0.9).abs() < 1e-5, "topP was {}", top_p);
+        assert!((top_p - 0.9).abs() < 1e-5, "topP was {top_p}");
         assert_eq!(gc["topK"], 40.0);
         assert_eq!(gc["stopSequences"][0], "STOP");
     }
@@ -2022,11 +2129,11 @@ mod request_body {
         let pp = body["generationConfig"]["presencePenalty"]
             .as_f64()
             .unwrap();
-        assert!((pp - 0.5).abs() < 1e-5, "presencePenalty was {}", pp);
+        assert!((pp - 0.5).abs() < 1e-5, "presencePenalty was {pp}");
         let fp = body["generationConfig"]["frequencyPenalty"]
             .as_f64()
             .unwrap();
-        assert!((fp - 0.3).abs() < 1e-5, "frequencyPenalty was {}", fp);
+        assert!((fp - 0.3).abs() < 1e-5, "frequencyPenalty was {fp}");
     }
 
     // ── should omit generationConfig when no options set ─────────────────────

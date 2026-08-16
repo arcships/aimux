@@ -212,10 +212,7 @@ async fn rejects_empty_base_url_option() {
         Err(AiMuxError::InvalidArgument(msg)) => {
             assert_eq!(msg, "baseURL must be a non-empty string.");
         }
-        other => panic!(
-            "expected InvalidArgument for empty baseURL, got {:?}",
-            other
-        ),
+        other => panic!("expected InvalidArgument for empty baseURL, got {other:?}"),
     }
 }
 
@@ -273,10 +270,9 @@ fn throws_when_both_api_key_and_auth_token_provided() {
                  Please use only one authentication method."
             );
         }
-        other => panic!(
-            "expected InvalidArgument for conflicting apiKey + authToken, got {:?}",
-            other
-        ),
+        other => {
+            panic!("expected InvalidArgument for conflicting apiKey + authToken, got {other:?}")
+        }
     }
 }
 
@@ -370,7 +366,7 @@ async fn warns_when_using_default_max_output_token_limit() {
                 )
             );
         }
-        other => panic!("expected Compatibility warning, got {:?}", other),
+        other => panic!("expected Compatibility warning, got {other:?}"),
     }
 }
 
@@ -428,7 +424,7 @@ async fn uses_current_gen_default_and_warns_for_unknown_claude_model() {
                 )
             );
         }
-        other => panic!("expected Compatibility warning, got {:?}", other),
+        other => panic!("expected Compatibility warning, got {other:?}"),
     }
 }
 
@@ -663,8 +659,7 @@ async fn sends_tool_change_blocks_and_beta_header() {
                 })
                 .unwrap_or(false)
         }),
-        "expected a system tool_removal block, got body: {}",
-        body
+        "expected a system tool_removal block, got body: {body}"
     );
 
     // The beta header should advertise mid-conversation tool changes.
@@ -675,7 +670,6 @@ async fn sends_tool_change_blocks_and_beta_header() {
         .unwrap_or("");
     assert!(
         beta.contains("mid-conversation-tool-changes-2026-07-01"),
-        "missing beta header, got: {}",
-        beta
+        "missing beta header, got: {beta}"
     );
 }

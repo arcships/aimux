@@ -41,7 +41,10 @@ fn parse_openai_files_options(
         if let Some(purpose) = openai.get("purpose").and_then(|v| v.as_str()) {
             opts.purpose = Some(purpose.to_string());
         }
-        if let Some(expires_after) = openai.get("expiresAfter").and_then(|v| v.as_u64()) {
+        if let Some(expires_after) = openai
+            .get("expiresAfter")
+            .and_then(serde_json::Value::as_u64)
+        {
             opts.expires_after = Some(expires_after);
         }
     }
@@ -91,6 +94,7 @@ pub struct OpenAIFiles {
 }
 
 impl OpenAIFiles {
+    #[must_use]
     pub fn new(config: OpenAIConfig) -> Self {
         Self { config }
     }
@@ -144,7 +148,7 @@ impl Files for OpenAIFiles {
 
         // Build multipart/form-data body manually.
         let (body, content_type) = build_multipart_form(
-            &format!("form-data; name=\"file\"; filename=\"{}\"", filename),
+            &format!("form-data; name=\"file\"; filename=\"{filename}\""),
             &options.media_type,
             &file_bytes,
             &[("purpose", purpose.as_str())],

@@ -143,7 +143,7 @@ fn extract_text_content(content: &Option<Value>) -> Option<String> {
                     if part.get("type").and_then(|t| t.as_str()) == Some("text") {
                         part.get("text")
                             .and_then(|t| t.as_str())
-                            .map(|s| s.to_string())
+                            .map(std::string::ToString::to_string)
                     } else {
                         None
                     }
@@ -178,7 +178,7 @@ fn extract_reasoning_content(content: &Option<Value>) -> Option<String> {
                                             chunk
                                                 .get("text")
                                                 .and_then(|t| t.as_str())
-                                                .map(|s| s.to_string())
+                                                .map(std::string::ToString::to_string)
                                         } else {
                                             None
                                         }
@@ -265,6 +265,17 @@ impl LanguageModel for MistralModel {
         // Build content array.
         let mut content = Vec::new();
 
+        // Reasoning content (from thinking parts in array content).
+        // Pushed before text to match upstream ordering (reasoning → text).
+        if let Some(r) = extract_reasoning_content(&choice.message.content)
+            && !r.is_empty()
+        {
+            content.push(GenerateContent::Reasoning {
+                text: r,
+                provider_metadata: None,
+            });
+        }
+
         // Content can be a string (legacy) or an array of typed parts.
         if let Some(text) = extract_text_content(&choice.message.content)
             && !text.is_empty()
@@ -311,7 +322,10 @@ impl LanguageModel for MistralModel {
             provider_metadata: None,
             response: ResponseMetadata {
                 id: data.id,
-                timestamp: None,
+                timestamp: data
+                    .created
+                    .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
+                    .map(|dt| dt.to_rfc3339()),
                 model_id: data.model,
             },
             request_body: Some(body),
@@ -419,7 +433,12 @@ impl LanguageModel for MistralModel {
                             response_metadata_emitted = true;
                             yield Ok(StreamPart::ResponseMetadata {
                                 id: chunk.id.clone(),
-                                timestamp: None,
+                                timestamp: chunk
+                                    .created
+                                    .and_then(|secs| {
+                                        chrono::DateTime::from_timestamp(secs as i64, 0)
+                                    })
+                                    .map(|dt| dt.to_rfc3339()),
                                 model_id: chunk.model.clone(),
                             });
                         }
@@ -439,7 +458,7 @@ impl LanguageModel for MistralModel {
                                         // End any active text before starting reasoning.
                                         if text_started {
                                             yield Ok(StreamPart::TextEnd {
-                                                id: format!("{}", text_id),
+                                                id: format!("{text_id}"),
                                                 provider_metadata: None,
                                             });
                                             text_started = false;
@@ -483,13 +502,13 @@ impl LanguageModel for MistralModel {
                                             reasoning_id = None;
                                         }
                                         yield Ok(StreamPart::TextStart {
-                                            id: format!("{}", text_id),
+                                            id: format!("{text_id}"),
                                             provider_metadata: None,
                                         });
                                         text_started = true;
                                     }
                                     yield Ok(StreamPart::TextDelta {
-                                        id: format!("{}", text_id),
+                                        id: format!("{text_id}"),
                                         delta: text_delta,
                                         provider_metadata: None,
                                     });
@@ -542,7 +561,7 @@ impl LanguageModel for MistralModel {
                             if let Some(reason) = choice.finish_reason {
                                 if text_started {
                                     yield Ok(StreamPart::TextEnd {
-                                        id: format!("{}", text_id),
+                                        id: format!("{text_id}"),
                                         provider_metadata: None,
                                     });
                                     text_started = false;
@@ -574,7 +593,7 @@ impl LanguageModel for MistralModel {
             // Close any remaining open segments.
             if text_started {
                 yield Ok(StreamPart::TextEnd {
-                    id: format!("{}", text_id),
+                    id: format!("{text_id}"),
                     provider_metadata: None,
                 });
             }

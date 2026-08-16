@@ -59,7 +59,7 @@ fn po(map: Value) -> Option<std::collections::HashMap<String, Value>> {
     Some(h)
 }
 fn sse_event(json_str: &str) -> String {
-    format!("data: {}\n\n", json_str)
+    format!("data: {json_str}\n\n")
 }
 fn sse_body(events: &[&str]) -> String {
     let mut s = String::new();
@@ -164,7 +164,7 @@ mod do_generate_extended {
                     "Based on the search results [doc1], I found information."
                 );
             }
-            other => panic!("expected Text, got {:?}", other),
+            other => panic!("expected Text, got {other:?}"),
         }
         match &result.content[1] {
             GenerateContent::Source {
@@ -177,7 +177,7 @@ mod do_generate_extended {
                 assert_eq!(url.as_deref(), Some("https://example.com/doc1.pdf"));
                 assert_eq!(title.as_deref(), Some("Document 1"));
             }
-            other => panic!("expected Source, got {:?}", other),
+            other => panic!("expected Source, got {other:?}"),
         }
     }
 
@@ -720,7 +720,7 @@ mod do_stream_extended {
             Some(StreamPart::Finish { finish_reason, .. }) => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -766,7 +766,7 @@ mod do_stream_extended {
                 assert_eq!(pm["openai"]["acceptedPredictionTokens"], json!(123));
                 assert_eq!(pm["openai"]["rejectedPredictionTokens"], json!(456));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -809,7 +809,7 @@ mod do_stream_extended {
                 assert_eq!(usage.output_tokens.reasoning, Some(10));
                 assert_eq!(usage.output_tokens.text, Some(10));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 

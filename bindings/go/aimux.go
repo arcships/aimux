@@ -337,6 +337,105 @@ func InitProxy(configJSON string) error {
 	return nil
 }
 
+// NewRouter builds a RouterModel (RFC-0021) over the given child models. The
+// returned model routes each call to one child and falls back across the rest
+// on error (per configJSON). models must be non-empty.
+//
+// configJSON (optional): {"router": "rule"|"weighted", "weights": [...],
+// "fallback": "on_error"|"none", "provider_name", "model_id"}.
+func NewRouter(models []*Model, configJSON string) (*Model, error) {
+	if len(models) == 0 {
+		return nil, newError(CodeInvalidArgument, "router: models must be non-empty")
+	}
+	handles := make([]uint64, len(models))
+	for i, m := range models {
+		h, unlock, err := m.acquireHandle()
+		if err != nil {
+			return nil, err
+		}
+		handles[i] = h
+		unlock()
+	}
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
+	var h C.uint64_t
+	if configJSON == "" {
+		h = C.aimux_router_new(
+			(*C.uint64_t)(unsafe.Pointer(&handles[0])),
+			C.size_t(len(handles)),
+			nil,
+			&cerr,
+		)
+	} else {
+		cJSON := C.CString(configJSON)
+		defer C.free(unsafe.Pointer(cJSON))
+		h = C.aimux_router_new(
+			(*C.uint64_t)(unsafe.Pointer(&handles[0])),
+			C.size_t(len(handles)),
+			cJSON,
+			&cerr,
+		)
+	}
+	return wrapHandleU64(h, &cerr)
+}
+
+// NewMoa builds a MoaModel (RFC-0022) over reference models + one aggregator.
+// References fan out in parallel, then the aggregator synthesizes a final
+// answer. references may be empty (runs aggregator only).
+//
+// configJSON (optional) is a serialized MoaConfig.
+func NewMoa(references []*Model, aggregator *Model, configJSON string) (*Model, error) {
+	aggHandle, unlock, err := aggregator.acquireHandle()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
+	var h C.uint64_t
+	switch {
+	case len(references) == 0:
+		// No references: pass a NULL pointer + 0 length.
+		h = callMoaNew(nil, 0, aggHandle, configJSON, &cerr)
+	default:
+		refHandles := make([]uint64, len(references))
+		for i, m := range references {
+			rh, runlock, rerr := m.acquireHandle()
+			if rerr != nil {
+				return nil, rerr
+			}
+			refHandles[i] = rh
+			runlock()
+		}
+		h = callMoaNew(
+			(*C.uint64_t)(unsafe.Pointer(&refHandles[0])),
+			C.size_t(len(refHandles)),
+			aggHandle,
+			configJSON,
+			&cerr,
+		)
+	}
+	return wrapHandleU64(h, &cerr)
+}
+
+// callMoaNew is a small helper that builds the C call with or without a config
+// JSON string, avoiding repeated CString bookkeeping at the call sites.
+func callMoaNew(
+	refPtr *C.uint64_t,
+	refLen C.size_t,
+	aggregator uint64,
+	configJSON string,
+	cerr *C.AimuxError,
+) C.uint64_t {
+	if configJSON == "" {
+		return C.aimux_moa_new(refPtr, refLen, C.uint64_t(aggregator), nil, cerr)
+	}
+	cJSON := C.CString(configJSON)
+	defer C.free(unsafe.Pointer(cJSON))
+	return C.aimux_moa_new(refPtr, refLen, C.uint64_t(aggregator), cJSON, cerr)
+}
+
 // Anthropic creates an Anthropic model instance, panicking on failure.
 func Anthropic(apiKey, modelID string) *Model {
 	return mustNew(NewAnthropic(apiKey, modelID))

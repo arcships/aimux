@@ -1,4 +1,4 @@
-﻿//! Rust port of the Anthropic provider `doGenerate` response-parsing tests and
+//! Rust port of the Anthropic provider `doGenerate` response-parsing tests and
 //! `doStream` streaming tests.
 //!
 //! Translated from the Vercel AI SDK TypeScript test suite:
@@ -88,7 +88,7 @@ async fn mock_sse(server: &MockServer, sse_body: &str) {
 
 /// Format a single Anthropic SSE event as `data: {json}\n\n`.
 fn sse(data: &Value) -> String {
-    format!("data: {}\n\n", data)
+    format!("data: {data}\n\n")
 }
 
 /// Concatenate an ordered list of SSE events into one response body.
@@ -103,7 +103,7 @@ async fn collect_stream(result: StreamResult) -> Vec<StreamPart> {
     while let Some(part) = stream.next().await {
         match part {
             Ok(p) => parts.push(p),
-            Err(e) => panic!("stream error: {:?}", e),
+            Err(e) => panic!("stream error: {e:?}"),
         }
     }
     parts
@@ -127,7 +127,7 @@ fn text_response(text: &str) -> Value {
 fn as_text(item: &GenerateContent) -> &str {
     match item {
         GenerateContent::Text { text, .. } => text,
-        _ => panic!("expected Text content, got {:?}", item),
+        _ => panic!("expected Text content, got {item:?}"),
     }
 }
 
@@ -140,7 +140,7 @@ fn as_tool_call(item: &GenerateContent) -> (&str, &str, &Value) {
             input,
             ..
         } => (tool_call_id, tool_name, input),
-        _ => panic!("expected ToolCall content, got {:?}", item),
+        _ => panic!("expected ToolCall content, got {item:?}"),
     }
 }
 
@@ -831,7 +831,7 @@ mod do_stream {
 
         // Expected sequence: StreamStart, ResponseMetadata, TextStart,
         // TextDelta("Hello"), TextDelta("!"), TextEnd, Finish.
-        assert_eq!(parts.len(), 7, "parts = {:?}", parts);
+        assert_eq!(parts.len(), 7, "parts = {parts:?}");
 
         assert!(matches!(
             &parts[0],
@@ -842,36 +842,36 @@ mod do_stream {
                 assert_eq!(id.as_deref(), Some("msg_1"));
                 assert_eq!(model_id.as_deref(), Some("claude-3-haiku-20240307"));
             }
-            other => panic!("expected ResponseMetadata, got {:?}", other),
+            other => panic!("expected ResponseMetadata, got {other:?}"),
         }
         match &parts[2] {
             StreamPart::TextStart { id, .. } => assert_eq!(id, "0"),
-            other => panic!("expected TextStart, got {:?}", other),
+            other => panic!("expected TextStart, got {other:?}"),
         }
         match &parts[3] {
             StreamPart::TextDelta { id, delta, .. } => {
                 assert_eq!(id, "0");
                 assert_eq!(delta, "Hello");
             }
-            other => panic!("expected TextDelta Hello, got {:?}", other),
+            other => panic!("expected TextDelta Hello, got {other:?}"),
         }
         match &parts[4] {
             StreamPart::TextDelta { id, delta, .. } => {
                 assert_eq!(id, "0");
                 assert_eq!(delta, "!");
             }
-            other => panic!("expected TextDelta !, got {:?}", other),
+            other => panic!("expected TextDelta !, got {other:?}"),
         }
         match &parts[5] {
             StreamPart::TextEnd { id, .. } => assert_eq!(id, "0"),
-            other => panic!("expected TextEnd, got {:?}", other),
+            other => panic!("expected TextEnd, got {other:?}"),
         }
         match &parts[6] {
             StreamPart::Finish { finish_reason, .. } => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
                 assert_eq!(finish_reason.raw.as_deref(), Some("end_turn"));
             }
-            other => panic!("expected Finish, got {:?}", other),
+            other => panic!("expected Finish, got {other:?}"),
         }
     }
 
@@ -1093,7 +1093,10 @@ mod do_stream {
             .collect();
         assert_eq!(
             tool_deltas,
-            frags.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+            frags
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
         );
 
         // ToolInputStart.
@@ -1179,8 +1182,7 @@ mod do_stream {
             !parts
                 .iter()
                 .any(|p| matches!(p, StreamPart::ToolInputDelta { .. })),
-            "no tool-input-delta expected, parts = {:?}",
-            parts
+            "no tool-input-delta expected, parts = {parts:?}"
         );
 
         let tool_call = parts
@@ -1477,7 +1479,8 @@ mod do_stream {
         .await;
 
         // The stream must contain a StreamPart::Error carrying the provider
-        // message, and must NOT emit a Finish after it.
+        // message, followed by an error-finish (Finish is the final-chunk
+        // contract, matching openai/google — see #112).
         let error_idx = parts
             .iter()
             .position(|p| matches!(p, StreamPart::Error { .. }));
@@ -1485,11 +1488,69 @@ mod do_stream {
         match &parts[error_idx] {
             StreamPart::Error { error } => {
                 let msg = error.to_string();
-                assert!(msg.contains("Overloaded"), "msg = {}", msg);
+                assert!(msg.contains("Overloaded"), "msg = {msg}");
             }
             _ => unreachable!(),
         }
-        // Nothing after the Error.
-        assert_eq!(parts.len(), error_idx + 1);
+        // Error is followed by exactly one Finish with unified=Error.
+        assert_eq!(parts.len(), error_idx + 2);
+        assert!(matches!(
+            &parts[error_idx + 1],
+            StreamPart::Finish { finish_reason, .. }
+                if matches!(finish_reason.unified, FinishReasonUnified::Error)
+        ));
+    }
+
+    /// Extended-thinking streams: `signature_delta` pieces accumulate on the
+    /// thinking block and are attached to the concluding ReasoningEnd as
+    /// provider_metadata (`{"anthropic": {"signature": ..}}`), matching the
+    /// non-streaming path (#113).
+    #[tokio::test]
+    async fn should_attach_thinking_signature_to_reasoning_end() {
+        let server = MockServer::start().await;
+        let sse_body = sse_stream(&[
+            json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "model": "claude-3-haiku-20240307",
+                    "usage": { "input_tokens": 10 },
+                },
+            }),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me think."}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-part-1"}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-part-2"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}),
+            json!({"type":"message_stop"}),
+        ]);
+        mock_sse(&server, &sse_body).await;
+        let model = make_model(&server);
+        let parts = collect_stream(
+            model
+                .do_stream(&default_options(test_prompt()))
+                .await
+                .unwrap(),
+        )
+        .await;
+
+        assert!(
+            parts.iter().any(|p| matches!(p,
+                StreamPart::ReasoningDelta { delta, .. } if delta == "Let me think.")),
+            "expected the thinking text delta, got {parts:?}"
+        );
+        let meta = parts.iter().find_map(|p| match p {
+            StreamPart::ReasoningEnd {
+                provider_metadata, ..
+            } => provider_metadata.clone(),
+            _ => None,
+        });
+        let meta = meta.expect("ReasoningEnd with provider_metadata");
+        // Incremental signature pieces are concatenated.
+        assert_eq!(
+            meta["anthropic"]["signature"].as_str(),
+            Some("sig-part-1sig-part-2")
+        );
     }
 }

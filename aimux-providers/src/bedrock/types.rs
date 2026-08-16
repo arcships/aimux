@@ -5,7 +5,7 @@
 //! is a unified interface across all model providers (Anthropic, Meta, Mistral,
 //! etc.), so the request/response format is provider-agnostic.
 //!
-//! Reference: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html
+//! Reference: <https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html>
 
 #![allow(dead_code)]
 

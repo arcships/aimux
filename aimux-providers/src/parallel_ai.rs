@@ -44,12 +44,17 @@ impl ParallelAiConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Create from the `PARALLEL_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `PARALLEL_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "PARALLEL_API_KEY", "Parallel AI")?;
         Ok(Self::new(api_key))
@@ -64,11 +69,13 @@ pub struct ParallelAiProvider {
 }
 
 impl ParallelAiProvider {
+    #[must_use]
     pub fn new(config: ParallelAiConfig) -> Self {
         Self { config }
     }
 
     /// Create a search model instance.
+    #[must_use]
     pub fn search_model(&self) -> ParallelAiSearchModel {
         ParallelAiSearchModel::new(self.config.clone())
     }
@@ -137,6 +144,7 @@ pub struct ParallelAiSearchModel {
 }
 
 impl ParallelAiSearchModel {
+    #[must_use]
     pub fn new(config: ParallelAiConfig) -> Self {
         Self { config }
     }

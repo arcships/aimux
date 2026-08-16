@@ -28,6 +28,7 @@ pub struct MistralEmbeddingModel {
 }
 
 impl MistralEmbeddingModel {
+    #[must_use]
     pub fn new(model_id: String, config: MistralConfig) -> Self {
         Self { model_id, config }
     }
@@ -138,7 +139,7 @@ impl EmbeddingModel for MistralEmbeddingModel {
         let usage = raw_value
             .get("usage")
             .and_then(|u| u.get("prompt_tokens"))
-            .and_then(|t| t.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|tokens| EmbeddingUsage {
                 tokens: tokens as u32,
             });
@@ -172,11 +173,11 @@ fn parse_mistral_provider_options(
         metadata: provider_opts.and_then(|o| o.get("metadata")).cloned(),
         output_dimension: provider_opts
             .and_then(|o| o.get("outputDimension"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
         output_dtype: provider_opts
             .and_then(|o| o.get("outputDtype"))
             .and_then(|d| d.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
     }
 }

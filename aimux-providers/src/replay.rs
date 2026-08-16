@@ -33,6 +33,11 @@ use crate::provider::ProviderOptions;
 ///   中的 org/project/headers/body_overrides 一并恢复;`profile` 从录制恢复。
 /// - 注意:录制的 headers 已脱敏,真实头无法从此恢复——需要时调用方重建后
 ///   再通过 `ProviderOptions.headers` 补。
+///
+/// # Errors
+///
+/// Returns `Unsupported` for non-OpenAI-compatible recordings,
+/// `InvalidArgument` for a missing `base_url`, and key-resolution errors.
 pub fn rebuild_provider(
     p: &ProviderRecord,
     api_key: Option<&str>,

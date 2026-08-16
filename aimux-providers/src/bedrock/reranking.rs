@@ -74,6 +74,7 @@ pub struct BedrockRerankingModel {
 }
 
 impl BedrockRerankingModel {
+    #[must_use]
     pub fn new(model_id: String, base_url: String, region: String, auth: BedrockAuth) -> Self {
         Self {
             model_id,
@@ -102,7 +103,7 @@ impl BedrockRerankingModel {
 
         match &self.auth {
             BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".to_string(), format!("Bearer {}", token))];
+                let mut headers = vec![("Authorization".to_string(), format!("Bearer {token}"))];
                 headers.extend(extra_headers);
                 Ok(headers)
             }

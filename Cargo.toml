@@ -8,6 +8,7 @@ members = [
     "scripts/fix_tool",
     "tools/aimux-cli",
     "tools/aimux-replay",
+    "tools/aimux-web",
 ]
 resolver = "2"
 
@@ -53,15 +54,14 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 
 # Streaming
-tokio-stream = "0.1"
 bytes = "1"
 async-stream = "0.3"
 
+# WebSocket (realtime provider APIs, RFC-0028; feature-gated per crate)
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
 # URL
 url = "2"
-
-# Cache directories (RFC-0027 catalogue cache)
-dirs = "5"
 
 # Logging
 tracing = "0.1"
@@ -90,6 +90,11 @@ rand = "0.8"
 # Serial test execution (for env-var-mutating tests)
 serial_test = "3"
 
+# Web console server (RFC-0029)
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+
 # TypeScript type generation (auto-generate .d.ts from Rust types)
 ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 
@@ -97,3 +102,8 @@ ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
 # CI additionally promotes all warnings to errors.
 [workspace.lints.clippy]
 all = "warn"
+uninlined_format_args = "warn"
+must_use_candidate = "warn"
+redundant_closure_for_method_calls = "warn"
+return_self_not_must_use = "warn"
+missing_errors_doc = "warn"

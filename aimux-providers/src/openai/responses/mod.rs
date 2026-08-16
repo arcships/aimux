@@ -55,7 +55,7 @@ use responses_convert::build_header_list;
 /// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use
 /// the process-wide shared `Client` internally (RFC-0009 §4.1).
 ///
-/// Created via [`OpenAIResponsesProvider`](super::OpenAIResponsesProvider) or
+/// Created via `OpenAIResponsesProvider` or
 /// directly with [`OpenAIResponsesModel::new`].
 pub struct OpenAIResponsesModel {
     model_id: String,
@@ -63,6 +63,7 @@ pub struct OpenAIResponsesModel {
 }
 
 impl OpenAIResponsesModel {
+    #[must_use]
     pub fn new(model_id: String, config: OpenAIConfig) -> Self {
         Self { model_id, config }
     }
@@ -169,7 +170,7 @@ impl LanguageModel for OpenAIResponsesModel {
             .as_ref()
             .and_then(|m| m.get("openai"))
             .and_then(|o| o.get("store"))
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             == Some(true);
 
         let resp = send_stream_timed(

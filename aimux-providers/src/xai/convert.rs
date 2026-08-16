@@ -1,4 +1,4 @@
-﻿//! Conversion between `LanguageModelPrompt` and xAI API format.
+//! Conversion between `LanguageModelPrompt` and xAI API format.
 //!
 //! Mirrors the TS xai package's `convert-to-xai-chat-messages.ts`,
 //! `convert-xai-chat-usage.ts`, `xai-prepare-tools.ts`,
@@ -22,6 +22,7 @@ use super::types::XaiUsageResponse;
 // ── Finish reason ────────────────────────────────────────────────────────────
 
 /// Map an xAI finish reason string to the unified enum.
+#[must_use]
 pub fn map_xai_finish_reason(s: &str) -> FinishReasonUnified {
     match s {
         "stop" => FinishReasonUnified::Stop,
@@ -32,6 +33,7 @@ pub fn map_xai_finish_reason(s: &str) -> FinishReasonUnified {
     }
 }
 
+#[must_use]
 pub fn parse_finish_reason(s: &str) -> FinishReason {
     FinishReason {
         unified: map_xai_finish_reason(s),
@@ -60,12 +62,14 @@ fn is_model_without_reasoning_effort(model_id: &str) -> bool {
 }
 
 /// Whether the model accepts the `reasoning_effort` parameter.
+#[must_use]
 pub fn supports_reasoning_effort(model_id: &str) -> bool {
     !is_model_without_reasoning_effort(model_id)
 }
 
 // ── Usage conversion ─────────────────────────────────────────────────────────
 
+#[must_use]
 pub fn convert_xai_usage(usage: &XaiUsageResponse) -> aimux_core::types::Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
     let completion_tokens = usage.completion_tokens.unwrap_or(0);
@@ -120,6 +124,7 @@ pub struct PreparedTools {
     pub tool_warnings: Vec<Warning>,
 }
 
+#[must_use]
 pub fn prepare_tools(tools: &Option<Vec<Tool>>, tool_choice: Option<&ToolChoice>) -> PreparedTools {
     let non_empty = tools.as_ref().filter(|t| !t.is_empty());
     let mut tool_warnings: Vec<Warning> = Vec::new();
@@ -223,6 +228,7 @@ fn get_top_level_media_type(media_type: &str) -> &str {
     media_type.split('/').next().unwrap_or("")
 }
 
+#[must_use]
 pub fn resolve_full_media_type(media_type: &str, b64_data: &str) -> String {
     let top_level = get_top_level_media_type(media_type);
     if top_level == "image" && media_type != "image" && !media_type.ends_with("/*") {
@@ -246,6 +252,13 @@ pub fn resolve_full_media_type(media_type: &str, b64_data: &str) -> String {
     media_type.to_string()
 }
 
+/// Resolve the provider-specific reference string from a file part's
+/// `provider` map.
+///
+/// # Errors
+///
+/// Returns a `String` listing the available providers when the requested key
+/// is absent.
 pub fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<String, String> {
     if let Some(val) = reference.get(provider) {
         if let Some(s) = val.as_str() {
@@ -266,6 +279,12 @@ pub fn resolve_provider_reference(reference: &Value, provider: &str) -> Result<S
 
 // ── Message conversion ───────────────────────────────────────────────────────
 
+/// Convert a [`LanguageModelPrompt`] into xAI `messages`, returning warnings.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::InvalidArgument` when a user part cannot be converted
+/// (e.g. invalid base64 data or an unsupported file part).
 pub fn convert_to_xai_messages(
     prompt: &LanguageModelPrompt,
 ) -> Result<(Vec<Value>, Vec<Warning>), AiMuxError> {
@@ -406,8 +425,7 @@ fn convert_image_part(
     let top_level = get_top_level_media_type(media_type);
     if top_level != "image" {
         return Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file part media type {}",
-            media_type
+            "file part media type {media_type}"
         )));
     }
     let image_url = if let Some(url_str) = url {
@@ -433,6 +451,11 @@ pub struct RequestBodyResult {
     pub warnings: Vec<Warning>,
 }
 
+/// Convert `CallOptions` to an xAI request body, returning warnings.
+///
+/// # Errors
+///
+/// Propagates prompt-conversion errors from `convert_to_xai_messages`.
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
@@ -474,8 +497,11 @@ pub fn build_request_body_with_warnings(
         warnings.push(tw.clone());
     }
 
-    let mut reasoning_effort: Option<String> = xai_option(xai_opts, "reasoningEffort")
-        .map(|v| v.as_str().map(|s| s.to_string()).unwrap_or(v.to_string()));
+    let mut reasoning_effort: Option<String> = xai_option(xai_opts, "reasoningEffort").map(|v| {
+        v.as_str()
+            .map(std::string::ToString::to_string)
+            .unwrap_or(v.to_string())
+    });
 
     if reasoning_effort.is_none() && options.reasoning.is_some_and(ReasoningEffort::is_custom) {
         let reasoning = options.reasoning.unwrap();
@@ -483,8 +509,7 @@ pub fn build_request_body_with_warnings(
             warnings.push(Warning::Unsupported {
                 feature: "reasoning".to_string(),
                 details: Some(format!(
-                    "reasoning \"{}\" is not supported by this model.",
-                    reasoning
+                    "reasoning \"{reasoning}\" is not supported by this model."
                 )),
             });
         } else if reasoning == ReasoningEffort::None {

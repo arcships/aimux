@@ -299,11 +299,10 @@ async fn chinese_sse_event_split_at_every_byte_boundary() {
         );
         let event = events[0]
             .as_ref()
-            .unwrap_or_else(|e| panic!("split at byte {} errored: {:?}", split, e));
+            .unwrap_or_else(|e| panic!("split at byte {split} errored: {e:?}"));
         assert_eq!(
             event.data, "你好世界",
-            "split at byte {} corrupted the data",
-            split
+            "split at byte {split} corrupted the data"
         );
     }
 }
@@ -319,7 +318,7 @@ async fn invalid_utf8_frame_returns_utf8_error() {
     assert_eq!(events.len(), 1, "expected exactly one result");
     match &events[0] {
         Err(SseError::Utf8(_)) => {}
-        other => panic!("expected SseError::Utf8, got {:?}", other),
+        other => panic!("expected SseError::Utf8, got {other:?}"),
     }
 }
 

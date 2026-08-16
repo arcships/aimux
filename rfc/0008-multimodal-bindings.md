@@ -166,6 +166,8 @@ const result = JSON.parse(await files.upload(JSON.stringify({
 
 #### 3.1.3 Mode C: Transcription Stream (bidirectional stream)
 
+**[2026-08-14: design superseded by [RFC-0028](0028-transcription-streaming.md).]**
+
 Transcription's non-streaming `do_generate` follows Mode B (base64 audio input). Streaming `do_stream` requires a bidirectional binary stream — this is relatively complex in napi-rs and PyO3.
 
 **Option 1 (recommended for PoC)**: Streaming transcription is not supported for now; only `do_generate` (non-streaming) is exposed.
@@ -181,7 +183,7 @@ for await (const part of transcriber.stream(input, opts)) {
 }
 ```
 
-**Decision**: The PoC stage only implements `do_generate` (non-streaming transcription); streaming transcription is marked as TODO.
+**Decision**: The PoC stage only implements `do_generate` (non-streaming transcription); streaming transcription is marked as TODO. **(2026-08-14: superseded by [RFC-0028](0028-transcription-streaming.md) — full streaming design; the deferral's root cause "bidirectional stream is complex" is addressed there in phases.)**
 
 #### 3.1.4 Python Side
 

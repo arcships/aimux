@@ -6,9 +6,9 @@
 //! provider 不持有 `Client`、不构造 `RequestBuilder`、不碰 `reqwest::Response`。
 //!
 //! 三个职责：
-//! - **连接池**：`shared_client()` / `shared_streaming_client()` 返回 `&'static
-//!   Client` 全局单例，TLS 会话与连接池全仓复用（RFC-0009 §4.1）。替代散落
-//!   各处的 `Client::new()`。
+//! - **连接池**：`shared_client()` / `shared_streaming_client()` 返回共享单例
+//!   （`Result<&'static Client, AiMuxError>`——构建失败粘性返回错误），TLS 会话
+//!   与连接池全仓复用（RFC-0009 §4.1）。替代散落各处的 `Client::new()`。
 //! - **超时**：非流式带 30s 整体超时；流式禁用整体超时（LLM 流式时长取决于
 //!   生成长度，固定超时会误杀长生成，RFC-0009 §4.3）。
 //! - **retry**：408/409/429/5xx 重试 + Full Jitter 退避（RFC-0009 §4.2）。retry 是本
@@ -86,6 +86,7 @@ impl TimeoutConfig {
     ///
     /// LLM 流式时长取决于生成长度 / max_tokens，固定整体超时会误杀长
     /// 生成请求（RFC-0009 §4.3）。仅保留 connect timeout 守护建连阶段。
+    #[must_use]
     pub fn streaming() -> Self {
         Self {
             connect_timeout_ms: 10_000,
@@ -131,38 +132,73 @@ fn global_proxy() -> ProxyConfig {
     GLOBAL_PROXY.get().cloned().unwrap_or_default()
 }
 
-/// 全局共享的 reqwest::Client（非流式，带 30s 整体超时）。
-static SHARED: OnceLock<Client> = OnceLock::new();
+/// 全局共享的 reqwest::Client（非流式，带 30s 整体超时）。构建失败（如 TLS
+/// 后端初始化失败、系统资源耗尽）以错误字符串粘性保存——之后每次访问都返回
+/// 同一错误，而非在 release `panic=abort` 下杀死宿主进程（issue #115）。
+static SHARED: OnceLock<Result<Client, String>> = OnceLock::new();
 
-/// 全局共享的流式 reqwest::Client（无整体超时）。
-static SHARED_STREAMING: OnceLock<Client> = OnceLock::new();
+/// 全局共享的流式 reqwest::Client（无整体超时）。同上的粘性错误语义。
+static SHARED_STREAMING: OnceLock<Result<Client, String>> = OnceLock::new();
+
+/// 把构建失败映射为可诊断错误（无 HTTP 交换，status 留空、不可重试）。
+fn client_init_error(source: &str) -> AiMuxError {
+    AiMuxError::ApiCall(ApiCallError {
+        message: format!("shared HTTP client initialization failed: {source}"),
+        ..Default::default()
+    })
+}
 
 /// 获取（或惰性初始化）共享 reqwest Client（带 30s 整体超时，非流式用）。
 ///
-/// 返回 `&'static Client`——provider **拿引用即用**，不持有、不 clone、不传参。
-pub fn shared_client() -> &'static Client {
-    SHARED.get_or_init(|| {
-        build_client(
-            PoolConfig::default(),
-            TimeoutConfig::default(),
-            global_proxy(),
-        )
-    })
+/// 成功返回 `&'static Client`——provider **拿引用即用**，不持有、不 clone、
+/// 不传参；首次构建失败（及之后的每次调用）返回 [`AiMuxError::ApiCall`]
+/// （message 带 "client initialization failed"，status 为 None）。
+///
+/// # Errors
+///
+/// Returns a sticky, non-retryable [`AiMuxError::ApiCall`] (no HTTP status)
+/// when the shared client could not be built, e.g. TLS backend or resource
+/// initialization failures in restricted environments.
+pub fn shared_client() -> Result<&'static Client, AiMuxError> {
+    SHARED
+        .get_or_init(|| {
+            build_client(
+                PoolConfig::default(),
+                TimeoutConfig::default(),
+                global_proxy(),
+            )
+        })
+        .as_ref()
+        .map_err(|e| client_init_error(e))
 }
 
 /// 获取（或惰性初始化）流式共享 reqwest Client（无整体超时，流式用）。
-pub fn shared_streaming_client() -> &'static Client {
-    SHARED_STREAMING.get_or_init(|| {
-        build_client(
-            PoolConfig::default(),
-            TimeoutConfig::streaming(),
-            global_proxy(),
-        )
-    })
+///
+/// # Errors
+///
+/// Same sticky-failure semantics as [`shared_client`]: a non-retryable
+/// [`AiMuxError::ApiCall`] without an HTTP status when the build failed.
+pub fn shared_streaming_client() -> Result<&'static Client, AiMuxError> {
+    SHARED_STREAMING
+        .get_or_init(|| {
+            build_client(
+                PoolConfig::default(),
+                TimeoutConfig::streaming(),
+                global_proxy(),
+            )
+        })
+        .as_ref()
+        .map_err(|e| client_init_error(e))
 }
 
-/// 用给定配置构建一个 reqwest Client。
-fn build_client(pool: PoolConfig, timeout: TimeoutConfig, proxy: ProxyConfig) -> Client {
+/// 用给定配置构建一个 reqwest Client。构建失败返回错误字符串（reqwest 仅
+/// 提供 Display），由调用方决定映射——不再 `expect`（issue #115：受限环境
+/// 下 TLS/资源初始化失败不应在 panic=abort 产物中直接终止宿主进程）。
+fn build_client(
+    pool: PoolConfig,
+    timeout: TimeoutConfig,
+    proxy: ProxyConfig,
+) -> Result<Client, String> {
     let mut b = Client::builder()
         .connect_timeout(Duration::from_millis(timeout.connect_timeout_ms))
         .pool_max_idle_per_host(pool.max_idle_per_host)
@@ -174,7 +210,7 @@ fn build_client(pool: PoolConfig, timeout: TimeoutConfig, proxy: ProxyConfig) ->
         b = b.timeout(Duration::from_millis(timeout.response_timeout_ms));
     }
     b = apply_proxy(b, &proxy);
-    b.build().expect("shared reqwest Client build failed")
+    b.build().map_err(|e| e.to_string())
 }
 
 /// Apply proxy configuration to a reqwest client builder (by-value chain).
@@ -225,6 +261,7 @@ pub enum HttpMethod {
 
 impl HttpMethod {
     /// 方法名（小写），用于日志。
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             HttpMethod::Get => "get",
@@ -326,13 +363,19 @@ pub struct HttpStreamResponse {
 /// - 408/409/429/5xx 可重试；其他 4xx **立即返回不重试**
 ///
 /// 退避用 Full Jitter（`delay ∈ [0, base)`），防并发 429 惊群。
+///
+/// # Errors
+///
+/// Returns `ApiCall` for transport failures and non-2xx responses (after the
+/// configured retries), `Aborted` when the abort signal fires, and `Timeout`
+/// when reading the body exceeds the 30s overall deadline.
 pub async fn send(
     request: HttpRequest,
     retry_config: RetryConfig,
     error_structure: &ErrorStructure,
 ) -> Result<HttpResponse, AiMuxError> {
     auto_init_from_env();
-    let client = shared_client();
+    let client = shared_client()?;
     let started = Instant::now();
     let (resp, attempt) =
         send_with_retry_raw(client, &request, retry_config, error_structure).await?;
@@ -437,13 +480,19 @@ pub async fn send(
 ///
 /// retry 仅覆盖**建连阶段**——`.send()` 返回 200 后立即返回字节流，流中途
 /// 出错不重试（已吐 token 后重试会重复内容，RFC-0009 §5）。
+///
+/// # Errors
+///
+/// Returns `ApiCall` when establishing the connection (including retries)
+/// fails; transport errors on the byte stream surface as `Err` items in the
+/// returned stream.
 pub async fn send_stream(
     request: HttpRequest,
     retry_config: RetryConfig,
     error_structure: &ErrorStructure,
 ) -> Result<HttpStreamResponse, AiMuxError> {
     auto_init_from_env();
-    let client = shared_streaming_client();
+    let client = shared_streaming_client()?;
     let started = Instant::now();
     let (resp, attempt) =
         send_with_retry_raw(client, &request, retry_config, error_structure).await?;
@@ -666,6 +715,12 @@ impl Drop for ObservedByteStream {
 /// The timeout covers the **entire** call: connect, response body, and any
 /// retry backoff. On expiry the call fails with `AiMuxError::Timeout` (no
 /// retry is attempted after the deadline).
+///
+/// # Errors
+///
+/// Returns `InvalidArgument` for a malformed timeout, `Timeout` when the
+/// total deadline expires, and the inner retry loop's `ApiCall`/`Aborted`
+/// errors.
 pub async fn send_timed(
     request: HttpRequest,
     retry_config: RetryConfig,
@@ -690,6 +745,12 @@ pub async fn send_timed(
 /// wrapped so that `first_chunk_ms` / `chunk_ms` / the remaining `total_ms`
 /// are enforced on the chunks themselves. Expired limits surface as
 /// `AiMuxError::Timeout` items in the stream (after which the stream ends).
+///
+/// # Errors
+///
+/// Returns `InvalidArgument` for a malformed timeout and `Timeout` when the
+/// connect-phase deadline expires; expired chunk limits surface as `Timeout`
+/// items inside the returned stream.
 pub async fn send_stream_timed(
     request: HttpRequest,
     retry_config: RetryConfig,
@@ -976,6 +1037,11 @@ impl Stream for TimeoutBodyStream {
 /// - cancellation is exactly [`AiMuxError::Aborted`].
 ///
 /// Shared by the retry backoff here and by provider polling waits.
+///
+/// # Errors
+///
+/// Returns `AiMuxError::Aborted` when the cancellation signal fires before or
+/// during the sleep.
 pub async fn sleep_or_abort(
     duration: Duration,
     signal: Option<&AbortSignal>,
@@ -1546,21 +1612,40 @@ mod tests {
 
     #[test]
     fn shared_client_is_stable_handle() {
-        let a = shared_client();
-        let b = shared_client();
+        let a = shared_client().expect("client init in test env");
+        let b = shared_client().expect("client init in test env");
         assert!(std::ptr::eq(a, b));
     }
 
     #[test]
     fn shared_streaming_client_is_stable_handle() {
-        let a = shared_streaming_client();
-        let b = shared_streaming_client();
+        let a = shared_streaming_client().expect("client init in test env");
+        let b = shared_streaming_client().expect("client init in test env");
         assert!(std::ptr::eq(a, b));
     }
 
     #[test]
     fn shared_and_streaming_are_distinct() {
-        assert!(!std::ptr::eq(shared_client(), shared_streaming_client()));
+        let a = shared_client().expect("client init in test env");
+        let b = shared_streaming_client().expect("client init in test env");
+        assert!(!std::ptr::eq(a, b));
+    }
+
+    #[test]
+    fn client_init_error_is_non_retryable_api_call() {
+        // Shape lock for the #115 mapping: no HTTP exchange, no status, and a
+        // message that names the failure source (so users can tell an init
+        // failure apart from a provider-side API call).
+        let e = client_init_error("simulated TLS backend failure");
+        match e {
+            AiMuxError::ApiCall(call) => {
+                assert_eq!(call.status_code, None);
+                assert!(!call.is_retryable);
+                assert!(call.message.contains("client initialization failed"));
+                assert!(call.message.contains("simulated TLS backend failure"));
+            }
+            other => panic!("expected ApiCall, got {other:?}"),
+        }
     }
 
     #[test]

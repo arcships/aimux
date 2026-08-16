@@ -93,6 +93,7 @@ impl ReasoningEffort {
     ///
     /// Replaces the per-provider `is_custom_reasoning` helpers that were
     /// copy-pasted across openai/anthropic/xai convert modules (issue M10).
+    #[must_use]
     pub fn is_custom(self) -> bool {
         !matches!(self, ReasoningEffort::ProviderDefault)
     }
@@ -123,7 +124,7 @@ impl std::str::FromStr for ReasoningEffort {
             "medium" => Ok(ReasoningEffort::Medium),
             "high" => Ok(ReasoningEffort::High),
             "xhigh" => Ok(ReasoningEffort::Xhigh),
-            other => Err(format!("unknown reasoning effort: {}", other)),
+            other => Err(format!("unknown reasoning effort: {other}")),
         }
     }
 }

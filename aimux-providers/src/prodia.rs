@@ -38,14 +38,22 @@ impl ProdiaConfig {
             headers: None,
         }
     }
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
+    /// Create from the `PRODIA_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when the environment variable is not
+    /// set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "PRODIA_API_KEY", "Prodia")?;
         Ok(Self::new(api_key))
@@ -56,13 +64,16 @@ pub struct ProdiaProvider {
     config: ProdiaConfig,
 }
 impl ProdiaProvider {
+    #[must_use]
     pub fn new(config: ProdiaConfig) -> Self {
         Self { config }
     }
+    #[must_use]
     pub fn image(&self, model_id: &str) -> ProdiaImageModel {
         ProdiaImageModel::new(model_id.to_string(), self.config.clone())
     }
     /// Create a video generation model instance.
+    #[must_use]
     pub fn video(&self, model_id: &str) -> ProdiaVideoModel {
         ProdiaVideoModel::new(model_id.to_string(), self.config.clone())
     }
@@ -74,6 +85,7 @@ pub struct ProdiaImageModel {
     config: ProdiaConfig,
 }
 impl ProdiaImageModel {
+    #[must_use]
     pub fn new(model_id: String, config: ProdiaConfig) -> Self {
         Self { model_id, config }
     }
@@ -102,7 +114,7 @@ impl ProdiaImageModel {
 
 /// Parse a multipart body into parts (name, content_type, body).
 fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, String, Vec<u8>)> {
-    let delimiter = format!("--{}", boundary);
+    let delimiter = format!("--{boundary}");
     let mut parts = Vec::new();
     let mut idx = 0;
 
@@ -122,7 +134,7 @@ fn parse_multipart(body: &[u8], boundary: &str) -> Vec<(String, String, Vec<u8>)
         };
 
         // Find next boundary
-        let next_delimiter = format!("\r\n{}", delimiter);
+        let next_delimiter = format!("\r\n{delimiter}");
         let end = body[content_start..]
             .windows(next_delimiter.len())
             .position(|w| w == next_delimiter.as_bytes())
@@ -315,6 +327,7 @@ pub struct ProdiaVideoModel {
 }
 
 impl ProdiaVideoModel {
+    #[must_use]
     pub fn new(model_id: String, config: ProdiaConfig) -> Self {
         Self { model_id, config }
     }

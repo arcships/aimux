@@ -15,6 +15,7 @@
 //! These convert user messages into `LanguageModelPrompt`, build `CallOptions`,
 //! and call `LanguageModel::do_generate` / `do_stream` on the provider implementation.
 
+pub mod composite;
 pub mod content;
 pub mod embedding_model;
 pub mod error;
@@ -26,6 +27,7 @@ pub mod language_model;
 pub mod language_model_message;
 pub mod math;
 pub mod message;
+pub mod moa;
 pub mod model_catalogue;
 pub mod model_id;
 pub mod openai_output;
@@ -35,6 +37,7 @@ pub mod recording;
 pub mod replay;
 pub mod reranking_model;
 pub mod result;
+pub mod router;
 pub mod search_model;
 pub mod session;
 pub mod shared;
@@ -49,6 +52,7 @@ pub mod video_model;
 
 /// Convenience re-exports.
 pub mod prelude {
+    pub use crate::composite::ChildModel;
     pub use crate::content::ContentPart;
     pub use crate::embedding_model::{EmbeddingCallOptions, EmbeddingModel, EmbeddingResult};
     pub use crate::error::{AiMuxError, ApiCallError};
@@ -62,6 +66,7 @@ pub mod prelude {
     pub use crate::language_model::LanguageModel;
     pub use crate::language_model_message::LanguageModelPrompt;
     pub use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+    pub use crate::moa::{MoaConfig, MoaFailMode, MoaModel};
     pub use crate::model_catalogue::{
         CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
         ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility, RuntimeModel,
@@ -75,6 +80,9 @@ pub mod prelude {
     pub use crate::provider::Provider;
     pub use crate::reranking_model::{RerankingCallOptions, RerankingModel, RerankingResult};
     pub use crate::result::{GenerateResult, StreamResult};
+    pub use crate::router::{
+        FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,
+    };
     pub use crate::search_model::{
         SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
     };

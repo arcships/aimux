@@ -7,6 +7,7 @@ pub mod model;
 pub mod prepare_tools;
 pub mod sanitize_json_schema;
 pub mod stream;
+pub mod tool_name_mapping;
 pub mod types;
 pub mod usage;
 
@@ -70,6 +71,7 @@ impl AnthropicConfig {
     /// Start a builder for more involved configurations (e.g. `auth_token`,
     /// custom `name`, extra `headers`). The builder validates that `api_key`
     /// and `auth_token` are not both provided.
+    #[must_use]
     pub fn builder() -> AnthropicConfigBuilder {
         AnthropicConfigBuilder::default()
     }
@@ -77,44 +79,51 @@ impl AnthropicConfig {
     /// Override the base URL. Normalizes the value (strips a trailing slash and
     /// a trailing `/v1` segment so the endpoint formula `{base_url}/v1/messages`
     /// never doubles the version) and rejects empty strings.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = normalize_base_url(&url.into());
         self
     }
 
     /// Set the retry configuration. Pass `max_retries: 0` to disable retries.
+    #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.retry_config = config;
         self
     }
 
     /// Set a custom provider name.
+    #[must_use]
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// Authenticate with a bearer token instead of an API key.
+    #[must_use]
     pub fn with_auth_token(mut self, token: impl Into<String>) -> Self {
         self.auth_token = Some(token.into());
         self
     }
 
     /// Attach extra headers merged into every request.
+    #[must_use]
     pub fn with_headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
     /// Set provider-level request body overrides (RFC-0017).
+    #[must_use]
     pub fn with_body_overrides(mut self, overrides: Value) -> Self {
         self.body_overrides = Some(overrides);
         self
     }
 
     /// 标注 api_key 来源(RFC-0023 回放重建用)。
+    #[must_use]
     pub fn with_api_key_source(mut self, source: Option<&str>) -> Self {
-        self.api_key_source = source.map(|s| s.to_string());
+        self.api_key_source = source.map(std::string::ToString::to_string);
         self
     }
 
@@ -123,6 +132,11 @@ impl AnthropicConfig {
     /// Reads `ANTHROPIC_API_KEY` (required) and the optional
     /// `ANTHROPIC_BASE_URL`. `ANTHROPIC_AUTH_TOKEN` is not auto-loaded here;
     /// use [`AnthropicConfig::builder`]`.auth_token` for token auth.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `ANTHROPIC_API_KEY` is not set
+    /// and no key was supplied.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "ANTHROPIC_API_KEY", "Anthropic")?;
         let mut config = Self::new(api_key).with_api_key_source(Some("env:ANTHROPIC_API_KEY"));
@@ -148,31 +162,37 @@ pub struct AnthropicConfigBuilder {
 }
 
 impl AnthropicConfigBuilder {
+    #[must_use]
     pub fn api_key(mut self, api_key: impl Into<String>) -> Self {
         self.api_key = Some(api_key.into());
         self
     }
 
+    #[must_use]
     pub fn auth_token(mut self, auth_token: impl Into<String>) -> Self {
         self.auth_token = Some(auth_token.into());
         self
     }
 
+    #[must_use]
     pub fn base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = Some(base_url.into());
         self
     }
 
+    #[must_use]
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
+    #[must_use]
     pub fn headers(mut self, headers: HashMap<String, String>) -> Self {
         self.headers = Some(headers);
         self
     }
 
+    #[must_use]
     pub fn body_overrides(mut self, overrides: Value) -> Self {
         self.body_overrides = Some(overrides);
         self
@@ -180,6 +200,11 @@ impl AnthropicConfigBuilder {
 
     /// Build the config, validating that `api_key` and `auth_token` are not
     /// both set and that a provided `base_url` is non-empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when both `api_key` and `auth_token`
+    /// are set, or when a provided `base_url` is empty.
     pub fn build(self) -> Result<AnthropicConfig, AiMuxError> {
         if self.api_key.is_some() && self.auth_token.is_some() {
             return Err(AiMuxError::InvalidArgument(
@@ -230,15 +255,18 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
+    #[must_use]
     pub fn new(config: AnthropicConfig) -> Self {
         Self { config }
     }
 
+    #[must_use]
     pub fn model(&self, model_id: &str) -> model::AnthropicModel {
         model::AnthropicModel::new(model_id.to_string(), self.config.clone())
     }
 
     /// Create a Files interface for uploading files to Anthropic.
+    #[must_use]
     pub fn files(&self) -> files::AnthropicFiles {
         files::AnthropicFiles::new(self.config.clone())
     }

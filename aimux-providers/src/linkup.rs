@@ -69,12 +69,17 @@ impl LinkupConfig {
     }
 
     /// Use a custom base URL.
+    #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = without_trailing_slash(&url.into());
         self
     }
 
     /// Create from the `LINKUP_API_KEY` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AiMuxError::InvalidArgument` when `LINKUP_API_KEY` is not set.
     pub fn from_env() -> Result<Self, AiMuxError> {
         let api_key = load_api_key(None, "LINKUP_API_KEY", "Linkup")?;
         Ok(Self::new(api_key))
@@ -89,11 +94,13 @@ pub struct LinkupProvider {
 }
 
 impl LinkupProvider {
+    #[must_use]
     pub fn new(config: LinkupConfig) -> Self {
         Self { config }
     }
 
     /// Create a search model instance.
+    #[must_use]
     pub fn search_model(&self) -> LinkupSearchModel {
         LinkupSearchModel::new(self.config.clone())
     }
@@ -174,6 +181,7 @@ pub struct LinkupSearchModel {
 }
 
 impl LinkupSearchModel {
+    #[must_use]
     pub fn new(config: LinkupConfig) -> Self {
         Self { config }
     }

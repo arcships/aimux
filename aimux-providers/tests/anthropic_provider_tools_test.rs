@@ -27,9 +27,9 @@
 //!    `tools: [{ type: 'provider', id: 'anthropic.web_search_20250305', ... }]`.
 //!    Until `CallOptions.tools` is extended to support provider tools (or a
 //!    separate field is added), these tests cannot be run.
-//! 2. **`GenerateContent` lacks server-tool variants** �?response parsing for
-//!    `server_tool_use`, `web_search_tool_result`, `code_execution_tool_result`,
-//!    `advisor_tool_result`, etc. requires new `GenerateContent` variants.
+//! 2. ~~**`GenerateContent` lacks server-tool variants**~~ �?resolved. The
+//!    result blocks are surfaced as `GenerateContent::ToolResult`, and
+//!    `web_search` hits additionally become `Source` items.
 //! 3. **`build_request_body` doesn't read `providerOptions.anthropic.mcpServers`
 //!    / `container` / `thinking`** �?tests that pass these through
 //!    `CallOptions.provider_options` compile and run but will fail on
@@ -610,13 +610,34 @@ mod web_search_tool {
             "web_search",
             json!({ "maxUses": 1 }),
         )]);
-        let _result = model.do_generate(&options).await.unwrap();
+        let result = model.do_generate(&options).await.unwrap();
 
         // TS expects content to contain:
         // 1. tool-result (isError: true, errorCode: 'max_uses_exceeded')
         // 2. text
-        // The error result block is decoded but not yet surfaced as a
-        // GenerateContent variant; the turn still parses successfully.
+        let tool_result = result
+            .content
+            .iter()
+            .find_map(|c| match c {
+                GenerateContent::ToolResult {
+                    result, is_error, ..
+                } => Some((result, is_error)),
+                _ => None,
+            })
+            .expect("the error result block must be surfaced");
+        assert_eq!(*tool_result.1, Some(true));
+        assert_eq!(
+            tool_result.0["errorCode"],
+            json!("max_uses_exceeded"),
+            "`error_code` is re-keyed to `errorCode`"
+        );
+        assert!(
+            result
+                .content
+                .iter()
+                .any(|c| matches!(c, GenerateContent::Text { .. })),
+            "the trailing text must still be surfaced"
+        );
     }
 
     /// TS: "should work alongside regular client-side tools" (L3695)

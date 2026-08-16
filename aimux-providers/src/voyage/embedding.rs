@@ -31,6 +31,7 @@ pub struct VoyageEmbeddingModel {
 }
 
 impl VoyageEmbeddingModel {
+    #[must_use]
     pub fn new(model_id: String, config: VoyageConfig) -> Self {
         Self { model_id, config }
     }
@@ -132,7 +133,10 @@ impl EmbeddingModel for VoyageEmbeddingModel {
                 let mut indexed: Vec<(u64, Vec<f32>)> = arr
                     .iter()
                     .map(|item| {
-                        let index = item.get("index").and_then(|i| i.as_u64()).unwrap_or(0);
+                        let index = item
+                            .get("index")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0);
                         let embedding = item
                             .get("embedding")
                             .and_then(|e| e.as_array())
@@ -154,7 +158,7 @@ impl EmbeddingModel for VoyageEmbeddingModel {
         let tokens = raw_value
             .get("usage")
             .and_then(|u| u.get("total_tokens"))
-            .and_then(|t| t.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
 
         Ok(EmbeddingResult {
@@ -187,17 +191,17 @@ fn parse_voyage_provider_options(
         input_type: provider_opts
             .and_then(|o| o.get("inputType"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
         truncation: provider_opts
             .and_then(|o| o.get("truncation"))
-            .and_then(|v| v.as_bool()),
+            .and_then(serde_json::Value::as_bool),
         output_dimension: provider_opts
             .and_then(|o| o.get("outputDimension"))
-            .and_then(|d| d.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .map(|d| d as u32),
         output_dtype: provider_opts
             .and_then(|o| o.get("outputDtype"))
             .and_then(|d| d.as_str())
-            .map(|s| s.to_string()),
+            .map(std::string::ToString::to_string),
     }
 }
