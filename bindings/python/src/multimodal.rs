@@ -627,7 +627,26 @@ pub fn start_transcription_session(
                 let mut stream = stream_result.stream;
                 // Immediate delivery when capacity allows (terminal errors are
                 // never preempted); abort only unblocks a full channel.
-                while let Some(part) = stream.next().await {
+                while let Some(item) = stream.next().await {
+                    // In-stream errors raise from `next_part` (issue #145,
+                    // option A) instead of being smuggled through the data
+                    // channel as a serialized `{"Err": ...}` part — matching
+                    // the FFI session, which surfaces them as Err items, and
+                    // the other six bindings' exception sentinels.
+                    let part = match item {
+                        Ok(p) => p,
+                        Err(e) => {
+                            // Terminal by contract: providers end the stream
+                            // after an Error part (openai transcription
+                            // breaks right after), so nothing is dropped by
+                            // returning here. New providers must uphold this.
+                            tokio::select! {
+                                res = tx.send(Err(e)) => { let _ = res; }
+                                _ = effective.cancelled() => {}
+                            }
+                            return;
+                        }
+                    };
                     let json = match serde_json::to_string(&part) {
                         Ok(j) => j,
                         Err(e) => {

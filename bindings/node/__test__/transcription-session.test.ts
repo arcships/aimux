@@ -125,7 +125,7 @@ test.serial('nextPart timeout is determinable for retries and the session surviv
   const session = await startTranscriptionSession(model, null)
   try {
     const first = JSON.parse((await session.nextPart(3000)) as string)
-    t.truthy('StreamStart' in first.Ok)
+    t.truthy('StreamStart' in first)
 
     const thrown = await t.throwsAsync(session.nextPart(250))
     const err = AimuxError.fromNative(thrown as Error)
@@ -137,16 +137,16 @@ test.serial('nextPart timeout is determinable for retries and the session surviv
 
     // The session stayed live across the timeout.
     const late = JSON.parse((await session.nextPart(5000)) as string)
-    t.truthy('TranscriptDelta' in late.Ok)
+    t.truthy('TranscriptDelta' in late)
   } finally {
     session.close()
   }
 })
 
-test.serial('server error event propagates verbatim as an Err part', async (t) => {
-  // NOTE on contract: in-stream errors (a server `error` event) are delivered
-  // as a serialized `{"Err": {...}}` *part* — only connect failures and
-  // nextPart timeouts reject (the session channel returns Err items).
+test.serial('server error event rejects with a typed APICallError', async (t) => {
+  // Contract (issue #145, option A): in-stream errors REJECT from nextPart
+  // with the typed hierarchy — matching the FFI session (Err items) and the
+  // other six bindings.
   const { server, url } = await startFakeRealtimeServer([
     { delayMs: 50, json: ERROR_EVENT },
   ])
@@ -156,15 +156,15 @@ test.serial('server error event propagates verbatim as an Err part', async (t) =
   const session = await startTranscriptionSession(model, null)
   try {
     const first = JSON.parse((await session.nextPart(5000)) as string)
-    t.truthy('StreamStart' in first.Ok)
+    t.truthy('StreamStart' in first)
 
-    const errPart = JSON.parse((await session.nextPart(5000)) as string)
-    const api = errPart.Err.ApiCall
-    // The provider's own message, verbatim, not transport noise.
-    t.is(api.message, 'insufficient quota for realtime transcription')
-    // The retry verdict is decidable from the part.
-    t.is(api.is_retryable, false)
-    t.is(api.status_code, null)
+    const thrown = await t.throwsAsync(session.nextPart(5000))
+    const err = AimuxError.fromNative(thrown as Error)
+    t.true(err instanceof APICallError)
+    // The provider's own message, verbatim (the error adds its prefix).
+    t.regex(err.message, /insufficient quota for realtime transcription$/)
+    // The retry verdict stays decidable on the typed error.
+    t.is(err.retryable, false)
 
     // The error terminated the stream: the channel ends normally.
     t.is(await session.nextPart(3000), null)
