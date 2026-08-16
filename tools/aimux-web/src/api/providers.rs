@@ -10,7 +10,10 @@ use aimux_providers::provider_name::ProviderName;
 /// registry-backed OpenAI-compatible provider (generated enum).
 pub fn provider_names() -> Vec<String> {
     const NATIVE: [&str; 6] = ["openai", "anthropic", "google", "mistral", "xai", "cohere"];
-    let mut names: Vec<String> = NATIVE.iter().map(|s| s.to_string()).collect();
+    let mut names: Vec<String> = NATIVE
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     names.extend(ProviderName::ALL.iter().map(|p| p.as_str().to_string()));
     names
 }
