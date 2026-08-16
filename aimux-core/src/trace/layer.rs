@@ -517,6 +517,12 @@ impl LanguageModel for TraceLayer {
         self.inner.model_id()
     }
 
+    /// RFC-0023 §3.3: transparent decorators must forward the inner snapshot
+    /// (otherwise recording sees the decorator's minimal record).
+    fn config_snapshot(&self) -> crate::recording::ProviderRecord {
+        self.inner.config_snapshot()
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let ctx = self.make_record_ctx(options, None, None, Arc::new(AtomicU64::new(u64::MAX)));
         match self.inner.do_generate(options).await {
