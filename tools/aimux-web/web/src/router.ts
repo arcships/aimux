@@ -5,6 +5,7 @@ import Traces from './views/Traces.vue'
 import Sessions from './views/Sessions.vue'
 import Replay from './views/Replay.vue'
 import CacheProbe from './views/CacheProbe.vue'
+import Settings from './views/Settings.vue'
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -15,5 +16,6 @@ export const router = createRouter({
     { path: '/sessions', name: 'sessions', component: Sessions },
     { path: '/replay', name: 'replay', component: Replay },
     { path: '/cache-probe', name: 'cache-probe', component: CacheProbe },
+    { path: '/settings', name: 'settings', component: Settings },
   ],
 })

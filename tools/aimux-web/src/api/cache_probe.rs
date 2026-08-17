@@ -24,7 +24,8 @@ use crate::wire;
 pub struct ProbeRequest {
     pub provider: String,
     pub model: String,
-    /// `None` / `env:VAR` only (plaintext rejected).
+    /// `None` (Settings key store / provider env var) / `env:VAR`, or a
+    /// plaintext literal on loopback binds (RFC-0029 §5.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -48,14 +49,14 @@ const PROBE_SESSION: &str = "cache-probe";
 
 /// `POST /api/cache-probe` — run a cache probe and return per-round results,
 /// aggregated stats and the raw trace records.
-pub async fn run(State(_state): State<AppState>, Json(req): Json<ProbeRequest>) -> Response {
-    match run_inner(req).await {
+pub async fn run(State(state): State<AppState>, Json(req): Json<ProbeRequest>) -> Response {
+    match run_inner(state, req).await {
         Ok(resp) => resp,
         Err(e) => err_response(e),
     }
 }
 
-async fn run_inner(req: ProbeRequest) -> Result<Response, AiMuxError> {
+async fn run_inner(state: AppState, req: ProbeRequest) -> Result<Response, AiMuxError> {
     if req.max_requests == 0 {
         return Err(AiMuxError::InvalidArgument(
             "max_requests must be >= 1".into(),
@@ -75,7 +76,12 @@ async fn run_inner(req: ProbeRequest) -> Result<Response, AiMuxError> {
         .into_response());
     }
 
-    let key = wire::resolve_api_key(req.api_key.as_deref())?;
+    let key = wire::resolve_api_key(
+        req.api_key.as_deref(),
+        &req.provider,
+        &state.keys,
+        state.loopback,
+    )?;
     let model =
         model_builder::build_model(&req.provider, key, &req.model, req.base_url.as_deref())?;
 

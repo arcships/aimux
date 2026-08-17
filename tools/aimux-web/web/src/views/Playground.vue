@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { api, callStream, parseStreamPart } from '../api/client'
 import type { WireMessage } from '../types/WireMessage'
@@ -274,8 +274,11 @@ function openTrace(item: ChatItem) {
           </button>
         </div>
         <div>
-          <Label>API key（只接受 env 引用）</Label>
+          <Label>API key（env 引用；留空用 Settings）</Label>
           <Input v-model="apiKey" class="mt-1 font-mono" :placeholder="apiKeyHint" />
+          <div class="mt-1 text-[11px] text-muted-foreground">
+            也可在 <RouterLink to="/settings" class="underline decoration-dotted">Settings</RouterLink> 保存该 provider 的 key，此处留空即可。
+          </div>
         </div>
         <div>
           <Label>Base URL（可选）</Label>
