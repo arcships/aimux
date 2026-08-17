@@ -396,7 +396,13 @@ jobs:
           mkdir -p staging
           EXT=""; [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
           cp "target/${{ matrix.settings.target }}/release/aimux-web$EXT" "staging/aimux-web${{ matrix.settings.suffix }}"
-          for tool in aimux-cli aimux-replay; do
+          # aimux-cli's [[bin]] is named "aimux" — rename on the way out so
+          # the release asset stays aimux-cli-<platform> (the -f guard keeps
+          # the replay step honest on platforms where a tool is absent).
+          if [ -f "target/${{ matrix.settings.target }}/release/aimux$EXT" ]; then
+            cp "target/${{ matrix.settings.target }}/release/aimux$EXT" "staging/aimux-cli${{ matrix.settings.suffix }}"
+          fi
+          for tool in aimux-replay; do
             if [ -f "target/${{ matrix.settings.target }}/release/$tool$EXT" ]; then
               cp "target/${{ matrix.settings.target }}/release/$tool$EXT" "staging/$tool${{ matrix.settings.suffix }}"
             fi
