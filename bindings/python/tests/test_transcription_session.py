@@ -3,8 +3,8 @@
 Covers the session surface (`start_transcription_session` / `push_audio` /
 `next_part` / `close`) against a fake realtime WebSocket server:
 
-- `next_part(timeout_ms=...)` raises `APITimeoutError` that is *determinable*
-  for retries (`retryable` is False), and the session stays live afterwards.
+- `next_part(timeout_ms=...)` raises `APITimeoutError`, and the session stays
+  live afterwards.
 - A server-sent realtime `error` event propagates verbatim as `APICallError`.
 - A connect failure is delivered through the session channel as the first
   `next_part` result (the session API never silently hangs).
@@ -174,7 +174,7 @@ DELTA_EVENT = (
 class TestTranscriptionSessionBehavior:
     """Session API semantics through the PyO3 channel."""
 
-    def test_next_part_timeout_is_determinable_and_session_survives(self):
+    def test_next_part_timeout_preserves_the_live_session(self):
         # session.created at 50ms (no part mapping), delta at 900ms: the
         # 250ms next_part window must time out in between and the session
         # must still deliver the later delta.
@@ -189,10 +189,11 @@ class TestTranscriptionSessionBehavior:
 
                 with pytest.raises(APITimeoutError) as ei:
                     session.next_part(timeout_ms=250)
-                # Timeout is a spent budget, not a transport failure — the
-                # retry verdict must be decidable (and be "don't retry").
+                # Timeout is a spent budget, not a provider-call transport
+                # failure, so it has no API-call payload.
                 assert "no transcription part within timeout" in str(ei.value)
-                assert ei.value.retryable is False
+                assert not hasattr(ei.value, "status")
+                assert not hasattr(ei.value, "retryable")
 
                 # The session stayed live across the timeout.
                 late = session.next_part(timeout_ms=5000)
@@ -235,6 +236,10 @@ class TestTranscriptionSessionBehavior:
         session = start_transcription_session(model, None)
         with pytest.raises(APICallError) as ei:
             session.next_part(timeout_ms=5000)
-        assert "websocket connect failed" in str(ei.value)
+        err = ei.value
+        assert "websocket connect failed" in str(err)
+        # It is still an API-call error, but no HTTP response was observed.
+        assert err.status is None
+        assert err.retry_ms is None
         # The session terminated with the connect error (channel closed).
         assert session.next_part(timeout_ms=3000) is None

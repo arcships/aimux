@@ -17,7 +17,10 @@ pub use multimodal::*;
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::error::{AimuxResult, MResult, MappedError, StreamItem};
+use crate::error::{
+    AimuxResult, BindingError, AiMuxBindingError, MResult, StreamItem, parse_wire_json,
+    serialize_result,
+};
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
     GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
@@ -117,18 +120,15 @@ impl Model {
     pub fn trace_aggregate(&self, filter_json: Option<String>) -> AimuxResult<String> {
         AimuxResult((|| -> crate::error::MResult<String> {
             let Some(store) = &self.trace_store else {
-                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
                     "model is not traced; call trace() first".into(),
                 )));
             };
             let filter = match filter_json {
-                Some(f) => serde_json::from_str(&f).map_err(|e| {
-                    MappedError::from(&AiMuxError::InvalidArgument(format!("invalid filter: {e}")))
-                })?,
+                Some(f) => parse_wire_json("filter", &f)?,
                 None => Default::default(),
             };
-            serde_json::to_string(&store.aggregate(&filter))
-                .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+            serialize_result(&store.aggregate(&filter))
         })())
     }
 
@@ -138,15 +138,14 @@ impl Model {
     pub fn trace_session_chain(&self, session_id: String) -> AimuxResult<String> {
         AimuxResult((|| -> crate::error::MResult<String> {
             let Some(store) = &self.trace_store else {
-                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
                     "model is not traced; call trace() first".into(),
                 )));
             };
-            let view = store
-                .session_chain(&session_id)
-                .ok_or_else(|| MappedError::from(&AiMuxError::Other("unknown session".into())))?;
-            serde_json::to_string(&view)
-                .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+            let view = store.session_chain(&session_id).ok_or_else(|| {
+                AiMuxBindingError::from(&AiMuxError::InvalidArgument("unknown session".into()))
+            })?;
+            serialize_result(&view)
         })())
     }
 
@@ -157,13 +156,12 @@ impl Model {
     pub fn trace_session_trajectory(&self, session_id: String) -> AimuxResult<String> {
         AimuxResult((|| -> crate::error::MResult<String> {
             let Some(store) = &self.trace_store else {
-                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
                     "model is not traced; call trace() first".into(),
                 )));
             };
             let stats = store.session_cache_trajectory(&session_id);
-            serde_json::to_string(&stats)
-                .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+            serialize_result(&stats)
         })())
     }
 
@@ -172,16 +170,22 @@ impl Model {
     pub fn trace_export_jsonl(&self) -> AimuxResult<String> {
         AimuxResult((|| -> crate::error::MResult<String> {
             let Some(store) = &self.trace_store else {
-                return Err(MappedError::from(&AiMuxError::InvalidArgument(
+                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
                     "model is not traced; call trace() first".into(),
                 )));
             };
             let mut buf = Vec::new();
             store
                 .export_jsonl(&mut buf)
-                .map_err(|e| MappedError::from(&AiMuxError::Other(format!("export: {e}"))))?;
-            String::from_utf8(buf)
-                .map_err(|e| MappedError::from(&AiMuxError::Other(format!("utf8: {e}"))))
+                .map_err(|e| BindingError::ResultSerialization {
+                    message: format!("export: {e}"),
+                })?;
+            String::from_utf8(buf).map_err(|e| {
+                BindingError::ResultSerialization {
+                    message: format!("utf8: {e}"),
+                }
+                .into()
+            })
         })())
     }
 
@@ -215,11 +219,9 @@ impl Model {
 
                 let result = generate_text(&*self.inner, parsed_prompt, opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
 
-                serde_json::to_string(&result).map_err(|e| {
-                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
-                })
+                serialize_result(&result)
             }
             .await;
             __r
@@ -247,11 +249,9 @@ impl Model {
 
                 let result = generate_object(&*self.inner, parsed_prompt, opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
 
-                serde_json::to_string(&result).map_err(|e| {
-                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
-                })
+                serialize_result(&result)
             }
             .await;
             __r
@@ -278,12 +278,13 @@ impl Model {
 
                 let stream_result = stream_text(&*self.inner, parsed_prompt, opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                let aggregated = stream_result.consume().await.map_err(|e| MappedError::from(&e))?;
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                let aggregated = stream_result
+                    .consume()
+                    .await
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
 
-                serde_json::to_string(&aggregated).map_err(|e| {
-                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
-                })
+                serialize_result(&aggregated)
             }
             .await;
             __r
@@ -309,29 +310,21 @@ impl Model {
                 let abort_signal = bridge.map(|b| b.core_signal());
 
                 let (tx, rx) =
-                    tokio::sync::mpsc::channel::<std::result::Result<String, MappedError>>(64);
+                    tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxBindingError>>(64);
 
                 // Spawn the stream-driving task immediately on napi's tokio runtime.
                 napi::tokio::spawn(async move {
                     let prompt = match parse_prompt(&prompt) {
                         Ok(p) => p,
                         Err(e) => {
-                            let _ = tx
-                                .send(Err(MappedError::from(&AiMuxError::InvalidPrompt(format!(
-                                    "invalid prompt: {e}"
-                                )))))
-                                .await;
+                            let _ = tx.send(Err(e)).await;
                             return;
                         }
                     };
                     let mut opts = match parse_opts(options.as_deref()) {
                         Ok(o) => o,
                         Err(e) => {
-                            let _ = tx
-                                .send(Err(MappedError::from(&AiMuxError::InvalidArgument(
-                                    format!("invalid options: {e}"),
-                                ))))
-                                .await;
+                            let _ = tx.send(Err(e)).await;
                             return;
                         }
                     };
@@ -344,21 +337,34 @@ impl Model {
                             while let Some(item) = stream.next().await {
                                 match item {
                                     Ok(part) => {
-                                        let json = serde_json::to_string(&part)
-                                            .unwrap_or_else(|_| "{}".to_string());
+                                        // Not serializable → end the stream with the binding's
+                                        // ResultSerialization, never a silent "{}".
+                                        let json = match serde_json::to_string(&part) {
+                                            Ok(j) => j,
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(Err(AiMuxBindingError::from(
+                                                        BindingError::ResultSerialization {
+                                                            message: format!("stream part: {e}"),
+                                                        },
+                                                    )))
+                                                    .await;
+                                                break;
+                                            }
+                                        };
                                         if tx.send(Ok(json)).await.is_err() {
                                             break; // receiver dropped (JS stopped iterating)
                                         }
                                     }
                                     Err(e) => {
-                                        let _ = tx.send(Err(MappedError::from(&e))).await;
+                                        let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
                                         break;
                                     }
                                 }
                             }
                         }
                         Err(e) => {
-                            let _ = tx.send(Err(MappedError::from(&e))).await;
+                            let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
                         }
                     }
                 });
@@ -390,11 +396,9 @@ impl Model {
 
                 let result = generate_text_as_openai(&*self.inner, parsed_prompt, opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
 
-                serde_json::to_string(&result).map_err(|e| {
-                    MappedError::from(&AiMuxError::JsonParse(format!("serialize result: {e}")))
-                })
+                serialize_result(&result)
             }
             .await;
             __r
@@ -418,28 +422,20 @@ impl Model {
                 let abort_signal = bridge.map(|b| b.core_signal());
 
                 let (tx, rx) =
-                    tokio::sync::mpsc::channel::<std::result::Result<String, MappedError>>(64);
+                    tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxBindingError>>(64);
 
                 napi::tokio::spawn(async move {
                     let prompt = match parse_prompt(&prompt) {
                         Ok(p) => p,
                         Err(e) => {
-                            let _ = tx
-                                .send(Err(MappedError::from(&AiMuxError::InvalidPrompt(format!(
-                                    "invalid prompt: {e}"
-                                )))))
-                                .await;
+                            let _ = tx.send(Err(e)).await;
                             return;
                         }
                     };
                     let mut opts = match parse_opts(options.as_deref()) {
                         Ok(o) => o,
                         Err(e) => {
-                            let _ = tx
-                                .send(Err(MappedError::from(&AiMuxError::InvalidArgument(
-                                    format!("invalid options: {e}"),
-                                ))))
-                                .await;
+                            let _ = tx.send(Err(e)).await;
                             return;
                         }
                     };
@@ -472,21 +468,34 @@ impl Model {
                             while let Some(item) = stream.next().await {
                                 match item {
                                     Ok(chunk) => {
-                                        let json = serde_json::to_string(&chunk)
-                                            .unwrap_or_else(|_| "{}".to_string());
+                                        // Not serializable → end the stream with the binding's
+                                        // ResultSerialization, never a silent "{}".
+                                        let json = match serde_json::to_string(&chunk) {
+                                            Ok(j) => j,
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(Err(AiMuxBindingError::from(
+                                                        BindingError::ResultSerialization {
+                                                            message: format!("stream chunk: {e}"),
+                                                        },
+                                                    )))
+                                                    .await;
+                                                break;
+                                            }
+                                        };
                                         if tx.send(Ok(json)).await.is_err() {
                                             break;
                                         }
                                     }
                                     Err(e) => {
-                                        let _ = tx.send(Err(MappedError::from(&e))).await;
+                                        let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
                                         break;
                                     }
                                 }
                             }
                         }
                         Err(e) => {
-                            let _ = tx.send(Err(MappedError::from(&e))).await;
+                            let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
                         }
                     }
                 });
@@ -510,7 +519,7 @@ impl Model {
 pub struct StreamTextGenerator {
     rx: std::sync::Arc<
         tokio::sync::Mutex<
-            Option<tokio::sync::mpsc::Receiver<std::result::Result<String, MappedError>>>,
+            Option<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
         >,
     >,
 }
@@ -532,10 +541,10 @@ impl AsyncGenerator for StreamTextGenerator {
             match guard.as_mut() {
                 Some(rx) => {
                     match rx.recv().await {
-                        Some(Ok(json)) => Ok(Some(StreamItem::Json(json))),
+                        Some(Ok(json)) => Ok(Some(StreamItem::json(json))),
                         // Converting Failure to a napi value (JS thread, Env
                         // present) rejects `next()` with a structured error.
-                        Some(Err(m)) => Ok(Some(StreamItem::Failure(m))),
+                        Some(Err(m)) => Ok(Some(StreamItem::failure(m))),
                         None => Ok(None), // stream finished
                     }
                 }
@@ -578,14 +587,14 @@ pub struct ProviderConfig {
 fn apply_provider_config_openai(
     mut config: aimux_providers::openai::OpenAIConfig,
     cfg: &ProviderConfig,
-) -> aimux_providers::openai::OpenAIConfig {
+) -> MResult<aimux_providers::openai::OpenAIConfig> {
     if let Some(url) = &cfg.base_url {
         config = config.with_base_url(url);
     }
     if let Some(ref json_str) = cfg.headers {
-        if let Ok(h) = serde_json::from_str::<std::collections::HashMap<String, String>>(json_str) {
-            config = config.with_headers(h);
-        }
+        let h: std::collections::HashMap<String, String> =
+            parse_wire_json("config.headers", json_str)?;
+        config = config.with_headers(h);
     }
     if let Some(ref org) = cfg.organization {
         config = config.with_org_id(org);
@@ -600,11 +609,10 @@ fn apply_provider_config_openai(
         });
     }
     if let Some(ref json_str) = cfg.body_overrides {
-        if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
-            config = config.with_body_overrides(overrides);
-        }
+        let overrides: serde_json::Value = parse_wire_json("config.bodyOverrides", json_str)?;
+        config = config.with_body_overrides(overrides);
     }
-    config
+    Ok(config)
 }
 
 /// 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
@@ -646,13 +654,22 @@ pub fn init_session_infer(enabled: bool) {
 /// (RFC-0020). Entries override same-named built-ins or add new ones.
 ///
 /// `configJson` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
-/// Throws on invalid JSON or validation failure (bad base_url scheme, empty
-/// name, unsupported protocol).
+/// Malformed JSON text throws a plain `Error` (napi `InvalidArg`); a
+/// well-formed document the registry rejects (bad base_url scheme, empty
+/// name, unsupported protocol, wrong shape) throws `InvalidArgumentError`.
 #[napi]
 pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
     AimuxResult((|| -> error::MResult<()> {
-        aimux_providers::load_providers_from_json(&config_json)
-            .map_err(|e| crate::error::MappedError::from(&e))
+        // Malformed text is the binding's finding; the registry reports a
+        // schema mismatch as `JsonParse`, which is core's InvalidArgument
+        // here (the text already parsed) — JsonParse is for provider responses.
+        let _: serde_json::Value = parse_wire_json("config_json", &config_json)?;
+        aimux_providers::load_providers_from_json(&config_json).map_err(|e| match e {
+            AiMuxError::JsonParse(m) => crate::error::AiMuxBindingError::from(
+                &AiMuxError::InvalidArgument(format!("config_json: {m}")),
+            ),
+            e => crate::error::AiMuxBindingError::from(&e),
+        })
     })())
 }
 
@@ -670,12 +687,8 @@ pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
 #[napi]
 pub fn init_proxy(config_json: String) -> error::AimuxResult<()> {
     AimuxResult((|| -> error::MResult<()> {
-        let config: aimux_provider_utils::ProxyConfig = serde_json::from_str(&config_json)
-            .map_err(|e| {
-                MappedError::from(&AiMuxError::InvalidArgument(format!(
-                    "invalid proxy config JSON: {e}"
-                )))
-            })?;
+        let config: aimux_provider_utils::ProxyConfig =
+            parse_wire_json("config_json", &config_json)?;
         // `init_proxy` returns false when the shared client is already up; treat
         // that as success (idempotent) so callers don't reason about ordering.
         let _ = aimux_provider_utils::init_proxy(config);
@@ -689,11 +702,17 @@ pub fn init_proxy(config_json: String) -> error::AimuxResult<()> {
 
 /// 启动录制(RFC-0023 P1/P2):把完整 `Recording` 写 JSONL 到 `{dir}/recordings.jsonl`
 /// (目录自动创建)。录制 **opt-in**;再次调用(不同 dir)替换 recorder。
+/// Throws `RecordingError` (`code` = `Init` / `OpenFile` / `Spawn`) when the
+/// recorder cannot be set up; the previous recorder, if any, stays in place.
 #[napi]
-pub fn init_recording(dir: String) {
-    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-        aimux_core::recording::JsonlRecorder::new(dir),
-    )));
+pub fn init_recording(dir: String) -> AimuxResult<()> {
+    AimuxResult(
+        aimux_core::recording::JsonlRecorder::try_new(dir)
+            .map(|rec| {
+                aimux_core::recording::init_recording(Some(std::sync::Arc::new(rec)));
+            })
+            .map_err(AiMuxBindingError::from),
+    )
 }
 
 /// 启动内存有界录制(RFC-0023 P6):`RingRecorder`,FIFO 淘汰,丢弃计数可查。
@@ -712,17 +731,9 @@ pub fn init_recording_ring(cap: Option<u32>) -> error::AimuxResult<()> {
             Ok(())
         }
         // 显式 cap == 0:拒绝(与 Kotlin/Java/Python 一致)。
-        Some(0) => Err(crate::error::MappedError {
-            code: "InvalidArgument".to_string(),
-            message: "initRecordingRing: cap must be > 0".to_string(),
-            status: -1,
-            retry_ms: -1,
-            retryable: false,
-            provider_code: None,
-            request_id: None,
-            response_body: None,
-            error_value: None,
-        }),
+        Some(0) => Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
+            "initRecordingRing: cap must be > 0".into(),
+        ))),
         // 显式 cap > 0:指定容量的有界 ring。
         Some(c) => {
             aimux_core::recording::init_recording(Some(std::sync::Arc::new(
@@ -748,6 +759,19 @@ pub fn recording_flush() {
     }
 }
 
+/// Flush the global recorder and **report write failures**: throws
+/// `RecordingError` (`code` = `WriterGone` / `FlushTimeout` / `Write`) when the
+/// data could not be confirmed on disk. `RecordingError` is its own class,
+/// not an `AimuxError`. Resolves normally when nothing is recording. The
+/// legacy `recordingFlush` stays and never reports.
+#[napi]
+pub fn recording_try_flush() -> AimuxResult<()> {
+    let Some(rec) = aimux_core::recording::recorder() else {
+        return AimuxResult(Ok(()));
+    };
+    AimuxResult(rec.try_flush().map_err(AiMuxBindingError::from))
+}
+
 /// 从录制 JSONL 创建 mock 回放模型(RFC-0023 P3):按输入匹配录制响应,
 /// **不发真实 API**。返回的 `Model` 可用于 `generateText` / `streamText`。
 #[napi]
@@ -759,16 +783,27 @@ pub fn mock_replay(recordings_jsonl: String) -> AimuxResult<Model> {
             if line.is_empty() {
                 continue;
             }
-            let rec = serde_json::from_str(line).map_err(|e| {
-                MappedError::from(&AiMuxError::InvalidArgument(format!(
-                    "recordings line {}: {e}",
-                    idx + 1
-                )))
-            })?;
+            // Same split as parse_wire_json, with the line number in whichever
+            // message actually reaches JS (binding errors render from `binding`,
+            // not `message`).
+            let rec: aimux_core::recording::Recording =
+                serde_json::from_str(line).map_err(|e| {
+                    let message = format!("recordings line {}: {e}", idx + 1);
+                    match e.classify() {
+                        serde_json::error::Category::Data => {
+                            AiMuxBindingError::from(&AiMuxError::InvalidArgument(message))
+                        }
+                        _ => BindingError::InvalidWireJson {
+                            argument: "recordings_jsonl",
+                            message,
+                        }
+                        .into(),
+                    }
+                })?;
             recordings.push(rec);
         }
         if recordings.is_empty() {
-            return Err(MappedError::from(&AiMuxError::InvalidArgument(
+            return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
                 "no recordings".into(),
             )));
         }
@@ -785,24 +820,17 @@ pub fn mock_replay(recordings_jsonl: String) -> AimuxResult<Model> {
 }
 
 #[napi]
-pub fn router(
-    models: Vec<&Model>,
-    config_json: Option<String>,
-) -> AimuxResult<Model> {
+pub fn router(models: Vec<&Model>, config_json: Option<String>) -> AimuxResult<Model> {
     AimuxResult((|| -> crate::error::MResult<Model> {
         if models.is_empty() {
-            return Err(MappedError::from(&AiMuxError::InvalidArgument(
+            return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
                 "router: models must be non-empty".into(),
             )));
         }
         let children: Vec<Arc<dyn LanguageModel>> =
             models.iter().map(|m| m.inner.clone()).collect();
         let cfg: RouterFfiConfig = match config_json.as_deref() {
-            Some(json) => serde_json::from_str(json).map_err(|e| {
-                MappedError::from(&AiMuxError::JsonParse(format!(
-                    "router config_json: {e}"
-                )))
-            })?,
+            Some(json) => parse_wire_json("config_json", json)?,
             None => RouterFfiConfig::default(),
         };
         let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
@@ -821,8 +849,7 @@ pub fn router(
             provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
             model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
         };
-        let model =
-            aimux_core::router::RouterModel::new(children, router, fallback, router_cfg);
+        let model = aimux_core::router::RouterModel::new(children, router, fallback, router_cfg);
         Ok(Model {
             inner: Arc::new(model),
             trace_store: None,
@@ -840,9 +867,7 @@ pub fn moa(
         let refs: Vec<Arc<dyn LanguageModel>> =
             references.iter().map(|m| m.inner.clone()).collect();
         let cfg: aimux_core::moa::MoaConfig = match config_json.as_deref() {
-            Some(json) => serde_json::from_str(json).map_err(|e| {
-                MappedError::from(&AiMuxError::JsonParse(format!("moa config_json: {e}")))
-            })?,
+            Some(json) => parse_wire_json("config_json", json)?,
             None => aimux_core::moa::MoaConfig::default(),
         };
         let model = aimux_core::moa::MoaModel::new(refs, aggregator.inner.clone(), cfg);
@@ -870,9 +895,7 @@ struct RouterFfiConfig {
 pub fn session_calls(session_id: String) -> AimuxResult<String> {
     AimuxResult((|| -> crate::error::MResult<String> {
         let calls = aimux_core::session::session_calls(&session_id);
-        serde_json::to_string(&calls).map_err(|e| {
-            MappedError::from(&AiMuxError::JsonParse(format!("serialize sessionCalls: {e}")))
-        })
+        serialize_result(&calls)
     })())
 }
 
@@ -881,9 +904,7 @@ pub fn session_calls(session_id: String) -> AimuxResult<String> {
 pub fn list_sessions() -> AimuxResult<String> {
     AimuxResult((|| -> crate::error::MResult<String> {
         let views = aimux_core::session::list_sessions();
-        serde_json::to_string(&views).map_err(|e| {
-            MappedError::from(&AiMuxError::JsonParse(format!("serialize listSessions: {e}")))
-        })
+        serialize_result(&views)
     })())
 }
 
@@ -905,14 +926,14 @@ pub async fn openai(
                     cfg = cfg.with_base_url(url);
                 }
                 Some(Either::B(opts)) => {
-                    cfg = apply_provider_config_openai(cfg, &opts);
+                    cfg = apply_provider_config_openai(cfg, &opts)?;
                 }
                 None => {}
             }
             let provider = OpenAIProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -945,12 +966,9 @@ pub async fn anthropic(
                         cfg = cfg.with_base_url(url);
                     }
                     if let Some(ref json_str) = opts.headers {
-                        if let Ok(h) = serde_json::from_str::<
-                            std::collections::HashMap<String, String>,
-                        >(json_str)
-                        {
-                            cfg = cfg.with_headers(h);
-                        }
+                        let h: std::collections::HashMap<String, String> =
+                            parse_wire_json("config.headers", json_str)?;
+                        cfg = cfg.with_headers(h);
                     }
                     if let Some(max) = opts.max_retries {
                         cfg = cfg.with_retry_config(aimux_provider_utils::RetryConfig {
@@ -959,9 +977,9 @@ pub async fn anthropic(
                         });
                     }
                     if let Some(ref json_str) = opts.body_overrides {
-                        if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            cfg = cfg.with_body_overrides(overrides);
-                        }
+                        let overrides: serde_json::Value =
+                            parse_wire_json("config.bodyOverrides", json_str)?;
+                        cfg = cfg.with_body_overrides(overrides);
                     }
                 }
                 None => {}
@@ -969,7 +987,7 @@ pub async fn anthropic(
             let provider = AnthropicProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -991,7 +1009,7 @@ pub async fn deepseek(
         let __r: crate::error::MResult<Model> = async {
             let options = provider_options_from_config(config)?;
             let model = aimux_providers::provider("deepseek", Some(api_key), &model_id, options)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1033,7 +1051,7 @@ pub async fn google(
             let provider = GoogleProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1071,7 +1089,7 @@ pub async fn cohere(
             let provider = CohereProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1109,7 +1127,7 @@ pub async fn mistral(
             let provider = MistralProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1147,7 +1165,7 @@ pub async fn xai(
             let provider = XAIProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1188,7 +1206,7 @@ pub async fn bedrock(
             let provider = BedrockProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1229,7 +1247,7 @@ pub async fn vertex(
             let provider = VertexProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1271,7 +1289,7 @@ pub async fn anthropic_aws(
             let provider = AnthropicAwsProvider::new(cfg);
             let model = provider
                 .language_model(&model_id)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1318,10 +1336,10 @@ pub async fn azure(
             if !resource_name.is_empty() {
                 cfg = cfg.with_resource_name(resource_name);
             }
-            let provider = AzureProvider::new(cfg).map_err(|e| MappedError::from(&e))?;
+            let provider = AzureProvider::new(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
             let model = provider
                 .language_model(&deployment)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1349,7 +1367,7 @@ pub async fn provider(
                 None => None,
             };
             let model = aimux_providers::provider(&name, api_key, &model_id, options)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(Model {
                 inner: Arc::from(model),
                 trace_store: None,
@@ -1393,10 +1411,8 @@ impl ProviderHandle {
                     .inner
                     .list_models()
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&models).map_err(|e| {
-                    MappedError::from(&AiMuxError::JsonParse(format!("serialize list_models: {e}")))
-                })
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&models)
             }
             .await;
             __r
@@ -1412,7 +1428,7 @@ impl ProviderHandle {
                 let m = self
                     .inner
                     .language_model(&model_id)
-                    .map_err(|e| MappedError::from(&e))?;
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
                 Ok(Model {
                     inner: Arc::from(m),
                     // A model built from a provider handle starts untraced; enable
@@ -1446,7 +1462,7 @@ pub async fn create_provider(
                 None => None,
             };
             let p = aimux_providers::provider_handle(&name, api_key, options)
-                .map_err(|e| MappedError::from(&e))?;
+                .map_err(|e| AiMuxBindingError::from(&e))?;
             Ok(ProviderHandle {
                 inner: Arc::from(p),
             })
@@ -1465,10 +1481,8 @@ pub async fn get_model_specs(source_url: Option<String>) -> AimuxResult<String> 
         let __r: crate::error::MResult<String> = async {
             let cat = aimux_providers::get_model_specs(source_url.as_deref())
                 .await
-                .map_err(|e| MappedError::from(&e))?;
-            serde_json::to_string(&cat).map_err(|e| {
-                MappedError::from(&AiMuxError::JsonParse(format!("serialize catalogue: {e}")))
-            })
+                .map_err(|e| AiMuxBindingError::from(&e))?;
+            serialize_result(&cat)
         }
         .await;
         __r
@@ -1491,11 +1505,7 @@ fn provider_options_from_config(
                 o.base_url = Some(url);
             }
             if let Some(ref json_str) = cfg.headers {
-                if let Ok(h) =
-                    serde_json::from_str::<std::collections::HashMap<String, String>>(json_str)
-                {
-                    o.headers = Some(h);
-                }
+                o.headers = Some(parse_wire_json("config.headers", json_str)?);
             }
             if let Some(org) = cfg.organization {
                 o.organization = Some(org);
@@ -1507,9 +1517,7 @@ fn provider_options_from_config(
                 o.max_retries = Some(max);
             }
             if let Some(ref json_str) = cfg.body_overrides {
-                if let Ok(overrides) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    o.body_overrides = Some(overrides);
-                }
+                o.body_overrides = Some(parse_wire_json("config.bodyOverrides", json_str)?);
             }
             Some(o)
         }
@@ -1522,8 +1530,7 @@ fn provider_options_from_config(
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn parse_prompt(json: &str) -> MResult<ModelPrompt> {
-    let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("invalid prompt JSON: {e}"))))?;
+    let value: serde_json::Value = parse_wire_json("prompt_json", json)?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -1531,7 +1538,11 @@ fn parse_prompt(json: &str) -> MResult<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("invalid prompt: {e}"))))
+        // Well-formed JSON of the wrong shape: core validation, not a binding
+        // transport failure.
+        .map_err(|e| {
+            AiMuxBindingError::from(&AiMuxError::InvalidArgument(format!("invalid prompt: {e}")))
+        })
 }
 
 fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
@@ -1542,9 +1553,7 @@ fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
             if trimmed.is_empty() || trimmed == "null" {
                 return Ok(GenerateTextOptions::default());
             }
-            serde_json::from_str(s).map_err(|e| {
-                MappedError::from(&AiMuxError::JsonParse(format!("invalid options JSON: {e}")))
-            })
+            parse_wire_json("opts_json", s)
         }
     }
 }

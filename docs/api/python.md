@@ -320,7 +320,7 @@ OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
 ```text
 Exception
  └── AimuxError
-      ├── APICallError              # every HTTP-shaped failure; classify on status
+      ├── APICallError              # provider call/transport failure; status when observed
       ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError
@@ -331,10 +331,30 @@ Exception
       └── OtherError
 ```
 
-Instances carry `status` (HTTP status or `None`), `retry_ms` (hint or `None`),
-and `error_value: str | None` — the raw externally-tagged AiMuxError JSON
-(e.g. `'{"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}'`), the
-machine-readable companion to `str(e)`.
+`AimuxError` subclasses carry only their own payload. There is no common string
+discriminator and no JSON companion.
+`RecordingError` mirrors the core's separate `RecordingError` type: it carries
+its own `code`, and is not caught by `except AimuxError`.
+Failures of the pyo3 bridge itself are not aimux types — they surface the way
+pyo3 does, as Python builtins, never disguised as an `AimuxError`:
+
+| scenario | raises |
+|---|---|
+| a JSON *text* you passed (`prompt_json` / `opts_json` / `config_json` / …) does not parse | `ValueError("prompt_json: invalid JSON: …")` — the message names the argument |
+| closed / ended session handed back to the binding | `ValueError("… is closed")` |
+| binding could not serialize a result | `RuntimeError("serialize result: …")` |
+| a bridge invariant broke | `RuntimeError` |
+| argument *type* errors | pyo3's own `TypeError` |
+| panic in native code | `pyo3_runtime.PanicException` |
+
+JSON that parses but has a bad value is still `InvalidArgumentError`.
+
+Payload attributes belong to the class that carries them and are absent on the
+others. `APICallError` has `status` / `retryable` / `retry_ms` /
+`provider_code` / `provider_message` / `response_body` / `request_id`;
+optional values use Python's normal `None`. `TokenExpiredError` has
+`status == 401`, `NoSuchModelError` has `model_id` / `model_type`, and
+`NoSuchProviderError` has `provider_id`.
 
 ```python
 from aimux import (

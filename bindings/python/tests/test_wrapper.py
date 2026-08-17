@@ -1,7 +1,7 @@
 """Tests for the typed Pydantic wrapper (aimux.wrapper).
 
 Verifies the FULL chain through the typed layer: typed options / prompt models
-→ JSON boundary → PyO3 → Rust engine → mock HTTP → typed result objects.
+→ JSON boundary → PyO3 → aimux-core → mock HTTP → typed result objects.
 
 Reuses the mock-server fixtures (MockServer / RecordingMockServer /
 SequencedMockServer) and canned provider responses from test_e2e.py.

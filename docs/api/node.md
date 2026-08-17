@@ -87,7 +87,7 @@ Engine and binding failures throw an **`AimuxError` subclass hierarchy**
 ```text
 Error
  └── AimuxError
-      ├── APICallError              // every HTTP-shaped failure; classify on status
+      ├── APICallError              // provider call/transport failure; status when observed
       ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError
@@ -98,7 +98,35 @@ Error
       └── OtherError
 ```
 
-Every instance has `message`, `status` (HTTP or `-1`), and `retryMs` (hint or `-1`).
+Failures of the binding's own bridge layer (the napi-rs side, never `AiMuxError`)
+follow napi-rs: a plain `Error` whose `code` is a napi status name, passed
+through unchanged — no aimux class.
+
+| scenario                                            | thrown                                                        |
+|-----------------------------------------------------|---------------------------------------------------------------|
+| a wire JSON text (`prompt_json`, `opts_json`, …) does not parse | `Error`, `code: 'InvalidArg'`, message `"prompt_json: invalid JSON: …"` |
+| closed / invalid native object (`TranscriptionSession`) | `Error`, `code: 'InvalidArg'`, message `"transcription session is closed …"` |
+| the binding could not serialize a result           | `Error`, `code: 'GenericFailure'`, message `"serialize result: …"` |
+| a bridge invariant broke                            | `Error`, `code: 'GenericFailure'`                             |
+| argument type errors                                | napi-rs's own `Error` (`code: 'StringExpected'`, …)           |
+| panic                                               | napi's mechanism                                              |
+
+Well-formed JSON that violates the schema, and business validation (empty
+model list, `cap === 0`, no recordings, …) stay `InvalidArgumentError`
+— that is what the core would say. Both package entrypoints register the
+exported JavaScript constructors with the native addon at load time. Rust
+constructs that exact class before throwing or rejecting, so `instanceof`
+works directly for synchronous calls, promises, and stream/session errors;
+`name` is the ordinary JavaScript error name, not a discriminator to parse.
+
+Every `AimuxError` instance has the ordinary `Error` fields. There is no aimux
+`code` discriminator and no JSON companion. Payload fields belong to the class
+that carries them: `APICallError` adds `retryable` and optional `status` /
+`retryMs` / `providerCode` /
+`providerMessage` / `responseBody` / `requestId`, `TokenExpiredError` carries
+`status: 401`, `NoSuchModelError` adds `modelId` / `modelType`, and
+`NoSuchProviderError` adds `providerId`. Missing HTTP status and retry hints are
+absent rather than represented by `-1`.
 
 ```typescript
 import { generateText, AimuxError, APICallError } from 'aimux'
@@ -400,8 +428,8 @@ The `aimux` package has two layers:
 
 | Layer | Source | Boundary |
 |------|------|------|
-| **Native (napi-rs)** | `bindings/node/index.js` + `index.d.ts` | JSON strings in / JSON strings out |
-| **Typed wrapper** | `bindings/node/src/index.ts` | Typed objects (ts-rs types, re-exported from the package root) |
+| **Native (napi-rs)** | `@arcships/aimux/raw` — `bindings/node/src/native.ts` over the generated native loader | JSON strings in / JSON strings out |
+| **Typed wrapper** | `@arcships/aimux` — `bindings/node/src/index.ts` | Typed objects (ts-rs types, re-exported from the package root) |
 
 ### Native classes and methods
 

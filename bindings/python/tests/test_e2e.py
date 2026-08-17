@@ -1,6 +1,6 @@
 """End-to-end provider tests with mock HTTP server.
 
-Verifies the FULL chain: Python → PyO3 → Rust engine → HTTP mock →
+Verifies the FULL chain: Python → PyO3 → aimux-core → HTTP mock →
 response parsing → typed result.
 
 The mock server runs in a separate process (multiprocessing) because

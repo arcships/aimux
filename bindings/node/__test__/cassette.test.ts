@@ -8,7 +8,7 @@
 // are excluded (not tested here), not faked.
 
 import test from 'ava'
-import { openai, anthropic } from '../index.js'
+import { openai, anthropic } from '../src/native.ts'
 import { CassetteServer } from './cassette-replay.ts'
 
 // ── OpenAI ──────────────────────────────────────────────────────────────────

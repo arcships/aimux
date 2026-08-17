@@ -13,7 +13,9 @@
 
 use std::sync::Arc;
 
-use crate::error::to_py_err;
+use crate::error::{
+    BindingError, AiMuxBindingError, binding_py_err, serialize_result, to_py_err, wire_json,
+};
 use aimux_core::AiMuxError;
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel as EmbeddingModelTrait};
 use aimux_core::files_model::{Files as FilesTrait, UploadFileCallOptions};
@@ -23,8 +25,7 @@ use aimux_core::search_model::{SearchCallOptions, SearchModel as SearchModelTrai
 use aimux_core::shared::FileBytes;
 use aimux_core::speech_model::{SpeechCallOptions, SpeechModel as SpeechModelTrait};
 use aimux_core::transcription_model::{
-    AudioChunk, AudioInput, TranscriptionCallOptions,
-    TranscriptionModel as TranscriptionModelTrait,
+    AudioChunk, AudioInput, TranscriptionCallOptions, TranscriptionModel as TranscriptionModelTrait,
 };
 use aimux_core::video_model::{VideoCallOptions, VideoModel as VideoModelTrait};
 use pyo3::prelude::*;
@@ -46,25 +47,17 @@ impl EmbeddingModel {
     #[pyo3(signature = (values_json, opts_json=None))]
     pub fn embed(&self, values_json: &str, opts_json: Option<&str>) -> PyResult<String> {
         let mut opts: EmbeddingCallOptions = match opts_json {
-            Some(s) if !s.trim().is_empty() && s.trim() != "null" => serde_json::from_str(s)
-                .map_err(|e| {
-                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
-                })?,
+            Some(s) if !s.trim().is_empty() && s.trim() != "null" => wire_json("opts_json", s)?,
             _ => EmbeddingCallOptions::new(""),
         };
         // Override values from the JSON array.
-        let values: Vec<String> = serde_json::from_str(values_json).map_err(|e| {
-            to_py_err(&AiMuxError::InvalidArgument(format!(
-                "invalid values_json: {e}"
-            )))
-        })?;
+        let values: Vec<String> = wire_json("values_json", values_json)?;
         opts.values = values;
 
         let result = crate::runtime().block_on(async move { self.inner.do_embed(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -84,14 +77,12 @@ impl SpeechModel {
     /// Generate speech audio. `opts_json` is JSON-serialized SpeechCallOptions.
     /// Returns JSON-serialized SpeechResult (audio as base64 in JSON).
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
-        let opts: SpeechCallOptions = serde_json::from_str(opts_json)
-            .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}"))))?;
+        let opts: SpeechCallOptions = wire_json("opts_json", opts_json)?;
 
         let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -111,14 +102,12 @@ impl ImageModel {
     /// Generate images. `opts_json` is JSON-serialized ImageCallOptions.
     /// Returns JSON-serialized ImageResult (images as base64 in JSON).
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
-        let opts: ImageCallOptions = serde_json::from_str(opts_json)
-            .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}"))))?;
+        let opts: ImageCallOptions = wire_json("opts_json", opts_json)?;
 
         let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -151,9 +140,7 @@ impl TranscriptionModel {
         );
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: TranscriptionCallOptions = serde_json::from_str(s).map_err(|e| {
-                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
-                })?;
+                let parsed: TranscriptionCallOptions = wire_json("opts_json", s)?;
                 // Keep audio and media_type from our explicit args.
                 if let Some(p) = &parsed.provider_options {
                     opts.provider_options = Some(p.clone());
@@ -164,8 +151,7 @@ impl TranscriptionModel {
         let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -193,18 +179,12 @@ impl RerankingModel {
         opts_json: Option<&str>,
     ) -> PyResult<String> {
         use aimux_core::reranking_model::RerankingDocuments;
-        let docs: RerankingDocuments = serde_json::from_str(docs_json).map_err(|e| {
-            to_py_err(&AiMuxError::InvalidArgument(format!(
-                "invalid docs_json: {e}"
-            )))
-        })?;
+        let docs: RerankingDocuments = wire_json("docs_json", docs_json)?;
 
         let mut opts = RerankingCallOptions::new(query.to_string(), docs);
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: RerankingCallOptions = serde_json::from_str(s).map_err(|e| {
-                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
-                })?;
+                let parsed: RerankingCallOptions = wire_json("opts_json", s)?;
                 opts.provider_options = parsed.provider_options;
                 opts.top_n = parsed.top_n;
             }
@@ -213,8 +193,7 @@ impl RerankingModel {
         let result = crate::runtime().block_on(async move { self.inner.do_rerank(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -234,14 +213,12 @@ impl VideoModel {
     /// Generate video. `opts_json` is JSON-serialized VideoCallOptions.
     /// Returns JSON-serialized VideoResult (typically contains a URL).
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
-        let opts: VideoCallOptions = serde_json::from_str(opts_json)
-            .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}"))))?;
+        let opts: VideoCallOptions = wire_json("opts_json", opts_json)?;
 
         let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -265,9 +242,7 @@ impl SearchModel {
         let mut opts = SearchCallOptions::new(query.to_string());
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: SearchCallOptions = serde_json::from_str(s).map_err(|e| {
-                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
-                })?;
+                let parsed: SearchCallOptions = wire_json("opts_json", s)?;
                 opts = parsed;
             }
         }
@@ -275,8 +250,7 @@ impl SearchModel {
         let result = crate::runtime().block_on(async move { self.inner.do_search(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -313,9 +287,7 @@ impl Files {
         );
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: UploadFileCallOptions = serde_json::from_str(s).map_err(|e| {
-                    to_py_err(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
-                })?;
+                let parsed: UploadFileCallOptions = wire_json("opts_json", s)?;
                 opts.filename = parsed.filename;
                 opts.provider_options = parsed.provider_options;
             }
@@ -324,8 +296,7 @@ impl Files {
         let result = crate::runtime().block_on(async move { self.inner.upload_file(&opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -555,7 +526,7 @@ pub fn tavily_search(api_key: &str, base_url: Option<&str>) -> PyResult<SearchMo
 pub struct TranscriptionSession {
     audio_tx: std::sync::Mutex<Option<futures::channel::mpsc::Sender<AudioChunk>>>,
     parts_rx: tokio::sync::Mutex<
-        tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxError>>,
+        tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>,
     >,
     token: aimux_core::shared::AbortSignal,
 }
@@ -579,13 +550,7 @@ pub fn start_transcription_session(
         timeout: Option<aimux_core::options::TimeoutConfiguration>,
     }
     let opts: SessionOpts = match opts_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-            serde_json::from_str(s).map_err(|e| {
-                to_py_err(&AiMuxError::InvalidArgument(format!(
-                    "invalid opts_json: {e}"
-                )))
-            })?
-        }
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => wire_json("opts_json", s)?,
         _ => SessionOpts::default(),
     };
 
@@ -602,18 +567,18 @@ pub fn start_transcription_session(
 
     let (audio_tx, audio_rx) = futures::channel::mpsc::channel::<AudioChunk>(64);
     let (tx, rx) =
-        tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxError>>(256);
+        tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxBindingError>>(256);
 
     let model = model.inner.clone();
     crate::runtime().spawn(async move {
         let options = aimux_core::transcription_model::TranscriptionStreamOptions {
             audio: Box::pin(audio_rx),
-            input_audio_format: opts
-                .input_audio_format
-                .unwrap_or(aimux_core::transcription_model::InputAudioFormat {
+            input_audio_format: opts.input_audio_format.unwrap_or(
+                aimux_core::transcription_model::InputAudioFormat {
                     format_type: "audio/pcm".to_string(),
                     rate: None,
-                }),
+                },
+            ),
             provider_options: opts.provider_options,
             abort_signal: Some(effective.clone()),
             headers: opts.headers,
@@ -641,7 +606,7 @@ pub fn start_transcription_session(
                             // breaks right after), so nothing is dropped by
                             // returning here. New providers must uphold this.
                             tokio::select! {
-                                res = tx.send(Err(e)) => { let _ = res; }
+                                res = tx.send(Err(e.into())) => { let _ = res; }
                                 _ = effective.cancelled() => {}
                             }
                             return;
@@ -651,9 +616,10 @@ pub fn start_transcription_session(
                         Ok(j) => j,
                         Err(e) => {
                             let _ = tx
-                                .send(Err(AiMuxError::JsonParse(format!(
-                                    "serialize part: {e}"
-                                ))))
+                                .send(Err(BindingError::ResultSerialization {
+                                    message: format!("part: {e}"),
+                                }
+                                .into()))
                                 .await;
                             return;
                         }
@@ -681,12 +647,12 @@ pub fn start_transcription_session(
                 // Connect failure: deliver as the first channel item
                 // (try_send + abort-select; mirrors the FFI driver).
                 loop {
-                    match tx.try_send(Err(e.clone())) {
+                    match tx.try_send(Err(e.clone().into())) {
                         Ok(()) => break,
                         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                             tokio::select! {
                                 _ = effective.cancelled() => return,
-                                res = tx.send(Err(e.clone())) => {
+                                res = tx.send(Err(e.clone().into())) => {
                                     if res.is_err() { return; }
                                     break;
                                 }
@@ -718,31 +684,38 @@ impl TranscriptionSession {
         // guard held (or with the GIL held) would freeze other Python
         // threads — including one calling close() to abort.
         let mut tx = {
-            let guard = self
-                .audio_tx
-                .lock()
-                .map_err(|_| to_py_err(&AiMuxError::Other("session poisoned".into())))?;
+            let guard = self.audio_tx.lock().map_err(|_| {
+                binding_py_err(&BindingError::InvariantViolation {
+                    message: "session poisoned".into(),
+                })
+            })?;
             match guard.as_ref() {
                 None => {
-                    return Err(to_py_err(&AiMuxError::Other(
-                        "audio input already finished".into(),
-                    )));
+                    return Err(binding_py_err(&BindingError::InvalidHandle {
+                        expected: "audio input (input_done() already called)",
+                    }));
                 }
                 Some(tx) => tx.clone(),
             }
         };
         let chunk = AudioChunk::Binary(data.to_vec());
-        py.allow_threads(|| {
-            crate::runtime().block_on(async move { tx.send(chunk).await })
-        })
-        .map_err(|_| to_py_err(&AiMuxError::Other("session ended".into())))
+        py.allow_threads(|| crate::runtime().block_on(async move { tx.send(chunk).await }))
+            .map_err(|_| {
+                binding_py_err(&BindingError::InvalidHandle {
+                    expected: "transcription session",
+                })
+            })
     }
 
     /// Signal end-of-audio (idempotent).
     pub fn input_done(&self) -> PyResult<()> {
         self.audio_tx
             .lock()
-            .map_err(|_| to_py_err(&AiMuxError::Other("session poisoned".into())))?
+            .map_err(|_| {
+                binding_py_err(&BindingError::InvariantViolation {
+                    message: "session poisoned".into(),
+                })
+            })?
             .take();
         Ok(())
     }
@@ -753,18 +726,14 @@ impl TranscriptionSession {
     /// (the session stays live, call again). `timeout_ms`: >0 wait at most;
     /// 0 immediate poll; negative = wait indefinitely.
     #[pyo3(signature = (timeout_ms=-1))]
-    pub fn next_part(
-        &self,
-        py: pyo3::Python<'_>,
-        timeout_ms: i64,
-    ) -> PyResult<Option<String>> {
+    pub fn next_part(&self, py: pyo3::Python<'_>, timeout_ms: i64) -> PyResult<Option<String>> {
         let timeout = if timeout_ms >= 0 {
             Some(std::time::Duration::from_millis(timeout_ms as u64))
         } else {
             None
         };
         enum Outcome {
-            Part(Option<std::result::Result<String, AiMuxError>>),
+            Part(Option<std::result::Result<String, AiMuxBindingError>>),
             TimedOut,
         }
         let outcome = py.allow_threads(|| {
@@ -790,7 +759,7 @@ impl TranscriptionSession {
         };
         match part {
             Some(Ok(json)) => Ok(Some(json)),
-            Some(Err(e)) => Err(to_py_err(&e)),
+            Some(Err(e)) => Err(e.to_py_err()),
             None => Ok(None), // ended normally
         }
     }

@@ -4,8 +4,8 @@
 // requires one binding-behavior group per language). Same three cases against
 // a fake realtime WebSocket server:
 //
-// - `nextPart(timeoutMs)` rejects with a `TimeoutError` whose retry verdict is
-//   *determinable* (`retryable` is false), and the session stays live.
+// - `nextPart(timeoutMs)` rejects with a `TimeoutError`, and the session stays
+//   live.
 // - A server-sent realtime `error` event propagates verbatim as an `Err` part
 //   (the provider's own message, decidable retry verdict), then the channel
 //   ends normally.
@@ -23,8 +23,13 @@ import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 
-import { openaiTranscription, startTranscriptionSession } from '../index.js'
-import { AimuxError, APICallError, TimeoutError } from '../src/index.ts'
+import {
+  openaiTranscription,
+  startTranscriptionSession,
+  AimuxError,
+  APICallError,
+  TimeoutError,
+} from '../src/native.ts'
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
@@ -111,7 +116,7 @@ const DELTA_EVENT = JSON.stringify({
 
 // Serial: the timing-sensitive scripts must not race each other.
 
-test.serial('nextPart timeout is determinable for retries and the session survives', async (t) => {
+test.serial('nextPart timeout preserves the live session', async (t) => {
   // session.created at 50ms (no part mapping), delta at 900ms: the 250ms
   // nextPart window must time out in between and the session must still
   // deliver the later delta.
@@ -127,13 +132,11 @@ test.serial('nextPart timeout is determinable for retries and the session surviv
     const first = JSON.parse((await session.nextPart(3000)) as string)
     t.truthy('StreamStart' in first)
 
-    const thrown = await t.throwsAsync(session.nextPart(250))
-    const err = AimuxError.fromNative(thrown as Error)
-    // Timeout is a spent budget, not a transport failure — the retry verdict
-    // must be decidable (and be "don't retry").
+    const err = (await t.throwsAsync(session.nextPart(250))) as AimuxError
+    // Timeout is a spent budget, not a provider-call transport failure.
     t.true(err instanceof TimeoutError)
     t.regex(err.message, /no transcription part within timeout/)
-    t.is(err.retryable, false)
+    t.false('retryable' in err)
 
     // The session stayed live across the timeout.
     const late = JSON.parse((await session.nextPart(5000)) as string)
@@ -158,8 +161,7 @@ test.serial('server error event rejects with a typed APICallError', async (t) =>
     const first = JSON.parse((await session.nextPart(5000)) as string)
     t.truthy('StreamStart' in first)
 
-    const thrown = await t.throwsAsync(session.nextPart(5000))
-    const err = AimuxError.fromNative(thrown as Error)
+    const err = (await t.throwsAsync(session.nextPart(5000))) as AimuxError
     t.true(err instanceof APICallError)
     // The provider's own message, verbatim (the error adds its prefix).
     t.regex(err.message, /insufficient quota for realtime transcription$/)
@@ -178,8 +180,7 @@ test.serial('connect failure surfaces through the channel', async (t) => {
   const model = await openaiTranscription('k', 'gpt-realtime-whisper', 'http://127.0.0.1:1')
   const session = await startTranscriptionSession(model, null)
   try {
-    const thrown = await t.throwsAsync(session.nextPart(5000))
-    const err = AimuxError.fromNative(thrown as Error)
+    const err = (await t.throwsAsync(session.nextPart(5000))) as AimuxError
     t.true(err instanceof APICallError)
     t.regex(err.message, /websocket connect failed/)
     // The session terminated with the connect error (channel closed).

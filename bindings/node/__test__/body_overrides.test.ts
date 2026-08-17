@@ -6,7 +6,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { openai, deepseek } from '../index.js'
+import { openai, deepseek } from '../src/native.ts'
 
 function startMockServer(handler: (req: any, res: any) => void): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
