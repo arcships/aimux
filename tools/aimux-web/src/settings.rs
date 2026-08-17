@@ -191,7 +191,9 @@ impl KeyStore {
         // Atomic write via temp + rename: two concurrent PUT(remember) calls
         // snapshot-then-write outside the lock, so an in-place truncate could
         // interleave into torn JSON (silently wiping all keys on next load).
-        let tmp = path.with_extension("json.tmp");
+        static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = path.with_extension(format!("json.{seq}.tmp"));
         {
             let mut file = fs::OpenOptions::new()
                 .write(true)
@@ -208,8 +210,8 @@ impl KeyStore {
     }
 }
 
-/// Masked hint for a stored key: `…abcd` (last 4 chars) when long enough,
-/// otherwise just the length — never the full key.
+/// Masked hint for a stored key: `…abcd` (last 4 chars) when longer than
+/// 8 chars; shorter keys reveal only their length — never the full key.
 fn mask_key(key: &str) -> String {
     let chars: Vec<char> = key.chars().collect();
     // Only reveal a tail when it cannot reconstruct a meaningful fraction of

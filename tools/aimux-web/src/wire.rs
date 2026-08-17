@@ -319,6 +319,22 @@ mod tests {
     use crate::settings::KeyStore;
 
     #[test]
+    fn empty_spec_resolves_as_unset() {
+        // Empty/whitespace spec behaves exactly like None: fall through to
+        // the stored key, then the provider's registered env var.
+        let store = KeyStore::from_path(None);
+        store.set("openai", "sk-from-store", false).unwrap();
+        assert_eq!(
+            resolve_api_key(Some(""), "openai", &store, true).unwrap(),
+            Some("sk-from-store".to_string())
+        );
+        assert_eq!(
+            resolve_api_key(Some("   "), "unknown-provider", &store, true).unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn resolve_key_priority_explicit_env_over_store() {
         let store = KeyStore::from_path(None);
         store.set("openai", "sk-from-store", false).unwrap();
