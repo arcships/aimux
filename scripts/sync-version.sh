@@ -26,19 +26,19 @@ console.log('  Node    -> bindings/node/package.json');
 "
 
 # Python
-sed -i -E "s/^version = .*/version = \"$VERSION\"/" bindings/python/pyproject.toml
+sed -i'' -E "s/^version = .*/version = \"$VERSION\"/" bindings/python/pyproject.toml
 echo "  Python  -> bindings/python/pyproject.toml"
 
 # Flutter
-sed -i -E "s/^version: .*/version: $VERSION/" bindings/flutter/pubspec.yaml
+sed -i'' -E "s/^version: .*/version: $VERSION/" bindings/flutter/pubspec.yaml
 echo "  Flutter -> bindings/flutter/pubspec.yaml"
 
 # Kotlin
-sed -i -E "s/^version = .*/version = \"$VERSION\"/" bindings/kotlin/build.gradle.kts
+sed -i'' -E "s/^version = .*/version = \"$VERSION\"/" bindings/kotlin/build.gradle.kts
 echo "  Kotlin  -> bindings/kotlin/build.gradle.kts"
 
 # Java
-sed -i -E "s/^version = .*/version = \"$VERSION\"/" bindings/java/build.gradle.kts
+sed -i'' -E "s/^version = .*/version = \"$VERSION\"/" bindings/java/build.gradle.kts
 echo "  Java    -> bindings/java/build.gradle.kts"
 
 echo "Done. Go is driven by the git tag — no change needed."
