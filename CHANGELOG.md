@@ -94,6 +94,11 @@ bindings, a browser console, and a large provider-correctness sweep.
   an FFI session API, and first-class support in all eight bindings.
 - **`aimux-web` console** (RFC-0029) — browser-based model-call testing
   and trace visualization, shipped as release artifacts.
+- **In-page API key settings for the console** (RFC-0029 revision) —
+  set provider keys in the browser (Settings page): in-memory by default,
+  opt-in disk persistence at `0600`, masked hints only, and plaintext
+  entry is loopback-gated (non-loopback binds fall back to `env:VAR`
+  references).
 - **FFI/binding ergonomics** — default-capacity ring init, cancellable Go
   streams, `ProviderWithConfig` (Go), full `ProviderOptions` for
   `provider()` (Python), optional recording-ring capacity in every
