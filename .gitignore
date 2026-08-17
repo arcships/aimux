@@ -46,3 +46,6 @@ dist/
 /tools/aimux-web/web/node_modules/
 /tools/aimux-web/web/dist/
 tsconfig.tsbuildinfo
+
+# 竞品 bad-case 挖矿副产物（数据 + 临时脚本），不进产品仓库
+quirks-corpus/
