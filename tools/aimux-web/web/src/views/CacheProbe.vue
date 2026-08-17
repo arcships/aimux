@@ -84,7 +84,7 @@ function hitRate(): number | null {
       </div>
       <div class="w-44">
         <Label>API key（env）</Label>
-        <Input v-model="apiKey" class="mt-1 font-mono" placeholder="env:VAR 或留空" />
+        <Input v-model="apiKey" class="mt-1 font-mono" placeholder="env:VAR / 留空用 Settings" />
       </div>
       <div class="w-40">
         <Label>Base URL</Label>

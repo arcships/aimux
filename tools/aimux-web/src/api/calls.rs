@@ -30,8 +30,14 @@ pub async fn call(State(state): State<AppState>, Json(req): Json<WireCallRequest
 }
 
 async fn run(state: AppState, req: WireCallRequest) -> Result<Response, AiMuxError> {
-    // api_key: only env references (plaintext rejected).
-    let key = wire::resolve_api_key(req.api_key.as_deref())?;
+    // api_key: explicit spec (env: ref, or plaintext on loopback) > Settings
+    // key store > provider's registered env var (RFC-0029 §5.5).
+    let key = wire::resolve_api_key(
+        req.api_key.as_deref(),
+        &req.provider,
+        &state.keys,
+        state.loopback,
+    )?;
 
     let model: Arc<dyn LanguageModel> = if req.mock {
         let key = format!("{}/{}", req.provider, req.model);

@@ -5,6 +5,7 @@ pub mod calls;
 pub mod providers;
 pub mod replay;
 pub mod sessions;
+pub mod settings;
 pub mod tools;
 pub mod traces;
 
@@ -38,6 +39,14 @@ pub fn router(state: AppState) -> Router {
         .route("/api/mock/load", axum::routing::post(replay::mock_load))
         .route("/api/cache-probe", axum::routing::post(cache_probe::run))
         .route("/api/providers", get(providers::list))
+        .route(
+            "/api/settings/keys",
+            get(settings::list_keys).put(settings::put_key),
+        )
+        .route(
+            "/api/settings/keys/{provider}",
+            axum::routing::delete(settings::delete_key),
+        )
         .with_state(state)
 }
 

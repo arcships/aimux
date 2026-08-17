@@ -13,6 +13,7 @@ const nav = [
   { path: '/sessions', label: 'Sessions', icon: '≡' },
   { path: '/replay', label: 'Replay', icon: '↻' },
   { path: '/cache-probe', label: 'Cache', icon: '◉' },
+  { path: '/settings', label: 'Settings', icon: '⚙' },
 ]
 </script>
 
