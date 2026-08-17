@@ -4,12 +4,12 @@
   <img src="assets/aimux-banner.png" alt="aimux banner" width="100%">
 </p>
 
-> **A unified LLM access layer written in Rust. One API for 325 AI providers.**
+> **A unified LLM access layer written in Rust. One API for 329 AI providers.**
 
 [![CI](https://github.com/arcships/aimux/actions/workflows/ci.yml/badge.svg)](https://github.com/arcships/aimux/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![Providers](https://img.shields.io/badge/providers-325-green.svg)](docs/api/providers.md)
+[![Providers](https://img.shields.io/badge/providers-329-green.svg)](docs/api/providers.md)
 [![Bindings](https://img.shields.io/badge/bindings-8-9cf.svg)](bindings/)
 [![crates.io](https://img.shields.io/crates/v/aimux-core)](https://crates.io/crates/aimux-core)
 [![npm](https://img.shields.io/npm/v/@arcships/aimux)](https://www.npmjs.com/package/@arcships/aimux)
@@ -30,16 +30,24 @@ difference: aimux is an access layer, those are orchestration layers.
 
 ## Why aimux
 
-- **325 provider modules** — 250 registry-backed OpenAI-compatible
+- **329 provider modules** — 251 registry-backed OpenAI-compatible
   (unified `provider(name, ...)` entry) + 10 native protocol
   implementations (OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere,
-  Mistral, xAI, Anthropic-AWS) + 65 standalone/modality/local/search providers
+  Mistral, xAI, Anthropic-AWS) + 68 standalone/modality/local/search providers
   (OpenRouter, DeepSeek, Ollama, vLLM, ElevenLabs, KlingAI, Tavily, …).
   Full list: [docs/api/providers.md](docs/api/providers.md).
 - **Unified, object-safe interface** — the `LanguageModel` trait supports
   `Box<dyn>` so providers are interchangeable without changing call sites.
 - **Full multimodal** — text, streaming, tool calling, embeddings, image,
-  speech, transcription, video, reranking, files.
+  speech, transcription, video, reranking, files — plus **realtime
+  transcription sessions** (RFC-0028: push audio, pull transcript parts,
+  retryable timeouts).
+- **Observability built in** (new in 0.3.0) — record every request/response
+  pair to JSONL and replay it offline (RFC-0023), group calls into sessions
+  (RFC-0024), and detect provider prompt-cache hits (RFC-0015).
+- **Composite models** (new in 0.3.0) — `RouterModel` routes each call with
+  fallback (RFC-0021); `MoaModel` aggregates parallel reference models
+  mixture-of-agents style (RFC-0022). Both are plain `LanguageModel`s.
 - **Config-driven provider registry** — `provider-registry.json` describes
   each of the 250 OpenAI-compatible providers (base URL, env var, profile
   quirks: top_k, tools, response_format, streaming usage, max_tokens key);
@@ -47,8 +55,9 @@ difference: aimux is an access layer, those are orchestration layers.
 - **Fast and small** — Rust core, release profile tuned for binary size
   (`lto`, `codegen-units=1`, `panic="abort"`, `strip`, `opt-level="z"`).
 - **8 language bindings** from one core: Node, Python, Swift, Kotlin, Flutter,
-  Go, Java, C.
-- **Hermetic tests** — 2,650+ cassettes replay real API responses; no network
+  Go, Java, C — plus `aimux-web`, a browser console for model-call testing
+  and trace visualization (RFC-0029).
+- **Hermetic tests** — 2,800+ cassettes replay real API responses; no network
   or API keys required.
 
 ## Performance
@@ -90,7 +99,8 @@ aimux/
 ├── aimux-providers       # 290+ provider implementations (250 registry-backed + native)
 ├── aimux-stream          # SSE / NDJSON stream parsing
 ├── aimux-provider-utils  # HTTP utilities: retry, backoff, error parsing, API-key loading
-└── aimux-ffi             # C ABI (handles + JSON results + AimuxError out-param) for non-native bindings
+├── aimux-ffi             # C ABI (handles + JSON results + AimuxError out-param) for non-native bindings
+└── tools/                # aimux-cli (cache probe) · aimux-replay · aimux-web (console)
 ```
 
 ```
@@ -178,6 +188,87 @@ while let Some(part) = stream.next().await {
 }
 ```
 
+## Record & replay (new in 0.3.0)
+
+Every request/response pair can be captured to JSONL and replayed offline —
+regression tests, incident forensics, and CI without network or keys
+([RFC-0023](rfc/0023-runtime-request-recording.md)):
+
+```rust
+use aimux_core::recording::{init_recording, JsonlRecorder};
+use std::sync::Arc;
+
+// One line turns on recording for the process (every binding has the same
+// switch; secrets are redacted before hitting disk).
+init_recording(Some(Arc::new(JsonlRecorder::new("./recordings"))));
+
+let result = generate_text(&model, "Explain Rust ownership.", Default::default()).await?;
+// → ./recordings/recordings.jsonl now holds the full request + response,
+//   replayable offline with the `aimux-replay` CLI.
+```
+
+Related: sessions group calls with `session_id` ([RFC-0024](rfc/0024-session-aggregation.md)),
+and cache-hit tracing detects prompt-cache reuse from provider headers
+([RFC-0015](rfc/0015-cache-trace-audit.md), surfaced by `aimux-cli`).
+
+## Composite models: router & MoA (new in 0.3.0)
+
+```rust
+use aimux_core::composite::ChildModel;
+use aimux_core::moa::{MoaConfig, MoaModel};
+use aimux_core::router::{FallbackPolicy, RouterConfig, RouterModel, RuleRouter};
+
+// Router: pick one model per call, fall back on failure (RFC-0021).
+let children: Vec<ChildModel> = vec![
+    Arc::new(provider.model("gpt-4o")) as ChildModel,
+    Arc::new(provider.model("gpt-4o-mini")) as ChildModel,
+];
+let routed = RouterModel::new(
+    children.clone(),
+    Box::new(RuleRouter),
+    FallbackPolicy::OnError,
+    RouterConfig::default(),
+);
+
+// MoA: fan out to references, aggregate their answers (RFC-0022).
+let moa = MoaModel::new(
+    children,
+    Arc::new(provider.model("gpt-4o")) as ChildModel,
+    MoaConfig::default(),
+);
+
+// Both are plain LanguageModel — every API and binding works unchanged.
+let result = generate_text(&routed, "…", Default::default()).await?;
+```
+
+## Realtime transcription sessions (new in 0.3.0)
+
+WebSocket-based streaming transcription with push-audio / next-part /
+retryable timeouts, in every binding ([RFC-0028](rfc/0028-transcription-streaming.md)).
+TypeScript:
+
+```typescript
+import { openaiTranscription, startTranscriptionSession } from '@arcships/aimux'
+
+const model = await openaiTranscription(process.env.OPENAI_API_KEY!, 'gpt-realtime-whisper')
+const session = await startTranscriptionSession(model, null)
+
+session.pushAudio(pcmChunk) // push audio as it arrives
+
+for (;;) {
+  try {
+    const raw = await session.nextPart(500)
+    if (raw === null) break                       // stream ended
+    const part = JSON.parse(raw)
+    if ('TranscriptDelta' in part) process.stdout.write(part.TranscriptDelta.delta)
+  } catch (e: any) {
+    if (e.retryable === false && e.message.includes('timeout')) continue
+    throw e                                       // real failure — typed error
+  }
+}
+session.close()
+```
+
 ## Switch providers
 
 ```rust
@@ -192,7 +283,7 @@ let model = provider_from_env("deepseek", "deepseek-chat", None)?;
 // model usage is identical — it's all dyn LanguageModel
 ```
 
-All 250 OpenAI-compatible providers are registry-backed: `provider(name, ...)`
+All 251 OpenAI-compatible providers are registry-backed: `provider(name, ...)`
 in every binding, with typed `ProviderName` (enum/union/consts per language).
 The retired per-provider shell types (`XxxConfig`/`XxxProvider`) are gone —
 see [docs/API.md](docs/API.md#providers).
@@ -206,8 +297,8 @@ see [docs/API.md](docs/API.md#providers).
 | Type | Count | Examples |
 |------|:-----:|----------|
 | Native protocol | 10 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, Anthropic-AWS |
-| OpenAI-compatible (registry) | 250 | Groq, Fireworks, Together, Perplexity, Ollama Cloud, DeepSeek, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot, SiliconFlow… |
-| OpenAI-compatible (standalone + Vertex-hosted) | 32 | OpenRouter, Hugging Face, Ollama, vLLM, SGLang, Llama.cpp, LiteLLM Proxy, Vertex-hosted DeepSeek/Qwen/Llama… |
+| OpenAI-compatible (registry) | 251 | Groq, Fireworks, Together, Perplexity, Ollama Cloud, DeepSeek, Alibaba Tongyi, Zhipu, Baidu, Tencent, Moonshot, SiliconFlow… |
+| OpenAI-compatible (standalone + Vertex-hosted) | 35 | OpenRouter, Hugging Face, Ollama, vLLM, SGLang, Llama.cpp, LiteLLM Proxy, Vertex-hosted DeepSeek/Qwen/Llama… |
 | Speech / transcription | 10 | ElevenLabs, Deepgram, AssemblyAI, AWS Polly, Cartesia, Hume, Gladia, RevAI, LMNT, Fal |
 | Image / video | 8 | Black Forest Labs, Replicate, Luma, Prodia, KlingAI, Recraft, Stability, RunwayML |
 | Embeddings / rerank / search | 13 | Voyage, Jina, Tavily, Exa, Firecrawl, Serper, SearXNG, You.com… |
@@ -224,9 +315,9 @@ aimux ships 8 bindings that share the same Rust core:
 | **Node.js** | native | napi-rs v3 | `npm install @arcships/aimux` — [npm](https://www.npmjs.com/package/@arcships/aimux) | bundled in the package, nothing to do |
 | **Python** | native | PyO3 + maturin | `pip install arcships-aimux` — [PyPI](https://pypi.org/project/arcships-aimux/) | bundled in the wheel, nothing to do |
 | **Go** | C ABI | cgo (static link) | `go get github.com/arcships/aimux/bindings/go` then `go generate` | auto-downloaded `.a` from [GitHub Releases](https://github.com/arcships/aimux/releases) |
-| **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.2.1"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
-| **Kotlin** | C ABI | JNA | `ai.arcships:aimux-kotlin` — Maven Central (publishing) | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
-| **Java** | C ABI | JNA | `ai.arcships:aimux-java` — Maven Central (publishing) | same as Kotlin — see [guide](docs/api/java.md#install) |
+| **Swift** | C ABI | SPM | SPM: `https://github.com/arcships/aimux` (`from: "0.3.0"`) | `libaimux_ffi.dylib` — see [guide](docs/api/swift.md#install) |
+| **Kotlin** | C ABI | JNA | `ai.arcships:aimux-kotlin` — Maven Central · **requires JDK 17+** (0.3.0) | `libaimux_ffi.so/.dylib` or `aimux_ffi.dll` on the JNA search path — see [guide](docs/api/kotlin.md#install) |
+| **Java** | C ABI | JNA | `ai.arcships:aimux-java` — Maven Central | same as Kotlin — see [guide](docs/api/java.md#install) |
 | **Flutter** | C ABI | dart:ffi | `aimux` on pub.dev — Flutter plugin, native core embedded (publisher `arcships.ai`) | iOS/Android 开箱即用，桌面端开发/测试 — see [guide](docs/api/flutter.md#install) |
 | **C / C++** | C ABI | direct link | `.so`/`.dylib`/`.dll` + `aimux-ffi.h` from [GitHub Releases](https://github.com/arcships/aimux/releases) | link against it — see [guide](docs/api/c.md#install) |
 
@@ -275,7 +366,18 @@ Tests run on cassette playback — no network and no keys. See
 | [0017](rfc/0017-provider-config-dx.md) | Unified provider config & request body overrides (DX) |
 | [0018](rfc/0018-codex-subscription.md) | Codex subscription channel provider (evaluation) |
 | [0019](rfc/0019-session-affinity.md) | Session affinity lightweight support |
+| [0014](rfc/0014-logging.md) | Logging (`AIMUX_LOG` controls) |
+| [0015](rfc/0015-cache-trace-audit.md) | Cache-hit tracing & audit (TraceLayer / verdict engine) |
 | [0020](rfc/0020-pi-agent-integration.md) | Pi Agent integration — aimux as a Pi package (provider registry → Pi models) |
+| [0021](rfc/0021-composite-model-routing.md) | RouterModel — composite model routing with fallback |
+| [0022](rfc/0022-moa-single-fanout.md) | MoaModel — single-fanout mixture-of-agents |
+| [0023](rfc/0023-runtime-request-recording.md) | Request recording & replay (JSONL, ring, redaction) |
+| [0024](rfc/0024-session-aggregation.md) | Session grouping & query APIs |
+| [0025](rfc/0025-aimux-cli-cache-probe.md) | `aimux-cli` cache-probe client |
+| [0026](rfc/0026-openai-compatible-output.md) | OpenAI-compatible output format |
+| [0027](rfc/0027-model-catalogue-and-list-api.md) | Model catalogue & `list_models` |
+| [0028](rfc/0028-transcription-streaming.md) | Realtime transcription streaming (WS sessions) |
+| [0029](rfc/0029-web-console.md) | `aimux-web` browser console |
 
 ## Contributing
 

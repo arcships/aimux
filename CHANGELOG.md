@@ -75,8 +75,15 @@ bindings, a browser console, and a large provider-correctness sweep.
   `get_model_specs` with reasoning/capability metadata.
 - **External provider config overlay** (RFC-0020) — register or override
   OpenAI-compatible providers from JSON at runtime.
-- **Composite models** — `RouterModel` (RFC-0021) and `MoaModel`
-  mixture-of-agents (RFC-0022).
+- **Composite models** — drop-in `LanguageModel` wrappers, usable from every
+  binding with zero call-site changes:
+  - `RouterModel` (RFC-0021) routes each call to one child model through a
+    pluggable `Router` strategy (built-ins: `RuleRouter`, `WeightedRouter`)
+    with automatic fallback to the remaining children on failure.
+  - `MoaModel` (RFC-0022) implements mixture-of-agents in a single call:
+    reference models run in parallel, their outputs are spliced into an
+    aggregator prompt, and the aggregated answer is returned — no agent
+    loop involved.
 - **Core API growth** — `streamText` aggregation, `generateObject`,
   top-level result aggregation (reasoning / sources / files /
   responseMessages), proxy configuration, `rawFinishReason`, logprobs,
