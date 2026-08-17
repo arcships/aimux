@@ -5,79 +5,164 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — pending (planned 2026-08-17)
 
-### Changed
-
-- **Breaking (python / node bindings)**: streaming-transcription sessions
-  now surface in-stream errors by raising (`next_part`) / rejecting
-  (`nextPart`) the typed error hierarchy instead of returning a serialized
-  `{"Err": ...}` part through the data channel, and part payloads are no
-  longer wrapped in a `{"Ok": ...}` envelope — both now match the C-ABI
-  session shape and the other six bindings (#145). Code that parsed the
-  envelope manually must catch the exception instead.
-
-## [0.3.0] - 2026-08-10
-
-**Breaking release.** Reworks the error model across the C ABI and every
-binding, and adds observability primitives (request recording/replay, sessions,
-tracing). See [Breaking](#breaking) and [Removed](#removed) for migration.
+**Breaking release.** 196 commits since 0.2.1: observability primitives
+(recording / replay / sessions / tracing), composite models, streaming
+transcription, a reworked error model across the C ABI and all eight
+bindings, a browser console, and a large provider-correctness sweep.
 
 ### Breaking
 
-- **`AiMuxError::RateLimited` gained a `message: String` field** (aimux-core).
-  The variant is now `RateLimited { retry_after_ms, message }` so callers can
-  distinguish "quota exceeded" from "too many requests". `#[serde(default)]`
-  keeps deserializing pre-0.3.0 error payloads, but the generated TypeScript
-  binding marks `message` required — update any exhaustive destructuring or
-  manual serialization.
-- **`GenerateTextOptions` / `CallOptions` / `StreamTextResult` gained public
-  fields** (e.g. `session_id`, recording/trace controls, stream-result
-  metadata). Exhaustive struct initializers must add the new fields; prefer
-  struct-update (`..Default::default()`) to avoid breakage.
-- **C ABI error transport switched to an `AimuxError` out-parameter.** FFI
-  functions now take `err: *mut AimuxError` and return a failure sentinel
-  instead of a JSON envelope string. The old JSON error envelope and the
-  streaming `on_error` callback have been removed — C-ABI consumers must read
-  the out-param rather than parsing a JSON error.
-- **`aimux_last_error()` removed** from the C ABI. Error detail is now returned
-  via the `AimuxError` out-param on the call that failed; drop any
-  `aimux_last_error` declarations and handles.
-- **Error model restructured in Kotlin, Java, Go, Swift, and Flutter** to mirror
-  the new `AimuxError` (typed code + HTTP status + retry hint + message).
-  Binding consumers should migrate from the old string/JSON error shape to the
-  typed error struct.
+**Rust (aimux-core / aimux-provider-utils)**
+
+- `AiMuxError::RateLimited` gained `message: String` (now
+  `RateLimited { retry_after_ms, message }`); `#[serde(default)]` keeps
+  old payloads deserializable, but the generated TypeScript marks
+  `message` required — update exhaustive destructuring.
+- `GenerateTextOptions` / `CallOptions` / `StreamTextResult` gained public
+  fields (`session_id`, recording/trace controls, stream-result metadata).
+  Use struct-update (`..Default::default()`) instead of exhaustive
+  initializers.
+- `shared_client()` / `shared_streaming_client()` (aimux-provider-utils)
+  now return `Result<&'static Client, AiMuxError>`: client-build failures
+  (TLS backend, resource exhaustion) surface as a sticky, non-retryable
+  `ApiCall` instead of aborting the host process (#147).
+- Panicking convert wrappers are deprecated in favor of fallible variants.
+
+**C ABI & the six FFI bindings (Kotlin / Java / Swift / Go / Flutter / C)**
+
+- Error transport switched to an `AimuxError` out-parameter with typed
+  code + HTTP status + retry hint; the JSON error envelope, the streaming
+  `on_error` callback, and `aimux_last_error()` are removed.
+- All six bindings restructured to the typed error model.
+- **Kotlin**: `topK` is now `Double` (was `Long` — 40.5 truncated
+  silently); published artifacts require **JDK 17** (`jvmToolchain(17)`).
+- **Java**: `topK` likewise typed as double-valued (#106).
+- `init_recording_ring(0)` now throws instead of a silent no-op
+  (consistent across all seven languages).
+
+**Python / Node (native bindings)**
+
+- Streaming-transcription sessions surface in-stream errors by raising
+  (`next_part`) / rejecting (`nextPart`) the typed hierarchy, and part
+  payloads are no longer wrapped in a `{"Ok": ...}` envelope — both now
+  match the C-ABI session shape and the other six bindings (#145/#150).
+  Code that parsed the envelope manually must catch the exception.
 
 ### Added
 
-- **Request recording & replay** (RFC-0023 / RFC-0024) — `recording.rs` /
-  `replay.rs` capture provider config plus request/response streams to JSONL
-  and replay them offline for regression and CI; `config_snapshot()` records
-  the minimal provider/model identity.
-- **Session grouping** — `session_id` on `GenerateTextOptions` groups related
-  calls for observability (RFC-0024; orthogonal to RFC-0019 session-affinity
-  headers).
-- **Request tracing store** — `aimux-core::trace` records call spans for
-  debugging and audit (RFC-0015).
-- **OpenAI Responses / output API** — the Azure Responses path
-  (`azure/responses.rs`) and the Codex subscription channel expose the
-  Responses API output flow.
-- **`list_models` / `get_model_specs`** — `Provider::list_models` enumerates a
-  provider's models; `get_model_specs` returns reasoning/capability metadata
-  (RFC-0027 host-side merge).
-- **Typed error model** across Rust and all eight bindings — machine-readable
-  `error_type`, HTTP status code, retry hint, and message.
+- **Request recording & replay** (RFC-0023) — `Recorder` /
+  `JsonlRecorder` plus a bounded in-memory `RingRecorder` with drop
+  counting; layer-B HTTP choke-point recording (per-attempt, streaming,
+  credential redaction); mock & request replay with matchers and the
+  `aimux-replay` CLI; cross-binding exposure via C ABI, Python, Node, Go,
+  Swift, Kotlin, Java, Flutter; `config_snapshot()` captures the minimal
+  provider/model identity. `aimux_recording_try_flush` FFI export reports
+  write failures (sticky first error) across the ABI (#133/#137).
+- **Session grouping** (RFC-0024) — `session_id` groups related calls;
+  `SessionStore` + `SessionInferer` with query APIs in all bindings;
+  session-cache trajectory export.
+- **Cache-hit tracing** (RFC-0015) — `TraceLayer`, verdict engine, and
+  `RingTraceStore` detect prompt-cache hits from provider headers
+  (vLLM / SGLang / LMCache behaviours), with cluster/route-aware gating;
+  exposed in every binding.
+- **`aimux-cli` cache-probe client** (RFC-0025) — offline / session /
+  provider probing over the trace store.
+- **OpenAI-compatible output** (RFC-0026) — `generateOpenAIOutput`
+  across all eight bindings.
+- **Model catalogue & listing** (RFC-0027) — `Provider::list_models` and
+  `get_model_specs` with reasoning/capability metadata.
+- **External provider config overlay** (RFC-0020) — register or override
+  OpenAI-compatible providers from JSON at runtime.
+- **Composite models** — drop-in `LanguageModel` wrappers, usable from every
+  binding with zero call-site changes:
+  - `RouterModel` (RFC-0021) routes each call to one child model through a
+    pluggable `Router` strategy (built-ins: `RuleRouter`, `WeightedRouter`)
+    with automatic fallback to the remaining children on failure.
+  - `MoaModel` (RFC-0022) implements mixture-of-agents in a single call:
+    reference models run in parallel, their outputs are spliced into an
+    aggregator prompt, and the aggregated answer is returned — no agent
+    loop involved.
+- **Core API growth** — `streamText` aggregation, `generateObject`,
+  top-level result aggregation (reasoning / sources / files /
+  responseMessages), proxy configuration, `rawFinishReason`, logprobs,
+  `usage.raw`, streaming warnings, `includeRawChunks`,
+  `ResponseMetadata.timestamp`.
+- **Streaming transcription** (RFC-0028) — realtime WebSocket sessions
+  with push-audio / next-part / abort / first-chunk and idle timeouts,
+  an FFI session API, and first-class support in all eight bindings.
+- **`aimux-web` console** (RFC-0029) — browser-based model-call testing
+  and trace visualization, shipped as release artifacts.
+- **In-page API key settings for the console** (RFC-0029 revision) —
+  set provider keys in the browser (Settings page): in-memory by default,
+  opt-in disk persistence at `0600`, masked hints only, and plaintext
+  entry is loopback-gated (non-loopback binds fall back to `env:VAR`
+  references).
+- **FFI/binding ergonomics** — default-capacity ring init, cancellable Go
+  streams, `ProviderWithConfig` (Go), full `ProviderOptions` for
+  `provider()` (Python), optional recording-ring capacity in every
+  language.
 
 ### Fixed
 
-- Audit rounds 1–4 fixes: Python binding exports (recording / mock-replay entry
-  points, `get_model_specs`), FFI error-transport correctness, and CI drift
-  (regenerated Node `index.js` / `index.d.ts`).
+**Provider correctness**
+
+- Gemini: `functionResponse.name` now uses the tool name instead of the
+  opaque call id (multi-turn tool calls no longer 400) (#127).
+- Anthropic: in-stream errors now emit the terminal `Finish` part
+  (contract parity with OpenAI/Google) (#128); assistant reasoning —
+  including its signature — is echoed back when thinking is enabled
+  (#131/#138).
+- Bedrock & Anthropic: streaming no longer drops reasoning signatures;
+  extended-thinking multi-turn keeps its context (#131).
+- Vertex: grounding / url-context / code-execution / server-tool results
+  are no longer silently dropped from streams; finish metadata restored
+  (#141/#143).
+- AWS SigV4 signs the host header with non-default ports; local gateways
+  and proxied environments no longer fail (#125/#129).
+- Six providers (openai/bedrock/cohere/mistral/huggingface/anthropic)
+  stop discarding response fields they had already parsed (#101/#139).
+- Recording: writer I/O failures (e.g. ENOSPC) surface through
+  `try_flush` instead of a silent Ok, and the completion barrier requires
+  the input record before finalizing (#110/#133).
+- Structured `ApiCall`/`NoSuchProvider` fields with unified retry
+  classification (#94); retry config honored for vertex/anthropic-aws;
+  credential-source accuracy for xai/open-responses; real provider
+  identity surfaced on the OpenAI chat path.
+- Kotlin: the documented retryable timeout sentinel for `nextPart` is
+  actually reachable (#116/#144); close-race read/write locks for handle
+  types in Kotlin/Java/Flutter; Python exposes recording / mock-replay /
+  `get_model_specs` with typed exceptions.
+
+**Tests & fixtures**
+
+- Cassette bodies are no longer blanked for every streaming response —
+  157 recovered recordings across 640 files (#102).
+- Contract fixtures now type-check (field *values*, not just names)
+  across Rust and all eight bindings; the `top_k` drift that hid for
+  months is regression-locked (#106).
+
+### Engineering
+
+- Quality gates: workspace fmt, clippy baseline plus a permanent
+  5-lint subset (1,521 fixes, incl. 146 hand-written `# Errors` docs),
+  `rustdoc -D warnings` in CI, ts-rs type-drift check, ProviderName
+  generator-drift check.
+- Coverage infrastructure (cargo-llvm-cov) with a 78.5% workspace
+  baseline; unified e2e suite extended to six protocols; a 96-export FFI
+  smoke harness; RFC-0028 error-path coverage in Rust, Python and Node.
+- Round 4 quality audit: 16 verified findings, full reports under
+  `docs/quality-audit/round4/`; unused-dependency sweep; rustdoc errors
+  47 → 0.
+- Release pipeline hardened from the 0.2.1 post-mortem (JVM Central
+  Portal routing, napi rebuild before publish, Flutter xcframework
+  embedding) plus a troubleshooting handbook.
 
 ### Removed
 
-- `aimux_last_error()` C ABI function (replaced by the `AimuxError` out-param).
-- C ABI JSON error envelope and the streaming `on_error` callback.
+- `aimux_last_error()` (C ABI) — replaced by the `AimuxError` out-param.
+- The C ABI JSON error envelope and the streaming `on_error` callback.
 
 ## [0.2.1] - 2026-08-04
 
