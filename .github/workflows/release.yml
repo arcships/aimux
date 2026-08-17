@@ -356,7 +356,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        # NOTE: the entries MUST live under a `settings:` key — the job
+        # references matrix.settings.*. A bare `include:` list defines
+        # matrix.host/target/suffix instead, so runs-on resolves to an empty
+        # runner label and GitHub silently drops the job from the run (no
+        # error, not even a "skipped" entry — verified by bisect on
+        # 2026-08-17; this kept the console binaries out of the v0.3.0 tag run).
+        settings:
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             suffix: -linux-x64
