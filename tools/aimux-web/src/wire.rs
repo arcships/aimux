@@ -286,6 +286,9 @@ pub fn resolve_api_key(
 ) -> Result<Option<String>, AiMuxError> {
     match spec {
         None => Ok(store.get(provider)),
+        // An empty/whitespace-only field is "unset", not an empty key — fall
+        // through to the stored key / provider's registered env var.
+        Some(s) if s.trim().is_empty() => Ok(store.get(provider)),
         Some(s) if s.starts_with("env:") => {
             let var = &s[4..];
             if var.is_empty() {

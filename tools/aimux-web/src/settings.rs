@@ -188,18 +188,23 @@ impl KeyStore {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        // Create (or truncate) first, then tighten permissions before the
-        // plaintext lands in the file.
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-        set_private(path)?;
-        let json = serde_json::to_string_pretty(&KeysFile { keys: snapshot })
-            .map_err(std::io::Error::other)?;
-        std::io::Write::write_all(&mut file, json.as_bytes())?;
-        file.sync_all()
+        // Atomic write via temp + rename: two concurrent PUT(remember) calls
+        // snapshot-then-write outside the lock, so an in-place truncate could
+        // interleave into torn JSON (silently wiping all keys on next load).
+        let tmp = path.with_extension("json.tmp");
+        {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&tmp)?;
+            set_private(&tmp)?;
+            let json = serde_json::to_string_pretty(&KeysFile { keys: snapshot })
+                .map_err(std::io::Error::other)?;
+            std::io::Write::write_all(&mut file, json.as_bytes())?;
+            file.sync_all()?;
+        }
+        fs::rename(&tmp, path)
     }
 }
 
@@ -207,7 +212,10 @@ impl KeyStore {
 /// otherwise just the length — never the full key.
 fn mask_key(key: &str) -> String {
     let chars: Vec<char> = key.chars().collect();
-    if chars.len() >= 4 {
+    // Only reveal a tail when it cannot reconstruct a meaningful fraction of
+    // the key — short keys (≤8 chars) get length only, so a 4-char key never
+    // leaks in full via "…abcd".
+    if chars.len() > 8 {
         let tail: String = chars[chars.len() - 4..].iter().collect();
         format!("…{tail}")
     } else {
@@ -289,7 +297,10 @@ mod tests {
     #[test]
     fn mask_key_last_four_or_length() {
         assert_eq!(mask_key("sk-abcd1234"), "…1234");
-        assert_eq!(mask_key("abcd"), "…abcd");
+        // Short keys reveal length only — a 4-char key must not leak in full
+        // via its own tail (threshold: > 8 chars).
+        assert_eq!(mask_key("abcdefgh"), "(8 chars)");
+        assert_eq!(mask_key("abcd"), "(4 chars)");
         assert_eq!(mask_key("abc"), "(3 chars)");
         assert_eq!(mask_key(""), "(0 chars)");
     }
@@ -400,7 +411,7 @@ mod tests {
         assert_eq!(hints[0].provider, "openai");
         assert_eq!(hints[0].hint, "…9999");
         assert_eq!(hints[1].provider, "zhipu");
-        assert_eq!(hints[1].hint, "…-new");
+        assert_eq!(hints[1].hint, "(5 chars)");
     }
 
     #[test]

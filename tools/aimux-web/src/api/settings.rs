@@ -81,6 +81,7 @@ pub async fn delete_key(State(state): State<AppState>, Path(provider): Path<Stri
     if !state.loopback {
         return non_loopback_forbidden();
     }
+    let provider = provider.trim().to_string();
     match state.keys.remove(&provider) {
         Ok(removed) => Json(json!({ "provider": provider, "removed": removed })).into_response(),
         Err(e) => (
