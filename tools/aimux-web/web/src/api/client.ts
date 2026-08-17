@@ -82,8 +82,44 @@ function parseSSE(raw: string): SSEEvent | null {
 
 // ── typed endpoints ─────────────────────────────────────────────────────────
 
+/** One entry of `GET /api/settings/keys` — masked, never the plaintext key. */
+export interface StoredKey {
+  provider: string
+  status: 'stored' | 'unset'
+  hint: string | null
+  remembered?: boolean
+}
+
+export interface SettingsKeys {
+  keys: StoredKey[]
+  /** false when the server is bound non-loopback → hide the key input. */
+  plaintext_entry: boolean
+}
+
 export const api = {
   health: () => fetch(`${API}/health`).then((r) => r.text()),
+
+  settingsKeys(): Promise<SettingsKeys> {
+    return fetch(`${API}/settings/keys`).then((r) => j<SettingsKeys>(r))
+  },
+
+  putSettingsKey(body: { provider: string; key: string; remember?: boolean }): Promise<{
+    provider: string
+    stored: boolean
+    remembered: boolean
+  }> {
+    return fetch(`${API}/settings/keys`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => j(r))
+  },
+
+  deleteSettingsKey(provider: string): Promise<{ provider: string; removed: boolean }> {
+    return fetch(`${API}/settings/keys/${encodeURIComponent(provider)}`, {
+      method: 'DELETE',
+    }).then((r) => j(r))
+  },
 
   call(body: WireCallRequest): Promise<WireCallResponse> {
     return fetch(`${API}/calls`, {

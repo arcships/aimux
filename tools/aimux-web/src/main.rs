@@ -20,6 +20,7 @@ use clap::Parser;
 mod agents;
 mod api;
 mod model_builder;
+mod settings;
 mod state;
 mod wire;
 
@@ -51,7 +52,9 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let state = state::AppState::new();
+    let state = state::AppState::with_bind_host(&cli.host);
+    let loopback = state.loopback;
+    let key_store = state.keys.clone();
 
     let app = Router::new().merge(api::router(state));
 
@@ -95,6 +98,15 @@ async fn main() -> Result<()> {
             .display()
     );
     println!("  wiring: RingRecorder(2048) + RingTraceStore + SessionStore");
+    if !key_store.is_empty() {
+        println!(
+            "  key store: {} provider key(s) loaded from Settings",
+            key_store.len()
+        );
+    }
+    if !loopback {
+        println!("  note: non-loopback bind — web key entry is disabled, use env:VAR references");
+    }
 
     if !cli.no_open {
         // Best-effort browser open (ignore failures on headless machines).

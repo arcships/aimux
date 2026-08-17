@@ -37,7 +37,7 @@ aimux 是 access layer(README 明确不做 agent loop / RAG / 编排)。**agent 
 2. **浏览器跑简单 agent loop**:循环逻辑在前端 JS 驱动(决策 D1),用户发消息,页面实时展示每步的模型调用/tool 调用/结果;agent 定义用 JSON,无需写 Rust。
 3. **trace 可视化**:录制列表 + 单条三层详情(输入/provider 配置/HTTP exchanges)+ 会话瀑布图 + 双 Recording diff。
 4. **最大化复用**:录制、trace、session、回放、mock、model catalogue 全部复用 core 现有实现,不重写。
-5. **本地优先、凭据不落地前端**:默认绑 `127.0.0.1`;API key 只在服务端(env 引用),录制脱敏复用 RFC-0023 现成规则。
+5. **本地优先、凭据服务端托管**:默认绑 `127.0.0.1`;API key 支持网页内 Settings 保存(内存默认 + 显式 remember 落盘 `0600`,GET 仅掩码)或 `env:` 引用,明文永不回传前端,录制脱敏复用 RFC-0023 现成规则(见 §5.5)。
 
 ---
 
@@ -48,6 +48,7 @@ aimux 是 access layer(README 明确不做 agent loop / RAG / 编排)。**agent 
 | **D1** agent loop 放哪 | **前端 JS**。循环状态在浏览器,Vue 组件驱动;每次 model call 走后端 `POST /api/calls`(带 `session_id`+`step`),后端负责调用 + 录制,不感知循环 |
 | **D2** 前端技术栈 | **Vite + Vue 3 + TS + shadcn-vue + Tailwind CSS**(组件库 2026-08-14 定稿);类型由 ts-rs 从 Rust 生成,不手写;界面设计见 §8 |
 | **D3** V1 范围 | **P1–P5 一次做完**(Playground / Agent / Traces / Sessions / Replay / Cache probe) |
+| **D4** 凭据管理(**2026-08-14 修订**,替代原"凭据不落地前端") | **网页内 Settings + 服务端托管**:provider 下拉 + key 输入;内存为默认,显式勾选 remember 才落盘(配置目录 `keys.json`,`0600`);`GET /api/settings/keys` 只返回掩码(末 4 位),明文永不回传;非回环绑定时 PUT/DELETE 返回 403、请求内明文维持拒绝,回退 `env:` 引用。调用优先级:请求内显式 spec > Settings 已存 key > provider 注册 env var(§5.5) |
 
 ---
 
@@ -113,7 +114,8 @@ tools/aimux-web/web/
 │       ├── Traces.vue
 │       ├── Sessions.vue
 │       ├── Replay.vue
-│       └── CacheProbe.vue
+│       ├── CacheProbe.vue
+│       └── Settings.vue      # API key 管理(§5.5,决策 D4)
 └── index.html
 ```
 
@@ -138,6 +140,9 @@ tools/aimux-web/web/
 | `/api/recordings/export` | GET | 导出全部录制为 jsonl(与 `aimux-replay` 格式互通) |
 | `/api/recordings/import` | POST | 导入 jsonl(RFC-0023 `from_jsonl` 兼容) |
 | `/api/providers` | GET | provider 列表 + 可用模型(复用 RFC-0027 catalogue) |
+| `/api/settings/keys` | GET | 已存 key 掩码列表(末 4 位)+ `plaintext_entry` 标志(**2026-08-14 修订新增**,§5.5) |
+| `/api/settings/keys` | PUT | `{provider, key, remember?}` 保存 key(内存 + 可选落盘;非回环 403) |
+| `/api/settings/keys/:provider` | DELETE | 移除该 provider 的 key(内存 + 磁盘;非回环 403) |
 | `/api/cache-probe` | POST | 在线缓存探测(平移 `aimux-cli probe::provider`,含 `--dry-run` 等价语义) |
 
 ### 5.2 SSE 协议(`POST /api/calls?stream=1`)
@@ -171,7 +176,7 @@ POST /api/calls
 {
   "provider": "openai",            // 注册表名或原生 provider 名
   "model": "gpt-4o",
-  "api_key": "env:OPENAI_API_KEY", // 仅允许 env:VAR 引用或空(服务端已配置);不接受明文 key
+  "api_key": "env:OPENAI_API_KEY", // env:VAR 引用 / 留空(Settings 已存 key 或 provider env var)/ 明文仅限回环绑定(§5.5)
   "base_url": null,
   "stream": true,
   "options": {
@@ -200,7 +205,7 @@ POST /api/calls
 映射规则:
 - `system/user/assistant/tool` → `ModelMessage`,`content` 数组映射 `ContentPart`(text / image / tool_result…);
 - `tool_calls` 按 provider 能力转 `ToolChoice`/消息内嵌 tool call(OpenAI 兼容族);
-- `api_key` 只接受 `env:VAR`,后端经 `provider_utils` 的 key 加载逻辑解析;**浏览器永远见不到 key 明文**。
+- `api_key` 解析见 §5.5:显式 `env:VAR` 引用、Settings key store 回退、回环绑定下的明文直传;**浏览器永远见不到 key 明文**(Settings 页只显示掩码)。
 
 ### 5.4 多步关联(前端 loop 与 trace 的桥梁)
 
@@ -208,6 +213,20 @@ POST /api/calls
 - 后端 `CallOptions.session_id` 透传(RFC-0024),`SessionStore.append` 归组,`RingRecorder` 落 `Recording`(`session_id`/`step` 字段由 RFC-0023 P1 已实现);
 - Traces 页按 `session_id` 过滤即得**整个 agent 运行的调用链**,按 `step` 排序渲染瀑布图;
 - 单条失败/异常调用不影响会话归组(录制在入口发生,失败也在会话内)。
+
+### 5.5 Settings 与凭据(决策 D4,2026-08-14 修订)
+
+原设计只接受 `env:VAR` 引用,用户必须先在 shell `export`——对"下载即用"的预编译二进制不友好。修订为**网页内设置**(Settings 页):
+
+- **存储**(`settings.rs` `KeyStore`):每 provider 一把明文 key,内存 `HashMap` 为默认;勾选 "remember" 才落盘到配置目录(Linux/macOS `~/.config/aimux-web/keys.json`,Windows `%APPDATA%/aimux-web/keys.json`),文件权限 `0600`(unix `PermissionsExt`,Windows 尽力而为),启动时若文件存在则加载进内存。同 provider 重新保存但不勾 remember 时,磁盘旧条目同步移除(避免重启复活旧 key)。
+- **API 面**(见 §5.1):`GET` 只返回 `{provider, status, hint}`(hint = 末 4 位,不足 4 位给长度),**明文永不回传**;`PUT`/`DELETE` 非回环绑定时返回 403。
+- **回环门控**:后端启动时已知 bind host;非 `127.0.0.1`/`localhost`/`::1` 时 Settings 写接口 403(错误信息引导 `env:` 引用),`GET` 附 `plaintext_entry: false` 供前端隐藏输入框,请求内明文 spec 亦维持拒绝。
+- **调用优先级**(`wire.rs` `resolve_api_key`,三个调用方 calls/cache-probe/replay 均带上 provider 名):
+  1. **请求内显式 spec** —— `env:VAR` 引用(任意绑定可用);明文仅限回环绑定(Playground 快速用一次、不保存的场景);
+  2. **Settings 已存该 provider 的 key**(KeyStore,含启动时从磁盘加载的);
+  3. `None` —— provider 读自己注册的默认 env var。
+
+**威胁模型**:信任边界 = 本机回环客户端。回环下浏览器 ↔ 后端信道视为可信,故允许网页内明文录入与请求内明文直传;非回环(如 `--host 0.0.0.0` LAN 共享)下任何局域网客户端都能 POST,故全部明文入口关闭。明文 key 永不进日志、永不回传前端、永不进 Recording(录制层脱敏复用 RFC-0023 规则)。
 
 ---
 
@@ -478,7 +497,7 @@ Replay 页对同一 `Recording` 重发真实 API 后,新旧两条 `Recording` **
 | 维度 | 设计 |
 |---|---|
 | 绑定 | 默认 `127.0.0.1`;`--host 0.0.0.0` 需显式开启(LAN 共享用,文档警示) |
-| API key | 只接受 `env:VAR` 引用或服务端已配置;**浏览器侧永不出现 key 明文** |
+| API key | 网页内 Settings 保存(内存默认 + 显式 remember 落盘 `0600`)或 `env:VAR` 引用;`GET` 仅掩码,**明文永不回传浏览器**;非回环绑定关闭一切明文入口(403 / 拒绝),回退 `env:` 引用(§5.5,决策 D4) |
 | 录制脱敏 | 复用 RFC-0023 现成规则:api_key/Authorization/含 api-key 头恒 `[REDACTED]` |
 | `http_get` 工具 | 白名单域名 + 仅 http/https,防 SSRF;默认关闭 |
 | 请求回放 | 重发真实 API 消耗费用,UI 明确警示 + 需用户确认(等价 CLI `--dry-run` 的精神) |
@@ -523,7 +542,7 @@ Replay 页对同一 `Recording` 重发真实 API 后,新旧两条 `Recording` **
 | 前端 loop 与 provider tool 语义差异(OpenAI-compat vs 原生) | 中 | `wire.rs` 收敛 tool call 映射;V1 以 OpenAI 兼容族为主(与 mock 回放范围一致),原生 provider 逐步补 |
 | 前端消息 schema 与 `ModelPrompt` 往返丢字段 | 中 | wire 往返单测(round-trip)覆盖;未知字段显式报错而非静默丢弃 |
 | SSE 中断 / 浏览器 fetch reader 兼容 | 低 | fetch streaming + TextDecoder 解析;断流重试 + 失败态展示 |
-| key 误入前端(用户手填明文) | 低 | 输入框只接受 `env:VAR`;检测到明文 key 时拒绝并提示 |
+| key 误入前端(用户手填明文) | 低 | Settings 页与请求内明文仅回环可用;`GET` 只回掩码;非回环一律拒绝并提示 `env:VAR` |
 | `http_get` SSRF | 中 | 白名单 + 协议限制,默认关闭 |
 | 请求回放消耗真实费用 | 中 | UI 确认弹窗 + 每请求显示预估 token;与 CLI `--dry-run` 精神一致 |
 | 前端体量膨胀 | 中 | shadcn-vue 组件按需拷贝进仓库(不用即删);业务组件(JSON 查看器/瀑布/Schema form)复用;shiki 按需加载语言 |

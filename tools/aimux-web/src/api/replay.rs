@@ -22,8 +22,9 @@ use crate::wire::{self, WireMessage};
 #[derive(Deserialize)]
 pub struct ReplayRequest {
     pub call_id: String,
-    /// Required for recordings whose key source is `explicit`/`unknown`
-    /// (only `env:VAR` references accepted).
+    /// Fallback for recordings whose key source is `explicit`/`unknown`:
+    /// `env:VAR` reference, or a plaintext literal on loopback binds
+    /// (RFC-0029 §5.5). Keys saved in Settings apply as well.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,13 +60,26 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
         AiMuxError::InvalidArgument(format!("recording '{}' not found", req.call_id))
     })?;
 
-    // Resolve the key for provider rebuild (privacy: never plaintext).
+    // Resolve the key for provider rebuild: the recording's own env: source
+    // first, then the request spec, with the Settings key store as the
+    // fallback (RFC-0029 §5.5).
+    let provider_name = recording.provider.provider.clone();
     let key = match recording.provider.api_key_source.as_str() {
-        s if s.starts_with("env:") => wire::resolve_api_key(Some(s))?,
-        "none" => None,
-        _ => wire::resolve_api_key(req.api_key.as_deref()).map_err(|_| {
+        s if s.starts_with("env:") => {
+            wire::resolve_api_key(Some(s), &provider_name, &state.keys, state.loopback)?
+        }
+        "none" => wire::resolve_api_key(None, &provider_name, &state.keys, state.loopback)?,
+        _ => wire::resolve_api_key(
+            req.api_key.as_deref(),
+            &provider_name,
+            &state.keys,
+            state.loopback,
+        )
+        .map_err(|_| {
             AiMuxError::InvalidArgument(
-                "this recording has no env key source — pass api_key=\"env:VAR\" to replay".into(),
+                "this recording has no env key source — pass api_key=\"env:VAR\" or save the \
+                 provider key in Settings to replay"
+                    .into(),
             )
         })?,
     };

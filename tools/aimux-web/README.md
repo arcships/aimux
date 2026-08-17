@@ -57,6 +57,19 @@ cargo run -p aimux-web
 cargo run -p aimux-web -- --port 8787 --no-open
 ```
 
+### 配置 API key(二选一)
+
+1. **网页内设置(推荐,无需 shell)**:打开控制台后进入 **Settings** 页,选
+   provider、粘贴 key 保存即可;默认只保存在内存(重启失效),勾选
+   "记住(写入磁盘)" 会持久化到配置目录的 `keys.json`(权限 `0600`)并在下次
+   启动自动加载。列表只显示掩码(末 4 位),明文永不回传前端。
+2. **shell 环境变量(可选)**:`export OPENAI_API_KEY=sk-…`(或对应 provider
+   的注册 env var);Playground 等页的 key 字段也可填 `env:VAR` 引用。
+
+调用优先级:请求内显式 `env:` 引用 > Settings 已存 key > provider 注册的默认
+env var。非回环绑定(`--host 0.0.0.0` 等)时网页内 key 管理自动禁用,只能走
+`env:` 引用。
+
 打开后使用 Playground / Agent 页跑一次调用,Traces 页即可看到完整录制。
 
 ## 开发模式(前端热更新)
@@ -81,6 +94,7 @@ npm run dev
 | Sessions | 会话归组与调用链 |
 | Replay | 请求回放(重发真实 API)+ 新旧输出 diff + mock 模式加载 |
 | Cache | 在线 prefix 缓存探测(dry-run 免费) |
+| Settings | 网页内 API key 管理:provider 下拉 + key 输入 + "记住(存盘)"开关;列表仅掩码 |
 
 ## 关键设计
 
@@ -88,8 +102,10 @@ npm run dev
   (SSE),循环逻辑、tool 执行桥(`POST /api/tools/:name`)在浏览器驱动。
 - **多步关联**:同一 `session_id` + 后端 `SessionStore` 自动分配 step,
   Traces 页按会话聚合瀑布图。
-- **凭据安全**:API key 只接受 `env:VAR` 引用或由 provider 注册表 env var 自动读取;
-  明文 key 一律拒绝;录制脱敏复用 core 规则。
+- **凭据安全**:API key 可在 Settings 页网页内保存(内存默认,显式勾选才落盘
+  `~/.config/aimux-web/keys.json`,权限 `0600`),或用 `env:VAR` 引用 / provider
+  注册表 env var 自动读取;`GET /api/settings/keys` 只返回掩码,明文永不回传前端;
+  非回环绑定时网页内明文入口全部关闭(403);录制脱敏复用 core 规则。
 - **Mock 模式**:`POST /api/mock/load` 加载录制 jsonl(与 `aimux-replay` 格式互通),
   之后 `mock: true` 的调用走 `MockReplayModel`,零成本离线验证。
 

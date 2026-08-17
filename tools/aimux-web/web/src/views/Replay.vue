@@ -93,7 +93,7 @@ async function replay() {
       </div>
       <div class="w-44">
         <Label>API key（env，explicit 源需要）</Label>
-        <Input v-model="apiKey" class="mt-1 font-mono" placeholder="env:VAR" />
+        <Input v-model="apiKey" class="mt-1 font-mono" placeholder="env:VAR（或 Settings 保存）" />
       </div>
       <div class="w-32">
         <Label>Temperature</Label>

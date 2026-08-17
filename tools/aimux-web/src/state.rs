@@ -81,10 +81,33 @@ pub struct AppState {
     pub mock_models: Arc<Mutex<HashMap<String, Arc<dyn LanguageModel>>>>,
     /// Recordings imported from jsonl (RFC-0023), merged into listings.
     pub imported: Arc<Mutex<Vec<Recording>>>,
+    /// Console credential store (RFC-0029 §5.5): per-provider keys saved
+    /// from the Settings page, optionally persisted under the config dir.
+    pub keys: Arc<crate::settings::KeyStore>,
+    /// Whether the server is bound to a loopback host — gates plaintext key
+    /// entry (Settings PUT/DELETE and per-request key literals).
+    pub loopback: bool,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        Self::with_bind_host("127.0.0.1")
+    }
+
+    /// State for a given bind host: loopback detection + key store loaded
+    /// from the default config path (when a remembered-keys file exists).
+    pub fn with_bind_host(host: &str) -> Self {
+        let keys = crate::settings::KeyStore::load_default();
+        Self::build(crate::settings::is_loopback_host(host), keys)
+    }
+
+    /// Test constructor: explicit bind host + injected key store (tempdir).
+    #[cfg(test)]
+    pub fn with_bind_host_and_store(host: &str, keys: crate::settings::KeyStore) -> Self {
+        Self::build(crate::settings::is_loopback_host(host), keys)
+    }
+
+    fn build(loopback: bool, keys: crate::settings::KeyStore) -> Self {
         let recorder = Arc::new(RingRecorder::new());
         let trace_sink = Arc::new(WebTraceSink::new());
         let session_store = Arc::new(SessionStore::new());
@@ -99,6 +122,8 @@ impl AppState {
             session_store,
             mock_models: Arc::new(Mutex::new(HashMap::new())),
             imported: Arc::new(Mutex::new(Vec::new())),
+            keys: Arc::new(keys),
+            loopback,
         }
     }
 
