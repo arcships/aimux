@@ -5,7 +5,7 @@ All notable changes to aimux are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] — pending (planned 2026-08-17)
+## [0.3.0] - 2026-08-17
 
 **Breaking release.** 196 commits since 0.2.1: observability primitives
 (recording / replay / sessions / tracing), composite models, streaming
