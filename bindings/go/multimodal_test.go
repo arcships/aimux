@@ -7,9 +7,11 @@ package aimux
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ── Constructor tests ────────────────────────────────────────────────────────
@@ -94,6 +96,214 @@ func TestSpeechDoubleClose(t *testing.T) {
 	if err := m.Close(); err != nil {
 		t.Fatalf("double close should be safe: %v", err)
 	}
+}
+
+func TestStartTranscriptionSessionRejectsNilModel(t *testing.T) {
+	_, err := StartTranscriptionSession(nil, nil)
+	var aimuxErr *Error
+	if !errors.As(err, &aimuxErr) || aimuxErr.Code != CodeInvalidArgument {
+		t.Fatalf("nil transcription model: expected flat InvalidArgument, got %v", err)
+	}
+}
+
+func TestMultimodalCloseDoesNotWaitForInFlightCall(t *testing.T) {
+	server, requestStarted, releaseRequest := newBlockedHTTPServer(
+		t, "audio/mpeg", "test audio",
+	)
+	defer releaseRequest()
+
+	model, err := NewOpenAISpeechWithBase("sk-test-fake-key", "tts-1", server.URL)
+	if err != nil {
+		t.Fatalf("NewOpenAISpeechWithBase failed: %v", err)
+	}
+	defer model.Close()
+
+	voice := "alloy"
+	format := "mp3"
+	generateDone := make(chan error, 1)
+	go func() {
+		_, err := model.Generate(&SpeechCallOptions{
+			Text:         "hello",
+			Voice:        &voice,
+			OutputFormat: &format,
+		})
+		generateDone <- err
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("speech request did not start")
+	}
+
+	closes := make([]func(), 32)
+	for i := range closes {
+		closes[i] = func() {
+			if err := model.Close(); err != nil {
+				t.Errorf("Close: %v", err)
+			}
+		}
+	}
+	runConcurrent(t, "multimodal Close during an in-flight call", closes...)
+	if got := model.h.handle.Load(); got != 0 {
+		t.Fatalf("multimodal handle after Close = %d, want 0", got)
+	}
+
+	releaseRequest()
+	select {
+	case err := <-generateDone:
+		if err != nil {
+			t.Fatalf("in-flight Generate failed after Close: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight Generate did not finish after releasing the response")
+	}
+
+	_, err = model.Generate(&SpeechCallOptions{Text: "after close"})
+	var aimuxErr *Error
+	if !errors.As(err, &aimuxErr) || aimuxErr.Code != CodeInvalidArgument {
+		t.Fatalf("Generate after Close: expected flat InvalidArgument, got %v", err)
+	}
+}
+
+func TestTranscriptionSessionCloseUnblocksNextPart(t *testing.T) {
+	// Withhold the WebSocket handshake. The native driver cannot publish its
+	// first part, so NextPart(-1) is guaranteed to wait until Close aborts it.
+	server, handshakeStarted, releaseHandshake := newBlockedHTTPServer(t, "", "")
+	defer releaseHandshake()
+
+	model, err := NewOpenAITranscriptionWithBase(
+		"sk-test-fake-key", "gpt-realtime-whisper", server.URL,
+	)
+	if err != nil {
+		t.Fatalf("NewOpenAITranscriptionWithBase failed: %v", err)
+	}
+	defer model.Close()
+	session, err := StartTranscriptionSession(model, nil)
+	if err != nil {
+		t.Fatalf("StartTranscriptionSession failed: %v", err)
+	}
+
+	select {
+	case <-handshakeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WebSocket handshake did not start")
+	}
+	nextStarted := make(chan struct{})
+	nextDone := make(chan error, 1)
+	go func() {
+		close(nextStarted)
+		_, err := session.NextPart(-1)
+		nextDone <- err
+	}()
+	<-nextStarted
+	select {
+	case err := <-nextDone:
+		session.Close()
+		t.Fatalf("NextPart(-1) returned before Close: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	closeDone := make(chan struct{})
+	go func() {
+		session.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+	case <-time.After(2 * time.Second):
+		// Let the handshake fail so a lock-based implementation can unwind
+		// instead of leaking its blocked goroutines after the assertion.
+		releaseHandshake()
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+		}
+		t.Fatal("Close did not wake NextPart(-1)")
+	}
+	releaseHandshake()
+
+	select {
+	case err := <-nextDone:
+		var aimuxErr *Error
+		if !errors.As(err, &aimuxErr) || aimuxErr.Code != CodeAborted {
+			t.Fatalf("NextPart after Close: expected flat Aborted, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("NextPart(-1) stayed blocked after Close returned")
+	}
+	// Idempotence remains part of the public session contract.
+	session.Close()
+}
+
+func TestTranscriptionSessionCloseUnblocksBackpressuredPushAudio(t *testing.T) {
+	// Keeping the WebSocket handshake pending also keeps the driver from
+	// polling its 64-slot audio receiver, giving a deterministic full channel.
+	server, handshakeStarted, releaseHandshake := newBlockedHTTPServer(t, "", "")
+	defer releaseHandshake()
+
+	model, err := NewOpenAITranscriptionWithBase(
+		"sk-test-fake-key", "gpt-realtime-whisper", server.URL,
+	)
+	if err != nil {
+		t.Fatalf("NewOpenAITranscriptionWithBase failed: %v", err)
+	}
+	defer model.Close()
+	session, err := StartTranscriptionSession(model, nil)
+	if err != nil {
+		t.Fatalf("StartTranscriptionSession failed: %v", err)
+	}
+
+	select {
+	case <-handshakeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WebSocket handshake did not start")
+	}
+	for i := 0; i < 64; i++ {
+		if err := session.PushAudio([]byte{byte(i)}); err != nil {
+			session.Close()
+			t.Fatalf("PushAudio %d failed while filling the channel: %v", i, err)
+		}
+	}
+
+	pushStarted := make(chan struct{})
+	pushDone := make(chan error, 1)
+	go func() {
+		close(pushStarted)
+		pushDone <- session.PushAudio([]byte("backpressure"))
+	}()
+	<-pushStarted
+	select {
+	case err := <-pushDone:
+		session.Close()
+		t.Fatalf("PushAudio did not backpressure on a full channel: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	closeDone := make(chan struct{})
+	go func() {
+		session.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+	case <-time.After(2 * time.Second):
+		releaseHandshake()
+		select {
+		case <-closeDone:
+		case <-time.After(2 * time.Second):
+		}
+		t.Fatal("Close did not wake backpressured PushAudio")
+	}
+	releaseHandshake()
+
+	select {
+	case <-pushDone:
+		// The send may have linearized before teardown (success) or observe the
+		// closed receiver (error); this regression only requires bounded wakeup.
+	case <-time.After(2 * time.Second):
+		t.Fatal("backpressured PushAudio stayed blocked after Close returned")
+	}
+	session.Close()
 }
 
 // ── E2E: Embedding via mock server ───────────────────────────────────────────

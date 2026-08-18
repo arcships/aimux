@@ -19,7 +19,7 @@ package aimux
 
 #include "aimux-ffi.h"
 
-// Go-side callback trampolines (//export below). stream_ctx is the stream id.
+// Go-side callback trampoline (//export below). stream_ctx is a cgo.Handle.
 extern void goStreamPart(int64_t id, char* json);
 extern void goStreamDone(int64_t id);
 
@@ -62,6 +62,7 @@ import (
 	"io"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -72,43 +73,57 @@ import (
 // It implements io.Closer — you MUST call Close (or use defer) to release the
 // native handle and avoid memory leaks.
 //
-// Concurrency: Model is safe for concurrent use. GenerateText and StreamText
-// acquire a read lock; Close acquires a write lock and waits for in-flight
-// calls to finish before dropping the native handle.
+// Model must not be copied after first use. Its methods and Close are safe to
+// call concurrently. Close prevents future calls but never waits for an
+// in-flight C call; Rust's registry owns the Arc used by calls that entered
+// before Close won the registry race.
 type Model struct {
-	mu     sync.RWMutex
-	handle uint64
-	closed bool
+	id atomic.Uint64 // 0 means closed
 }
 
 // Close releases the native handle. Safe to call multiple times.
-// It blocks until in-flight GenerateText/StreamText calls finish.
+// It never waits for in-flight model calls or streams.
 func (m *Model) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed {
+	if m == nil {
 		return nil
 	}
-	m.closed = true
-	if m.handle != 0 {
-		C.aimux_drop_handle(C.uint64_t(m.handle))
-		m.handle = 0
+	if id := m.id.Swap(0); id != 0 {
+		C.aimux_drop_handle(C.uint64_t(id))
+		runtime.SetFinalizer(m, nil)
 	}
-	runtime.SetFinalizer(m, nil)
 	return nil
 }
 
-// acquireHandle returns the native handle under a read lock, or an error if
-// the model is closed. The caller must call the returned release func when
-// done with the handle (deferred after the FFI call returns).
-func (m *Model) acquireHandle() (uint64, func(), error) {
-	m.mu.RLock()
-	if m.closed {
-		m.mu.RUnlock()
-		return 0, nil, newError(CodeInvalidArgument, "aimux: model already closed")
+// handle snapshots the native handle. Callers must KeepAlive the receiver
+// until after C returns so its finalizer cannot run before registry lookup.
+func (m *Model) handle() (uint64, error) {
+	if m != nil {
+		if id := m.id.Load(); id != 0 {
+			return id, nil
+		}
 	}
-	h := m.handle
-	return h, m.mu.RUnlock, nil
+	return 0, newError(CodeInvalidArgument, "aimux: model already closed")
+}
+
+func modelHandles(models []*Model) ([]uint64, error) {
+	handles := make([]uint64, len(models))
+	for i, model := range models {
+		if model == nil {
+			return nil, newError(CodeInvalidArgument, fmt.Sprintf("aimux: models[%d] is nil", i))
+		}
+		handle, err := model.handle()
+		if err != nil {
+			return nil, err
+		}
+		handles[i] = handle
+	}
+	return handles, nil
+}
+
+func keepModelsAlive(models []*Model) {
+	for _, model := range models {
+		runtime.KeepAlive(model)
+	}
 }
 
 // ── Provider constructors ───────────────────────────────────────────────────
@@ -347,15 +362,11 @@ func NewRouter(models []*Model, configJSON string) (*Model, error) {
 	if len(models) == 0 {
 		return nil, newError(CodeInvalidArgument, "router: models must be non-empty")
 	}
-	handles := make([]uint64, len(models))
-	for i, m := range models {
-		h, unlock, err := m.acquireHandle()
-		if err != nil {
-			return nil, err
-		}
-		handles[i] = h
-		unlock()
+	handles, err := modelHandles(models)
+	if err != nil {
+		return nil, err
 	}
+	defer keepModelsAlive(models)
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
 	var h C.uint64_t
@@ -385,37 +396,24 @@ func NewRouter(models []*Model, configJSON string) (*Model, error) {
 //
 // configJSON (optional) is a serialized MoaConfig.
 func NewMoa(references []*Model, aggregator *Model, configJSON string) (*Model, error) {
-	aggHandle, unlock, err := aggregator.acquireHandle()
+	if aggregator == nil {
+		return nil, newError(CodeInvalidArgument, "aimux: aggregator is nil")
+	}
+	models := append(append(make([]*Model, 0, len(references)+1), references...), aggregator)
+	handles, err := modelHandles(models)
 	if err != nil {
 		return nil, err
 	}
-	defer unlock()
+	defer keepModelsAlive(models)
+	aggHandle := handles[len(references)]
 
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
-	var h C.uint64_t
-	switch {
-	case len(references) == 0:
-		// No references: pass a NULL pointer + 0 length.
-		h = callMoaNew(nil, 0, aggHandle, configJSON, &cerr)
-	default:
-		refHandles := make([]uint64, len(references))
-		for i, m := range references {
-			rh, runlock, rerr := m.acquireHandle()
-			if rerr != nil {
-				return nil, rerr
-			}
-			refHandles[i] = rh
-			runlock()
-		}
-		h = callMoaNew(
-			(*C.uint64_t)(unsafe.Pointer(&refHandles[0])),
-			C.size_t(len(refHandles)),
-			aggHandle,
-			configJSON,
-			&cerr,
-		)
+	var refPtr *C.uint64_t
+	if len(references) > 0 {
+		refPtr = (*C.uint64_t)(unsafe.Pointer(&handles[0]))
 	}
+	h := callMoaNew(refPtr, C.size_t(len(references)), aggHandle, configJSON, &cerr)
 	return wrapHandleU64(h, &cerr)
 }
 
@@ -458,7 +456,8 @@ func wrapHandleU64(h C.uint64_t, cerr *C.AimuxError) (*Model, error) {
 	if h == 0 {
 		return nil, errorFromC(cerr)
 	}
-	m := &Model{handle: uint64(h)}
+	m := &Model{}
+	m.id.Store(uint64(h))
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
 	return m, nil
 }
@@ -654,54 +653,58 @@ func ProviderWithConfig(name, apiKey, modelID string, cfg *ProviderConfig) (*Mod
 
 // ProviderHandle is a provider handle created by CreateProvider. It supports
 // ListModels (runtime discovery) and Model (build a model from a discovered id).
+// It must not be copied after first use.
 type ProviderHandle struct {
-	mu     sync.RWMutex
-	handle uint64
-	closed bool
+	id atomic.Uint64 // 0 means closed
 }
 
 // Close releases the native handle. Safe to call multiple times.
 func (p *ProviderHandle) Close() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
+	if p == nil {
 		return nil
 	}
-	p.closed = true
-	if p.handle != 0 {
-		C.aimux_drop_handle(C.uint64_t(p.handle))
-		p.handle = 0
+	if id := p.id.Swap(0); id != 0 {
+		C.aimux_drop_handle(C.uint64_t(id))
+		runtime.SetFinalizer(p, nil)
 	}
-	runtime.SetFinalizer(p, nil)
 	return nil
+}
+
+func (p *ProviderHandle) handle() (uint64, error) {
+	if p != nil {
+		if id := p.id.Load(); id != 0 {
+			return id, nil
+		}
+	}
+	return 0, newError(CodeInvalidArgument, "aimux: provider handle is closed")
 }
 
 // ListModels lists models available on this provider (runtime discovery via
 // the provider's /models endpoint), enriched with community knowledge (anya2a)
 // when available. Returns a JSON array of RuntimeModel.
 func (p *ProviderHandle) ListModels() (string, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.closed || p.handle == 0 {
-		return "", newError(CodeInvalidArgument, "aimux: provider handle is closed")
+	id, err := p.handle()
+	if err != nil {
+		return "", err
 	}
+	defer runtime.KeepAlive(p)
 	return ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_provider_list_models(C.uint64_t(p.handle), cerr)
+		return C.aimux_provider_list_models(C.uint64_t(id), cerr)
 	})
 }
 
 // Model builds a language model from a discovered model id.
 func (p *ProviderHandle) Model(modelID string) (*Model, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if p.closed || p.handle == 0 {
-		return nil, newError(CodeInvalidArgument, "aimux: provider handle is closed")
+	id, err := p.handle()
+	if err != nil {
+		return nil, err
 	}
+	defer runtime.KeepAlive(p)
 	cModel := C.CString(modelID)
 	defer C.free(unsafe.Pointer(cModel))
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
-	h := C.aimux_provider_model(C.uint64_t(p.handle), cModel, &cerr)
+	h := C.aimux_provider_model(C.uint64_t(id), cModel, &cerr)
 	return wrapHandleU64(h, &cerr)
 }
 
@@ -734,7 +737,8 @@ func CreateProvider(name, apiKey string, cfg *ProviderConfig) (*ProviderHandle, 
 	if h == 0 {
 		return nil, errorFromC(&cerr)
 	}
-	p := &ProviderHandle{handle: uint64(h)}
+	p := &ProviderHandle{}
+	p.id.Store(uint64(h))
 	runtime.SetFinalizer(p, func(p *ProviderHandle) { p.Close() })
 	return p, nil
 }
@@ -768,11 +772,11 @@ func GetModelSpecs(sourceURL string) (string, error) {
 //
 //	result, err := model.GenerateText(`"What is Rust?"`, "")
 func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return "", err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	cPrompt := C.CString(promptJson)
 	defer C.free(unsafe.Pointer(cPrompt))
@@ -795,11 +799,11 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 // optsJson for schema control; the function applies JSON repair before
 // parsing.
 func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return "", err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	cPrompt := C.CString(promptJson)
 	defer C.free(unsafe.Pointer(cPrompt))
@@ -822,11 +826,11 @@ func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 // Same signature as GenerateText; returns the JSON-serialized
 // StreamTextResultAggregated.
 func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return "", err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	cPrompt := C.CString(promptJson)
 	defer C.free(unsafe.Pointer(cPrompt))
@@ -849,11 +853,11 @@ func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
 // (OpenAI "chat.completion" object) rather than a GenerateTextResult. Works
 // with any provider.
 func (m *Model) GenerateTextAsOpenAI(promptJson, optsJson string) (string, error) {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return "", err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	cPrompt := C.CString(promptJson)
 	defer C.free(unsafe.Pointer(cPrompt))
@@ -1027,12 +1031,12 @@ func (m *Model) StreamTextContext(ctx context.Context, promptJson, optsJson stri
 			entry.closeParts()
 		}()
 
-		handle, release, err := m.acquireHandle()
+		handle, err := m.handle()
 		if err != nil {
 			entry.markTerminal(err, false)
 			return
 		}
-		defer release()
+		defer runtime.KeepAlive(m)
 
 		cPrompt := C.CString(promptJson)
 		defer C.free(unsafe.Pointer(cPrompt))
@@ -1105,12 +1109,12 @@ func (m *Model) StreamTextAsOpenAIContext(ctx context.Context, promptJson, optsJ
 			entry.closeParts()
 		}()
 
-		handle, release, err := m.acquireHandle()
+		handle, err := m.handle()
 		if err != nil {
 			entry.markTerminal(err, false)
 			return
 		}
-		defer release()
+		defer runtime.KeepAlive(m)
 
 		cPrompt := C.CString(promptJson)
 		defer C.free(unsafe.Pointer(cPrompt))

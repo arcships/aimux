@@ -12,6 +12,7 @@ package aimux
 import "C"
 
 import (
+	"runtime"
 	"unsafe"
 )
 
@@ -34,11 +35,11 @@ func (m *Model) TraceAudited(strict bool) (*Model, error) {
 }
 
 func (m *Model) traceWrap(audited bool, strict C.int) (*Model, error) {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
@@ -69,11 +70,11 @@ func (m *Model) TraceSessionChain(sessionId string) (string, error) {
 // TraceExportJsonl returns all probe records as JSONL (one TraceRecord per
 // line).
 func (m *Model) TraceExportJsonl() (string, error) {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return "", err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	return ffiString(func(cerr *C.AimuxError) *C.char {
 		return C.aimux_trace_export_jsonl(C.uint64_t(handle), cerr)
@@ -82,11 +83,11 @@ func (m *Model) TraceExportJsonl() (string, error) {
 
 // TraceClear drops all probe records of this model.
 func (m *Model) TraceClear() error {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	if rc := C.aimux_trace_clear(C.uint64_t(handle)); rc != 0 {
 		return newError(CodeInvalidArgument, "aimux: trace_clear failed (invalid handle)")
@@ -96,11 +97,11 @@ func (m *Model) TraceClear() error {
 
 // traceQuery runs a query taking one C string argument.
 func (m *Model) traceQuery(arg string, call func(C.uint64_t, *C.char, *C.AimuxError) *C.char) (string, error) {
-	handle, release, err := m.acquireHandle()
+	handle, err := m.handle()
 	if err != nil {
 		return "", err
 	}
-	defer release()
+	defer runtime.KeepAlive(m)
 
 	cArg := C.CString(arg)
 	defer C.free(unsafe.Pointer(cArg))

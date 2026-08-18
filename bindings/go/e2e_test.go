@@ -512,14 +512,12 @@ func TestStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 		t.Fatal("provider did not send the SSE burst")
 	}
 	waitForChannelFull(t, stream.entry.parts)
-	select {
-	case <-stream.entry.terminal:
-		t.Fatal("stream ended before cancellation")
-	default:
-	}
 
-	stream.Cancel()
-	stream.Cancel()
+	tasks := []func(){func() { m.Close() }}
+	for i := 0; i < 32; i++ {
+		tasks = append(tasks, stream.Cancel)
+	}
+	runConcurrent(t, "full stream buffer Cancel + Model.Close", tasks...)
 	drained := make(chan struct{})
 	go func() {
 		for range stream.Parts() {

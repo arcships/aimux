@@ -72,7 +72,15 @@ stream := model.StreamText(`"Write a haiku"`, "")
 for part := range stream.Parts() {
     fmt.Println(part) // StreamPart JSON
 }
+if err := stream.Err(); err != nil { // only after Parts has closed
+    log.Fatal(err)
+}
 ```
+
+Drain `Parts()` completely, or call `Cancel()` when stopping early. Context
+variants connect cancellation automatically. `Cancel` releases callback
+backpressure and aborts the native request; it never closes `Parts()` itself.
+The producer closes `Parts()` after the blocking native call returns.
 
 ## Providers
 
@@ -131,7 +139,15 @@ stream := model.StreamText(`"Write a haiku"`, "")
 for part := range stream.Parts() {
     fmt.Println(part) // StreamPart JSON
 }
+if err := stream.Err(); err != nil { // only after Parts has closed
+    log.Fatal(err)
+}
 ```
+
+Drain `Parts()` completely, or call `Cancel()` when stopping early. `Cancel`
+aborts the native request and releases a callback blocked on a full channel;
+the producer goroutine remains the only goroutine that closes `Parts()` and
+publishes the terminal error.
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
 
@@ -356,7 +372,10 @@ fmt.Println(result.ProviderReference)  // map["openai":"file-xxx"]
 
 All constructors come in two flavors: `NewXxx(...) (T, error)` (checked) and
 `Xxx(...) T` (unchecked, panics on failure). Every model type has a `Close()`
-method that drops the underlying FFI handle.
+method that atomically drops the underlying FFI handle. Handle wrappers must
+not be copied after first use. `Close` is idempotent and does not wait for an
+in-flight network call or stream; a racing call either enters Rust first and
+continues with its cloned `Arc`, or receives an invalid-handle error.
 
 ### Constructors
 
@@ -373,6 +392,25 @@ method that drops the underlying FFI handle.
 | `NewCohereReranking(key, modelID)` | `*RerankingModel` | |
 | `NewTavilySearch(key)` | `*SearchModel` | no model ID needed |
 | `NewOpenAIFiles(key)` | `*Files` | |
+| `NewRouter(models []*Model, configJSON)` | `*Model` | RFC-0021 fallback router; `models` must be non-empty and may contain the same model more than once |
+| `NewMoa(references []*Model, aggregator *Model, configJSON)` | `*Model` | RFC-0022 mixture-of-agents; references may be empty, repeated, or include the aggregator |
+
+#### Composite constructors and concurrency
+
+`NewRouter` and `NewMoa` snapshot each atomic handle in caller order and never
+hold a Go lifecycle lock while calling C. Duplicate models require no special
+case, and opposite caller orders cannot form an ABBA cycle because there is no
+multi-lock protocol. Concurrent `Close` is resolved by the Rust registry:
+construction either clones a model `Arc` or returns an invalid-handle error.
+
+A `nil` child or reference returns an error naming its position
+(`aimux: models[i] is nil`); a `nil` MoA aggregator returns
+`aimux: aggregator is nil`. Validation happens before the C call rather than
+panicking on a nil pointer.
+
+Both constructors take a new reference to each child, so the caller keeps
+ownership: closing a child afterwards does not invalidate the composite, and
+the composite must be closed separately.
 
 ### Methods
 
