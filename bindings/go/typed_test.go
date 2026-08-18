@@ -222,16 +222,15 @@ func TestTypedStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 		t.Fatal("provider did not send the SSE burst")
 	}
 	waitForChannelFull(t, stream.parts)
-	select {
-	case <-stream.raw.entry.terminal:
-		t.Fatal("typed stream ended before cancellation")
-	default:
-	}
 
 	stream.Cancel()
 	stream.Cancel()
 	done := make(chan error, 1)
-	go func() { done <- stream.Err() }()
+	go func() {
+		for range stream.Parts() {
+		}
+		done <- stream.Err()
+	}()
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {
@@ -253,7 +252,7 @@ func TestDeepSeekFactory(t *testing.T) {
 	if m == nil {
 		t.Fatal("expected non-nil model")
 	}
-	if m.handle == 0 {
+	if m.id.Load() == 0 {
 		t.Fatal("expected non-zero handle")
 	}
 }

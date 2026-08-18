@@ -235,7 +235,7 @@ FFI 层:mock provider 实现 `do_stream` → 验证 push/next_part/input_done/dr
 |---|---|
 | **Node**(native) | ~~streamTranscribe + ReadableStream/AsyncGenerator~~ → **实际落地为会话对象**(见 §10 D1):`startTranscriptionSession(model, optsJson?, bridge?)` 返回 `TranscriptionSession` 类(pushAudio/inputDone/nextPart/close) |
 | **Python**(native) | 同 D1:`start_transcription_session(model, opts_json?)` + `TranscriptionSession` pyclass(push_audio/input_done/next_part/close) |
-| **Go/Swift/Java/Kotlin/Flutter**(C-ABI) | 各包一个 `TranscriptionSession` 类:start → pushAudio(bytes) → nextPart(timeoutMs) → inputDone → close。模式同各自的 Model wrapper(锁 + handle);Go 用 RWMutex 允许并发 push/pull(双向会话不死锁) |
+| **Go/Swift/Java/Kotlin/Flutter**(C-ABI) | 各包一个 `TranscriptionSession` 类:start → pushAudio(bytes) → nextPart(timeoutMs) → inputDone → close。Go 以原子 handle（`0 = closed`）实现：操作只读取 handle 后直接进入 C，不持 Go 生命周期锁；`Close` 用 `Swap(0)` 取得所有权并立即调用 native session drop/abort，从而唤醒阻塞的 push/pull。其他四个 binding 使用各自的原生资源包装。 |
 
 Node/Python 的 native 路径不走 Phase 2 的 FFI 会话(直连 core,与 generateText 同架构);C-ABI 5 语言消费 Phase 2。
 
@@ -284,4 +284,5 @@ Node/Python 的 native 路径不走 Phase 2 的 FFI 会话(直连 core,与 gener
 2. **D2 — `TranscriptionStreamOptions` 增加 `timeout` 字段**(R1 B1):设计稿的超时只在 ws 层;实现把 `Option<TimeoutConfiguration>` 提到 options(FFI opts_json 的 `"timeout"` 对象 / Node/Python opts 同),`first_chunk_ms` 为 connect+首事件**合并预算**(锚定在 connect 前,connect 后只花余额)。
 3. **D3 — peer close 携带 code/reason**(R1 S3):设计稿只说"close frame → ApiCall 带 code";实现为 `"websocket closed by peer (code NNN: reason)"`。
 4. **D4 — live-API smoke 未执行**:§3.3 的"用真实 key 跑一次最小会话"需要 API key,未在 CI/本地执行。wire 形状已由本地 WS 集成测试逐字段断言(含 session.update 嵌套结构与 turn_detection 嵌套位置);首次真实调用时如遇 shape 偏差请回报此 RFC。
-5. **D5 — 其余 review 修正**:ws close() 5s 有界;chunk-idle 窗口按 next() 调用计算(ping 不续命);FFI 驱动的 futures-mpsc `flush()` 不可用于断连检测(改 `try_send + is_disconnected`);五个 C-ABI 绑定的 timeout 路径先消费错误串(防泄漏);Go 会话 RWMutex(并发 push/pull);Python push/next 释放 GIL(allow_threads)。
+5. **D5 — 其余 review 修正**:ws close() 5s 有界;chunk-idle 窗口按 next() 调用计算(ping 不续命);FFI 驱动的 futures-mpsc `flush()` 不可用于断连检测(改 `try_send + is_disconnected`);五个 C-ABI 绑定的 timeout 路径先消费错误串(防泄漏);Python push/next 释放 GIL(allow_threads)。
+6. **D6 — Go 会话生命周期改为原子 owner**(2026-08-18):早期实现用 RWMutex 保护 handle，但 `NextPart(-1)` / 满 audio channel 的 `PushAudio` 会持读锁阻塞，导致 `Close` 无法取得写锁去触发恰好用于唤醒它们的 native abort。现改为 `atomic.Uint64`：方法只 snapshot handle，`Close` 原子清零并立即 session drop/abort；Rust registry 的 `Arc` clone 负责已进入调用的内存安全，不再存在 Go 锁等待环。

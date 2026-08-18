@@ -105,7 +105,13 @@ aimux_stream_text  →  C callback on_part(json)  →  channel<- part  →  for 
 
 - **Producer side (push)**: cgo calls the blocking `C.aimux_stream_text` in a separate goroutine; the C callback writes each StreamPart JSON to the Go channel
 - **Consumer side (pull)**: Go users consume with `for part := range ch`, conforming to Go conventions
-- A buffered channel decouples the two in between, avoiding backpressure
+- A bounded buffered channel decouples bursts while preserving backpressure;
+  callers that stop consuming must cancel the stream or its context
+- The producer goroutine is the only terminal-state writer: after the blocking
+  C call returns (and all synchronous callbacks have returned), it stores the
+  terminal error and closes the parts channel. `Err` is read only after that
+  closure, so the channel close supplies the happens-before edge without a
+  separate mutex or done channel
 
 Compared to the streaming wrappers of other C ABI bindings:
 
@@ -263,3 +269,4 @@ Reuse the shared JSON fixture [contract-tests/fixtures/wire-format.json](../cont
 | 2026-07-31 | v0.1 | **PoC landed**: `bindings/go/` complete implementation (aimux.go cgo declarations + Model + Generate/Stream; types.go typed JSON types; 19 tests all passing: 7 unit + 6 E2E + 6 contract subtests). Single binary empirically 8.7MB (after strip), statically linked `libaimux_ffi.a`, zero extra file dependencies |
 | 2026-07-31 | v0.1.1 | **Review fixes**: RWMutex handle lifecycle, stream fallback closeParts, error envelope JSON parsing, constructors return error, ParseStreamPart validation, numeric types aligned with Rust (uint32/uint64/float64), mock server io.ReadAll, contract default→Fatal |
 | 2026-07-31 | v0.2 | **Aligned with Node flagship coverage**: typed text API (Generate/Stream accept string\|[]ModelMessage + typed options, return *GenerateTextResult / typed StreamPart channel); 8-modality multimodal (Embedding/Speech/Image/Transcription/Files/Reranking/Video/Search) + factory functions + typed result types (aligned with ts-rs wire format); DeepSeek factory; 55 tests all passing (including -race) |
+| 2026-08-18 | v0.3 | **Non-blocking lifecycle**: native handles use an atomic `0 = closed` owner instead of RWMutex/lock ordering; `Close` never waits for in-flight calls. Stream producers alone publish errors and close parts; explicit Cancel/context releases callback backpressure. |

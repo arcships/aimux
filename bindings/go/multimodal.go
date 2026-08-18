@@ -25,63 +25,68 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
-// multimodalHandle is the common structure for all multimodal model types.
-// It mirrors Model but is kept separate because the C ABI uses distinct
-// handle types (Embedding/Speech/Image/... are not interchangeable).
+// multimodalHandle is the common state for all multimodal model types. The
+// atomic swap makes Close non-blocking: a call that already loaded the handle
+// may finish (the Rust registry clones its Arc at entry), while later calls see
+// zero and return the existing closed-handle error. No Go lock is held across
+// a blocking C call.
+//
+// A multimodalHandle must not be copied after first use. Public model wrappers
+// embed it so atomic.noCopy also lets go vet flag accidental value copies.
 type multimodalHandle struct {
-	mu     sync.RWMutex
-	handle uint64
-	closed bool
+	handle atomic.Uint64
 }
 
-func (h *multimodalHandle) acquire() (uint64, func(), error) {
-	h.mu.RLock()
-	if h.closed {
-		h.mu.RUnlock()
-		return 0, nil, newError(CodeInvalidArgument, "aimux: model already closed")
+func (h *multimodalHandle) load() (uint64, error) {
+	handle := h.handle.Load()
+	if handle == 0 {
+		return 0, newError(CodeInvalidArgument, "aimux: model already closed")
 	}
-	return h.handle, h.mu.RUnlock, nil
+	return handle, nil
 }
 
 func (h *multimodalHandle) close() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
-		return
-	}
-	h.closed = true
-	if h.handle != 0 {
-		C.aimux_drop_handle(C.uint64_t(h.handle))
-		h.handle = 0
+	if handle := h.handle.Swap(0); handle != 0 {
+		C.aimux_drop_handle(C.uint64_t(handle))
 	}
 }
 
-// callFFIString is a helper for the common pattern: acquire handle, call a
-// C function that returns char* and fills AimuxError on failure.
-func callFFIString(h *multimodalHandle, fn func(handle C.uint64_t, err *C.AimuxError) *C.char) (string, error) {
-	handle, release, err := h.acquire()
+func closeMultimodal(owner any, h *multimodalHandle) {
+	h.close()
+	runtime.SetFinalizer(owner, nil)
+	runtime.KeepAlive(owner)
+}
+
+// callFFIString is the common pattern for a multimodal call returning an
+// aimux-allocated char*. owner is kept alive until after C returns so its
+// finalizer cannot close the handle while the call is entering the Rust
+// registry. Explicit concurrent Close is allowed and may make the call fail;
+// it cannot cause use-after-free.
+func callFFIString(owner any, h *multimodalHandle, fn func(handle C.uint64_t, err *C.AimuxError) *C.char) (string, error) {
+	handle, err := h.load()
 	if err != nil {
 		return "", err
 	}
-	defer release()
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
+	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
 		return fn(C.uint64_t(handle), cerr)
 	})
+	runtime.KeepAlive(owner)
+	return result, callErr
 }
 
 // newMultimodalHandleU64 wraps a constructor handle + AimuxError.
-func newMultimodalHandleU64(h C.uint64_t, cerr *C.AimuxError) (*multimodalHandle, error) {
+func newMultimodalHandleU64(h C.uint64_t, cerr *C.AimuxError) (uint64, error) {
 	if h == 0 {
-		return nil, errorFromC(cerr)
+		return 0, errorFromC(cerr)
 	}
-	return &multimodalHandle{handle: uint64(h)}, nil
+	return uint64(h), nil
 }
 
 // cstringPair creates two C strings and returns them with a cleanup func.
@@ -113,7 +118,7 @@ func newMultimodalModelWithBase(
 	apiKey, modelID, baseURL string,
 	plain func(ca, cb *C.char, err *C.AimuxError) C.uint64_t,
 	withBase func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t,
-) (*multimodalHandle, error) {
+) (uint64, error) {
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
 	if baseURL == "" {
@@ -132,7 +137,7 @@ func newMultimodalModelFiles(
 	apiKey, baseURL string,
 	plain func(ca *C.char, err *C.AimuxError) C.uint64_t,
 	withBase func(ca, cbase *C.char, err *C.AimuxError) C.uint64_t,
-) (*multimodalHandle, error) {
+) (uint64, error) {
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
 	ca := C.CString(apiKey)
@@ -148,13 +153,14 @@ func newMultimodalModelFiles(
 // ── EmbeddingModel ──────────────────────────────────────────────────────────
 
 // EmbeddingModel generates vector embeddings for text.
+// An EmbeddingModel must not be copied after first use.
 type EmbeddingModel struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
 // Close releases the native handle.
 func (m *EmbeddingModel) Close() error {
-	m.h.close()
+	closeMultimodal(m, &m.h)
 	return nil
 }
 
@@ -174,11 +180,10 @@ func (m *EmbeddingModel) Embed(values []string, opts *EmbeddingCallOptions) (str
 		optsJSON = string(b)
 	}
 
-	handle, release, err := m.h.acquire()
+	handle, err := m.h.load()
 	if err != nil {
 		return "", err
 	}
-	defer release()
 
 	cVals := C.CString(string(valuesJSON))
 	defer C.free(unsafe.Pointer(cVals))
@@ -188,9 +193,11 @@ func (m *EmbeddingModel) Embed(values []string, opts *EmbeddingCallOptions) (str
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
+	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
 		return C.aimux_embed(C.uint64_t(handle), cVals, cOpts, cerr)
 	})
+	runtime.KeepAlive(m)
+	return result, callErr
 }
 
 // ParseEmbeddingResult parses the JSON string returned by Embed.
@@ -220,7 +227,8 @@ func NewOpenAIEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingMode
 	if err != nil {
 		return nil, err
 	}
-	m := &EmbeddingModel{h: mh}
+	m := &EmbeddingModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *EmbeddingModel) { m.Close() })
 	return m, nil
 }
@@ -241,7 +249,8 @@ func NewCohereEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingMode
 	if err != nil {
 		return nil, err
 	}
-	m := &EmbeddingModel{h: mh}
+	m := &EmbeddingModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *EmbeddingModel) { m.Close() })
 	return m, nil
 }
@@ -262,7 +271,8 @@ func NewGoogleEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingMode
 	if err != nil {
 		return nil, err
 	}
-	m := &EmbeddingModel{h: mh}
+	m := &EmbeddingModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *EmbeddingModel) { m.Close() })
 	return m, nil
 }
@@ -270,11 +280,12 @@ func NewGoogleEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingMode
 // ── SpeechModel (TTS) ────────────────────────────────────────────────────────
 
 // SpeechModel converts text to speech audio.
+// A SpeechModel must not be copied after first use.
 type SpeechModel struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
-func (m *SpeechModel) Close() error { m.h.close(); return nil }
+func (m *SpeechModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 // Generate generates speech audio from the given options.
 func (m *SpeechModel) Generate(opts *SpeechCallOptions) (string, error) {
@@ -286,7 +297,7 @@ func (m *SpeechModel) Generate(opts *SpeechCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
 		return C.aimux_speech_generate(handle, cOpts, err)
@@ -317,7 +328,8 @@ func NewOpenAISpeechWithBase(apiKey, modelID, baseURL string) (*SpeechModel, err
 	if err != nil {
 		return nil, err
 	}
-	m := &SpeechModel{h: mh}
+	m := &SpeechModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *SpeechModel) { m.Close() })
 	return m, nil
 }
@@ -325,11 +337,12 @@ func NewOpenAISpeechWithBase(apiKey, modelID, baseURL string) (*SpeechModel, err
 // ── ImageModel ──────────────────────────────────────────────────────────────
 
 // ImageModel generates images from prompts.
+// An ImageModel must not be copied after first use.
 type ImageModel struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
-func (m *ImageModel) Close() error { m.h.close(); return nil }
+func (m *ImageModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 func (m *ImageModel) Generate(opts *ImageCallOptions) (string, error) {
 	optsJSON := ""
@@ -340,7 +353,7 @@ func (m *ImageModel) Generate(opts *ImageCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
 		return C.aimux_image_generate(handle, cOpts, err)
@@ -371,7 +384,8 @@ func NewOpenAIImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error
 	if err != nil {
 		return nil, err
 	}
-	m := &ImageModel{h: mh}
+	m := &ImageModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *ImageModel) { m.Close() })
 	return m, nil
 }
@@ -392,7 +406,8 @@ func NewGoogleImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error
 	if err != nil {
 		return nil, err
 	}
-	m := &ImageModel{h: mh}
+	m := &ImageModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *ImageModel) { m.Close() })
 	return m, nil
 }
@@ -400,11 +415,12 @@ func NewGoogleImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error
 // ── TranscriptionModel (STT) ────────────────────────────────────────────────
 
 // TranscriptionModel converts audio to text.
+// A TranscriptionModel must not be copied after first use.
 type TranscriptionModel struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
-func (m *TranscriptionModel) Close() error { m.h.close(); return nil }
+func (m *TranscriptionModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 // Generate transcribes audio (base64-encoded) to text.
 func (m *TranscriptionModel) Generate(audioBase64, mediaType string, opts *TranscriptionCallOptions) (string, error) {
@@ -417,11 +433,10 @@ func (m *TranscriptionModel) Generate(audioBase64, mediaType string, opts *Trans
 		optsJSON = string(b)
 	}
 
-	handle, release, err := m.h.acquire()
+	handle, err := m.h.load()
 	if err != nil {
 		return "", err
 	}
-	defer release()
 
 	ca, cb, cc, cleanup := cstringTriple(audioBase64, mediaType, optsJSON)
 	defer cleanup()
@@ -430,9 +445,11 @@ func (m *TranscriptionModel) Generate(audioBase64, mediaType string, opts *Trans
 		cOpts = cc
 	}
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
+	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
 		return C.aimux_transcription_generate(C.uint64_t(handle), ca, cb, cOpts, cerr)
 	})
+	runtime.KeepAlive(m)
+	return result, callErr
 }
 
 func ParseTranscriptionResult(jsonStr string) (*TranscriptionResult, error) {
@@ -461,7 +478,8 @@ func NewOpenAITranscriptionWithBase(apiKey, modelID, baseURL string) (*Transcrip
 	if err != nil {
 		return nil, err
 	}
-	m := &TranscriptionModel{h: mh}
+	m := &TranscriptionModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *TranscriptionModel) { m.Close() })
 	return m, nil
 }
@@ -469,11 +487,12 @@ func NewOpenAITranscriptionWithBase(apiKey, modelID, baseURL string) (*Transcrip
 // ── Files ───────────────────────────────────────────────────────────────────
 
 // Files manages file uploads to providers.
+// A Files value must not be copied after first use.
 type Files struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
-func (f *Files) Close() error { f.h.close(); return nil }
+func (f *Files) Close() error { closeMultimodal(f, &f.h); return nil }
 
 // Upload uploads a file (base64-encoded) to the provider.
 func (f *Files) Upload(dataBase64, mediaType string, opts *UploadFileCallOptions) (string, error) {
@@ -486,11 +505,10 @@ func (f *Files) Upload(dataBase64, mediaType string, opts *UploadFileCallOptions
 		optsJSON = string(b)
 	}
 
-	handle, release, err := f.h.acquire()
+	handle, err := f.h.load()
 	if err != nil {
 		return "", err
 	}
-	defer release()
 
 	ca, cb, cc, cleanup := cstringTriple(dataBase64, mediaType, optsJSON)
 	defer cleanup()
@@ -499,9 +517,11 @@ func (f *Files) Upload(dataBase64, mediaType string, opts *UploadFileCallOptions
 		cOpts = cc
 	}
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
+	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
 		return C.aimux_file_upload(C.uint64_t(handle), ca, cb, cOpts, cerr)
 	})
+	runtime.KeepAlive(f)
+	return result, callErr
 }
 
 func ParseUploadFileResult(jsonStr string) (*UploadFileResult, error) {
@@ -528,7 +548,8 @@ func NewOpenAIFilesWithBase(apiKey, baseURL string) (*Files, error) {
 	if err != nil {
 		return nil, err
 	}
-	f := &Files{h: mh}
+	f := &Files{}
+	f.h.handle.Store(mh)
 	runtime.SetFinalizer(f, func(f *Files) { f.Close() })
 	return f, nil
 }
@@ -536,11 +557,12 @@ func NewOpenAIFilesWithBase(apiKey, baseURL string) (*Files, error) {
 // ── RerankingModel ──────────────────────────────────────────────────────────
 
 // RerankingModel reranks documents by relevance to a query.
+// A RerankingModel must not be copied after first use.
 type RerankingModel struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
-func (m *RerankingModel) Close() error { m.h.close(); return nil }
+func (m *RerankingModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 // Rerank reranks documents against a query.
 func (m *RerankingModel) Rerank(opts *RerankingCallOptions) (string, error) {
@@ -552,7 +574,7 @@ func (m *RerankingModel) Rerank(opts *RerankingCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
 		return C.aimux_rerank(handle, cOpts, err)
@@ -583,7 +605,8 @@ func NewCohereRerankingWithBase(apiKey, modelID, baseURL string) (*RerankingMode
 	if err != nil {
 		return nil, err
 	}
-	m := &RerankingModel{h: mh}
+	m := &RerankingModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *RerankingModel) { m.Close() })
 	return m, nil
 }
@@ -591,11 +614,12 @@ func NewCohereRerankingWithBase(apiKey, modelID, baseURL string) (*RerankingMode
 // ── VideoModel ──────────────────────────────────────────────────────────────
 
 // VideoModel generates videos from prompts.
+// A VideoModel must not be copied after first use.
 type VideoModel struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
-func (m *VideoModel) Close() error { m.h.close(); return nil }
+func (m *VideoModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 func (m *VideoModel) Generate(opts *VideoCallOptions) (string, error) {
 	optsJSON := ""
@@ -606,7 +630,7 @@ func (m *VideoModel) Generate(opts *VideoCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
 		return C.aimux_video_generate(handle, cOpts, err)
@@ -637,7 +661,8 @@ func NewGoogleVideoWithBase(apiKey, modelID, baseURL string) (*VideoModel, error
 	if err != nil {
 		return nil, err
 	}
-	m := &VideoModel{h: mh}
+	m := &VideoModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *VideoModel) { m.Close() })
 	return m, nil
 }
@@ -645,11 +670,12 @@ func NewGoogleVideoWithBase(apiKey, modelID, baseURL string) (*VideoModel, error
 // ── SearchModel ─────────────────────────────────────────────────────────────
 
 // SearchModel performs web search.
+// A SearchModel must not be copied after first use.
 type SearchModel struct {
-	h *multimodalHandle
+	h multimodalHandle
 }
 
-func (m *SearchModel) Close() error { m.h.close(); return nil }
+func (m *SearchModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 func (m *SearchModel) Search(opts *SearchCallOptions) (string, error) {
 	optsJSON := ""
@@ -660,7 +686,7 @@ func (m *SearchModel) Search(opts *SearchCallOptions) (string, error) {
 		}
 		optsJSON = string(b)
 	}
-	return callFFIString(m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
 		return C.aimux_search(handle, cOpts, err)
@@ -700,7 +726,8 @@ func NewTavilySearchWithBase(apiKey, baseURL string) (*SearchModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &SearchModel{h: mh}
+	m := &SearchModel{}
+	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *SearchModel) { m.Close() })
 	return m, nil
 }
@@ -723,14 +750,13 @@ func NewDeepSeek(apiKey, modelID string) (*Model, error) {
 // Push audio chunks with PushAudio, mark end-of-audio with InputDone, then
 // pull transcription parts (JSON TranscriptionStreamPart) with NextPart.
 // Close releases the session (safe and idempotent).
+//
+// A TranscriptionSession must not be copied after first use. Close atomically
+// takes its native handle and immediately terminates the native session, so it
+// can wake an in-flight NextPart(-1) or a backpressured PushAudio instead of
+// waiting for that operation to return first.
 type TranscriptionSession struct {
-	// RWMutex: Push/NextPart/InputDone take the READ lock so a bidirectional
-	// session works from two goroutines (a blocking NextPart(-1) must not
-	// exclude a concurrent PushAudio — that would deadlock). Close takes the
-	// write lock, waiting for in-flight calls to finish.
-	mu      sync.RWMutex
-	session uint64
-	closed  bool
+	session atomic.Uint64
 }
 
 // InputAudioFormat is the input audio format for streaming transcription
@@ -766,11 +792,13 @@ func StartTranscriptionSession(model *TranscriptionModel, opts *TranscriptionSes
 // StartTranscriptionSessionWithAbort is StartTranscriptionSession with an
 // abort handle (from AbortSignalNew); firing it aborts the session.
 func StartTranscriptionSessionWithAbort(model *TranscriptionModel, opts *TranscriptionSessionOpts, abortHandle uint64) (*TranscriptionSession, error) {
-	modelHandle, release, err := model.h.acquire()
+	if model == nil {
+		return nil, newError(CodeInvalidArgument, "aimux: transcription model is nil")
+	}
+	modelHandle, err := model.h.load()
 	if err != nil {
 		return nil, err
 	}
-	defer release()
 
 	optsJSON := cNullOrEmpty(opts)
 	ca, cleanup := cstring1(optsJSON)
@@ -784,10 +812,12 @@ func StartTranscriptionSessionWithAbort(model *TranscriptionModel, opts *Transcr
 		ca,
 		&cerr,
 	)
+	runtime.KeepAlive(model)
 	if h == 0 {
 		return nil, errorFromC(&cerr)
 	}
-	s := &TranscriptionSession{session: uint64(h)}
+	s := &TranscriptionSession{}
+	s.session.Store(uint64(h))
 	runtime.SetFinalizer(s, func(s *TranscriptionSession) { s.Close() })
 	return s, nil
 }
@@ -795,12 +825,10 @@ func StartTranscriptionSessionWithAbort(model *TranscriptionModel, opts *Transcr
 // PushAudio pushes one binary audio chunk. Blocks while the internal channel
 // is full (backpressure propagation).
 func (s *TranscriptionSession) PushAudio(audio []byte) error {
-	handle, release, err := s.acquire()
+	handle, err := s.load()
 	if err != nil {
 		return err
 	}
-	defer release()
-
 	var ptr *C.uint8_t
 	if len(audio) > 0 {
 		ptr = (*C.uint8_t)(unsafe.Pointer(&audio[0]))
@@ -813,6 +841,8 @@ func (s *TranscriptionSession) PushAudio(audio []byte) error {
 		C.size_t(len(audio)),
 		&cerr,
 	)
+	runtime.KeepAlive(audio)
+	runtime.KeepAlive(s)
 	if rc == 0 {
 		return errorFromC(&cerr)
 	}
@@ -821,15 +851,14 @@ func (s *TranscriptionSession) PushAudio(audio []byte) error {
 
 // InputDone signals end-of-audio (idempotent).
 func (s *TranscriptionSession) InputDone() error {
-	handle, release, err := s.acquire()
+	handle, err := s.load()
 	if err != nil {
 		return err
 	}
-	defer release()
-
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
 	rc := C.aimux_transcription_input_done(C.uint64_t(handle), &cerr)
+	runtime.KeepAlive(s)
 	if rc == 0 {
 		return errorFromC(&cerr)
 	}
@@ -841,12 +870,10 @@ func (s *TranscriptionSession) InputDone() error {
 // ErrTranscriptionTimeout when no part arrived in time (retryable).
 // timeoutMs: >0 wait at most; 0 immediate poll; <0 wait indefinitely.
 func (s *TranscriptionSession) NextPart(timeoutMs int64) (string, error) {
-	handle, release, err := s.acquire()
+	handle, err := s.load()
 	if err != nil {
 		return "", err
 	}
-	defer release()
-
 	var cerr C.AimuxError
 	C.aimux_error_clear(&cerr)
 	ptr := C.aimux_transcription_next_part(
@@ -854,6 +881,7 @@ func (s *TranscriptionSession) NextPart(timeoutMs int64) (string, error) {
 		C.int64_t(timeoutMs),
 		&cerr,
 	)
+	runtime.KeepAlive(s)
 	if ptr != nil {
 		defer C.aimux_free_string(ptr)
 		return C.GoString(ptr), nil
@@ -872,26 +900,19 @@ func (s *TranscriptionSession) NextPart(timeoutMs int64) (string, error) {
 
 // Close terminates and releases the session (aborts the driver; idempotent).
 func (s *TranscriptionSession) Close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return
+	if handle := s.session.Swap(0); handle != 0 {
+		C.aimux_transcription_session_drop(C.uint64_t(handle))
 	}
-	s.closed = true
-	if s.session != 0 {
-		C.aimux_transcription_session_drop(C.uint64_t(s.session))
-		s.session = 0
-	}
+	runtime.SetFinalizer(s, nil)
+	runtime.KeepAlive(s)
 }
 
-func (s *TranscriptionSession) acquire() (uint64, func(), error) {
-	s.mu.RLock()
-	if s.closed {
-		s.mu.RUnlock()
-		return 0, nil, newError(CodeInvalidArgument, "aimux: transcription session already closed")
+func (s *TranscriptionSession) load() (uint64, error) {
+	handle := s.session.Load()
+	if handle == 0 {
+		return 0, newError(CodeInvalidArgument, "aimux: transcription session already closed")
 	}
-	h := s.session
-	return h, s.mu.RUnlock, nil
+	return handle, nil
 }
 
 func cstring1(a string) (*C.char, func()) {

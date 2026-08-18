@@ -111,18 +111,15 @@ type TypedStream struct {
 	raw   *Stream
 	parts chan *StreamPart
 	err   error
-	done  chan struct{}
 }
 
 // Parts returns a channel of parsed *StreamPart values.
 // The channel is closed when the stream ends.
 func (s *TypedStream) Parts() <-chan *StreamPart { return s.parts }
 
-// Err returns any error that occurred during streaming.
-func (s *TypedStream) Err() error {
-	<-s.done
-	return s.err
-}
+// Err returns any error that occurred during streaming. It must be called
+// only after Parts has closed.
+func (s *TypedStream) Err() error { return s.err }
 
 // Cancel stops this stream. It is safe to call more than once.
 func (s *TypedStream) Cancel() { s.raw.Cancel() }
@@ -164,28 +161,35 @@ func (m *Model) StreamContext(
 	ts := &TypedStream{
 		raw:   rawStream,
 		parts: make(chan *StreamPart, 256),
-		done:  make(chan struct{}),
 	}
 
 	go func() {
-		defer close(ts.done)
 		defer close(ts.parts)
-		for raw := range rawStream.Parts() {
+		for {
+			var raw string
+			select {
+			case part, ok := <-rawStream.Parts():
+				if !ok {
+					ts.err = rawStream.Err()
+					return
+				}
+				raw = part
+			case <-rawStream.cancelCtx.Done():
+				ts.err = context.Cause(rawStream.cancelCtx)
+				return
+			}
 			sp, err := ParseStreamPart(raw)
 			if err != nil {
 				ts.err = err
-				rawStream.Cancel()
+				rawStream.cancel(err)
 				return
 			}
 			select {
 			case ts.parts <- sp:
-			case <-rawStream.entry.cancelled:
-				ts.err = rawStream.Err()
+			case <-rawStream.cancelCtx.Done():
+				ts.err = context.Cause(rawStream.cancelCtx)
 				return
 			}
-		}
-		if err := rawStream.Err(); err != nil {
-			ts.err = err
 		}
 	}()
 
@@ -224,18 +228,15 @@ type OpenAIStream struct {
 	raw   *Stream
 	parts chan *ChatCompletionChunk
 	err   error
-	done  chan struct{}
 }
 
 // Parts returns a channel of parsed *ChatCompletionChunk values.
 // The channel is closed when the stream ends.
 func (s *OpenAIStream) Parts() <-chan *ChatCompletionChunk { return s.parts }
 
-// Err returns any error that occurred during streaming.
-func (s *OpenAIStream) Err() error {
-	<-s.done
-	return s.err
-}
+// Err returns any error that occurred during streaming. It must be called
+// only after Parts has closed.
+func (s *OpenAIStream) Err() error { return s.err }
 
 // Cancel stops this stream. It is safe to call more than once.
 func (s *OpenAIStream) Cancel() { s.raw.Cancel() }
@@ -278,28 +279,35 @@ func (m *Model) StreamAsOpenAIContext(
 	ts := &OpenAIStream{
 		raw:   rawStream,
 		parts: make(chan *ChatCompletionChunk, 256),
-		done:  make(chan struct{}),
 	}
 
 	go func() {
-		defer close(ts.done)
 		defer close(ts.parts)
-		for raw := range rawStream.Parts() {
+		for {
+			var raw string
+			select {
+			case part, ok := <-rawStream.Parts():
+				if !ok {
+					ts.err = rawStream.Err()
+					return
+				}
+				raw = part
+			case <-rawStream.cancelCtx.Done():
+				ts.err = context.Cause(rawStream.cancelCtx)
+				return
+			}
 			chunk, err := ParseChatCompletionChunk(raw)
 			if err != nil {
 				ts.err = err
-				rawStream.Cancel()
+				rawStream.cancel(err)
 				return
 			}
 			select {
 			case ts.parts <- chunk:
-			case <-rawStream.entry.cancelled:
-				ts.err = rawStream.Err()
+			case <-rawStream.cancelCtx.Done():
+				ts.err = context.Cause(rawStream.cancelCtx)
 				return
 			}
-		}
-		if err := rawStream.Err(); err != nil {
-			ts.err = err
 		}
 	}()
 

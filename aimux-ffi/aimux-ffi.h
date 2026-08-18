@@ -625,8 +625,9 @@ uint64_t aimux_mock_replay_new(const char *recordings_jsonl, AimuxError *err);
    aimux_stream_text); release with aimux_drop_handle.
 
    handles: array of `len` existing model handles (e.g. from aimux_openai_new).
-   Unknown handles are silently dropped; the call only fails if all are
-   unknown (or len == 0). config_json selects the router + fallback policy:
+   Lookup is all-or-nothing: any unknown handle fails the call, so the router
+   never runs with fewer children than requested. len == 0 also fails.
+   config_json selects the router + fallback policy:
    { "router": "rule"|"weighted", "weights": [..], "fallback": "on_error"|"none",
      "provider_name": "router", "model_id": "router" } — all optional; defaults
    are rule / on_error / "router" / "router".
@@ -640,7 +641,7 @@ uint64_t aimux_router_new(const uint64_t *handles, size_t len,
 
    reference_handles: array of `ref_len` existing handles (may be NULL/0 —
    MoaModel then runs just the aggregator). aggregator: a single existing
-   handle (must be valid). Unknown reference handles are dropped; an unknown
+   handle (must be valid). Lookup is all-or-nothing: any unknown reference or
    aggregator handle fails. config_json is a serialized MoaConfig (all fields
    optional): { "provider_name", "model_id", "aggregator_instructions",
    "strip_reference_tools", "fail_mode": "best_effort"|"fail_fast" }.
