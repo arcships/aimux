@@ -172,6 +172,21 @@ func TestStreamTextContextAlreadyCanceled(t *testing.T) {
 	stream.Cancel()
 }
 
+func TestStreamTextContextPreservesCancelCause(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
+	defer m.Close()
+
+	cause := errors.New("caller stopped consuming")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cause)
+	stream := m.StreamTextContext(ctx, `"hello"`, "")
+	for range stream.Parts() {
+	}
+	if !errors.Is(stream.Err(), cause) {
+		t.Fatalf("expected custom cancellation cause, got %v", stream.Err())
+	}
+}
+
 func TestStreamTextContextDoesNotLoseRacingCancellation(t *testing.T) {
 	requestStarted := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

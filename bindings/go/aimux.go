@@ -20,36 +20,34 @@ package aimux
 #include "aimux-ffi.h"
 
 // Go-side callback trampoline (//export below). stream_ctx is a cgo.Handle.
-extern void goStreamPart(int64_t id, char* json);
-extern void goStreamDone(int64_t id);
+extern void goStreamPart(uintptr_t id, char* json);
 
 static void trampoline_part(const char* json, void* stream_ctx) {
-    int64_t id = (int64_t)(intptr_t)stream_ctx;
+    uintptr_t id = (uintptr_t)stream_ctx;
     if (id) goStreamPart(id, (char*)json);
 }
 static void trampoline_done(void* stream_ctx) {
-    int64_t id = (int64_t)(intptr_t)stream_ctx;
-    if (id) goStreamDone(id);
+    (void)stream_ctx;
 }
 
 // do_stream: blocking cancelable stream; id is passed as stream_ctx.
 // On failure, *err is filled and return is 0 (no on_done).
 static int32_t do_stream(uint64_t handle, uint64_t abort_handle,
-                         const char* prompt, const char* opts, int64_t id,
+                         const char* prompt, const char* opts, uintptr_t id,
                          AimuxError* err) {
     return aimux_stream_text_with_abort(
         handle, abort_handle, prompt, opts,
         trampoline_part, trampoline_done,
-        (void*)(intptr_t)id, err);
+        (void*)id, err);
 }
 
 static int32_t do_stream_openai(uint64_t handle, uint64_t abort_handle,
-                                const char* prompt, const char* opts, int64_t id,
+                                const char* prompt, const char* opts, uintptr_t id,
                                 AimuxError* err) {
     return aimux_stream_text_as_openai_with_abort(
         handle, abort_handle, prompt, opts,
         trampoline_part, trampoline_done,
-        (void*)(intptr_t)id, err);
+        (void*)id, err);
 }
 
 */
@@ -61,7 +59,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"sync"
+	"runtime/cgo"
 	"sync/atomic"
 	"unsafe"
 )
@@ -875,93 +873,15 @@ func (m *Model) GenerateTextAsOpenAI(promptJson, optsJson string) (string, error
 
 // ── Streaming generation ─────────────────────────────────────────────────────
 
-// streamEntry holds the channel and error for an active stream.
-type streamEntry struct {
-	parts        chan string
-	mu           sync.Mutex
-	err          error
-	closeOnce    sync.Once
-	terminalOnce sync.Once
-	terminal     chan struct{}
-	cancelled    chan struct{}
-	abortHandle  uint64
-}
-
-// streamRegistry maps stream IDs to active stream entries. This avoids passing
-// Go pointers into C (cgo pointer rules forbid passing Go memory containing Go
-// pointers like channels). The ID is a plain int64_t.
-var (
-	streamRegMu  sync.Mutex
-	streamReg    = make(map[int64]*streamEntry)
-	streamNextID int64
-)
-
-func registerStream(abortHandle uint64) (*streamEntry, int64) {
-	streamRegMu.Lock()
-	defer streamRegMu.Unlock()
-	streamNextID++
-	e := &streamEntry{
-		parts:       make(chan string, 256),
-		terminal:    make(chan struct{}),
-		cancelled:   make(chan struct{}),
-		abortHandle: abortHandle,
-	}
-	streamReg[streamNextID] = e
-	return e, streamNextID
-}
-
-func lookupStream(id int64) *streamEntry {
-	streamRegMu.Lock()
-	defer streamRegMu.Unlock()
-	return streamReg[id]
-}
-
-func unregisterStream(id int64) {
-	streamRegMu.Lock()
-	defer streamRegMu.Unlock()
-	delete(streamReg, id)
-}
-
-// closeParts safely closes the stream's parts channel exactly once, guarding
-// against the engine firing both on_done and on_error for the same stream
-// (which would otherwise panic on double close).
-func (e *streamEntry) closeParts() {
-	e.closeOnce.Do(func() { close(e.parts) })
-}
-
-// markTerminal records the first terminal result. A cancellation also wakes
-// callbacks that are waiting to send to a full parts channel.
-func (e *streamEntry) markTerminal(err error, cancelled bool) bool {
-	marked := false
-	e.terminalOnce.Do(func() {
-		marked = true
-		e.mu.Lock()
-		e.err = err
-		e.mu.Unlock()
-		if cancelled {
-			close(e.cancelled)
-		}
-		close(e.terminal)
-	})
-	return marked
-}
-
-func (e *streamEntry) cancel(err error) {
-	if err == nil {
-		err = context.Canceled
-	}
-	if e.markTerminal(err, true) && e.abortHandle != 0 {
-		C.aimux_abort_signal_abort(C.uint64_t(e.abortHandle))
-	}
-}
-
-// Stream is a handle to an in-progress or completed stream.
-// Consume parts via the Parts() channel; check Err() after the channel closes.
-//
-// The channel is buffered (256). Call Cancel when the caller stops consuming.
+// Stream is an in-progress or completed stream. The producer goroutine is the
+// only writer of err and the only goroutine that closes parts; observing the
+// channel close publishes err under the Go memory model.
 type Stream struct {
-	parts <-chan string
-	entry *streamEntry
+	parts       chan string
+	cancelCtx   context.Context
+	cancelFn    context.CancelCauseFunc
+	err         error
+	abortHandle uint64
 }
 
 // Parts returns a receive-only channel of StreamPart JSON strings.
@@ -969,16 +889,28 @@ type Stream struct {
 func (s *Stream) Parts() <-chan string { return s.parts }
 
 // Err returns any error that occurred during streaming.
-// Call this after Parts() channel closes.
-func (s *Stream) Err() error {
-	s.entry.mu.Lock()
-	defer s.entry.mu.Unlock()
-	return s.entry.err
-}
+// It must be called only after Parts() has closed.
+func (s *Stream) Err() error { return s.err }
 
 // Cancel stops this stream. It is safe to call more than once.
-func (s *Stream) Cancel() {
-	s.entry.cancel(context.Canceled)
+func (s *Stream) Cancel() { s.cancel(context.Canceled) }
+
+func (s *Stream) cancel(cause error) {
+	if cause == nil {
+		cause = context.Canceled
+	}
+	s.cancelFn(cause)
+	if s.abortHandle != 0 {
+		C.aimux_abort_signal_abort(C.uint64_t(s.abortHandle))
+	}
+}
+
+func (s *Stream) finish(err error) {
+	if cause := context.Cause(s.cancelCtx); cause != nil {
+		err = cause
+	}
+	s.err = err
+	close(s.parts)
 }
 
 // StreamText performs streaming text generation.
@@ -1002,67 +934,7 @@ func (m *Model) StreamText(promptJson, optsJson string) *Stream {
 // StreamTextContext performs streaming text generation. Context cancellation
 // stops the native request and makes Err return the context error.
 func (m *Model) StreamTextContext(ctx context.Context, promptJson, optsJson string) *Stream {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	abortHandle := uint64(C.aimux_abort_signal_new())
-	entry, id := registerStream(abortHandle)
-
-	if err := ctx.Err(); err != nil {
-		entry.cancel(err)
-	} else if done := ctx.Done(); done != nil {
-		go func() {
-			select {
-			case <-done:
-				entry.cancel(ctx.Err())
-			case <-entry.terminal:
-			}
-		}()
-	}
-
-	go func() {
-		defer unregisterStream(id)
-		defer C.aimux_abort_signal_drop(C.uint64_t(abortHandle))
-		// Safety net: ensure the channel is always closed even if the
-		// native layer never fires on_done/on_error (defensive against
-		// future bugs or panic edges in the FFI layer).
-		defer func() {
-			entry.markTerminal(nil, false)
-			entry.closeParts()
-		}()
-
-		handle, err := m.handle()
-		if err != nil {
-			entry.markTerminal(err, false)
-			return
-		}
-		defer runtime.KeepAlive(m)
-
-		cPrompt := C.CString(promptJson)
-		defer C.free(unsafe.Pointer(cPrompt))
-
-		var cOpts *C.char
-		if optsJson != "" {
-			cOpts = C.CString(optsJson)
-			defer C.free(unsafe.Pointer(cOpts))
-		}
-
-		var cerr C.AimuxError
-		C.aimux_error_clear(&cerr)
-		rc := C.do_stream(
-			C.uint64_t(handle),
-			C.uint64_t(abortHandle),
-			cPrompt,
-			cOpts,
-			C.int64_t(id),
-			&cerr,
-		)
-		if rc == 0 {
-			entry.markTerminal(errorFromC(&cerr), false)
-		}
-	}()
-
-	return &Stream{parts: entry.parts, entry: entry}
+	return m.startStream(ctx, promptJson, optsJson, false)
 }
 
 // StreamTextAsOpenAI performs streaming text generation with OpenAI Chat
@@ -1081,66 +953,87 @@ func (m *Model) StreamTextAsOpenAI(promptJson, optsJson string) *Stream {
 // StreamTextAsOpenAIContext performs streaming OpenAI-compatible generation.
 // Context cancellation stops the native request.
 func (m *Model) StreamTextAsOpenAIContext(ctx context.Context, promptJson, optsJson string) *Stream {
+	return m.startStream(ctx, promptJson, optsJson, true)
+}
+
+func (m *Model) startStream(ctx context.Context, promptJson, optsJson string, openAI bool) *Stream {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	abortHandle := uint64(C.aimux_abort_signal_new())
-	entry, id := registerStream(abortHandle)
+	cancelCtx, cancelFn := context.WithCancelCause(context.Background())
+	stream := &Stream{
+		parts:       make(chan string, 256),
+		cancelCtx:   cancelCtx,
+		cancelFn:    cancelFn,
+		abortHandle: abortHandle,
+	}
+	callbackHandle := cgo.NewHandle(stream)
 
-	if err := ctx.Err(); err != nil {
-		entry.cancel(err)
-	} else if done := ctx.Done(); done != nil {
-		go func() {
-			select {
-			case <-done:
-				entry.cancel(ctx.Err())
-			case <-entry.terminal:
-			}
-		}()
+	if cause := context.Cause(ctx); cause != nil {
+		stream.cancel(cause)
+	}
+	stopContext := func() bool { return true }
+	if ctx.Done() != nil {
+		stopContext = context.AfterFunc(ctx, func() { stream.cancel(context.Cause(ctx)) })
 	}
 
 	go func() {
-		defer unregisterStream(id)
+		defer callbackHandle.Delete()
 		defer C.aimux_abort_signal_drop(C.uint64_t(abortHandle))
-		// Safety net: ensure the channel is always closed even if the
-		// native layer never fires on_done/on_error.
-		defer func() {
-			entry.markTerminal(nil, false)
-			entry.closeParts()
-		}()
-
-		handle, err := m.handle()
-		if err != nil {
-			entry.markTerminal(err, false)
-			return
+		err := m.runStream(stream, callbackHandle, promptJson, optsJson, openAI)
+		// Stop the watcher before the final cause check. If cancellation won
+		// concurrently, Cause is already visible even when the AfterFunc callback
+		// itself has not run yet, so terminal publication never has to wait for it.
+		stopContext()
+		if cause := context.Cause(ctx); cause != nil {
+			stream.cancel(cause)
 		}
-		defer runtime.KeepAlive(m)
-
-		cPrompt := C.CString(promptJson)
-		defer C.free(unsafe.Pointer(cPrompt))
-
-		var cOpts *C.char
-		if optsJson != "" {
-			cOpts = C.CString(optsJson)
-			defer C.free(unsafe.Pointer(cOpts))
-		}
-
-		var cerr C.AimuxError
-		C.aimux_error_clear(&cerr)
-		rc := C.do_stream_openai(
-			C.uint64_t(handle),
-			C.uint64_t(abortHandle),
-			cPrompt,
-			cOpts,
-			C.int64_t(id),
-			&cerr,
-		)
-		if rc == 0 {
-			entry.markTerminal(errorFromC(&cerr), false)
-		}
+		stream.finish(err)
 	}()
 
-	return &Stream{parts: entry.parts, entry: entry}
+	return stream
+}
+
+func (m *Model) runStream(stream *Stream, callbackHandle cgo.Handle, promptJson, optsJson string, openAI bool) error {
+	select {
+	case <-stream.cancelCtx.Done():
+		return context.Cause(stream.cancelCtx)
+	default:
+	}
+
+	handle, err := m.handle()
+	if err != nil {
+		return err
+	}
+	defer runtime.KeepAlive(m)
+
+	cPrompt := C.CString(promptJson)
+	defer C.free(unsafe.Pointer(cPrompt))
+	var cOpts *C.char
+	if optsJson != "" {
+		cOpts = C.CString(optsJson)
+		defer C.free(unsafe.Pointer(cOpts))
+	}
+
+	var cerr C.AimuxError
+	C.aimux_error_clear(&cerr)
+	var rc C.int32_t
+	if openAI {
+		rc = C.do_stream_openai(
+			C.uint64_t(handle), C.uint64_t(stream.abortHandle),
+			cPrompt, cOpts, C.uintptr_t(callbackHandle), &cerr,
+		)
+	} else {
+		rc = C.do_stream(
+			C.uint64_t(handle), C.uint64_t(stream.abortHandle),
+			cPrompt, cOpts, C.uintptr_t(callbackHandle), &cerr,
+		)
+	}
+	if rc == 0 {
+		return errorFromC(&cerr)
+	}
+	return nil
 }
 
 // errorFromC maps aimux-ffi AimuxError into *Error (openai-go style).
@@ -1192,31 +1085,18 @@ func ffiString(call func(cerr *C.AimuxError) *C.char) (string, error) {
 	return C.GoString(ptr), nil
 }
 
-// ── C→Go callback trampolines (called by trampoline_part/done) ─────────
+// ── C→Go callback trampoline ────────────────────────────────────────────
 
 //export goStreamPart
-func goStreamPart(id C.int64_t, json *C.char) {
-	e := lookupStream(int64(id))
-	if e == nil {
-		return
-	}
+func goStreamPart(id C.uintptr_t, json *C.char) {
 	if json == nil {
 		return
 	}
+	stream := cgo.Handle(id).Value().(*Stream)
 	select {
-	case e.parts <- C.GoString(json):
-	case <-e.cancelled:
+	case stream.parts <- C.GoString(json):
+	case <-stream.cancelCtx.Done():
 	}
-}
-
-//export goStreamDone
-func goStreamDone(id C.int64_t) {
-	e := lookupStream(int64(id))
-	if e == nil {
-		return
-	}
-	e.markTerminal(nil, false)
-	e.closeParts()
 }
 
 // Ensure io.Closer interface is satisfied.

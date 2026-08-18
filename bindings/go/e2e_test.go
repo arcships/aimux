@@ -511,7 +511,7 @@ func TestStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("provider did not send the SSE burst")
 	}
-	waitForChannelFull(t, stream.entry.parts)
+	waitForChannelFull(t, stream.parts)
 
 	tasks := []func(){func() { m.Close() }}
 	for i := 0; i < 32; i++ {
