@@ -128,6 +128,23 @@ fn get_model(handle: u64) -> Option<Arc<dyn LanguageModel>> {
     }
 }
 
+/// Resolve a composite's model handles under one registry lock. This makes
+/// the lookup all-or-nothing with respect to concurrent handle drops: either
+/// every requested model is cloned, or the constructor fails without silently
+/// changing the composite's membership.
+fn get_models(handles: &[u64]) -> Option<Vec<Arc<dyn LanguageModel>>> {
+    let registry = registry()
+        .lock()
+        .expect("aimux-ffi: registry mutex poisoned");
+    handles
+        .iter()
+        .map(|handle| match registry.get(handle) {
+            Some(ModelHandle::Language(model)) => Some(model.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Look up a provider by handle (RFC-0027 provider handles for list_models).
 fn get_provider(handle: u64) -> Option<Arc<dyn aimux_core::provider::Provider>> {
     match get_handle(handle)? {
@@ -3017,9 +3034,9 @@ pub extern "C" fn aimux_mock_replay_new(
 /// optional; defaults are `rule` / `on_error` / `"router"` / `"router"`.
 ///
 /// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
-/// pointer, bad JSON, zero-length `handles`, or an unknown child handle
-/// (which is dropped from the child list — the call only fails if **all**
-/// handles are unknown).
+/// pointer, bad JSON, zero-length `handles`, or any unknown child handle.
+/// Child lookup is all-or-nothing; unknown children are never silently
+/// dropped.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_router_new(
     handles: *const u64,
@@ -3031,15 +3048,9 @@ pub extern "C" fn aimux_router_new(
         return unsafe { fail_invalid_args(err) };
     }
     let handle_slice = unsafe { std::slice::from_raw_parts(handles, len) };
-    let mut models: Vec<Arc<dyn aimux_core::LanguageModel>> = Vec::with_capacity(len);
-    for &h in handle_slice {
-        if let Some(m) = get_model(h) {
-            models.push(m);
-        }
-    }
-    if models.is_empty() {
-        return unsafe { fail_other(err, "router: no valid child handles") };
-    }
+    let Some(models) = get_models(handle_slice) else {
+        return unsafe { fail_other(err, "router: invalid child handle") };
+    };
     // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
     // convention). Invalid UTF-8 → invalid args.
     let Some(config_json) = normalize_config_json(config_json, err) else {
@@ -3084,8 +3095,9 @@ pub extern "C" fn aimux_router_new(
 /// "fail_mode": "best_effort" | "fail_fast" }`.
 ///
 /// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
-/// pointer, bad JSON, an unknown aggregator handle, or all-unknown references
-/// (references may be empty; aggregator may not).
+/// pointer, bad JSON, an unknown aggregator handle, or any unknown reference
+/// handle (references may be empty; aggregator may not). Model lookup is
+/// all-or-nothing.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_moa_new(
     reference_handles: *const u64,
@@ -3094,22 +3106,21 @@ pub extern "C" fn aimux_moa_new(
     config_json: *const c_char,
     err: *mut CAimuxError,
 ) -> u64 {
-    let Some(aggregator_model) = get_model(aggregator) else {
-        return unsafe { fail_other(err, "moa: invalid aggregator handle") };
+    let reference_slice: &[u64] = if ref_len == 0 {
+        &[]
+    } else if reference_handles.is_null() {
+        return unsafe { fail_invalid_args(err) };
+    } else {
+        unsafe { std::slice::from_raw_parts(reference_handles, ref_len) }
     };
-    let references: Vec<Arc<dyn aimux_core::LanguageModel>> =
-        if reference_handles.is_null() || ref_len == 0 {
-            Vec::new()
-        } else {
-            let slice = unsafe { std::slice::from_raw_parts(reference_handles, ref_len) };
-            let mut v = Vec::with_capacity(ref_len);
-            for &h in slice {
-                if let Some(m) = get_model(h) {
-                    v.push(m);
-                }
-            }
-            v
-        };
+    let mut handles = Vec::with_capacity(ref_len + 1);
+    handles.extend_from_slice(reference_slice);
+    handles.push(aggregator);
+    let Some(mut models) = get_models(&handles) else {
+        return unsafe { fail_other(err, "moa: invalid reference or aggregator handle") };
+    };
+    let aggregator_model = models.pop().expect("aggregator handle is always present");
+    let references = models;
     // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
     // convention). Invalid UTF-8 → invalid args.
     let Some(config_json) = normalize_config_json(config_json, err) else {
@@ -3440,6 +3451,15 @@ mod tests {
     }
 
     #[test]
+    fn router_new_rejects_any_invalid_child() {
+        let handles = [mock_handle("mock", "valid", "ok"), 999_999];
+        let mut err = zero_err();
+        let h = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), &mut err);
+        assert_eq!(h, 0, "router must not silently drop an invalid child");
+        assert_eq!(err.code, AIMUX_E_OTHER);
+    }
+
+    #[test]
     fn router_new_rejects_bad_json() {
         let handles = [mock_handle("mock", "m", "x")];
         let bad = std::ffi::CString::new("{not json").unwrap();
@@ -3502,6 +3522,16 @@ mod tests {
             &mut err,
         );
         assert_eq!(h, 0);
+        assert_eq!(err.code, AIMUX_E_OTHER);
+    }
+
+    #[test]
+    fn moa_new_rejects_any_invalid_reference() {
+        let refs = [mock_handle("mock", "ref-a", "A"), 999_999];
+        let agg = mock_handle("mock", "aggregator", "agg");
+        let mut err = zero_err();
+        let h = aimux_moa_new(refs.as_ptr(), refs.len(), agg, std::ptr::null(), &mut err);
+        assert_eq!(h, 0, "MoA must not silently drop an invalid reference");
         assert_eq!(err.code, AIMUX_E_OTHER);
     }
 
