@@ -175,7 +175,7 @@ final class WrapperTests: XCTestCase {
             apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
         )
         var parts: [StreamPart] = []
-        var streamErr: AimuxError?
+        var streamErr: (any Error)?
         model.streamText(
             prompt: .text("Say hello"),
             onPart: { parts.append($0) },
@@ -212,7 +212,7 @@ final class WrapperTests: XCTestCase {
             ))
         ])
         var parts: [StreamPart] = []
-        var streamErr: AimuxError?
+        var streamErr: (any Error)?
         model.streamText(
             prompt: .text("What's the weather?"),
             options: options,

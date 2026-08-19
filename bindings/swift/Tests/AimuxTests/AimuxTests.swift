@@ -1,5 +1,6 @@
 import XCTest
 @testable import Aimux
+import CAimuxFFI
 
 final class AimuxTests: XCTestCase {
 
@@ -41,7 +42,7 @@ final class AimuxTests: XCTestCase {
         XCTAssertThrowsError(try model.generateText(prompt: "{invalid json}"))
     }
 
-    func testNoSuchProviderErrorValue() {
+    func testNoSuchProviderCarriesProviderId() {
         XCTAssertThrowsError(try Model.provider(
             name: "no-such-provider", apiKey: "sk-test-fake-key", modelId: "whatever"
         )) { error in
@@ -51,10 +52,147 @@ final class AimuxTests: XCTestCase {
             guard case .noSuchProvider = e else {
                 return XCTFail("expected .noSuchProvider, got \(e)")
             }
-            // errorValue is the raw externally-tagged core AiMuxError JSON.
-            XCTAssertTrue(e.errorValue?.contains("NoSuchProvider") == true,
-                          "errorValue should contain NoSuchProvider, got \(e.errorValue ?? "nil")")
+            XCTAssertEqual(e.providerId, "no-such-provider")
         }
+    }
+
+    /// `expectAimuxError` reads code 10, copies the per-code payload into the
+    /// matching case, leaves unrelated payload accessors `nil`, and frees the
+    /// returned error.
+    /// Driven through the real FFI: an unknown provider fails offline.
+    func testExpectAimuxReadsReturnedError() throws {
+        var h: UInt64 = 0
+        guard let e = aimux_provider_new("no-such-provider", "k", "m", nil, &h) else {
+            return XCTFail("expected a returned error")
+        }
+        XCTAssertEqual(h, 0)
+        XCTAssertEqual(aimux_error_code(e), Int32(AIMUX_E_NO_SUCH_PROVIDER.rawValue))
+        guard let err = expectAimuxError(e, context: "test") as? AimuxError else { // frees `e`
+            return XCTFail("expected AimuxError")
+        }
+        guard case .noSuchProvider = err else {
+            return XCTFail("expected .noSuchProvider, got \(err)")
+        }
+        XCTAssertFalse(err.message.isEmpty)
+        XCTAssertEqual(err.providerId, "no-such-provider")
+        XCTAssertNil(err.status)
+        XCTAssertNil(err.retryMs)
+        XCTAssertFalse(err.retryable)
+        XCTAssertNil(err.providerCode)
+        XCTAssertNil(err.modelId)
+    }
+
+    /// NULL owners answer nothing (NULL-safe getters, aimux-error.h).
+    func testNullOwnerGettersAreSafe() {
+        XCTAssertEqual(aimux_error_code(nil), 0)
+        XCTAssertNil(aimux_error_message(nil))
+        XCTAssertNil(aimux_error_message(nil))
+        aimux_error_free(nil)
+    }
+
+    // MARK: C ABI failure codes
+
+    /// A NULL required string argument is an invariant a correct binding never
+    /// triggers: code 200 has a non-empty message, and the
+    /// decoder throws `DecodingError` (never an `AimuxError`).
+    func testNullPointerArgIsDecodingError() throws {
+        var h: UInt64 = 0
+        guard let e = aimux_openai_new(nil, "gpt-4o", &h) else {
+            return XCTFail("expected a returned error")
+        }
+        XCTAssertEqual(h, 0)
+        XCTAssertEqual(aimux_error_code(e), 200)
+        let raw = aimux_error_message(e)
+        XCTAssertNotNil(raw)
+        XCTAssertFalse(String(cString: raw!).isEmpty)
+        aimux_free_string(raw)
+        let error = expectAimuxError(e, context: "test") // frees `e`
+        XCTAssertFalse(error is AimuxError)
+        guard case DecodingError.dataCorrupted(let ctx) = error else {
+            return XCTFail("expected DecodingError.dataCorrupted, got \(error)")
+        }
+        XCTAssertTrue(ctx.debugDescription.hasPrefix("aimux ffi: "), ctx.debugDescription)
+        XCTAssertTrue(ctx.debugDescription.contains("api_key"), ctx.debugDescription)
+    }
+
+    /// A dead / never-issued handle reaching the FFI (the wrappers guard this
+    /// locally with `precondition`) is likewise the invariant `DecodingError`,
+    /// whichever decoder the call site uses.
+    func testInvalidHandleIsDecodingError() {
+        var out: UnsafeMutablePointer<CChar>? = nil
+        guard let e = aimux_generate_text(0x7FFF_FFFF_FFFF_FFFF, "\"hi\"", nil, &out) else {
+            return XCTFail("expected a returned error")
+        }
+        XCTAssertNil(out)
+        XCTAssertEqual(aimux_error_code(e), 203)
+        let error = expectAimuxError(e, context: "test")
+        XCTAssertFalse(error is AimuxError)
+        XCTAssertTrue(error is DecodingError, "expected DecodingError, got \(error)")
+
+        guard let e2 = aimux_transcription_input_done(0x7FFF_FFFF_FFFF_FFFF) else {
+            return XCTFail("expected a returned error")
+        }
+        XCTAssertEqual(aimux_error_code(e2), 203)
+        XCTAssertTrue(expectRecordingError(e2, context: "test") is DecodingError)
+    }
+
+    /// Malformed raw JSON is rejected by the binding before the C call:
+    /// `DecodingError.dataCorrupted` naming the parameter, not an `AimuxError`.
+    func testMalformedJsonIsRejectedBeforeFfi() throws {
+        let model = try Model.openai(apiKey: "sk-test-fake-key", modelId: "gpt-4o-mini")
+        XCTAssertThrowsError(try model.generateText(prompt: "{not json")) { error in
+            XCTAssertFalse(error is AimuxError)
+            guard case DecodingError.dataCorrupted(let ctx) = error else {
+                return XCTFail("expected DecodingError.dataCorrupted, got \(error)")
+            }
+            XCTAssertTrue(ctx.debugDescription.contains("prompt"), ctx.debugDescription)
+        }
+        XCTAssertThrowsError(try model.generateText(prompt: "\"hi\"", options: "{not json")) { error in
+            guard case DecodingError.dataCorrupted(let ctx) = error else {
+                return XCTFail("expected DecodingError.dataCorrupted, got \(error)")
+            }
+            XCTAssertTrue(ctx.debugDescription.contains("options"), ctx.debugDescription)
+        }
+        // Valid JSON fragments pass the pre-check (they reach the C ABI).
+        XCTAssertNoThrow(try validateJson("\"hi\"", parameter: "prompt"))
+        XCTAssertNoThrow(try validateJson(nil, parameter: "options"))
+        // Optional params: blank means default (FFI rule); required: rejected.
+        XCTAssertNoThrow(try validateJson(Optional(" "), parameter: "options"))
+        XCTAssertThrowsError(try validateJson("", parameter: "prompt"))
+    }
+
+    /// Every raw-JSON entry pre-validates: multimodal `embed(values:)`,
+    /// composite `router(configJson:)` and `mockReplay` reject malformed JSON
+    /// with `DecodingError` before any C call (constructors are infallible
+    /// offline, so this runs without a network).
+    func testRawJsonEntriesRejectMalformedJsonBeforeFfi() throws {
+        let embedder = try EmbeddingModel.openai(apiKey: "sk-test-fake-key", modelId: "text-embedding-3-small")
+        XCTAssertThrowsError(try embedder.embed(values: "{not json")) { error in
+            guard case DecodingError.dataCorrupted(let ctx) = error else {
+                return XCTFail("expected DecodingError.dataCorrupted, got \(error)")
+            }
+            XCTAssertTrue(ctx.debugDescription.contains("values"), ctx.debugDescription)
+        }
+        let child = try Model.openai(apiKey: "sk-test-fake-key", modelId: "gpt-4o-mini")
+        XCTAssertThrowsError(try Model.router([child], configJson: "{not json")) { error in
+            guard case DecodingError.dataCorrupted(let ctx) = error else {
+                return XCTFail("expected DecodingError.dataCorrupted, got \(error)")
+            }
+            XCTAssertTrue(ctx.debugDescription.contains("configJson"), ctx.debugDescription)
+        }
+        XCTAssertThrowsError(try Model.mockReplay(recordingsJsonl: "{}\n{not json\n")) { error in
+            guard case DecodingError.dataCorrupted(let ctx) = error else {
+                return XCTFail("expected DecodingError.dataCorrupted, got \(error)")
+            }
+            XCTAssertTrue(ctx.debugDescription.contains("recordingsJsonl"), ctx.debugDescription)
+        }
+    }
+
+    /// `code` returns the mapped C constant; there is no binding-local case
+    /// without one.
+    func testCodeAccessor() {
+        XCTAssertEqual(AimuxError.timeout(message: "t", status: -1, retryMs: -1, retryable: true).code,
+                       Int32(AIMUX_E_TIMEOUT.rawValue))
     }
 
     /// HTTP-shaped failures all arrive as `.apiCall`; the classification is the
@@ -62,24 +200,43 @@ final class AimuxTests: XCTestCase {
     func testApiCallClassifiesByStatus() {
         let rateLimited = AimuxError.apiCall(
             message: "API call error: HTTP 429: slow down",
-            status: 429, retryMs: 1500, errorValue: nil
+            status: 429, retryMs: 1500, retryable: true
         )
         XCTAssertEqual(rateLimited.status, 429)
         XCTAssertEqual(rateLimited.retryMs, 1500)
+        XCTAssertTrue(rateLimited.retryable)
 
         let auth = AimuxError.apiCall(
             message: "API call error: HTTP 401: invalid api key",
-            status: 401, retryMs: -1, errorValue: nil
+            status: 401, retryMs: -1, retryable: false
         )
         XCTAssertEqual(auth.status, 401)
         XCTAssertNil(auth.retryMs)
+        XCTAssertFalse(auth.retryable)
 
         // Transport failure: no response, so no status.
         let transport = AimuxError.apiCall(
             message: "API call error: connection reset",
-            status: -1, retryMs: -1, errorValue: nil
+            status: -1, retryMs: -1, retryable: true
         )
         XCTAssertNil(transport.status)
+    }
+
+    /// `retryable` is not derivable from `status`: both of these report no
+    /// status and disagree about whether a retry is worth attempting.
+    func testRetryableIsNotDerivableFromStatus() {
+        let transport = AimuxError.apiCall(
+            message: "API call error: connection reset",
+            status: -1, retryMs: -1, retryable: true
+        )
+        let missingKey = AimuxError.apiCall(
+            message: "API call error: missing api key",
+            status: -1, retryMs: -1, retryable: false
+        )
+        XCTAssertNil(transport.status)
+        XCTAssertNil(missingKey.status)
+        XCTAssertTrue(transport.retryable)
+        XCTAssertFalse(missingKey.retryable)
     }
 
     /// End to end: a 401 from the provider surfaces as `.apiCall` with the
@@ -104,8 +261,8 @@ final class AimuxTests: XCTestCase {
             }
             XCTAssertEqual(e.status, 401)
             XCTAssertTrue(e.message.contains("401"), "got \(e.message)")
-            XCTAssertTrue(e.errorValue?.contains("ApiCall") == true,
-                          "errorValue should contain ApiCall, got \(e.errorValue ?? "nil")")
+            XCTAssertFalse(e.retryable)
+            XCTAssertEqual(e.responseBody?.contains("invalid api key"), true, "got \(String(describing: e.responseBody))")
         }
     }
 
@@ -118,21 +275,26 @@ final class AimuxTests: XCTestCase {
 
     // MARK: - Recording ring (T10)
 
-    /// `initRecordingRing(cap: 0)` must throw instead of silently ignoring the
-    /// C ABI's -1 return (T10). Mirrors Kotlin/Java (throw) and Flutter
-    /// (surface the C error). cap == 0 is rejected by the C ABI without side
-    /// effects, so this does not mutate global recorder state.
-    func testInitRecordingRingRejectsZeroCap() {
+    /// `cap: 0` is decided by aimux-core, not by a local trap: the C layer
+    /// classifies it as `AIMUX_E_INVALID_ARGUMENT`, so Swift throws
+    /// `AimuxError.invalidArgument` — catchable, identical to what a C caller
+    /// sees.
+    func testInitRecordingRingZeroCapThrowsInvalidArgument() {
         XCTAssertThrowsError(try Model.initRecordingRing(cap: 0)) { error in
-            guard case .invalidArgument = error as? AimuxError else {
-                return XCTFail("expected .invalidArgument, got \(error)")
+            guard let e = error as? AimuxError else {
+                return XCTFail("expected AimuxError, got \(error)")
+            }
+            guard case .invalidArgument = e else {
+                return XCTFail("expected .invalidArgument, got \(e)")
             }
         }
+        // A rejected cap must not have replaced the global recorder.
+        Model.recordingStop()
     }
 
-    /// A positive cap constructs the ring recorder without throwing.
+    /// A positive cap constructs the ring recorder.
     func testInitRecordingRingAcceptsPositiveCap() throws {
-        XCTAssertNoThrow(try Model.initRecordingRing(cap: 8))
+        try Model.initRecordingRing(cap: 8)
         // Reset global recorder state so this doesn't leak into other tests.
         Model.recordingStop()
     }
@@ -140,9 +302,46 @@ final class AimuxTests: XCTestCase {
     /// Omitting cap uses the library default capacity (FFI
     /// aimux_init_recording_ring_default) and must not throw.
     func testInitRecordingRingDefaultNoArg() throws {
-        XCTAssertNoThrow(try Model.initRecordingRing())
+        try Model.initRecordingRing()
         // Reset global recorder state so this doesn't leak into other tests.
         Model.recordingStop()
+    }
+
+    // MARK: - recordingTryFlush
+
+    /// Nothing recording: the checked flush is a no-op that must not throw.
+    func testRecordingTryFlushNoRecorder() {
+        Model.recordingStop()
+        XCTAssertNoThrow(try Model.recordingTryFlush())
+    }
+
+    func testRecordingCodeOutsideRustEnumIsRejected() {
+        XCTAssertNil(RecordingError.code(fromC: 999))
+    }
+
+    /// Unwritable dir (parent path is a regular file): init fails with
+    /// `RecordingError.initFailed` (not an `AimuxError`), nothing is
+    /// installed, and the checked flush afterwards succeeds.
+    func testRecordingInitFailedUnwritableDir() throws {
+        let blocker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aimux-swift-blocker-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: blocker, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: blocker) }
+        let occupied = blocker.appendingPathComponent("occupied")
+        try Data("x".utf8).write(to: occupied)
+
+        defer { Model.recordingStop() }
+        XCTAssertThrowsError(
+            try Model.initRecording(dir: occupied.appendingPathComponent("sub").path)
+        ) { error in
+            XCTAssertNil(error as? AimuxError, "recording errors are not AimuxError")
+            guard let e = error as? RecordingError else {
+                return XCTFail("expected RecordingError, got \(error)")
+            }
+            XCTAssertEqual(e.code, .initFailed)
+            XCTAssertFalse(e.message.isEmpty)
+        }
+        XCTAssertNoThrow(try Model.recordingTryFlush())
     }
 
     // MARK: - base_url constructors (no network: just construction)
@@ -291,7 +490,7 @@ final class AimuxTests: XCTestCase {
             apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
         )
         var parts: [String] = []
-        var streamErr: AimuxError?
+        var streamErr: (any Error)?
         model.streamText(
             prompt: jsonEncodeString("Say hello"),
             onPart: { parts.append($0) },
@@ -329,7 +528,7 @@ final class AimuxTests: XCTestCase {
             ]],
         ])
         var parts: [String] = []
-        var streamErr: AimuxError?
+        var streamErr: (any Error)?
         model.streamText(
             prompt: jsonEncodeString("What's the weather?"),
             options: opts,

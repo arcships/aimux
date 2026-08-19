@@ -1636,14 +1636,7 @@ public extension Model {
         let promptJson = try AimuxCodable.jsonString(for: prompt)
         let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         let resultJson = try generateText(prompt: promptJson, options: optsJson)
-        guard let data = resultJson.data(using: .utf8) else {
-            throw AimuxError.serializationError("generate_text returned non-UTF-8 result")
-        }
-        do {
-            return try JSONDecoder().decode(GenerateTextResult.self, from: data)
-        } catch {
-            throw AimuxError.serializationError("failed to decode GenerateTextResult: \(error)")
-        }
+        return try JSONDecoder().decode(GenerateTextResult.self, from: Data(resultJson.utf8))
     }
 
     /// Generate a structured JSON object with typed inputs/outputs (M12, RFC-0016).
@@ -1665,14 +1658,7 @@ public extension Model {
         let promptJson = try AimuxCodable.jsonString(for: prompt)
         let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         let resultJson = try generateObject(prompt: promptJson, options: optsJson)
-        guard let data = resultJson.data(using: .utf8) else {
-            throw AimuxError.serializationError("generate_object returned non-UTF-8 result")
-        }
-        do {
-            return try JSONDecoder().decode(GenerateObjectResult.self, from: data)
-        } catch {
-            throw AimuxError.serializationError("failed to decode GenerateObjectResult: \(error)")
-        }
+        return try JSONDecoder().decode(GenerateObjectResult.self, from: Data(resultJson.utf8))
     }
 
     /// Consume a stream to completion and return the aggregated typed result
@@ -1690,15 +1676,7 @@ public extension Model {
         let promptJson = try AimuxCodable.jsonString(for: prompt)
         let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         let resultJson = try consumeStreamText(prompt: promptJson, options: optsJson)
-        guard let data = resultJson.data(using: .utf8) else {
-            throw AimuxError.serializationError("consume_stream_text returned non-UTF-8 result")
-        }
-        do {
-            return try JSONDecoder().decode(StreamTextResultAggregated.self, from: data)
-        } catch {
-            throw AimuxError.serializationError(
-                "failed to decode StreamTextResultAggregated: \(error)")
-        }
+        return try JSONDecoder().decode(StreamTextResultAggregated.self, from: Data(resultJson.utf8))
     }
 
     /// Stream text with typed `StreamPart`s.
@@ -1711,32 +1689,23 @@ public extension Model {
         options: GenerateTextOptions? = nil,
         onPart: @escaping (StreamPart) -> Void,
         onDone: @escaping () -> Void,
-        onError: @escaping (AimuxError) -> Void
+        onError: @escaping (any Error) -> Void
     ) {
         let promptJson: String
-        do {
-            promptJson = try AimuxCodable.jsonString(for: prompt)
-        } catch {
-            onError(.serializationError("invalid prompt: \(error)"))
-            return
-        }
         let optsJson: String?
         do {
+            promptJson = try AimuxCodable.jsonString(for: prompt)
             optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         } catch {
-            onError(.serializationError("invalid options: \(error)"))
+            onError(error) // EncodingError from JSONEncoder
             return
         }
         streamText(prompt: promptJson, options: optsJson,
                    onPart: { json in
-                       guard let data = json.data(using: .utf8) else {
-                           onError(.serializationError("stream part was non-UTF-8"))
-                           return
-                       }
-                       if let part = try? JSONDecoder().decode(StreamPart.self, from: data) {
-                           onPart(part)
-                       } else {
-                           onError(.serializationError("failed to decode StreamPart: \(json)"))
+                       do {
+                           try onPart(JSONDecoder().decode(StreamPart.self, from: Data(json.utf8)))
+                       } catch {
+                           onError(error) // DecodingError from JSONDecoder
                        }
                    },
                    onDone: onDone,
@@ -1746,8 +1715,8 @@ public extension Model {
     /// Stream text as an `AsyncSequence` of typed `StreamPart`s.
     ///
     /// The stream finishes on normal completion and throws `AimuxError`
-    /// (preserving C codes via `fromC`, or `.serializationError` for local
-    /// decode failures) when the native stream or typed decoding fails.
+    /// (AiMuxError failure, C codes preserved via `fromC`) or the native
+    /// `EncodingError` / `DecodingError` when typed (de)serialization fails.
     func streamTextAsync(
         prompt: ModelPrompt,
         options: GenerateTextOptions? = nil
@@ -1778,14 +1747,7 @@ public extension Model {
         let promptJson = try AimuxCodable.jsonString(for: prompt)
         let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         let resultJson = try generateTextAsOpenAI(prompt: promptJson, options: optsJson)
-        guard let data = resultJson.data(using: .utf8) else {
-            throw AimuxError.serializationError("generate_text_as_openai returned non-UTF-8 result")
-        }
-        do {
-            return try JSONDecoder().decode(ChatCompletion.self, from: data)
-        } catch {
-            throw AimuxError.serializationError("failed to decode ChatCompletion: \(error)")
-        }
+        return try JSONDecoder().decode(ChatCompletion.self, from: Data(resultJson.utf8))
     }
 
     /// Stream text with OpenAI Chat Completions output, yielding typed
@@ -1801,32 +1763,23 @@ public extension Model {
         options: GenerateTextOptions? = nil,
         onPart: @escaping (ChatCompletionChunk) -> Void,
         onDone: @escaping () -> Void,
-        onError: @escaping (AimuxError) -> Void
+        onError: @escaping (any Error) -> Void
     ) {
         let promptJson: String
-        do {
-            promptJson = try AimuxCodable.jsonString(for: prompt)
-        } catch {
-            onError(.serializationError("invalid prompt: \(error)"))
-            return
-        }
         let optsJson: String?
         do {
+            promptJson = try AimuxCodable.jsonString(for: prompt)
             optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
         } catch {
-            onError(.serializationError("invalid options: \(error)"))
+            onError(error) // EncodingError from JSONEncoder
             return
         }
         streamTextAsOpenAI(prompt: promptJson, options: optsJson,
                            onPart: { json in
-                               guard let data = json.data(using: .utf8) else {
-                                   onError(.serializationError("stream chunk was non-UTF-8"))
-                                   return
-                               }
-                               if let chunk = try? JSONDecoder().decode(ChatCompletionChunk.self, from: data) {
-                                   onPart(chunk)
-                               } else {
-                                   onError(.serializationError("failed to decode ChatCompletionChunk: \(json)"))
+                               do {
+                                   try onPart(JSONDecoder().decode(ChatCompletionChunk.self, from: Data(json.utf8)))
+                               } catch {
+                                   onError(error) // DecodingError from JSONDecoder
                                }
                            },
                            onDone: onDone,
