@@ -19,7 +19,7 @@ package aimux
 
 #include "aimux-ffi.h"
 
-// Go-side callback trampoline (//export below). stream_ctx is a cgo.Handle.
+// Go-side callback trampolines (//export below). stream_ctx is the stream id.
 extern void goStreamPart(uintptr_t id, char* json);
 
 static void trampoline_part(const char* json, void* stream_ctx) {
@@ -31,23 +31,21 @@ static void trampoline_done(void* stream_ctx) {
 }
 
 // do_stream: blocking cancelable stream; id is passed as stream_ctx.
-// On failure, *err is filled and return is 0 (no on_done).
-static int32_t do_stream(uint64_t handle, uint64_t abort_handle,
-                         const char* prompt, const char* opts, uintptr_t id,
-                         AimuxError* err) {
+// NULL return after on_done = clean end; non-NULL = failure (no on_done).
+static aimux_error_t* do_stream(uint64_t handle, uint64_t abort_handle,
+                                    const char* prompt, const char* opts, uintptr_t id) {
     return aimux_stream_text_with_abort(
         handle, abort_handle, prompt, opts,
         trampoline_part, trampoline_done,
-        (void*)id, err);
+        (void*)id);
 }
 
-static int32_t do_stream_openai(uint64_t handle, uint64_t abort_handle,
-                                const char* prompt, const char* opts, uintptr_t id,
-                                AimuxError* err) {
+static aimux_error_t* do_stream_openai(uint64_t handle, uint64_t abort_handle,
+                                           const char* prompt, const char* opts, uintptr_t id) {
     return aimux_stream_text_as_openai_with_abort(
         handle, abort_handle, prompt, opts,
         trampoline_part, trampoline_done,
-        (void*)id, err);
+        (void*)id);
 }
 
 */
@@ -55,11 +53,12 @@ import "C"
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"runtime"
 	"runtime/cgo"
+	"strings"
 	"sync/atomic"
 	"unsafe"
 )
@@ -72,11 +71,15 @@ import (
 // native handle and avoid memory leaks.
 //
 // Model must not be copied after first use. Its methods and Close are safe to
-// call concurrently. Close prevents future calls but never waits for an
-// in-flight C call; Rust's registry owns the Arc used by calls that entered
-// before Close won the registry race.
+// call concurrently. Close prevents future calls but does not wait for calls
+// that have already entered the Rust registry; those calls own a cloned Arc
+// and may finish normally.
 type Model struct {
 	id atomic.Uint64 // 0 means closed
+	// traced is true only for handles produced by Trace/TraceAudited, the
+	// only ones with a trace store behind them. Set at construction and never
+	// mutated, so the trace guard reads it without synchronization.
+	traced bool
 }
 
 // Close releases the native handle. Safe to call multiple times.
@@ -92,35 +95,39 @@ func (m *Model) Close() error {
 	return nil
 }
 
-// handle snapshots the native handle. Callers must KeepAlive the receiver
-// until after C returns so its finalizer cannot run before registry lookup.
+// handle returns a snapshot of the native handle. Callers must keep m alive
+// until after the C call (runtime.KeepAlive) so its finalizer cannot drop the
+// registry entry between this load and Rust's Arc clone.
 func (m *Model) handle() (uint64, error) {
 	if m != nil {
 		if id := m.id.Load(); id != 0 {
 			return id, nil
 		}
 	}
-	return 0, newError(CodeInvalidArgument, "aimux: model already closed")
+	return 0, fmt.Errorf("%w: model", ErrClosed)
 }
 
+// modelHandles snapshots models in caller order without taking Go locks.
+// A concurrent Close races only with Rust's registry lookup: either the call
+// clones the Arc or it receives an invalid-handle error, never a use-after-free.
 func modelHandles(models []*Model) ([]uint64, error) {
-	handles := make([]uint64, len(models))
-	for i, model := range models {
-		if model == nil {
-			return nil, newError(CodeInvalidArgument, fmt.Sprintf("aimux: models[%d] is nil", i))
+	out := make([]uint64, len(models))
+	for i, m := range models {
+		if m == nil {
+			return nil, fmt.Errorf("model[%d] is nil", i)
 		}
-		handle, err := model.handle()
+		id, err := m.handle()
 		if err != nil {
 			return nil, err
 		}
-		handles[i] = handle
+		out[i] = id
 	}
-	return handles, nil
+	return out, nil
 }
 
 func keepModelsAlive(models []*Model) {
-	for _, model := range models {
-		runtime.KeepAlive(model)
+	for _, m := range models {
+		runtime.KeepAlive(m)
 	}
 }
 
@@ -227,13 +234,16 @@ func NewAzureWithBase(apiKey, baseURL, deployment string) (*Model, error) {
 	return newAzureModel(apiKey, baseURL, deployment, "", true)
 }
 
-// OpenAI creates an OpenAI model instance, panicking on failure.
-// Prefer NewOpenAI for explicit error handling.
+// OpenAI creates an OpenAI model instance. Must-style (regexp.MustCompile): it
+// PANICS on any failure, including invalid input — an apiKey or modelID that is
+// not valid UTF-8 or contains a NUL. Use NewOpenAI for anything caller-supplied.
 func OpenAI(apiKey, modelID string) *Model {
 	return mustNew(NewOpenAI(apiKey, modelID))
 }
 
-// OpenAIWithBase creates an OpenAI model with a custom base URL, panicking on failure.
+// OpenAIWithBase creates an OpenAI model with a custom base URL. Must-style: it
+// PANICS on any failure, including an apiKey / modelID / baseURL that is not
+// valid UTF-8 or contains a NUL. Use NewOpenAIWithBase to get an error instead.
 func OpenAIWithBase(apiKey, modelID, baseURL string) *Model {
 	return mustNew(NewOpenAIWithBase(apiKey, modelID, baseURL))
 }
@@ -243,22 +253,39 @@ func OpenAIWithBase(apiKey, modelID, baseURL string) *Model {
 // subscriber. level: "off"|"error"|"warn"|"info"|"debug"|"trace" (empty
 // defaults to "warn"). The AIMUX_LOG / AIMUX_LOG_LEVEL env vars take
 // precedence. Logs go to stderr.
+//
+// An unusable level — empty, not valid UTF-8, or containing a NUL — falls back
+// to "warn" rather than failing: this has no error channel, and aimux-core
+// already treats every unparseable level as "use the default". That matters
+// because the obvious call is InitLogging(os.Getenv("AIMUX_LOG_LEVEL")), and
+// os.Getenv hands back raw bytes on POSIX.
 func InitLogging(level string) {
-	if level == "" {
+	if level == "" || checkUTF8("level", level) != nil {
 		level = "warn"
 	}
 	cLevel := C.CString(level)
 	defer C.free(unsafe.Pointer(cLevel))
-	C.aimux_init_logging(cLevel)
+	if err := expectFfiError(C.aimux_init_logging(cLevel)); err != nil {
+		// Unreachable: level is now non-NULL, valid UTF-8 and NUL-free, which
+		// is every failure aimux_init_logging documents. A non-nil error here
+		// is a header/library mismatch, like the enum panics below.
+		panic(err)
+	}
 }
 
 // InitRecording starts RFC-0023 recording: complete Recording JSONL is written
 // to {dir}/recordings.jsonl (dir auto-created). Recording is opt-in; calling
-// again replaces the recorder.
-func InitRecording(dir string) {
+// again replaces the recorder. Construction failures are reported as
+// *RecordingError (Code RecordingErrorInit when dir cannot be created,
+// RecordingErrorOpenFile, RecordingErrorSpawn); on failure the previous
+// recorder, if any, stays in place.
+func InitRecording(dir string) error {
+	if err := checkUTF8("dir", dir); err != nil {
+		return err
+	}
 	cDir := C.CString(dir)
 	defer C.free(unsafe.Pointer(cDir))
-	C.aimux_init_recording(cDir)
+	return expectRecordingError(C.aimux_init_recording(cDir))
 }
 
 // InitRecordingRing starts in-memory bounded recording (RFC-0023 P6): FIFO
@@ -266,19 +293,16 @@ func InitRecording(dir string) {
 //
 // cap is optional (variadic): omit it to use the library default capacity,
 // which calls the FFI aimux_init_recording_ring_default entry point. When
-// provided, cap must be > 0 — the C ABI rejects cap == 0 (returns -1). Unlike
-// the previous behavior, this binding no longer silently rewrites cap == 0 to
-// 2048; callers must omit cap for the default or pass an explicit > 0
-// capacity. This matches Kotlin/Java (which throw) and Swift/Flutter (which
-// surface the C error). Returns an error when cap == 0, more than one cap is
-// supplied, or the C call fails.
+// provided, cap must be > 0 — the C ABI returns `AiMuxError::InvalidArgument`
+// for cap == 0. Unlike the previous behavior, this binding no longer
+// silently rewrites cap == 0 to 2048; callers must omit cap for the default or
+// pass an explicit > 0 capacity. This matches Kotlin/Java (which throw) and
+// Swift/Flutter (which surface the C error). Returns an error when cap == 0,
+// more than one cap is supplied, or the C call fails.
 func InitRecordingRing(cap ...uint64) error {
 	if len(cap) == 0 {
 		// No cap: library default capacity (FFI default entry point).
-		rc := C.aimux_init_recording_ring_default()
-		if rc != 0 {
-			return fmt.Errorf("aimux: InitRecordingRing default failed (rc=%d)", int32(rc))
-		}
+		C.aimux_init_recording_ring_default()
 		return nil
 	}
 	if len(cap) > 1 {
@@ -288,11 +312,7 @@ func InitRecordingRing(cap ...uint64) error {
 	if c == 0 {
 		return fmt.Errorf("aimux: InitRecordingRing requires cap > 0 (got 0)")
 	}
-	rc := C.aimux_init_recording_ring(C.uint64_t(c))
-	if rc != 0 {
-		return fmt.Errorf("aimux: InitRecordingRing failed (rc=%d)", int32(rc))
-	}
-	return nil
+	return expectAimuxError(C.aimux_init_recording_ring(C.uint64_t(c)))
 }
 
 // RecordingStop stops recording: the global recorder becomes None.
@@ -306,48 +326,56 @@ func RecordingFlush() {
 	C.aimux_recording_flush()
 }
 
+// RecordingTryFlush flushes the global recorder and reports failures as
+// *RecordingError (Code RecordingErrorWriterGone, RecordingErrorFlushTimeout
+// or RecordingErrorWrite); nil when the JSONL is on disk (or nothing is
+// recording). The legacy RecordingFlush stays and never reports.
+func RecordingTryFlush() error {
+	return expectRecordingError(C.aimux_recording_try_flush())
+}
+
 // MockReplay creates a mock replay model from recorded JSONL (RFC-0023 P3):
 // it returns recorded responses by input match — no real API is sent. The
 // returned model works with GenerateText / StreamText.
 func MockReplay(recordingsJsonl string) (*Model, error) {
+	// checkJSON per line: UTF-8 / NUL / json.Valid / surrogate pairing, with
+	// "" (a blank line) skipped as before.
+	for _, line := range strings.Split(recordingsJsonl, "\n") {
+		if err := checkJSON("recordings_jsonl", strings.TrimSpace(line)); err != nil {
+			return nil, err
+		}
+	}
 	cJsonl := C.CString(recordingsJsonl)
 	defer C.free(unsafe.Pointer(cJsonl))
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	h := C.aimux_mock_replay_new(cJsonl, &cerr)
-	return wrapHandleU64(h, &cerr)
+	var h C.uint64_t
+	return wrapHandle(&h, C.aimux_mock_replay_new(cJsonl, &h))
 }
 
 // RegisterProviders registers external OpenAI-compatible providers from a JSON
 // config string (RFC-0020). Entries override same-named built-ins or add new
 // ones. configJSON shape: { "providers": [ { "name", "base_url", ... } ] }.
 func RegisterProviders(configJSON string) error {
+	if err := requireJSON("config_json", configJSON); err != nil {
+		return err
+	}
 	cJSON := C.CString(configJSON)
 	defer C.free(unsafe.Pointer(cJSON))
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	rc := C.aimux_register_providers(cJSON, &cerr)
-	if rc == 0 {
-		return errorFromC(&cerr)
-	}
-	return nil
+	return expectAimuxError(C.aimux_register_providers(cJSON))
 }
 
 // InitProxy sets the global proxy configuration (M6, RFC-0016). Must be called
 // before the first GenerateText / StreamText call; a no-op if the shared HTTP
-// client is already initialised. configJSON shape:
+// client is already initialised. configJSON is required (pass "{}" for
+// defaults); shape:
 // { "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy": "..." }
 // (all fields optional).
 func InitProxy(configJSON string) error {
+	if err := requireJSON("config_json", configJSON); err != nil {
+		return err
+	}
 	cJSON := C.CString(configJSON)
 	defer C.free(unsafe.Pointer(cJSON))
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	rc := C.aimux_init_proxy(cJSON, &cerr)
-	if rc == 0 {
-		return errorFromC(&cerr)
-	}
-	return nil
+	return expectAimuxError(C.aimux_init_proxy(cJSON))
 }
 
 // NewRouter builds a RouterModel (RFC-0021) over the given child models. The
@@ -356,36 +384,41 @@ func InitProxy(configJSON string) error {
 //
 // configJSON (optional): {"router": "rule"|"weighted", "weights": [...],
 // "fallback": "on_error"|"none", "provider_name", "model_id"}.
+//
+// The same model may appear several times. A nil entry returns an error
+// ("aimux: router: models[i] is nil"), never a panic. Concurrent Close is
+// resolved by the Rust registry: construction either clones every live child
+// it reaches or returns an invalid-handle error.
 func NewRouter(models []*Model, configJSON string) (*Model, error) {
 	if len(models) == 0 {
-		return nil, newError(CodeInvalidArgument, "router: models must be non-empty")
+		return nil, errors.New("aimux: router needs at least one model")
+	}
+	if err := checkJSON("config_json", configJSON); err != nil {
+		return nil, err
+	}
+	for i, m := range models {
+		if m == nil {
+			return nil, fmt.Errorf("aimux: router: models[%d] is nil", i)
+		}
 	}
 	handles, err := modelHandles(models)
 	if err != nil {
 		return nil, err
 	}
 	defer keepModelsAlive(models)
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	var h C.uint64_t
-	if configJSON == "" {
-		h = C.aimux_router_new(
-			(*C.uint64_t)(unsafe.Pointer(&handles[0])),
-			C.size_t(len(handles)),
-			nil,
-			&cerr,
-		)
-	} else {
-		cJSON := C.CString(configJSON)
+
+	var cJSON *C.char
+	if configJSON != "" {
+		cJSON = C.CString(configJSON)
 		defer C.free(unsafe.Pointer(cJSON))
-		h = C.aimux_router_new(
-			(*C.uint64_t)(unsafe.Pointer(&handles[0])),
-			C.size_t(len(handles)),
-			cJSON,
-			&cerr,
-		)
 	}
-	return wrapHandleU64(h, &cerr)
+	var h C.uint64_t
+	return wrapHandle(&h, C.aimux_router_new(
+		(*C.uint64_t)(unsafe.Pointer(&handles[0])),
+		C.size_t(len(handles)),
+		cJSON,
+		&h,
+	))
 }
 
 // NewMoa builds a MoaModel (RFC-0022) over reference models + one aggregator.
@@ -393,9 +426,21 @@ func NewRouter(models []*Model, configJSON string) (*Model, error) {
 // answer. references may be empty (runs aggregator only).
 //
 // configJSON (optional) is a serialized MoaConfig.
+//
+// The aggregator is allowed to appear in references too, and references may
+// repeat. No Go locks are taken; Rust clones every model Arc it resolves. A
+// nil aggregator or reference returns an error, never a panic.
 func NewMoa(references []*Model, aggregator *Model, configJSON string) (*Model, error) {
+	if err := checkJSON("config_json", configJSON); err != nil {
+		return nil, err
+	}
 	if aggregator == nil {
-		return nil, newError(CodeInvalidArgument, "aimux: aggregator is nil")
+		return nil, errors.New("aimux: moa: aggregator is nil")
+	}
+	for i, m := range references {
+		if m == nil {
+			return nil, fmt.Errorf("aimux: moa: references[%d] is nil", i)
+		}
 	}
 	models := append(append(make([]*Model, 0, len(references)+1), references...), aggregator)
 	handles, err := modelHandles(models)
@@ -405,43 +450,45 @@ func NewMoa(references []*Model, aggregator *Model, configJSON string) (*Model, 
 	defer keepModelsAlive(models)
 	aggHandle := handles[len(references)]
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
+	// No references: NULL pointer + 0 length.
 	var refPtr *C.uint64_t
 	if len(references) > 0 {
 		refPtr = (*C.uint64_t)(unsafe.Pointer(&handles[0]))
 	}
-	h := callMoaNew(refPtr, C.size_t(len(references)), aggHandle, configJSON, &cerr)
-	return wrapHandleU64(h, &cerr)
-}
-
-// callMoaNew is a small helper that builds the C call with or without a config
-// JSON string, avoiding repeated CString bookkeeping at the call sites.
-func callMoaNew(
-	refPtr *C.uint64_t,
-	refLen C.size_t,
-	aggregator uint64,
-	configJSON string,
-	cerr *C.AimuxError,
-) C.uint64_t {
-	if configJSON == "" {
-		return C.aimux_moa_new(refPtr, refLen, C.uint64_t(aggregator), nil, cerr)
+	var cJSON *C.char
+	if configJSON != "" {
+		cJSON = C.CString(configJSON)
+		defer C.free(unsafe.Pointer(cJSON))
 	}
-	cJSON := C.CString(configJSON)
-	defer C.free(unsafe.Pointer(cJSON))
-	return C.aimux_moa_new(refPtr, refLen, C.uint64_t(aggregator), cJSON, cerr)
+	var h C.uint64_t
+	return wrapHandle(&h, C.aimux_moa_new(
+		refPtr,
+		C.size_t(len(references)),
+		C.uint64_t(aggHandle),
+		cJSON,
+		&h,
+	))
 }
 
-// Anthropic creates an Anthropic model instance, panicking on failure.
+// Anthropic creates an Anthropic model instance. Must-style: it PANICS on any
+// failure, including an apiKey / modelID that is not valid UTF-8 or contains a
+// NUL. Use NewAnthropic to get an error instead.
 func Anthropic(apiKey, modelID string) *Model {
 	return mustNew(NewAnthropic(apiKey, modelID))
 }
 
-// AnthropicWithBase creates an Anthropic model with a custom base URL, panicking on failure.
+// AnthropicWithBase creates an Anthropic model with a custom base URL.
+// Must-style: it PANICS on any failure, including an apiKey / modelID /
+// baseURL that is not valid UTF-8 or contains a NUL. Use NewAnthropicWithBase
+// to get an error instead.
 func AnthropicWithBase(apiKey, modelID, baseURL string) *Model {
 	return mustNew(NewAnthropicWithBase(apiKey, modelID, baseURL))
 }
 
+// mustNew is the Must-style constructor helper shared by OpenAI / OpenAIWithBase /
+// Anthropic / AnthropicWithBase / DeepSeek: the NewXxx twin's error becomes a
+// panic. Invalid input panics too — that is the documented Go convention
+// (regexp.MustCompile), so these five are for compile-time-known arguments.
 func mustNew(m *Model, err error) *Model {
 	if err != nil {
 		panic(err)
@@ -449,59 +496,67 @@ func mustNew(m *Model, err error) *Model {
 	return m
 }
 
-// wrapHandleU64 turns a constructor handle + optional AimuxError into *Model.
-func wrapHandleU64(h C.uint64_t, cerr *C.AimuxError) (*Model, error) {
-	if h == 0 {
-		return nil, errorFromC(cerr)
+// wrapHandle turns an [AiMuxError] constructor's out-handle + error into *Model.
+// It takes the out-handle by pointer so it can be written in the same
+// expression: wrapHandle(&h, C.aimux_x_new(..., &h)).
+func wrapHandle(h *C.uint64_t, e *C.aimux_error_t) (*Model, error) {
+	if err := expectAimuxError(e); err != nil {
+		return nil, err
 	}
 	m := &Model{}
-	m.id.Store(uint64(h))
+	m.id.Store(uint64(*h))
 	runtime.SetFinalizer(m, func(m *Model) { m.Close() })
 	return m, nil
 }
 
-func newModel(apiKey, modelID, baseURL, kind string) (*Model, error) {
+func newModel(apiKey, modelID, baseURL, provider string) (*Model, error) {
+	if err := checkUTF8("api_key", apiKey, "model_id", modelID, "base_url", baseURL); err != nil {
+		return nil, err
+	}
 	cKey := C.CString(apiKey)
 	cModel := C.CString(modelID)
 	defer C.free(unsafe.Pointer(cKey))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
 	var h C.uint64_t
+	var e *C.aimux_error_t
 	if baseURL == "" {
-		switch kind {
+		switch provider {
 		case "anthropic":
-			h = C.aimux_anthropic_new(cKey, cModel, &cerr)
+			e = C.aimux_anthropic_new(cKey, cModel, &h)
 		case "cohere":
-			h = C.aimux_cohere_new(cKey, cModel, &cerr)
+			e = C.aimux_cohere_new(cKey, cModel, &h)
 		case "mistral":
-			h = C.aimux_mistral_new(cKey, cModel, &cerr)
+			e = C.aimux_mistral_new(cKey, cModel, &h)
 		case "xai":
-			h = C.aimux_xai_new(cKey, cModel, &cerr)
+			e = C.aimux_xai_new(cKey, cModel, &h)
 		default:
-			h = C.aimux_openai_new(cKey, cModel, &cerr)
+			e = C.aimux_openai_new(cKey, cModel, &h)
 		}
 	} else {
 		cBase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cBase))
-		switch kind {
+		switch provider {
 		case "anthropic":
-			h = C.aimux_anthropic_new_with_base(cKey, cModel, cBase, &cerr)
+			e = C.aimux_anthropic_new_with_base(cKey, cModel, cBase, &h)
 		case "cohere":
-			h = C.aimux_cohere_new_with_base(cKey, cModel, cBase, &cerr)
+			e = C.aimux_cohere_new_with_base(cKey, cModel, cBase, &h)
 		case "mistral":
-			h = C.aimux_mistral_new_with_base(cKey, cModel, cBase, &cerr)
+			e = C.aimux_mistral_new_with_base(cKey, cModel, cBase, &h)
 		case "xai":
-			h = C.aimux_xai_new_with_base(cKey, cModel, cBase, &cerr)
+			e = C.aimux_xai_new_with_base(cKey, cModel, cBase, &h)
 		default:
-			h = C.aimux_openai_new_with_base(cKey, cModel, cBase, &cerr)
+			e = C.aimux_openai_new_with_base(cKey, cModel, cBase, &h)
 		}
 	}
-	return wrapHandleU64(h, &cerr)
+	return wrapHandle(&h, e)
 }
 
 func newBedrockModel(accessKeyID, secretAccessKey, region, modelID, baseURL string) (*Model, error) {
+	if err := checkUTF8("access_key_id", accessKeyID, "secret_access_key", secretAccessKey,
+		"region", region, "model_id", modelID, "base_url", baseURL); err != nil {
+		return nil, err
+	}
 	cAccess := C.CString(accessKeyID)
 	cSecret := C.CString(secretAccessKey)
 	cRegion := C.CString(region)
@@ -511,20 +566,20 @@ func newBedrockModel(accessKeyID, secretAccessKey, region, modelID, baseURL stri
 	defer C.free(unsafe.Pointer(cRegion))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
 	var h C.uint64_t
 	if baseURL == "" {
-		h = C.aimux_bedrock_new(cAccess, cSecret, cRegion, cModel, &cerr)
-	} else {
-		cBase := C.CString(baseURL)
-		defer C.free(unsafe.Pointer(cBase))
-		h = C.aimux_bedrock_new_with_base(cAccess, cSecret, cRegion, cModel, cBase, &cerr)
+		return wrapHandle(&h, C.aimux_bedrock_new(cAccess, cSecret, cRegion, cModel, &h))
 	}
-	return wrapHandleU64(h, &cerr)
+	cBase := C.CString(baseURL)
+	defer C.free(unsafe.Pointer(cBase))
+	return wrapHandle(&h, C.aimux_bedrock_new_with_base(cAccess, cSecret, cRegion, cModel, cBase, &h))
 }
 
 func newVertexModel(accessToken, project, location, modelID, baseURL string) (*Model, error) {
+	if err := checkUTF8("access_token", accessToken, "project", project,
+		"location", location, "model_id", modelID, "base_url", baseURL); err != nil {
+		return nil, err
+	}
 	cToken := C.CString(accessToken)
 	cProject := C.CString(project)
 	cLocation := C.CString(location)
@@ -534,20 +589,20 @@ func newVertexModel(accessToken, project, location, modelID, baseURL string) (*M
 	defer C.free(unsafe.Pointer(cLocation))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
 	var h C.uint64_t
 	if baseURL == "" {
-		h = C.aimux_vertex_new(cToken, cProject, cLocation, cModel, &cerr)
-	} else {
-		cBase := C.CString(baseURL)
-		defer C.free(unsafe.Pointer(cBase))
-		h = C.aimux_vertex_new_with_base(cToken, cProject, cLocation, cModel, cBase, &cerr)
+		return wrapHandle(&h, C.aimux_vertex_new(cToken, cProject, cLocation, cModel, &h))
 	}
-	return wrapHandleU64(h, &cerr)
+	cBase := C.CString(baseURL)
+	defer C.free(unsafe.Pointer(cBase))
+	return wrapHandle(&h, C.aimux_vertex_new_with_base(cToken, cProject, cLocation, cModel, cBase, &h))
 }
 
 func newAnthropicAwsModel(apiKey, region, modelID, baseURL string) (*Model, error) {
+	if err := checkUTF8("api_key", apiKey, "region", region,
+		"model_id", modelID, "base_url", baseURL); err != nil {
+		return nil, err
+	}
 	cKey := C.CString(apiKey)
 	cRegion := C.CString(region)
 	cModel := C.CString(modelID)
@@ -555,20 +610,24 @@ func newAnthropicAwsModel(apiKey, region, modelID, baseURL string) (*Model, erro
 	defer C.free(unsafe.Pointer(cRegion))
 	defer C.free(unsafe.Pointer(cModel))
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
 	var h C.uint64_t
 	if baseURL == "" {
-		h = C.aimux_anthropic_aws_new(cKey, cRegion, cModel, &cerr)
-	} else {
-		cBase := C.CString(baseURL)
-		defer C.free(unsafe.Pointer(cBase))
-		h = C.aimux_anthropic_aws_new_with_base(cKey, cRegion, cModel, cBase, &cerr)
+		return wrapHandle(&h, C.aimux_anthropic_aws_new(cKey, cRegion, cModel, &h))
 	}
-	return wrapHandleU64(h, &cerr)
+	cBase := C.CString(baseURL)
+	defer C.free(unsafe.Pointer(cBase))
+	return wrapHandle(&h, C.aimux_anthropic_aws_new_with_base(cKey, cRegion, cModel, cBase, &h))
 }
 
 func newAzureModel(apiKey, resourceOrBase, deployment, apiVersion string, useBase bool) (*Model, error) {
+	resourceParam := "resource_name"
+	if useBase {
+		resourceParam = "base_url"
+	}
+	if err := checkUTF8("api_key", apiKey, resourceParam, resourceOrBase,
+		"deployment", deployment, "api_version", apiVersion); err != nil {
+		return nil, err
+	}
 	cKey := C.CString(apiKey)
 	cResource := C.CString(resourceOrBase)
 	cDeployment := C.CString(deployment)
@@ -578,15 +637,11 @@ func newAzureModel(apiKey, resourceOrBase, deployment, apiVersion string, useBas
 	defer C.free(unsafe.Pointer(cDeployment))
 	defer C.free(unsafe.Pointer(cVersion))
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
 	var h C.uint64_t
 	if useBase {
-		h = C.aimux_azure_new_with_base(cKey, cResource, cDeployment, cVersion, &cerr)
-	} else {
-		h = C.aimux_azure_new(cKey, cResource, cDeployment, cVersion, &cerr)
+		return wrapHandle(&h, C.aimux_azure_new_with_base(cKey, cResource, cDeployment, cVersion, &h))
 	}
-	return wrapHandleU64(h, &cerr)
+	return wrapHandle(&h, C.aimux_azure_new(cKey, cResource, cDeployment, cVersion, &h))
 }
 
 // Provider creates a model from the built-in registry by provider name
@@ -620,6 +675,9 @@ type ProviderConfig struct {
 // ProviderWithConfig is Provider with the full ProviderOptions config.
 // cfg may be nil for defaults.
 func ProviderWithConfig(name, apiKey, modelID string, cfg *ProviderConfig) (*Model, error) {
+	if err := checkUTF8("name", name, "api_key", apiKey, "model_id", modelID); err != nil {
+		return nil, err
+	}
 	cName := C.CString(name)
 	cModel := C.CString(modelID)
 	defer C.free(unsafe.Pointer(cName))
@@ -633,18 +691,16 @@ func ProviderWithConfig(name, apiKey, modelID string, cfg *ProviderConfig) (*Mod
 
 	var cConfig *C.char
 	if cfg != nil {
-		buf, err := json.Marshal(cfg)
+		buf, err := marshalJSON("config_json", cfg)
 		if err != nil {
-			return nil, fmt.Errorf("aimux: marshal provider config: %w", err)
+			return nil, err
 		}
-		cConfig = C.CString(string(buf))
+		cConfig = C.CString(buf)
 		defer C.free(unsafe.Pointer(cConfig))
 	}
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	h := C.aimux_provider_new(cName, cKey, cModel, cConfig, &cerr)
-	return wrapHandleU64(h, &cerr)
+	var h C.uint64_t
+	return wrapHandle(&h, C.aimux_provider_new(cName, cKey, cModel, cConfig, &h))
 }
 
 // ── Provider handles (RFC-0027) ─────────────────────────────────────────────
@@ -674,7 +730,7 @@ func (p *ProviderHandle) handle() (uint64, error) {
 			return id, nil
 		}
 	}
-	return 0, newError(CodeInvalidArgument, "aimux: provider handle is closed")
+	return 0, fmt.Errorf("%w: provider", ErrClosed)
 }
 
 // ListModels lists models available on this provider (runtime discovery via
@@ -686,13 +742,16 @@ func (p *ProviderHandle) ListModels() (string, error) {
 		return "", err
 	}
 	defer runtime.KeepAlive(p)
-	return ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_provider_list_models(C.uint64_t(id), cerr)
+	return ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_provider_list_models(C.uint64_t(id), out)
 	})
 }
 
 // Model builds a language model from a discovered model id.
 func (p *ProviderHandle) Model(modelID string) (*Model, error) {
+	if err := checkUTF8("model_id", modelID); err != nil {
+		return nil, err
+	}
 	id, err := p.handle()
 	if err != nil {
 		return nil, err
@@ -700,16 +759,17 @@ func (p *ProviderHandle) Model(modelID string) (*Model, error) {
 	defer runtime.KeepAlive(p)
 	cModel := C.CString(modelID)
 	defer C.free(unsafe.Pointer(cModel))
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	h := C.aimux_provider_model(C.uint64_t(id), cModel, &cerr)
-	return wrapHandleU64(h, &cerr)
+	var h C.uint64_t
+	return wrapHandle(&h, C.aimux_provider_model(C.uint64_t(id), cModel, &h))
 }
 
 // CreateProvider creates a provider handle for a registry-backed provider.
 // Unlike Provider (which binds to a single modelID), this returns a handle
 // that supports ListModels() and Model().
 func CreateProvider(name, apiKey string, cfg *ProviderConfig) (*ProviderHandle, error) {
+	if err := checkUTF8("name", name, "api_key", apiKey); err != nil {
+		return nil, err
+	}
 	cName := C.CString(name)
 	defer C.free(unsafe.Pointer(cName))
 
@@ -721,19 +781,17 @@ func CreateProvider(name, apiKey string, cfg *ProviderConfig) (*ProviderHandle, 
 
 	var cConfig *C.char
 	if cfg != nil {
-		buf, err := json.Marshal(cfg)
+		buf, err := marshalJSON("config_json", cfg)
 		if err != nil {
-			return nil, fmt.Errorf("aimux: marshal provider config: %w", err)
+			return nil, err
 		}
-		cConfig = C.CString(string(buf))
+		cConfig = C.CString(buf)
 		defer C.free(unsafe.Pointer(cConfig))
 	}
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	h := C.aimux_provider_handle_new(cName, cKey, cConfig, &cerr)
-	if h == 0 {
-		return nil, errorFromC(&cerr)
+	var h C.uint64_t
+	if err := expectAimuxError(C.aimux_provider_handle_new(cName, cKey, cConfig, &h)); err != nil {
+		return nil, err
 	}
 	p := &ProviderHandle{}
 	p.id.Store(uint64(h))
@@ -747,13 +805,16 @@ func CreateProvider(name, apiKey string, cfg *ProviderConfig) (*ProviderHandle, 
 // string representing the Catalogue (provider → model_id → ModelSpec).
 // Thin fetch — no caching. sourceURL may be "" for the default endpoint.
 func GetModelSpecs(sourceURL string) (string, error) {
+	if err := checkUTF8("source_url", sourceURL); err != nil {
+		return "", err
+	}
 	var cURL *C.char
 	if sourceURL != "" {
 		cURL = C.CString(sourceURL)
 		defer C.free(unsafe.Pointer(cURL))
 	}
-	return ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_get_model_specs(cURL, cerr)
+	return ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_get_model_specs(cURL, out)
 	})
 }
 
@@ -770,6 +831,9 @@ func GetModelSpecs(sourceURL string) (string, error) {
 //
 //	result, err := model.GenerateText(`"What is Rust?"`, "")
 func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
+	if err := checkPromptOpts(promptJson, optsJson); err != nil {
+		return "", err
+	}
 	handle, err := m.handle()
 	if err != nil {
 		return "", err
@@ -785,8 +849,8 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_generate_text(C.uint64_t(handle), cPrompt, cOpts, cerr)
+	return ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_generate_text(C.uint64_t(handle), cPrompt, cOpts, out)
 	})
 }
 
@@ -797,6 +861,9 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 // optsJson for schema control; the function applies JSON repair before
 // parsing.
 func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
+	if err := checkPromptOpts(promptJson, optsJson); err != nil {
+		return "", err
+	}
 	handle, err := m.handle()
 	if err != nil {
 		return "", err
@@ -812,8 +879,8 @@ func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_generate_object(C.uint64_t(handle), cPrompt, cOpts, cerr)
+	return ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_generate_object(C.uint64_t(handle), cPrompt, cOpts, out)
 	})
 }
 
@@ -824,6 +891,9 @@ func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
 // Same signature as GenerateText; returns the JSON-serialized
 // StreamTextResultAggregated.
 func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
+	if err := checkPromptOpts(promptJson, optsJson); err != nil {
+		return "", err
+	}
 	handle, err := m.handle()
 	if err != nil {
 		return "", err
@@ -839,8 +909,8 @@ func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_consume_stream_text(C.uint64_t(handle), cPrompt, cOpts, cerr)
+	return ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_consume_stream_text(C.uint64_t(handle), cPrompt, cOpts, out)
 	})
 }
 
@@ -851,6 +921,9 @@ func (m *Model) ConsumeStreamText(promptJson, optsJson string) (string, error) {
 // (OpenAI "chat.completion" object) rather than a GenerateTextResult. Works
 // with any provider.
 func (m *Model) GenerateTextAsOpenAI(promptJson, optsJson string) (string, error) {
+	if err := checkPromptOpts(promptJson, optsJson); err != nil {
+		return "", err
+	}
 	handle, err := m.handle()
 	if err != nil {
 		return "", err
@@ -866,16 +939,17 @@ func (m *Model) GenerateTextAsOpenAI(promptJson, optsJson string) (string, error
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	return ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_generate_text_as_openai(C.uint64_t(handle), cPrompt, cOpts, cerr)
+	return ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_generate_text_as_openai(C.uint64_t(handle), cPrompt, cOpts, out)
 	})
 }
 
 // ── Streaming generation ─────────────────────────────────────────────────────
 
-// Stream is an in-progress or completed stream. The producer goroutine is the
-// only writer of err and the only goroutine that closes parts; observing the
-// channel close publishes err under the Go memory model.
+// Stream is a handle to an in-progress or completed stream. It must be fully
+// drained or explicitly cancelled. The producer goroutine is the only writer
+// of err and the only goroutine that closes parts; observing parts close
+// publishes err under the Go memory model.
 type Stream struct {
 	parts       chan string
 	cancelCtx   context.Context
@@ -895,6 +969,8 @@ func (s *Stream) Err() error { return s.err }
 // Cancel stops this stream. It is safe to call more than once.
 func (s *Stream) Cancel() { s.cancel(context.Canceled) }
 
+// cancel uses Context's first-cause-wins, concurrency-safe cancellation. The
+// native abort operation is idempotent, so repeated calls need no Go lock.
 func (s *Stream) cancel(cause error) {
 	if cause == nil {
 		cause = context.Canceled
@@ -905,6 +981,8 @@ func (s *Stream) cancel(cause error) {
 	}
 }
 
+// finish is called exactly once by the producer after the synchronous C
+// stream call has returned and all callbacks have left the call stack.
 func (s *Stream) finish(err error) {
 	if cause := context.Cause(s.cancelCtx); cause != nil {
 		err = cause
@@ -982,13 +1060,12 @@ func (m *Model) startStream(ctx context.Context, promptJson, optsJson string, op
 		defer callbackHandle.Delete()
 		defer C.aimux_abort_signal_drop(C.uint64_t(abortHandle))
 		err := m.runStream(stream, callbackHandle, promptJson, optsJson, openAI)
-		// Stop the watcher before the final cause check. If cancellation won
-		// concurrently, Cause is already visible even when the AfterFunc callback
-		// itself has not run yet, so terminal publication never has to wait for it.
-		stopContext()
+		// Do not depend on the AfterFunc goroutine winning a scheduling race at
+		// the exact moment the native call returns.
 		if cause := context.Cause(ctx); cause != nil {
 			stream.cancel(cause)
 		}
+		stopContext()
 		stream.finish(err)
 	}()
 
@@ -996,6 +1073,9 @@ func (m *Model) startStream(ctx context.Context, promptJson, optsJson string, op
 }
 
 func (m *Model) runStream(stream *Stream, callbackHandle cgo.Handle, promptJson, optsJson string, openAI bool) error {
+	if err := checkPromptOpts(promptJson, optsJson); err != nil {
+		return err
+	}
 	select {
 	case <-stream.cancelCtx.Done():
 		return context.Cause(stream.cancelCtx)
@@ -1010,92 +1090,162 @@ func (m *Model) runStream(stream *Stream, callbackHandle cgo.Handle, promptJson,
 
 	cPrompt := C.CString(promptJson)
 	defer C.free(unsafe.Pointer(cPrompt))
+
 	var cOpts *C.char
 	if optsJson != "" {
 		cOpts = C.CString(optsJson)
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	var rc C.int32_t
+	var ffiErr *C.aimux_error_t
 	if openAI {
-		rc = C.do_stream_openai(
+		ffiErr = C.do_stream_openai(
 			C.uint64_t(handle), C.uint64_t(stream.abortHandle),
-			cPrompt, cOpts, C.uintptr_t(callbackHandle), &cerr,
+			cPrompt, cOpts, C.uintptr_t(callbackHandle),
 		)
 	} else {
-		rc = C.do_stream(
+		ffiErr = C.do_stream(
 			C.uint64_t(handle), C.uint64_t(stream.abortHandle),
-			cPrompt, cOpts, C.uintptr_t(callbackHandle), &cerr,
+			cPrompt, cOpts, C.uintptr_t(callbackHandle),
 		)
 	}
-	if rc == 0 {
-		return errorFromC(&cerr)
-	}
-	return nil
+	return expectAimuxError(ffiErr)
 }
 
-// errorFromC maps aimux-ffi AimuxError into *Error (openai-go style).
-// It takes ownership of e.message and e.error_value (allocated by the callee
-// on failure) and frees them via aimux_free_string.
-func errorFromC(e *C.AimuxError) error {
-	if e == nil || e.code == C.AIMUX_OK {
-		return newError(CodeUnknown, "aimux: operation failed")
+// cstr copies and frees an aimux-allocated C string; "" for NULL.
+func cstr(p *C.char) string {
+	if p == nil {
+		return ""
 	}
-	var msg string
-	if e.message != nil {
-		msg = C.GoString(e.message)
-		C.aimux_free_string(e.message)
-		e.message = nil
+	defer C.aimux_free_string(p)
+	return C.GoString(p)
+}
+
+// ── Error decoding ───────────────────────────────────────────────────────────
+//
+// Every fallible C call returns *C.aimux_error_t: nil = success, non-nil
+// = failure. The unified code space distinguishes AiMuxError (1..13),
+// RecordingError (100..105), and failures detected by the C ABI (200..206).
+// The latter collapse to a plain error in Go; no public Go error type is added
+// for those implementation failures. Every helper frees the pointer once.
+
+// ffiError reads the owner's message into a plain error; the caller has
+// deferred aimux_error_free.
+func ffiError(e *C.aimux_error_t) error {
+	return fmt.Errorf("aimux: %s", cstr(C.aimux_error_message(e)))
+}
+
+// expectFfiError decodes a [C ABI] call: nil is success; anything else is a
+// C ABI failure.
+func expectFfiError(e *C.aimux_error_t) error {
+	if e == nil {
+		return nil
 	}
+	defer C.aimux_error_free(e)
+	code := int(C.aimux_error_code(e))
+	if !ffiCodeFromC(code) {
+		panic(fmt.Sprintf("aimux: expected C ABI failure code, got %d", code))
+	}
+	return ffiError(e)
+}
+
+// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..13 → *Error;
+// 200..206 → plain C ABI error. Any other code is an ABI contract violation.
+func expectAimuxError(e *C.aimux_error_t) error {
+	if e == nil {
+		return nil
+	}
+	defer C.aimux_error_free(e)
+	codeValue := int(C.aimux_error_code(e))
+	if ffiCodeFromC(codeValue) {
+		return ffiError(e)
+	}
+	str := cstr
+	code, ok := codeFromC(codeValue)
+	if !ok {
+		panic(fmt.Sprintf("aimux: unknown aimux_error_code_t: %d", codeValue))
+	}
+	msg := str(C.aimux_error_message(e))
 	if msg == "" {
-		msg = fmt.Sprintf("aimux: %s", Code(e.code).String())
+		msg = fmt.Sprintf("aimux: %s", code.String())
 	}
-	var errValue string
-	if e.error_value != nil {
-		errValue = C.GoString(e.error_value)
-		C.aimux_free_string(e.error_value)
-		e.error_value = nil
+	err := &Error{
+		Code:      code,
+		Message:   msg,
+		Status:    -1,
+		RetryMs:   -1,
+		Retryable: C.aimux_error_retryable(e) != 0,
+	}
+	switch code {
+	case CodeAPICall:
+		err.Status = int(C.aimux_error_status(e))
+		err.RetryMs = int64(C.aimux_error_retry_ms(e))
+		err.ProviderCode = str(C.aimux_error_provider_code(e))
+		err.ProviderMessage = str(C.aimux_error_provider_message(e))
+		err.RequestID = str(C.aimux_error_request_id(e))
+		err.ResponseBody = str(C.aimux_error_response_body(e))
+	case CodeNoSuchModel:
+		err.ModelID = str(C.aimux_error_model_id(e))
+		err.ModelType = str(C.aimux_error_model_type(e))
+	case CodeNoSuchProvider:
+		err.ProviderID = str(C.aimux_error_provider_id(e))
 	}
 	// TokenExpired carries a 401 by contract even if C reports -1; every
-	// other status is the observed one (ApiCall without a status = transport
-	// failure, no response). See bindings/node src/error.ts.
-	status := defaultStatus(Code(e.code), int(e.status))
-	return &Error{
-		Code:       Code(e.code),
-		Message:    msg,
-		Status:     status,
-		RetryMs:    int64(e.retry_ms),
-		ErrorValue: errValue,
-	}
+	// other status is the observed one (ApiCall without a status = no HTTP
+	// response was observed). See bindings/node src/error.ts.
+	err.Status = defaultStatus(code, err.Status)
+	return err
 }
 
-// ffiString runs an FFI call returning an aimux-allocated C string, mapping
-// the NULL-sentinel failure path through errorFromC. It clears *cerr up front
-// (cheap at 24 bytes) as defense against callees that fail without writing it.
-func ffiString(call func(cerr *C.AimuxError) *C.char) (string, error) {
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	ptr := call(&cerr)
-	if ptr == nil {
-		return "", errorFromC(&cerr)
+// expectRecordingError decodes a [RecordingError] call: nil → nil; 100..105 →
+// *RecordingError; 200..206 → plain C ABI error. Any other code is an ABI
+// contract violation.
+func expectRecordingError(e *C.aimux_error_t) error {
+	if e == nil {
+		return nil
 	}
-	defer C.aimux_free_string(ptr)
-	return C.GoString(ptr), nil
+	defer C.aimux_error_free(e)
+	codeValue := int(C.aimux_error_code(e))
+	if ffiCodeFromC(codeValue) {
+		return ffiError(e)
+	}
+	code, ok := recordingErrorCodeFromC(codeValue)
+	if !ok {
+		panic(fmt.Sprintf("aimux: unknown aimux_error_code_t: %d", codeValue))
+	}
+	return &RecordingError{Code: code, Message: cstr(C.aimux_error_message(e))}
 }
 
-// ── C→Go callback trampoline ────────────────────────────────────────────
+// ffiString runs an [AiMuxError] call that writes an aimux-allocated C string to
+// its out-parameter, freeing it and mapping the error through expectAimuxError.
+func ffiString(call func(out **C.char) *C.aimux_error_t) (string, error) {
+	var out *C.char
+	if err := expectAimuxError(call(&out)); err != nil {
+		return "", err
+	}
+	return cstr(out), nil
+}
+
+// ffiStringWithFfiError is ffiString for a call that only reports C ABI codes.
+func ffiStringWithFfiError(call func(out **C.char) *C.aimux_error_t) (string, error) {
+	var out *C.char
+	if err := expectFfiError(call(&out)); err != nil {
+		return "", err
+	}
+	return cstr(out), nil
+}
+
+// ── C→Go callback trampolines (called by trampoline_part/done) ─────────
 
 //export goStreamPart
 func goStreamPart(id C.uintptr_t, json *C.char) {
 	if json == nil {
 		return
 	}
-	stream := cgo.Handle(id).Value().(*Stream)
+	s := cgo.Handle(id).Value().(*Stream)
 	select {
-	case stream.parts <- C.GoString(json):
-	case <-stream.cancelCtx.Done():
+	case s.parts <- C.GoString(json):
+	case <-s.cancelCtx.Done():
 	}
 }
 
