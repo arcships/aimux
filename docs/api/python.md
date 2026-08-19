@@ -195,6 +195,7 @@ imager = openai_image("sk-...", "dall-e-3")
 result = json.loads(imager.generate(json.dumps({
     "prompt": "A cute baby sea otter",
     "n": 1,
+    "provider_options": {},
 })))
 
 if "Base64" in result["images"]:
@@ -214,6 +215,7 @@ videor = google_video("sk-...", "veo-3.0")
 result = json.loads(videor.generate(json.dumps({
     "prompt": "A cat playing piano",
     "n": 1,
+    "provider_options": {},
 })))
 
 # result["videos"] is usually [{"Url": {"url": "...", "media_type": "..."}}]
@@ -230,13 +232,18 @@ from aimux import cohere_reranking
 import json
 
 reranker = cohere_reranking("sk-...", "rerank-v3.0")
+# docs_json is the externally-tagged `RerankingDocuments` enum —
+# {"Object": {"values": [...]}} for JSON documents, {"Text": {"values": [...]}} for strings
+docs = {"Object": {"values": [
+    {"text": "Rust is a systems programming language."},
+    {"text": "Rust is a chemical element."},
+]}}
 result = json.loads(reranker.rerank(
     "What is Rust?",
-    json.dumps([
-        {"text": "Rust is a systems programming language."},
-        {"text": "Rust is a chemical element."},
-    ]),
-    json.dumps({"top_n": 3}),
+    json.dumps(docs),
+    # opts_json is a whole RerankingCallOptions: only top_n and provider_options
+    # are read from it, but query and documents must be present to deserialize
+    json.dumps({"query": "What is Rust?", "documents": docs, "top_n": 3}),
 ))
 
 # result["ranking"] sorted by relevance_score
@@ -247,8 +254,14 @@ for rank in result["ranking"]:
 ## Search
 
 ```python
-# Same as Node: the SearchModel class is exposed, but there is no factory
-# function yet — use via the Rust core, the Go binding, or the C ABI
+from aimux import tavily_search
+import json
+
+searcher = tavily_search("tvly-...")
+result = json.loads(searcher.search("What is Rust?"))
+
+print(result["results"][0]["title"])  # ordered result list
+print(result["answer"])               # provider's summary, if any
 ```
 
 ## File Upload
@@ -286,14 +299,16 @@ The `aimux` package has two layers:
 | `ImageModel` | `openai_image` / `google_image` | `generate(opts_json)` |
 | `VideoModel` | `google_video` | `generate(opts_json)` |
 | `RerankingModel` | `cohere_reranking` | `rerank(query, docs_json, opts_json=None)` |
-| `SearchModel` | — (no factory yet) | `search(query, opts_json=None)` |
+| `SearchModel` | `tavily_search(api_key, base_url=None)` | `search(query, opts_json=None)` |
 | `Files` | `openai_files(api_key, base_url=None)` | `upload_file(data_base64, media_type, opts_json=None)` |
 | `StreamIterator` | returned by `Model.stream_text` | `__iter__` / `__next__` of `StreamPart` JSON strings |
 
 All factories accept an optional `base_url` and return instances synchronously
-(no `await`). The typed wrapper adds three functions: `generate_text` (returns a
+(no `await`). The typed wrapper adds five functions: `generate_text` (returns a
 pydantic `GenerateTextResult`), `stream_text` (yields parsed `StreamPart`
-dicts), and `parse_stream_part` (validates a dict into a typed `StreamPart`).
+dicts), and `parse_stream_part` (validates a dict into a typed `StreamPart`),
+plus `generate_text_as_openai` / `stream_text_as_openai`, which return OpenAI
+`ChatCompletion` / `ChatCompletionChunk` models.
 
 ## Types
 
@@ -314,7 +329,7 @@ from aimux.wrapper import (
 )
 ```
 
-Engine and binding failures raise an **exception hierarchy** (explicit types —
+`AiMuxError` and recorder failures raise an **exception hierarchy** (explicit types —
 OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
 
 ```text
@@ -329,6 +344,9 @@ Exception
       ├── APITimeoutError
       ├── RequestAbortedError
       └── OtherError
+
+Exception                          # the recorder's own failure type — not an AimuxError
+ └── RecordingError                # init_recording(): code "Init" | "OpenFile" | "Spawn"; recording_try_flush(): "WriterGone" | "FlushTimeout" | "Write"
 ```
 
 `AimuxError` subclasses carry only their own payload. There is no common string
@@ -374,7 +392,7 @@ except APICallError as e:
     elif e.status == 404:
         ...  # model not found
 except AimuxError:
-    ...  # any engine / binding failure
+    ...  # any AiMuxError failure
 ```
 
 (The pydantic wire type named `AiMuxErrorValue` in `aimux.wrapper` is only for

@@ -193,7 +193,7 @@ pre-aborted signal fails fast without sending).
   bridges it internally:
 
   ```ts
-  import { openai, generateText, streamText } from 'aimux'
+  import { openai, generateText, streamText } from '@arcships/aimux'
 
   const controller = new AbortController()
   const model = await openai('sk-...', 'gpt-4o')
@@ -219,8 +219,22 @@ pre-aborted signal fails fast without sending).
   signal.abort(); // cancels the call
   ```
 
-- **FFI / Python / Go / C ABI** — the JSON boundary cannot carry runtime
-  handles; cancellation is not yet exposed there (tracked in RFC-0016 §7.3).
+- **C ABI** — cancellation rides a separate abort handle, not the JSON
+  boundary: `aimux_abort_signal_new()` / `aimux_abort_signal_abort()` /
+  `aimux_abort_signal_drop()`, plus the `*_with_abort` entry points
+  (`aimux_stream_text_with_abort`, `aimux_stream_text_as_openai_with_abort`)
+  and `aimux_transcription_session_new`'s `abort_handle`.
+
+- **Go** — idiomatic: `StreamTextContext` / `StreamTextAsOpenAIContext` take a
+  `context.Context` and drive that abort handle for you (`GenerateText` has no
+  context variant yet).
+
+- **Python / Swift / Kotlin / Java / Flutter** — not yet exposed for
+  generate/stream (tracked in RFC-0016 §7.3). Python's transcription session
+  `close()` aborts its driver, and the Swift / Kotlin / Java / Flutter
+  `startStream` takes an `abortHandle` — but only the C ABI exposes a way to
+  create one (Go builds one internally from a `context.Context` and exposes
+  none, so its `StartTranscriptionSessionWithAbort` has no usable caller).
 
 ### Timeouts
 
@@ -399,7 +413,7 @@ Examples: [Node.js](api/node.md#file-upload) · [Python](api/python.md#file-uplo
 
 > The `baseUrl?` parameter of all factory functions is optional; by default each provider's official API address is used. When testing, pass a local mock server URL.
 
-> **Per-language naming.** The tables above use the Node.js (camelCase) names. Each binding has its own naming convention for the same factories: Python uses snake_case (`openai_embedding`, `google_video`), Go uses `NewXxx` constructors returning `(T, error)` (`NewOpenAIEmbedding`, `NewGoogleVideo`), and the C ABI uses `aimux_<provider>_<feature>_new` (`aimux_openai_embedding_new`). Swift/Kotlin/Flutter currently expose only the language-model constructors (`Model.openai` / `Model.anthropic`). See [Feature Coverage](#feature-coverage) for the full matrix and each [language guide](#language-guides) for examples.
+> **Per-language naming.** The tables above use the Node.js (camelCase) names. Each binding has its own naming convention for the same factories: Python uses snake_case (`openai_embedding`, `google_video`), Go uses `NewXxx` constructors returning `(T, error)` (`NewOpenAIEmbedding`, `NewGoogleVideo`), and the C ABI uses `aimux_<provider>_<feature>_new` (`aimux_openai_embedding_new`). Swift/Kotlin/Flutter/Java expose the multimodal models as their own classes (`EmbeddingModel.openai(...)`, `SpeechModel.openai(...)`, …). See [Feature Coverage](#feature-coverage) for the full matrix and each [language guide](#language-guides) for examples.
 
 ---
 
@@ -435,13 +449,13 @@ instantiated. Evidence per binding:
 | Binding | Evidence (source of truth) |
 |------|------|
 | Rust | `aimux-core/src/` — one trait per feature: `language_model.rs`, `embedding_model.rs`, `speech_model.rs`, `transcription_model.rs`, `image_model.rs`, `video_model.rs`, `reranking_model.rs`, `search_model.rs`, `files_model.rs`; plus `generate.rs` (`generate_text` / `stream_text`) |
-| Node.js | `bindings/node/index.d.ts` — 9 model classes + 16 factory functions (L12-152); `SearchModel.search` exists (L65) but no search factory in the export list |
-| Python | `bindings/python/src/lib.rs` L203-231 — 8 multimodal classes registered via `add_class`, 10 multimodal factories via `add_function`; no search factory |
+| Node.js | `bindings/node/index.d.ts` — 9 model classes plus a factory for every model type on the `./raw` entry, `tavilySearch` (L499) included |
+| Python | `bindings/python/src/lib.rs` — 8 multimodal classes registered via `add_class`, 11 multimodal factories via `add_function`, `tavily_search` included |
 | Swift | `bindings/swift/Sources/Aimux/Aimux.swift` — `Model` (4 constructors) + `generateText` / `streamText` / `streamTextAsync` / `generate`; `Multimodal.swift` — 8 multimodal classes (EmbeddingModel, SpeechModel, TranscriptionModel, ImageModel, VideoModel, RerankingModel, SearchModel, Files) with factory constructors + methods + 19 Codable types |
-| Kotlin | `bindings/kotlin/src/main/kotlin/aimux/Model.kt` — JNA interface declares all 38 ABI functions; `Multimodal.kt` — 8 multimodal Closeable classes with factory methods; `MultimodalTypes.kt` — serializable data classes for all result/option types |
-| Flutter | `bindings/flutter/lib/aimux.dart` — `Model` (text); `multimodal.dart` — 8 multimodal classes with dart:ffi lookups for all 32 C ABI multimodal symbols |
+| Kotlin | `bindings/kotlin/src/main/kotlin/ai/arcships/aimux/Model.kt` — JNA interface declares all 97 ABI functions; `Multimodal.kt` — 8 multimodal Closeable classes with factory methods; `MultimodalTypes.kt` — serializable data classes for all result/option types |
+| Flutter | `bindings/flutter/lib/aimux.dart` — `Model` (text); `multimodal.dart` — 8 multimodal classes with dart:ffi lookups for all 35 C ABI multimodal symbols (incl. the five RFC-0028 session entry points) |
 | Go | `bindings/go/multimodal.go` — `NewOpenAIEmbedding` / `NewOpenAISpeech` / `NewOpenAITranscription` / `NewOpenAIImage` / `NewGoogleVideo` / `NewCohereReranking` / `NewTavilySearch` / `NewOpenAIFiles` + matching `ParseXxxResult`; embedding & image are OpenAI-only (no Cohere/Google constructors) |
-| C/C++ | `aimux-ffi/src/lib.rs` — 36 exported `extern "C"` functions; full mapping in [c.md](api/c.md#function-list) |
+| C/C++ | `aimux-ffi/src/lib.rs` — 113 exported `extern "C"` functions; full mapping in [c.md](api/c.md#function-list) |
 
 > The ❌ / ⚠️ cells are tracked as actionable work items in
 > [Binding API Gaps](api/gaps.md) — each gap lists the required C ABI

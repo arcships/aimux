@@ -24,10 +24,10 @@ async fn main() -> Result<(), AiMuxError> {
 
 ## Providers
 
-All 250 built-in OpenAI-compatible providers are registry-backed: no per-provider
+All 251 built-in OpenAI-compatible providers are registry-backed: no per-provider
 `XxxConfig`/`XxxProvider` types. Look them up by name (or by the `ProviderName` enum):
 
-> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`AnthropicProvider::new(..)`); custom endpoints →
 > `ProviderOptions.base_url` / `OpenAIConfig::with_base_url`.
@@ -54,7 +54,7 @@ let model = provider(ProviderName::Groq, None, "llama-3.3-70b", None)?;
 let model = provider_from_env("groq", "llama-3.3-70b", None)?;
 ```
 
-`ProviderName` is generated from `provider_registry.json` (250 variants, `as_str`/
+`ProviderName` is generated from `provider_registry.json` (251 variants, `as_str`/
 `from_str`/`ALL`). Unknown names fail with `AiMuxError::NoSuchProvider { provider_id }`.
 
 ## Text Generation

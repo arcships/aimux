@@ -48,7 +48,7 @@ result.toolResults[0].output        // ✅ inferred from execute return type
 
 **aimux** — JSON string boundary, types entirely lost:
 ```typescript
-import { openai } from 'aimux'
+import { openai } from '@arcships/aimux'
 
 const resultJson = await model.generateText(
   JSON.stringify("What's the weather in Tokyo?"),
@@ -233,7 +233,7 @@ import { openai } from '@ai-sdk/openai'     // → import { anthropic } from '@a
 const model = openai('gpt-4o')
 
 // aimux
-import { openai } from 'aimux'               // → import { anthropic } from 'aimux'
+import { openai } from '@arcships/aimux'               // → import { anthropic } from '@arcships/aimux'
 const model = await openai('sk-...', 'gpt-4o')
 ```
 

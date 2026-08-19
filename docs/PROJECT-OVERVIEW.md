@@ -19,7 +19,7 @@ aimux does not do agent loops, RAG, or orchestration — it focuses solely on un
 | Metric | Value |
 |------|------|
 | Rust code | 144,500+ lines |
-| AI providers | 290+ (250 registry-backed OpenAI-compatible + 10 native protocols + 38 standalone/local/speech/image/video) |
+| AI providers | 329 (251 registry-backed OpenAI-compatible + 10 native protocols + 38 standalone/local/speech/image/video) |
 | Modality traits | 8 (text/embedding/image/video/speech/transcription/reranking/search) |
 | Test cassettes | 2,650 recorded replays |
 | Test files | 118 |
@@ -116,7 +116,7 @@ The comparison between aimux and the OpenAI official SDK is truly equivalent —
 | Type | Count | Representatives |
 |------|:---:|------|
 | Native protocol | 11 | OpenAI, Anthropic, Google, Bedrock, Vertex, Azure, Cohere, Mistral, xAI, DeepSeek |
-| OpenAI-compatible (registry) | 250 | Groq, Fireworks, Together, Perplexity, Ollama, OpenRouter, Alibaba Tongyi, Zhipu, Baidu, Tencent, iFlytek, Moonshot AI, SiliconFlow… |
+| OpenAI-compatible (registry) | 251 | Groq, Fireworks, Together, Perplexity, Ollama, OpenRouter, Alibaba Tongyi, Zhipu, Baidu, Tencent, iFlytek, Moonshot AI, SiliconFlow… |
 | Voice/transcription | 7 | ElevenLabs, Deepgram, AssemblyAI, Cartesia… |
 | Image/video | 8 | Black Forest Labs, Replicate, Fal, KlingAI… |
 | Search | 11 | Tavily, Exa, Serper, Firecrawl… |
@@ -160,7 +160,7 @@ aimux/
 │   └── RerankingModel / SearchModel
 ├── aimux-providers          # 325 provider implementations
 │   ├── 11 native protocols   #   standalone model + convert, handles provider-specific differences
-│   ├── 250 OpenAI compatible #   registry-backed: provider-registry.json + provider(name, ...) entry (RFC-0017 phase 4)
+│   ├── 251 OpenAI compatible #   registry-backed: provider-registry.json + provider(name, ...) entry (RFC-0017 phase 4)
 │   └── modalities/search     #   voice / image / video / search implementations
 ├── aimux-stream             # SSE / NDJSON streaming parsing
 ├── aimux-provider-utils     # HTTP utilities: retry, backoff, error parsing, API key loading
@@ -314,7 +314,7 @@ npm install @arcships/aimux
 ```
 
 ```typescript
-import { openai, generateText, streamText } from 'aimux'
+import { openai, generateText, streamText } from '@arcships/aimux'
 
 const model = await openai(process.env.OPENAI_API_KEY!, 'gpt-4o')
 
@@ -420,7 +420,7 @@ let profile = OpenAICompatProfile {
 };
 ```
 
-The 11 native protocols have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the 250 OpenAI-compatible providers are registry-backed (provider-registry.json + unified provider(name, ...) entry, RFC-0017 phase 4).
+The 11 native protocols have independent models + convert (handling differences such as Anthropic message format / Google generateContent / Bedrock SigV4), while the 251 OpenAI-compatible providers are registry-backed (provider-registry.json + unified provider(name, ...) entry, RFC-0017 phase 4).
 
 ### 4. Recorded testing with 2650 cassettes
 
@@ -436,7 +436,7 @@ aimux's type design directly targets Vercel AI SDK V4 provider types — the `Ge
 
 ### Completed
 
-- [x] 325 providers integrated (10 native + 250 registry-backed OpenAI-compatible + voice/image/video/search)
+- [x] 329 providers integrated (10 native + 251 registry-backed OpenAI-compatible + voice/image/video/search)
 - [x] 8 modality traits (text/embedding/image/video/speech/transcription/reranking/search)
 - [x] 7 language bindings (Node/Python/Swift/Kotlin/Flutter/C/Rust)
 - [x] 2650 cassette recorded tests
