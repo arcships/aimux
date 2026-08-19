@@ -2,84 +2,73 @@
 //! (cohere / mistral / xai / bedrock / vertex / anthropic_aws / azure).
 //!
 //! Constructing a model only builds a config + provider — no network is
-//! touched, so fake keys are fine. Constructors return `uint64_t` handle
-//! (0 = failure, details in `AimuxError *err`).
+//! touched, so fake keys are fine. Constructors return NULL and write a
+//! non-zero handle to `*out_handle`, or return an `aimux_error_t`.
 
-use std::ffi::CString;
+mod common;
+
 use std::ptr;
 
 use aimux_ffi::{
-    AIMUX_OK, CAimuxError, aimux_anthropic_aws_new, aimux_anthropic_aws_new_with_base,
-    aimux_azure_new, aimux_azure_new_with_base, aimux_bedrock_new, aimux_bedrock_new_with_base,
-    aimux_cohere_new, aimux_cohere_new_with_base, aimux_drop_handle, aimux_mistral_new,
+    aimux_anthropic_aws_new, aimux_anthropic_aws_new_with_base, aimux_azure_new,
+    aimux_azure_new_with_base, aimux_bedrock_new, aimux_bedrock_new_with_base, aimux_cohere_new,
+    aimux_cohere_new_with_base, aimux_drop_handle, aimux_error_t, aimux_mistral_new,
     aimux_mistral_new_with_base, aimux_vertex_new, aimux_vertex_new_with_base, aimux_xai_new,
     aimux_xai_new_with_base,
 };
+use common::{c, expect_ffi_error, ok};
 
-fn c(s: &str) -> CString {
-    CString::new(s).unwrap()
-}
-
-fn clear_err() -> CAimuxError {
-    CAimuxError {
-        code: AIMUX_OK,
-        status: -1,
-        retry_ms: -1,
-        message: std::ptr::null_mut(),
-        error_value: std::ptr::null_mut(),
-        reserved: [std::ptr::null_mut(); 1],
-    }
-}
-
-fn expect_handle(h: u64, name: &str) {
+fn expect_handle(e: *mut aimux_error_t, h: u64, name: &str) {
+    ok(e, name);
     assert_ne!(h, 0, "{name}: expected non-zero handle");
     aimux_drop_handle(h);
-}
-
-fn expect_fail(h: u64, err: &CAimuxError, name: &str) {
-    assert_eq!(h, 0, "{name}: expected handle 0");
-    assert_ne!(err.code, AIMUX_OK, "{name}: expected error code");
 }
 
 #[test]
 fn simple_key_constructors() {
     let key = c("sk-test-fake-key");
     let model = c("command-r-plus");
-    let mut err = clear_err();
+    let base = c("https://example.com/v1");
+    let mut h = 0;
     expect_handle(
-        aimux_cohere_new(key.as_ptr(), model.as_ptr(), &mut err),
+        aimux_cohere_new(key.as_ptr(), model.as_ptr(), &mut h),
+        h,
         "cohere_new",
     );
-    let base = c("https://example.com/v1");
     expect_handle(
-        aimux_cohere_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut err),
+        aimux_cohere_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut h),
+        h,
         "cohere_new_with_base",
     );
 
     let model = c("mistral-large-latest");
     expect_handle(
-        aimux_mistral_new(key.as_ptr(), model.as_ptr(), &mut err),
+        aimux_mistral_new(key.as_ptr(), model.as_ptr(), &mut h),
+        h,
         "mistral_new",
     );
     expect_handle(
-        aimux_mistral_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut err),
+        aimux_mistral_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut h),
+        h,
         "mistral_new_with_base",
     );
 
     let model = c("grok-3");
     expect_handle(
-        aimux_xai_new(key.as_ptr(), model.as_ptr(), &mut err),
+        aimux_xai_new(key.as_ptr(), model.as_ptr(), &mut h),
+        h,
         "xai_new",
     );
     expect_handle(
-        aimux_xai_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut err),
+        aimux_xai_new_with_base(key.as_ptr(), model.as_ptr(), base.as_ptr(), &mut h),
+        h,
         "xai_new_with_base",
     );
 }
 
 #[test]
 fn credential_constructors() {
-    let mut err = clear_err();
+    let mut h = 0;
     let access = c("AKIDEXAMPLE");
     let secret = c("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
     let region = c("us-east-1");
@@ -90,8 +79,9 @@ fn credential_constructors() {
             secret.as_ptr(),
             region.as_ptr(),
             model.as_ptr(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "bedrock_new",
     );
     let base = c("https://example.com");
@@ -102,8 +92,9 @@ fn credential_constructors() {
             region.as_ptr(),
             model.as_ptr(),
             base.as_ptr(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "bedrock_new_with_base",
     );
 
@@ -117,8 +108,9 @@ fn credential_constructors() {
             project.as_ptr(),
             location.as_ptr(),
             model.as_ptr(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "vertex_new",
     );
     expect_handle(
@@ -128,15 +120,17 @@ fn credential_constructors() {
             location.as_ptr(),
             model.as_ptr(),
             base.as_ptr(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "vertex_new_with_base",
     );
 
     let key = c("sk-ant-fake");
     let model = c("claude-3-5-sonnet-20240620-v1:0");
     expect_handle(
-        aimux_anthropic_aws_new(key.as_ptr(), region.as_ptr(), model.as_ptr(), &mut err),
+        aimux_anthropic_aws_new(key.as_ptr(), region.as_ptr(), model.as_ptr(), &mut h),
+        h,
         "anthropic_aws_new",
     );
     expect_handle(
@@ -145,15 +139,16 @@ fn credential_constructors() {
             region.as_ptr(),
             model.as_ptr(),
             base.as_ptr(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "anthropic_aws_new_with_base",
     );
 }
 
 #[test]
 fn azure_constructors() {
-    let mut err = clear_err();
+    let mut h = 0;
     let key = c("sk-azure-fake");
     let resource = c("my-resource");
     let deployment = c("gpt-4o");
@@ -163,8 +158,9 @@ fn azure_constructors() {
             resource.as_ptr(),
             deployment.as_ptr(),
             ptr::null(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "azure_new (default api_version)",
     );
     let version = c("2024-06-01");
@@ -174,8 +170,9 @@ fn azure_constructors() {
             resource.as_ptr(),
             deployment.as_ptr(),
             version.as_ptr(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "azure_new (explicit api_version)",
     );
     let base = c("https://example.openai.azure.com");
@@ -185,30 +182,33 @@ fn azure_constructors() {
             base.as_ptr(),
             deployment.as_ptr(),
             ptr::null(),
-            &mut err,
+            &mut h,
         ),
+        h,
         "azure_new_with_base",
     );
 }
 
 #[test]
 fn invalid_args_return_error() {
-    let mut err = clear_err();
+    let mut h = 7;
     let key = c("sk-test-fake-key");
-    expect_fail(
-        aimux_cohere_new(key.as_ptr(), ptr::null(), &mut err),
-        &err,
-        "cohere_new(null model_id)",
+    let e = aimux_cohere_new(key.as_ptr(), ptr::null(), &mut h);
+    assert_eq!(h, 0, "failure writes the sentinel");
+    assert_eq!(
+        expect_ffi_error(e, "cohere_new(null model_id)"),
+        "model_id: must not be NULL"
     );
-    expect_fail(
-        aimux_bedrock_new(
-            key.as_ptr(),
-            key.as_ptr(),
-            key.as_ptr(),
-            ptr::null(),
-            &mut err,
-        ),
-        &err,
-        "bedrock_new(null model_id)",
+    let e = aimux_bedrock_new(
+        key.as_ptr(),
+        key.as_ptr(),
+        key.as_ptr(),
+        ptr::null(),
+        &mut h,
+    );
+    assert_eq!(h, 0);
+    assert_eq!(
+        expect_ffi_error(e, "bedrock_new(null model_id)"),
+        "model_id: must not be NULL"
     );
 }

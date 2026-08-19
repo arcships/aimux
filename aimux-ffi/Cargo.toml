@@ -9,7 +9,8 @@ categories = ["api-bindings", "asynchronous", "development-tools::ffi"]
 documentation = "https://docs.rs/aimux-ffi"
 
 [lib]
-# Produce linkable artifacts for C ABI consumers (Swift / Kotlin / C).
+# Produce linkable artifacts for C ABI consumers
+# (C/C++, Go, Kotlin, Java, Swift, and Flutter).
 # `rlib` lets other Rust crates depend on this crate too.
 crate-type = ["cdylib", "staticlib", "rlib"]
 

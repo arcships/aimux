@@ -1,15 +1,27 @@
-//! aimux-ffi: C ABI boundary for multi-language bindings.
+//! aimux-ffi: C ABI for multi-language bindings.
 //!
-//! Provides an opaque handle registry + JSON wire boundary + push callback
-//! stream. Only used by C ABI bindings (Swift / Kotlin / C). Native bindings
-//! (Python / Node / Flutter) bypass this layer and use `aimux-providers`
-//! directly.
+//! Provides an opaque handle registry + JSON wire format + push callback
+//! stream. The C ABI is consumed by C/C++, Go, Kotlin, Java, Swift, and
+//! Flutter. Native bindings (Python / Node) bypass this layer and use
+//! `aimux-providers` directly.
+//!
+//! ## Errors
+//!
+//! Every fallible C function returns `*mut aimux_error_t`: NULL on
+//! success (the result is written to the out-parameter), a heap-owned error
+//! value on failure (the out-parameter is left at its sentinel: handle 0,
+//! pointer NULL). Every non-NULL error has one code from [`aimux_error_code`]
+//! and one message from [`aimux_error_message`], and is released exactly once
+//! with [`aimux_error_free`]. Codes 1..13 come from `AiMuxError`, 100..105
+//! from `RecordingError`, and 200..206 identify failures detected while
+//! crossing the C ABI.
 //!
 //! ## Memory ownership
 //!
-//! - Every function returning `*mut c_char` — constructors included —
+//! - Every function returning `*mut c_char` — error getters included —
 //!   transfers ownership to the caller, who MUST free it with
-//!   [`aimux_free_string`].
+//!   [`aimux_free_string`]. Handles (`u64`) are released with
+//!   [`aimux_drop_handle`].
 //! - [`aimux_stream_text`] callbacks receive `*const c_char` pointers that are
 //!   valid **only for the duration of the callback**. The callback must copy
 //!   the data synchronously; the backing buffer is freed when the callback
@@ -50,6 +62,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::provider::Provider;
+use aimux_core::recording::RecordingError;
 use aimux_core::shared::AbortSignal;
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceLayer};
 use aimux_providers::anthropic::{AnthropicConfig, AnthropicProvider};
@@ -72,9 +85,10 @@ use tokio::runtime::Runtime;
 // Global state: handle registry + tokio runtime
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A type-erased FFI handle. One registry holds models and abort signals.
+/// A type-erased FFI handle. One registry holds models, providers, sessions
+/// and abort signals.
 #[derive(Clone)]
-enum ModelHandle {
+enum HandleEntry {
     Language(Arc<dyn LanguageModel>),
     Provider(Arc<dyn aimux_core::provider::Provider>),
     Embedding(Arc<dyn aimux_core::embedding_model::EmbeddingModel>),
@@ -90,12 +104,12 @@ enum ModelHandle {
     Abort(AbortSignal),
 }
 
-type ModelRegistry = HashMap<u64, ModelHandle>;
+type Registry = HashMap<u64, HandleEntry>;
 
-static REGISTRY: OnceLock<Mutex<ModelRegistry>> = OnceLock::new();
+static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
 
-fn registry() -> &'static Mutex<ModelRegistry> {
+fn registry() -> &'static Mutex<Registry> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -103,15 +117,10 @@ fn registry() -> &'static Mutex<ModelRegistry> {
 ///
 /// Handles start at 1; 0 is reserved for "failure / invalid".
 fn intern_model(model: Arc<dyn LanguageModel>) -> u64 {
-    let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
-    registry()
-        .lock()
-        .expect("aimux-ffi: registry mutex poisoned")
-        .insert(handle, ModelHandle::Language(model));
-    handle
+    intern_handle(HandleEntry::Language(model))
 }
 
-fn intern_handle(h: ModelHandle) -> u64 {
+fn intern_handle(h: HandleEntry) -> u64 {
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     registry()
         .lock()
@@ -120,46 +129,8 @@ fn intern_handle(h: ModelHandle) -> u64 {
     handle
 }
 
-/// Look up a model by handle, cloning the `Arc` out of the registry.
-fn get_model(handle: u64) -> Option<Arc<dyn LanguageModel>> {
-    match get_handle(handle)? {
-        ModelHandle::Language(m) => Some(m),
-        _ => None,
-    }
-}
-
-/// Resolve a composite's model handles under one registry lock. This makes
-/// the lookup all-or-nothing with respect to concurrent handle drops: either
-/// every requested model is cloned, or the constructor fails without silently
-/// changing the composite's membership.
-fn get_models(handles: &[u64]) -> Option<Vec<Arc<dyn LanguageModel>>> {
-    let registry = registry()
-        .lock()
-        .expect("aimux-ffi: registry mutex poisoned");
-    handles
-        .iter()
-        .map(|handle| match registry.get(handle) {
-            Some(ModelHandle::Language(model)) => Some(model.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Look up a provider by handle (RFC-0027 provider handles for list_models).
-fn get_provider(handle: u64) -> Option<Arc<dyn aimux_core::provider::Provider>> {
-    match get_handle(handle)? {
-        ModelHandle::Provider(p) => Some(p),
-        _ => None,
-    }
-}
-
-/// Register a provider instance, returning its opaque `u64` handle.
-fn intern_provider(provider: Arc<dyn aimux_core::provider::Provider>) -> u64 {
-    intern_handle(ModelHandle::Provider(provider))
-}
-
-/// Look up any handle (multimodal).
-fn get_handle(handle: u64) -> Option<ModelHandle> {
+/// Look up any handle.
+fn get_handle(handle: u64) -> Option<HandleEntry> {
     registry()
         .lock()
         .expect("aimux-ffi: registry mutex poisoned")
@@ -167,20 +138,49 @@ fn get_handle(handle: u64) -> Option<ModelHandle> {
         .cloned()
 }
 
-fn get_abort_signal(handle: u64) -> Option<AbortSignal> {
+/// Look up a model by handle, cloning the `Arc` out of the registry.
+fn get_model(handle: u64) -> Option<Arc<dyn LanguageModel>> {
     match get_handle(handle)? {
-        ModelHandle::Abort(signal) => Some(signal),
+        HandleEntry::Language(m) => Some(m),
         _ => None,
     }
+}
+
+/// A model handle, or [`FfiError::InvalidHandle`] (`"model"`).
+fn model_of(handle: u64) -> Result<Arc<dyn LanguageModel>, FfiError> {
+    get_model(handle).ok_or(FfiError::InvalidHandle { expected: "model" })
+}
+
+/// A live handle of any registered type, or [`FfiError::InvalidHandle`] naming what was
+/// expected. Callers match the arm they need and fall back to the same error.
+fn entry_of(handle: u64, expected: &'static str) -> Result<HandleEntry, FfiError> {
+    get_handle(handle).ok_or(FfiError::InvalidHandle { expected })
+}
+
+fn get_abort_signal(handle: u64) -> Option<AbortSignal> {
+    match get_handle(handle)? {
+        HandleEntry::Abort(signal) => Some(signal),
+        _ => None,
+    }
+}
+
+fn abort_of(handle: u64) -> Result<AbortSignal, FfiError> {
+    get_abort_signal(handle).ok_or(FfiError::InvalidHandle { expected: "abort" })
 }
 
 /// Remove a handle from the registry (the model drops when the last ref goes).
 /// Trace stores bound to the handle are released with it.
 fn drop_handle(handle: u64) {
-    registry()
+    let removed = registry()
         .lock()
         .expect("aimux-ffi: registry mutex poisoned")
         .remove(&handle);
+    // A transcription session owns a driver task: abort and join it here too,
+    // so the generic drop is never a silent leak (the registry mutex is
+    // already released — the join must not hold it).
+    if let Some(HandleEntry::TranscriptionSession(s)) = removed {
+        s.terminate();
+    }
     if let Some(stores) = TRACE_STORES.get() {
         stores
             .lock()
@@ -193,7 +193,7 @@ fn drop_abort_signal(handle: u64) {
     let mut registry = registry()
         .lock()
         .expect("aimux-ffi: registry mutex poisoned");
-    if matches!(registry.get(&handle), Some(ModelHandle::Abort(_))) {
+    if matches!(registry.get(&handle), Some(HandleEntry::Abort(_))) {
         registry.remove(&handle);
     }
 }
@@ -220,26 +220,24 @@ thread_local! {
     /// non-unwind `extern "C"` ABI terminates the process rather than letting
     /// the panic propagate (and `panic = "abort"` terminates at the panic site).
     /// `ffi_block_on` checks this guard and turns that re-entrant call into
-    /// a failure sentinel + optional AimuxError instead (issue M7).
+    /// a [`FfiError::ReentrantCall`] instead (issue M7).
     static IN_FFI_BLOCK_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Run a future on the shared runtime from an FFI entry point (issue M7).
 ///
 /// Rejects re-entrant calls made from inside a stream callback, returning
-/// [`AiMuxError::Other`] instead of letting tokio's nested `block_on` panic —
-/// a non-unwind `extern "C"` boundary never lets the panic propagate, so the
+/// [`FfiError::ReentrantCall`] instead of letting tokio's nested `block_on` panic —
+/// a non-unwind `extern "C"` call never lets the panic propagate, so the
 /// process would terminate. The guard is released when the future completes,
 /// including when it panics.
-fn ffi_block_on<F, T>(f: F) -> Result<T, AiMuxError>
+fn ffi_block_on<F, T>(f: F) -> Result<T, FfiError>
 where
     F: std::future::Future<Output = T>,
 {
     IN_FFI_BLOCK_ON.with(|flag| {
         if flag.replace(true) {
-            return Err(AiMuxError::Other(
-                "re-entrant FFI call from within a callback is not allowed".to_string(),
-            ));
+            return Err(FfiError::ReentrantCall);
         }
         struct Reset;
         impl Drop for Reset {
@@ -253,48 +251,539 @@ where
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Error model (aimux-error.h)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Copy a NUL-terminated C string into an owned `String`.
-///
-/// Returns `None` for a null pointer or invalid UTF-8.
-///
-/// # Safety
-///
-/// `ptr` must be null or a valid NUL-terminated C string valid for the
-/// duration of this call.
-fn cstr_to_string(ptr: *const c_char) -> Option<String> {
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: caller guarantees `ptr` is a valid NUL-terminated C string.
-    let cstr = unsafe { CStr::from_ptr(ptr) };
-    cstr.to_str().ok().map(str::to_owned)
+/// A failure detected while lifting arguments, using handles, invoking a
+/// callback, or lowering a result across the C ABI.
+#[derive(Debug, Clone)]
+enum FfiError {
+    /// A required pointer argument was NULL.
+    NullPointer { argument: &'static str },
+    /// A string argument was not valid UTF-8.
+    InvalidUtf8 { argument: &'static str },
+    /// A JSON-text argument of this wire format (`prompt_json`, `opts_json`,
+    /// `config_json`, …) did not parse. Not `AiMuxError::JsonParse` — that
+    /// one is about provider responses.
+    InvalidWireJson {
+        argument: &'static str,
+        message: String,
+    },
+    /// A handle argument is 0, released, or has the wrong handle type.
+    InvalidHandle { expected: &'static str },
+    /// The FFI was re-entered from inside one of its own callbacks.
+    ReentrantCall,
+    /// A result could not be serialized to the wire format.
+    ResultSerialization { message: String },
+    /// A host callback panicked (caught inside the C ABI).
+    CallbackFailure { message: String },
 }
 
-/// Parse the prompt JSON accepted by the FFI.
+impl std::fmt::Display for FfiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FfiError::NullPointer { argument } => write!(f, "{argument}: must not be NULL"),
+            FfiError::InvalidUtf8 { argument } => write!(f, "{argument}: must be valid UTF-8"),
+            FfiError::InvalidWireJson { argument, message } => {
+                write!(f, "{argument}: invalid JSON: {message}")
+            }
+            FfiError::InvalidHandle { expected } => {
+                write!(f, "invalid or expired {expected} handle")
+            }
+            FfiError::ReentrantCall => {
+                f.write_str("re-entrant FFI call from within a callback is not allowed")
+            }
+            FfiError::ResultSerialization { message } => {
+                write!(f, "could not serialize result: {message}")
+            }
+            FfiError::CallbackFailure { message } => write!(f, "host callback failed: {message}"),
+        }
+    }
+}
+
+/// The errors that can cross the Aimux C ABI.
+enum AiMuxFfiError {
+    AiMux(AiMuxError),
+    Recording(RecordingError),
+    Ffi(FfiError),
+}
+
+impl From<AiMuxError> for AiMuxFfiError {
+    fn from(inner: AiMuxError) -> Self {
+        AiMuxFfiError::AiMux(inner)
+    }
+}
+impl From<RecordingError> for AiMuxFfiError {
+    fn from(inner: RecordingError) -> Self {
+        AiMuxFfiError::Recording(inner)
+    }
+}
+impl From<FfiError> for AiMuxFfiError {
+    fn from(e: FfiError) -> Self {
+        AiMuxFfiError::Ffi(e)
+    }
+}
+
+impl std::fmt::Display for AiMuxFfiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AiMuxFfiError::AiMux(e) => e.fmt(f),
+            AiMuxFfiError::Recording(e) => e.fmt(f),
+            AiMuxFfiError::Ffi(e) => e.fmt(f),
+        }
+    }
+}
+
+/// The owned error returned by a failed C ABI invocation. Opaque to C: read it
+/// with the `aimux_error_*` getters, then release it once with
+/// `aimux_error_free`.
+#[allow(non_camel_case_types)]
+pub struct aimux_error_t {
+    error: AiMuxFfiError,
+}
+
+type FfiResult<T> = Result<T, AiMuxFfiError>;
+
+/// Ok → run `write` with the value and return NULL; Err → hand the owned
+/// error to the caller.
+fn finish<T>(r: FfiResult<T>, write: impl FnOnce(T)) -> *mut aimux_error_t {
+    match r {
+        Ok(v) => {
+            write(v);
+            std::ptr::null_mut()
+        }
+        Err(error) => Box::into_raw(Box::new(aimux_error_t { error })),
+    }
+}
+
+/// Entry-point shape: `uint64_t *out_handle`. NULL out-param is a
+/// `NullPointer("out_handle")`; the sentinel 0 is written before `f` runs.
+fn with_out_handle(out_handle: *mut u64, f: impl FnOnce() -> FfiResult<u64>) -> *mut aimux_error_t {
+    if out_handle.is_null() {
+        return finish(
+            Err(FfiError::NullPointer {
+                argument: "out_handle",
+            }
+            .into()),
+            |_: u64| {},
+        );
+    }
+    unsafe { *out_handle = 0 };
+    finish(f(), |h| unsafe { *out_handle = h })
+}
+
+/// Entry-point shape: `char **out_json` (name given by `argument`). NULL
+/// out-param is a `NullPointer`; the sentinel NULL is written before `f` runs.
+fn with_out_string(
+    out: *mut *mut c_char,
+    argument: &'static str,
+    f: impl FnOnce() -> FfiResult<String>,
+) -> *mut aimux_error_t {
+    if out.is_null() {
+        return finish(
+            Err(FfiError::NullPointer { argument }.into()),
+            |_: String| {},
+        );
+    }
+    unsafe { *out = std::ptr::null_mut() };
+    finish(f(), |s| unsafe { *out = into_cstring_raw(s) })
+}
+
+/// Entry-point shape: no result.
+fn no_result(f: impl FnOnce() -> FfiResult<()>) -> *mut aimux_error_t {
+    finish(f(), |()| {})
+}
+
+// ── aimux_error_* ────────────────────────────────────────────────────────────
+
+/// Release a returned error. NULL-safe; call exactly once.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_free(err: *mut aimux_error_t) {
+    if !err.is_null() {
+        // SAFETY: `err` came from `Box::into_raw` in `finish` and the caller
+        // passes it exactly once.
+        drop(unsafe { Box::from_raw(err) });
+    }
+}
+
+// ── Unified error codes (aimux-error.h `aimux_error_code_t`) ─────────────────
+
+pub const AIMUX_OK: i32 = 0;
+// 1 is the catch-all `Other` (it was `AIMUX_E_UNKNOWN`, whose slot it inherits:
+// a code a binding does not know is a header mismatch, not a user-facing code).
+pub const AIMUX_E_OTHER: i32 = 1;
+pub const AIMUX_E_JSON_PARSE: i32 = 2;
+pub const AIMUX_E_INVALID_RESPONSE_DATA: i32 = 3;
+pub const AIMUX_E_TOOL: i32 = 4;
+pub const AIMUX_E_INVALID_ARGUMENT: i32 = 5;
+pub const AIMUX_E_INVALID_PROMPT: i32 = 6;
+pub const AIMUX_E_TOKEN_EXPIRED: i32 = 7;
+pub const AIMUX_E_UNSUPPORTED_FUNCTIONALITY: i32 = 8;
+pub const AIMUX_E_NO_SUCH_MODEL: i32 = 9;
+pub const AIMUX_E_NO_SUCH_PROVIDER: i32 = 10;
+pub const AIMUX_E_API_CALL: i32 = 11;
+pub const AIMUX_E_TIMEOUT: i32 = 12;
+pub const AIMUX_E_ABORTED: i32 = 13;
+
+// 100..105 preserve `RecordingError` as a separate high-level type while C
+// uses one code space for every returned error.
+pub const AIMUX_E_RECORDING_INIT: i32 = 100;
+pub const AIMUX_E_RECORDING_OPEN_FILE: i32 = 101;
+pub const AIMUX_E_RECORDING_SPAWN: i32 = 102;
+pub const AIMUX_E_RECORDING_WRITER_GONE: i32 = 103;
+pub const AIMUX_E_RECORDING_FLUSH_TIMEOUT: i32 = 104;
+pub const AIMUX_E_RECORDING_WRITE: i32 = 105;
+
+// 200..206 are failures detected while lifting arguments, looking up handles,
+// invoking callbacks, or lowering a result across the C ABI.
+pub const AIMUX_E_FFI_NULL_POINTER: i32 = 200;
+pub const AIMUX_E_FFI_INVALID_UTF8: i32 = 201;
+pub const AIMUX_E_FFI_INVALID_WIRE_JSON: i32 = 202;
+pub const AIMUX_E_FFI_INVALID_HANDLE: i32 = 203;
+pub const AIMUX_E_FFI_REENTRANT_CALL: i32 = 204;
+pub const AIMUX_E_FFI_RESULT_SERIALIZATION: i32 = 205;
+pub const AIMUX_E_FFI_CALLBACK_FAILURE: i32 = 206;
+
+// ── `aimux_transcription_next_part_state_t` ──────────────────────────────────
+pub const AIMUX_TRANSCRIPTION_NEXT_PART_PART: i32 = 1;
+pub const AIMUX_TRANSCRIPTION_NEXT_PART_ENDED: i32 = 2;
+pub const AIMUX_TRANSCRIPTION_NEXT_PART_TIMEOUT: i32 = 3;
+
+fn aimux_error_code_of(err: &AiMuxError) -> i32 {
+    match err {
+        AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
+        AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
+        AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
+        AiMuxError::Tool(_) => AIMUX_E_TOOL,
+        AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
+        AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
+        AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
+        AiMuxError::UnsupportedFunctionality(_) => AIMUX_E_UNSUPPORTED_FUNCTIONALITY,
+        AiMuxError::NoSuchModel { .. } => AIMUX_E_NO_SUCH_MODEL,
+        AiMuxError::NoSuchProvider { .. } => AIMUX_E_NO_SUCH_PROVIDER,
+        AiMuxError::Timeout(_) => AIMUX_E_TIMEOUT,
+        AiMuxError::Aborted => AIMUX_E_ABORTED,
+        AiMuxError::Other(_) => AIMUX_E_OTHER,
+    }
+}
+
+fn recording_error_code_of(e: &RecordingError) -> i32 {
+    use RecordingError as R;
+    match e {
+        R::Init { .. } => AIMUX_E_RECORDING_INIT,
+        R::OpenFile { .. } => AIMUX_E_RECORDING_OPEN_FILE,
+        R::Spawn { .. } => AIMUX_E_RECORDING_SPAWN,
+        R::WriterGone => AIMUX_E_RECORDING_WRITER_GONE,
+        R::FlushTimeout => AIMUX_E_RECORDING_FLUSH_TIMEOUT,
+        R::Write(_) => AIMUX_E_RECORDING_WRITE,
+    }
+}
+
+fn ffi_error_code_of(e: &FfiError) -> i32 {
+    match e {
+        FfiError::NullPointer { .. } => AIMUX_E_FFI_NULL_POINTER,
+        FfiError::InvalidUtf8 { .. } => AIMUX_E_FFI_INVALID_UTF8,
+        FfiError::InvalidWireJson { .. } => AIMUX_E_FFI_INVALID_WIRE_JSON,
+        FfiError::InvalidHandle { .. } => AIMUX_E_FFI_INVALID_HANDLE,
+        FfiError::ReentrantCall => AIMUX_E_FFI_REENTRANT_CALL,
+        FfiError::ResultSerialization { .. } => AIMUX_E_FFI_RESULT_SERIALIZATION,
+        FfiError::CallbackFailure { .. } => AIMUX_E_FFI_CALLBACK_FAILURE,
+    }
+}
+
+fn error_code_of(e: &AiMuxFfiError) -> i32 {
+    match e {
+        AiMuxFfiError::AiMux(e) => aimux_error_code_of(e),
+        AiMuxFfiError::Recording(e) => recording_error_code_of(e),
+        AiMuxFfiError::Ffi(e) => ffi_error_code_of(e),
+    }
+}
+
+fn api_call(e: &AiMuxError) -> Option<&aimux_core::ApiCallError> {
+    match e {
+        AiMuxError::ApiCall(d) => Some(d),
+        _ => None,
+    }
+}
+
+/// Apply `f` to the `AiMuxError` stored in a returned error.
+///
+/// The closure keeps the borrowed error scoped to this call instead of
+/// manufacturing an unconstrained lifetime from the raw pointer.
+fn map_aimux_error<T>(err: *const aimux_error_t, f: impl FnOnce(&AiMuxError) -> T) -> Option<T> {
+    // SAFETY: the C API requires NULL or a live error returned by `finish`.
+    match unsafe { err.as_ref() } {
+        Some(aimux_error_t {
+            error: AiMuxFfiError::AiMux(e),
+        }) => Some(f(e)),
+        _ => None,
+    }
+}
+
+fn opt_cstring(v: Option<String>) -> *mut c_char {
+    v.map_or(std::ptr::null_mut(), into_cstring_raw)
+}
+
+// ── aimux_error_* getters ────────────────────────────────────────────
+//
+// One getter per fact. `code` and `message` answer for every returned error;
+// the rest belong to one AiMuxError code and return NULL / -1 / 0 under every
+// other code or for NULL. Strings are owned by the caller (aimux_free_string).
+
+/// Machine-readable code (`aimux_error_code_t`); `AIMUX_OK` for NULL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_code(err: *const aimux_error_t) -> i32 {
+    // SAFETY: NULL or a live error returned by `finish`.
+    unsafe { err.as_ref() }.map_or(AIMUX_OK, |e| error_code_of(&e.error))
+}
+
+/// Human-readable description for every code; NULL only for NULL.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_message(err: *const aimux_error_t) -> *mut c_char {
+    // SAFETY: NULL or a live error returned by `finish`.
+    unsafe { err.as_ref() }.map_or(std::ptr::null_mut(), |e| {
+        into_cstring_raw(e.error.to_string())
+    })
+}
+
+/// HTTP status: the observed status under `AIMUX_E_API_CALL`, 401 by
+/// definition under `AIMUX_E_TOKEN_EXPIRED`, -1 otherwise or when no response
+/// was observed (`AiMuxError::status_code`).
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_status(err: *const aimux_error_t) -> i32 {
+    map_aimux_error(err, AiMuxError::status_code)
+        .flatten()
+        .map_or(-1, i32::from)
+}
+
+/// `AIMUX_E_API_CALL`: retry hint in ms (0 = retry now), or -1 when none.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_retry_ms(err: *const aimux_error_t) -> i64 {
+    map_aimux_error(err, AiMuxError::retry_after_hint)
+        .flatten()
+        .unwrap_or(-1)
+}
+
+/// 1 when retrying may help, 0 when it will not — the core's verdict. Do not
+/// infer it from `status`: a statusless `AIMUX_E_API_CALL` may be either.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_retryable(err: *const aimux_error_t) -> i32 {
+    map_aimux_error(err, AiMuxError::is_retryable).unwrap_or(false) as i32
+}
+
+/// `AIMUX_E_API_CALL`: the provider's own error code, e.g. "insufficient_quota".
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_provider_code(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(map_aimux_error(err, |e| api_call(e)?.provider_code.clone()).flatten())
+}
+
+/// `AIMUX_E_API_CALL`: the failure's own text ("slow down"), without the
+/// composed prefix `message` carries ("API call error: HTTP 429: slow down").
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_provider_message(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| Some(api_call(e)?.message.clone()))
+            .flatten()
+            .filter(|m| !m.is_empty()),
+    )
+}
+
+/// `AIMUX_E_API_CALL`: provider request id.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_request_id(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(map_aimux_error(err, |e| api_call(e)?.request_id.clone()).flatten())
+}
+
+/// `AIMUX_E_API_CALL`: raw response body.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_response_body(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(map_aimux_error(err, |e| api_call(e)?.response_body.clone()).flatten())
+}
+
+/// `AIMUX_E_NO_SUCH_MODEL`: the model id that was asked for.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_model_id(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::NoSuchModel { model_id, .. } => Some(model_id.clone()),
+            _ => None,
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_NO_SUCH_MODEL`: the model type it was asked for as.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_model_type(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::NoSuchModel { model_type, .. } => Some(model_type.clone()),
+            _ => None,
+        })
+        .flatten(),
+    )
+}
+
+/// `AIMUX_E_NO_SUCH_PROVIDER`: the provider id that was asked for.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_error_provider_id(err: *const aimux_error_t) -> *mut c_char {
+    opt_cstring(
+        map_aimux_error(err, |e| match e {
+            AiMuxError::NoSuchProvider { provider_id } => Some(provider_id.clone()),
+            _ => None,
+        })
+        .flatten(),
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Argument helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Read a required string argument, naming it in the failure
+/// (`NullPointer` / `InvalidUtf8`).
+///
+/// # Safety: `ptr` is null or a valid NUL-terminated C string.
+fn str_arg(ptr: *const c_char, argument: &'static str) -> Result<String, FfiError> {
+    if ptr.is_null() {
+        return Err(FfiError::NullPointer { argument });
+    }
+    // SAFETY: caller guarantees `ptr` is a valid NUL-terminated C string.
+    unsafe { CStr::from_ptr(ptr) }
+        .to_str()
+        .map(str::to_owned)
+        .map_err(|_| FfiError::InvalidUtf8 { argument })
+}
+
+/// Read an optional string argument: NULL means "absent"; a non-NULL pointer
+/// must be valid UTF-8 or it is [`FfiError::InvalidUtf8`] — absent and
+/// malformed are different things.
+fn opt_str_arg(ptr: *const c_char, argument: &'static str) -> Result<Option<String>, FfiError> {
+    if ptr.is_null() {
+        return Ok(None);
+    }
+    str_arg(ptr, argument).map(Some)
+}
+
+/// Build (a, b) from two required C strings.
+fn parse_two_args(
+    a: *const c_char,
+    an: &'static str,
+    b: *const c_char,
+    bn: &'static str,
+) -> Result<(String, String), FfiError> {
+    Ok((str_arg(a, an)?, str_arg(b, bn)?))
+}
+
+/// Parse four required C string arguments; any null fails the whole call.
+#[allow(clippy::too_many_arguments)]
+fn parse_four_args(
+    a: *const c_char,
+    an: &'static str,
+    b: *const c_char,
+    bn: &'static str,
+    c: *const c_char,
+    cn: &'static str,
+    d: *const c_char,
+    dn: &'static str,
+) -> Result<(String, String, String, String), FfiError> {
+    Ok((
+        str_arg(a, an)?,
+        str_arg(b, bn)?,
+        str_arg(c, cn)?,
+        str_arg(d, dn)?,
+    ))
+}
+
+/// Parse the base_url argument; NULL or an empty string means unset.
+fn parse_base_url(base_url: *const c_char) -> Result<Option<String>, FfiError> {
+    Ok(opt_str_arg(base_url, "base_url")?.filter(|url| !url.is_empty()))
+}
+
+/// Where a serde failure on a wire-JSON argument belongs. Malformed text
+/// (syntax / EOF) is this layer's finding: [`FfiError::InvalidWireJson`].
+/// Well-formed JSON of the wrong shape (missing field, wrong type) is what the
+/// core would reject: [`AiMuxError::InvalidArgument`]. `detail` is the
+/// message to carry (usually `e.to_string()`, sometimes with a line prefix).
+fn wire_failure(argument: &'static str, e: &serde_json::Error, detail: String) -> AiMuxFfiError {
+    match e.classify() {
+        serde_json::error::Category::Data => {
+            AiMuxError::InvalidArgument(format!("{argument}: {detail}")).into()
+        }
+        _ => FfiError::InvalidWireJson {
+            argument,
+            message: detail,
+        }
+        .into(),
+    }
+}
+
+/// [`wire_failure`] with the serde message as the detail.
+fn wire_err(argument: &'static str, e: serde_json::Error) -> AiMuxFfiError {
+    let detail = e.to_string();
+    wire_failure(argument, &e, detail)
+}
+
+/// Parse a JSON C-string argument into `T`. NULL / non-UTF-8 → FFI
+/// `NullPointer` / `InvalidUtf8`; text that does not parse → FFI
+/// `InvalidWireJson`; text that parses but violates `T`'s schema →
+/// `AiMuxError::InvalidArgument` (see [`wire_failure`]).
+fn parse_json_arg<T: DeserializeOwned>(json: *const c_char, name: &'static str) -> FfiResult<T> {
+    let s = str_arg(json, name)?;
+    serde_json::from_str::<T>(&s).map_err(|e| wire_err(name, e))
+}
+
+/// Parse the prompt JSON accepted by the FFI (`prompt_json`, required).
 ///
 /// Accepts either a bare prompt value (`"text"` or `[{...}]`) or a wrapper
 /// object `{"prompt": <value>}`.
-fn parse_prompt(json: &str) -> Result<ModelPrompt, serde_json::Error> {
-    let value: serde_json::Value = serde_json::from_str(json)?;
-    let inner = match &value {
-        serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
-            obj.get("prompt").expect("checked by guard")
-        }
-        _ => &value,
+fn parse_prompt_arg(prompt_json: *const c_char) -> FfiResult<ModelPrompt> {
+    let s = str_arg(prompt_json, "prompt_json")?;
+    let parse = |json: &str| -> Result<ModelPrompt, serde_json::Error> {
+        let value: serde_json::Value = serde_json::from_str(json)?;
+        let inner = match &value {
+            serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
+                obj.get("prompt").expect("checked by guard")
+            }
+            _ => &value,
+        };
+        serde_json::from_value(inner.clone())
     };
-    serde_json::from_value(inner.clone())
+    parse(&s).map_err(|e| wire_err("prompt_json", e))
 }
 
-/// Parse the options JSON. Empty / `null` yields the default options.
-fn parse_opts(json: &str) -> Result<GenerateTextOptions, serde_json::Error> {
-    let trimmed = json.trim();
-    if trimmed.is_empty() || trimmed == "null" {
-        return Ok(GenerateTextOptions::default());
+/// Parse the options JSON (`opts_json`, optional). NULL / empty / `null`
+/// yields the default options.
+fn parse_opts_arg(opts_json: *const c_char) -> FfiResult<GenerateTextOptions> {
+    match opt_str_arg(opts_json, "opts_json")? {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            serde_json::from_str(&s).map_err(|e| wire_err("opts_json", e))
+        }
+        _ => Ok(GenerateTextOptions::default()),
     }
-    serde_json::from_str(json)
+}
+
+/// Parse the optional `config_json` argument (`ProviderOptions`); NULL,
+/// empty or "null" means unset.
+fn parse_provider_options(config_json: *const c_char) -> FfiResult<Option<ProviderOptions>> {
+    match opt_str_arg(config_json, "config_json")? {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
+            serde_json::from_str::<ProviderOptions>(&s)
+                .map(Some)
+                .map_err(|e| wire_err("config_json", e))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Read a config-style JSON C string and normalize it for lenient
+/// deserialization: NULL, empty, whitespace-only and `"null"` all become
+/// `"{}"` (defaults). Invalid UTF-8 is [`FfiError::InvalidUtf8`].
+fn normalize_config_json(json: *const c_char, argument: &'static str) -> Result<String, FfiError> {
+    Ok(match opt_str_arg(json, argument)? {
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => s,
+        _ => String::from("{}"),
+    })
 }
 
 /// Build an owned C string (`*mut c_char`) from a `String`, transferring
@@ -321,181 +810,43 @@ fn into_cstring_raw(s: String) -> *mut c_char {
         .into_raw()
 }
 
-// ── C AimuxError (aimux-error.h) ─────────────────────────────────────────────
-
-pub const AIMUX_OK: i32 = 0;
-pub const AIMUX_E_UNKNOWN: i32 = 1;
-pub const AIMUX_E_JSON_PARSE: i32 = 2;
-pub const AIMUX_E_INVALID_RESPONSE_DATA: i32 = 3;
-pub const AIMUX_E_TOOL: i32 = 4;
-pub const AIMUX_E_INVALID_ARGUMENT: i32 = 5;
-pub const AIMUX_E_INVALID_PROMPT: i32 = 6;
-pub const AIMUX_E_TOKEN_EXPIRED: i32 = 7;
-pub const AIMUX_E_UNSUPPORTED_FUNCTIONALITY: i32 = 8;
-pub const AIMUX_E_NO_SUCH_MODEL: i32 = 9;
-pub const AIMUX_E_NO_SUCH_PROVIDER: i32 = 10;
-pub const AIMUX_E_API_CALL: i32 = 11;
-pub const AIMUX_E_TIMEOUT: i32 = 12;
-pub const AIMUX_E_ABORTED: i32 = 13;
-pub const AIMUX_E_OTHER: i32 = 14;
-/// Recording write failed (sticky) — see `aimux_recording_try_flush`.
-pub const AIMUX_E_RECORDING_WRITE: i32 = 15;
-/// Recording writer thread unavailable — see `aimux_recording_try_flush`.
-pub const AIMUX_E_RECORDING_WRITER_GONE: i32 = 16;
-/// Recording flush ack timed out — see `aimux_recording_try_flush`.
-pub const AIMUX_E_RECORDING_FLUSH_TIMEOUT: i32 = 17;
-
-/// Layout must match `aimux-error.h` `AimuxError` (40 bytes).
-///
-/// On failure the callee overwrites every field; `message` is allocated with
-/// `into_cstring_raw` and the caller releases it with `aimux_free_string`.
-/// `error_value` is the lossless externally-tagged serde JSON of the source
-/// [`AiMuxError`] (null when the failure was synthesized at the FFI boundary
-/// and has no core error value). `reserved` is future ABI room (the
-/// caller-allocated size can never change) and is zeroed on failure.
-#[repr(C)]
-pub struct CAimuxError {
-    pub code: i32,
-    pub status: i32,
-    pub retry_ms: i64,
-    pub message: *mut c_char,
-    pub error_value: *mut c_char,
-    pub reserved: [*mut c_void; 1],
+/// Serialize a result to its wire JSON, or [`FfiError::ResultSerialization`].
+fn to_json<T: serde::Serialize>(v: &T) -> FfiResult<String> {
+    serde_json::to_string(v).map_err(|e| {
+        FfiError::ResultSerialization {
+            message: format!("serialize: {e}"),
+        }
+        .into()
+    })
 }
 
-fn aimux_error_code(err: &AiMuxError) -> i32 {
-    match err {
-        AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
-        AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
-        AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
-        AiMuxError::Tool(_) => AIMUX_E_TOOL,
-        AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
-        AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
-        AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
-        AiMuxError::UnsupportedFunctionality(_) => AIMUX_E_UNSUPPORTED_FUNCTIONALITY,
-        AiMuxError::NoSuchModel { .. } => AIMUX_E_NO_SUCH_MODEL,
-        AiMuxError::NoSuchProvider { .. } => AIMUX_E_NO_SUCH_PROVIDER,
-        AiMuxError::Timeout(_) => AIMUX_E_TIMEOUT,
-        AiMuxError::Aborted => AIMUX_E_ABORTED,
-        AiMuxError::Other(_) => AIMUX_E_OTHER,
-    }
-}
-
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fill_error(err: *mut CAimuxError, code: i32, status: i32, retry_ms: i64, msg: &str) {
-    if err.is_null() {
-        return;
-    }
-    let e = unsafe { &mut *err };
-    e.code = code;
-    e.status = status;
-    e.retry_ms = retry_ms;
-    e.message = into_cstring_raw(msg.to_string());
-    e.error_value = std::ptr::null_mut();
-    e.reserved = [std::ptr::null_mut(); 1];
-}
-
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fill_from_aimux(err: *mut CAimuxError, ae: &AiMuxError) {
-    let code = aimux_error_code(ae);
-    let status = ae.status_code().map(|s| s as i32).unwrap_or(-1);
-    let retry_ms = ae.retry_after_hint().unwrap_or(-1);
-    let msg = ae.to_string();
-    unsafe { fill_error(err, code, status, retry_ms, &msg) };
-    if err.is_null() {
-        return;
-    }
-    // Lossless machine-readable payload alongside the Display message.
-    if let Ok(v) = serde_json::to_string(ae) {
-        unsafe { (*err).error_value = into_cstring_raw(v) };
-    }
-}
-
-const INVALID_ARGS: &str = "missing or invalid required argument(s): null or invalid UTF-8";
-
-trait Sentinel {
-    fn sentinel() -> Self;
-}
-impl Sentinel for u64 {
-    fn sentinel() -> Self {
-        0
-    }
-}
-impl Sentinel for *mut c_char {
-    fn sentinel() -> Self {
-        std::ptr::null_mut()
-    }
-}
-impl Sentinel for i32 {
-    fn sentinel() -> Self {
-        0
-    }
-}
-
-/// Fill optional `err` and return the failure sentinel for `T`.
-///
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fail<T: Sentinel>(
-    err: *mut CAimuxError,
-    code: i32,
-    status: i32,
-    retry_ms: i64,
-    msg: &str,
-) -> T {
-    unsafe { fill_error(err, code, status, retry_ms, msg) };
-    T::sentinel()
-}
-
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fail_ai<T: Sentinel>(err: *mut CAimuxError, ae: &AiMuxError) -> T {
-    unsafe { fill_from_aimux(err, ae) };
-    T::sentinel()
-}
-
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fail_invalid_args<T: Sentinel>(err: *mut CAimuxError) -> T {
-    unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, INVALID_ARGS) }
-}
-
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fail_other<T: Sentinel>(err: *mut CAimuxError, msg: impl std::fmt::Display) -> T {
-    unsafe { fail(err, AIMUX_E_OTHER, -1, -1, &msg.to_string()) }
-}
-
-/// Failure for a malformed JSON argument.
-///
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fail_json<T: Sentinel>(err: *mut CAimuxError, msg: impl std::fmt::Display) -> T {
-    unsafe { fail(err, AIMUX_E_JSON_PARSE, -1, -1, &msg.to_string()) }
-}
-
-/// Failure for an invalid, expired, or wrong-typed handle.
-///
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fail_invalid_handle<T: Sentinel>(err: *mut CAimuxError, what: &str) -> T {
-    unsafe {
-        fail(
-            err,
-            AIMUX_E_INVALID_ARGUMENT,
-            -1,
-            -1,
-            &format!("invalid or expired {what} handle"),
-        )
-    }
+/// Run an async model operation on the runtime and serialize its result.
+fn run_json<F, T>(f: F) -> FfiResult<String>
+where
+    F: std::future::Future<Output = Result<T, AiMuxError>>,
+    T: serde::Serialize,
+{
+    let v = ffi_block_on(f)??;
+    to_json(&v)
 }
 
 /// Invoke a stream callback (`on_part`/`on_done`) while catching any panic.
 ///
-/// A panic inside a `extern "C" fn` callback would unwind across the FFI
-/// boundary, which is undefined behavior (issue #64). This wrapper catches
-/// the panic and converts it to a structured `AiMuxError::Other` so the host
-/// process is not killed (release builds use `panic = "abort"`, but
-/// dev/debug builds still unwind).
+/// The callbacks are declared `extern "C-unwind"`, so a *Rust* panic raised
+/// inside a Rust-implemented callback (panic=unwind builds, same runtime)
+/// propagates back here instead of aborting at the ABI edge (issue #64); this
+/// wrapper catches it and converts it to a structured
+/// [`FfiError::CallbackFailure`] that ends the stream. Foreign exceptions
+/// (C++, JVM, Swift, Dart, Go) are NOT covered — `catch_unwind` may abort on
+/// them — so callbacks must not unwind across the C ABI; binding trampolines
+/// catch their own language's exceptions. (Release builds use `panic =
+/// "abort"`, in which case the
+/// process aborts before this point and the code is never produced).
 ///
 /// `AssertUnwindSafe` is required because the callback receives raw pointers
 /// (`*const c_char`/`*mut c_void`) that are not `UnwindSafe`; this is sound
 /// because we abort the stream on any panic rather than continuing.
-fn invoke_stream_callback(callback_name: &str, f: impl FnOnce()) -> Result<(), AiMuxError> {
+fn invoke_stream_callback(callback_name: &str, f: impl FnOnce()) -> Result<(), FfiError> {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(()) => Ok(()),
         Err(payload) => {
@@ -504,116 +855,10 @@ fn invoke_stream_callback(callback_name: &str, f: impl FnOnce()) -> Result<(), A
                 .copied()
                 .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
                 .unwrap_or("<non-string panic>");
-            Err(AiMuxError::Other(format!(
-                "stream callback '{callback_name}' panicked: {msg}"
-            )))
+            Err(FfiError::CallbackFailure {
+                message: format!("stream callback '{callback_name}' panicked: {msg}"),
+            })
         }
-    }
-}
-
-/// Build (key, model_id) from two C strings; None if either is null/invalid.
-///
-/// # Safety
-///
-/// `a` and `b` must each be null or point to a valid NUL-terminated C string.
-unsafe fn parse_two_args(a: *const c_char, b: *const c_char) -> Option<(String, String)> {
-    match (cstr_to_string(a), cstr_to_string(b)) {
-        (Some(k), Some(m)) => Some((k, m)),
-        _ => None,
-    }
-}
-
-/// Parse four C string arguments; any null fails the whole call.
-unsafe fn parse_four_args(
-    a: *const c_char,
-    b: *const c_char,
-    c: *const c_char,
-    d: *const c_char,
-) -> Option<(String, String, String, String)> {
-    match (
-        cstr_to_string(a),
-        cstr_to_string(b),
-        cstr_to_string(c),
-        cstr_to_string(d),
-    ) {
-        (Some(w), Some(x), Some(y), Some(z)) => Some((w, x, y, z)),
-        _ => None,
-    }
-}
-
-/// Run an async operation and return its result as JSON (caller frees).
-fn run_and_serialize<F, T>(err: *mut CAimuxError, f: F) -> *mut c_char
-where
-    F: std::future::Future<Output = Result<T, AiMuxError>>,
-    T: serde::Serialize,
-{
-    let result = ffi_block_on(f).and_then(|inner| inner);
-    match result {
-        Ok(r) => match serde_json::to_string(&r) {
-            Ok(s) => into_cstring_raw(s),
-            Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
-        },
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
-}
-
-/// Parse the base_url argument; an empty string means unset.
-fn parse_base_url(base_url: *const c_char) -> Option<String> {
-    cstr_to_string(base_url).filter(|url| !url.is_empty())
-}
-
-/// Parse a JSON C-string argument into `T`. A null/invalid pointer maps to
-/// `AIMUX_E_INVALID_ARGUMENT`; a JSON parse failure maps to `AIMUX_E_JSON_PARSE`.
-fn parse_json_arg<T: DeserializeOwned>(
-    json: *const c_char,
-    name: &str,
-) -> Result<T, (i32, String)> {
-    let s = match cstr_to_string(json) {
-        Some(s) => s,
-        None => return Err((AIMUX_E_INVALID_ARGUMENT, format!("invalid {name}"))),
-    };
-    serde_json::from_str::<T>(&s).map_err(|e| (AIMUX_E_JSON_PARSE, format!("invalid {name}: {e}")))
-}
-
-/// Fail with the (code, message) pair produced by [`parse_json_arg`].
-///
-/// # Safety: `err` null or writable `CAimuxError`.
-unsafe fn fail_code<T: Sentinel>(err: *mut CAimuxError, (code, msg): (i32, String)) -> T {
-    unsafe { fail(err, code, -1, -1, &msg) }
-}
-
-/// Parse the optional `config_json` argument (`ProviderOptions`); empty or
-/// "null" means unset.
-fn parse_provider_options(
-    config_json: *const c_char,
-) -> Result<Option<ProviderOptions>, (i32, String)> {
-    match cstr_to_string(config_json) {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-            serde_json::from_str::<ProviderOptions>(&s)
-                .map(Some)
-                .map_err(|e| (AIMUX_E_JSON_PARSE, format!("invalid config_json: {e}")))
-        }
-        _ => Ok(None),
-    }
-}
-
-/// Read a config_json C string and normalize it for lenient deserialization.
-///
-/// NULL, empty, whitespace-only, and `"null"` all become `"{}"` (defaults),
-/// matching `parse_provider_options` / `parse_opts` convention so direct C
-/// callers get the documented "empty = defaults" behavior. Invalid UTF-8
-/// (cstr_to_string returns None) is still an error.
-fn normalize_config_json(config_json: *const c_char, err: *mut CAimuxError) -> Option<String> {
-    if config_json.is_null() {
-        return Some(String::from("{}"));
-    }
-    match cstr_to_string(config_json) {
-        None => unsafe {
-            fill_error(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, INVALID_ARGS);
-            None
-        },
-        Some(s) if s.trim().is_empty() || s.trim() == "null" => Some(String::from("{}")),
-        Some(s) => Some(s),
     }
 }
 
@@ -621,23 +866,18 @@ fn normalize_config_json(config_json: *const c_char, err: *mut CAimuxError) -> O
 // C ABI: provider constructors
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Create an OpenAI model instance.
-///
-/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
-/// arguments or invalid model id).
+/// Create an OpenAI model instance. AiMuxError: invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let m = OpenAIProvider::new(OpenAIConfig::new(api_key)).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create an OpenAI model instance with a custom base URL.
@@ -648,38 +888,31 @@ pub extern "C" fn aimux_openai_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match OpenAIProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = OpenAIConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = OpenAIProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
-/// Create an Anthropic model instance.
-///
-/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
-/// arguments or invalid model id).
+/// Create an Anthropic model instance. AiMuxError: invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_anthropic_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match AnthropicProvider::new(AnthropicConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let m = AnthropicProvider::new(AnthropicConfig::new(api_key)).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create an Anthropic model instance with a custom base URL.
@@ -690,19 +923,17 @@ pub extern "C" fn aimux_anthropic_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = AnthropicConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match AnthropicProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = AnthropicConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = AnthropicProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create an Anthropic-on-AWS model instance (API key + region).
@@ -711,25 +942,17 @@ pub extern "C" fn aimux_anthropic_aws_new(
     api_key: *const c_char,
     region: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let parsed = match (
-        cstr_to_string(api_key),
-        cstr_to_string(region),
-        cstr_to_string(model_id),
-    ) {
-        (Some(k), Some(r), Some(m)) => Some((k, r, m)),
-        _ => None,
-    };
-    let Some((api_key, region, model_id)) = parsed else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
-        .language_model(&model_id)
-    {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let region = str_arg(region, "region")?;
+        let model_id = str_arg(model_id, "model_id")?;
+        let m =
+            AnthropicAwsProvider::new(AnthropicAwsProviderConfig::with_api_key(api_key, region))
+                .language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create an Anthropic-on-AWS model instance with a custom base URL.
@@ -739,27 +962,19 @@ pub extern "C" fn aimux_anthropic_aws_new_with_base(
     region: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let parsed = match (
-        cstr_to_string(api_key),
-        cstr_to_string(region),
-        cstr_to_string(model_id),
-    ) {
-        (Some(k), Some(r), Some(m)) => Some((k, r, m)),
-        _ => None,
-    };
-    let Some((api_key, region, model_id)) = parsed else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match AnthropicAwsProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let region = str_arg(region, "region")?;
+        let model_id = str_arg(model_id, "model_id")?;
+        let mut config = AnthropicAwsProviderConfig::with_api_key(api_key, region);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = AnthropicAwsProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create an Azure OpenAI model instance (API key + resource name).
@@ -772,98 +987,76 @@ pub extern "C" fn aimux_azure_new(
     resource_name: *const c_char,
     deployment: *const c_char,
     api_version: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let parsed = match (
-        cstr_to_string(api_key),
-        cstr_to_string(resource_name),
-        cstr_to_string(deployment),
-    ) {
-        (Some(k), Some(r), Some(d)) => Some((k, r, d)),
-        _ => None,
-    };
-    let Some((api_key, resource_name, deployment)) = parsed else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = AzureConfig::new()
-        .with_api_key(api_key)
-        .with_resource_name(resource_name);
-    if let Some(version) = parse_base_url(api_version) {
-        config = config.with_api_version(version);
-    }
-    match AzureProvider::new(config) {
-        Ok(p) => match p.language_model(&deployment) {
-            Ok(m) => intern_model(Arc::from(m)),
-            Err(e) => unsafe { fail_ai(err, &e) },
-        },
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let resource_name = str_arg(resource_name, "resource_name")?;
+        let deployment = str_arg(deployment, "deployment")?;
+        let mut config = AzureConfig::new()
+            .with_api_key(api_key)
+            .with_resource_name(resource_name);
+        if let Some(v) = opt_str_arg(api_version, "api_version")?.filter(|v| !v.is_empty()) {
+            config = config.with_api_version(v);
+        }
+        let m = AzureProvider::new(config)?.language_model(&deployment)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
-/// Create an Azure OpenAI model instance with a custom base URL.
-///
-/// `api_version` may be null (uses the provider default). The deployment
-/// name is passed as `model_id`.
+/// Create an Azure OpenAI model instance with a custom base URL (required,
+/// in place of `resource_name`).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_azure_new_with_base(
     api_key: *const c_char,
     base_url: *const c_char,
     deployment: *const c_char,
     api_version: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let parsed = match (
-        cstr_to_string(api_key),
-        cstr_to_string(base_url),
-        cstr_to_string(deployment),
-    ) {
-        (Some(k), Some(b), Some(d)) => Some((k, b, d)),
-        _ => None,
-    };
-    let Some((api_key, base_url, deployment)) = parsed else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = AzureConfig::new()
-        .with_api_key(api_key)
-        .with_base_url(base_url);
-    if let Some(version) = parse_base_url(api_version) {
-        config = config.with_api_version(version);
-    }
-    match AzureProvider::new(config) {
-        Ok(p) => match p.language_model(&deployment) {
-            Ok(m) => intern_model(Arc::from(m)),
-            Err(e) => unsafe { fail_ai(err, &e) },
-        },
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let base_url = str_arg(base_url, "base_url")?;
+        let deployment = str_arg(deployment, "deployment")?;
+        let mut config = AzureConfig::new()
+            .with_api_key(api_key)
+            .with_base_url(base_url);
+        if let Some(v) = opt_str_arg(api_version, "api_version")?.filter(|v| !v.is_empty()) {
+            config = config.with_api_version(v);
+        }
+        let m = AzureProvider::new(config)?.language_model(&deployment)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create a Bedrock model instance (AWS SigV4 credentials).
-///
-/// `access_key_id` / `secret_access_key` / `region` are required.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_bedrock_new(
     access_key_id: *const c_char,
     secret_access_key: *const c_char,
     region: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((access_key_id, secret_access_key, region, model_id)) =
-        (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
-    else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match BedrockProvider::new(BedrockProviderConfig::new(
-        access_key_id,
-        secret_access_key,
-        region,
-    ))
-    .language_model(&model_id)
-    {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (access_key_id, secret_access_key, region, model_id) = parse_four_args(
+            access_key_id,
+            "access_key_id",
+            secret_access_key,
+            "secret_access_key",
+            region,
+            "region",
+            model_id,
+            "model_id",
+        )?;
+        let m = BedrockProvider::new(BedrockProviderConfig::new(
+            access_key_id,
+            secret_access_key,
+            region,
+        ))
+        .language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create a Bedrock model instance with a custom base URL.
@@ -874,45 +1067,52 @@ pub extern "C" fn aimux_bedrock_new_with_base(
     region: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((access_key_id, secret_access_key, region, model_id)) =
-        (unsafe { parse_four_args(access_key_id, secret_access_key, region, model_id) })
-    else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match BedrockProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (access_key_id, secret_access_key, region, model_id) = parse_four_args(
+            access_key_id,
+            "access_key_id",
+            secret_access_key,
+            "secret_access_key",
+            region,
+            "region",
+            model_id,
+            "model_id",
+        )?;
+        let mut config = BedrockProviderConfig::new(access_key_id, secret_access_key, region);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = BedrockProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create a Vertex AI model instance (GCP bearer token).
-///
-/// `access_token` / `project` / `location` are required.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_vertex_new(
     access_token: *const c_char,
     project: *const c_char,
     location: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((access_token, project, location, model_id)) =
-        (unsafe { parse_four_args(access_token, project, location, model_id) })
-    else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
-        .language_model(&model_id)
-    {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (access_token, project, location, model_id) = parse_four_args(
+            access_token,
+            "access_token",
+            project,
+            "project",
+            location,
+            "location",
+            model_id,
+            "model_id",
+        )?;
+        let m = VertexProvider::new(VertexProviderConfig::new(access_token, project, location))
+            .language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create a Vertex AI model instance with a custom base URL.
@@ -923,40 +1123,40 @@ pub extern "C" fn aimux_vertex_new_with_base(
     location: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((access_token, project, location, model_id)) =
-        (unsafe { parse_four_args(access_token, project, location, model_id) })
-    else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = VertexProviderConfig::new(access_token, project, location);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match VertexProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (access_token, project, location, model_id) = parse_four_args(
+            access_token,
+            "access_token",
+            project,
+            "project",
+            location,
+            "location",
+            model_id,
+            "model_id",
+        )?;
+        let mut config = VertexProviderConfig::new(access_token, project, location);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = VertexProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
-/// Create a Cohere model instance.
-///
-/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
-/// arguments or invalid model id).
+/// Create a Cohere model instance. AiMuxError: invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_cohere_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let m = CohereProvider::new(CohereConfig::new(api_key)).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create a Cohere model instance with a custom base URL.
@@ -965,38 +1165,31 @@ pub extern "C" fn aimux_cohere_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match CohereProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = CohereConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = CohereProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
-/// Create a Mistral model instance.
-///
-/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
-/// arguments or invalid model id).
+/// Create a Mistral model instance. AiMuxError: invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_mistral_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match MistralProvider::new(MistralConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let m = MistralProvider::new(MistralConfig::new(api_key)).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create a Mistral model instance with a custom base URL.
@@ -1005,38 +1198,31 @@ pub extern "C" fn aimux_mistral_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = MistralConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match MistralProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = MistralConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = MistralProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
-/// Create an xAI model instance.
-///
-/// Returns a non-zero handle on success, or 0 on failure filling `*err` (null
-/// arguments or invalid model id).
+/// Create an xAI model instance. AiMuxError: invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_xai_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let m = XAIProvider::new(XAIConfig::new(api_key)).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create an xAI model instance with a custom base URL.
@@ -1045,19 +1231,17 @@ pub extern "C" fn aimux_xai_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = XAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    match XAIProvider::new(config).language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = XAIConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let m = XAIProvider::new(config).language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Create a language model from the registry by provider name (RFC-0017 phase 4).
@@ -1070,31 +1254,25 @@ pub extern "C" fn aimux_xai_new_with_base(
 ///   (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`);
 ///   NULL / empty / "null" for defaults.
 ///
-/// Returns a non-zero handle on success, or 0 on failure filling `*err` (unknown
-/// provider, bad config, missing env key, or invalid model id).
+/// AiMuxError: unknown provider, bad config shape, missing env key, or
+/// invalid model id.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_new(
     name: *const c_char,
     api_key: *const c_char,
     model_id: *const c_char,
     config_json: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(name) = cstr_to_string(name) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let Some(model_id) = cstr_to_string(model_id) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let key = cstr_to_string(api_key); // None => env var from registry entry
-    let opts = match parse_provider_options(config_json) {
-        Ok(o) => o,
-        Err(e) => return unsafe { fail_code(err, e) },
-    };
-    match provider(&name, key, &model_id, opts) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let name = str_arg(name, "name")?;
+        let model_id = str_arg(model_id, "model_id")?;
+        // NULL => the registry entry's env var; a non-NULL key must be UTF-8.
+        let key = opt_str_arg(api_key, "api_key")?;
+        let opts = parse_provider_options(config_json)?;
+        let m = provider(&name, key, &model_id, opts)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 /// Convenience: create a language model by provider name, reading the API key
@@ -1103,18 +1281,14 @@ pub extern "C" fn aimux_provider_new(
 pub extern "C" fn aimux_provider_from_env(
     name: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(name) = cstr_to_string(name) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let Some(model_id) = cstr_to_string(model_id) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match provider(&name, None, &model_id, None) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let name = str_arg(name, "name")?;
+        let model_id = str_arg(model_id, "model_id")?;
+        let m = provider(&name, None, &model_id, None)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1129,78 +1303,75 @@ pub extern "C" fn aimux_provider_from_env(
 ///
 /// `api_key = null` reads the provider's env var from the registry entry.
 /// `config_json` is an optional `ProviderOptions` JSON string (same as
-/// `aimux_provider_new`). Returns a non-zero handle on success, or 0 filling `*err`.
+/// `aimux_provider_new`).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_handle_new(
     name: *const c_char,
     api_key: *const c_char,
     config_json: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(name) = cstr_to_string(name) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let key = cstr_to_string(api_key);
-    let opts = match parse_provider_options(config_json) {
-        Ok(o) => o,
-        Err(e) => return unsafe { fail_code(err, e) },
-    };
-    match provider_handle(&name, key, opts) {
-        Ok(p) => intern_provider(Arc::from(p)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let name = str_arg(name, "name")?;
+        let key = opt_str_arg(api_key, "api_key")?;
+        let opts = parse_provider_options(config_json)?;
+        let p = provider_handle(&name, key, opts)?;
+        Ok(intern_handle(HandleEntry::Provider(Arc::from(p))))
+    })
 }
 
 /// List models on a provider handle (RFC-0027 runtime discovery).
 ///
-/// `handle` is from `aimux_provider_handle_new`. Returns a JSON array of
+/// `handle` is from `aimux_provider_handle_new`. Writes a JSON array of
 /// sparse `RuntimeModel` (id / owned_by / created) — **no community
 /// enrichment**. To supplement with model specs, call `aimux_get_model_specs`
-/// separately and merge in the host. Returns NULL on failure (fills `*err`).
+/// separately and merge in the host.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_provider_list_models(handle: u64, err: *mut CAimuxError) -> *mut c_char {
-    let Some(p) = get_provider(handle) else {
-        return unsafe { fail_invalid_handle(err, "provider") };
-    };
-    match ffi_block_on(p.list_models()) {
-        Err(e) => unsafe { fail_ai(err, &e) },
-        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
-        Ok(Ok(models)) => match serde_json::to_string(&models) {
-            Ok(s) => into_cstring_raw(s),
-            Err(e) => unsafe { fail_other(err, format!("serialize list_models: {e}")) },
-        },
-    }
+pub extern "C" fn aimux_provider_list_models(
+    handle: u64,
+    out_models_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_models_json, "out_models_json", || {
+        let HandleEntry::Provider(p) = entry_of(handle, "provider")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "provider",
+            }
+            .into());
+        };
+        run_json(p.list_models())
+    })
 }
 
 /// Build a language model from a provider handle + model_id (RFC-0027).
 ///
-/// `handle` is from `aimux_provider_handle_new`. Returns a JSON model handle
-/// a non-zero handle (same as `aimux_provider_new`), usable with
-/// `aimux_generate_text` etc.
+/// `handle` is from `aimux_provider_handle_new`. The new handle is a model
+/// handle (same as `aimux_provider_new`), usable with `aimux_generate_text`
+/// etc.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_provider_model(
     handle: u64,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(p) = get_provider(handle) else {
-        return unsafe { fail_invalid_handle(err, "provider") };
-    };
-    let Some(model_id) = cstr_to_string(model_id) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match p.language_model(&model_id) {
-        Ok(m) => intern_model(Arc::from(m)),
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let HandleEntry::Provider(p) = entry_of(handle, "provider")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "provider",
+            }
+            .into());
+        };
+        let model_id = str_arg(model_id, "model_id")?;
+        let m = p.language_model(&model_id)?;
+        Ok(intern_model(Arc::from(m)))
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // C ABI: model specs (RFC-0027) — get_model_specs
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
-/// `Catalogue` (provider → model_id → ModelSpec), or NULL on failure.
+/// Fetch the community model catalogue (anya2a). Writes a JSON-serialized
+/// `Catalogue` (provider → model_id → ModelSpec).
 ///
 /// `source_url` is an optional URL override (null = default anya2a endpoint).
 /// This is a **thin fetch** — no caching, no FS writes. The host decides how
@@ -1208,17 +1379,12 @@ pub extern "C" fn aimux_provider_model(
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_get_model_specs(
     source_url: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let url = cstr_to_string(source_url);
-    match ffi_block_on(aimux_providers::get_model_specs(url.as_deref())) {
-        Err(e) => unsafe { fail_ai(err, &e) },
-        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
-        Ok(Ok(cat)) => match serde_json::to_string(&cat) {
-            Ok(s) => into_cstring_raw(s),
-            Err(e) => unsafe { fail_other(err, format!("serialize catalogue: {e}")) },
-        },
-    }
+    out_specs_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_specs_json, "out_specs_json", || {
+        let url = opt_str_arg(source_url, "source_url")?;
+        run_json(aimux_providers::get_model_specs(url.as_deref()))
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1229,118 +1395,64 @@ pub extern "C" fn aimux_get_model_specs(
 ///
 /// `prompt_json` is either a bare prompt value (`"text"` or a messages array)
 /// or `{"prompt": <value>}`. `opts_json` is a serialized `GenerateTextOptions`
-/// (empty / null for defaults).
-///
-/// Returns a JSON string — the serialized `GenerateTextResult`, or
-/// NULL on failure (fills `*err`) — success JSON the caller MUST free with
-/// [`aimux_free_string`]. Returns a null pointer only if allocation fails.
+/// (empty / null for defaults). Writes the serialized `GenerateTextResult`
+/// to `*out_json` (caller frees with [`aimux_free_string`]).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_generate_text(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_model(handle) {
-        Some(m) => m,
-        None => return unsafe { fail_invalid_handle(err, "model") },
-    };
-    let prompt = match cstr_to_string(prompt_json) {
-        Some(s) => match parse_prompt(&s) {
-            Ok(p) => p,
-            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
-        },
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
-        }
-    };
-    let opts = match cstr_to_string(opts_json) {
-        Some(s) => match parse_opts(&s) {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
-        },
-        None => GenerateTextOptions::default(),
-    };
-    run_and_serialize(
-        err,
-        async move { generate_text(&*model, prompt, opts).await },
-    )
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let model = model_of(handle)?;
+        let prompt = parse_prompt_arg(prompt_json)?;
+        let opts = parse_opts_arg(opts_json)?;
+        run_json(async move { generate_text(&*model, prompt, opts).await })
+    })
 }
 
 /// Generate a structured JSON object from the model (M12, RFC-0016).
 ///
-/// Same signature as [`aimux_generate_text`]; returns a JSON string — the
-/// serialized `GenerateObjectResult`, or NULL on failure (fills `*err`).
-/// The caller passes `response_format: { "Json": { ... } }` via `opts_json`
-/// to control the schema; the function applies JSON repair before parsing.
+/// Same signature as [`aimux_generate_text`]; writes the serialized
+/// `GenerateObjectResult`. The caller passes `response_format: { "Json": {
+/// ... } }` via `opts_json` to control the schema; the function applies JSON
+/// repair before parsing.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_generate_object(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_model(handle) {
-        Some(m) => m,
-        None => return unsafe { fail_invalid_handle(err, "model") },
-    };
-    let prompt = match cstr_to_string(prompt_json) {
-        Some(s) => match parse_prompt(&s) {
-            Ok(p) => p,
-            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
-        },
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
-        }
-    };
-    let opts = match cstr_to_string(opts_json) {
-        Some(s) => match parse_opts(&s) {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
-        },
-        None => GenerateTextOptions::default(),
-    };
-    run_and_serialize(
-        err,
-        async move { generate_object(&*model, prompt, opts).await },
-    )
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let model = model_of(handle)?;
+        let prompt = parse_prompt_arg(prompt_json)?;
+        let opts = parse_opts_arg(opts_json)?;
+        run_json(async move { generate_object(&*model, prompt, opts).await })
+    })
 }
 
-/// Consume a stream to completion and return the aggregated result (M11,
+/// Consume a stream to completion and write the aggregated result (M11,
 /// RFC-0016). Synchronous — blocks until the stream finishes.
 ///
-/// Same signature as [`aimux_generate_text`]; returns a JSON string — the
-/// serialized `StreamTextResultAggregated`, or NULL on failure (fills `*err`).
+/// Same signature as [`aimux_generate_text`]; writes the serialized
+/// `StreamTextResultAggregated`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_consume_stream_text(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_model(handle) {
-        Some(m) => m,
-        None => return unsafe { fail_invalid_handle(err, "model") },
-    };
-    let prompt = match cstr_to_string(prompt_json) {
-        Some(s) => match parse_prompt(&s) {
-            Ok(p) => p,
-            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
-        },
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
-        }
-    };
-    let opts = match cstr_to_string(opts_json) {
-        Some(s) => match parse_opts(&s) {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
-        },
-        None => GenerateTextOptions::default(),
-    };
-    run_and_serialize(err, async move {
-        let stream_result = stream_text(&*model, prompt, opts).await?;
-        stream_result.consume().await
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let model = model_of(handle)?;
+        let prompt = parse_prompt_arg(prompt_json)?;
+        let opts = parse_opts_arg(opts_json)?;
+        run_json(async move {
+            let stream_result = stream_text(&*model, prompt, opts).await?;
+            stream_result.consume().await
+        })
     })
 }
 
@@ -1356,28 +1468,29 @@ pub extern "C" fn aimux_consume_stream_text(
 ///   the call). `StreamPart::Error` is data on this path, not a terminal fail.
 /// - `on_done(stream_ctx)`: once on normal completion (not on failure).
 ///
-/// Returns non-zero (e.g. 1) on success; 0 on failure (fills `*err` when non-NULL).
-/// No JSON error envelope.
+/// NULL on success (after `on_done`); a returned error otherwise (no
+/// `on_done`): a NULL callback is `NullPointer`, a provider failure is the
+/// model's, a part that cannot be serialized is `ResultSerialization`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_stream_text(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char, *mut c_void),
-    on_done: extern "C" fn(*mut c_void),
+    on_part: Option<extern "C-unwind" fn(*const c_char, *mut c_void)>,
+    on_done: Option<extern "C-unwind" fn(*mut c_void)>,
     stream_ctx: *mut c_void,
-    err: *mut CAimuxError,
-) -> i32 {
-    stream_text_with_signal(
-        handle,
-        prompt_json,
-        opts_json,
-        on_part,
-        on_done,
-        stream_ctx,
-        err,
-        None,
-    )
+) -> *mut aimux_error_t {
+    no_result(|| {
+        stream_text_with_signal(
+            handle,
+            prompt_json,
+            opts_json,
+            on_part,
+            on_done,
+            stream_ctx,
+            None,
+        )
+    })
 }
 
 /// Create a per-call abort signal for a cancelable FFI operation.
@@ -1386,7 +1499,7 @@ pub extern "C" fn aimux_stream_text(
 /// [`aimux_abort_signal_drop`].
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_abort_signal_new() -> u64 {
-    intern_handle(ModelHandle::Abort(AbortSignal::new()))
+    intern_handle(HandleEntry::Abort(AbortSignal::new()))
 }
 
 /// Request cancellation for an abort-signal handle.
@@ -1413,34 +1526,30 @@ pub extern "C" fn aimux_abort_signal_drop(handle: u64) {
 /// Stream text with a per-call abort signal.
 ///
 /// This function blocks like [`aimux_stream_text`]. Another thread can call
-/// [`aimux_abort_signal_abort`] with `abort_handle` to stop this call.
+/// [`aimux_abort_signal_abort`] with `abort_handle` to stop this call
+/// (`AiMuxError::Aborted`, no `on_done`).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_stream_text_with_abort(
     handle: u64,
     abort_handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char, *mut c_void),
-    on_done: extern "C" fn(*mut c_void),
+    on_part: Option<extern "C-unwind" fn(*const c_char, *mut c_void)>,
+    on_done: Option<extern "C-unwind" fn(*mut c_void)>,
     stream_ctx: *mut c_void,
-    err: *mut CAimuxError,
-) -> i32 {
-    let abort_signal = match get_abort_signal(abort_handle) {
-        Some(signal) => signal,
-        None => {
-            return unsafe { fail_invalid_handle(err, "abort") };
-        }
-    };
-    stream_text_with_signal(
-        handle,
-        prompt_json,
-        opts_json,
-        on_part,
-        on_done,
-        stream_ctx,
-        err,
-        Some(abort_signal),
-    )
+) -> *mut aimux_error_t {
+    no_result(|| {
+        let abort_signal = abort_of(abort_handle)?;
+        stream_text_with_signal(
+            handle,
+            prompt_json,
+            opts_json,
+            on_part,
+            on_done,
+            stream_ctx,
+            Some(abort_signal),
+        )
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1449,43 +1558,22 @@ pub extern "C" fn aimux_stream_text_with_abort(
 
 /// Non-streaming text generation with OpenAI Chat Completions output.
 ///
-/// Identical to [`aimux_generate_text`] except the returned JSON string is a
+/// Identical to [`aimux_generate_text`] except the written JSON string is a
 /// serialized `ChatCompletion` (OpenAI `chat.completion` object) rather than a
 /// `GenerateTextResult`. Works with any provider — the result is always
 /// standard OpenAI format.
-///
-/// Returns a JSON string — the serialized `ChatCompletion`, or
-/// NULL on failure (fills `*err`) — success JSON the caller MUST free with
-/// [`aimux_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_generate_text_as_openai(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_model(handle) {
-        Some(m) => m,
-        None => return unsafe { fail_invalid_handle(err, "model") },
-    };
-    let prompt = match cstr_to_string(prompt_json) {
-        Some(s) => match parse_prompt(&s) {
-            Ok(p) => p,
-            Err(e) => return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) },
-        },
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
-        }
-    };
-    let opts = match cstr_to_string(opts_json) {
-        Some(s) => match parse_opts(&s) {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
-        },
-        None => GenerateTextOptions::default(),
-    };
-    run_and_serialize(err, async move {
-        generate_text_as_openai(&*model, prompt, opts).await
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let model = model_of(handle)?;
+        let prompt = parse_prompt_arg(prompt_json)?;
+        let opts = parse_opts_arg(opts_json)?;
+        run_json(async move { generate_text_as_openai(&*model, prompt, opts).await })
     })
 }
 
@@ -1500,28 +1588,27 @@ pub extern "C" fn aimux_generate_text_as_openai(
 /// true) fields to control the chunk output.
 ///
 /// `StreamPart::Error` is mapped to a content delta + finish chunk; terminal
-/// failures return 0 and fill `*err` when non-NULL (same polarity as
-/// [`aimux_stream_text`]).
+/// failures return a returned error (same polarity as [`aimux_stream_text`]).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_stream_text_as_openai(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char, *mut c_void),
-    on_done: extern "C" fn(*mut c_void),
+    on_part: Option<extern "C-unwind" fn(*const c_char, *mut c_void)>,
+    on_done: Option<extern "C-unwind" fn(*mut c_void)>,
     stream_ctx: *mut c_void,
-    err: *mut CAimuxError,
-) -> i32 {
-    stream_text_as_openai_with_signal(
-        handle,
-        prompt_json,
-        opts_json,
-        on_part,
-        on_done,
-        stream_ctx,
-        err,
-        None,
-    )
+) -> *mut aimux_error_t {
+    no_result(|| {
+        stream_text_as_openai_with_signal(
+            handle,
+            prompt_json,
+            opts_json,
+            on_part,
+            on_done,
+            stream_ctx,
+            None,
+        )
+    })
 }
 
 /// Cancelable streaming OpenAI-compatible output (see
@@ -1532,66 +1619,53 @@ pub extern "C" fn aimux_stream_text_as_openai_with_abort(
     abort_handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char, *mut c_void),
-    on_done: extern "C" fn(*mut c_void),
+    on_part: Option<extern "C-unwind" fn(*const c_char, *mut c_void)>,
+    on_done: Option<extern "C-unwind" fn(*mut c_void)>,
     stream_ctx: *mut c_void,
-    err: *mut CAimuxError,
-) -> i32 {
-    let abort_signal = match get_abort_signal(abort_handle) {
-        Some(signal) => signal,
-        None => {
-            return unsafe { fail_invalid_handle(err, "abort") };
-        }
-    };
-    stream_text_as_openai_with_signal(
-        handle,
-        prompt_json,
-        opts_json,
-        on_part,
-        on_done,
-        stream_ctx,
-        err,
-        Some(abort_signal),
-    )
+) -> *mut aimux_error_t {
+    no_result(|| {
+        let abort_signal = abort_of(abort_handle)?;
+        stream_text_as_openai_with_signal(
+            handle,
+            prompt_json,
+            opts_json,
+            on_part,
+            on_done,
+            stream_ctx,
+            Some(abort_signal),
+        )
+    })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Serialize a stream item for `on_part`, or [`FfiError::ResultSerialization`].
+fn stream_part_cstring<T: serde::Serialize>(part: &T) -> Result<CString, FfiError> {
+    let json = serde_json::to_string(part).map_err(|e| FfiError::ResultSerialization {
+        message: format!("stream part: {e}"),
+    })?;
+    CString::new(json).map_err(|e| FfiError::ResultSerialization {
+        message: format!("stream part contains NUL: {e}"),
+    })
+}
+
 fn stream_text_as_openai_with_signal(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char, *mut c_void),
-    on_done: extern "C" fn(*mut c_void),
+    on_part: Option<extern "C-unwind" fn(*const c_char, *mut c_void)>,
+    on_done: Option<extern "C-unwind" fn(*mut c_void)>,
     stream_ctx: *mut c_void,
-    err: *mut CAimuxError,
     abort_signal: Option<AbortSignal>,
-) -> i32 {
-    let model = match get_model(handle) {
-        Some(m) => m,
-        None => return unsafe { fail_invalid_handle(err, "model") },
-    };
-
-    let prompt = match cstr_to_string(prompt_json) {
-        Some(s) => match parse_prompt(&s) {
-            Ok(p) => p,
-            Err(e) => {
-                return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) };
-            }
-        },
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
-        }
-    };
-
-    let mut opts = match cstr_to_string(opts_json) {
-        Some(s) => match parse_opts(&s) {
-            Ok(o) => o,
-            Err(e) => {
-                return unsafe { fail_json(err, format!("invalid opts_json: {e}")) };
-            }
-        },
-        None => GenerateTextOptions::default(),
-    };
+) -> FfiResult<()> {
+    // A NULL callback is this layer's finding, before anything else runs.
+    let on_part = on_part.ok_or(FfiError::NullPointer {
+        argument: "on_part",
+    })?;
+    let on_done = on_done.ok_or(FfiError::NullPointer {
+        argument: "on_done",
+    })?;
+    let model = model_of(handle)?;
+    let prompt = parse_prompt_arg(prompt_json)?;
+    let mut opts = parse_opts_arg(opts_json)?;
 
     // Extract OpenAI stream options from the opts JSON, then remove them so
     // they don't confuse the provider (which doesn't know this field).
@@ -1614,11 +1688,11 @@ fn stream_text_as_openai_with_signal(
         .unwrap_or_default();
 
     opts.abort_signal = abort_signal.clone();
-    // stream_ctx is only for C callbacks; not Send across the async boundary.
+    // stream_ctx is only for C callbacks; not Send into the async task.
     let stream_ctx = stream_ctx as usize;
 
-    let outcome = ffi_block_on(async move {
-        let stream_result = match abort_signal.as_ref() {
+    ffi_block_on(async move {
+        let sr = match abort_signal.as_ref() {
             Some(signal) => {
                 tokio::select! {
                     biased;
@@ -1627,96 +1701,60 @@ fn stream_text_as_openai_with_signal(
                 }
             }
             None => stream_text_as_openai(&*model, prompt, opts, stream_options).await,
-        };
-        match stream_result {
-            Ok(sr) => {
-                let mut stream = sr.stream;
-                loop {
-                    let next = match abort_signal.as_ref() {
-                        Some(signal) => {
-                            tokio::select! {
-                                biased;
-                                _ = signal.cancelled() => {
-                                    return Err(AiMuxError::Aborted);
-                                }
-                                item = stream.next() => item,
-                            }
-                        }
-                        None => stream.next().await,
-                    };
-                    let Some(item) = next else {
-                        break;
-                    };
-                    match item {
-                        Ok(chunk) => {
-                            let json =
-                                serde_json::to_string(&chunk).unwrap_or_else(|_| "{}".to_string());
-                            if let Ok(cstr) = CString::new(json) {
-                                invoke_stream_callback("on_part", || {
-                                    on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
-                                })?;
-                            }
-                        }
-                        Err(e) => return Err(e),
+        }?;
+        let mut stream = sr.stream;
+        loop {
+            let next = match abort_signal.as_ref() {
+                Some(signal) => {
+                    tokio::select! {
+                        biased;
+                        _ = signal.cancelled() => return Err(AiMuxError::Aborted.into()),
+                        item = stream.next() => item,
                     }
                 }
-                invoke_stream_callback("on_done", || {
-                    on_done(stream_ctx as *mut c_void);
-                })?;
-                Ok(())
-            }
-            Err(e) => Err(e),
+                None => stream.next().await,
+            };
+            let Some(item) = next else {
+                break;
+            };
+            // A chunk that cannot be serialized ends the stream with this
+            // layer's ResultSerialization — never a silent "{}" placeholder.
+            let cstr = stream_part_cstring(&item?)?;
+            invoke_stream_callback("on_part", || {
+                on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
+            })?;
         }
-    });
-    match outcome {
-        Ok(Ok(())) => 1,
-        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+        invoke_stream_callback("on_done", || {
+            on_done(stream_ctx as *mut c_void);
+        })?;
+        Ok::<(), AiMuxFfiError>(())
+    })?
 }
 
-#[allow(clippy::too_many_arguments)]
 fn stream_text_with_signal(
     handle: u64,
     prompt_json: *const c_char,
     opts_json: *const c_char,
-    on_part: extern "C" fn(*const c_char, *mut c_void),
-    on_done: extern "C" fn(*mut c_void),
+    on_part: Option<extern "C-unwind" fn(*const c_char, *mut c_void)>,
+    on_done: Option<extern "C-unwind" fn(*mut c_void)>,
     stream_ctx: *mut c_void,
-    err: *mut CAimuxError,
     abort_signal: Option<AbortSignal>,
-) -> i32 {
-    let model = match get_model(handle) {
-        Some(m) => m,
-        None => return unsafe { fail_invalid_handle(err, "model") },
-    };
-
-    let prompt = match cstr_to_string(prompt_json) {
-        Some(s) => match parse_prompt(&s) {
-            Ok(p) => p,
-            Err(e) => {
-                return unsafe { fail_json(err, format!("invalid prompt_json: {e}")) };
-            }
-        },
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid prompt_json") };
-        }
-    };
-
-    let mut opts = match cstr_to_string(opts_json) {
-        Some(s) => match parse_opts(&s) {
-            Ok(o) => o,
-            Err(e) => {
-                return unsafe { fail_json(err, format!("invalid opts_json: {e}")) };
-            }
-        },
-        None => GenerateTextOptions::default(),
-    };
+) -> FfiResult<()> {
+    // A NULL callback is this layer's finding, before anything else runs.
+    let on_part = on_part.ok_or(FfiError::NullPointer {
+        argument: "on_part",
+    })?;
+    let on_done = on_done.ok_or(FfiError::NullPointer {
+        argument: "on_done",
+    })?;
+    let model = model_of(handle)?;
+    let prompt = parse_prompt_arg(prompt_json)?;
+    let mut opts = parse_opts_arg(opts_json)?;
     opts.abort_signal = abort_signal.clone();
     let stream_ctx = stream_ctx as usize;
 
-    let outcome = ffi_block_on(async move {
-        let stream_result = match abort_signal.as_ref() {
+    ffi_block_on(async move {
+        let sr = match abort_signal.as_ref() {
             Some(signal) => {
                 tokio::select! {
                     biased;
@@ -1725,61 +1763,46 @@ fn stream_text_with_signal(
                 }
             }
             None => stream_text(&*model, prompt, opts).await,
-        };
-        match stream_result {
-            Ok(sr) => {
-                let mut stream = sr.stream;
-                loop {
-                    let next = match abort_signal.as_ref() {
-                        Some(signal) => {
-                            tokio::select! {
-                                biased;
-                                _ = signal.cancelled() => {
-                                    return Err(AiMuxError::Aborted);
-                                }
-                                item = stream.next() => item,
-                            }
-                        }
-                        None => stream.next().await,
-                    };
-                    let Some(item) = next else {
-                        break;
-                    };
-                    match item {
-                        Ok(part) => {
-                            let json =
-                                serde_json::to_string(&part).unwrap_or_else(|_| "{}".to_string());
-                            if let Ok(cstr) = CString::new(json) {
-                                invoke_stream_callback("on_part", || {
-                                    on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
-                                })?;
-                            }
-                        }
-                        Err(e) => return Err(e),
+        }?;
+        let mut stream = sr.stream;
+        loop {
+            let next = match abort_signal.as_ref() {
+                Some(signal) => {
+                    tokio::select! {
+                        biased;
+                        _ = signal.cancelled() => return Err(AiMuxError::Aborted.into()),
+                        item = stream.next() => item,
                     }
                 }
-                invoke_stream_callback("on_done", || {
-                    on_done(stream_ctx as *mut c_void);
-                })?;
-                Ok(())
-            }
-            Err(e) => Err(e),
+                None => stream.next().await,
+            };
+            let Some(item) = next else {
+                break;
+            };
+            // A part that cannot be serialized ends the stream with this
+            // layer's ResultSerialization — never a silent "{}" placeholder.
+            let cstr = stream_part_cstring(&item?)?;
+            invoke_stream_callback("on_part", || {
+                on_part(cstr.as_ptr(), stream_ctx as *mut c_void);
+            })?;
         }
-    });
-    match outcome {
-        Ok(Ok(())) => 1,
-        Ok(Err(e)) => unsafe { fail_ai(err, &e) },
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+        invoke_stream_callback("on_done", || {
+            on_done(stream_ctx as *mut c_void);
+        })?;
+        Ok::<(), AiMuxFfiError>(())
+    })?
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // C ABI: resource management
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Release a model handle previously returned by `aimux_*_new`.
+/// Release a handle previously returned by `aimux_*_new` (any handle type — a
+/// transcription session's driver task is aborted and joined as well, so
+/// `aimux_transcription_session_drop` is only a clearer name for the same
+/// thing).
 ///
-/// Safe to call with `0` (no-op).
+/// Safe to call with `0` or an unknown handle (no-op).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_drop_handle(handle: u64) {
     if handle != 0 {
@@ -1787,8 +1810,8 @@ pub extern "C" fn aimux_drop_handle(handle: u64) {
     }
 }
 
-/// Free a C string previously returned by any aimux function that returns
-/// `*mut c_char` — constructors, [`aimux_generate_text`], multimodal calls.
+/// Free a C string previously returned by any aimux function that hands out
+/// `*mut c_char` — result JSON, error getters.
 ///
 /// # Safety
 ///
@@ -1813,13 +1836,13 @@ pub unsafe extern "C" fn aimux_free_string(ptr: *mut c_char) {
 pub extern "C" fn aimux_openai_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).embedding_model(&model_id);
+        Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -1827,30 +1850,30 @@ pub extern "C" fn aimux_openai_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = OpenAIProvider::new(config).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = OpenAIConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = OpenAIProvider::new(config).embedding_model(&model_id);
+        Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_cohere_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = CohereProvider::new(CohereConfig::new(api_key)).embedding_model(&model_id);
+        Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -1858,30 +1881,30 @@ pub extern "C" fn aimux_cohere_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = CohereProvider::new(config).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = CohereConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = CohereProvider::new(config).embedding_model(&model_id);
+        Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_embedding_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = GoogleProvider::new(GoogleConfig::new(api_key)).embedding_model(&model_id);
+        Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -1889,54 +1912,46 @@ pub extern "C" fn aimux_google_embedding_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = GoogleProvider::new(config).embedding_model(&model_id);
-    intern_handle(ModelHandle::Embedding(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = GoogleConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = GoogleProvider::new(config).embedding_model(&model_id);
+        Ok(intern_handle(HandleEntry::Embedding(Arc::new(model))))
+    })
 }
 
 /// Generate embeddings. `values_json` is a JSON array of strings.
-/// Returns EmbeddingResult JSON (caller must free).
+/// Writes `EmbeddingResult` JSON (caller frees).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_embed(
     handle: u64,
     values_json: *const c_char,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Embedding(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "embedding") },
-    };
-    let values_json = match cstr_to_string(values_json) {
-        Some(s) => s,
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid values_json") };
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Embedding(model) = entry_of(handle, "embedding")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "embedding",
+            }
+            .into());
+        };
+        let values_json = str_arg(values_json, "values_json")?;
+        let mut opts = aimux_core::embedding_model::EmbeddingCallOptions::new("");
+        if let Some(s) = opt_str_arg(opts_json, "opts_json")?
+            && !s.trim().is_empty()
+            && s.trim() != "null"
+        {
+            opts = serde_json::from_str(&s).map_err(|e| wire_err("opts_json", e))?;
         }
-    };
-    let mut opts = aimux_core::embedding_model::EmbeddingCallOptions::new("");
-    if let Some(s) = cstr_to_string(opts_json)
-        && !s.trim().is_empty()
-        && s.trim() != "null"
-    {
-        match serde_json::from_str::<aimux_core::embedding_model::EmbeddingCallOptions>(&s) {
-            Ok(o) => opts = o,
-            Err(e) => return unsafe { fail_json(err, format!("invalid opts: {e}")) },
-        }
-    }
-    let values: Vec<String> = match serde_json::from_str(&values_json) {
-        Ok(v) => v,
-        Err(e) => return unsafe { fail_json(err, format!("invalid values: {e}")) },
-    };
-    opts.values = values;
-    run_and_serialize(err, async move { model.do_embed(&opts).await })
+        opts.values = serde_json::from_str(&values_json).map_err(|e| wire_err("values_json", e))?;
+        run_json(async move { model.do_embed(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1947,13 +1962,13 @@ pub extern "C" fn aimux_embed(
 pub extern "C" fn aimux_openai_speech_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).speech(&model_id);
-    intern_handle(ModelHandle::Speech(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).speech(&model_id);
+        Ok(intern_handle(HandleEntry::Speech(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -1961,35 +1976,33 @@ pub extern "C" fn aimux_openai_speech_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = OpenAIProvider::new(config).speech(&model_id);
-    intern_handle(ModelHandle::Speech(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = OpenAIConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = OpenAIProvider::new(config).speech(&model_id);
+        Ok(intern_handle(HandleEntry::Speech(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_speech_generate(
     handle: u64,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Speech(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "speech") },
-    };
-    let opts: aimux_core::speech_model::SpeechCallOptions =
-        match parse_json_arg(opts_json, "opts_json") {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_code(err, e) },
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Speech(model) = entry_of(handle, "speech")? else {
+            return Err(FfiError::InvalidHandle { expected: "speech" }.into());
         };
-    run_and_serialize(err, async move { model.do_generate(&opts).await })
+        let opts: aimux_core::speech_model::SpeechCallOptions =
+            parse_json_arg(opts_json, "opts_json")?;
+        run_json(async move { model.do_generate(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2000,13 +2013,13 @@ pub extern "C" fn aimux_speech_generate(
 pub extern "C" fn aimux_openai_image_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).image(&model_id);
+        Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2014,30 +2027,30 @@ pub extern "C" fn aimux_openai_image_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = OpenAIProvider::new(config).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = OpenAIConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = OpenAIProvider::new(config).image(&model_id);
+        Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_google_image_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = GoogleProvider::new(GoogleConfig::new(api_key)).image(&model_id);
+        Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2045,35 +2058,33 @@ pub extern "C" fn aimux_google_image_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = GoogleProvider::new(config).image(&model_id);
-    intern_handle(ModelHandle::Image(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = GoogleConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = GoogleProvider::new(config).image(&model_id);
+        Ok(intern_handle(HandleEntry::Image(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_image_generate(
     handle: u64,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Image(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "image") },
-    };
-    let opts: aimux_core::image_model::ImageCallOptions =
-        match parse_json_arg(opts_json, "opts_json") {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_code(err, e) },
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Image(model) = entry_of(handle, "image")? else {
+            return Err(FfiError::InvalidHandle { expected: "image" }.into());
         };
-    run_and_serialize(err, async move { model.do_generate(&opts).await })
+        let opts: aimux_core::image_model::ImageCallOptions =
+            parse_json_arg(opts_json, "opts_json")?;
+        run_json(async move { model.do_generate(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2084,13 +2095,13 @@ pub extern "C" fn aimux_image_generate(
 pub extern "C" fn aimux_openai_transcription_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).transcription(&model_id);
-    intern_handle(ModelHandle::Transcription(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = OpenAIProvider::new(OpenAIConfig::new(api_key)).transcription(&model_id);
+        Ok(intern_handle(HandleEntry::Transcription(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2098,17 +2109,17 @@ pub extern "C" fn aimux_openai_transcription_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = OpenAIProvider::new(config).transcription(&model_id);
-    intern_handle(ModelHandle::Transcription(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = OpenAIConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = OpenAIProvider::new(config).transcription(&model_id);
+        Ok(intern_handle(HandleEntry::Transcription(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2117,37 +2128,23 @@ pub extern "C" fn aimux_transcription_generate(
     audio_base64: *const c_char,
     media_type: *const c_char,
     _opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Transcription(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "transcription") },
-    };
-    let audio_base64 = match cstr_to_string(audio_base64) {
-        Some(s) => s,
-        None => {
-            return unsafe {
-                fail(
-                    err,
-                    AIMUX_E_INVALID_ARGUMENT,
-                    -1,
-                    -1,
-                    "invalid audio_base64",
-                )
-            };
-        }
-    };
-    let media_type = match cstr_to_string(media_type) {
-        Some(s) => s,
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid media_type") };
-        }
-    };
-    let opts = aimux_core::transcription_model::TranscriptionCallOptions::new(
-        aimux_core::transcription_model::AudioInput::Base64(audio_base64),
-        media_type,
-    );
-    run_and_serialize(err, async move { model.do_generate(&opts).await })
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Transcription(model) = entry_of(handle, "transcription")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "transcription",
+            }
+            .into());
+        };
+        let audio_base64 = str_arg(audio_base64, "audio_base64")?;
+        let media_type = str_arg(media_type, "media_type")?;
+        let opts = aimux_core::transcription_model::TranscriptionCallOptions::new(
+            aimux_core::transcription_model::AudioInput::Base64(audio_base64),
+            media_type,
+        );
+        run_json(async move { model.do_generate(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2167,17 +2164,14 @@ struct TranscriptionSessionFfiOptions {
 }
 
 /// Look up a transcription streaming session handle.
-fn get_transcription_session(
+fn session_of(
     handle: u64,
-    err: *mut CAimuxError,
-) -> Option<Arc<transcription_session::TranscriptionFfiSession>> {
-    match get_handle(handle) {
-        Some(ModelHandle::TranscriptionSession(s)) => Some(s),
-        _ => {
-            // Statement position: annotate the sentinel return type.
-            let _: i32 = unsafe { fail_invalid_handle(err, "transcription session") };
-            None
-        }
+) -> Result<Arc<transcription_session::TranscriptionFfiSession>, FfiError> {
+    match entry_of(handle, "transcription session")? {
+        HandleEntry::TranscriptionSession(s) => Ok(s),
+        _ => Err(FfiError::InvalidHandle {
+            expected: "transcription session",
+        }),
     }
 }
 
@@ -2191,47 +2185,42 @@ fn get_transcription_session(
 /// fail on the first `next_part` (the connect/establishment error surfaces
 /// there). `abort_handle` may be 0 (no cancellation) or an
 /// `aimux_abort_signal_new` handle — firing it aborts the session.
-///
-/// Returns a non-zero session handle, or 0 with `*err` filled.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_transcription_session_new(
     model_handle: u64,
     abort_handle: u64,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let model = match get_handle(model_handle) {
-        Some(ModelHandle::Transcription(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "transcription") },
-    };
-    let abort = if abort_handle == 0 {
-        None
-    } else {
-        match get_handle(abort_handle) {
-            Some(ModelHandle::Abort(signal)) => Some(signal),
-            _ => return unsafe { fail_invalid_handle(err, "abort signal") },
-        }
-    };
-    // NULL / empty / "null" = defaults (shared convention).
-    let Some(opts_json) = normalize_config_json(opts_json, err) else {
-        return 0;
-    };
-    let ffi_opts: TranscriptionSessionFfiOptions = match serde_json::from_str(&opts_json) {
-        Ok(o) => o,
-        Err(e) => return unsafe { fail_json(err, format!("invalid opts_json: {e}")) },
-    };
-    let session = transcription_session::TranscriptionFfiSession::spawn(
-        model,
-        transcription_session::SessionOptions {
-            input_audio_format: ffi_opts.input_audio_format,
-            provider_options: ffi_opts.provider_options,
-            headers: ffi_opts.headers,
-            include_raw_chunks: ffi_opts.include_raw_chunks.unwrap_or(false),
-            timeout: ffi_opts.timeout,
-        },
-        abort,
-    );
-    intern_handle(ModelHandle::TranscriptionSession(session))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let HandleEntry::Transcription(model) = entry_of(model_handle, "transcription")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "transcription",
+            }
+            .into());
+        };
+        let abort = if abort_handle == 0 {
+            None
+        } else {
+            Some(abort_of(abort_handle)?)
+        };
+        // NULL / empty / "null" = defaults (shared convention).
+        let opts_json = normalize_config_json(opts_json, "opts_json")?;
+        let ffi_opts: TranscriptionSessionFfiOptions =
+            serde_json::from_str(&opts_json).map_err(|e| wire_err("opts_json", e))?;
+        let session = transcription_session::TranscriptionFfiSession::spawn(
+            model,
+            transcription_session::SessionOptions {
+                input_audio_format: ffi_opts.input_audio_format,
+                provider_options: ffi_opts.provider_options,
+                headers: ffi_opts.headers,
+                include_raw_chunks: ffi_opts.include_raw_chunks.unwrap_or(false),
+                timeout: ffi_opts.timeout,
+            },
+            abort,
+        );
+        Ok(intern_handle(HandleEntry::TranscriptionSession(session)))
+    })
 }
 
 /// Push one binary audio chunk into the session. **Blocking**: waits while
@@ -2239,90 +2228,105 @@ pub extern "C" fn aimux_transcription_session_new(
 /// capture loop throttles). Must not be called from within an aimux callback
 /// (re-entrancy guard rejects it).
 ///
-/// `data` may be NULL only when `len == 0` (no-op). Returns 1 on success, 0
-/// with `*err` filled (session ended / input already finished / invalid args).
+/// `data` may be NULL only when `len == 0` (no-op). Failures: session ended /
+/// input already finished → AiMuxError; NULL data with `len > 0` →
+/// `NullPointer`; dead session → `InvalidHandle`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_transcription_push_audio(
     session: u64,
     data: *const u8,
     len: usize,
-    err: *mut CAimuxError,
-) -> i32 {
-    let Some(session) = get_transcription_session(session, err) else {
-        return 0;
-    };
-    if data.is_null() {
-        if len == 0 {
-            return 1; // no-op
+) -> *mut aimux_error_t {
+    no_result(|| {
+        let session = session_of(session)?;
+        if data.is_null() {
+            if len == 0 {
+                return Ok(()); // no-op
+            }
+            return Err(FfiError::NullPointer { argument: "data" }.into());
         }
-        return unsafe { fail_invalid_args(err) };
-    }
-    // SAFETY: caller guarantees `data` points to `len` valid bytes; the copy
-    // happens synchronously before any await.
-    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
-    match ffi_block_on(session.push_audio(bytes)) {
-        Ok(Ok(())) => 1,
-        Ok(Err(e)) | Err(e) => unsafe {
-            let _: i32 = fail_ai(err, &e);
-            0
-        },
-    }
+        // SAFETY: caller guarantees `data` points to `len` valid bytes; the copy
+        // happens synchronously before any await.
+        let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+        ffi_block_on(session.push_audio(bytes))??;
+        Ok(())
+    })
 }
 
 /// Signal end-of-audio (the audio stream ends; the provider flushes). Safe to
-/// call multiple times. Returns 1 on success, 0 with `*err` filled when the
-/// session handle is invalid.
+/// call multiple times. Fails only for a dead session handle.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_transcription_input_done(session: u64, err: *mut CAimuxError) -> i32 {
-    let Some(session) = get_transcription_session(session, err) else {
-        return 0;
-    };
-    session.input_done();
-    1
+pub extern "C" fn aimux_transcription_input_done(session: u64) -> *mut aimux_error_t {
+    no_result(|| {
+        session_of(session)?.input_done();
+        Ok(())
+    })
 }
 
 /// Pull the next transcription part (JSON-serialized `TranscriptionStreamPart`;
 /// free with `aimux_free_string`).
 ///
 /// `timeout_ms`: >0 = wait at most that long; 0 = immediate poll; <0 = wait
-/// indefinitely. Returns NULL in three distinguishable cases — the caller
-/// MUST pass a non-NULL `err`:
-/// - `err.code == AIMUX_E_TIMEOUT` — no part in time; the session is still
-///   live, call again.
-/// - `err.code == AIMUX_OK` (untouched on success by convention; callers
-///   following clear-then-call see 0) — the stream ended normally (a
-///   `Finish` part was delivered earlier).
-/// - any other error code — the stream failed (abort / API error), details
-///   in `err`.
+/// indefinitely. Both out-params are required. On NULL return `*out_state`
+/// says what happened:
+/// - `AIMUX_TRANSCRIPTION_NEXT_PART_PART` — `*out_part` holds a part;
+/// - `AIMUX_TRANSCRIPTION_NEXT_PART_ENDED` — the stream ended normally (a
+///   `Finish` part was delivered earlier); `*out_part` is NULL;
+/// - `AIMUX_TRANSCRIPTION_NEXT_PART_TIMEOUT` — no part in time; the session
+///   is still live, call again; `*out_part` is NULL.
+///
+/// A non-NULL return is a failure (abort / API error / dead handle);
+/// `*out_part` is NULL and `*out_state` is unspecified.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_transcription_next_part(
     session: u64,
     timeout_ms: i64,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let Some(session) = get_transcription_session(session, err) else {
-        return std::ptr::null_mut();
-    };
-    let timeout = if timeout_ms < 0 {
-        None
-    } else {
-        Some(std::time::Duration::from_millis(timeout_ms as u64))
-    };
-    match ffi_block_on(session.next_part(timeout)) {
-        // A part arrived.
-        Ok(Ok(Some(Ok(part)))) => match serde_json::to_string(&part) {
-            Ok(json) => into_cstring_raw(json),
-            Err(e) => unsafe { fail_json(err, format!("serialize transcription part: {e}")) },
-        },
-        // The part stream itself errored (abort / API error) — final error.
-        Ok(Ok(Some(Err(e)))) | Ok(Err(e)) | Err(e) => unsafe {
-            let _: *mut c_char = fail_ai(err, &e);
-            std::ptr::null_mut()
-        },
-        // Channel closed: normal end. NULL with err left untouched (OK by
-        // the clear-then-call convention).
-        Ok(Ok(None)) => std::ptr::null_mut(),
+    out_part: *mut *mut c_char,
+    out_state: *mut i32,
+) -> *mut aimux_error_t {
+    if out_part.is_null() {
+        return no_result(|| {
+            Err(FfiError::NullPointer {
+                argument: "out_part",
+            }
+            .into())
+        });
     }
+    // Sentinel first, so a failure below (including a NULL out_state) never
+    // leaves a stale pointer in *out_part.
+    unsafe { *out_part = std::ptr::null_mut() };
+    if out_state.is_null() {
+        return no_result(|| {
+            Err(FfiError::NullPointer {
+                argument: "out_state",
+            }
+            .into())
+        });
+    }
+    let r: FfiResult<(i32, Option<String>)> = (|| {
+        let session = session_of(session)?;
+        let timeout = if timeout_ms < 0 {
+            None
+        } else {
+            Some(std::time::Duration::from_millis(timeout_ms as u64))
+        };
+        Ok(match ffi_block_on(session.next_part(timeout))? {
+            // A part arrived.
+            Ok(Some(Ok(part))) => (AIMUX_TRANSCRIPTION_NEXT_PART_PART, Some(to_json(&part)?)),
+            // Channel closed: normal end.
+            Ok(None) => (AIMUX_TRANSCRIPTION_NEXT_PART_ENDED, None),
+            // No part within `timeout`; the session is still live.
+            Err(AiMuxError::Timeout(_)) => (AIMUX_TRANSCRIPTION_NEXT_PART_TIMEOUT, None),
+            // The part stream itself errored (abort / API error) — final error.
+            Ok(Some(Err(e))) | Err(e) => return Err(e.into()),
+        })
+    })();
+    finish(r, |(state, part)| unsafe {
+        *out_state = state;
+        if let Some(p) = part {
+            *out_part = into_cstring_raw(p);
+        }
+    })
 }
 
 /// Terminate a transcription session and release it: aborts the driver,
@@ -2335,7 +2339,7 @@ pub extern "C" fn aimux_transcription_session_drop(session: u64) {
         .lock()
         .expect("aimux-ffi: registry mutex poisoned")
         .remove(&session);
-    if let Some(ModelHandle::TranscriptionSession(s)) = removed {
+    if let Some(HandleEntry::TranscriptionSession(s)) = removed {
         s.terminate();
     }
 }
@@ -2345,29 +2349,32 @@ pub extern "C" fn aimux_transcription_session_drop(session: u64) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_openai_files_new(api_key: *const c_char, err: *mut CAimuxError) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let files = OpenAIProvider::new(OpenAIConfig::new(api_key)).files();
-    intern_handle(ModelHandle::Files(Arc::new(files)))
+pub extern "C" fn aimux_openai_files_new(
+    api_key: *const c_char,
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let files = OpenAIProvider::new(OpenAIConfig::new(api_key)).files();
+        Ok(intern_handle(HandleEntry::Files(Arc::new(files))))
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_openai_files_new_with_base(
     api_key: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = OpenAIConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let files = OpenAIProvider::new(config).files();
-    intern_handle(ModelHandle::Files(Arc::new(files)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let mut config = OpenAIConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let files = OpenAIProvider::new(config).files();
+        Ok(intern_handle(HandleEntry::Files(Arc::new(files))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2376,31 +2383,22 @@ pub extern "C" fn aimux_file_upload(
     data_base64: *const c_char,
     media_type: *const c_char,
     _opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Files(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "files") },
-    };
-    let data_base64 = match cstr_to_string(data_base64) {
-        Some(s) => s,
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid data_base64") };
-        }
-    };
-    let media_type = match cstr_to_string(media_type) {
-        Some(s) => s,
-        None => {
-            return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid media_type") };
-        }
-    };
-    let opts = aimux_core::files_model::UploadFileCallOptions::new(
-        aimux_core::files_model::UploadFileData::Data {
-            data: aimux_core::shared::FileBytes::Base64(data_base64),
-        },
-        media_type,
-    );
-    run_and_serialize(err, async move { model.upload_file(&opts).await })
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Files(model) = entry_of(handle, "files")? else {
+            return Err(FfiError::InvalidHandle { expected: "files" }.into());
+        };
+        let data_base64 = str_arg(data_base64, "data_base64")?;
+        let media_type = str_arg(media_type, "media_type")?;
+        let opts = aimux_core::files_model::UploadFileCallOptions::new(
+            aimux_core::files_model::UploadFileData::Data {
+                data: aimux_core::shared::FileBytes::Base64(data_base64),
+            },
+            media_type,
+        );
+        run_json(async move { model.upload_file(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2412,13 +2410,13 @@ pub extern "C" fn aimux_file_upload(
 pub extern "C" fn aimux_cohere_reranking_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = CohereProvider::new(CohereConfig::new(api_key)).reranking_model(&model_id);
-    intern_handle(ModelHandle::Reranking(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = CohereProvider::new(CohereConfig::new(api_key)).reranking_model(&model_id);
+        Ok(intern_handle(HandleEntry::Reranking(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2426,38 +2424,38 @@ pub extern "C" fn aimux_cohere_reranking_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = CohereConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = CohereProvider::new(config).reranking_model(&model_id);
-    intern_handle(ModelHandle::Reranking(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = CohereConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = CohereProvider::new(config).reranking_model(&model_id);
+        Ok(intern_handle(HandleEntry::Reranking(Arc::new(model))))
+    })
 }
 
 /// Rerank documents. `opts_json` is JSON-serialized `RerankingCallOptions`
-/// (must contain `query` and `documents`). Returns `RerankingResult` JSON
-/// (caller must free), or NULL on failure (fills `*err` when non-NULL).
+/// (must contain `query` and `documents`). Writes `RerankingResult` JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_rerank(
     handle: u64,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Reranking(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "reranking") },
-    };
-    let opts: aimux_core::reranking_model::RerankingCallOptions =
-        match parse_json_arg(opts_json, "opts_json") {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_code(err, e) },
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Reranking(model) = entry_of(handle, "reranking")? else {
+            return Err(FfiError::InvalidHandle {
+                expected: "reranking",
+            }
+            .into());
         };
-    run_and_serialize(err, async move { model.do_rerank(&opts).await })
+        let opts: aimux_core::reranking_model::RerankingCallOptions =
+            parse_json_arg(opts_json, "opts_json")?;
+        run_json(async move { model.do_rerank(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2469,13 +2467,13 @@ pub extern "C" fn aimux_rerank(
 pub extern "C" fn aimux_google_video_new(
     api_key: *const c_char,
     model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = GoogleProvider::new(GoogleConfig::new(api_key)).video(&model_id);
-    intern_handle(ModelHandle::Video(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let model = GoogleProvider::new(GoogleConfig::new(api_key)).video(&model_id);
+        Ok(intern_handle(HandleEntry::Video(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2483,38 +2481,35 @@ pub extern "C" fn aimux_google_video_new_with_base(
     api_key: *const c_char,
     model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some((api_key, model_id)) = (unsafe { parse_two_args(api_key, model_id) }) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = GoogleConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = GoogleProvider::new(config).video(&model_id);
-    intern_handle(ModelHandle::Video(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let (api_key, model_id) = parse_two_args(api_key, "api_key", model_id, "model_id")?;
+        let mut config = GoogleConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = GoogleProvider::new(config).video(&model_id);
+        Ok(intern_handle(HandleEntry::Video(Arc::new(model))))
+    })
 }
 
 /// Generate video. `opts_json` is JSON-serialized `VideoCallOptions`
-/// (must contain `prompt`). Returns `VideoResult` JSON (caller must free),
-/// or NULL on failure (fills `*err` when non-NULL).
+/// (must contain `prompt`). Writes `VideoResult` JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_video_generate(
     handle: u64,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Video(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "video") },
-    };
-    let opts: aimux_core::video_model::VideoCallOptions =
-        match parse_json_arg(opts_json, "opts_json") {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_code(err, e) },
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Video(model) = entry_of(handle, "video")? else {
+            return Err(FfiError::InvalidHandle { expected: "video" }.into());
         };
-    run_and_serialize(err, async move { model.do_generate(&opts).await })
+        let opts: aimux_core::video_model::VideoCallOptions =
+            parse_json_arg(opts_json, "opts_json")?;
+        run_json(async move { model.do_generate(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2527,13 +2522,13 @@ pub extern "C" fn aimux_video_generate(
 pub extern "C" fn aimux_tavily_search_new(
     api_key: *const c_char,
     _model_id: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let model = TavilyProvider::new(TavilyConfig::new(api_key)).search_model();
-    intern_handle(ModelHandle::Search(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let model = TavilyProvider::new(TavilyConfig::new(api_key)).search_model();
+        Ok(intern_handle(HandleEntry::Search(Arc::new(model))))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -2541,38 +2536,35 @@ pub extern "C" fn aimux_tavily_search_new_with_base(
     api_key: *const c_char,
     _model_id: *const c_char,
     base_url: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(api_key) = cstr_to_string(api_key) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let mut config = TavilyConfig::new(api_key);
-    if let Some(url) = parse_base_url(base_url) {
-        config = config.with_base_url(url);
-    }
-    let model = TavilyProvider::new(config).search_model();
-    intern_handle(ModelHandle::Search(Arc::new(model)))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let api_key = str_arg(api_key, "api_key")?;
+        let mut config = TavilyConfig::new(api_key);
+        if let Some(url) = parse_base_url(base_url)? {
+            config = config.with_base_url(url);
+        }
+        let model = TavilyProvider::new(config).search_model();
+        Ok(intern_handle(HandleEntry::Search(Arc::new(model))))
+    })
 }
 
 /// Execute a search. `opts_json` is JSON-serialized `SearchCallOptions`
-/// (must contain `query`). Returns `SearchResult` JSON (caller must free),
-/// or NULL on failure (fills `*err` when non-NULL).
+/// (must contain `query`). Writes `SearchResult` JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_search(
     handle: u64,
     opts_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let model = match get_handle(handle) {
-        Some(ModelHandle::Search(m)) => m,
-        _ => return unsafe { fail_invalid_handle(err, "search") },
-    };
-    let opts: aimux_core::search_model::SearchCallOptions =
-        match parse_json_arg(opts_json, "opts_json") {
-            Ok(o) => o,
-            Err(e) => return unsafe { fail_code(err, e) },
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let HandleEntry::Search(model) = entry_of(handle, "search")? else {
+            return Err(FfiError::InvalidHandle { expected: "search" }.into());
         };
-    run_and_serialize(err, async move { model.do_search(&opts).await })
+        let opts: aimux_core::search_model::SearchCallOptions =
+            parse_json_arg(opts_json, "opts_json")?;
+        run_json(async move { model.do_search(&opts).await })
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2582,24 +2574,21 @@ pub extern "C" fn aimux_search(
 /// Refresh a Codex subscription access token (RFC-0018 §3.2).
 ///
 /// Stateless: performs one OAuth `refresh_token` grant against
-/// `auth.openai.com/oauth/token`. Returns
-/// `{"access_token","refresh_token","expires_in_secs"}` JSON on success, or
-/// the standard error JSON (caller must free with `aimux_free_string`).
-/// The caller owns token persistence and the 401 → refresh → retry
-/// orchestration — the library never stores credentials.
+/// `auth.openai.com/oauth/token`. Writes
+/// `{"access_token","refresh_token","expires_in_secs"}` JSON on success
+/// (caller frees with `aimux_free_string`). The caller owns token persistence
+/// and the 401 → refresh → retry orchestration — the library never stores
+/// credentials.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_codex_refresh(
     refresh_token: *const c_char,
     client_id: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let (Some(refresh_token), Some(client_id)) =
-        (cstr_to_string(refresh_token), cstr_to_string(client_id))
-    else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    run_and_serialize(err, async move {
-        aimux_providers::codex_refresh(&refresh_token, &client_id).await
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let (refresh_token, client_id) =
+            parse_two_args(refresh_token, "refresh_token", client_id, "client_id")?;
+        run_json(async move { aimux_providers::codex_refresh(&refresh_token, &client_id).await })
     })
 }
 
@@ -2615,20 +2604,16 @@ pub extern "C" fn aimux_codex_refresh(
 ///
 /// @param level NUL-terminated level string: "off" / "error" / "warn" /
 ///              "info" / "debug" / "trace". NULL falls back to the default
-///              ("warn"). `AIMUX_LOG` (RUST_LOG-style) and `AIMUX_LOG_LEVEL`
-///              env vars take precedence when set. Logs go to stderr.
-/// @return Always 0.
+///              ("warn"); a non-UTF-8 pointer is `InvalidUtf8`. `AIMUX_LOG`
+///              (RUST_LOG-style) and `AIMUX_LOG_LEVEL` env vars take
+///              precedence when set. Logs go to stderr.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_init_logging(level: *const c_char) -> i32 {
-    if level.is_null() {
-        aimux_providers::init_logging("warn");
-        return 0;
-    }
-    match cstr_to_string(level) {
-        Some(level) => aimux_providers::init_logging(&level),
-        None => aimux_providers::init_logging("warn"),
-    }
-    0
+pub extern "C" fn aimux_init_logging(level: *const c_char) -> *mut aimux_error_t {
+    no_result(|| {
+        let level = opt_str_arg(level, "level")?;
+        aimux_providers::init_logging(level.as_deref().unwrap_or("warn"));
+        Ok(())
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2637,55 +2622,43 @@ pub extern "C" fn aimux_init_logging(level: *const c_char) -> i32 {
 
 /// Register the global session store (RFC-0024). Replaces any previous one.
 /// Until called, calls are not grouped and the session query functions return
-/// empty results. Returns 0.
+/// empty results.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_session_store_init() -> i32 {
+pub extern "C" fn aimux_session_store_init() {
     aimux_core::session::init_session_store(std::sync::Arc::new(
         aimux_core::session::SessionStore::new(),
     ));
-    0
 }
 
 /// Enable/disable the global session inferer (RFC-0024, opt-in, off by
 /// default). Explicit `session_id` values always win regardless.
-/// `enabled` nonzero = on. Returns 0.
+/// `enabled` nonzero = on.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_session_infer_init(enabled: i32) -> i32 {
+pub extern "C" fn aimux_session_infer_init(enabled: i32) {
     aimux_core::session::init_session_infer(enabled != 0);
-    0
 }
 
 /// Query: all calls of a session, ordered by step (RFC-0024).
 ///
-/// Returns a JSON string — a serialized `SessionCall[]` (empty array if the
-/// session is unknown or no store is registered), or NULL on
-/// failure — that the caller MUST free with [`aimux_free_string`]. Returns a
-/// null pointer only if allocation fails.
+/// Writes a serialized `SessionCall[]` (empty array if the session is unknown
+/// or no store is registered); the caller frees it with [`aimux_free_string`].
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_session_calls(
     session_id: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let Some(id) = cstr_to_string(session_id) else {
-        return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid session_id") };
-    };
-    match serde_json::to_string(&aimux_core::session::session_calls(&id)) {
-        Ok(s) => into_cstring_raw(s),
-        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
-    }
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let id = str_arg(session_id, "session_id")?;
+        to_json(&aimux_core::session::session_calls(&id))
+    })
 }
 
-/// Query: all known sessions (RFC-0024).
-///
-/// Returns a JSON string — a serialized `SessionView[]`, or NULL
-/// on failure — that the caller MUST free with [`aimux_free_string`]. Returns
-/// a null pointer only if allocation fails.
+/// Query: all known sessions (RFC-0024). Writes a serialized `SessionView[]`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_list_sessions(err: *mut CAimuxError) -> *mut c_char {
-    match serde_json::to_string(&aimux_core::session::list_sessions()) {
-        Ok(s) => into_cstring_raw(s),
-        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
-    }
+pub extern "C" fn aimux_list_sessions(out_json: *mut *mut c_char) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        to_json(&aimux_core::session::list_sessions())
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2698,147 +2671,135 @@ fn trace_stores() -> &'static Mutex<HashMap<u64, Arc<RingTraceStore>>> {
     TRACE_STORES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn get_trace_store(handle: u64) -> Option<Arc<RingTraceStore>> {
+fn trace_store_of(handle: u64) -> Result<Arc<RingTraceStore>, FfiError> {
     trace_stores()
         .lock()
         .expect("aimux-ffi: trace registry mutex poisoned")
         .get(&handle)
         .cloned()
+        .ok_or(FfiError::InvalidHandle { expected: "trace" })
 }
 
-/// Wrap a model handle in a probe layer (RFC-0015). Returns a new handle that
-/// can be used with `aimux_generate_text` / `aimux_stream_text` (probed) and
-/// with the `aimux_trace_*` query functions. Returns a non-zero handle or 0 on failure (fills `*err`); drop with
-/// `aimux_free_string`.
-#[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_new(handle: u64, err: *mut CAimuxError) -> u64 {
-    let Some(model) = get_model(handle) else {
-        return unsafe { fail_invalid_handle(err, "model") };
-    };
+fn trace_wrap(handle: u64, audited: Option<bool>) -> FfiResult<u64> {
+    let model = model_of(handle)?;
     let store = Arc::new(RingTraceStore::new());
-    let layer = Arc::new(TraceLayer::new(model, store.clone()));
-    let new_handle = intern_model(layer);
+    let mut layer = TraceLayer::new(model, store.clone());
+    if let Some(strict) = audited {
+        layer = layer.with_rules_auditor(strict);
+    }
+    let new_handle = intern_model(Arc::new(layer));
     trace_stores()
         .lock()
         .expect("aimux-ffi: trace registry mutex poisoned")
         .insert(new_handle, store);
-    new_handle
+    Ok(new_handle)
+}
+
+/// Wrap a model handle in a probe layer (RFC-0015). The new handle can be
+/// used with `aimux_generate_text` / `aimux_stream_text` (probed) and with
+/// the `aimux_trace_*` query functions; release with `aimux_drop_handle`.
+#[unsafe(no_mangle)]
+pub extern "C" fn aimux_trace_new(handle: u64, out_handle: *mut u64) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || trace_wrap(handle, None))
 }
 
 /// Wrap a model handle in a probe layer WITH the built-in rules auditor
 /// (RFC-0015 §4). `strict` nonzero = strict mode (self-hosted single
-/// instance); zero = shared mode (safe default). Returns non-zero handle or 0;
-/// drop with `aimux_drop_handle`.
+/// instance); zero = shared mode (safe default). Release with
+/// `aimux_drop_handle`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_new_audited(handle: u64, strict: i32, err: *mut CAimuxError) -> u64 {
-    let Some(model) = get_model(handle) else {
-        return unsafe { fail_invalid_handle(err, "model") };
-    };
-    let store = Arc::new(RingTraceStore::new());
-    let layer = Arc::new(TraceLayer::new(model, store.clone()).with_rules_auditor(strict != 0));
-    let new_handle = intern_model(layer);
-    trace_stores()
-        .lock()
-        .expect("aimux-ffi: trace registry mutex poisoned")
-        .insert(new_handle, store);
-    new_handle
+pub extern "C" fn aimux_trace_new_audited(
+    handle: u64,
+    strict: i32,
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || trace_wrap(handle, Some(strict != 0)))
 }
 
 /// Query: aggregated probe statistics, filtered by `filter_json` (a serialized
-/// `TraceFilter`; pass `"{}"` for all rows — NULL is rejected as an invalid
-/// argument). Returns JSON `TraceStats[]` or NULL on failure; caller frees
-/// with `aimux_free_string`.
+/// `TraceFilter`; pass `"{}"` for all rows — NULL is `NullPointer`). Writes
+/// JSON `TraceStats[]`; caller frees with `aimux_free_string`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_trace_aggregate(
     handle: u64,
     filter_json: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let Some(store) = get_trace_store(handle) else {
-        return unsafe { fail_invalid_handle(err, "trace") };
-    };
-    let filter = match parse_json_arg::<TraceFilter>(filter_json, "filter_json") {
-        Ok(f) => f,
-        Err(e) => return unsafe { fail_code(err, e) },
-    };
-    match serde_json::to_string(&store.aggregate(&filter)) {
-        Ok(s) => into_cstring_raw(s),
-        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
-    }
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let store = trace_store_of(handle)?;
+        let filter = parse_json_arg::<TraceFilter>(filter_json, "filter_json")?;
+        to_json(&store.aggregate(&filter))
+    })
 }
 
-/// Query: one session's chain view. Returns JSON `SessionChainView` or
-/// NULL on failure (e.g. unknown session); caller frees with `aimux_free_string`.
+/// Query: one session's chain view. Writes JSON `SessionChainView`; caller
+/// frees with `aimux_free_string`. An unknown `session_id` is a lookup miss
+/// on a caller-supplied value and is reported as
+/// `AiMuxError::InvalidArgument` ("unknown session"), not as an invalid C
+/// handle — the id is a string key, not a registry handle.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_trace_session_chain(
     handle: u64,
     session_id: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let Some(store) = get_trace_store(handle) else {
-        return unsafe { fail_invalid_handle(err, "trace") };
-    };
-    let Some(id) = cstr_to_string(session_id) else {
-        return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid session_id") };
-    };
-    match store.session_chain(&id) {
-        Some(view) => match serde_json::to_string(&view) {
-            Ok(s) => into_cstring_raw(s),
-            Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
-        },
-        None => unsafe { fail_other(err, "unknown session") },
-    }
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let store = trace_store_of(handle)?;
+        let id = str_arg(session_id, "session_id")?;
+        let view = store
+            .session_chain(&id)
+            .ok_or_else(|| AiMuxError::InvalidArgument("unknown session".into()))?;
+        to_json(&view)
+    })
 }
 
 /// Query: one session's per-step cache-hit trajectory (RFC-0024 §4.3).
-/// Returns a JSON array of `SessionStepStat` (empty for unknown sessions) or
-/// NULL on failure; caller frees success with `aimux_free_string`.
+/// Writes a JSON array of `SessionStepStat` (empty for unknown sessions);
+/// caller frees with `aimux_free_string`.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_trace_session_trajectory(
     handle: u64,
     session_id: *const c_char,
-    err: *mut CAimuxError,
-) -> *mut c_char {
-    let Some(store) = get_trace_store(handle) else {
-        return unsafe { fail_invalid_handle(err, "trace") };
-    };
-    let Some(id) = cstr_to_string(session_id) else {
-        return unsafe { fail(err, AIMUX_E_INVALID_ARGUMENT, -1, -1, "invalid session_id") };
-    };
-    match serde_json::to_string(&store.session_cache_trajectory(&id)) {
-        Ok(s) => into_cstring_raw(s),
-        Err(e) => unsafe { fail_other(err, format!("serialize: {e}")) },
-    }
+    out_json: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_json, "out_json", || {
+        let store = trace_store_of(handle)?;
+        let id = str_arg(session_id, "session_id")?;
+        to_json(&store.session_cache_trajectory(&id))
+    })
 }
 
-/// Export all probe records as JSONL (one `TraceRecord` per line). Returns a
-/// JSON string (with embedded newlines) or NULL on failure; caller frees with
-/// `aimux_free_string`.
+/// Export all probe records as JSONL (one `TraceRecord` per line). Writes a
+/// string with embedded newlines; caller frees with `aimux_free_string`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_export_jsonl(handle: u64, err: *mut CAimuxError) -> *mut c_char {
-    let Some(store) = get_trace_store(handle) else {
-        return unsafe { fail_invalid_handle(err, "trace") };
-    };
-    let mut buf = Vec::new();
-    match store.export_jsonl(&mut buf) {
-        Ok(()) => match String::from_utf8(buf) {
-            Ok(s) => into_cstring_raw(s),
-            Err(e) => unsafe { fail_other(err, format!("utf8: {e}")) },
-        },
-        Err(e) => unsafe { fail_other(err, format!("export: {e}")) },
-    }
+pub extern "C" fn aimux_trace_export_jsonl(
+    handle: u64,
+    out_jsonl: *mut *mut c_char,
+) -> *mut aimux_error_t {
+    with_out_string(out_jsonl, "out_jsonl", || {
+        let store = trace_store_of(handle)?;
+        let mut buf = Vec::new();
+        store
+            .export_jsonl(&mut buf)
+            .map_err(|e| FfiError::ResultSerialization {
+                message: format!("export: {e}"),
+            })?;
+        String::from_utf8(buf).map_err(|e| {
+            FfiError::ResultSerialization {
+                message: format!("utf8: {e}"),
+            }
+            .into()
+        })
+    })
 }
 
-/// Clear all probe records of a trace handle. Returns 0.
+/// Clear all probe records of a trace handle. Fails only for a dead handle.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_trace_clear(handle: u64) -> i32 {
-    match get_trace_store(handle) {
-        Some(store) => {
-            store.clear();
-            0
-        }
-        None => -1,
-    }
+pub extern "C" fn aimux_trace_clear(handle: u64) -> *mut aimux_error_t {
+    no_result(|| {
+        trace_store_of(handle)?.clear();
+        Ok(())
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2847,31 +2808,36 @@ pub extern "C" fn aimux_trace_clear(handle: u64) -> i32 {
 
 /// Start recording (RFC-0023 P1/P2): writes complete `Recording` JSONL to
 /// `{dir}/recordings.jsonl` (dir auto-created). Recording is **opt-in**.
-/// Calling again with a different dir replaces the recorder. Returns 0 on
-/// success, -1 on null `dir`.
+/// Calling again with a different dir replaces the recorder.
+///
+/// A null / non-UTF-8 `dir` is a C ABI failure; recorder construction
+/// failures carry the recording view (`AIMUX_E_RECORDING_INIT`,
+/// `AIMUX_E_RECORDING_OPEN_FILE`, or `AIMUX_E_RECORDING_SPAWN`). On failure
+/// the previous recorder, if any, is left in place.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_init_recording(dir: *const c_char) -> i32 {
-    let Some(dir) = cstr_to_string(dir) else {
-        return -1;
-    };
-    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-        aimux_core::recording::JsonlRecorder::new(dir),
-    )));
-    0
+pub extern "C" fn aimux_init_recording(dir: *const c_char) -> *mut aimux_error_t {
+    no_result(|| {
+        let dir = str_arg(dir, "dir")?;
+        let rec = aimux_core::recording::JsonlRecorder::try_new(dir)?;
+        aimux_core::recording::init_recording(Some(std::sync::Arc::new(rec)));
+        Ok(())
+    })
 }
 
 /// Start in-memory bounded recording (RFC-0023 P6): `RingRecorder` with `cap`
-/// entries, FIFO eviction, dropped-count queryable. Returns 0 on success,
-/// -1 when `cap == 0`.
+/// entries, FIFO eviction, dropped-count queryable. `cap == 0` is
+/// `AiMuxError::InvalidArgument`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_init_recording_ring(cap: u64) -> i32 {
-    if cap == 0 {
-        return -1;
-    }
-    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-        aimux_core::recording::RingRecorder::with_capacity(cap as usize),
-    )));
-    0
+pub extern "C" fn aimux_init_recording_ring(cap: u64) -> *mut aimux_error_t {
+    no_result(|| {
+        if cap == 0 {
+            return Err(AiMuxError::InvalidArgument("cap: must be > 0".into()).into());
+        }
+        aimux_core::recording::init_recording(Some(std::sync::Arc::new(
+            aimux_core::recording::RingRecorder::with_capacity(cap as usize),
+        )));
+        Ok(())
+    })
 }
 
 /// No-argument variant of [`aimux_init_recording_ring`]: initialize the global
@@ -2879,211 +2845,214 @@ pub extern "C" fn aimux_init_recording_ring(cap: u64) -> i32 {
 /// entries, [`aimux_core::recording::RingRecorder::default`]). Ordinary callers
 /// should prefer this entry point and leave the ring size to the library; pass
 /// an explicit `cap` via [`aimux_init_recording_ring`] only when a different
-/// size is required. Returns 0 on success.
+/// size is required.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_init_recording_ring_default() -> i32 {
+pub extern "C" fn aimux_init_recording_ring_default() {
     aimux_core::recording::init_recording(Some(std::sync::Arc::new(
         aimux_core::recording::RingRecorder::default(),
     )));
-    0
 }
 
-/// Stop recording: global recorder = None (new calls are unrecorded). Returns 0.
+/// Stop recording: global recorder = None (new calls are unrecorded).
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_recording_stop() -> i32 {
+pub extern "C" fn aimux_recording_stop() {
     aimux_core::recording::init_recording(None);
-    0
 }
 
 /// Flush the global recorder (blocks until JSONL is on disk; no-op for the
-/// ring recorder). Returns 0.
+/// ring recorder). Write failures are not reported here — see
+/// [`aimux_recording_try_flush`].
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_recording_flush() -> i32 {
+pub extern "C" fn aimux_recording_flush() {
     if let Some(rec) = aimux_core::recording::recorder() {
         rec.flush();
     }
-    0
 }
 
 /// Flush the global recorder and **report write failures** (see #136).
 ///
-/// Unlike [`aimux_recording_flush`] — which always returns 0 for
-/// compatibility — this surface makes the recorder's durability observable
-/// across the C ABI:
-/// - `AIMUX_OK` — data confirmed on disk (also when recording was never
-///   initialized: nothing to flush).
+/// Unlike [`aimux_recording_flush`], this surface makes the recorder's
+/// durability observable across the C ABI: NULL when the data is confirmed
+/// on disk (also when recording was never initialized: nothing to flush), an
+/// returned error with the recording view otherwise. Codes reachable from a
+/// flush:
 /// - `AIMUX_E_RECORDING_WRITE` — a prior write failed (e.g. ENOSPC); the
 ///   first error is sticky and every later flush keeps reporting it.
-/// - `AIMUX_E_RECORDING_WRITER_GONE` — the writer thread is unavailable
-///   (e.g. recording was initialized with an unwritable directory and
-///   downgraded to a no-op recorder).
+/// - `AIMUX_E_RECORDING_WRITER_GONE` — the writer thread is unavailable.
 /// - `AIMUX_E_RECORDING_FLUSH_TIMEOUT` — no writer ack within 30s.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_recording_try_flush() -> i32 {
-    let Some(rec) = aimux_core::recording::recorder() else {
-        return AIMUX_OK;
-    };
-    use aimux_core::recording::RecordingError;
-    match rec.try_flush() {
-        Ok(()) => AIMUX_OK,
-        Err(RecordingError::Write(_)) => AIMUX_E_RECORDING_WRITE,
-        Err(RecordingError::WriterGone) => AIMUX_E_RECORDING_WRITER_GONE,
-        Err(RecordingError::FlushTimeout) => AIMUX_E_RECORDING_FLUSH_TIMEOUT,
-        Err(_) => AIMUX_E_UNKNOWN,
-    }
+pub extern "C" fn aimux_recording_try_flush() -> *mut aimux_error_t {
+    no_result(|| {
+        if let Some(rec) = aimux_core::recording::recorder() {
+            rec.try_flush()?;
+        }
+        Ok(())
+    })
 }
 
 /// Register external OpenAI-compatible providers from a JSON config string
 /// (RFC-0020). `config_json` is `{ "providers": [ { "name": ..., "base_url":
 /// ..., ... }, ... ] }`. Entries override same-named built-ins or add new
-/// ones. Returns 1 on success, 0 on failure (with `err` filled).
+/// ones. Malformed JSON text is `InvalidWireJson`; a well-formed document the
+/// registry rejects is `AiMuxError::InvalidArgument`.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_register_providers(
-    config_json: *const c_char,
-    err: *mut CAimuxError,
-) -> i32 {
-    let Some(json) = cstr_to_string(config_json) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    match aimux_providers::load_providers_from_json(&json) {
-        Ok(()) => 1,
-        Err(e) => unsafe { fail_ai(err, &e) },
-    }
+pub extern "C" fn aimux_register_providers(config_json: *const c_char) -> *mut aimux_error_t {
+    no_result(|| {
+        let json = str_arg(config_json, "config_json")?;
+        // Malformed JSON text is this layer's finding; a well-formed document
+        // that the registry rejects (bad schema, unknown protocol) is an AiMuxError.
+        serde_json::from_str::<serde_json::Value>(&json).map_err(|e| wire_err("config_json", e))?;
+        aimux_providers::load_providers_from_json(&json).map_err(|e| match e {
+            // The registry reports a schema mismatch as `JsonParse`; the text
+            // already parsed above, so what it rejected is the shape —
+            // `AiMuxError::InvalidArgument`, not a provider-response parse failure.
+            AiMuxError::JsonParse(m) => AiMuxError::InvalidArgument(format!("config_json: {m}")),
+            e => e,
+        })?;
+        Ok(())
+    })
 }
 
 /// Set the global proxy configuration (M6, RFC-0016). Must be called before
-/// the first `aimux_generate_text` / `aimux_stream_text` call; a no-op (returns
-/// 1) if the shared HTTP client is already initialised.
+/// the first `aimux_generate_text` / `aimux_stream_text` call; a no-op if the
+/// shared HTTP client is already initialised.
 ///
 /// `config_json` is a serialized `ProxyConfig`:
 /// `{ "http_url": "...", "https_url": "...", "all_url": "...", "no_proxy":
 /// "..." }` (all fields optional; omitting all is equivalent to relying on the
 /// `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` env vars).
-///
-/// Returns 1 on success (including the already-initialised no-op), 0 on
-/// failure (with `err` filled): null/invalid pointer or malformed JSON.
 #[unsafe(no_mangle)]
-pub extern "C" fn aimux_init_proxy(config_json: *const c_char, err: *mut CAimuxError) -> i32 {
-    let Some(json) = cstr_to_string(config_json) else {
-        return unsafe { fail_invalid_args(err) };
-    };
-    let config: aimux_provider_utils::ProxyConfig = match serde_json::from_str(&json) {
-        Ok(c) => c,
-        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
-    };
-    // `init_proxy` returns false when the shared client is already up; treat
-    // that as success (idempotent) so callers don't need to reason about
-    // ordering races.
-    let _ = aimux_provider_utils::init_proxy(config);
-    1
+pub extern "C" fn aimux_init_proxy(config_json: *const c_char) -> *mut aimux_error_t {
+    no_result(|| {
+        let config: aimux_provider_utils::ProxyConfig = parse_json_arg(config_json, "config_json")?;
+        // `init_proxy` returns false when the shared client is already up; treat
+        // that as success (idempotent) so callers don't need to reason about
+        // ordering races.
+        let _ = aimux_provider_utils::init_proxy(config);
+        Ok(())
+    })
 }
 
 /// Create a mock replay model from recorded JSONL (RFC-0023 P3). `recordings`
-/// is one `Recording` JSON per line. Returns non-zero handle or 0
-/// (the handle works with `aimux_generate_text` /
-/// `aimux_stream_text`, no real API is sent); caller frees with
-/// `aimux_free_string`.
+/// is one `Recording` JSON per line. The handle works with
+/// `aimux_generate_text` / `aimux_stream_text` (no real API is sent).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_mock_replay_new(
     recordings_jsonl: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let Some(recordings_jsonl) = cstr_to_string(recordings_jsonl) else {
-        return unsafe {
-            fail(
-                err,
-                AIMUX_E_INVALID_ARGUMENT,
-                -1,
-                -1,
-                "invalid recordings_jsonl",
-            )
-        };
-    };
-    let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
-    for (idx, line) in recordings_jsonl.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        match serde_json::from_str(line) {
-            Ok(r) => recordings.push(r),
-            Err(e) => {
-                return unsafe { fail_json(err, format!("recordings line {}: {e}", idx + 1)) };
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let recordings_jsonl = str_arg(recordings_jsonl, "recordings_jsonl")?;
+        let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
+        for (idx, line) in recordings_jsonl.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
             }
+            recordings.push(serde_json::from_str(line).map_err(|e| {
+                wire_failure("recordings_jsonl", &e, format!("line {}: {e}", idx + 1))
+            })?);
         }
-    }
-    if recordings.is_empty() {
-        return unsafe { fail_other(err, "no recordings") };
-    }
-    let model = aimux_core::replay::MockReplayModel::new(
-        recordings[0].provider.provider.clone(),
-        recordings[0].provider.model_id.clone(),
-        recordings,
-    );
-    intern_model(Arc::new(model))
+        if recordings.is_empty() {
+            return Err(
+                AiMuxError::InvalidArgument("recordings_jsonl: no recordings".into()).into(),
+            );
+        }
+        let model = aimux_core::replay::MockReplayModel::new(
+            recordings[0].provider.provider.clone(),
+            recordings[0].provider.model_id.clone(),
+            recordings,
+        );
+        Ok(intern_model(Arc::new(model)))
+    })
+}
+
+/// Resolve an array of model handles for a composite (router / moa).
+///
+/// `NULL` with `len == 0` is an empty list; `NULL` with `len > 0` is
+/// `NullPointer`; any element that is not a live model handle is
+/// `InvalidHandle { expected }` — a dead child is a caller bug, never
+/// silently dropped (the composite would otherwise run with fewer members
+/// than the caller believes).
+fn model_handles(
+    handles: *const u64,
+    len: usize,
+    argument: &'static str,
+    expected: &'static str,
+) -> FfiResult<Vec<Arc<dyn aimux_core::LanguageModel>>> {
+    let slice: &[u64] = if handles.is_null() {
+        if len != 0 {
+            return Err(FfiError::NullPointer { argument }.into());
+        }
+        &[]
+    } else {
+        // SAFETY: caller guarantees `handles` points to `len` u64s.
+        unsafe { std::slice::from_raw_parts(handles, len) }
+    };
+    slice
+        .iter()
+        .map(|&h| get_model(h).ok_or_else(|| FfiError::InvalidHandle { expected }.into()))
+        .collect()
 }
 
 /// Create a `RouterModel` (RFC-0021) over the given child-model handles. The
-/// returned handle is itself a model handle (works with `aimux_generate_text` /
+/// new handle is itself a model handle (works with `aimux_generate_text` /
 /// `aimux_stream_text`); free it with `aimux_drop_handle`.
 ///
-/// `handles` is an array of `len` existing model handles (e.g. returned by
+/// `handles` is an array of `len` existing model handles (e.g. from
 /// `aimux_openai_new`). `config_json` selects the router + fallback policy:
 /// `{ "router": "rule" | "weighted", "weights": [..], "fallback": "on_error" |
 /// "none", "provider_name": "router", "model_id": "router" }`. All keys are
 /// optional; defaults are `rule` / `on_error` / `"router"` / `"router"`.
 ///
-/// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
-/// pointer, bad JSON, zero-length `handles`, or any unknown child handle.
-/// Child lookup is all-or-nothing; unknown children are never silently
-/// dropped.
+/// Fails on: NULL `handles` with `len > 0`, bad JSON, zero-length `handles`,
+/// or any dead child handle (nothing is silently dropped).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_router_new(
     handles: *const u64,
     len: usize,
     config_json: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    if handles.is_null() || len == 0 {
-        return unsafe { fail_invalid_args(err) };
-    }
-    let handle_slice = unsafe { std::slice::from_raw_parts(handles, len) };
-    let Some(models) = get_models(handle_slice) else {
-        return unsafe { fail_other(err, "router: invalid child handle") };
-    };
-    // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
-    // convention). Invalid UTF-8 → invalid args.
-    let Some(config_json) = normalize_config_json(config_json, err) else {
-        return 0;
-    };
-    let cfg: RouterFfiConfig = match serde_json::from_str::<RouterFfiConfig>(&config_json) {
-        Ok(c) => c,
-        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
-    };
-    let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
-        Some("weighted") => {
-            let weights = cfg.weights.unwrap_or_else(|| vec![1.0; models.len()]);
-            Box::new(aimux_core::router::WeightedRouter::new(weights))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let models = model_handles(handles, len, "handles", "router child")?;
+        if models.is_empty() {
+            // No children at all: nothing to route to.
+            return Err(FfiError::InvalidHandle {
+                expected: "router child",
+            }
+            .into());
         }
-        // "rule", None, and any unknown value fall back to RuleRouter (safest
-        // default: child 0 + ordered fallback).
-        _ => Box::new(aimux_core::router::RuleRouter),
-    };
-    let fallback = if cfg.fallback.as_deref() == Some("none") {
-        aimux_core::router::FallbackPolicy::None
-    } else {
-        aimux_core::router::FallbackPolicy::OnError
-    };
-    let router_cfg = aimux_core::router::RouterConfig {
-        provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
-        model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
-    };
-    let model = aimux_core::router::RouterModel::new(models, router, fallback, router_cfg);
-    intern_model(Arc::new(model))
+        // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
+        // convention). Invalid UTF-8 → FFI `InvalidUtf8`.
+        let config_json = normalize_config_json(config_json, "config_json")?;
+        let cfg: RouterFfiConfig =
+            serde_json::from_str(&config_json).map_err(|e| wire_err("config_json", e))?;
+        let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
+            Some("weighted") => {
+                let weights = cfg.weights.unwrap_or_else(|| vec![1.0; models.len()]);
+                Box::new(aimux_core::router::WeightedRouter::new(weights))
+            }
+            // "rule", None, and any unknown value fall back to RuleRouter (safest
+            // default: child 0 + ordered fallback).
+            _ => Box::new(aimux_core::router::RuleRouter),
+        };
+        let fallback = if cfg.fallback.as_deref() == Some("none") {
+            aimux_core::router::FallbackPolicy::None
+        } else {
+            aimux_core::router::FallbackPolicy::OnError
+        };
+        let router_cfg = aimux_core::router::RouterConfig {
+            provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
+            model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
+        };
+        let model = aimux_core::router::RouterModel::new(models, router, fallback, router_cfg);
+        Ok(intern_model(Arc::new(model)))
+    })
 }
 
 /// Create a `MoaModel` (RFC-0022) over the given reference handles + one
-/// aggregator handle. The returned handle is a model handle (works with
+/// aggregator handle. The new handle is a model handle (works with
 /// `aimux_generate_text` / `aimux_stream_text`); free it with
 /// `aimux_drop_handle`.
 ///
@@ -3094,44 +3063,34 @@ pub extern "C" fn aimux_router_new(
 /// "aggregator_instructions": null, "strip_reference_tools": true,
 /// "fail_mode": "best_effort" | "fail_fast" }`.
 ///
-/// Returns a non-zero handle on success, or 0 with `err` filled: null/invalid
-/// pointer, bad JSON, an unknown aggregator handle, or any unknown reference
-/// handle (references may be empty; aggregator may not). Model lookup is
-/// all-or-nothing.
+/// Fails on: bad JSON, an unknown aggregator handle (references may be empty;
+/// aggregator may not).
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_moa_new(
     reference_handles: *const u64,
     ref_len: usize,
     aggregator: u64,
     config_json: *const c_char,
-    err: *mut CAimuxError,
-) -> u64 {
-    let reference_slice: &[u64] = if ref_len == 0 {
-        &[]
-    } else if reference_handles.is_null() {
-        return unsafe { fail_invalid_args(err) };
-    } else {
-        unsafe { std::slice::from_raw_parts(reference_handles, ref_len) }
-    };
-    let mut handles = Vec::with_capacity(ref_len + 1);
-    handles.extend_from_slice(reference_slice);
-    handles.push(aggregator);
-    let Some(mut models) = get_models(&handles) else {
-        return unsafe { fail_other(err, "moa: invalid reference or aggregator handle") };
-    };
-    let aggregator_model = models.pop().expect("aggregator handle is always present");
-    let references = models;
-    // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
-    // convention). Invalid UTF-8 → invalid args.
-    let Some(config_json) = normalize_config_json(config_json, err) else {
-        return 0;
-    };
-    let cfg: aimux_core::moa::MoaConfig = match serde_json::from_str(&config_json) {
-        Ok(c) => c,
-        Err(e) => return unsafe { fail_json(err, format!("invalid config_json: {e}")) },
-    };
-    let model = aimux_core::moa::MoaModel::new(references, aggregator_model, cfg);
-    intern_model(Arc::new(model))
+    out_handle: *mut u64,
+) -> *mut aimux_error_t {
+    with_out_handle(out_handle, || {
+        let aggregator_model = get_model(aggregator).ok_or(FfiError::InvalidHandle {
+            expected: "moa aggregator",
+        })?;
+        let references = model_handles(
+            reference_handles,
+            ref_len,
+            "reference_handles",
+            "moa reference",
+        )?;
+        // NULL / empty / "null" all mean "defaults" (matching parse_provider_options
+        // convention). Invalid UTF-8 → FFI `InvalidUtf8`.
+        let config_json = normalize_config_json(config_json, "config_json")?;
+        let cfg: aimux_core::moa::MoaConfig =
+            serde_json::from_str(&config_json).map_err(|e| wire_err("config_json", e))?;
+        let model = aimux_core::moa::MoaModel::new(references, aggregator_model, cfg);
+        Ok(intern_model(Arc::new(model)))
+    })
 }
 
 /// FFI-side router config (lenient: all fields optional).
@@ -3147,15 +3106,286 @@ struct RouterFfiConfig {
 #[cfg(test)]
 mod tests {
     use aimux_core::ApiCallError;
+    use std::time::Duration;
 
     use super::*;
 
-    #[test]
-    fn c_error_layout_is_40_bytes() {
-        assert_eq!(std::mem::size_of::<CAimuxError>(), 40);
+    /// Own the string a getter returns; None for NULL.
+    fn take(p: *mut c_char) -> Option<String> {
+        if p.is_null() {
+            return None;
+        }
+        let s = unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_string();
+        unsafe { aimux_free_string(p) };
+        Some(s)
     }
 
-    /// Pin the full 13-variant → code mapping and the status/retry derivation.
+    /// The owned returned error a failing call would return for `p`.
+    fn boxed(p: impl Into<AiMuxFfiError>) -> *mut aimux_error_t {
+        finish::<()>(Err(p.into()), |()| {})
+    }
+
+    /// Message of a returned error, which is then freed.
+    fn msg(e: *mut aimux_error_t) -> String {
+        assert!(!e.is_null(), "expected a returned error");
+        let m = take(aimux_error_message(e)).unwrap();
+        aimux_error_free(e);
+        m
+    }
+
+    /// AiMuxError code and message; the returned error is freed.
+    fn expect_aimux_error(e: *mut aimux_error_t) -> (i32, String) {
+        assert!(!e.is_null(), "expected a returned error");
+        let code = aimux_error_code(e);
+        if !(AIMUX_E_OTHER..=AIMUX_E_ABORTED).contains(&code) {
+            panic!("expected an AiMuxError code, got {code}: {}", msg(e));
+        }
+        let out = (code, take(aimux_error_message(e)).unwrap());
+        aimux_error_free(e);
+        out
+    }
+
+    /// C ABI failure code and non-empty message; the returned error is freed.
+    fn expect_ffi_error(e: *mut aimux_error_t) -> String {
+        assert!(!e.is_null(), "expected a returned error");
+        let code = aimux_error_code(e);
+        assert!(
+            (AIMUX_E_FFI_NULL_POINTER..=AIMUX_E_FFI_CALLBACK_FAILURE).contains(&code),
+            "expected a C ABI failure code, got {code}"
+        );
+        let m = msg(e);
+        assert!(!m.is_empty());
+        m
+    }
+
+    fn zero_err() -> u64 {
+        0
+    }
+
+    /// Each payload getter answers under the one code that owns it and is
+    /// NULL / -1 / 0 under every other; a NULL pointer answers as "no error".
+    #[test]
+    fn payload_getters_follow_the_code() {
+        let owner = boxed(AiMuxError::ApiCall(ApiCallError {
+            status_code: Some(429),
+            provider_code: Some("insufficient_quota".into()),
+            message: "quota".into(),
+            response_body: Some("{}".into()),
+            request_id: Some("req_1".into()),
+            retry_after_ms: Some(1500),
+            is_retryable: true,
+        }));
+        let h = owner;
+        assert_eq!(aimux_error_code(h), AIMUX_E_API_CALL);
+        assert_eq!(aimux_error_status(h), 429);
+        assert_eq!(aimux_error_retry_ms(h), 1500);
+        assert_eq!(aimux_error_retryable(h), 1);
+        assert_eq!(
+            take(aimux_error_provider_code(h)).as_deref(),
+            Some("insufficient_quota")
+        );
+        // The variant's own text, not the composed Display form in `message`.
+        assert_eq!(
+            take(aimux_error_provider_message(h)).as_deref(),
+            Some("quota")
+        );
+        let m = take(aimux_error_message(h)).unwrap();
+        assert!(m.contains("quota") && m != "quota", "{m}");
+        assert_eq!(take(aimux_error_request_id(h)).as_deref(), Some("req_1"));
+        assert_eq!(take(aimux_error_response_body(h)).as_deref(), Some("{}"));
+        assert!(aimux_error_model_id(h).is_null());
+        assert!(aimux_error_model_type(h).is_null());
+        assert!(aimux_error_provider_id(h).is_null());
+        aimux_error_free(owner);
+
+        // Absent Option fields are NULL, not empty strings.
+        let owner = boxed(AiMuxError::ApiCall(ApiCallError {
+            message: "x".into(),
+            ..Default::default()
+        }));
+        let h = owner;
+        assert!(aimux_error_provider_code(h).is_null());
+        assert!(aimux_error_request_id(h).is_null());
+        assert!(aimux_error_response_body(h).is_null());
+        assert_eq!(take(aimux_error_provider_message(h)).as_deref(), Some("x"));
+        aimux_error_free(owner);
+
+        let owner = boxed(AiMuxError::NoSuchModel {
+            model_id: "m".into(),
+            model_type: "language".into(),
+        });
+        let h = owner;
+        assert_eq!(aimux_error_code(h), AIMUX_E_NO_SUCH_MODEL);
+        assert_eq!(take(aimux_error_model_id(h)).as_deref(), Some("m"));
+        assert_eq!(take(aimux_error_model_type(h)).as_deref(), Some("language"));
+        assert!(aimux_error_provider_code(h).is_null());
+        assert!(aimux_error_provider_id(h).is_null());
+        assert_eq!(aimux_error_status(h), -1);
+        assert_eq!(aimux_error_retryable(h), 0);
+        aimux_error_free(owner);
+
+        let owner = boxed(AiMuxError::NoSuchProvider {
+            provider_id: "p".into(),
+        });
+        let h = owner;
+        assert_eq!(aimux_error_code(h), AIMUX_E_NO_SUCH_PROVIDER);
+        assert_eq!(take(aimux_error_provider_id(h)).as_deref(), Some("p"));
+        assert!(aimux_error_model_id(h).is_null());
+        aimux_error_free(owner);
+
+        // NULL pointer: never UB, answers "no error".
+        let n = std::ptr::null();
+        assert_eq!(aimux_error_code(n), AIMUX_OK);
+        assert!(aimux_error_message(n).is_null());
+        assert_eq!(aimux_error_status(n), -1);
+        assert_eq!(aimux_error_retry_ms(n), -1);
+        assert_eq!(aimux_error_retryable(n), 0);
+        assert!(aimux_error_provider_code(n).is_null());
+    }
+
+    /// The retry verdict crosses the ABI as its own getter. It is not
+    /// derivable from `status`: both cases below report -1, and they disagree.
+    #[test]
+    fn retryable_crosses_the_abi_and_status_cannot_stand_in() {
+        let transport_owner = boxed(AiMuxError::ApiCall(ApiCallError {
+            message: "connection reset".into(),
+            is_retryable: true,
+            ..Default::default()
+        }));
+        let transport = transport_owner;
+        assert_eq!(aimux_error_status(transport), -1);
+        assert_eq!(aimux_error_retryable(transport), 1);
+        aimux_error_free(transport_owner);
+
+        let no_key_owner = boxed(AiMuxError::ApiCall(ApiCallError {
+            message: "no api key".into(),
+            ..Default::default()
+        }));
+        let no_key = no_key_owner;
+        assert_eq!(
+            aimux_error_status(no_key),
+            -1,
+            "same sentinel as the transport failure"
+        );
+        assert_eq!(aimux_error_retryable(no_key), 0, "but the opposite verdict");
+        aimux_error_free(no_key_owner);
+
+        // Non-ApiCall variants are never retryable.
+        let arg_owner = boxed(AiMuxError::InvalidArgument("bad".into()));
+        let arg = arg_owner;
+        assert_eq!(aimux_error_retryable(arg), 0);
+        aimux_error_free(arg_owner);
+    }
+
+    /// The unified code space identifies every returned error source.
+    #[test]
+    fn unified_error_codes_cover_every_source() {
+        // AiMuxError.
+        let e = boxed(AiMuxError::Aborted);
+        assert_eq!(aimux_error_code(e), AIMUX_E_ABORTED);
+        assert_eq!(msg(e), AiMuxError::Aborted.to_string());
+
+        // Recording.
+        use RecordingError as R;
+        let cases = [
+            (R::WriterGone, AIMUX_E_RECORDING_WRITER_GONE),
+            (R::FlushTimeout, AIMUX_E_RECORDING_FLUSH_TIMEOUT),
+            (R::Write("ENOSPC".into()), AIMUX_E_RECORDING_WRITE),
+            (
+                R::Spawn {
+                    source: std::io::Error::other("x"),
+                },
+                AIMUX_E_RECORDING_SPAWN,
+            ),
+        ];
+        for (r, code) in cases {
+            let e = boxed(r);
+            assert_eq!(aimux_error_code(e), code);
+            assert!(!msg(e).is_empty());
+        }
+        // NULL means success.
+        assert_eq!(aimux_error_code(std::ptr::null()), AIMUX_OK);
+        assert!(aimux_error_message(std::ptr::null()).is_null());
+
+        // FfiError codes and Display texts are pinned.
+        let cases: Vec<(FfiError, i32, &str)> = vec![
+            (
+                FfiError::NullPointer {
+                    argument: "api_key",
+                },
+                AIMUX_E_FFI_NULL_POINTER,
+                "api_key: must not be NULL",
+            ),
+            (
+                FfiError::InvalidUtf8 {
+                    argument: "model_id",
+                },
+                AIMUX_E_FFI_INVALID_UTF8,
+                "model_id: must be valid UTF-8",
+            ),
+            (
+                FfiError::InvalidWireJson {
+                    argument: "opts_json",
+                    message: "expected `,`".into(),
+                },
+                AIMUX_E_FFI_INVALID_WIRE_JSON,
+                "opts_json: invalid JSON: expected `,`",
+            ),
+            (
+                FfiError::InvalidHandle { expected: "model" },
+                AIMUX_E_FFI_INVALID_HANDLE,
+                "invalid or expired model handle",
+            ),
+            (
+                FfiError::ReentrantCall,
+                AIMUX_E_FFI_REENTRANT_CALL,
+                "re-entrant FFI call from within a callback is not allowed",
+            ),
+            (
+                FfiError::ResultSerialization {
+                    message: "serialize".into(),
+                },
+                AIMUX_E_FFI_RESULT_SERIALIZATION,
+                "could not serialize result: serialize",
+            ),
+            (
+                FfiError::CallbackFailure {
+                    message: "on_part panicked".into(),
+                },
+                AIMUX_E_FFI_CALLBACK_FAILURE,
+                "host callback failed: on_part panicked",
+            ),
+        ];
+        for (f, code, text) in cases {
+            let e = boxed(f);
+            assert_eq!(aimux_error_code(e), code);
+            assert_eq!(expect_ffi_error(e), text);
+        }
+
+        // NULL owner: every accessor is NULL-safe.
+        let n: *mut aimux_error_t = std::ptr::null_mut();
+        assert_eq!(aimux_error_code(n), AIMUX_OK);
+        assert!(aimux_error_message(n).is_null());
+        aimux_error_free(n);
+    }
+
+    /// Even on a recording entry point, malformed C input is an `FfiError`;
+    /// only failures produced by `JsonlRecorder` carry the recording
+    /// code.
+    #[test]
+    fn recording_init_reports_ffi_codes_for_invalid_input() {
+        assert_eq!(
+            expect_ffi_error(aimux_init_recording(std::ptr::null())),
+            "dir: must not be NULL"
+        );
+        let invalid_utf8 = [0xff_u8, 0];
+        assert_eq!(
+            expect_ffi_error(aimux_init_recording(invalid_utf8.as_ptr().cast())),
+            "dir: must be valid UTF-8"
+        );
+    }
+
+    /// Pin the full 13-variant → code mapping.
     #[test]
     fn error_code_mapping_covers_all_variants() {
         let s = |t: &str| t.to_string();
@@ -3200,57 +3430,36 @@ mod tests {
             (AiMuxError::Aborted, AIMUX_E_ABORTED),
             (AiMuxError::Other(s("x")), AIMUX_E_OTHER),
         ];
-        for (e, code) in &cases {
-            assert_eq!(aimux_error_code(e), *code, "variant {e:?}");
+        for (e, code) in cases {
+            let expect = format!("variant {e:?}");
+            let (got, _) = expect_aimux_error(boxed(e));
+            assert_eq!(got, code, "{expect}");
         }
-
-        // fill_from_aimux derives status/retry_ms/message from the same source.
-        let mut c = CAimuxError {
-            code: AIMUX_OK,
-            status: 0,
-            retry_ms: 0,
-            message: std::ptr::null_mut(),
-            error_value: std::ptr::null_mut(),
-            reserved: [std::ptr::null_mut(); 1],
-        };
-        // A 429 is an ApiCall error; code is AIMUX_E_API_CALL and the
-        // classification/hint cross the ABI as status/retry_ms.
-        let rl = AiMuxError::ApiCall(ApiCallError {
-            status_code: Some(429),
-            message: "slow down".into(),
-            retry_after_ms: Some(1500),
-            ..Default::default()
-        });
-        unsafe { fill_from_aimux(&mut c, &rl) };
-        assert_eq!(c.code, AIMUX_E_API_CALL);
-        assert_eq!(c.status, 429);
-        assert_eq!(c.retry_ms, 1500);
-        let m = unsafe { CStr::from_ptr(c.message) }.to_str().unwrap();
-        assert!(m.contains("slow down"), "{m}");
-        // error_value round-trips to the exact source enum value.
-        let v = unsafe { CStr::from_ptr(c.error_value) }.to_str().unwrap();
-        let back: AiMuxError = serde_json::from_str(v).unwrap();
-        assert_eq!(back.retry_after_hint(), Some(1500), "{v}");
-        assert_eq!(back.status_code(), Some(429), "{v}");
-        unsafe { aimux_free_string(c.message) };
-        unsafe { aimux_free_string(c.error_value) };
     }
 
     /// Interior NUL bytes must not corrupt or truncate the message.
     #[test]
-    fn fill_error_sanitizes_interior_nul() {
-        let mut c = CAimuxError {
-            code: AIMUX_OK,
-            status: -1,
-            retry_ms: -1,
-            message: std::ptr::null_mut(),
-            error_value: std::ptr::null_mut(),
-            reserved: [std::ptr::null_mut(); 1],
-        };
-        unsafe { fill_error(&mut c, AIMUX_E_OTHER, -1, -1, "a\0b") };
-        let m = unsafe { CStr::from_ptr(c.message) }.to_str().unwrap();
+    fn error_message_sanitizes_interior_nul() {
+        let (_, m) = expect_aimux_error(boxed(AiMuxError::Other("a\0b".into())));
         assert_eq!(m, "a\u{FFFD}b");
-        unsafe { aimux_free_string(c.message) };
+    }
+
+    /// A NULL out-parameter is reported, not dereferenced.
+    #[test]
+    fn null_out_param_is_an_ffi_error() {
+        let key = std::ffi::CString::new("k").unwrap();
+        assert_eq!(
+            expect_ffi_error(aimux_openai_new(
+                key.as_ptr(),
+                key.as_ptr(),
+                std::ptr::null_mut()
+            )),
+            "out_handle: must not be NULL"
+        );
+        assert_eq!(
+            expect_ffi_error(aimux_list_sessions(std::ptr::null_mut())),
+            "out_json: must not be NULL"
+        );
     }
 
     // ── invoke_stream_callback (issue #64: FFI panic guard) ───────────────────
@@ -3278,7 +3487,7 @@ mod tests {
             panic!("callback explosion");
         });
         match result {
-            Err(AiMuxError::Other(msg)) => {
+            Err(FfiError::CallbackFailure { message: msg }) => {
                 assert!(
                     msg.contains("on_part"),
                     "message should name the callback: {msg}"
@@ -3288,7 +3497,7 @@ mod tests {
                     "message should include the panic payload: {msg}"
                 );
             }
-            other => panic!("expected AiMuxError::Other, got {other:?}"),
+            other => panic!("expected FfiError::CallbackFailure, got {other:?}"),
         }
     }
 
@@ -3299,7 +3508,7 @@ mod tests {
             panic!("{}", "dynamic boom".to_string());
         });
         match result {
-            Err(AiMuxError::Other(msg)) => {
+            Err(FfiError::CallbackFailure { message: msg }) => {
                 assert!(
                     msg.contains("on_done"),
                     "message should name the callback: {msg}"
@@ -3309,7 +3518,7 @@ mod tests {
                     "message should include the panic payload: {msg}"
                 );
             }
-            other => panic!("expected AiMuxError::Other, got {other:?}"),
+            other => panic!("expected FfiError::CallbackFailure, got {other:?}"),
         }
     }
 
@@ -3321,7 +3530,7 @@ mod tests {
             std::panic::panic_any(42i32);
         });
         match result {
-            Err(AiMuxError::Other(msg)) => {
+            Err(FfiError::CallbackFailure { message: msg }) => {
                 assert!(
                     msg.contains("on_part"),
                     "message should name the callback: {msg}"
@@ -3331,7 +3540,7 @@ mod tests {
                     "non-string payload should use placeholder: {msg}"
                 );
             }
-            other => panic!("expected AiMuxError::Other, got {other:?}"),
+            other => panic!("expected FfiError::CallbackFailure, got {other:?}"),
         }
     }
 
@@ -3344,7 +3553,7 @@ mod tests {
             panic!("done callback failed");
         });
         match result {
-            Err(AiMuxError::Other(msg)) => {
+            Err(FfiError::CallbackFailure { message: msg }) => {
                 assert!(
                     msg.contains("on_done"),
                     "message should name the callback: {msg}"
@@ -3354,7 +3563,7 @@ mod tests {
                     "message should include the panic payload: {msg}"
                 );
             }
-            other => panic!("expected AiMuxError::Other, got {other:?}"),
+            other => panic!("expected FfiError::CallbackFailure, got {other:?}"),
         }
     }
 
@@ -3418,12 +3627,9 @@ mod tests {
             mock_handle("mock", "primary", "primary-out"),
             mock_handle("mock", "backup", "backup-out"),
         ];
-        let h = aimux_router_new(
-            handles.as_ptr(),
-            handles.len(),
-            std::ptr::null(),
-            std::ptr::null_mut(),
-        );
+        let mut h = zero_err();
+        let e = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), &mut h);
+        assert!(e.is_null(), "{}", msg(e));
         assert!(h != 0, "router handle must be non-zero");
         // Confirm it resolves to a model.
         let model = get_model(h).expect("router handle resolves");
@@ -3431,42 +3637,30 @@ mod tests {
         assert_eq!(model.model_id(), "router");
     }
 
-    fn zero_err() -> CAimuxError {
-        CAimuxError {
-            code: AIMUX_OK,
-            status: 0,
-            retry_ms: 0,
-            message: std::ptr::null_mut(),
-            error_value: std::ptr::null_mut(),
-            reserved: [std::ptr::null_mut(); 1],
-        }
-    }
-
     #[test]
     fn router_new_rejects_empty_handles() {
-        let mut err = zero_err();
-        let h = aimux_router_new(std::ptr::null(), 0, std::ptr::null(), &mut err);
+        // len == 0 (with or without a NULL array) is "no usable child", not a
+        // null pointer; a NULL array with len > 0 is.
+        let mut h = zero_err();
+        let e = aimux_router_new(std::ptr::null(), 0, std::ptr::null(), &mut h);
         assert_eq!(h, 0);
-        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn router_new_rejects_any_invalid_child() {
-        let handles = [mock_handle("mock", "valid", "ok"), 999_999];
-        let mut err = zero_err();
-        let h = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), &mut err);
-        assert_eq!(h, 0, "router must not silently drop an invalid child");
-        assert_eq!(err.code, AIMUX_E_OTHER);
+        assert_eq!(
+            expect_ffi_error(e),
+            "invalid or expired router child handle"
+        );
+        let e = aimux_router_new(std::ptr::null(), 2, std::ptr::null(), &mut h);
+        assert_eq!(h, 0);
+        assert_eq!(expect_ffi_error(e), "handles: must not be NULL");
     }
 
     #[test]
     fn router_new_rejects_bad_json() {
         let handles = [mock_handle("mock", "m", "x")];
         let bad = std::ffi::CString::new("{not json").unwrap();
-        let mut err = zero_err();
-        let h = aimux_router_new(handles.as_ptr(), handles.len(), bad.as_ptr(), &mut err);
+        let mut h = zero_err();
+        let e = aimux_router_new(handles.as_ptr(), handles.len(), bad.as_ptr(), &mut h);
         assert_eq!(h, 0);
-        assert_eq!(err.code, AIMUX_E_JSON_PARSE);
+        assert!(expect_ffi_error(e).starts_with("config_json: invalid JSON:"));
     }
 
     #[test]
@@ -3476,16 +3670,10 @@ mod tests {
         let handles = [mock_handle("mock", "m", "x")];
         for cfg in ["", "  ", "null"] {
             let c = std::ffi::CString::new(cfg).unwrap();
-            let h = aimux_router_new(
-                handles.as_ptr(),
-                handles.len(),
-                c.as_ptr(),
-                std::ptr::null_mut(),
-            );
-            assert!(
-                h != 0,
-                "router with config {cfg:?} should succeed (defaults)"
-            );
+            let mut h = zero_err();
+            let e = aimux_router_new(handles.as_ptr(), handles.len(), c.as_ptr(), &mut h);
+            assert!(e.is_null(), "router with config {cfg:?}: {}", msg(e));
+            assert!(h != 0);
         }
     }
 
@@ -3496,13 +3684,9 @@ mod tests {
             mock_handle("mock", "ref-b", "B"),
         ];
         let agg = mock_handle("mock", "aggregator", "agg");
-        let h = aimux_moa_new(
-            refs.as_ptr(),
-            refs.len(),
-            agg,
-            std::ptr::null(),
-            std::ptr::null_mut(),
-        );
+        let mut h = zero_err();
+        let e = aimux_moa_new(refs.as_ptr(), refs.len(), agg, std::ptr::null(), &mut h);
+        assert!(e.is_null(), "{}", msg(e));
         assert!(h != 0, "moa handle must be non-zero");
         let model = get_model(h).expect("moa handle resolves");
         assert_eq!(model.provider(), "moa");
@@ -3512,40 +3696,61 @@ mod tests {
     #[test]
     fn moa_new_rejects_bad_aggregator() {
         let refs = [mock_handle("mock", "ref-a", "A")];
-        let mut err = zero_err();
+        let mut h = zero_err();
         // aggregator handle 999999 does not exist.
-        let h = aimux_moa_new(
-            refs.as_ptr(),
-            refs.len(),
-            999_999,
-            std::ptr::null(),
-            &mut err,
-        );
+        let e = aimux_moa_new(refs.as_ptr(), refs.len(), 999_999, std::ptr::null(), &mut h);
         assert_eq!(h, 0);
-        assert_eq!(err.code, AIMUX_E_OTHER);
+        assert_eq!(
+            expect_ffi_error(e),
+            "invalid or expired moa aggregator handle"
+        );
     }
 
     #[test]
-    fn moa_new_rejects_any_invalid_reference() {
-        let refs = [mock_handle("mock", "ref-a", "A"), 999_999];
+    fn composites_reject_any_dead_member_handle() {
+        // A dead handle inside the array is a caller bug: reported, never
+        // silently dropped (the composite would otherwise run with fewer
+        // members than the caller believes).
+        let live = mock_handle("mock", "live", "L");
+        let dead = mock_handle("mock", "dead", "D");
+        aimux_drop_handle(dead);
+        let handles = [live, dead];
+
+        let mut h = zero_err();
+        let e = aimux_router_new(handles.as_ptr(), handles.len(), std::ptr::null(), &mut h);
+        assert_eq!(h, 0);
+        assert_eq!(
+            expect_ffi_error(e),
+            "invalid or expired router child handle"
+        );
+
         let agg = mock_handle("mock", "aggregator", "agg");
-        let mut err = zero_err();
-        let h = aimux_moa_new(refs.as_ptr(), refs.len(), agg, std::ptr::null(), &mut err);
-        assert_eq!(h, 0, "MoA must not silently drop an invalid reference");
-        assert_eq!(err.code, AIMUX_E_OTHER);
+        let e = aimux_moa_new(
+            handles.as_ptr(),
+            handles.len(),
+            agg,
+            std::ptr::null(),
+            &mut h,
+        );
+        assert_eq!(h, 0);
+        assert_eq!(
+            expect_ffi_error(e),
+            "invalid or expired moa reference handle"
+        );
+
+        // NULL with ref_len > 0 is a null pointer, same as router.
+        let e = aimux_moa_new(std::ptr::null(), 2, agg, std::ptr::null(), &mut h);
+        assert_eq!(h, 0);
+        assert_eq!(expect_ffi_error(e), "reference_handles: must not be NULL");
     }
 
     #[test]
     fn moa_new_allows_zero_references() {
         // 0 references is valid (degrades to aggregator-only).
         let agg = mock_handle("mock", "aggregator", "agg");
-        let h = aimux_moa_new(
-            std::ptr::null(),
-            0,
-            agg,
-            std::ptr::null(),
-            std::ptr::null_mut(),
-        );
+        let mut h = zero_err();
+        let e = aimux_moa_new(std::ptr::null(), 0, agg, std::ptr::null(), &mut h);
+        assert!(e.is_null(), "{}", msg(e));
         assert!(h != 0, "moa with 0 references should succeed");
     }
 
@@ -3645,102 +3850,92 @@ mod tests {
     }
 
     fn mock_transcriber_handle() -> u64 {
-        intern_handle(ModelHandle::Transcription(Arc::new(
+        intern_handle(HandleEntry::Transcription(Arc::new(
             MockStreamingTranscriber,
         )))
     }
 
-    /// Read a returned JSON string and free it.
-    fn free_json(ptr: *mut c_char) -> String {
-        unsafe {
-            let s = std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned();
-            crate::aimux_free_string(ptr);
-            s
+    fn session(model: u64, abort: u64) -> u64 {
+        let mut s = zero_err();
+        let e = aimux_transcription_session_new(model, abort, std::ptr::null(), &mut s);
+        assert!(e.is_null(), "{}", msg(e));
+        assert!(s != 0, "session should start");
+        s
+    }
+
+    /// One `next_part` pull: `(state, part)`; a non-NULL error is returned
+    /// as `Err`.
+    fn pull(session: u64, timeout_ms: i64) -> Result<(i32, Option<String>), *mut aimux_error_t> {
+        let mut part: *mut c_char = std::ptr::null_mut();
+        let mut state: i32 = 0;
+        let e = aimux_transcription_next_part(session, timeout_ms, &mut part, &mut state);
+        if !e.is_null() {
+            assert!(part.is_null(), "failure must leave *out_part NULL");
+            return Err(e);
+        }
+        Ok((state, take(part)))
+    }
+
+    fn pull_part(session: u64) -> String {
+        match pull(session, 2_000) {
+            Ok((AIMUX_TRANSCRIPTION_NEXT_PART_PART, Some(p))) => p,
+            Ok(other) => panic!("expected a part, got {other:?}"),
+            Err(e) => panic!("expected a part, got error: {}", msg(e)),
         }
     }
 
     #[test]
     fn transcription_session_full_lifecycle() {
         let model = mock_transcriber_handle();
-        let mut err = zero_err();
-        let session = aimux_transcription_session_new(model, 0, std::ptr::null(), &mut err);
-        assert!(session != 0, "session should start");
+        let session = session(model, 0);
 
         // Push two chunks + end-of-input.
         let chunk1 = [1u8, 2, 3];
         let chunk2 = [4u8, 5];
-        assert_eq!(
-            aimux_transcription_push_audio(session, chunk1.as_ptr(), 3, std::ptr::null_mut()),
-            1
-        );
-        assert_eq!(
-            aimux_transcription_push_audio(session, chunk2.as_ptr(), 2, std::ptr::null_mut()),
-            1
-        );
-        assert_eq!(
-            aimux_transcription_input_done(session, std::ptr::null_mut()),
-            1
-        );
+        assert!(aimux_transcription_push_audio(session, chunk1.as_ptr(), 3).is_null());
+        assert!(aimux_transcription_push_audio(session, chunk2.as_ptr(), 2).is_null());
+        assert!(aimux_transcription_input_done(session).is_null());
 
         // Pull parts: StreamStart, delta("3 "), delta("2 "), Final, Finish,
-        // then NULL + OK (ended).
-        let mut err = zero_err();
-        let p1 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        // then ENDED.
+        let p1 = pull_part(session);
         assert!(p1.contains("StreamStart"), "part 1: {p1}");
-        let p2 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        let p2 = pull_part(session);
         assert!(p2.contains("3 "), "part 2: {p2}");
-        let p3 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        let p3 = pull_part(session);
         assert!(p3.contains("2 "), "part 3: {p3}");
-        let p4 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        let p4 = pull_part(session);
         assert!(p4.contains("TranscriptFinal"), "part 4: {p4}");
-        let p5 = free_json(aimux_transcription_next_part(session, 2_000, &mut err));
+        let p5 = pull_part(session);
         assert!(p5.contains("Finish"), "part 5: {p5}");
         assert!(p5.contains("3 2 "), "finish text: {p5}");
 
-        // Stream ended: NULL with err untouched (AIMUX_OK).
-        let mut err = zero_err();
-        let end = aimux_transcription_next_part(session, 2_000, &mut err);
-        assert!(end.is_null());
-        assert_eq!(err.code, AIMUX_OK, "normal end must read as AIMUX_OK");
+        // Stream ended: NULL error, ENDED state, no part.
+        assert_eq!(
+            pull(session, 2_000).ok(),
+            Some((AIMUX_TRANSCRIPTION_NEXT_PART_ENDED, None))
+        );
 
         aimux_transcription_session_drop(session);
     }
 
     #[test]
-    fn transcription_session_timeout_is_retryable() {
+    fn transcription_session_timeout_is_a_state_not_an_error() {
         let model = mock_transcriber_handle();
-        let session =
-            aimux_transcription_session_new(model, 0, std::ptr::null(), std::ptr::null_mut());
+        let session = session(model, 0);
         // Consume StreamStart, then DON'T push audio: next_part times out
         // (the mock waits for more audio).
-        let _ = free_json(aimux_transcription_next_part(
-            session,
-            2_000,
-            std::ptr::null_mut(),
-        ));
-        let mut err = zero_err();
-        let timed_out = aimux_transcription_next_part(session, 50, &mut err);
-        assert!(timed_out.is_null());
-        assert_eq!(err.code, AIMUX_E_TIMEOUT);
-        unsafe {
-            crate::aimux_free_string(err.message);
-        }
+        let _ = pull_part(session);
+        assert_eq!(
+            pull(session, 50).ok(),
+            Some((AIMUX_TRANSCRIPTION_NEXT_PART_TIMEOUT, None))
+        );
 
         // Session still alive: push + finish works after the timeout.
         let chunk = [9u8];
-        assert_eq!(
-            aimux_transcription_push_audio(session, chunk.as_ptr(), 1, std::ptr::null_mut()),
-            1
-        );
-        assert_eq!(
-            aimux_transcription_input_done(session, std::ptr::null_mut()),
-            1
-        );
-        let p = free_json(aimux_transcription_next_part(
-            session,
-            2_000,
-            &mut zero_err(),
-        ));
+        assert!(aimux_transcription_push_audio(session, chunk.as_ptr(), 1).is_null());
+        assert!(aimux_transcription_input_done(session).is_null());
+        let p = pull_part(session);
         assert!(p.contains("1 "), "post-timeout part: {p}");
         aimux_transcription_session_drop(session);
     }
@@ -3749,84 +3944,180 @@ mod tests {
     fn transcription_session_abort_via_signal() {
         let model = mock_transcriber_handle();
         let abort = crate::aimux_abort_signal_new();
-        let session =
-            aimux_transcription_session_new(model, abort, std::ptr::null(), std::ptr::null_mut());
+        let session = session(model, abort);
         // Drain StreamStart.
-        let _ = free_json(aimux_transcription_next_part(
-            session,
-            2_000,
-            std::ptr::null_mut(),
-        ));
+        let _ = pull_part(session);
 
         // Abort; the mock yields Err(Aborted).
         crate::aimux_abort_signal_abort(abort);
-        let mut err = zero_err();
-        let p = aimux_transcription_next_part(session, 2_000, &mut err);
-        assert!(p.is_null());
-        assert_eq!(err.code, AIMUX_E_ABORTED);
-        unsafe {
-            crate::aimux_free_string(err.message);
-        }
+        let e = pull(session, 2_000).expect_err("aborted stream must fail");
+        assert_eq!(expect_aimux_error(e).0, AIMUX_E_ABORTED);
 
-        // Push after abort fails (the session's channels are closing).
+        // Push after abort fails or is buffered (the session's channels are
+        // closing); either way no panic.
         let chunk = [1u8];
-        let mut err = zero_err();
-        let _ = aimux_transcription_push_audio(session, chunk.as_ptr(), 1, &mut err);
+        let e = aimux_transcription_push_audio(session, chunk.as_ptr(), 1);
+        aimux_error_free(e);
         aimux_transcription_session_drop(session);
     }
 
     #[test]
     fn transcription_session_drop_is_safe_and_idempotent() {
         let model = mock_transcriber_handle();
-        let session =
-            aimux_transcription_session_new(model, 0, std::ptr::null(), std::ptr::null_mut());
+        let session = session(model, 0);
         aimux_transcription_session_drop(session);
         aimux_transcription_session_drop(session); // idempotent
         aimux_transcription_session_drop(0); // safe with 0
         aimux_transcription_session_drop(999_999); // safe with unknown
 
         // Operations on a dropped session fail with invalid handle.
-        let mut err = zero_err();
         assert_eq!(
-            aimux_transcription_push_audio(session, std::ptr::null(), 0, &mut err),
-            0
+            expect_ffi_error(aimux_transcription_push_audio(session, std::ptr::null(), 0)),
+            "invalid or expired transcription session handle"
         );
-        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+        assert_eq!(
+            expect_ffi_error(aimux_transcription_input_done(session)),
+            "invalid or expired transcription session handle"
+        );
+        let e = pull(session, 0).expect_err("dead session");
+        assert_eq!(
+            expect_ffi_error(e),
+            "invalid or expired transcription session handle"
+        );
+    }
+
+    #[test]
+    fn transcription_session_drop_unblocks_infinite_next_part() {
+        let model = mock_transcriber_handle();
+        let session = session(model, 0);
+        // Consume StreamStart; with no audio, the next pull waits forever
+        // unless session_drop aborts the driver and closes the parts stream.
+        let _ = pull_part(session);
+
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let puller = std::thread::spawn(move || {
+            if let Err(e) = pull(session, -1) {
+                aimux_error_free(e);
+            }
+            done_tx.send(()).unwrap();
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            matches!(
+                done_rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ),
+            "next_part(-1) should still be blocked before drop"
+        );
+
+        let started = std::time::Instant::now();
+        aimux_transcription_session_drop(session);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "session_drop should not wait for next_part"
+        );
+        done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("session_drop must wake next_part(-1)");
+        puller.join().unwrap();
+        drop_handle(model);
+    }
+
+    #[test]
+    fn transcription_session_drop_unblocks_backpressured_push_audio() {
+        let model = mock_transcriber_handle();
+        let session = session(model, 0);
+        let sent = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sent_by_pusher = Arc::clone(&sent);
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let pusher = std::thread::spawn(move || {
+            let chunk = [1u8];
+            for _ in 0..1024 {
+                let e = aimux_transcription_push_audio(session, chunk.as_ptr(), chunk.len());
+                if !e.is_null() {
+                    aimux_error_free(e);
+                    break;
+                }
+                sent_by_pusher.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            done_tx.send(()).unwrap();
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while sent.load(std::sync::atomic::Ordering::Relaxed) < 64
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::yield_now();
+        }
+        assert!(
+            sent.load(std::sync::atomic::Ordering::Relaxed) >= 64,
+            "pusher never filled the bounded audio path"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(
+            matches!(
+                done_rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ),
+            "pusher unexpectedly completed without backpressure"
+        );
+
+        let started = std::time::Instant::now();
+        aimux_transcription_session_drop(session);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "session_drop should not wait for push_audio"
+        );
+        done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("session_drop must wake a backpressured push_audio");
+        pusher.join().unwrap();
+        drop_handle(model);
     }
 
     #[test]
     fn transcription_session_new_rejects_bad_inputs() {
         let model = mock_transcriber_handle();
+        let mut h = zero_err();
         // Bad JSON.
         let bad = std::ffi::CString::new("{not json").unwrap();
-        let mut err = zero_err();
-        assert_eq!(
-            aimux_transcription_session_new(model, 0, bad.as_ptr(), &mut err),
-            0
-        );
-        assert_eq!(err.code, AIMUX_E_JSON_PARSE);
-        unsafe {
-            crate::aimux_free_string(err.message);
-        }
+        let e = aimux_transcription_session_new(model, 0, bad.as_ptr(), &mut h);
+        assert_eq!(h, 0);
+        assert!(expect_ffi_error(e).starts_with("opts_json: invalid JSON:"));
 
         // Non-transcription model handle.
         let lang = mock_handle("mock", "m", "x");
-        let mut err = zero_err();
+        let e = aimux_transcription_session_new(lang, 0, std::ptr::null(), &mut h);
+        assert_eq!(h, 0);
         assert_eq!(
-            aimux_transcription_session_new(lang, 0, std::ptr::null(), &mut err),
-            0
+            expect_ffi_error(e),
+            "invalid or expired transcription handle"
         );
-        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
-        unsafe {
-            crate::aimux_free_string(err.message);
-        }
 
         // Bad abort handle.
-        let mut err = zero_err();
+        let e = aimux_transcription_session_new(model, 999_999, std::ptr::null(), &mut h);
+        assert_eq!(h, 0);
+        assert_eq!(expect_ffi_error(e), "invalid or expired abort handle");
+
+        // NULL out-params on next_part.
+        let mut part: *mut c_char = std::ptr::null_mut();
         assert_eq!(
-            aimux_transcription_session_new(model, 999_999, std::ptr::null(), &mut err),
-            0
+            expect_ffi_error(aimux_transcription_next_part(
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut()
+            )),
+            "out_part: must not be NULL"
         );
-        assert_eq!(err.code, AIMUX_E_INVALID_ARGUMENT);
+        assert_eq!(
+            expect_ffi_error(aimux_transcription_next_part(
+                0,
+                0,
+                &mut part,
+                std::ptr::null_mut()
+            )),
+            "out_state: must not be NULL"
+        );
     }
 }
