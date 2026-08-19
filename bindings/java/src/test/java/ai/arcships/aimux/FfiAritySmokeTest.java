@@ -1,6 +1,7 @@
 package ai.arcships.aimux;
 
 import com.sun.jna.Pointer;
+import com.sun.jna.ptr.PointerByReference;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,53 +15,52 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class FfiAritySmokeTest {
 
-    /** Call with an invalid handle and assert the C layer reports INVALID_ARGUMENT. */
-    private static void assertInvalidHandle(Pointer result, AimuxCError err) {
-        assertThat(result).isNull();
-        AimuxException e = AimuxException.fromC(err);
-        assertThat(e).isInstanceOf(AimuxException.InvalidArgumentError.class);
-        assertThat(e.getMessage()).contains("invalid or expired");
-        // FFI-synthesized failure: no engine AiMuxError, so no error_value JSON.
-        assertThat(e.getErrorValue()).isNull();
+    /** Call with an invalid handle and assert code 203 is a binding invariant. */
+    private static void assertInvalidHandle(Pointer err, PointerByReference out) {
+        assertThat(err).isNotNull();
+        assertThat(out.getValue()).isNull();
+        assertThat(AimuxFFI.INSTANCE.aimux_error_code(err)).isEqualTo(203);
+        RuntimeException e = AimuxResult.expectAimuxError(err, null);
+        assertThat(e).isInstanceOf(IllegalStateException.class).isNotInstanceOf(AimuxException.class);
+        assertThat(e.getMessage()).startsWith("aimux ffi: ");
     }
 
     @Test
-    void unknownProviderCarriesErrorValueJson() {
+    void unknownProviderCarriesProviderId() {
         try {
             Model.provider("definitely-not-a-provider", "sk-x", "some-model", null);
             throw new AssertionError("expected AimuxException");
-        } catch (AimuxException e) {
-            assertThat(e).isInstanceOf(AimuxException.NoSuchProviderError.class);
-            assertThat(e.getErrorValue()).isNotNull().contains("NoSuchProvider");
+        } catch (AimuxException.NoSuchProviderError e) {
+            assertThat(e.getProviderId()).isEqualTo("definitely-not-a-provider");
         }
     }
 
     @Test
     void transcriptionGenerateBadHandle() {
-        AimuxCError err = AimuxResult.newError();
+        PointerByReference out = new PointerByReference();
         assertInvalidHandle(
-            AimuxFFI.INSTANCE.aimux_transcription_generate(0L, "aGk=", "audio/wav", null, err), err);
+            AimuxFFI.INSTANCE.aimux_transcription_generate(0L, "aGk=", "audio/wav", null, out), out);
     }
 
     @Test
     void fileUploadBadHandle() {
-        AimuxCError err = AimuxResult.newError();
+        PointerByReference out = new PointerByReference();
         assertInvalidHandle(
-            AimuxFFI.INSTANCE.aimux_file_upload(0L, "aGk=", "text/plain", null, err), err);
+            AimuxFFI.INSTANCE.aimux_file_upload(0L, "aGk=", "text/plain", null, out), out);
     }
 
     @Test
     void videoGenerateBadHandle() {
-        AimuxCError err = AimuxResult.newError();
+        PointerByReference out = new PointerByReference();
         assertInvalidHandle(
-            AimuxFFI.INSTANCE.aimux_video_generate(0L, "{}", err), err);
+            AimuxFFI.INSTANCE.aimux_video_generate(0L, "{}", out), out);
     }
 
     @Test
     void providerListModelsBadHandle() {
-        AimuxCError err = AimuxResult.newError();
+        PointerByReference out = new PointerByReference();
         assertInvalidHandle(
-            AimuxFFI.INSTANCE.aimux_provider_list_models(0L, err), err);
+            AimuxFFI.INSTANCE.aimux_provider_list_models(0L, out), out);
     }
 
     @Test
@@ -72,7 +72,9 @@ class FfiAritySmokeTest {
 
     @Test
     void mockReplayNewRejectsGarbageJsonl() {
+        // Malformed JSONL is rejected by the binding before the C call.
         assertThatThrownBy(() -> Model.mockReplay("not json at all"))
-            .isInstanceOf(AimuxException.class);
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("recordingsJsonl");
     }
 }

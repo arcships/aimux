@@ -1,11 +1,16 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+
 /**
- * Engine / binding failure hierarchy (OpenAI Java / Vercel AI SDK style).
+ * AiMuxError hierarchy (OpenAI Java / Vercel AI SDK style).
  *
- * <p>Raised when a fallible C ABI call fails: return sentinel (0 / {@code NULL})
- * with details in {@link AimuxCError}. Prefer {@code instanceof} on subclasses
- * over stringly code checks:
+ * <p>Raised when a fallible C ABI call returns an AiMuxError code (1–13).
+ * Recording failures use the
+ * independent {@link RecordingException} type; C ABI failures (bad raw
+ * wire JSON, use-after-close, re-entrant call) surface as plain
+ * {@link IllegalArgumentException} / {@link IllegalStateException}. Prefer
+ * {@code instanceof} on subclasses over stringly code checks:
  *
  * <pre>{@code
  * try {
@@ -14,13 +19,14 @@ package ai.arcships.aimux;
  *     // Classification is the status field (AI SDK APICallError.statusCode):
  *     // 429 → rate limited (e.getRetryMs()), 401 → auth, 404 → model
  * } catch (AimuxException e) {
- *     // any engine / binding failure
+ *     // any AiMuxError
  * }
  * }</pre>
  *
- * <p>Every instance carries {@link #getCode()} (C {@code AimuxErrorCode} 0–14),
- * {@link #getStatusCode()} (HTTP or {@code -1}), and {@link #getRetryMs()} (hint
- * or {@code -1}; {@code 0} = retry now). Message text comes from the C layer.
+ * <p>Every instance carries {@link #getCode()} (C {@code aimux_error_code_t} 1–13),
+ * {@link #getStatusCode()} (HTTP or {@code -1}), {@link #getRetryMs()} (hint
+ * or {@code -1}; {@code 0} = retry now) and {@link #isRetryable()}. Message
+ * text comes from the C layer.
  *
  * <p>Message-only constructors default {@code status=-1}, {@code retryMs=-1} for
  * backward compatibility with typed-layer decode failures.
@@ -29,11 +35,13 @@ public class AimuxException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
-    // ── AimuxErrorCode (aimux-error.h) ──────────────────────────────────────
-    // 14 variant codes (0–14); every HTTP-shaped failure arrives as AIMUX_E_API_CALL.
+    // ── aimux_error_code_t (aimux-error.h) ──────────────────────────────────
+    // 13 variant codes (1–13; 1 is the catch-all OTHER); every HTTP-shaped failure
+    // arrives as AIMUX_E_API_CALL. A code outside that range is a header/library
+    // mismatch and fails with IllegalStateException, never an AimuxException.
+    // Recording failures are a different type: see RecordingException.
 
     public static final int AIMUX_OK = 0;
-    public static final int AIMUX_E_UNKNOWN = 1;
     public static final int AIMUX_E_JSON_PARSE = 2;
     public static final int AIMUX_E_INVALID_RESPONSE_DATA = 3;
     public static final int AIMUX_E_TOOL = 4;
@@ -46,16 +54,16 @@ public class AimuxException extends RuntimeException {
     public static final int AIMUX_E_API_CALL = 11;
     public static final int AIMUX_E_TIMEOUT = 12;
     public static final int AIMUX_E_ABORTED = 13;
-    public static final int AIMUX_E_OTHER = 14;
+    public static final int AIMUX_E_OTHER = 1;
 
     private final int code;
     private final int status;
     private final long retryMs;
 
-    // Set once by the fromC construction path; null for local / synthesized
+    // Set once by the fromC construction path; false for local / synthesized
     // failures. Not a constructor param so the 13 subclass constructors keep
     // their public signatures.
-    private String errorValue;
+    private boolean retryable;
 
     // ── Constructors ────────────────────────────────────────────────────────
 
@@ -85,7 +93,7 @@ public class AimuxException extends RuntimeException {
 
     // ── Accessors ───────────────────────────────────────────────────────────
 
-    /** C {@code AimuxErrorCode} value (0–14). */
+    /** C {@code aimux_error_code_t} value (1–13). */
     public int getCode() {
         return code;
     }
@@ -101,59 +109,62 @@ public class AimuxException extends RuntimeException {
     }
 
     /**
-     * Raw externally-tagged AiMuxError JSON from the engine (e.g.
-     * {@code {"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}}), or
-     * {@code null} for FFI-synthesized failures (bad args, invalid handles)
-     * and local (non-FFI) failures. The binding does no parsing.
+     * The {@code AiMuxError} retry verdict: {@code true} when retrying may help.
+     *
+     * <p>Not derivable from {@link #getStatusCode()} — two failures can both
+     * report {@code -1} and disagree: a transport failure (the request went out,
+     * the connection was reset) is retryable, a missing API key (the request
+     * never went out) is not. {@code false} for local (non-FFI) failures and
+     * for failures synthesized by the C ABI.
      */
-    public String getErrorValue() {
-        return errorValue;
+    public boolean isRetryable() {
+        return retryable;
     }
 
     // ── Factories ───────────────────────────────────────────────────────────
 
     /**
-     * Build a typed exception from a filled C {@link AimuxCError} out-param.
-     * Null or {@link #AIMUX_OK} yields a generic unknown failure.
+     * Build a typed exception from a returned {@code const aimux_error_t *},
+     * prefixing {@code prefix} to the message. Reads the code, message,
+     * retryable, status and the payload getters for that code only, freeing
+     * every returned string. Does not own the pointer: the caller
+     * ({@link AimuxResult#expectAimuxError}) frees the returned error afterwards.
+     * A code outside 1–13 is a header/library mismatch →
+     * {@link IllegalStateException}.
      */
-    public static AimuxException fromC(AimuxCError e) {
-        return fromC(e, null);
-    }
-
-    /**
-     * Build a typed exception from a filled C {@link AimuxCError} out-param,
-     * prefixing {@code context} (e.g. a factory description) when present.
-     * Consumes (reads and frees) the C-allocated message.
-     */
-    static AimuxException fromC(AimuxCError e, String context) {
-        int code;
-        int status;
-        long retryMs;
-        String msg;
-        String errorValue = null;
-        if (e == null) {
-            code = AIMUX_E_OTHER;
-            status = -1;
-            retryMs = -1L;
-            msg = "aimux: operation failed";
-        } else {
-            // After a JNA Library call, Structure out-params are already synced
-            // native → Java. Do not call e.read() here: that would clobber
-            // pure-Java probes (unit tests) that only set fields in Java.
-            code = (e.code == AIMUX_OK) ? AIMUX_E_OTHER : e.code;
-            status = e.status;
-            retryMs = e.retry_ms;
-            msg = e.takeMessage();
-            errorValue = e.takeErrorValue();
-            if (msg.isEmpty()) {
-                msg = "aimux: " + codeName(e.code);
-            }
+    static AimuxException fromC(Pointer error, String prefix) {
+        AimuxFFI ffi = AimuxFFI.INSTANCE;
+        int code = ffi.aimux_error_code(error);
+        if (code == AIMUX_OK) {
+            throw new IllegalStateException(prefix + "non-null aimux error carries AIMUX_OK");
         }
-        if (context != null && !context.isEmpty()) {
-            msg = context + ": " + msg;
+        String msg = AimuxResult.takeString(ffi.aimux_error_message(error));
+        if (msg == null || msg.isEmpty()) {
+            msg = "aimux: " + codeName(code);
         }
-        AimuxException ex = createByCode(code, msg, status, retryMs);
-        ex.errorValue = errorValue;
+        msg = prefix + msg;
+        AimuxException ex;
+        switch (code) {
+            case AIMUX_E_API_CALL:
+                ex = new APICallError(msg, ffi.aimux_error_status(error), ffi.aimux_error_retry_ms(error),
+                    AimuxResult.takeString(ffi.aimux_error_provider_code(error)),
+                    AimuxResult.takeString(ffi.aimux_error_provider_message(error)),
+                    AimuxResult.takeString(ffi.aimux_error_request_id(error)),
+                    AimuxResult.takeString(ffi.aimux_error_response_body(error)));
+                break;
+            case AIMUX_E_NO_SUCH_MODEL:
+                ex = new NoSuchModelError(msg, -1, -1L,
+                    AimuxResult.takeString(ffi.aimux_error_model_id(error)),
+                    AimuxResult.takeString(ffi.aimux_error_model_type(error)));
+                break;
+            case AIMUX_E_NO_SUCH_PROVIDER:
+                ex = new NoSuchProviderError(msg, -1, -1L,
+                    AimuxResult.takeString(ffi.aimux_error_provider_id(error)));
+                break;
+            default:
+                ex = createByCode(code, msg, -1, -1L);
+        }
+        ex.retryable = ffi.aimux_error_retryable(error) != 0;
         return ex;
     }
 
@@ -200,10 +211,8 @@ public class AimuxException extends RuntimeException {
                 return new RequestAbortedError(message, status, retryMs);
             case AIMUX_E_OTHER:
                 return new OtherError(message, status, retryMs);
-            case AIMUX_E_UNKNOWN:
             default:
-                // Unknown / out-of-range: base class so callers still catch AimuxException.
-                return new AimuxException(message, code, status, retryMs);
+                throw new IllegalStateException("Unknown aimux_error_code_t: " + code);
         }
     }
 
@@ -212,8 +221,6 @@ public class AimuxException extends RuntimeException {
         switch (code) {
             case AIMUX_OK:
                 return "OK";
-            case AIMUX_E_UNKNOWN:
-                return "Unknown";
             case AIMUX_E_JSON_PARSE:
                 return "JsonParse";
             case AIMUX_E_INVALID_RESPONSE_DATA:
@@ -290,25 +297,94 @@ public class AimuxException extends RuntimeException {
     }
 
     public static class NoSuchModelError extends AimuxException {
+        private final String modelId;
+        private final String modelType;
+
         public NoSuchModelError(String message, int status, long retryMs) {
+            this(message, status, retryMs, null, null);
+        }
+
+        public NoSuchModelError(String message, int status, long retryMs,
+                                String modelId, String modelType) {
             super(message, AIMUX_E_NO_SUCH_MODEL, status, retryMs);
+            this.modelId = modelId;
+            this.modelType = modelType;
+        }
+
+        /** The model id that was asked for, or {@code null} for local failures. */
+        public String getModelId() {
+            return modelId;
+        }
+
+        /** The model type it was asked for as, or {@code null} for local failures. */
+        public String getModelType() {
+            return modelType;
         }
     }
 
     public static class NoSuchProviderError extends AimuxException {
+        private final String providerId;
+
         public NoSuchProviderError(String message, int status, long retryMs) {
+            this(message, status, retryMs, null);
+        }
+
+        public NoSuchProviderError(String message, int status, long retryMs, String providerId) {
             super(message, AIMUX_E_NO_SUCH_PROVIDER, status, retryMs);
+            this.providerId = providerId;
+        }
+
+        /** The provider id that was asked for, or {@code null} for local failures. */
+        public String getProviderId() {
+            return providerId;
         }
     }
 
     /**
      * Every HTTP-shaped failure (AI SDK {@code APICallError} analogue): provider
      * errors, transport failures, 401 auth, 404 model, 429 rate limit. Classify
-     * with {@link #getStatusCode()}; a transport failure reports {@code -1}.
+     * with {@link #getStatusCode()}; {@code -1} means no HTTP response was ever
+     * observed — a missing API key, an error built without a request, or a
+     * transport failure — and says nothing about whether a retry would help:
+     * read {@link #isRetryable()} for that, never the status sentinel.
      */
     public static class APICallError extends AimuxException {
+        private final String providerCode;
+        private final String providerMessage;
+        private final String requestId;
+        private final String responseBody;
+
         public APICallError(String message, int status, long retryMs) {
+            this(message, status, retryMs, null, null, null, null);
+        }
+
+        public APICallError(String message, int status, long retryMs,
+                            String providerCode, String providerMessage, String requestId, String responseBody) {
             super(message, AIMUX_E_API_CALL, status, retryMs);
+            this.providerCode = providerCode;
+            this.providerMessage = providerMessage;
+            this.requestId = requestId;
+            this.responseBody = responseBody;
+        }
+
+        /** The provider's own error code (e.g. {@code "insufficient_quota"}), or {@code null}. */
+        public String getProviderCode() {
+            return providerCode;
+        }
+
+        /** The failure's own text without the composed prefix {@link #getMessage()} carries (e.g. {@code "slow down"}), or {@code null}. */
+        public String getProviderMessage() {
+            return providerMessage;
+        }
+
+        /** Provider request id (for support tickets), or {@code null}. */
+        public String getRequestId() {
+            return requestId;
+        }
+
+        /** Raw response body, or {@code null}. */
+        public String getResponseBody() {
+            return responseBody;
         }
     }
 

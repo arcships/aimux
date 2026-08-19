@@ -1,6 +1,10 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 import java.io.Closeable;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -51,9 +55,10 @@ public final class Files implements Closeable {
      * @throws AimuxException on failure.
      */
     public static Files openai(String apiKey) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_files_new(apiKey, err);
-        return new Files(AimuxResult.extractHandle(h, err, "Failed to create OpenAI files manager"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_files_new(apiKey, out);
+        return new Files(AimuxResult.extractHandle(e, out, "Failed to create OpenAI files manager"));
     }
 
     /**
@@ -65,9 +70,10 @@ public final class Files implements Closeable {
      * @throws AimuxException on failure.
      */
     public static Files openaiWithBase(String apiKey, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_files_new_with_base(apiKey, baseUrl, err);
-        return new Files(AimuxResult.extractHandle(h, err, "Failed to create OpenAI files manager"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_files_new_with_base(apiKey, baseUrl, out);
+        return new Files(AimuxResult.extractHandle(e, out, "Failed to create OpenAI files manager"));
     }
 
     /**
@@ -93,11 +99,14 @@ public final class Files implements Closeable {
      * @throws AimuxException on engine / transport failure.
      */
     public String uploadFile(String dataBase64, String mediaType, String optsJson) {
-        AimuxCError err = AimuxResult.newError();
+        Objects.requireNonNull(dataBase64, "dataBase64");
+        Objects.requireNonNull(mediaType, "mediaType");
+        AimuxResult.requireJson(optsJson, "optsJson");
+        PointerByReference out = new PointerByReference();
         return AimuxResult.extractString(
             AimuxFFI.INSTANCE.aimux_file_upload(
-                requireHandle(), dataBase64, mediaType, optsJson, err),
-            err,
+                requireHandle(), dataBase64, mediaType, optsJson, out),
+            out,
             "file_upload");
     }
 }

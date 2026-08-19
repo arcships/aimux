@@ -95,11 +95,12 @@ public class TypedModel implements Closeable {
     }
 
     private Types.GenerateTextResult decodeResult(String resultJson) {
-        // Failures throw from the raw Model via AimuxCError → AimuxException.
+        // AiMuxError values throw from the raw Model via the C returned error → AimuxException;
+        // failing to decode what the library returned is a binding invariant → ISE.
         try {
             return Types.AimuxJson.MAPPER.readValue(resultJson, Types.GenerateTextResult.class);
         } catch (IOException e) {
-            throw new AimuxException("failed to decode GenerateTextResult: " + e.getMessage(), e);
+            throw new IllegalStateException("aimux: failed to decode GenerateTextResult: " + e.getMessage(), e);
         }
     }
 
@@ -151,7 +152,7 @@ public class TypedModel implements Closeable {
         try {
             return Types.AimuxJson.MAPPER.readValue(resultJson, Types.GenerateObjectResult.class);
         } catch (IOException e) {
-            throw new AimuxException("failed to decode GenerateObjectResult: " + e.getMessage(), e);
+            throw new IllegalStateException("aimux: failed to decode GenerateObjectResult: " + e.getMessage(), e);
         }
     }
 
@@ -207,7 +208,7 @@ public class TypedModel implements Closeable {
         try {
             return Types.AimuxJson.MAPPER.readValue(resultJson, Types.StreamTextResultAggregated.class);
         } catch (IOException e) {
-            throw new AimuxException("failed to decode StreamTextResultAggregated: " + e.getMessage(), e);
+            throw new IllegalStateException("aimux: failed to decode StreamTextResultAggregated: " + e.getMessage(), e);
         }
     }
 
@@ -440,7 +441,7 @@ public class TypedModel implements Closeable {
         try {
             return Types.AimuxJson.MAPPER.readValue(resultJson, Types.ChatCompletion.class);
         } catch (IOException e) {
-            throw new AimuxException("failed to decode ChatCompletion: " + e.getMessage(), e);
+            throw new IllegalStateException("aimux: failed to decode ChatCompletion: " + e.getMessage(), e);
         }
     }
 
@@ -663,7 +664,7 @@ public class TypedModel implements Closeable {
         try {
             return Types.AimuxJson.MAPPER.readValue(partJson, Types.StreamPart.class);
         } catch (IOException e) {
-            throw new IllegalArgumentException("failed to decode StreamPart", e);
+            throw new IllegalStateException("aimux: failed to decode StreamPart: " + e.getMessage(), e);
         }
     }
 
@@ -671,8 +672,7 @@ public class TypedModel implements Closeable {
         try {
             return Types.AimuxJson.MAPPER.readValue(chunkJson, Types.ChatCompletionChunk.class);
         } catch (IOException e) {
-            throw new IllegalArgumentException("failed to decode ChatCompletionChunk", e);
+            throw new IllegalStateException("aimux: failed to decode ChatCompletionChunk: " + e.getMessage(), e);
         }
     }
 }
-

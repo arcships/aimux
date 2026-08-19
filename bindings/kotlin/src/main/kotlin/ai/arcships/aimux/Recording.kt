@@ -1,8 +1,5 @@
 package ai.arcships.aimux
 
-import com.sun.jna.Library
-import com.sun.jna.Native
-
 /**
  * Recording + mock replay (RFC-0023).
  *
@@ -15,46 +12,36 @@ import com.sun.jna.Native
  * Start recording: the complete `Recording` JSONL is written to
  * `{dir}/recordings.jsonl` (dir is auto-created).
  *
- * @throws IllegalArgumentException if `dir` is null/empty (the C ABI returns -1).
+ * @throws IllegalArgumentException if `dir` is empty.
+ * @throws RecordingException (code `INIT` — dir could not be created,
+ *   `OPEN_FILE` or `SPAWN`) if the recorder could not be constructed. On
+ *   failure the previous recorder (if any) stays in place.
  */
 fun initRecording(dir: String) {
     if (dir.isEmpty()) throw IllegalArgumentException("initRecording: dir must not be empty")
-    requireOk(FFI.lib.aimux_init_recording(dir), "initRecording")
+    FFI.lib.aimux_init_recording(dir)?.let { throw expectRecordingError(it, "initRecording") }
 }
-
-/**
- * Local JNA binding for the no-arg default-capacity ring entry point. Declared
- * here (rather than the shared `AimuxFFI` interface in Model.kt) to keep this
- * change scoped to Recording.kt. JNA caches the underlying native library by
- * name, so loading "aimux_ffi" again for this interface reuses the already-open
- * handle.
- */
-private interface RecordingDefaultFFI : Library {
-    fun aimux_init_recording_ring_default(): Int
-}
-
-private val recordingDefaultLib: RecordingDefaultFFI =
-    Native.load("aimux_ffi", RecordingDefaultFFI::class.java)
 
 /**
  * Start in-memory bounded recording (`RingRecorder`, FIFO eviction).
  *
  * @param cap Maximum number of entries held in memory; `null` (default) uses
  *   the library default capacity (FFI `aimux_init_recording_ring_default`).
- * @throws IllegalArgumentException if `cap <= 0` (the C ABI returns -1).
+ * @throws IllegalArgumentException if `cap <= 0` (checked before the C call so a
+ *   negative value is never reinterpreted as a huge `uint64_t`).
  */
 fun initRecordingRing(cap: Int? = null) {
     if (cap == null) {
-        requireOk(recordingDefaultLib.aimux_init_recording_ring_default(), "initRecordingRing")
+        FFI.lib.aimux_init_recording_ring_default()
         return
     }
     if (cap <= 0) throw IllegalArgumentException("initRecordingRing: cap must be > 0")
-    requireOk(FFI.lib.aimux_init_recording_ring(cap.toLong()), "initRecordingRing")
+    FFI.lib.aimux_init_recording_ring(cap.toLong())?.let { throw expectAimuxError(it, "initRecordingRing") }
 }
 
 /** Stop recording: the global recorder becomes None (new calls are unrecorded). */
 fun recordingStop() {
-    requireOk(FFI.lib.aimux_recording_stop(), "recordingStop")
+    FFI.lib.aimux_recording_stop()
 }
 
 /**
@@ -62,9 +49,15 @@ fun recordingStop() {
  * ring recorder).
  */
 fun recordingFlush() {
-    requireOk(FFI.lib.aimux_recording_flush(), "recordingFlush")
+    FFI.lib.aimux_recording_flush()
 }
 
-private fun requireOk(code: Int, context: String) {
-    if (code != 0) throw IllegalArgumentException("$context: native call failed (code $code)")
+/**
+ * Checked flush: like [recordingFlush] but reports failures. Throws
+ * [RecordingException] (code `WRITE`, `WRITER_GONE` or `FLUSH_TIMEOUT`) — not
+ * an [AimuxException]. Returns normally when nothing is recording. The legacy
+ * [recordingFlush] stays and never reports.
+ */
+fun recordingTryFlush() {
+    FFI.lib.aimux_recording_try_flush()?.let { throw expectRecordingError(it, "recordingTryFlush") }
 }

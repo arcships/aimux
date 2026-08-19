@@ -90,9 +90,10 @@ class ModelTest {
     @Test
     void generateTextRejectsInvalidPrompt() {
         try (Model model = Model.openai("sk-test-fake-key", "gpt-4o-mini")) {
-            // Invalid prompts fail via C AimuxError → AimuxException (no JSON envelope).
+            // Malformed raw JSON is rejected by the binding before the C call.
             assertThatThrownBy(() -> model.generateText("{invalid json}"))
-                .isInstanceOf(AimuxException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("promptJson");
         }
     }
 

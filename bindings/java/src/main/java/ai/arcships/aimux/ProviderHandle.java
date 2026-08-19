@@ -1,5 +1,9 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
+import java.util.Objects;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -82,10 +86,10 @@ public class ProviderHandle implements AutoCloseable {
         lock.readLock().lock();
         try {
             long h = requireHandleLocked();
-            AimuxCError err = AimuxResult.newError();
+            PointerByReference out = new PointerByReference();
             return AimuxResult.extractString(
-                AimuxFFI.INSTANCE.aimux_provider_list_models(h, err),
-                err,
+                AimuxFFI.INSTANCE.aimux_provider_list_models(h, out),
+                out,
                 "list_models");
         } finally {
             lock.readLock().unlock();
@@ -101,12 +105,13 @@ public class ProviderHandle implements AutoCloseable {
      * @throws AimuxException on construction failure
      */
     public Model model(String modelId) {
+        Objects.requireNonNull(modelId, "modelId");
         lock.readLock().lock();
         try {
             long h = requireHandleLocked();
-            AimuxCError err = AimuxResult.newError();
-            long newHandle = AimuxFFI.INSTANCE.aimux_provider_model(h, modelId, err);
-            return new Model(AimuxResult.extractHandle(newHandle, err, "Failed to create model: " + modelId));
+            LongByReference out = new LongByReference();
+            Pointer e = AimuxFFI.INSTANCE.aimux_provider_model(h, modelId, out);
+            return new Model(AimuxResult.extractHandle(e, out, "Failed to create model: " + modelId));
         } finally {
             lock.readLock().unlock();
         }

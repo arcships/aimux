@@ -1,6 +1,10 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 import java.io.Closeable;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -52,10 +56,12 @@ public final class TranscriptionModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static TranscriptionModel openai(String apiKey, String modelId) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_transcription_new(apiKey, modelId, err);
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_transcription_new(apiKey, modelId, out);
         return new TranscriptionModel(
-            AimuxResult.extractHandle(h, err, "Failed to create OpenAI transcription model"));
+            AimuxResult.extractHandle(e, out, "Failed to create OpenAI transcription model"));
     }
 
     /**
@@ -68,10 +74,12 @@ public final class TranscriptionModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static TranscriptionModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl, err);
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl, out);
         return new TranscriptionModel(
-            AimuxResult.extractHandle(h, err, "Failed to create OpenAI transcription model"));
+            AimuxResult.extractHandle(e, out, "Failed to create OpenAI transcription model"));
     }
 
     /**
@@ -121,11 +129,12 @@ public final class TranscriptionModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public TranscriptionSession startStream(String optsJson, long abortHandle) {
+        AimuxResult.requireJson(optsJson, "optsJson");
         long h = requireHandle();
-        AimuxCError err = AimuxResult.newError();
-        long session = AimuxFFI.INSTANCE.aimux_transcription_session_new(h, abortHandle, optsJson, err);
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_transcription_session_new(h, abortHandle, optsJson, out);
         return new TranscriptionSession(
-                AimuxResult.extractHandle(session, err, "Failed to start transcription session"));
+                AimuxResult.extractHandle(e, out, "Failed to start transcription session"));
     }
 
     /**
@@ -139,11 +148,14 @@ public final class TranscriptionModel implements Closeable {
      * @throws AimuxException on engine / transport failure.
      */
     public String generate(String audioBase64, String mediaType, String optsJson) {
-        AimuxCError err = AimuxResult.newError();
+        Objects.requireNonNull(audioBase64, "audioBase64");
+        Objects.requireNonNull(mediaType, "mediaType");
+        AimuxResult.requireJson(optsJson, "optsJson");
+        PointerByReference out = new PointerByReference();
         return AimuxResult.extractString(
             AimuxFFI.INSTANCE.aimux_transcription_generate(
-                requireHandle(), audioBase64, mediaType, optsJson, err),
-            err,
+                requireHandle(), audioBase64, mediaType, optsJson, out),
+            out,
             "transcription_generate");
     }
 }
