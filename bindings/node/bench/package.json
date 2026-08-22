@@ -6,8 +6,9 @@
     "bench": "tsx bench-nonstream.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "file:../../reference/ai/packages/openai",
-    "ai": "file:../../reference/ai/packages/ai"
+    "@ai-sdk/openai": "^2",
+    "ai": "^5",
+    "openai": "^6"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

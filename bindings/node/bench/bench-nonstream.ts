@@ -13,10 +13,11 @@
  */
 
 import { startMockServer } from './mock-server.ts'
+import { nativeBinaryPath } from './native.ts'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 // raw napi .node — 直接加载原生二进制，绕过 ts wrapper 的循环 re-export
-const napi = require('../aimux.linux-x64-gnu.node') as { openai: (apiKey: string, modelId: string, baseUrl?: string) => Promise<{ generateText: (prompt: string, opts?: string) => Promise<string> }> }
+const napi = require(nativeBinaryPath()) as { openai: (apiKey: string, modelId: string, baseUrl?: string) => Promise<{ generateText: (prompt: string, opts?: string) => Promise<string> }> }
 
 // ── B0: undici 直调 ──────────────────────────────────────────────────────
 async function benchB0(uri: string): Promise<number> {
@@ -56,9 +57,7 @@ async function benchAimux(uri: string): Promise<number> {
 let aisdkModel: { doGenerate: (opts: unknown) => Promise<unknown> } | null = null
 
 async function initAisdk(uri: string) {
-  const { createRequire: cR } = await import('node:module')
-  const openaiRequire = cR('/media/eric8810/fast-deliver/code/aimux/reference/ai/packages/openai/package.json')
-  const { createOpenAI } = openaiRequire('@ai-sdk/openai')
+  const { createOpenAI } = await import('@ai-sdk/openai')
   const openai = createOpenAI({ apiKey: 'test-key', baseURL: `${uri}/v1` })
   // 用 .chat() 走 chat completions 接口（默认 .responses() 走 Responses API）
   aisdkModel = openai.chat('gpt-4o') as never

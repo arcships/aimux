@@ -13,9 +13,10 @@
  */
 
 import { startMockServer } from './mock-server.ts'
+import { nativeBinaryPath } from './native.ts'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-const napi = require('../aimux.linux-x64-gnu.node') as {
+const napi = require(nativeBinaryPath()) as {
   openai: (apiKey: string, modelId: string, baseUrl?: string) => Promise<{
     generateText: (prompt: string, opts?: string) => Promise<string>
   }>
@@ -87,8 +88,7 @@ async function benchAimux(uri: string, prompt: string): Promise<number> {
 
 let aisdkModel: { doGenerate: (opts: unknown) => Promise<unknown> } | null = null
 async function initAisdk(uri: string) {
-  const openaiReq = createRequire('/media/eric8810/fast-deliver/code/aimux/reference/ai/packages/openai/package.json')
-  const { createOpenAI } = openaiReq('@ai-sdk/openai')
+    const { createOpenAI } = await import('@ai-sdk/openai')
   const openai = createOpenAI({ apiKey: 'test-key', baseURL: `${uri}/v1` })
   aisdkModel = openai.chat('gpt-4o') as never
 }
