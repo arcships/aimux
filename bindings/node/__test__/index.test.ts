@@ -1,5 +1,12 @@
 import test from 'ava'
-import { openai, anthropic, deepseek, provider, initRecordingRing, recordingStop } from '../index.js'
+import {
+  openai,
+  anthropic,
+  deepseek,
+  provider,
+  initRecordingRing,
+  recordingStop,
+} from '../src/native.ts'
 
 // These tests verify the native module loads and the API surface works.
 // They do NOT make real API calls — they test error handling for invalid keys.
@@ -57,10 +64,12 @@ test('deepseek() creates a model instance', async (t) => {
 
 test('generateText rejects on invalid prompt JSON', async (t) => {
   const model = await openai('sk-test-fake-key', 'gpt-4o-mini')
-  // Invalid JSON should produce a napi Error, not a crash
+  // A wire-JSON text that does not parse is the binding's own failure, not
+  // the engine's: a plain napi Error with code 'InvalidArg' naming the
+  // argument — never an engine InvalidPromptError.
   await t.throwsAsync(
     () => model.generateText('{invalid json}'),
-    { message: /invalid prompt/i },
+    { code: 'InvalidArg', message: /^prompt_json: invalid JSON/ },
   )
 })
 

@@ -1,5 +1,6 @@
 package ai.arcships.aimux
 
+import com.sun.jna.ptr.PointerByReference
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -45,14 +46,16 @@ class ModelTest {
     }
 
     @Test
-    fun `generateText maps a JSON parse failure to JSONParseError`() {
+    fun `generateText rejects malformed prompt JSON with IllegalArgumentException`() {
         Model.openai("sk-test-fake-key", "gpt-4o-mini").use { model ->
-            // Prompt JSON parse failures are AIMUX_E_JSON_PARSE (code 2), not Other.
-            // Also exercises the real free-path: the FFI-allocated message is
-            // read and freed by throwFromC.
+            // Malformed raw JSON is the caller's mistake, caught before the C
+            // call and named after the Kotlin parameter — not AiMuxError's
+            // JSONParseError.
             assertThatThrownBy {
                 model.generateText("{invalid json}")
-            }.isInstanceOf(JSONParseError::class.java)
+            }.isInstanceOf(IllegalArgumentException::class.java)
+                .isNotInstanceOf(AimuxException::class.java)
+                .hasMessageContaining("promptJson")
         }
     }
 
@@ -79,29 +82,30 @@ class ModelTest {
     }
 
     @Test
-    fun `unknown provider failure carries lossless errorValue JSON`() {
-        // Core-originated failure: error_value is the externally-tagged
-        // AiMuxError JSON. throwFromC frees both C strings after mapping.
+    fun `unknown provider failure carries the requested provider id`() {
+        // Core-originated failure: provider_id is available under code 10.
+        // expectAimuxError reads the getters and frees the error after mapping.
         assertThatThrownBy {
             Model.provider("definitely-not-a-provider", apiKey = "k", modelId = "m")
         }.isInstanceOf(NoSuchProviderError::class.java)
             .satisfies({ ex ->
-                assertThat((ex as AimuxException).errorValue).contains("NoSuchProvider")
+                assertThat((ex as NoSuchProviderError).providerId).isEqualTo("definitely-not-a-provider")
             })
     }
 
     @Test
-    fun `FFI-synthesized failure has null errorValue`() {
-        // Invalid handle: the failure is synthesized at the FFI boundary,
-        // so C error_value is NULL and errorValue maps to Kotlin null.
-        val err = AimuxCError()
-        val res = FFI.lib.aimux_generate_text(0x7FFF_FFFFL, "\"hi\"", null, err)
-        assertThat(res).isNull()
-        val ex = AimuxException.fromC(err)
-        FFI.lib.aimux_free_string(err.message)
-        FFI.lib.aimux_free_string(err.error_value)
-        assertThat(ex).isInstanceOf(InvalidArgumentError::class.java)
-        assertThat(ex.errorValue).isNull()
+    fun `FFI-synthesized failure maps and frees cleanly`() {
+        // Invalid handle: code 203 maps through expectAimuxError to a plain
+        // IllegalStateException (binding invariant) and frees the error.
+        val out = PointerByReference()
+        val e = FFI.lib.aimux_generate_text(0x7FFF_FFFFL, "\"hi\"", null, out)
+        assertThat(e).isNotNull
+        assertThat(out.value).isNull()
+        assertThat(FFI.lib.aimux_error_code(e)).isEqualTo(203)
+        assertThatThrownBy { throw expectAimuxError(e!!) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .isNotInstanceOf(AimuxException::class.java)
+            .hasMessageContaining("model")
     }
 
     @Test
@@ -191,6 +195,30 @@ class ModelTest {
         // LD_LIBRARY_PATH (same as the other Model tests in this class).
         assertThatCode { initRecordingRing() }.doesNotThrowAnyException()
         recordingStop()
+    }
+
+    @Test
+    fun `recordingTryFlush succeeds when nothing is recording`() {
+        recordingStop()
+        assertThatCode { recordingTryFlush() }.doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `initRecording reports INIT for an unwritable dir`() {
+        // Parent path is a regular file → the dir cannot be created and init
+        // fails with code INIT; nothing is installed, so a later try_flush is a no-op.
+        val blocker = java.nio.file.Files.createTempFile("aimux-kt-blocker", "")
+        try {
+            recordingStop()
+            assertThatThrownBy { initRecording(blocker.resolve("sub").toString()) }
+                .isInstanceOf(RecordingException::class.java)
+                .isNotInstanceOf(AimuxException::class.java)
+                .matches { (it as RecordingException).code == RecordingErrorCode.INIT }
+            assertThatCode { recordingTryFlush() }.doesNotThrowAnyException()
+        } finally {
+            recordingStop()
+            java.nio.file.Files.deleteIfExists(blocker)
+        }
     }
 
     // ── canned OpenAI responses ────────────────────────────────────────────

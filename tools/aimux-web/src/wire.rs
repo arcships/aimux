@@ -338,13 +338,13 @@ mod tests {
     fn resolve_key_priority_explicit_env_over_store() {
         let store = KeyStore::from_path(None);
         store.set("openai", "sk-from-store", false).unwrap();
-        // SAFETY: test-only, single-threaded env mutation.
+        // SAFETY: This test owns a unique process-wide env key and removes it below.
         unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY", "k-123") };
         assert_eq!(
             resolve_api_key(Some("env:AIMUX_WEB_TEST_KEY"), "openai", &store, true).unwrap(),
             Some("k-123".to_string())
         );
-        // SAFETY: test-only cleanup.
+        // SAFETY: Cleanup of the unique test key set above.
         unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY") };
     }
 
@@ -383,14 +383,14 @@ mod tests {
         let err = resolve_api_key(Some("sk-literal"), "openai", &store, false).unwrap_err();
         assert!(err.to_string().contains("loopback"), "err: {err}");
         // env: references still work on non-loopback.
-        // SAFETY: test-only, single-threaded env mutation.
-        unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY", "k-lan") };
+        // SAFETY: This test owns a unique process-wide env key and removes it below.
+        unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY_LAN", "k-lan") };
         assert_eq!(
-            resolve_api_key(Some("env:AIMUX_WEB_TEST_KEY"), "openai", &store, false).unwrap(),
+            resolve_api_key(Some("env:AIMUX_WEB_TEST_KEY_LAN"), "openai", &store, false,).unwrap(),
             Some("k-lan".to_string())
         );
-        // SAFETY: test-only cleanup.
-        unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY") };
+        // SAFETY: Cleanup of the unique test key set above.
+        unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY_LAN") };
     }
 
     #[test]

@@ -69,7 +69,7 @@ class TypedModel(private val raw: Model, private val ownsModel: Boolean = false)
     }
 
     private fun decodeResult(resultJson: String): GenerateTextResult {
-        // Engine failures throw AimuxException.fromC in the raw layer.
+        // AiMuxError values throw AimuxException.fromC in the raw layer.
         // Decode failures are local InvalidArgumentError.
         return try {
             AimuxJson.decodeFromString(GenerateTextResult.serializer(), resultJson)

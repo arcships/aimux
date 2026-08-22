@@ -21,7 +21,7 @@ import {
   tavilySearch,
   openaiFiles,
   googleVideo,
-} from '../index.js'
+} from '../src/native.ts'
 
 // ── Mock server helpers (same pattern as e2e.test.ts) ───────────────────────
 

@@ -3,7 +3,7 @@
 //! Each modality is a napi class wrapping the Rust trait object.
 //! All cross-boundary data uses JSON strings (base64 for binary).
 
-use crate::error::{AimuxResult, MappedError};
+use crate::error::{AimuxResult, BindingError, AiMuxBindingError, parse_wire_json, serialize_result};
 use std::sync::Arc;
 
 use aimux_core::AiMuxError;
@@ -15,8 +15,7 @@ use aimux_core::search_model::SearchModel as SearchModelTrait;
 use aimux_core::shared::FileBytes;
 use aimux_core::speech_model::{SpeechCallOptions, SpeechModel as SpeechModelTrait};
 use aimux_core::transcription_model::{
-    AudioChunk, AudioInput, TranscriptionCallOptions,
-    TranscriptionModel as TranscriptionModelTrait,
+    AudioChunk, AudioInput, TranscriptionCallOptions, TranscriptionModel as TranscriptionModelTrait,
 };
 use aimux_core::video_model::{VideoCallOptions, VideoModel as VideoModelTrait};
 use napi_derive::napi;
@@ -44,29 +43,20 @@ impl EmbeddingModel {
             let __r: crate::error::MResult<String> = async {
                 let mut opts: EmbeddingCallOptions = match opts_json.as_deref() {
                     Some(s) if !s.trim().is_empty() && s.trim() != "null" => {
-                        serde_json::from_str(s).map_err(|e| {
-                            MappedError::from(&AiMuxError::InvalidArgument(format!(
-                                "invalid opts: {e}"
-                            )))
-                        })?
+                        parse_wire_json("opts_json", s)?
                     }
                     _ => EmbeddingCallOptions::new(""),
                 };
                 // Override values from the JSON array
-                let values: Vec<String> = serde_json::from_str(&values_json).map_err(|e| {
-                    MappedError::from(&AiMuxError::InvalidArgument(format!(
-                        "invalid values_json: {e}"
-                    )))
-                })?;
+                let values: Vec<String> = parse_wire_json("values_json", &values_json)?;
                 opts.values = values;
 
                 let result = self
                     .inner
                     .do_embed(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -96,21 +86,15 @@ impl SpeechModel {
     ) -> AimuxResult<String> {
         AimuxResult({
             let __r: crate::error::MResult<String> = async {
-                let mut opts: SpeechCallOptions =
-                    serde_json::from_str(&opts_json).map_err(|e| {
-                        MappedError::from(&AiMuxError::InvalidArgument(format!(
-                            "invalid opts: {e}"
-                        )))
-                    })?;
+                let mut opts: SpeechCallOptions = parse_wire_json("opts_json", &opts_json)?;
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
                 let result = self
                     .inner
                     .do_generate(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -140,18 +124,15 @@ impl ImageModel {
     ) -> AimuxResult<String> {
         AimuxResult({
             let __r: crate::error::MResult<String> = async {
-                let mut opts: ImageCallOptions = serde_json::from_str(&opts_json).map_err(|e| {
-                    MappedError::from(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
-                })?;
+                let mut opts: ImageCallOptions = parse_wire_json("opts_json", &opts_json)?;
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
                 let result = self
                     .inner
                     .do_generate(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -188,12 +169,7 @@ impl TranscriptionModel {
                     TranscriptionCallOptions::new(AudioInput::Base64(audio_base64), media_type);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: TranscriptionCallOptions =
-                            serde_json::from_str(s).map_err(|e| {
-                                MappedError::from(&AiMuxError::InvalidArgument(format!(
-                                    "invalid opts: {e}"
-                                )))
-                            })?;
+                        let parsed: TranscriptionCallOptions = parse_wire_json("opts_json", s)?;
                         // Keep audio and media_type from our explicit args
                         parsed
                             .provider_options
@@ -206,9 +182,8 @@ impl TranscriptionModel {
                     .inner
                     .do_generate(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -242,21 +217,12 @@ impl RerankingModel {
         AimuxResult({
             let __r: crate::error::MResult<String> = async {
                 use aimux_core::reranking_model::RerankingDocuments;
-                let docs: RerankingDocuments = serde_json::from_str(&docs_json).map_err(|e| {
-                    MappedError::from(&AiMuxError::InvalidArgument(format!(
-                        "invalid docs_json: {e}"
-                    )))
-                })?;
+                let docs: RerankingDocuments = parse_wire_json("docs_json", &docs_json)?;
 
                 let mut opts = RerankingCallOptions::new(query, docs);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: RerankingCallOptions =
-                            serde_json::from_str(s).map_err(|e| {
-                                MappedError::from(&AiMuxError::InvalidArgument(format!(
-                                    "invalid opts: {e}"
-                                )))
-                            })?;
+                        let parsed: RerankingCallOptions = parse_wire_json("opts_json", s)?;
                         opts.provider_options = parsed.provider_options;
                         opts.top_n = parsed.top_n;
                     }
@@ -267,9 +233,8 @@ impl RerankingModel {
                     .inner
                     .do_rerank(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -299,18 +264,15 @@ impl VideoModel {
     ) -> AimuxResult<String> {
         AimuxResult({
             let __r: crate::error::MResult<String> = async {
-                let mut opts: VideoCallOptions = serde_json::from_str(&opts_json).map_err(|e| {
-                    MappedError::from(&AiMuxError::InvalidArgument(format!("invalid opts: {e}")))
-                })?;
+                let mut opts: VideoCallOptions = parse_wire_json("opts_json", &opts_json)?;
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
                 let result = self
                     .inner
                     .do_generate(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -345,11 +307,7 @@ impl SearchModel {
                 let mut opts = SearchCallOptions::new(query);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: SearchCallOptions = serde_json::from_str(s).map_err(|e| {
-                            MappedError::from(&AiMuxError::InvalidArgument(format!(
-                                "invalid opts: {e}"
-                            )))
-                        })?;
+                        let parsed: SearchCallOptions = parse_wire_json("opts_json", s)?;
                         opts = parsed;
                     }
                 }
@@ -359,9 +317,8 @@ impl SearchModel {
                     .inner
                     .do_search(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -402,12 +359,7 @@ impl Files {
                 );
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: UploadFileCallOptions =
-                            serde_json::from_str(s).map_err(|e| {
-                                MappedError::from(&AiMuxError::InvalidArgument(format!(
-                                    "invalid opts: {e}"
-                                )))
-                            })?;
+                        let parsed: UploadFileCallOptions = parse_wire_json("opts_json", s)?;
                         opts.filename = parsed.filename;
                         opts.provider_options = parsed.provider_options;
                     }
@@ -417,9 +369,8 @@ impl Files {
                     .inner
                     .upload_file(&opts)
                     .await
-                    .map_err(|e| MappedError::from(&e))?;
-                serde_json::to_string(&result)
-                    .map_err(|e| MappedError::from(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+                    .map_err(|e| AiMuxBindingError::from(&e))?;
+                serialize_result(&result)
             }
             .await;
             __r
@@ -709,9 +660,8 @@ pub async fn tavily_search(api_key: String, base_url: Option<String>) -> AimuxRe
 #[napi]
 pub struct TranscriptionSession {
     audio_tx: std::sync::Mutex<Option<futures::channel::mpsc::Sender<AudioChunk>>>,
-    parts_rx: tokio::sync::Mutex<
-        tokio::sync::mpsc::Receiver<std::result::Result<String, MappedError>>,
-    >,
+    parts_rx:
+        tokio::sync::Mutex<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
     token: aimux_core::shared::AbortSignal,
 }
 
@@ -739,11 +689,7 @@ pub async fn start_transcription_session(
             }
             let opts: SessionOpts = match opts_json.as_deref() {
                 Some(json) if !json.trim().is_empty() && json.trim() != "null" => {
-                    serde_json::from_str(json).map_err(|e| {
-                        MappedError::from(&AiMuxError::InvalidArgument(format!(
-                            "invalid opts_json: {e}"
-                        )))
-                    })?
+                    parse_wire_json("opts_json", json)?
                 }
                 _ => SessionOpts::default(),
             };
@@ -766,7 +712,7 @@ pub async fn start_transcription_session(
             let (audio_tx, audio_rx) =
                 futures::channel::mpsc::channel::<AudioChunk>(64);
             let (tx, rx) =
-                tokio::sync::mpsc::channel::<std::result::Result<String, MappedError>>(256);
+                tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxBindingError>>(256);
 
             let model = model.inner.clone();
             napi::tokio::spawn(async move {
@@ -805,20 +751,16 @@ pub async fn start_transcription_session(
                                     // the stream after an Error part, so
                                     // nothing is dropped by returning here.
                                     tokio::select! {
-                                        res = tx.send(Err(MappedError::from(&e))) => { let _ = res; }
+                                        res = tx.send(Err(AiMuxBindingError::from(&e))) => { let _ = res; }
                                         _ = effective.cancelled() => {}
                                     }
                                     return;
                                 }
                             };
-                            let json = match serde_json::to_string(&part) {
+                            let json = match serialize_result(&part) {
                                 Ok(j) => j,
                                 Err(e) => {
-                                    let _ = tx
-                                        .send(Err(MappedError::from(&AiMuxError::JsonParse(
-                                            format!("serialize part: {e}"),
-                                        ))))
-                                        .await;
+                                    let _ = tx.send(Err(e)).await;
                                     return;
                                 }
                             };
@@ -848,12 +790,12 @@ pub async fn start_transcription_session(
                         // try_send + abort-select (a full channel must not
                         // stall; abort covers the session-drop path).
                         loop {
-                            match tx.try_send(Err(MappedError::from(&e))) {
+                            match tx.try_send(Err(AiMuxBindingError::from(&e))) {
                                 Ok(()) => break,
                                 Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                                     tokio::select! {
                                         _ = effective.cancelled() => return,
-                                        res = tx.send(Err(MappedError::from(&e))) => {
+                                        res = tx.send(Err(AiMuxBindingError::from(&e))) => {
                                             if res.is_err() { return; }
                                             break;
                                         }
@@ -882,40 +824,52 @@ impl TranscriptionSession {
     /// Push one binary audio chunk. Awaits while the internal channel is
     /// full (backpressure).
     #[napi]
-    pub async fn push_audio(&self, data: napi::bindgen_prelude::Buffer) -> napi::Result<()> {
-        use futures::SinkExt;
-        let bytes = data.to_vec();
-        // Clone the sender and drop the guard BEFORE awaiting: the mutex is
-        // shared with the SYNC inputDone()/close() methods on the JS thread —
-        // holding it across a backpressured send would wedge the event loop.
-        let mut tx = {
-            let guard = self
-                .audio_tx
-                .lock()
-                .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "session poisoned"))?;
-            match guard.as_ref() {
-                None => {
-                    return Err(napi::Error::new(
-                        napi::Status::GenericFailure,
-                        "audio input already finished",
-                    ));
-                }
-                Some(tx) => tx.clone(),
+    pub async fn push_audio(&self, data: napi::bindgen_prelude::Buffer) -> AimuxResult<()> {
+        AimuxResult({
+            let __r: crate::error::MResult<()> = async {
+                use futures::SinkExt;
+                let bytes = data.to_vec();
+                // Clone the sender and drop the guard BEFORE awaiting: the mutex is
+                // shared with the SYNC inputDone()/close() methods on the JS thread —
+                // holding it across a backpressured send would wedge the event loop.
+                let mut tx = {
+                    let guard = self.audio_tx.lock().map_err(|_| BindingError::InvariantViolation {
+                        message: "session poisoned".into(),
+                    })?;
+                    match guard.as_ref() {
+                        None => {
+                            return Err(BindingError::InvalidHandle {
+                                message: "transcription session is closed (audio input already finished)",
+                            }
+                            .into());
+                        }
+                        Some(tx) => tx.clone(),
+                    }
+                };
+                tx.send(AudioChunk::Binary(bytes)).await.map_err(|_| {
+                    BindingError::InvalidHandle {
+                        message: "transcription session is closed (session ended)",
+                    }
+                    .into()
+                })
             }
-        };
-        tx.send(AudioChunk::Binary(bytes))
-            .await
-            .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "session ended"))
+            .await;
+            __r
+        })
     }
 
     /// Signal end-of-audio (idempotent).
     #[napi]
-    pub fn input_done(&self) -> napi::Result<()> {
-        self.audio_tx
-            .lock()
-            .map_err(|_| napi::Error::new(napi::Status::GenericFailure, "session poisoned"))?
-            .take();
-        Ok(())
+    pub fn input_done(&self) -> AimuxResult<()> {
+        AimuxResult((|| -> crate::error::MResult<()> {
+            self.audio_tx
+                .lock()
+                .map_err(|_| BindingError::InvariantViolation {
+                    message: "session poisoned".into(),
+                })?
+                .take();
+            Ok(())
+        })())
     }
 
     /// Pull the next transcription part (JSON string). Resolves `null` when
@@ -924,17 +878,12 @@ impl TranscriptionSession {
     /// `timeoutMs`: >0 wait at most; 0 immediate poll; negative OR omitted
     /// = wait indefinitely.
     #[napi]
-    pub async fn next_part(
-        &self,
-        timeout_ms: Option<i64>,
-    ) -> AimuxResult<Option<String>> {
+    pub async fn next_part(&self, timeout_ms: Option<i64>) -> AimuxResult<Option<String>> {
         AimuxResult({
             let __r: crate::error::MResult<Option<String>> = async {
                 let mut rx = self.parts_rx.lock().await;
                 let timeout = match timeout_ms {
-                    Some(ms) if ms >= 0 => {
-                        Some(std::time::Duration::from_millis(ms as u64))
-                    }
+                    Some(ms) if ms >= 0 => Some(std::time::Duration::from_millis(ms as u64)),
                     _ => None,
                 };
                 let recv = rx.recv();
@@ -942,7 +891,7 @@ impl TranscriptionSession {
                     Some(d) => match tokio::time::timeout(d, recv).await {
                         Ok(p) => p,
                         Err(_) => {
-                            return Err(MappedError::from(&AiMuxError::Timeout(
+                            return Err(AiMuxBindingError::from(&AiMuxError::Timeout(
                                 "no transcription part within timeout".into(),
                             )));
                         }

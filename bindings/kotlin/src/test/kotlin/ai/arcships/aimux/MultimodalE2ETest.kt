@@ -1,6 +1,7 @@
 package ai.arcships.aimux
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.jupiter.api.AfterEach
@@ -52,6 +53,16 @@ class MultimodalE2ETest {
             assertThat(embeddings.length()).isEqualTo(1)
             assertThat(embeddings.getJSONArray(0).length()).isEqualTo(3)
         }
+    }
+
+    /** Closed-guard: a call after close() fails predictably, before reaching the C ABI. */
+    @Test
+    fun `embed after close throws IllegalStateException`() {
+        val model = EmbeddingModel.openai("sk-test", "text-embedding-3-small", server.baseUrl)
+        model.close()
+        assertThatThrownBy { model.embed("[\"hello\"]") }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("is closed")
     }
 
     // ── Speech (TTS) ───────────────────────────────────────────────────────

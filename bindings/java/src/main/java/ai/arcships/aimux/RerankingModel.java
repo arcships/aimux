@@ -1,6 +1,10 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 import java.io.Closeable;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -53,10 +57,12 @@ public final class RerankingModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static RerankingModel cohere(String apiKey, String modelId) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_cohere_reranking_new(apiKey, modelId, err);
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_cohere_reranking_new(apiKey, modelId, out);
         return new RerankingModel(
-            AimuxResult.extractHandle(h, err, "Failed to create Cohere reranking model"));
+            AimuxResult.extractHandle(e, out, "Failed to create Cohere reranking model"));
     }
 
     /**
@@ -69,24 +75,30 @@ public final class RerankingModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static RerankingModel cohereWithBase(String apiKey, String modelId, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl, err);
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl, out);
         return new RerankingModel(
-            AimuxResult.extractHandle(h, err, "Failed to create Cohere reranking model"));
+            AimuxResult.extractHandle(e, out, "Failed to create Cohere reranking model"));
     }
 
     /**
      * Rerank documents against a query.
      *
      * @param optsJson JSON-serialized {@code RerankingCallOptions}.
+     *                 Required: carries the input.
      * @return JSON-serialized {@code RerankingResult}.
+     * @throws NullPointerException if {@code optsJson} is null.
+     * @throws IllegalArgumentException if {@code optsJson} is blank or malformed JSON.
      * @throws AimuxException on engine / transport failure.
      */
     public String rerank(String optsJson) {
-        AimuxCError err = AimuxResult.newError();
+        AimuxResult.requireJsonNonNull(optsJson, "optsJson");
+        PointerByReference out = new PointerByReference();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_rerank(requireHandle(), optsJson, err),
-            err,
+            AimuxFFI.INSTANCE.aimux_rerank(requireHandle(), optsJson, out),
+            out,
             "rerank");
     }
 }

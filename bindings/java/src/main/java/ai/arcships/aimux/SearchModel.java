@@ -1,6 +1,10 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 import java.io.Closeable;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -53,9 +57,10 @@ public final class SearchModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static SearchModel tavily(String apiKey) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_tavily_search_new(apiKey, "", err);
-        return new SearchModel(AimuxResult.extractHandle(h, err, "Failed to create Tavily search model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_tavily_search_new(apiKey, "", out);
+        return new SearchModel(AimuxResult.extractHandle(e, out, "Failed to create Tavily search model"));
     }
 
     /**
@@ -67,23 +72,28 @@ public final class SearchModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static SearchModel tavilyWithBase(String apiKey, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_tavily_search_new_with_base(apiKey, "", baseUrl, err);
-        return new SearchModel(AimuxResult.extractHandle(h, err, "Failed to create Tavily search model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_tavily_search_new_with_base(apiKey, "", baseUrl, out);
+        return new SearchModel(AimuxResult.extractHandle(e, out, "Failed to create Tavily search model"));
     }
 
     /**
      * Perform a web search.
      *
      * @param optsJson JSON-serialized {@code SearchCallOptions}.
+     *                 Required: carries the input.
      * @return JSON-serialized {@code SearchResult}.
+     * @throws NullPointerException if {@code optsJson} is null.
+     * @throws IllegalArgumentException if {@code optsJson} is blank or malformed JSON.
      * @throws AimuxException on engine / transport failure.
      */
     public String search(String optsJson) {
-        AimuxCError err = AimuxResult.newError();
+        AimuxResult.requireJsonNonNull(optsJson, "optsJson");
+        PointerByReference out = new PointerByReference();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_search(requireHandle(), optsJson, err),
-            err,
+            AimuxFFI.INSTANCE.aimux_search(requireHandle(), optsJson, out),
+            out,
             "search");
     }
 }

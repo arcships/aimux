@@ -1,33 +1,36 @@
-// errors.dart — AimuxException hierarchy + AimuxCError (dart:ffi Struct),
-// plus the FFI helpers shared by aimux.dart and multimodal.dart.
+// errors.dart — the two aimux error types + the C-error decoder shared by
+// aimux.dart and multimodal.dart.
 //
-// Maps Rust AiMuxError → C AimuxError (aimux-error.h) → Dart Exception
-// subclasses (idiomatic Dart, OpenAI/Anthropic SDK style).
-//
-// Transport: fallible C ABI calls take a trailing AimuxError *err. Check the
-// return value first (0 / NULL / stream 0 = failure); only then read *err via
-// [AimuxException.fromC]. On failure the callee allocates `err->message` (a
-// NUL-terminated UTF-8 string) which the caller owns and must free via
-// `aimux_free_string` — [withAimuxCError] does this automatically. On success
-// `*err` is untouched.
+// Transport (aimux-error.h): every fallible C call returns
+// `aimux_error_t *` — NULL on success (the result is in the trailing
+// out-param), non-NULL on failure (out-param at its sentinel: 0 / NULL). The
+// unified code selects AiMuxError (1..13), RecordingError (100..105), or a
+// C ABI failure (200..206). The last range maps to
+// StateError('aimux ffi: …'); Dart does not expose seven additional classes.
+// Every field is copied before the error is released with `aimux_error_free`
+// exactly once. Errors are not
+// handles — never `aimux_drop_handle` them.
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Error code constants (match AimuxErrorCode in aimux-error.h)
+// Error code constants (match aimux_error_code_t in aimux-error.h)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Machine-readable codes. Values match C `AimuxErrorCode` / Go `Code`.
-/// 14 variant codes, numbered consecutively 1–14. Every HTTP-shaped failure
+/// Machine-readable codes. Values match C `aimux_error_code_t` / Go `Code`.
+/// 13 variant codes numbered consecutively 1–13 (1 is the catch-all). A code outside
+/// that range is a header/library mismatch and fails with [StateError], not an
+/// error type. Every HTTP-shaped failure
 /// arrives as [apiCall], classified
 /// by [AimuxException.status] (401 auth, 404 model, 429 rate limit;
-/// no status = transport failure).
+/// -1 = no HTTP response was ever observed — a missing API key, an error
+/// built without a request, or a transport failure).
 abstract final class AimuxErrorCode {
   static const int ok = 0;
-  static const int unknown = 1;
   static const int jsonParse = 2;
   static const int invalidResponseData = 3;
   static const int tool = 4;
@@ -40,11 +43,10 @@ abstract final class AimuxErrorCode {
   static const int apiCall = 11;
   static const int timeout = 12;
   static const int aborted = 13;
-  static const int other = 14;
+  static const int other = 1;
 
-  static const Map<int, String> _names = {
+  static const Map<int, String> _text = {
     ok: 'OK',
-    unknown: 'Unknown',
     jsonParse: 'JsonParse',
     invalidResponseData: 'InvalidResponseData',
     tool: 'Tool',
@@ -61,74 +63,164 @@ abstract final class AimuxErrorCode {
   };
 
   /// Core `error_type()` name.
-  static String name(int code) => _names[code] ?? 'Code($code)';
+  static String name(int code) => _text[code] ?? 'Code($code)';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// C ABI struct (aimux-error.h AimuxError)
+// The decoder (aimux-error.h)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// C `AimuxError` layout (40 bytes on 64-bit targets).
-///
-/// Layout must match `aimux-error.h` / Rust `CAimuxError` (`#[repr(C)]`):
-/// `code:i32`, `status:i32`, `retry_ms:i64`, `message:char*`,
-/// `error_value:char*`, plus one reserved pointer slot for future ABI
-/// extension (always zero).
-///
-/// On failure the callee allocates [message] and optionally [errorValue]
-/// (lossless externally-tagged core `AiMuxError` JSON; NULL for
-/// FFI-synthesized failures); the caller owns both and must free each via
-/// `aimux_free_string` after reading ([withAimuxCError] handles this). On
-/// success the struct is untouched.
-final class AimuxCError extends Struct {
-  @Int32()
-  external int code;
-
-  @Int32()
-  external int status;
-
-  @Int64()
-  external int retryMs;
-
-  external Pointer<Utf8> message;
-
-  external Pointer<Utf8> errorValue;
-
-  external Pointer<Void> reserved0;
-}
-
-/// Reset [err] to OK / no hint / no message (mirrors `aimux_error_clear`).
-void clearAimuxCError(Pointer<AimuxCError> err) {
-  err.ref.code = AimuxErrorCode.ok;
-  err.ref.status = -1;
-  err.ref.retryMs = -1;
-  err.ref.message = nullptr;
-  err.ref.errorValue = nullptr;
-  err.ref.reserved0 = nullptr;
-}
-
-/// Allocate a cleared [AimuxCError], run [fn], free the engine-allocated
-/// message (if any) and the struct itself.
-///
-/// Typical use:
-/// ```dart
-/// final handle = withAimuxCError((err) {
-///   final h = ffi.openaiNew(key, id, err);
-///   if (h == 0) throw AimuxException.fromC(err.ref);
-///   return h;
-/// });
-/// ```
-T withAimuxCError<T>(T Function(Pointer<AimuxCError> err) fn) {
-  final err = calloc<AimuxCError>();
+/// Decode the `aimux_error_t *` [e] returned by a call that can fail in
+/// `AiMuxError` (`[AiMuxError]` in aimux-ffi.h). NULL → returns (success).
+/// Codes 1..13 become [AimuxException]; 200..206 become [StateError].
+/// The returned error is always freed.
+void expectAimuxError(Pointer<Void> e, String context) {
+  if (e == nullptr) return;
+  final Object failure;
   try {
-    clearAimuxCError(err);
-    return fn(err);
+    final code = _errorCode(e);
+    failure = _isFfiCode(code)
+        ? _ffiError(e, context)
+        : AimuxException._decode(e, context);
   } finally {
-    final msg = err.ref.message;
-    if (msg != nullptr) aimuxFreeString(msg);
-    final ev = err.ref.errorValue;
-    if (ev != nullptr) aimuxFreeString(ev);
-    calloc.free(err);
+    _errorFree(e);
+  }
+  throw failure;
+}
+
+/// Same as [expectAimuxError] for calls that can fail in the recorder
+/// (`[RecordingError]`): 100..105 → [RecordingException]; 200..206 →
+/// invariant [StateError].
+void expectRecordingError(Pointer<Void> e, String context) {
+  if (e == nullptr) return;
+  final Object failure;
+  try {
+    final code = _errorCode(e);
+    failure = _isFfiCode(code)
+        ? _ffiError(e, context)
+        : RecordingException._decode(e);
+  } finally {
+    _errorFree(e);
+  }
+  throw failure;
+}
+
+/// Same for calls that only expose C ABI failures (`[C ABI]`): message
+/// only → invariant [StateError].
+void expectFfiError(Pointer<Void> e, String context) {
+  if (e == nullptr) return;
+  final Object failure;
+  try {
+    final code = _errorCode(e);
+    failure = _isFfiCode(code)
+        ? _ffiError(e, context)
+        : StateError('aimux ffi: $context: expected C ABI failure code, got $code');
+  } finally {
+    _errorFree(e);
+  }
+  throw failure;
+}
+
+StateError _ffiError(Pointer<Void> e, String context) =>
+    StateError('aimux ffi: $context: ${_errStr(_errorMessage, e) ?? ''}');
+
+bool _isFfiCode(int code) => code >= 200 && code <= 206;
+
+/// Validate a caller-supplied raw JSON string *before* it crosses the C
+/// C ABI; throws [FormatException] naming [param] (`source`) on bad
+/// syntax. Null passes through (optional parameters); empty/blank is rejected
+/// like the FFI does for REQUIRED params, unless [emptyIsDefault] — pass it for
+/// every OPTIONAL JSON param (nullable in the Dart signature: `config_json` of
+/// provider/router/moa, `opts_json` of embed / file upload / transcription),
+/// where the FFI treats NULL/empty as "use defaults".
+void checkJson(String? json, String param, {bool emptyIsDefault = false}) {
+  if (json == null) return;
+  if (json.trim().isEmpty) {
+    if (emptyIsDefault) return;
+    throw FormatException('$param: invalid JSON: empty', param);
+  }
+  final Object? value;
+  try {
+    value = jsonDecode(json);
+  } on FormatException catch (e) {
+    throw FormatException('$param: ${e.message}', param);
+  }
+  checkPortable(value, param);
+}
+
+/// [jsonEncode] for a caller-supplied value the binding serializes itself
+/// (prompts, call options, [ProviderConfig]) — pre-validated with the same
+/// rule [checkJson] applies to caller-supplied JSON *text*, because nothing
+/// downstream would check it.
+String encodeJson(Object? value, String param) {
+  checkPortable(value, param);
+  return jsonEncode(value);
+}
+
+/// Reject a JSON value that `jsonDecode`/`jsonEncode` accept but `serde_json`
+/// on the Rust side does not. Divergences (all three verified against
+/// serde_json 1.0.151):
+///
+///  - **Unpaired surrogate.** A Dart `String` is UTF-16 and may hold one;
+///    `jsonDecode` accepts it both raw and as a `\uD800` escape, and
+///    `jsonEncode` writes it back out as a `\uD800` escape. `serde_json`
+///    rejects that escape (`LoneLeadingSurrogateInHexEscape` /
+///    `UnexpectedEndOfHexEscape`).
+///  - **Non-finite number.** Dart parses `1e999` to `Infinity`; `serde_json`
+///    rejects it (`NumberOutOfRange`).
+///  - **Nesting past [_maxJsonDepth].**
+///
+/// All three classify as `Category::Syntax`, which aimux-ffi reports as
+/// `FfiError::InvalidWireJson` (code 202), so it reaches Dart through
+/// [_ffiError] as an invariant [StateError] — but none of it is
+/// an invariant: `text.substring(0, n)` cutting an emoji in half is enough to
+/// produce the first. Catch them here, where the parameter still has a name
+/// and the failure is a catchable [FormatException].
+void checkPortable(Object? value, String param, [int depth = 0]) {
+  if (depth >= _maxJsonDepth) {
+    throw FormatException(
+        '$param: JSON nested deeper than $_maxJsonDepth levels', param);
+  }
+  if (value is String) {
+    _checkSurrogates(value, param);
+  } else if (value is double && !value.isFinite) {
+    throw FormatException('$param: number out of range: $value', param);
+  } else if (value is List) {
+    for (final element in value) {
+      checkPortable(element, param, depth + 1);
+    }
+  } else if (value is Map) {
+    value.forEach((key, element) {
+      checkPortable(key, param, depth + 1);
+      checkPortable(element, param, depth + 1);
+    });
+  }
+}
+
+/// Matches `serde_json`'s default recursion limit, and keeps [checkPortable]'s
+/// own recursion bounded — `jsonDecode` is iterative and happily returns a
+/// 5000-deep document that would overflow the stack here.
+// ponytail: hard-coded to serde_json's default. If that ever moves, documents
+// between the two limits fall back to today's StateError — nothing valid is
+// rejected.
+const int _maxJsonDepth = 128;
+
+/// Reject an unpaired UTF-16 surrogate in [s] (not representable in UTF-8).
+void _checkSurrogates(String s, String param) {
+  for (var i = 0; i < s.length; i++) {
+    final unit = s.codeUnitAt(i);
+    if (unit < 0xD800 || unit > 0xDFFF) continue;
+    // A high surrogate must be followed by a low one; a bare low one is
+    // already wrong.
+    final low =
+        (unit < 0xDC00 && i + 1 < s.length) ? s.codeUnitAt(i + 1) : 0x0000;
+    if (low < 0xDC00 || low > 0xDFFF) {
+      throw FormatException(
+          '$param: unpaired surrogate U+${unit.toRadixString(16).toUpperCase()}'
+          ' at index $i is not representable in UTF-8',
+          param);
+    }
+    i++; // consume the low surrogate of the valid pair
   }
 }
 
@@ -155,16 +247,68 @@ DynamicLibrary openAimuxLibrary() {
   throw StateError('Unsupported platform');
 }
 
-/// `aimux_free_string` — frees engine-allocated strings, including
-/// `err->message`. Lazily initialized so pure-Dart tests that never produce a
-/// native message do not dlopen the library.
+/// `aimux_free_string` — frees aimux-allocated result strings. Lazily
+/// initialized so pure-Dart tests that never produce a native string do not
+/// dlopen the library.
 final void Function(Pointer<Utf8>) aimuxFreeString = openAimuxLibrary()
     .lookupFunction<Void Function(Pointer<Utf8>), void Function(Pointer<Utf8>)>(
         'aimux_free_string');
 
+/// Lazily opened library shared by the error symbols below.
+final DynamicLibrary _errLib = openAimuxLibrary();
+
+/// `aimux_drop_handle` — releases a model / provider handle. Lazy, as above.
+/// (Never for errors: those go through `aimux_error_free`.)
+final void Function(int) aimuxDropHandle = _errLib
+    .lookupFunction<Void Function(Uint64), void Function(int)>(
+        'aimux_drop_handle');
+
+// Returned errors (aimux-error.h) are opaque `Pointer<Void>` values.
+typedef _I32OfPtrC = Int32 Function(Pointer<Void>);
+typedef _I64OfPtrC = Int64 Function(Pointer<Void>);
+typedef _StrOfPtrC = Pointer<Utf8> Function(Pointer<Void>);
+typedef _IntOfPtr = int Function(Pointer<Void>);
+typedef _StrOfPtr = Pointer<Utf8> Function(Pointer<Void>);
+
+_IntOfPtr _i32Getter(String sym) =>
+    _errLib.lookupFunction<_I32OfPtrC, _IntOfPtr>(sym);
+_StrOfPtr _strGetter(String sym) =>
+    _errLib.lookupFunction<_StrOfPtrC, _StrOfPtr>(sym);
+
+final void Function(Pointer<Void>) _errorFree = _errLib.lookupFunction<
+    Void Function(Pointer<Void>),
+    void Function(Pointer<Void>)>('aimux_error_free');
+// `aimux_error_*` getters. Every char* is owned → freed
+// via aimuxFreeString by [_errStr].
+final _IntOfPtr _errorCode = _i32Getter('aimux_error_code');
+final _IntOfPtr _errorRetryable = _i32Getter('aimux_error_retryable');
+final _IntOfPtr _errorStatus = _i32Getter('aimux_error_status');
+final _IntOfPtr _errorRetryMs =
+    _errLib.lookupFunction<_I64OfPtrC, _IntOfPtr>('aimux_error_retry_ms');
+final _StrOfPtr _errorMessage = _strGetter('aimux_error_message');
+final _StrOfPtr _errorProviderCode = _strGetter('aimux_error_provider_code');
+final _StrOfPtr _errorProviderMessage =
+    _strGetter('aimux_error_provider_message');
+final _StrOfPtr _errorRequestId = _strGetter('aimux_error_request_id');
+final _StrOfPtr _errorResponseBody = _strGetter('aimux_error_response_body');
+final _StrOfPtr _errorModelId = _strGetter('aimux_error_model_id');
+final _StrOfPtr _errorModelType = _strGetter('aimux_error_model_type');
+final _StrOfPtr _errorProviderId = _strGetter('aimux_error_provider_id');
+
+/// Read an owned getter string for [error]; frees it; null when absent.
+String? _errStr(_StrOfPtr getter, Pointer<Void> error) {
+  final p = getter(error);
+  if (p == nullptr) return null;
+  try {
+    return p.toDartString();
+  } finally {
+    aimuxFreeString(p);
+  }
+}
+
 /// Run [fn] with a temporary native UTF-8 copy of [s]; always frees it.
 T withUtf8<T>(String s, T Function(Pointer<Utf8>) fn) {
-  final ptr = s.toNativeUtf8();
+  final ptr = toCString(s);
   try {
     return fn(ptr);
   } finally {
@@ -172,41 +316,84 @@ T withUtf8<T>(String s, T Function(Pointer<Utf8>) fn) {
   }
 }
 
-/// Take a constructor `uint64_t` handle; throw [AimuxException] when 0.
-int takeHandle(int handle, Pointer<AimuxCError> err) {
-  if (handle == 0) throw AimuxException.fromC(err.ref);
-  return handle;
+/// [toCString] for an optional argument: `nullptr` for null (the FFI reads
+/// NULL as "absent"). Callers still free a non-NULL result.
+Pointer<Utf8> toCStringOrNull(String? s) => s == null ? nullptr : toCString(s);
+
+/// `toNativeUtf8` with the two checks a C string needs and a Dart `String`
+/// does not enforce, applied to every string parameter that crosses the ABI
+/// (model ids, api keys, base URLs, dir paths, base64 payloads, media types,
+/// JSON text):
+///
+///  - **Interior NUL.** `toNativeUtf8` writes it verbatim, and the C side's
+///    `CStr::from_ptr` stops there — the argument is silently truncated at
+///    the NUL rather than rejected.
+///  - **Unpaired surrogate.** `toNativeUtf8` substitutes U+FFFD (documented in
+///    `package:ffi`'s `StringUtf8Pointer.toNativeUtf8`), so the argument is
+///    silently corrupted rather than rejected.
+///
+/// Both are catchable [FormatException]s here instead of silence there.
+Pointer<Utf8> toCString(String s) {
+  final nul = s.codeUnits.indexOf(0);
+  if (nul >= 0) {
+    throw FormatException(
+        'argument contains a NUL at index $nul; a C string ends there', s, nul);
+  }
+  _checkSurrogates(s, 'argument');
+  return s.toNativeUtf8();
 }
 
-/// Take an owned C string result; free it; throw [AimuxException] on null.
-String takeString(Pointer<Utf8> ptr, Pointer<AimuxCError> err) {
-  if (ptr == nullptr) throw AimuxException.fromC(err.ref);
+/// Run [fn] with a zeroed `uint64_t *out_handle`, [expectAimuxError] the returned
+/// error, and hand back the handle.
+int takeHandle(
+    Pointer<Void> Function(Pointer<Uint64> out) fn, String context) {
+  final out = calloc<Uint64>();
   try {
-    return ptr.toDartString();
+    expectAimuxError(fn(out), context);
+    return out.value;
   } finally {
-    aimuxFreeString(ptr);
+    calloc.free(out);
   }
 }
 
-/// Shared constructor for `(api_key, model_id[, base_url])` providers.
+/// Run [fn] with a NULL `char **out_json`, [expectAimuxError] the returned error,
+/// copy the owned C string out and free it.
+String takeString(
+    Pointer<Void> Function(Pointer<Pointer<Utf8>> out) fn, String context) {
+  final out = calloc<Pointer<Utf8>>();
+  try {
+    expectAimuxError(fn(out), context);
+    final p = out.value;
+    if (p == nullptr) throw StateError('aimux ffi: $context: NULL result');
+    try {
+      return p.toDartString();
+    } finally {
+      aimuxFreeString(p);
+    }
+  } finally {
+    calloc.free(out);
+  }
+}
+
+/// Shared constructor for `(api_key, model_id[, base_url], out_handle)`
+/// providers.
 int construct2(
   String apiKey,
   String modelId,
   String? baseUrl,
-  int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<AimuxCError>) plain,
-  int Function(
-          Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<AimuxCError>)
+  Pointer<Void> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>) plain,
+  Pointer<Void> Function(
+          Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>)
       withBase,
 ) {
-  return withAimuxCError((err) {
-    return withUtf8(apiKey, (keyPtr) {
-      return withUtf8(modelId, (idPtr) {
-        if (baseUrl == null) {
-          return takeHandle(plain(keyPtr, idPtr, err), err);
-        }
-        return withUtf8(baseUrl, (basePtr) {
-          return takeHandle(withBase(keyPtr, idPtr, basePtr, err), err);
-        });
+  return withUtf8(apiKey, (keyPtr) {
+    return withUtf8(modelId, (idPtr) {
+      if (baseUrl == null) {
+        return takeHandle((out) => plain(keyPtr, idPtr, out), 'new');
+      }
+      return withUtf8(baseUrl, (basePtr) {
+        return takeHandle(
+            (out) => withBase(keyPtr, idPtr, basePtr, out), 'new_with_base');
       });
     });
   });
@@ -216,23 +403,30 @@ int construct2(
 // Exception hierarchy
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Base class for all aimux engine / binding failures.
+/// Base class for aimux AiMuxErrors only.
 ///
-/// Catch this for any structured failure; use subclasses for specific handling
-/// (`on APICallError`, `on AimuxTimeoutError`, …). HTTP-shaped failures are all
-/// [APICallError] — branch on [status] (401 auth, 404 model, 429 rate limit).
+/// Use subclasses for specific handling (`on APICallError`,
+/// `on AimuxTimeoutError`, …). Recording failures use the independent
+/// [RecordingException]; C ABI failures surface as native Dart
+/// errors (see [expectAimuxError]).
+/// HTTP-shaped failures are all [APICallError] — branch on [status]
+/// (401 auth, 404 model, 429 rate limit).
 ///
-/// Fields mirror C `AimuxError` / core helpers:
-/// - [code]: kind ([AimuxErrorCode])
+/// Fields mirror the C `aimux_error_*` getters / core helpers:
+/// - [code]: error code ([AimuxErrorCode])
 /// - [status]: HTTP status, or `-1`
 /// - [retryMs]: rate-limit hint, or `-1` (`0` = retry now)
+/// - [retryable]: whether retrying may help
 /// - [message]: human-readable text
-/// - [errorValue]: raw lossless core-error JSON, or `null`
+///
+/// Per-code payload lives on the carrying subclass only: [APICallError]
+/// (`providerCode`/`providerMessage`/`requestId`/`responseBody`), [NoSuchModelError]
+/// (`modelId`/`modelType`), [NoSuchProviderError] (`providerId`).
 class AimuxException implements Exception {
   /// Human-readable failure text.
   final String message;
 
-  /// Machine-readable kind ([AimuxErrorCode] constants).
+  /// Machine-readable error code ([AimuxErrorCode] constants).
   final int code;
 
   /// HTTP status when known; otherwise `-1`.
@@ -241,43 +435,57 @@ class AimuxException implements Exception {
   /// Rate-limit hint in ms; `-1` if none; `0` means retry immediately.
   final int retryMs;
 
-  /// Raw lossless core-error JSON (externally-tagged `AiMuxError`), or `null`
-  /// when absent (e.g. FFI-synthesized failures). No parsing is done.
-  final String? errorValue;
+  /// Whether retrying may help — the `AiMuxError` verdict, carried across the C
+  /// ABI. Not derivable from [status]: a transport failure (request went out,
+  /// connection reset) and a missing API key (request never went out) both
+  /// report `status == -1` and disagree here.
+  final bool retryable;
 
   AimuxException(
     this.message, {
     this.code = AimuxErrorCode.other,
     this.status = -1,
     this.retryMs = -1,
-    this.errorValue,
+    this.retryable = false,
   });
 
-  /// Build the typed subclass from a filled C [AimuxCError].
-  ///
-  /// Call only after a fallible FFI return indicated failure. If [e].code is
-  /// [AimuxErrorCode.ok] (or the message is empty), produces a generic
-  /// failure with [AimuxErrorCode.unknown]. Does not free `e.message` or
-  /// `e.errorValue` — the enclosing [withAimuxCError] does.
-  factory AimuxException.fromC(AimuxCError e) {
-    var code = e.code;
-    var message = e.message == nullptr ? '' : e.message.toDartString();
+  /// Build the typed subclass from a returned `const aimux_error_t *` [error]
+  /// via the `aimux_error_*` getters (payload getters only under the owning
+  /// code; getter strings freed here). The caller ([expectAimuxError])
+  /// frees it. A code outside 1..13 is a
+  /// contract violation and throws [StateError].
+  factory AimuxException._decode(Pointer<Void> error, String context) {
+    final code = _errorCode(error);
+    var message = _errStr(_errorMessage, error) ?? '';
+    if (message.isEmpty) message = 'aimux: ${AimuxErrorCode.name(code)}';
 
-    if (code == AimuxErrorCode.ok) {
-      code = AimuxErrorCode.unknown;
-      if (message.isEmpty) message = 'aimux: operation failed';
-    } else if (message.isEmpty) {
-      message = 'aimux: ${AimuxErrorCode.name(code)}';
+    final retryable = _errorRetryable(error) != 0;
+    switch (code) {
+      case AimuxErrorCode.apiCall:
+        return APICallError(message,
+            status: _errorStatus(error),
+            retryMs: _errorRetryMs(error),
+            retryable: retryable,
+            providerCode: _errStr(_errorProviderCode, error),
+            providerMessage: _errStr(_errorProviderMessage, error),
+            requestId: _errStr(_errorRequestId, error),
+            responseBody: _errStr(_errorResponseBody, error));
+      case AimuxErrorCode.noSuchModel:
+        return NoSuchModelError(message,
+            retryable: retryable,
+            modelId: _errStr(_errorModelId, error) ?? '',
+            modelType: _errStr(_errorModelType, error) ?? '');
+      case AimuxErrorCode.noSuchProvider:
+        return NoSuchProviderError(message,
+            retryable: retryable,
+            providerId: _errStr(_errorProviderId, error) ?? '');
+      default:
+        try {
+          return AimuxException.fromCode(code, message, retryable: retryable);
+        } on StateError {
+          throw StateError('aimux ffi: $context: unknown error code $code');
+        }
     }
-
-    return AimuxException.fromCode(
-      code,
-      message,
-      status: e.status,
-      retryMs: e.retryMs,
-      errorValue:
-          e.errorValue == nullptr ? null : e.errorValue.toDartString(),
-    );
   }
 
   /// Dispatch [code] → concrete subclass (defaults for status when `-1`).
@@ -286,50 +494,42 @@ class AimuxException implements Exception {
     String message, {
     int status = -1,
     int retryMs = -1,
-    String? errorValue,
+    bool retryable = false,
   }) {
     switch (code) {
       case AimuxErrorCode.jsonParse:
-        return JSONParseError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return JSONParseError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.invalidResponseData:
-        return InvalidResponseDataError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return InvalidResponseDataError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.tool:
-        return ToolError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return ToolError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.invalidArgument:
-        return InvalidArgumentError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return InvalidArgumentError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.invalidPrompt:
-        return InvalidPromptError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return InvalidPromptError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.tokenExpired:
         return TokenExpiredError(
           message,
           status: status == -1 ? 401 : status,
           retryMs: retryMs,
-          errorValue: errorValue,
+          retryable: retryable,
         );
       case AimuxErrorCode.unsupportedFunctionality:
-        return UnsupportedFunctionalityError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return UnsupportedFunctionalityError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.noSuchModel:
-        return NoSuchModelError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return NoSuchModelError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.noSuchProvider:
-        return NoSuchProviderError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return NoSuchProviderError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.apiCall:
-        return APICallError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return APICallError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.timeout:
-        return AimuxTimeoutError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return AimuxTimeoutError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.aborted:
-        return RequestAbortedError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return RequestAbortedError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.other:
-        return OtherError(message, status: status, retryMs: retryMs, errorValue: errorValue);
-      case AimuxErrorCode.unknown:
-        return UnknownError(message, status: status, retryMs: retryMs, errorValue: errorValue);
+        return OtherError(message, status: status, retryMs: retryMs, retryable: retryable);
       default:
-        return AimuxException(
-          message,
-          code: code,
-          status: status,
-          retryMs: retryMs,
-          errorValue: errorValue,
-        );
+        throw StateError('Unknown AimuxErrorCode: $code');
     }
   }
 
@@ -342,92 +542,164 @@ class AimuxException implements Exception {
 
 // ── Concrete subclasses (one per live AimuxErrorCode) ───────────────────────
 
-/// Unclassified / unknown failure (C `AIMUX_E_UNKNOWN`).
-class UnknownError extends AimuxException {
-  UnknownError(super.message, {super.status, super.retryMs, super.errorValue})
-      : super(code: AimuxErrorCode.unknown);
-}
-
 /// JSON parse / serialize failure.
 class JSONParseError extends AimuxException {
-  JSONParseError(super.message, {super.status, super.retryMs, super.errorValue})
+  JSONParseError(super.message, {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.jsonParse);
 }
 
 /// Invalid / malformed response data (streaming or decode failure).
 class InvalidResponseDataError extends AimuxException {
   InvalidResponseDataError(super.message,
-      {super.status, super.retryMs, super.errorValue})
+      {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.invalidResponseData);
 }
 
 /// Tool-related failure.
 class ToolError extends AimuxException {
-  ToolError(super.message, {super.status, super.retryMs, super.errorValue})
+  ToolError(super.message, {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.tool);
 }
 
 /// Invalid argument (null args, invalid or expired handles, …).
 class InvalidArgumentError extends AimuxException {
-  InvalidArgumentError(super.message, {super.status, super.retryMs, super.errorValue})
+  InvalidArgumentError(super.message, {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.invalidArgument);
 }
 
 /// Invalid prompt.
 class InvalidPromptError extends AimuxException {
-  InvalidPromptError(super.message, {super.status, super.retryMs, super.errorValue})
+  InvalidPromptError(super.message, {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.invalidPrompt);
 }
 
 /// Access token expired.
 class TokenExpiredError extends AimuxException {
-  TokenExpiredError(super.message, {super.status = 401, super.retryMs, super.errorValue})
+  TokenExpiredError(super.message, {super.status = 401, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.tokenExpired);
 }
 
 /// Unsupported functionality.
 class UnsupportedFunctionalityError extends AimuxException {
   UnsupportedFunctionalityError(super.message,
-      {super.status, super.retryMs, super.errorValue})
+      {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.unsupportedFunctionality);
 }
 
 /// No such model in registry / catalogue.
 class NoSuchModelError extends AimuxException {
-  NoSuchModelError(super.message, {super.status, super.retryMs, super.errorValue})
+  /// The model id that was asked for.
+  final String modelId;
+
+  /// The model type it was asked for as.
+  final String modelType;
+
+  NoSuchModelError(super.message,
+      {super.status, super.retryMs, super.retryable, this.modelId = '', this.modelType = ''})
       : super(code: AimuxErrorCode.noSuchModel);
 }
 
 /// No such provider name.
 class NoSuchProviderError extends AimuxException {
+  /// The provider id that was asked for.
+  final String providerId;
+
   NoSuchProviderError(super.message,
-      {super.status, super.retryMs, super.errorValue})
+      {super.status, super.retryMs, super.retryable, this.providerId = ''})
       : super(code: AimuxErrorCode.noSuchProvider);
 }
 
 /// Provider API call failed (AI SDK `APICallError` analogue) — every
 /// HTTP-shaped failure. [status] is the classification (401 auth, 404 model,
-/// 429 rate limit + [retryMs]); `-1` means no response arrived (transport).
+/// 429 rate limit + [retryMs]); `-1` means no HTTP response was ever observed
+/// — a missing API key, an error built without a request, or a transport
+/// failure. Read [retryable] to decide on a retry; [status] cannot tell those
+/// two apart.
 class APICallError extends AimuxException {
-  APICallError(super.message, {super.status, super.retryMs, super.errorValue})
+  /// The provider's own error code, e.g. `insufficient_quota`.
+  final String? providerCode;
+
+  /// The failure's own text without the composed prefix [message] carries,
+  /// e.g. `slow down`.
+  final String? providerMessage;
+
+  /// Provider request id, for support tickets.
+  final String? requestId;
+
+  /// Raw response body.
+  final String? responseBody;
+
+  APICallError(super.message,
+      {super.status,
+      super.retryMs,
+      super.retryable,
+      this.providerCode,
+      this.providerMessage,
+      this.requestId,
+      this.responseBody})
       : super(code: AimuxErrorCode.apiCall);
 }
 
 /// Request timed out. (Prefixed to avoid shadowing dart:async
 /// `TimeoutError`.)
 class AimuxTimeoutError extends AimuxException {
-  AimuxTimeoutError(super.message, {super.status, super.retryMs, super.errorValue})
+  AimuxTimeoutError(super.message, {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.timeout);
 }
 
 /// Request aborted (not DOM `AbortError`).
 class RequestAbortedError extends AimuxException {
-  RequestAbortedError(super.message, {super.status, super.retryMs, super.errorValue})
+  RequestAbortedError(super.message, {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.aborted);
 }
 
 /// Unclassified failure (`AIMUX_E_OTHER`).
 class OtherError extends AimuxException {
-  OtherError(super.message, {super.status, super.retryMs, super.errorValue})
+  OtherError(super.message, {super.status, super.retryMs, super.retryable})
       : super(code: AimuxErrorCode.other);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recording errors (aimux-error.h aimux_error_code_t) — independent
+// of AimuxException, mirroring Rust's separate `recording::RecordingError`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Code of a [RecordingException]. Dart keeps six values independent of the
+/// C transport codes 100..105. Only
+/// [writerGone], [flushTimeout] and [write] are reachable from a flush.
+enum RecordingErrorCode {
+  init,
+  openFile,
+  spawn,
+  writerGone,
+  flushTimeout,
+  write;
+
+  static RecordingErrorCode fromCode(int code) {
+    if (code < 100 || code >= 100 + values.length) {
+      throw StateError('Unknown AimuxRecordingErrorCode: $code');
+    }
+    return values[code - 100];
+  }
+}
+
+/// Recording failure reported by `initRecording()` / `recordingTryFlush()`.
+/// NOT an [AimuxException] — the recorder is a separate subsystem with its
+/// own closed error set.
+class RecordingException implements Exception {
+  final RecordingErrorCode code;
+  final String message;
+  RecordingException(this.code, this.message);
+
+  /// Decode a returned `const aimux_error_t *` [error]. The caller
+  /// ([expectRecordingError]) frees it.
+  factory RecordingException._decode(Pointer<Void> error) {
+    final code = RecordingErrorCode.fromCode(_errorCode(error));
+    final message = _errStr(_errorMessage, error) ??
+        'aimux: recording ${code.name}';
+    return RecordingException(code, message);
+  }
+
+  @override
+  String toString() => 'RecordingException(${code.name}): $message';
 }

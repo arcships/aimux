@@ -55,7 +55,7 @@ let result = generate_text(model, "你好", GenerateTextOptions {
 ### Node —— 工厂级(所有请求)或调用级
 
 ```ts
-import { openai, generateText } from 'aimux';
+import { openai, generateText } from '@arcships/aimux';
 
 // 工厂级:整个 provider 实例都带
 const model = openai('sk-...', 'gpt-4o', {

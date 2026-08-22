@@ -65,8 +65,7 @@ class TranscriptionSessionTest {
             model.startStream().use { session ->
                 // The WS handshake to the stalling server never completes, so
                 // no part arrives within the wait bound: the documented
-                // sentinel must be thrown (previously dead code — the
-                // throwFromC(TimeoutError) before it never returned).
+                // sentinel must be thrown (state TIMEOUT: nothing to decode).
                 val ex = catchSentinel { session.nextPart(150) }
                 assertThat(ex).isNotNull
                 assertThat(ex).isInstanceOf(RuntimeException::class.java)

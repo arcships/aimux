@@ -1,6 +1,10 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 import java.io.Closeable;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -52,9 +56,11 @@ public final class ImageModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static ImageModel openai(String apiKey, String modelId) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_image_new(apiKey, modelId, err);
-        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI image model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_image_new(apiKey, modelId, out);
+        return new ImageModel(AimuxResult.extractHandle(e, out, "Failed to create OpenAI image model"));
     }
 
     /**
@@ -67,9 +73,11 @@ public final class ImageModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static ImageModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl, err);
-        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI image model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_image_new_with_base(apiKey, modelId, baseUrl, out);
+        return new ImageModel(AimuxResult.extractHandle(e, out, "Failed to create OpenAI image model"));
     }
 
     /**
@@ -81,9 +89,11 @@ public final class ImageModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static ImageModel google(String apiKey, String modelId) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_google_image_new(apiKey, modelId, err);
-        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create Google image model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_google_image_new(apiKey, modelId, out);
+        return new ImageModel(AimuxResult.extractHandle(e, out, "Failed to create Google image model"));
     }
 
     /**
@@ -96,23 +106,29 @@ public final class ImageModel implements Closeable {
      * @throws AimuxException on failure.
      */
     public static ImageModel googleWithBase(String apiKey, String modelId, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_google_image_new_with_base(apiKey, modelId, baseUrl, err);
-        return new ImageModel(AimuxResult.extractHandle(h, err, "Failed to create Google image model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_google_image_new_with_base(apiKey, modelId, baseUrl, out);
+        return new ImageModel(AimuxResult.extractHandle(e, out, "Failed to create Google image model"));
     }
 
     /**
      * Generate images from the given options.
      *
      * @param optsJson JSON-serialized {@code ImageCallOptions}.
+     *                 Required: carries the input.
      * @return JSON-serialized {@code ImageResult}.
+     * @throws NullPointerException if {@code optsJson} is null.
+     * @throws IllegalArgumentException if {@code optsJson} is blank or malformed JSON.
      * @throws AimuxException on engine / transport failure.
      */
     public String generate(String optsJson) {
-        AimuxCError err = AimuxResult.newError();
+        AimuxResult.requireJsonNonNull(optsJson, "optsJson");
+        PointerByReference out = new PointerByReference();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_image_generate(requireHandle(), optsJson, err),
-            err,
+            AimuxFFI.INSTANCE.aimux_image_generate(requireHandle(), optsJson, out),
+            out,
             "image_generate");
     }
 }

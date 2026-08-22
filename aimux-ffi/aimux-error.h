@@ -1,14 +1,19 @@
 /**
  * aimux-error.h — C error model for aimux-ffi.
  *
- * Transport: fallible calls use return-value sentinels (0 / NULL) for success
- * or failure. Optional details go through AimuxError *err (NULL = discard).
+ * Every fallible function returns `aimux_error_t *`: NULL on success and an
+ * owned error on failure. The normal result is written to the function's
+ * trailing out-parameter, which remains at its documented sentinel on failure.
  *
- * Modeling: flat error codes (13 AiMuxError variants + OK + UNKNOWN) and one
- * plain 40-byte struct. Check the function return value first; only then read
- * *err. On failure the callee overwrites every field and allocates `message`;
- * the caller owns it and must release it with aimux_free_string(). On success
- * *err is left untouched.
+ * Every non-NULL error has one non-zero `aimux_error_code_t` and one message.
+ * Codes 1..13 come from `AiMuxError`, 100..105 from `RecordingError`, and
+ * 200..206 identify failures detected while crossing the C ABI. Higher-level
+ * bindings reconstruct their native error types from that code; they map all
+ * 200..206 codes to the language's existing argument/state/invariant error.
+ *
+ * Strings returned by getters are owned by the caller and must be released
+ * with `aimux_free_string()`. Release the error itself exactly once with
+ * `aimux_error_free()`; passing NULL to either release function is safe.
  */
 
 #ifndef AIMUX_ERROR_H
@@ -20,14 +25,22 @@
 extern "C" {
 #endif
 
+/** An error returned by a failed Aimux C ABI invocation. Opaque and owned. */
+typedef struct aimux_error aimux_error_t;
+
 /**
- * Machine-readable codes. Values 2..14 map to aimux-core's 13 current
- * AiMuxError variants, numbered consecutively; 1 (UNKNOWN) is the
- * FFI-only fallback for errors with no core variant.
+ * Stable machine-readable code returned by `aimux_error_code()`.
+ *
+ * Existing values are never renumbered or reused. New values are appended
+ * within a reserved range or added in a new range. A non-NULL error must never
+ * report AIMUX_OK; an unknown non-zero value means the header and loaded
+ * library are incompatible.
  */
-typedef enum AimuxErrorCode {
+typedef enum aimux_error_code {
     AIMUX_OK = 0,
-    AIMUX_E_UNKNOWN = 1,
+
+    /* AiMuxError: 1..13. */
+    AIMUX_E_OTHER = 1,
     AIMUX_E_JSON_PARSE = 2,
     AIMUX_E_INVALID_RESPONSE_DATA = 3,
     AIMUX_E_TOOL = 4,
@@ -40,55 +53,70 @@ typedef enum AimuxErrorCode {
     AIMUX_E_API_CALL = 11,
     AIMUX_E_TIMEOUT = 12,
     AIMUX_E_ABORTED = 13,
-    AIMUX_E_OTHER = 14
-} AimuxErrorCode;
+
+    /* RecordingError: 100..105. */
+    AIMUX_E_RECORDING_INIT = 100,
+    AIMUX_E_RECORDING_OPEN_FILE = 101,
+    AIMUX_E_RECORDING_SPAWN = 102,
+    AIMUX_E_RECORDING_WRITER_GONE = 103,
+    AIMUX_E_RECORDING_FLUSH_TIMEOUT = 104,
+    AIMUX_E_RECORDING_WRITE = 105,
+
+    /* Failures detected while crossing the C ABI: 200..206. */
+    AIMUX_E_FFI_NULL_POINTER = 200,
+    AIMUX_E_FFI_INVALID_UTF8 = 201,
+    AIMUX_E_FFI_INVALID_WIRE_JSON = 202,
+    AIMUX_E_FFI_INVALID_HANDLE = 203,
+    AIMUX_E_FFI_REENTRANT_CALL = 204,
+    AIMUX_E_FFI_RESULT_SERIALIZATION = 205,
+    AIMUX_E_FFI_CALLBACK_FAILURE = 206
+} aimux_error_code_t;
+
+/** Release an error. NULL-safe; call exactly once for a non-NULL error. */
+void aimux_error_free(aimux_error_t *error);
+
+/** AIMUX_OK for NULL; otherwise the error's single non-zero code. */
+int32_t aimux_error_code(const aimux_error_t *error);
+
+/** Human-readable description for every code; caller frees the result. */
+char *aimux_error_message(const aimux_error_t *error);
+
+/*
+ * AiMuxError facts. These getters answer only for the documented AiMuxError
+ * code and return NULL / -1 / 0 for every RecordingError, C ABI failure,
+ * unrelated AiMuxError code, or NULL.
+ */
+
+/** 1 when retrying may help; only AIMUX_E_API_CALL can answer 1. */
+int32_t aimux_error_retryable(const aimux_error_t *error);
 
 /**
- * Error report filled by aimux-ffi on failure when the caller passed a
- * non-NULL AimuxError *.
- *
- * On failure: code != AIMUX_OK; message is a non-empty NUL-terminated UTF-8
- * string allocated by aimux — release it with aimux_free_string(). status is
- * the HTTP status or -1; retry_ms is the retry hint or -1 (0 = retry
- * now). error_value is the lossless machine-readable form of the source
- * error — the externally-tagged JSON of aimux-core's AiMuxError, e.g.
- * {"ApiCall":{"status_code":401,"message":"..."}} — or NULL when the
- * failure was synthesized at the FFI boundary (bad argument, invalid handle)
- * and has no core error value. Release it with aimux_free_string() too.
- *
- * Initialize with aimux_error_clear() (or `= {0}` and set status/retry_ms
- * yourself) before first use so the owned pointers are valid to free.
+ * Observed HTTP status for AIMUX_E_API_CALL; 401 for
+ * AIMUX_E_TOKEN_EXPIRED; -1 otherwise or when no response was observed.
  */
-typedef struct AimuxError {
-    AimuxErrorCode code;
-    int status;
-    int64_t retry_ms;
-    char *message;
-    char *error_value;
-    /**
-     * Reserved for future ABI extension. Must be zero; the callee zeroes it
-     * on failure. The struct size is part of the caller-allocated ABI and
-     * can never change — this slot is the only room left to grow.
-     */
-    void *reserved[1];
-} AimuxError;
+int32_t aimux_error_status(const aimux_error_t *error);
 
-/**
- * Reset to OK / no hint / no strings. Does not free previous message /
- * error_value — release those with aimux_free_string() first if they were
- * set by a failed call.
- */
-static inline void aimux_error_clear(AimuxError *e) {
-    if (!e) {
-        return;
-    }
-    e->code = AIMUX_OK;
-    e->status = -1;
-    e->retry_ms = -1;
-    e->message = 0;
-    e->error_value = 0;
-    e->reserved[0] = 0;
-}
+/* AIMUX_E_API_CALL — returned strings are caller-owned. */
+
+/** Retry hint in milliseconds (0 = retry now), or -1 when absent. */
+int64_t aimux_error_retry_ms(const aimux_error_t *error);
+/** Provider's own error code, e.g. "insufficient_quota". */
+char *aimux_error_provider_code(const aimux_error_t *error);
+/** Failure text without Aimux's composed prefix. */
+char *aimux_error_provider_message(const aimux_error_t *error);
+/** Provider request id. */
+char *aimux_error_request_id(const aimux_error_t *error);
+/** Raw provider response body. */
+char *aimux_error_response_body(const aimux_error_t *error);
+
+/* AIMUX_E_NO_SUCH_MODEL — returned strings are caller-owned. */
+
+char *aimux_error_model_id(const aimux_error_t *error);
+char *aimux_error_model_type(const aimux_error_t *error);
+
+/* AIMUX_E_NO_SUCH_PROVIDER — returned string is caller-owned. */
+
+char *aimux_error_provider_id(const aimux_error_t *error);
 
 #ifdef __cplusplus
 }

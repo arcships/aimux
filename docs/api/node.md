@@ -12,7 +12,7 @@ npm install @arcships/aimux
 ```
 
 ```typescript
-import { openai, generateText } from 'aimux'
+import { openai, generateText } from '@arcships/aimux'
 
 const model = await openai(process.env.OPENAI_API_KEY!, 'gpt-4o')
 const result = await generateText(model, 'What is Rust?')
@@ -21,14 +21,13 @@ console.log(result.text)
 
 ## Providers
 
-All 250 built-in OpenAI-compatible providers are registry-backed. Look them up
+All 251 built-in OpenAI-compatible providers are registry-backed. Look them up
 by name; the `ProviderName` type is a string-literal union generated from
 `provider-registry.json`, so your IDE autocompletes and typo'd names fail
 type-checking:
 
 ```typescript
-import { provider, generateText } from 'aimux'
-import type { ProviderName } from 'aimux'
+import { provider, generateText, ProviderName } from '@arcships/aimux'
 
 // 推荐:ProviderName.groq 写法(IDE 补全 + 类型检查)
 const model = await provider(ProviderName.groq, undefined, 'llama-3.3-70b')
@@ -44,7 +43,7 @@ const result = await generateText(model, 'Hello')
 registry-backed). For custom providers not in the registry, build from the
 base classes with `createProvider`-style config via the base-URL override.
 
-> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`anthropic(apiKey, model)`); custom endpoints → `baseUrl` override.
 > Full list: [providers.md](providers.md).
@@ -81,13 +80,15 @@ targets. The GNU/Linux builds use rustls and do not require system OpenSSL.
 
 ## Errors
 
-Engine and binding failures throw an **`AimuxError` subclass hierarchy**
-(Vercel AI SDK style — `instanceof`, not stringly `code` checks):
+Two aimux error types, one per Rust type; the bridge's own failures are
+plain napi errors (see below). `AiMuxError` values throw an **`AimuxError`
+subclass hierarchy** (Vercel AI SDK style — `instanceof`, not stringly `code`
+checks); the recorder throws its own class:
 
 ```text
 Error
  └── AimuxError
-      ├── APICallError              // every HTTP-shaped failure; classify on status
+      ├── APICallError              // provider call/transport failure; status when observed
       ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError
@@ -96,12 +97,43 @@ Error
       ├── TimeoutError
       ├── RequestAbortedError
       └── OtherError
+
+Error                             // the recorder's own failure type — not an AimuxError
+ └── RecordingError               // initRecording(): code 'Init' | 'OpenFile' | 'Spawn'; recordingTryFlush(): 'WriterGone' | 'FlushTimeout' | 'Write'
 ```
 
-Every instance has `message`, `status` (HTTP or `-1`), and `retryMs` (hint or `-1`).
+Failures of the binding's own bridge layer (the napi-rs side, never `AiMuxError`)
+follow napi-rs: a plain `Error` whose `code` is a napi status name, passed
+through unchanged — no aimux class.
+
+| scenario                                            | thrown                                                        |
+|-----------------------------------------------------|---------------------------------------------------------------|
+| a wire JSON text (`prompt_json`, `opts_json`, …) does not parse | `Error`, `code: 'InvalidArg'`, message `"prompt_json: invalid JSON: …"` |
+| closed / invalid native object (`TranscriptionSession`) | `Error`, `code: 'InvalidArg'`, message `"transcription session is closed …"` |
+| the binding could not serialize a result           | `Error`, `code: 'GenericFailure'`, message `"serialize result: …"` |
+| a bridge invariant broke                            | `Error`, `code: 'GenericFailure'`                             |
+| argument type errors                                | napi-rs's own `Error` (`code: 'StringExpected'`, …)           |
+| panic                                               | napi's mechanism                                              |
+
+Well-formed JSON that violates the schema, and business validation (empty
+model list, `cap === 0`, no recordings, …) stay `InvalidArgumentError`
+— that is what the core would say. Both package entrypoints register the
+exported JavaScript constructors with the native addon at load time. Rust
+constructs that exact class before throwing or rejecting, so `instanceof`
+works directly for synchronous calls, promises, and stream/session errors;
+`name` is the ordinary JavaScript error name, not a discriminator to parse.
+
+Every `AimuxError` instance has the ordinary `Error` fields. There is no aimux
+`code` discriminator and no JSON companion. Payload fields belong to the class
+that carries them: `APICallError` adds `retryable` and optional `status` /
+`retryMs` / `providerCode` /
+`providerMessage` / `responseBody` / `requestId`, `TokenExpiredError` carries
+`status: 401`, `NoSuchModelError` adds `modelId` / `modelType`, and
+`NoSuchProviderError` adds `providerId`. Missing HTTP status and retry hints are
+absent rather than represented by `-1`.
 
 ```typescript
-import { generateText, AimuxError, APICallError } from 'aimux'
+import { generateText, AimuxError, APICallError } from '@arcships/aimux'
 
 try {
   await generateText(model, 'hi')
@@ -116,7 +148,9 @@ try {
       // model not found
     }
   } else if (e instanceof AimuxError) {
-    // any engine / binding failure
+    // any AiMuxError failure
+  } else if (e instanceof Error && 'code' in e && e.code === 'InvalidArg') {
+    // the napi-rs bridge rejected an argument (bad wire JSON, closed session)
   }
 }
 ```
@@ -129,7 +163,7 @@ The ts-rs wire type `AiMuxError` is only for payload unions inside
 Non-streaming text generation; returns the complete result.
 
 ```typescript
-const { openai, generateText } = require('aimux')
+const { openai, generateText } = require('@arcships/aimux')
 
 const model = await openai('sk-...', 'gpt-4o', 'https://api.openai.com/v1')
 const result = await generateText(model, 'Explain Rust ownership.', {
@@ -154,8 +188,8 @@ const result = await generateText(model, 'Explain Rust ownership.', {}, controll
 controller.abort() // cancels an in-flight call; pre-aborted signals fail fast
 ```
 
-Multimodal calls (image/speech/video/transcription/rerank/search) accept the
-same signal as their last argument:
+Multimodal calls (image/speech/video/transcription/rerank/search) accept an
+optional `AbortBridge` (wrap a JS `AbortSignal`) as their last argument:
 
 > Parameters, return value, and the `raw.content` variants are documented in
 > the [API overview](../API.md#text-generation).
@@ -175,7 +209,7 @@ const reasoningPart = rawContent.find(c => c.Reasoning)
 Returns generated content as a stream, output chunk by chunk.
 
 ```typescript
-const { openai, streamText } = require('aimux')
+const { openai, streamText } = require('@arcships/aimux')
 
 const model = await openai('sk-...', 'gpt-4o')
 for await (const part of streamText(model, 'Write a haiku about Rust.')) {
@@ -236,12 +270,14 @@ const opts = {
 // Node.js — multi-turn dialogue + tool round-trip
 const result = await generateText(model, [
   { role: 'user', content: "What's the weather in Tokyo?" },
-  { role: 'assistant', content: null, tool_calls: [{
-    id: 'call_abc', type: 'function',
-    function: { name: 'get_weather', arguments: '{"location":"Tokyo"}' }
-  }]},
-  { role: 'tool', tool_call_id: 'call_abc',
-    content: '{"temperature":22,"condition":"sunny"}' }
+  { role: 'assistant', content: [{
+    type: 'tool_call', tool_call_id: 'call_abc',
+    tool_name: 'get_weather', input: { location: 'Tokyo' },
+  }] },
+  { role: 'tool', content: [{
+    type: 'tool_result', tool_call_id: 'call_abc', tool_name: 'get_weather',
+    result: { temperature: 22, condition: 'sunny' },
+  }] },
 ], { tools })
 ```
 
@@ -250,7 +286,7 @@ const result = await generateText(model, [
 Converts text into a vector representation.
 
 ```typescript
-const { openaiEmbedding } = require('aimux')
+const { openaiEmbedding } = require('@arcships/aimux/raw')
 
 const embedder = await openaiEmbedding('sk-...', 'text-embedding-3-small')
 const resultJson = await embedder.embed(JSON.stringify(['hello', 'world']))
@@ -266,7 +302,7 @@ console.log(result.usage.tokens)  // input token count
 Converts text into speech audio.
 
 ```typescript
-const { openaiSpeech } = require('aimux')
+const { openaiSpeech } = require('@arcships/aimux/raw')
 const fs = require('fs')
 
 const speaker = await openaiSpeech('sk-...', 'tts-1')
@@ -288,7 +324,7 @@ if (result.audio.Base64) {
 Converts audio into text (non-streaming).
 
 ```typescript
-const { openaiTranscription } = require('aimux')
+const { openaiTranscription } = require('@arcships/aimux/raw')
 const fs = require('fs')
 
 const transcriber = await openaiTranscription('sk-...', 'whisper-1')
@@ -304,13 +340,14 @@ console.log(result.language)   // detected language
 ## Image Generation
 
 ```typescript
-const { openaiImage } = require('aimux')
+const { openaiImage, AbortBridge } = require('@arcships/aimux/raw')
 const fs = require('fs')
 
 const imager = await openaiImage('sk-...', 'dall-e-3')
 const resultJson = await imager.generate(JSON.stringify({
   prompt: 'A cute baby sea otter',
   n: 1,
+  provider_options: {},
 }))
 const result = JSON.parse(resultJson)
 
@@ -319,13 +356,14 @@ if (result.images.Base64) {
 }
 ```
 
-Multimodal calls accept an optional `AbortSignal` as their last argument:
+Multimodal calls accept an optional `AbortBridge` as their last argument —
+wrap the JS `AbortSignal` in one:
 
 ```typescript
 const controller = new AbortController()
 const resultJson = await imager.generate(
-  JSON.stringify({ prompt: 'A cute baby sea otter' }),
-  controller.signal,
+  JSON.stringify({ prompt: 'A cute baby sea otter', n: 1, provider_options: {} }),
+  new AbortBridge(controller.signal),
 )
 controller.abort() // cancels the image call
 ```
@@ -335,16 +373,17 @@ controller.abort() // cancels the image call
 Video generation typically returns a URL (not binary).
 
 ```typescript
-const { googleVideo } = require('aimux')
+const { googleVideo } = require('@arcships/aimux/raw')
 
 const videor = await googleVideo('sk-...', 'veo-3.0')
 const resultJson = await videor.generate(JSON.stringify({
   prompt: 'A cat playing piano',
   n: 1,
+  provider_options: {},
 }))
 const result = JSON.parse(resultJson)
 
-// result.videos is usually { Url: { url, media_type } }
+// result.videos is usually [{ Url: { url, media_type } }]
 if (result.videos[0].Url) {
   console.log('Video URL:', result.videos[0].Url.url)
 }
@@ -355,15 +394,17 @@ if (result.videos[0].Url) {
 Reorders a document list by relevance.
 
 ```typescript
-const { cohereReranking } = require('aimux')
+const { cohereReranking } = require('@arcships/aimux/raw')
 
 const reranker = await cohereReranking('sk-...', 'rerank-v3.0')
 const resultJson = await reranker.rerank(
   'What is Rust?',
-  JSON.stringify([
+  // docs_json is the externally-tagged `RerankingDocuments` enum —
+  // `{ Object: { values } }` for JSON documents, `{ Text: { values } }` for plain strings
+  JSON.stringify({ Object: { values: [
     { text: 'Rust is a systems programming language.' },
     { text: 'Rust is a chemical element.' },
-  ]),
+  ] } }),
 )
 const result = JSON.parse(resultJson)
 
@@ -374,8 +415,14 @@ result.ranking.forEach(r => console.log(r.index, r.relevance_score))
 ## Search
 
 ```typescript
-// The SearchModel class is exposed, but there is no standalone factory
-// function yet — use via the Rust core, the Go binding, or the C ABI
+const { tavilySearch } = require('@arcships/aimux/raw')
+
+const searcher = await tavilySearch('tvly-...')
+const resultJson = await searcher.search('What is Rust?')
+const result = JSON.parse(resultJson)
+
+console.log(result.results[0].title)  // ordered result list
+console.log(result.answer)            // provider's summary, if any
 ```
 
 ## File Upload
@@ -383,7 +430,7 @@ result.ranking.forEach(r => console.log(r.index, r.relevance_score))
 Uploads a file to the provider and returns a file ID.
 
 ```typescript
-const { openaiFiles } = require('aimux')
+const { openaiFiles } = require('@arcships/aimux/raw')
 const fs = require('fs')
 
 const files = await openaiFiles('sk-...')
@@ -396,12 +443,12 @@ console.log(result.provider_reference)  // { openai: 'file-xxx' }
 
 ## API Surface
 
-The `aimux` package has two layers:
+The `@arcships/aimux` package has two layers:
 
 | Layer | Source | Boundary |
 |------|------|------|
-| **Native (napi-rs)** | `bindings/node/index.js` + `index.d.ts` | JSON strings in / JSON strings out |
-| **Typed wrapper** | `bindings/node/src/index.ts` | Typed objects (ts-rs types, re-exported from the package root) |
+| **Native (napi-rs)** | `@arcships/aimux/raw` — `bindings/node/src/native.ts` over the generated native loader | JSON strings in / JSON strings out |
+| **Typed wrapper** | `@arcships/aimux` — `bindings/node/src/index.ts` | Typed objects (ts-rs types, re-exported from the package root) |
 
 ### Native classes and methods
 
@@ -414,7 +461,7 @@ The `aimux` package has two layers:
 | `ImageModel` | `openaiImage` / `googleImage` | `generate(optsJson)` |
 | `VideoModel` | `googleVideo` | `generate(optsJson)` |
 | `RerankingModel` | `cohereReranking` | `rerank(query, docsJson, optsJson?)` |
-| `SearchModel` | — (no factory yet) | `search(query, optsJson?)` |
+| `SearchModel` | `tavilySearch` | `search(query, optsJson?)` |
 | `Files` | `openaiFiles(apiKey, baseUrl?)` | `uploadFile(dataBase64, mediaType, optsJson?)` |
 | `StreamTextGenerator` | returned by `Model.streamText` | async iterable of `StreamPart` JSON strings |
 
@@ -434,19 +481,28 @@ import type {
   GenerateTextOptions, GenerateTextResult, StreamPart, ModelMessage,
   Tool, ToolChoice, ToolCall, ToolResult, Usage, FinishReason, Warning,
   Role, MessageContent, ContentPart, ResponseFormat, ReasoningEffort,
-  AiMuxError, GenerateResult, FunctionTool,
-} from 'aimux'
+  GenerateResult, FunctionTool,
+} from '@arcships/aimux'
 ```
 
 ```typescript
 // bindings/node/src/types/GenerateTextResult.ts (ts-rs generated)
 export type GenerateTextResult = {
-  text: string                 // generated text (all Text variants concatenated)
-  tool_calls: Array<ToolCall>  // tool call list (extracted from content)
-  finish_reason: FinishReason  // finish reason
-  usage: Usage                 // token usage
-  warnings: Array<Warning>     // warnings
-  raw: GenerateResult          // raw provider result (includes full content)
+  text: string                            // generated text (all Text variants concatenated)
+  tool_calls: Array<ToolCall>             // tool call list (extracted from content)
+  finish_reason: FinishReason             // finish reason
+  usage: Usage                            // token usage
+  warnings: Array<Warning>                // warnings
+  raw: GenerateResult                     // raw provider result (includes full content)
+  reasoning: Array<ReasoningPart>         // reasoning / thinking segments
+  reasoning_text: string                  // the reasoning segments concatenated
+  sources: Array<SourcePart>              // sources / citations (search-preview models)
+  files: Array<FilePart>                  // files generated by the model
+  response_messages: Array<ModelMessage>  // assistant messages ready for the next turn
+  raw_finish_reason: string | null        // provider's own finish-reason string
+  provider_metadata: JsonValue | null     // mirrored from raw.provider_metadata
+  response: ResponseMetadata              // mirrored from raw.response (id, timestamp, model_id)
+  total_usage: Usage                      // usage across all steps (equals usage in single-step mode)
 }
 ```
 
@@ -467,4 +523,4 @@ export type StreamPart =
 The full declarations live in `bindings/node/src/types/` — `GenerateTextOptions.ts`,
 `ModelMessage.ts`, `Tool.ts`, `ToolChoice.ts`, `ContentPart.ts`,
 `GenerateContent.ts`, `GenerateResult.ts`, and the `types/` directory of the
-package (79 files).
+package (140 files).

@@ -1,6 +1,10 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.LongByReference;
+import com.sun.jna.ptr.PointerByReference;
 import java.io.Closeable;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -49,39 +53,51 @@ public final class EmbeddingModel implements Closeable {
     // ── Provider constructors ──────────────────────────────────────────────
 
     public static EmbeddingModel openai(String apiKey, String modelId) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_embedding_new(apiKey, modelId, err);
-        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI embedding model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_embedding_new(apiKey, modelId, out);
+        return new EmbeddingModel(AimuxResult.extractHandle(e, out, "Failed to create OpenAI embedding model"));
     }
 
     public static EmbeddingModel openaiWithBase(String apiKey, String modelId, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl, err);
-        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create OpenAI embedding model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl, out);
+        return new EmbeddingModel(AimuxResult.extractHandle(e, out, "Failed to create OpenAI embedding model"));
     }
 
     public static EmbeddingModel cohere(String apiKey, String modelId) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_cohere_embedding_new(apiKey, modelId, err);
-        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Cohere embedding model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_cohere_embedding_new(apiKey, modelId, out);
+        return new EmbeddingModel(AimuxResult.extractHandle(e, out, "Failed to create Cohere embedding model"));
     }
 
     public static EmbeddingModel cohereWithBase(String apiKey, String modelId, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl, err);
-        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Cohere embedding model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl, out);
+        return new EmbeddingModel(AimuxResult.extractHandle(e, out, "Failed to create Cohere embedding model"));
     }
 
     public static EmbeddingModel google(String apiKey, String modelId) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_google_embedding_new(apiKey, modelId, err);
-        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Google embedding model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_google_embedding_new(apiKey, modelId, out);
+        return new EmbeddingModel(AimuxResult.extractHandle(e, out, "Failed to create Google embedding model"));
     }
 
     public static EmbeddingModel googleWithBase(String apiKey, String modelId, String baseUrl) {
-        AimuxCError err = AimuxResult.newError();
-        long h = AimuxFFI.INSTANCE.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl, err);
-        return new EmbeddingModel(AimuxResult.extractHandle(h, err, "Failed to create Google embedding model"));
+        Objects.requireNonNull(apiKey, "apiKey");
+        Objects.requireNonNull(modelId, "modelId");
+        LongByReference out = new LongByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl, out);
+        return new EmbeddingModel(AimuxResult.extractHandle(e, out, "Failed to create Google embedding model"));
     }
 
     // ── Embedding ──────────────────────────────────────────────────────────
@@ -91,10 +107,12 @@ public final class EmbeddingModel implements Closeable {
     }
 
     public String embed(String valuesJson, String optsJson) {
-        AimuxCError err = AimuxResult.newError();
+        AimuxResult.requireJsonNonNull(valuesJson, "valuesJson");
+        AimuxResult.requireJson(optsJson, "optsJson");
+        PointerByReference out = new PointerByReference();
         return AimuxResult.extractString(
-            AimuxFFI.INSTANCE.aimux_embed(requireHandle(), valuesJson, optsJson, err),
-            err,
+            AimuxFFI.INSTANCE.aimux_embed(requireHandle(), valuesJson, optsJson, out),
+            out,
             "embed");
     }
 }

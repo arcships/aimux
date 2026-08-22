@@ -2,6 +2,7 @@ package ai.arcships.aimux;
 
 import com.sun.jna.Library;
 import com.sun.jna.Native;
+import com.sun.jna.Pointer;
 
 /**
  * Top-level entry point for global aimux services (RFC-0014 logging).
@@ -30,7 +31,10 @@ public final class Aimux {
      */
     public static void initLogging(String level) {
         String effective = (level == null || level.isEmpty()) ? "warn" : level;
-        AimuxFFI.INSTANCE.aimux_init_logging(effective);
+        Pointer e = AimuxFFI.INSTANCE.aimux_init_logging(effective);
+        if (e != null) {
+            throw AimuxResult.expectFfiError(e, "initLogging");
+        }
     }
 
     /**
@@ -38,14 +42,20 @@ public final class Aimux {
      * {@code {dir}/recordings.jsonl} (the directory is auto-created).
      *
      * <p>Recording is opt-in and process-global; calling this again replaces
-     * the previous recorder.
+     * the previous recorder. On failure the previous recorder (if any) stays
+     * in place.
      *
      * @param dir Directory to write {@code recordings.jsonl} into.
-     * @throws IllegalArgumentException if {@code dir} is null.
+     * @throws NullPointerException if {@code dir} is null
+     * @throws RecordingException with {@link RecordingErrorCode#INIT} (directory
+     *         could not be created),
+     *         {@link RecordingErrorCode#OPEN_FILE} or {@link RecordingErrorCode#SPAWN}.
      */
     public static void initRecording(String dir) {
-        if (AimuxFFI.INSTANCE.aimux_init_recording(dir) != 0) {
-            throw new IllegalArgumentException("Failed to initialize recording: dir must be non-null");
+        java.util.Objects.requireNonNull(dir, "dir");
+        Pointer e = AimuxFFI.INSTANCE.aimux_init_recording(dir);
+        if (e != null) {
+            throw AimuxResult.expectRecordingError(e, "initRecording");
         }
     }
 
@@ -58,7 +68,7 @@ public final class Aimux {
      */
     private interface RecordingDefaultFFI extends Library {
         RecordingDefaultFFI INSTANCE = Native.load("aimux_ffi", RecordingDefaultFFI.class);
-        int aimux_init_recording_ring_default();
+        void aimux_init_recording_ring_default();
     }
 
     /**
@@ -67,9 +77,7 @@ public final class Aimux {
      * who don't need a specific cap should prefer this.
      */
     public static void initRecordingRing() {
-        if (RecordingDefaultFFI.INSTANCE.aimux_init_recording_ring_default() != 0) {
-            throw new IllegalArgumentException("Failed to initialize default ring recording");
-        }
+        RecordingDefaultFFI.INSTANCE.aimux_init_recording_ring_default();
     }
 
     /**
@@ -85,8 +93,9 @@ public final class Aimux {
         if (cap <= 0) {
             throw new IllegalArgumentException("initRecordingRing: cap must be > 0");
         }
-        if (AimuxFFI.INSTANCE.aimux_init_recording_ring(cap) != 0) {
-            throw new IllegalArgumentException("Failed to initialize ring recording");
+        Pointer e = AimuxFFI.INSTANCE.aimux_init_recording_ring(cap);
+        if (e != null) {
+            throw AimuxResult.expectAimuxError(e, "initRecordingRing");
         }
     }
 
@@ -107,6 +116,21 @@ public final class Aimux {
     }
 
     /**
+     * Checked flush: like {@link #recordingFlush()} but throws
+     * {@link RecordingException} ({@link RecordingErrorCode#WRITE} /
+     * {@link RecordingErrorCode#WRITER_GONE} / {@link RecordingErrorCode#FLUSH_TIMEOUT})
+     * when the JSONL could not be written. Not an {@link AimuxException}: recording
+     * errors are their own type. Returns normally when nothing is recording. The
+     * legacy {@link #recordingFlush()} stays and never reports.
+     */
+    public static void recordingTryFlush() {
+        Pointer e = AimuxFFI.INSTANCE.aimux_recording_try_flush();
+        if (e != null) {
+            throw AimuxResult.expectRecordingError(e, "recordingTryFlush");
+        }
+    }
+
+    /**
      * Register external OpenAI-compatible providers from a JSON config string
      * (RFC-0020).
      *
@@ -114,18 +138,15 @@ public final class Aimux {
      * Entries override same-named built-ins or add new ones. Like
      * {@link #initRecording}, this mutates process-global registry state.
      *
-     * <p>The C entry point returns an {@code int} (1 = success, 0 = failure)
-     * rather than a handle, so the rc is checked inline (no
-     * {@code AimuxResult.extractHandle}).
-     *
      * @param configJson Provider registry config JSON.
-     * @throws AimuxException if the C call fails (rc == 0).
+     * @throws AimuxException if the registry rejects the config
+     *         ({@link AimuxException.InvalidArgumentError}).
      */
     public static void registerProviders(String configJson) {
-        AimuxCError err = AimuxResult.newError();
-        int rc = AimuxFFI.INSTANCE.aimux_register_providers(configJson, err);
-        if (rc == 0) {
-            throw AimuxException.fromC(err, "registerProviders");
+        AimuxResult.requireJsonNonNull(configJson, "configJson");
+        Pointer e = AimuxFFI.INSTANCE.aimux_register_providers(configJson);
+        if (e != null) {
+            throw AimuxResult.expectAimuxError(e, "registerProviders");
         }
     }
 
@@ -134,17 +155,16 @@ public final class Aimux {
      * the first {@code generateText} / {@code streamText} call; a no-op if the
      * shared HTTP client is already initialised.
      *
-     * <p>The C entry point returns an {@code int} (1 = success, 0 = failure).
-     *
      * @param configJson ProxyConfig JSON ({@code "http_url"}, {@code "https_url"},
      *                   {@code "all_url"}, {@code "no_proxy"} — all optional).
-     * @throws AimuxException if the C call fails (rc == 0).
+     * @throws AimuxException if the config has the wrong shape
+     *         ({@link AimuxException.InvalidArgumentError}).
      */
     public static void initProxy(String configJson) {
-        AimuxCError err = AimuxResult.newError();
-        int rc = AimuxFFI.INSTANCE.aimux_init_proxy(configJson, err);
-        if (rc == 0) {
-            throw AimuxException.fromC(err, "initProxy");
+        AimuxResult.requireJsonNonNull(configJson, "configJson");
+        Pointer e = AimuxFFI.INSTANCE.aimux_init_proxy(configJson);
+        if (e != null) {
+            throw AimuxResult.expectAimuxError(e, "initProxy");
         }
     }
 }

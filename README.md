@@ -49,7 +49,7 @@ difference: aimux is an access layer, those are orchestration layers.
   fallback (RFC-0021); `MoaModel` aggregates parallel reference models
   mixture-of-agents style (RFC-0022). Both are plain `LanguageModel`s.
 - **Config-driven provider registry** — `provider-registry.json` describes
-  each of the 250 OpenAI-compatible providers (base URL, env var, profile
+  each of the 251 OpenAI-compatible providers (base URL, env var, profile
   quirks: top_k, tools, response_format, streaming usage, max_tokens key);
   one unified `provider(name, ...)` entry in every binding.
 - **Fast and small** — Rust core, release profile tuned for binary size
@@ -88,7 +88,7 @@ middleware, and telemetry per request).
   2000 requests; Node grew only 2 MB.
 - **Stable tail latency** — no GC pauses means P99 stays flat even under CPU
   contention; the JS SDK's P99 spikes to 12.87 ms on a single core.
-- **FFI boundary is cheap** — serialization is ~50% of overhead only on large
+- **C ABI overhead is low** — serialization is ~50% of overhead only on large
   payloads; in real LLM requests (3–10 s) it is <0.1%.
 
 ## Architecture
@@ -96,17 +96,17 @@ middleware, and telemetry per request).
 ```
 aimux/
 ├── aimux-core            # Core abstractions: LanguageModel / Provider / Message / StreamPart
-├── aimux-providers       # 290+ provider implementations (250 registry-backed + native)
+├── aimux-providers       # 329 provider implementations (251 registry-backed + native)
 ├── aimux-stream          # SSE / NDJSON stream parsing
 ├── aimux-provider-utils  # HTTP utilities: retry, backoff, error parsing, API-key loading
-├── aimux-ffi             # C ABI (handles + JSON results + AimuxError out-param) for non-native bindings
+├── aimux-ffi             # C ABI (opaque handles + JSON results + owned aimux_error_t *) for non-native bindings
 └── tools/                # aimux-cli (cache probe) · aimux-replay · aimux-web (console)
 ```
 
 ```
            ┌─ native path ──→ aimux-core + aimux-providers (direct Rust types + async)
 bindings ──┤
-           └─ C ABI path  ──→ aimux-ffi (handles + JSON results + AimuxError *err)
+           └─ C ABI path  ──→ aimux-ffi (handles + JSON results + owned errors)
 ```
 
 ## Installation
@@ -248,7 +248,7 @@ retryable timeouts, in every binding ([RFC-0028](rfc/0028-transcription-streamin
 TypeScript:
 
 ```typescript
-import { openaiTranscription, startTranscriptionSession } from '@arcships/aimux'
+import { openaiTranscription, startTranscriptionSession } from '@arcships/aimux/raw'
 
 const model = await openaiTranscription(process.env.OPENAI_API_KEY!, 'gpt-realtime-whisper')
 const session = await startTranscriptionSession(model, null)
@@ -340,6 +340,7 @@ Tests run on cassette playback — no network and no keys. See
 | [docs/api/reference.md](docs/api/reference.md) | **API reference** — public types & functions lookup |
 | [docs/api/providers.md](docs/api/providers.md) | **Provider list** — all 325 providers with entry points (generated) |
 | [docs/api/](docs/api/) | **Per-language API guides** — Node.js, Python, Rust, Go, C/C++, Swift, Kotlin, Flutter |
+| [docs/error-model.md](docs/error-model.md) | **错误模型** — 跨语言错误形态与兼容性约定 |
 | [docs/PROJECT-OVERVIEW.md](docs/PROJECT-OVERVIEW.md) | Project overview, design decisions, benchmarks |
 | [docs/PERF-RESULTS.md](docs/PERF-RESULTS.md) | Performance benchmark results |
 | [docs/aimux-vs-aisdk-node.md](docs/aimux-vs-aisdk-node.md) | Node.js DX comparison vs Vercel AI SDK |
@@ -367,8 +368,8 @@ Tests run on cassette playback — no network and no keys. See
 | [0018](rfc/0018-codex-subscription.md) | Codex subscription channel provider (evaluation) |
 | [0019](rfc/0019-session-affinity.md) | Session affinity lightweight support |
 | [0014](rfc/0014-logging.md) | Logging (`AIMUX_LOG` controls) |
-| [0015](rfc/0015-cache-trace-audit.md) | Cache-hit tracing & audit (TraceLayer / verdict engine) |
-| [0020](rfc/0020-pi-agent-integration.md) | Pi Agent integration — aimux as a Pi package (provider registry → Pi models) |
+| [0015](rfc/0015-cache-trace-audit.md) | Cache-hit tracing & audit (TraceLayer / verdict evaluator) |
+| [0020](rfc/0020-external-provider-config.md) | External OpenAI-compatible provider config (runtime registry overrides) |
 | [0021](rfc/0021-composite-model-routing.md) | RouterModel — composite model routing with fallback |
 | [0022](rfc/0022-moa-single-fanout.md) | MoaModel — single-fanout mixture-of-agents |
 | [0023](rfc/0023-runtime-request-recording.md) | Request recording & replay (JSONL, ring, redaction) |

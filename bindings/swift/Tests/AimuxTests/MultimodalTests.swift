@@ -216,6 +216,70 @@ final class MultimodalTests: XCTestCase {
         XCTAssertEqual(urlData["url"] as? String, "https://example.com/v.mp4")
         XCTAssertEqual(urlData["media_type"] as? String, "video/mp4")
     }
+
+    // MARK: - TranscriptionSession use-after-close
+
+    // A live session needs a realtime websocket provider, which no mock here
+    // can stand up. `close()` is defined as `handle = 0`, so a session built
+    // on handle 0 *is* a closed session — and the drop is skipped, so nothing
+    // is freed twice. These tests pin the contract that matters: after close,
+    // every method throws and none of them traps (a trap is SIGTRAP, which
+    // XCTest cannot catch — if this regresses, the test run dies here).
+
+    /// All three methods on a closed session throw a C ABI failure —
+    /// catchable (Go `ErrClosed` / Dart `StateError` / Kotlin
+    /// `IllegalStateException` are the peers) and deliberately NOT
+    /// `AimuxTranscriptionEndedError`: a pump loop that breaks on "ended"
+    /// must not read a transcript truncated by its own `close()` as complete.
+    func testClosedSessionMethodsThrowFfiErrorNotEnded() {
+        let session = TranscriptionSession(handle: 0)
+
+        for (name, call) in [
+            ("pushAudio", { try session.pushAudio([0x00, 0x01]) }),
+            ("inputDone", { try session.inputDone() }),
+            ("nextPart", { _ = try session.nextPart(timeoutMs: 0) }),
+        ] as [(String, () throws -> Void)] {
+            XCTAssertThrowsError(try call(), name) { error in
+                XCTAssertFalse(
+                    error is AimuxTranscriptionEndedError,
+                    "\(name): a closed session must not look like a clean end of stream"
+                )
+                XCTAssertTrue(
+                    error is DecodingError,
+                    "\(name): expected the Swift boundary projection, got \(error)"
+                )
+            }
+        }
+    }
+
+    /// The `defer { session.close() }` shape: close, then one more call. This
+    /// used to trap the host process; it must be an ordinary catch.
+    func testCloseThenCallIsCatchable() {
+        let session = TranscriptionSession(handle: 0)
+        session.close()
+        session.close()  // idempotent
+
+        var caught = false
+        do {
+            try session.inputDone()
+        } catch is AimuxTranscriptionEndedError {
+            XCTFail("a closed session must not be reported as a clean end of stream")
+        } catch is DecodingError {
+            caught = true
+        } catch {
+            XCTFail("expected the Swift boundary projection, got \(error)")
+        }
+        XCTAssertTrue(caught, "use-after-close must be catchable, not a trap")
+    }
+
+    // MARK: - router([])
+
+    /// An empty child list throws C's zero-children failure instead of
+    /// trapping — the array may well come from a `.filter`, and the function
+    /// already has a throwing channel.
+    func testRouterWithNoChildrenThrows() {
+        XCTAssertThrowsError(try Model.router([]))
+    }
 }
 
 // MARK: - Helpers

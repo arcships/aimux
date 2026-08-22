@@ -5,7 +5,7 @@
 //   Node.js → napi → Rust engine → single cassette → parse → result
 
 import test from 'ava'
-import { openai } from '../index.js'
+import { openai } from '../src/native.ts'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -1,5 +1,9 @@
 package ai.arcships.aimux;
 
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
+import com.sun.jna.ptr.PointerByReference;
+
 /**
  * A live streaming-transcription session (RFC-0028): push audio chunks with
  * {@link #pushAudio(byte[])}, mark end-of-audio with {@link #inputDone()},
@@ -48,21 +52,19 @@ public final class TranscriptionSession implements AutoCloseable {
     public void pushAudio(byte[] audio) {
         long h = requireHandle();
         byte[] data = audio == null ? new byte[0] : audio;
-        AimuxCError err = AimuxResult.newError();
-        int rc = AimuxFFI.INSTANCE.aimux_transcription_push_audio(h, data, data.length, err);
-        if (rc == 0) throw AimuxException.fromC(err, "pushAudio failed");
+        Pointer e = AimuxFFI.INSTANCE.aimux_transcription_push_audio(h, data, data.length);
+        if (e != null) throw AimuxResult.expectAimuxError(e, "pushAudio failed");
     }
 
     /**
      * Signal end-of-audio (idempotent).
      *
-     * @throws AimuxException on invalid handle.
+     * @throws IllegalStateException on a dead native handle (C ABI failure).
      */
     public void inputDone() {
         long h = requireHandle();
-        AimuxCError err = AimuxResult.newError();
-        int rc = AimuxFFI.INSTANCE.aimux_transcription_input_done(h, err);
-        if (rc == 0) throw AimuxException.fromC(err, "inputDone failed");
+        Pointer e = AimuxFFI.INSTANCE.aimux_transcription_input_done(h);
+        if (e != null) throw AimuxResult.expectFfiError(e, "inputDone failed");
     }
 
     /**
@@ -79,23 +81,24 @@ public final class TranscriptionSession implements AutoCloseable {
      */
     public String nextPart(long timeoutMs) {
         long h = requireHandle();
-        AimuxCError err = AimuxResult.newError();
-        com.sun.jna.Pointer ptr =
-                AimuxFFI.INSTANCE.aimux_transcription_next_part(h, timeoutMs, err);
-        if (ptr != null) {
-            return AimuxResult.extractString(ptr, err, "nextPart");
+        PointerByReference outPart = new PointerByReference();
+        IntByReference outState = new IntByReference();
+        Pointer e = AimuxFFI.INSTANCE.aimux_transcription_next_part(h, timeoutMs, outPart, outState);
+        if (e != null) {
+            throw AimuxResult.expectAimuxError(e, "nextPart failed");
         }
-        // NULL: timeout / ended / error — disambiguate via err.code.
-        if (err.code == AimuxException.AIMUX_E_TIMEOUT) {
-            // fromC consumes (frees) the message strings, then we swap in the
-            // retryable sentinel.
-            AimuxException.fromC(err, "nextPart timeout");
-            throw new AimuxTranscriptionTimeoutException();
+        switch (outState.getValue()) {
+            case AimuxFFI.TRANSCRIPTION_NEXT_PART_PART:
+                return AimuxResult.extractString(null, outPart, "nextPart");
+            case AimuxFFI.TRANSCRIPTION_NEXT_PART_ENDED:
+                throw new AimuxTranscriptionEndedException();
+            case AimuxFFI.TRANSCRIPTION_NEXT_PART_TIMEOUT:
+                // Not an error: nothing to decode, the session stays live.
+                throw new AimuxTranscriptionTimeoutException();
+            default:
+                throw new IllegalStateException(
+                    "nextPart: aimux ffi: unknown next_part state " + outState.getValue());
         }
-        if (err.code == AimuxException.AIMUX_OK) {
-            throw new AimuxTranscriptionEndedException();
-        }
-        throw AimuxException.fromC(err, "nextPart failed");
     }
 
     /** The transcription stream ended normally. */

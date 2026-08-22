@@ -15,8 +15,10 @@ flutter pub add aimux
 The package is a Flutter plugin: the Rust core ships inside it —
 `libaimux_ffi.so` per ABI (Android) and `aimux_ffi.xcframework` (iOS) are
 embedded at publish time, so no extra download or build step is needed.
-iOS integrates via SwiftPM (default on Flutter 3.44+, `ios/aimux/Package.swift`)
-or CocoaPods fallback (`ios/aimux.podspec`).
+iOS integrates via CocoaPods (`ios/aimux.podspec`) — Flutter's SwiftPM
+integration does not link plugin binary targets as of Flutter 3.44, so the
+podspec is the integration path; the vendored `aimux_ffi.xcframework` slice is
+force-loaded into the app binary and resolved with `DynamicLibrary.process()`.
 
 While developing against the repo, depend on the path:
 
@@ -45,10 +47,10 @@ model.close();
 
 ## Providers
 
-All 250 registry-backed OpenAI-compatible providers are reachable by name;
+All 251 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:
 
-> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
 > Full list: [providers.md](providers.md).
@@ -69,13 +71,31 @@ names come from the generated `ProviderName` constants.
 
 ## Errors
 
-Engine and binding failures throw an **`AimuxException` subclass hierarchy**
+Two independent aimux exception types, mirroring two Rust types — neither
+shares a base with the other (both just `implements Exception`):
+
+| Source | Rust | Dart | C code |
+|---|---|---|---|
+| AiMux | `AiMuxError` | `AimuxException` hierarchy | 1..13 |
+| recorder | `RecordingError` | `RecordingException` | 100..105 |
+
+Every fallible C call returns an opaque `aimux_error_t *` (`NULL` =
+success, result in the trailing out-parameter). The binding has one decoder
+(`errors.dart`): `expectAimuxError(e, context)` for model calls,
+`expectRecordingError(e, context)` for `initRecording` / `recordingTryFlush`,
+`expectFfiError(e, context)` for utilities that can only fail in the C ABI.
+One unified code selects 1..13, 100..105, or 200..206; each decoder copies the
+relevant fields, releases the error with `aimux_error_free` exactly once, and
+throws the matching `AimuxException` subclass / `RecordingException`. Codes
+200..206 throw the native
+`StateError('aimux ffi: …')` — see *C ABI failures* below.
+
+`AiMuxError` values throw an **`AimuxException` subclass hierarchy**
 (idiomatic Dart — `is` / `on` type checks, not stringly `code` switches):
 
 ```text
 Exception (implements)
  └── AimuxException
-      ├── UnknownError
       ├── JSONParseError / InvalidResponseDataError
       ├── ToolError
       ├── InvalidArgumentError / InvalidPromptError
@@ -89,11 +109,12 @@ Exception (implements)
 ```
 
 Every instance has `message`, `code` (`AimuxErrorCode` constants matching C
-`AimuxErrorCode`), `status` (HTTP or `-1`), and `retryMs` (hint or `-1`;
-`0` = retry now). Built from the C `AimuxError` out-param via
-`AimuxException.fromC` — constructors return `uint64_t` (`0` = failure),
-payload calls return `char*` (`NULL` = failure), streams return `int32_t`
-(`0` = failure). No JSON error-envelope sniffing on the main path.
+`aimux_error_code_t`), `status` (HTTP or `-1`), `retryMs` (hint or `-1`;
+`0` = retry now) and `retryable`. Per-code payload lives on the carrying
+subclass only: `APICallError.providerCode` / `.providerMessage` / `.requestId` / `.responseBody`
+(`String?`), `NoSuchModelError.modelId` / `.modelType`, and
+`NoSuchProviderError.providerId`. A code outside the enum is a header/library
+mismatch and fails with `StateError`, not an error type.
 
 ```dart
 import 'package:aimux/aimux.dart'; // exports errors.dart
@@ -107,14 +128,72 @@ try {
     // auth failure
   }
 } on AimuxException catch (e) {
-  // any engine / binding failure
+  // any AiMuxError failure
 }
 ```
 
-Local closed-handle checks still throw `StateError` (not `AimuxException`).
-Stream terminal failures surface via `Stream.addError(AimuxException)` —
-there is no `on_error` callback; provider mid-stream `StreamPart::Error` is
-data on `on_part`.
+**C ABI failures** — the call was wrong, not the model — are native Dart
+errors, never an aimux type. Raw JSON string parameters (`configJson`,
+`optsJson`, `valuesJson`, …) are validated with `jsonDecode` in Dart *before*
+the C call. Empty/blank is rejected for required raw-JSON params (`valuesJson`,
+the `optsJson` of speech/image/video/rerank/search, and the `configJson` of
+`registerProviders` / `initProxy`) and treated as "defaults" for optional ones
+(nullable in the signature — provider/router/moa `configJson`,
+embed/upload/transcription `optsJson`), matching the C ABI; use-after-close is
+guarded locally. A returned C code in 200..206 is a binding/library invariant:
+
+| Failure | Dart |
+|---|---|
+| bad raw JSON string parameter | `FormatException` (`source` = parameter name, e.g. `config_json`) — before C |
+| string not representable on the wire (below) | `FormatException` — before C |
+| use-after-close | `StateError('… is closed')` — before C |
+| C code 200..206 | `StateError('aimux ffi: …')` (invariant) |
+
+### Strings the wire format cannot carry
+
+A Dart `String` is UTF-16 and may hold an **unpaired surrogate** — `s.substring(0,
+n)` cutting an emoji in half is enough. `jsonDecode` and `jsonEncode` both accept
+one (`jsonEncode` writes it back as a `\uD800` escape), but the Rust side's
+`serde_json` rejects that escape, and `toNativeUtf8` would otherwise silently
+substitute U+FFFD. An **interior NUL** is worse: it is not rejected anywhere, it
+just ends the C string early. Both are rejected in Dart with a `FormatException`
+naming the parameter, for raw JSON parameters *and* for the JSON the binding
+builds itself (`prompt`, `options`, `ProviderConfig`):
+
+```dart
+final chunk = userText.substring(0, 100);   // may split an emoji
+try {
+  model.generateText(chunk);
+} on FormatException catch (e) {
+  // 'prompt: unpaired surrogate U+D83D at index 99 is not representable in UTF-8'
+}
+```
+
+The same check rejects a number Dart parses to `Infinity` (`1e999`) and nesting
+deeper than 128 levels — both of which `serde_json` also rejects. Without it
+each of these arrived as an uncatchable-looking invariant `StateError` from the
+C ABI.
+
+Recording errors are a **separate type**, mirroring Rust's independent
+`recording::RecordingError`: `recordingTryFlush()` throws
+`RecordingException` (`implements Exception`, *not* an `AimuxException`) with
+`code` (`RecordingErrorCode.init / openFile / spawn / writerGone /
+flushTimeout / write`, from C `aimux_error_code_t`; only the last
+three are reachable from a flush) and `message`. It returns normally when
+nothing is recording. `initRecording(dir)` throws the same
+`RecordingException` with code `init` / `openFile` / `spawn` when the recorder
+cannot be constructed (the previous recorder stays in place). The legacy
+`recordingFlush()` stays and never reports.
+
+Use-after-close on a Dart wrapper (`Model`, `ProviderHandle`, the multimodal
+models, `TranscriptionSession`, `Files`) throws `StateError`.
+Stream terminal failures surface via `Stream.addError` with whatever the
+decoder produced (`AimuxException`, or the native `StateError` for a C ABI
+failure) and the stream is then closed — there is no `on_error` callback;
+provider mid-stream `StreamPart::Error` is data on `on_part`. A
+`TranscriptionSession.nextPart` timeout is a poll state, not an error:
+`AimuxTranscriptionTimeoutException` (session still live); a normal end is
+`AimuxTranscriptionEndedException`.
 
 ## Text Generation
 
@@ -180,3 +259,8 @@ Text generation and streaming are supported. Multimodal features (embedding,
 TTS, STT, image, video, rerank, search, files) are reachable only through the
 raw [C ABI](c.md) until the wrappers are extended — see the
 [coverage matrix](../API.md#feature-coverage).
+
+The cache-probing / trace API (RFC-0015 — `aimux_trace_new` and the
+`aimux_trace_*` queries) is **not** exposed by this binding: there is no
+`trace()` wrapper and no trace query method, so the trace store cannot be
+reached from Dart. Use the raw [C ABI](c.md) if you need it.

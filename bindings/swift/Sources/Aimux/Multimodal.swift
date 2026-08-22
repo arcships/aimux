@@ -15,27 +15,6 @@ import CAimuxFFI
 import Foundation
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FFI helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Call a C ABI function that returns a `char*` JSON result (or `NULL` + filled
-/// `AimuxError *err` on failure), copy it into a Swift `String`, and free the
-/// C allocation.
-///
-/// `body` performs the actual C call (capturing the handle and arguments) and
-/// receives the error out-param. The handle is checked here so every call site
-/// shares the same invalid-handle guard.
-private func ffiStringCall(
-    handle: UInt64,
-    body: (UnsafeMutablePointer<CAimuxFFI.AimuxError>?) -> UnsafeMutablePointer<CChar>?
-) throws -> String {
-    guard handle != 0 else {
-        throw AimuxError.invalidHandle
-    }
-    return try ffiStringCall(body)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // EmbeddingModel
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -61,37 +40,37 @@ public final class EmbeddingModel: @unchecked Sendable {
 
     /// Create an OpenAI embedding model instance (e.g. text-embedding-3-small).
     public static func openai(apiKey: String, modelId: String) throws -> EmbeddingModel {
-        let handle = try Model.wrapHandle { aimux_openai_embedding_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_embedding_new(apiKey, modelId, $0) }
         return EmbeddingModel(handle: handle)
     }
 
     /// Create an OpenAI embedding model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> EmbeddingModel {
-        let handle = try Model.wrapHandle { aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_embedding_new_with_base(apiKey, modelId, baseUrl, $0) }
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Cohere embedding model instance (e.g. embed-english-v3.0).
     public static func cohere(apiKey: String, modelId: String) throws -> EmbeddingModel {
-        let handle = try Model.wrapHandle { aimux_cohere_embedding_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_cohere_embedding_new(apiKey, modelId, $0) }
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Cohere embedding model instance with a custom base URL.
     public static func cohere(apiKey: String, modelId: String, baseUrl: String) throws -> EmbeddingModel {
-        let handle = try Model.wrapHandle { aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_cohere_embedding_new_with_base(apiKey, modelId, baseUrl, $0) }
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Google embedding model instance (e.g. gemini-embedding-001).
     public static func google(apiKey: String, modelId: String) throws -> EmbeddingModel {
-        let handle = try Model.wrapHandle { aimux_google_embedding_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_google_embedding_new(apiKey, modelId, $0) }
         return EmbeddingModel(handle: handle)
     }
 
     /// Create a Google embedding model instance with a custom base URL.
     public static func google(apiKey: String, modelId: String, baseUrl: String) throws -> EmbeddingModel {
-        let handle = try Model.wrapHandle { aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_google_embedding_new_with_base(apiKey, modelId, baseUrl, $0) }
         return EmbeddingModel(handle: handle)
     }
 
@@ -104,8 +83,10 @@ public final class EmbeddingModel: @unchecked Sendable {
     ///   - options: Optional EmbeddingCallOptions serialized as JSON.
     /// - Returns: The JSON-serialized EmbeddingResult.
     public func embed(values: String, options: String? = nil) throws -> String {
+        try validateJson(values, parameter: "values")
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_embed(h, values, options, $0)
         }
     }
@@ -137,13 +118,13 @@ public final class SpeechModel: @unchecked Sendable {
 
     /// Create an OpenAI speech (TTS) model instance.
     public static func openai(apiKey: String, modelId: String) throws -> SpeechModel {
-        let handle = try Model.wrapHandle { aimux_openai_speech_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_speech_new(apiKey, modelId, $0) }
         return SpeechModel(handle: handle)
     }
 
     /// Create an OpenAI speech model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> SpeechModel {
-        let handle = try Model.wrapHandle { aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_speech_new_with_base(apiKey, modelId, baseUrl, $0) }
         return SpeechModel(handle: handle)
     }
 
@@ -151,11 +132,12 @@ public final class SpeechModel: @unchecked Sendable {
 
     /// Generate speech audio from the given options.
     ///
-    /// - Parameter options: SpeechCallOptions serialized as JSON.
+    /// - Parameter options: SpeechCallOptions serialized as JSON (required — carries the input).
     /// - Returns: The JSON-serialized SpeechResult.
-    public func generate(options: String? = nil) throws -> String {
+    public func generate(options: String) throws -> String {
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_speech_generate(h, options, $0)
         }
     }
@@ -187,13 +169,13 @@ public final class TranscriptionModel: @unchecked Sendable {
 
     /// Create an OpenAI transcription (STT) model instance.
     public static func openai(apiKey: String, modelId: String) throws -> TranscriptionModel {
-        let handle = try Model.wrapHandle { aimux_openai_transcription_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_transcription_new(apiKey, modelId, $0) }
         return TranscriptionModel(handle: handle)
     }
 
     /// Create an OpenAI transcription model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> TranscriptionModel {
-        let handle = try Model.wrapHandle { aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_transcription_new_with_base(apiKey, modelId, baseUrl, $0) }
         return TranscriptionModel(handle: handle)
     }
 
@@ -207,8 +189,9 @@ public final class TranscriptionModel: @unchecked Sendable {
     ///   - options: Optional TranscriptionCallOptions serialized as JSON.
     /// - Returns: The JSON-serialized TranscriptionResult.
     public func generate(audioBase64: String, mediaType: String, options: String? = nil) throws -> String {
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_transcription_generate(h, audioBase64, mediaType, options, $0)
         }
     }
@@ -223,9 +206,10 @@ public final class TranscriptionModel: @unchecked Sendable {
     ///   - abortHandle: Optional abort handle (`aimux_abort_signal_new`);
     ///     firing it aborts the session.
     public func startStream(options: String? = nil, abortHandle: UInt64 = 0) throws -> TranscriptionSession {
+        try validateJson(options, parameter: "options")
         let h = handle
-        let session = try Model.wrapHandle { err in
-            aimux_transcription_session_new(h, abortHandle, options, err)
+        let session = try Model.wrapHandle { out in
+            aimux_transcription_session_new(h, abortHandle, options, out)
         }
         return TranscriptionSession(handle: session)
     }
@@ -257,25 +241,25 @@ public final class ImageModel: @unchecked Sendable {
 
     /// Create an OpenAI image model instance (e.g. dall-e-3).
     public static func openai(apiKey: String, modelId: String) throws -> ImageModel {
-        let handle = try Model.wrapHandle { aimux_openai_image_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_image_new(apiKey, modelId, $0) }
         return ImageModel(handle: handle)
     }
 
     /// Create an OpenAI image model instance with a custom base URL.
     public static func openai(apiKey: String, modelId: String, baseUrl: String) throws -> ImageModel {
-        let handle = try Model.wrapHandle { aimux_openai_image_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_image_new_with_base(apiKey, modelId, baseUrl, $0) }
         return ImageModel(handle: handle)
     }
 
     /// Create a Google image model instance (e.g. gemini-2.5-flash-image).
     public static func google(apiKey: String, modelId: String) throws -> ImageModel {
-        let handle = try Model.wrapHandle { aimux_google_image_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_google_image_new(apiKey, modelId, $0) }
         return ImageModel(handle: handle)
     }
 
     /// Create a Google image model instance with a custom base URL.
     public static func google(apiKey: String, modelId: String, baseUrl: String) throws -> ImageModel {
-        let handle = try Model.wrapHandle { aimux_google_image_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_google_image_new_with_base(apiKey, modelId, baseUrl, $0) }
         return ImageModel(handle: handle)
     }
 
@@ -283,11 +267,12 @@ public final class ImageModel: @unchecked Sendable {
 
     /// Generate images from the given options.
     ///
-    /// - Parameter options: ImageCallOptions serialized as JSON.
+    /// - Parameter options: ImageCallOptions serialized as JSON (required — carries the input).
     /// - Returns: The JSON-serialized ImageResult.
-    public func generate(options: String? = nil) throws -> String {
+    public func generate(options: String) throws -> String {
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_image_generate(h, options, $0)
         }
     }
@@ -319,13 +304,13 @@ public final class VideoModel: @unchecked Sendable {
 
     /// Create a Google video model instance (e.g. veo-3.0).
     public static func google(apiKey: String, modelId: String) throws -> VideoModel {
-        let handle = try Model.wrapHandle { aimux_google_video_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_google_video_new(apiKey, modelId, $0) }
         return VideoModel(handle: handle)
     }
 
     /// Create a Google video model instance with a custom base URL.
     public static func google(apiKey: String, modelId: String, baseUrl: String) throws -> VideoModel {
-        let handle = try Model.wrapHandle { aimux_google_video_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_google_video_new_with_base(apiKey, modelId, baseUrl, $0) }
         return VideoModel(handle: handle)
     }
 
@@ -333,11 +318,12 @@ public final class VideoModel: @unchecked Sendable {
 
     /// Generate videos from the given options.
     ///
-    /// - Parameter options: VideoCallOptions serialized as JSON.
+    /// - Parameter options: VideoCallOptions serialized as JSON (required — carries the input).
     /// - Returns: The JSON-serialized VideoResult.
-    public func generate(options: String? = nil) throws -> String {
+    public func generate(options: String) throws -> String {
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_video_generate(h, options, $0)
         }
     }
@@ -369,13 +355,13 @@ public final class RerankingModel: @unchecked Sendable {
 
     /// Create a Cohere reranking model instance (e.g. rerank-v3.0).
     public static func cohere(apiKey: String, modelId: String) throws -> RerankingModel {
-        let handle = try Model.wrapHandle { aimux_cohere_reranking_new(apiKey, modelId, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_cohere_reranking_new(apiKey, modelId, $0) }
         return RerankingModel(handle: handle)
     }
 
     /// Create a Cohere reranking model instance with a custom base URL.
     public static func cohere(apiKey: String, modelId: String, baseUrl: String) throws -> RerankingModel {
-        let handle = try Model.wrapHandle { aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_cohere_reranking_new_with_base(apiKey, modelId, baseUrl, $0) }
         return RerankingModel(handle: handle)
     }
 
@@ -383,11 +369,12 @@ public final class RerankingModel: @unchecked Sendable {
 
     /// Rerank documents by relevance to a query.
     ///
-    /// - Parameter options: RerankingCallOptions serialized as JSON.
+    /// - Parameter options: RerankingCallOptions serialized as JSON (required — carries the input).
     /// - Returns: The JSON-serialized RerankingResult.
-    public func rerank(options: String? = nil) throws -> String {
+    public func rerank(options: String) throws -> String {
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_rerank(h, options, $0)
         }
     }
@@ -420,14 +407,14 @@ public final class SearchModel: @unchecked Sendable {
     /// Create a Tavily search model instance. Tavily uses a fixed endpoint, so
     /// no model ID is needed (the C ABI's `model_id` argument is ignored).
     public static func tavily(apiKey: String) throws -> SearchModel {
-        let handle = try Model.wrapHandle { aimux_tavily_search_new(apiKey, "", $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_tavily_search_new(apiKey, "", $0) }
         return SearchModel(handle: handle)
     }
 
     /// Create a Tavily search model instance with a custom base URL (useful for
     /// testing against a mock server).
     public static func tavily(apiKey: String, baseUrl: String) throws -> SearchModel {
-        let handle = try Model.wrapHandle { aimux_tavily_search_new_with_base(apiKey, "", baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_tavily_search_new_with_base(apiKey, "", baseUrl, $0) }
         return SearchModel(handle: handle)
     }
 
@@ -435,11 +422,12 @@ public final class SearchModel: @unchecked Sendable {
 
     /// Perform a web search.
     ///
-    /// - Parameter options: SearchCallOptions serialized as JSON.
+    /// - Parameter options: SearchCallOptions serialized as JSON (required — carries the input).
     /// - Returns: The JSON-serialized SearchResult.
-    public func search(options: String? = nil) throws -> String {
+    public func search(options: String) throws -> String {
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_search(h, options, $0)
         }
     }
@@ -471,13 +459,13 @@ public final class Files: @unchecked Sendable {
 
     /// Create an OpenAI files manager instance. No model ID is required.
     public static func openai(apiKey: String) throws -> Files {
-        let handle = try Model.wrapHandle { aimux_openai_files_new(apiKey, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_files_new(apiKey, $0) }
         return Files(handle: handle)
     }
 
     /// Create an OpenAI files manager instance with a custom base URL.
     public static func openai(apiKey: String, baseUrl: String) throws -> Files {
-        let handle = try Model.wrapHandle { aimux_openai_files_new_with_base(apiKey, baseUrl, $0) }
+        let handle = try Model.wrapHandle(expecting: expectFfiError) { aimux_openai_files_new_with_base(apiKey, baseUrl, $0) }
         return Files(handle: handle)
     }
 
@@ -491,8 +479,9 @@ public final class Files: @unchecked Sendable {
     ///   - options: Optional UploadFileCallOptions serialized as JSON.
     /// - Returns: The JSON-serialized UploadFileResult.
     public func upload(dataBase64: String, mediaType: String, options: String? = nil) throws -> String {
+        try validateJson(options, parameter: "options")
         let h = handle
-        return try ffiStringCall(handle: h) {
+        return try ffiStringCall {
             aimux_file_upload(h, dataBase64, mediaType, options, $0)
         }
     }
@@ -1063,8 +1052,14 @@ public struct UploadFileResult: Codable, Equatable {
 // TranscriptionSession (RFC-0028 streaming)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Error for `TranscriptionSession.nextPart`: the stream ended normally (a
-/// `Finish` part was delivered earlier).
+/// Thrown by `TranscriptionSession.nextPart` when the stream ended normally
+/// (a `Finish` part was delivered earlier).
+///
+/// A session the caller `close()`d does NOT throw this — it throws the Swift
+/// boundary projection (`DecodingError.dataCorrupted`, "transcription session
+/// is closed"). Keeping the two apart matters: a pump loop that `break`s on
+/// this error must not report a transcript its own `defer { close() }`
+/// truncated as a complete one.
 public struct AimuxTranscriptionEndedError: Error {}
 
 /// Error for `TranscriptionSession.nextPart`: no part arrived within the
@@ -1091,68 +1086,77 @@ public final class TranscriptionSession: @unchecked Sendable {
     }
 
     // The handle read + nil-check must stay on one thread with the call;
-    // sessions are single-threaded (like Model).
+    // sessions are single-threaded (like Model). Using a closed session is a
+    // C ABI failure, thrown (never trapped — a trap here is uncatchable
+    // SIGTRAP in a host app) and deliberately NOT the same type as a clean
+    // end of stream: a pump loop that breaks on AimuxTranscriptionEndedError
+    // must not read "transcript complete" from a transcript its own
+    // `defer { close() }` truncated.
     private func withHandle<T>(_ body: (UInt64) throws -> T) throws -> T {
-        guard handle != 0 else {
-            throw AimuxError.invalidHandle
+        let h = handle
+        guard h != 0 else {
+            throw invariant("aimux: transcription session is closed")
         }
-        return try body(handle)
+        return try body(h)
     }
 
     /// Push one binary audio chunk. Blocks while the internal channel is full
     /// (backpressure propagation).
+    ///
+    /// Throws the Swift boundary projection (`DecodingError.dataCorrupted`,
+    /// "transcription session is closed") if the session was closed — never
+    /// `AimuxTranscriptionEndedError`, which means the stream ended on its own.
     public func pushAudio(_ audio: [UInt8]) throws {
         try withHandle { h in
-            var cerr = CAimuxFFI.AimuxError()
-            aimux_error_clear(&cerr)
-            let rc = audio.withUnsafeBufferPointer { buf -> Int32 in
-                let base = buf.baseAddress.map { UnsafeRawPointer($0) }
-                return aimux_transcription_push_audio(
-                    h, base?.assumingMemoryBound(to: UInt8.self), audio.count, &cerr)
+            let e = audio.withUnsafeBufferPointer { buf -> OpaquePointer? in
+                aimux_transcription_push_audio(h, buf.baseAddress, audio.count)
             }
-            if rc == 0 {
-                throw AimuxError.fromC(cerr)
-            }
+            if let e { throw expectAimuxError(e, context: "pushAudio") }
         }
     }
 
     /// Signal end-of-audio (idempotent).
+    ///
+    /// Throws the Swift boundary projection (`DecodingError.dataCorrupted`,
+    /// "transcription session is closed") if the session was closed — the same
+    /// signal as the other two methods, matching Go's `ErrClosed`, which its
+    /// `InputDone` also returns rather than swallowing.
     public func inputDone() throws {
         try withHandle { h in
-            var cerr = CAimuxFFI.AimuxError()
-            aimux_error_clear(&cerr)
-            let rc = aimux_transcription_input_done(h, &cerr)
-            if rc == 0 {
-                throw AimuxError.fromC(cerr)
-            }
+            if let e = aimux_transcription_input_done(h) { throw expectFfiError(e, context: "inputDone") }
         }
     }
 
     /// Pull the next transcription part (JSON `TranscriptionStreamPart`).
     ///
     /// Throws `AimuxTranscriptionEndedError` when the stream finished
-    /// normally, `AimuxTranscriptionTimeoutError` when no part arrived in
-    /// time (retryable). `timeoutMs`: >0 wait at most; 0 immediate poll;
-    /// negative = wait indefinitely.
+    /// normally, the Swift boundary projection (`DecodingError.dataCorrupted`)
+    /// when the session was closed — the two are deliberately distinct, so a
+    /// pump loop that breaks on "ended" cannot read a transcript its own
+    /// `close()` truncated as complete — and `AimuxTranscriptionTimeoutError`
+    /// when no part arrived in time (retryable, not an error at the C ABI —
+    /// nothing is decoded).
+    /// `timeoutMs`: >0 wait at most; 0 immediate poll; negative = wait
+    /// indefinitely.
     public func nextPart(timeoutMs: Int64) throws -> String {
         try withHandle { h in
-            var cerr = CAimuxFFI.AimuxError()
-            aimux_error_clear(&cerr)
-            let ptr = aimux_transcription_next_part(h, timeoutMs, &cerr)
-            if let ptr {
-                defer { aimux_free_string(ptr) }
-                return String(cString: ptr)
+            var part: UnsafeMutablePointer<CChar>? = nil
+            var state: Int32 = 0
+            if let e = aimux_transcription_next_part(h, timeoutMs, &part, &state) {
+                throw expectAimuxError(e, context: "nextPart")
             }
-            if cerr.code == AIMUX_E_TIMEOUT {
-                // fromC consumes (frees) the message strings, then we swap in
-                // the retryable sentinel.
-                _ = AimuxError.fromC(cerr)
-                throw AimuxTranscriptionTimeoutError()
-            }
-            if cerr.code == AIMUX_OK {
+            switch state {
+            case Int32(AIMUX_TRANSCRIPTION_NEXT_PART_PART.rawValue):
+                guard let part else { throw invariant("aimux ffi: nextPart: PART state but no part written") }
+                defer { aimux_free_string(part) }
+                return String(cString: part)
+            case Int32(AIMUX_TRANSCRIPTION_NEXT_PART_ENDED.rawValue):
                 throw AimuxTranscriptionEndedError()
+            case Int32(AIMUX_TRANSCRIPTION_NEXT_PART_TIMEOUT.rawValue):
+                throw AimuxTranscriptionTimeoutError()
+            default:
+                throw invariant("aimux ffi: nextPart: unknown aimux_transcription_next_part_state_t \(state)")
             }
-            throw AimuxError.fromC(cerr)
         }
     }
 

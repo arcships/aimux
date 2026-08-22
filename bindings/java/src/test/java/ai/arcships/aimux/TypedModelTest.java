@@ -364,7 +364,8 @@ class TypedModelTest {
 
     @Test
     void generateTextInvalidPromptThrowsAimuxException() {
-        // Invalid prompt → C AimuxError → AimuxException (typed layer).
+        // The typed layer JSON-encodes the prompt, so any string is valid wire
+        // JSON; the failure is the mock provider's response → AimuxException.
         try (TypedModel model =
                  TypedModel.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
             assertThatThrownBy(() -> model.generateText("not-valid-json"))

@@ -31,7 +31,7 @@ def test_provider_creates_registry_model():
 
 
 def test_provider_unknown_name_raises():
-    """provider() rejects unknown names with the available list."""
+    """provider() rejects unknown names, naming the one that did not resolve."""
     from aimux import provider
 
     with pytest.raises(Exception, match="no-such-provider"):
@@ -123,11 +123,15 @@ def test_deepseek_creates_model():
 
 
 def test_generate_text_rejects_invalid_prompt():
-    """generate_text raises on invalid prompt JSON."""
+    """A wire-JSON text that does not parse is the binding's own failure.
+
+    pyo3 style: a ValueError naming the argument, never the engine's
+    InvalidPromptError.
+    """
     from aimux import openai
 
     model = openai("sk-test-fake-key", "gpt-4o-mini")
-    with pytest.raises(Exception, match="invalid prompt"):
+    with pytest.raises(ValueError, match=r"^prompt_json: invalid JSON"):
         model.generate_text("{invalid json}")
 
 

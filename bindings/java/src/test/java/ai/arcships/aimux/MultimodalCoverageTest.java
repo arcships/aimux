@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <ul>
  *   <li>Provider variant construction (Cohere/Google embedding, Google image,
  *       all non-WithBase factories) — ~15 C ABI symbols previously untested.</li>
- *   <li>Engine failures → {@link AimuxException} (C {@code AimuxError} path).</li>
+ *   <li>AiMuxError values → {@link AimuxException} (C error-handle path).</li>
  *   <li>Lifecycle: close-then-call throws, double-close is safe.</li>
  *   <li>Search {@code answer} field assertion (previously only {@code results}
  *       was checked).</li>
@@ -84,30 +84,32 @@ class MultimodalCoverageTest {
         try (SearchModel m = SearchModel.tavily("sk-test")) { assertThat(m).isNotNull(); }
     }
 
-    // ── Invalid input → AimuxException (C AimuxError path) ──────────────────
+    // ── Invalid raw JSON → IllegalArgumentException (before the C call) ─────
 
     @Test
-    void embeddingErrorEnvelopeThrowsAimuxException() {
-        // Invalid input fails via C AimuxError → AimuxException (not a JSON envelope).
+    void embeddingInvalidJsonThrowsIllegalArgument() {
         try (EmbeddingModel model = EmbeddingModel.openaiWithBase("sk-test", "text-embedding-3-small", server.baseUrl())) {
             assertThatThrownBy(() -> model.embed("not-valid-json"))
-                .isInstanceOf(AimuxException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("valuesJson");
         }
     }
 
     @Test
-    void speechErrorEnvelopeThrowsAimuxException() {
+    void speechInvalidJsonThrowsIllegalArgument() {
         try (SpeechModel model = SpeechModel.openaiWithBase("sk-test", "tts-1", server.baseUrl())) {
             assertThatThrownBy(() -> model.generate("not-valid-json"))
-                .isInstanceOf(AimuxException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("optsJson");
         }
     }
 
     @Test
-    void rerankErrorEnvelopeThrowsAimuxException() {
+    void rerankInvalidJsonThrowsIllegalArgument() {
         try (RerankingModel model = RerankingModel.cohereWithBase("sk-test", "rerank-v3.0", server.baseUrl())) {
             assertThatThrownBy(() -> model.rerank("not-valid-json"))
-                .isInstanceOf(AimuxException.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("optsJson");
         }
     }
 

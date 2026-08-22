@@ -9,20 +9,20 @@
 // `./types.ts` (ts-rs exports directly into `./types/` — single source of
 // truth in the Rust core, packaged with the npm tarball).
 //
-// The raw napi API (`index.js` / `index.d.ts`, auto-generated) is untouched.
-// This is purely an extra TypeScript layer on top.
+// The generated napi loader stays untouched. `native.ts` registers the canonical
+// JS Error constructors; this file adds the typed JSON layer on top.
 
-import * as native from '../index.js'
+import * as native from './native.ts'
 import {
   AbortBridge,
   createProvider as rawCreateProvider,
   getModelSpecs as rawGetModelSpecs,
-} from '../index.js'
-import type { Model, ProviderConfig, ProviderHandle as RawProviderHandle } from '../index.js'
+} from './native.ts'
+import type { Model, ProviderConfig, ProviderHandle as RawProviderHandle } from './native.ts'
 
 // Canonical ts-rs generated types (local copy, packaged with the npm tarball).
 // These are type-only imports, so they are fully erased at runtime (the
-// wrapper only touches the raw `../index.js`).
+// wrapper only touches the registered raw entrypoint).
 import type {
   GenerateTextOptions,
   GenerateTextResult,
@@ -68,63 +68,51 @@ export {
   TimeoutError,
   RequestAbortedError,
   OtherError,
-  withAimuxError,
+  RecordingError,
+  type RecordingErrorCode,
 } from './error.ts'
-import { AimuxError, withAimuxError } from './error.ts'
 
 // Re-export the raw napi constructors/factories so consumers can do everything
 // from a single import: `import { openai, generateText } from 'aimux'`.
 // Rust fn names are snake_case; napi-rs exposes them camelCased (like
 // `init_logging` → `initLogging`).
 //
-// Infallible items (classes + void initializers) pass through untouched.
+// Native functions pass through unchanged: Rust already constructs the
+// registered JavaScript error subclasses before throwing.
 export {
   Model,
   StreamTextGenerator,
   AbortBridge,
   initLogging,
+  recordingFlush,
+  recordingStop,
   initSessionStore,
   initSessionInfer,
-} from '../index.js'
+  sessionCalls,
+  listSessions,
+  mockReplay,
+  initRecordingRing,
+  router,
+  moa,
+  openai,
+  anthropic,
+  deepseek,
+  google,
+  cohere,
+  mistral,
+  xai,
+  bedrock,
+  vertex,
+  anthropicAws,
+  azure,
+  provider,
+  type ProviderHandle,
+} from './native.ts'
 
-// Fallible raw functions are wrapped so their throws are typed `AimuxError`
-// subclasses (`instanceof` works); generic wrappers preserve the signatures.
-function wrapSync<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
-  return (...args) => {
-    try {
-      return fn(...args)
-    } catch (e) {
-      throw AimuxError.fromNative(e)
-    }
-  }
-}
-
-function wrapAsync<A extends unknown[], R>(
-  fn: (...args: A) => Promise<R>,
-): (...args: A) => Promise<R> {
-  return (...args) => withAimuxError(() => fn(...args))
-}
-
-export const sessionCalls = wrapSync(native.sessionCalls)
-export const listSessions = wrapSync(native.listSessions)
-export const mockReplay = wrapSync(native.mockReplay)
-export const router = wrapSync(native.router)
-export const moa = wrapSync(native.moa)
-export const openai = wrapAsync(native.openai)
-export const anthropic = wrapAsync(native.anthropic)
-export const deepseek = wrapAsync(native.deepseek)
-export const google = wrapAsync(native.google)
-export const cohere = wrapAsync(native.cohere)
-export const mistral = wrapAsync(native.mistral)
-export const xai = wrapAsync(native.xai)
-export const bedrock = wrapAsync(native.bedrock)
-export const vertex = wrapAsync(native.vertex)
-export const anthropicAws = wrapAsync(native.anthropicAws)
-export const azure = wrapAsync(native.azure)
-export const provider = wrapAsync(native.provider)
-// `ProviderHandle` is the napi class for provider handles (RFC-0027); export
-// it as a type so typed-wrapper users can reference it.
-export type { ProviderHandle } from '../index.js'
+// Spell these as `void` in the public wrapper instead of leaking the generated
+// `AimuxResult<undefined>` implementation type.
+export const recordingTryFlush: () => void = native.recordingTryFlush
+export const initRecording: (dir: string) => void = native.initRecording
 // Both meanings: the `ProviderName` const object (runtime, for `ProviderName.groq`)
 // and the derived string-union type. A value export resolves at runtime, so the
 // specifier needs the real `.ts` extension for Node's type-stripping test runs;
@@ -197,12 +185,10 @@ export async function generateText(
   options?: GenerateTextOptions,
   signal?: AbortSignal,
 ): Promise<GenerateTextResult> {
-  return withAimuxError(async () => {
-    const optsJson = options ? JSON.stringify(options) : undefined
-    const bridge = signal ? new AbortBridge(signal) : undefined
-    const resultJson = await model.generateText(JSON.stringify(prompt), optsJson, bridge)
-    return JSON.parse(resultJson) as GenerateTextResult
-  })
+  const optsJson = options ? JSON.stringify(options) : undefined
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const resultJson = await model.generateText(JSON.stringify(prompt), optsJson, bridge)
+  return JSON.parse(resultJson) as GenerateTextResult
 }
 
 /**
@@ -232,15 +218,11 @@ export async function* streamText(
   options?: GenerateTextOptions,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamPart> {
-  try {
-    const optsJson = options ? JSON.stringify(options) : undefined
-    const bridge = signal ? new AbortBridge(signal) : undefined
-    const gen = await model.streamText(JSON.stringify(prompt), optsJson, bridge)
-    for await (const json of gen) {
-      yield JSON.parse(json) as StreamPart
-    }
-  } catch (e) {
-    throw AimuxError.fromNative(e)
+  const optsJson = options ? JSON.stringify(options) : undefined
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const gen = await model.streamText(JSON.stringify(prompt), optsJson, bridge)
+  for await (const json of gen) {
+    yield JSON.parse(json) as StreamPart
   }
 }
 
@@ -252,22 +234,14 @@ export async function* streamText(
  * above) must be called first to register the store / opt-in inferer.
  */
 export function getSessionCalls(sessionId: string): SessionCall[] {
-  try {
-    return JSON.parse(native.sessionCalls(sessionId)) as SessionCall[]
-  } catch (e) {
-    throw AimuxError.fromNative(e)
-  }
+  return JSON.parse(native.sessionCalls(sessionId)) as SessionCall[]
 }
 
 /**
  * All known sessions (RFC-0024).
  */
 export function getSessions(): SessionView[] {
-  try {
-    return JSON.parse(native.listSessions()) as SessionView[]
-  } catch (e) {
-    throw AimuxError.fromNative(e)
-  }
+  return JSON.parse(native.listSessions()) as SessionView[]
 }
 
 /**
@@ -290,16 +264,10 @@ export async function generateTextAsOpenai(
   options?: GenerateTextOptions,
   signal?: AbortSignal,
 ): Promise<ChatCompletion> {
-  return withAimuxError(async () => {
-    const optsJson = options ? JSON.stringify(options) : undefined
-    const bridge = signal ? new AbortBridge(signal) : undefined
-    const resultJson = await model.generateTextAsOpenai(
-      JSON.stringify(prompt),
-      optsJson,
-      bridge,
-    )
-    return JSON.parse(resultJson) as ChatCompletion
-  })
+  const optsJson = options ? JSON.stringify(options) : undefined
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const resultJson = await model.generateTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
+  return JSON.parse(resultJson) as ChatCompletion
 }
 
 /**
@@ -325,15 +293,11 @@ export async function* streamTextAsOpenai(
   options?: GenerateTextOptions,
   signal?: AbortSignal,
 ): AsyncGenerator<ChatCompletionChunk> {
-  try {
-    const optsJson = options ? JSON.stringify(options) : undefined
-    const bridge = signal ? new AbortBridge(signal) : undefined
-    const gen = await model.streamTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
-    for await (const json of gen) {
-      yield JSON.parse(json) as ChatCompletionChunk
-    }
-  } catch (e) {
-    throw AimuxError.fromNative(e)
+  const optsJson = options ? JSON.stringify(options) : undefined
+  const bridge = signal ? new AbortBridge(signal) : undefined
+  const gen = await model.streamTextAsOpenai(JSON.stringify(prompt), optsJson, bridge)
+  for await (const json of gen) {
+    yield JSON.parse(json) as ChatCompletionChunk
   }
 }
 
@@ -364,14 +328,12 @@ export class ProviderHandleTyped {
 
   /** List models available on this provider (runtime discovery + anya2a spec). */
   async listModels(): Promise<RuntimeModel[]> {
-    return withAimuxError(async () => {
-      return JSON.parse(await this.raw.listModels()) as RuntimeModel[]
-    })
+    return JSON.parse(await this.raw.listModels()) as RuntimeModel[]
   }
 
   /** Build a language model from a discovered model id. */
   async model(modelId: string): Promise<RawModel> {
-    return withAimuxError(() => this.raw.model(modelId))
+    return this.raw.model(modelId)
   }
 }
 
@@ -399,10 +361,8 @@ export async function createProvider(
   apiKey?: string,
   config?: ProviderConfig,
 ): Promise<ProviderHandleTyped> {
-  return withAimuxError(async () => {
-    const raw = await rawCreateProvider(name, apiKey ?? null, config ?? null)
-    return new ProviderHandleTyped(raw)
-  })
+  const raw = await rawCreateProvider(name, apiKey ?? null, config ?? null)
+  return new ProviderHandleTyped(raw)
 }
 
 /**
@@ -425,7 +385,5 @@ export async function createProvider(
  * ```
  */
 export async function getModelSpecs(sourceUrl?: string): Promise<unknown> {
-  return withAimuxError(async () => {
-    return JSON.parse(await rawGetModelSpecs(sourceUrl ?? null))
-  })
+  return JSON.parse(await rawGetModelSpecs(sourceUrl ?? null))
 }

@@ -11,7 +11,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { anthropic, google } from '../index.js'
+import { anthropic, google } from '../src/native.ts'
 
 function startMockServer(handler: (req: any, res: any) => void): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {

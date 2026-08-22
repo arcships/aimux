@@ -20,9 +20,8 @@ import (
 	"time"
 )
 
-// cancelOnDoneContext makes cancellation happen while StreamTextContext is
-// installing its context watcher. It deterministically exercises the window
-// between the initial context check and context.AfterFunc registration.
+// cancelOnDoneContext models cancellation racing exactly between the
+// context.Cause and context.AfterFunc checks in StreamTextContext.
 type cancelOnDoneContext struct {
 	done      chan struct{}
 	cancelled atomic.Bool
@@ -95,27 +94,10 @@ func TestGenerateTextRejectsInvalidPrompt(t *testing.T) {
 	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
 	defer m.Close()
 
-	// Invalid JSON prompt should produce an error (the engine will try to
-	// parse it and fail). We can't hit a real API, but the FFI layer returns
-	// an error response for malformed input.
-	_, err := m.GenerateText("{invalid json}", "")
-	// With a fake key, this will either fail at JSON parse or at network.
-	// Either way, no nil error + empty string.
-	if err == nil {
-		// The provider might construct and fail on network — that's fine,
-		// the error comes as a JSON error string. Check it's not a panic.
-		// If no error (e.g., somehow succeeded), at least verify it didn't crash.
-		t.Log("generate_text did not return error (unexpected but not fatal with fake key)")
-	}
-}
-
-func TestGenerateTextAfterClose(t *testing.T) {
-	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
-	m.Close()
-
-	_, err := m.GenerateText(`"hello"`, "")
-	if err == nil {
-		t.Fatal("expected error after close")
+	// Malformed prompt JSON is rejected by the binding before the C call
+	// (plain error naming the parameter; see error_test.go).
+	if _, err := m.GenerateText("{invalid json}", ""); err == nil {
+		t.Fatal("expected error for malformed prompt_json")
 	}
 }
 
@@ -259,6 +241,325 @@ func TestProviderWithBaseQuotedURLDoesNotInjectJSON(t *testing.T) {
 	}
 }
 
+// TestInitRecordingRingRejectsZeroCap verifies D7: cap == 0 is rejected with
+// an error instead of being silently rewritten to 2048. The check happens in
+// Go before any FFI call, so this does not touch the global recorder state.
+func TestInitRecordingRingRejectsZeroCap(t *testing.T) {
+	err := InitRecordingRing(0)
+	if err == nil {
+		t.Fatal("expected error for cap == 0, got nil")
+	}
+	if !strings.Contains(err.Error(), "cap > 0") {
+		t.Fatalf("expected cap error message, got: %v", err)
+	}
+}
+
+// TestInitRecordingRingAcceptsPositiveCap verifies a positive cap does not
+// return an error (the C ABI accepts it and returns 0).
+func TestInitRecordingRingAcceptsPositiveCap(t *testing.T) {
+	if err := InitRecordingRing(8); err != nil {
+		t.Fatalf("expected success for cap=8, got: %v", err)
+	}
+	// Reset global recorder state so this doesn't leak into other tests.
+	RecordingStop()
+}
+
+// TestInitRecordingRingDefaultNoArg verifies the no-arg form uses the library
+// default capacity (FFI aimux_init_recording_ring_default) and returns nil.
+func TestInitRecordingRingDefaultNoArg(t *testing.T) {
+	if err := InitRecordingRing(); err != nil {
+		t.Fatalf("expected success for no-arg default, got: %v", err)
+	}
+	// Reset global recorder state so this doesn't leak into other tests.
+	RecordingStop()
+}
+
+// TestInitProxyRejectsEmpty verifies "" is rejected in Go (C requires JSON;
+// letting it through used to surface as a boundary panic).
+func TestInitProxyRejectsEmpty(t *testing.T) {
+	err := InitProxy("")
+	if err == nil || !strings.Contains(err.Error(), "config_json") {
+		t.Fatalf("expected config_json error, got: %v", err)
+	}
+}
+
+// TestTraceAggregateEmptyFilter verifies the documented "" = all filter works
+// (lowered to "{}" before the C call). Empty store → JSON array.
+func TestTraceAggregateEmptyFilter(t *testing.T) {
+	m, err := NewOpenAIWithBase("sk-test-fake-key", "gpt-4o", "http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	tr, err := m.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tr.Close()
+	out, err := tr.TraceAggregate("")
+	if err != nil {
+		t.Fatalf("TraceAggregate(\"\") failed: %v", err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(out), "[") {
+		t.Fatalf("expected JSON array, got: %q", out)
+	}
+}
+
+// TestTraceQueriesOnUntracedModel verifies every trace query on a plain model
+// returns ErrNotTraced instead of crashing the process: the C side only knows
+// "no trace store for this handle" and its [C ABI] error would panic.
+func TestTraceQueriesOnUntracedModel(t *testing.T) {
+	m, err := NewOpenAIWithBase("sk-test-fake-key", "gpt-4o", "http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	for name, call := range map[string]func() error{
+		"TraceAggregate":    func() error { _, e := m.TraceAggregate(""); return e },
+		"TraceSessionChain": func() error { _, e := m.TraceSessionChain("sess-1"); return e },
+		"TraceExportJsonl":  func() error { _, e := m.TraceExportJsonl(); return e },
+		"TraceClear":        m.TraceClear,
+	} {
+		if err := call(); !errors.Is(err, ErrNotTraced) {
+			t.Errorf("%s: expected ErrNotTraced, got %v", name, err)
+		}
+	}
+
+	// Closed still wins over the traced check for a real trace handle.
+	tr, err := m.Trace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr.Close()
+	if _, err := tr.TraceExportJsonl(); !errors.Is(err, ErrClosed) {
+		t.Errorf("closed trace handle: expected ErrClosed, got %v", err)
+	}
+}
+
+// ── Composite constructors: atomic snapshots, close races, nil elements ────
+
+// runConcurrent starts every task at one barrier and requires every task —
+// including Close — to return. The atomic handle design has no Go lock order
+// and therefore no waiting edge between these tasks.
+func runConcurrent(t *testing.T, what string, tasks ...func()) {
+	t.Helper()
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(len(tasks))
+	for _, task := range tasks {
+		go func() {
+			defer wg.Done()
+			<-start
+			task()
+		}()
+	}
+	close(start)
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s did not return within 10s — deadlocked", what)
+	}
+}
+
+// dup returns m repeated n times.
+func dup(m *Model, n int) []*Model {
+	out := make([]*Model, n)
+	for i := range out {
+		out[i] = m
+	}
+	return out
+}
+
+func TestNewRouterRepeatedModelRacingClose(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
+	if r, err := NewRouter(dup(m, 8), ""); err != nil {
+		t.Fatalf("duplicate router input: %v", err)
+	} else {
+		r.Close()
+	}
+	m.Close()
+
+	for i := 0; i < 25; i++ {
+		m = OpenAI("sk-test-fake-key", "gpt-4o-mini")
+		tasks := []func(){func() { m.Close() }}
+		for j := 0; j < 16; j++ {
+			tasks = append(tasks, func() {
+				if r, err := NewRouter(dup(m, 8), ""); err == nil {
+					r.Close()
+				}
+			})
+		}
+		runConcurrent(t, "NewRouter over a repeated model", tasks...)
+	}
+}
+
+func TestNewMoaAggregatorAlsoReferenceRacingClose(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
+	if r, err := NewMoa(dup(m, 7), m, ""); err != nil {
+		t.Fatalf("duplicate MoA input: %v", err)
+	} else {
+		r.Close()
+	}
+	m.Close()
+
+	for i := 0; i < 25; i++ {
+		m = OpenAI("sk-test-fake-key", "gpt-4o-mini")
+		tasks := []func(){func() { m.Close() }}
+		for j := 0; j < 16; j++ {
+			tasks = append(tasks, func() {
+				if r, err := NewMoa(dup(m, 7), m, ""); err == nil {
+					r.Close()
+				}
+			})
+		}
+		runConcurrent(t, "NewMoa with the aggregator also in references", tasks...)
+	}
+}
+
+// TestCompositeConstructorsOppositeOrdersRacingClose is the end-to-end half:
+// two groups of goroutines build routers over the same models in opposite
+// orders while every model is being closed.
+func TestCompositeConstructorsOppositeOrdersRacingClose(t *testing.T) {
+	const (
+		iterations = 30
+		fanout     = 8
+		pairs      = 8
+	)
+	for i := 0; i < iterations; i++ {
+		models := make([]*Model, fanout)
+		for j := range models {
+			models[j] = OpenAI("sk-test-fake-key", "gpt-4o-mini")
+		}
+		reversed := make([]*Model, fanout)
+		for j, m := range models {
+			reversed[fanout-1-j] = m
+		}
+
+		tasks := make([]func(), 0, pairs*2+fanout)
+		build := func(order []*Model) func() {
+			return func() {
+				if r, err := NewRouter(order, ""); err == nil {
+					r.Close()
+				}
+			}
+		}
+		for j := 0; j < pairs; j++ {
+			tasks = append(tasks, build(models), build(reversed))
+		}
+		for _, m := range models {
+			model := m
+			tasks = append(tasks, func() { model.Close() })
+		}
+		runConcurrent(t, fmt.Sprintf("opposite-order iteration %d", i), tasks...)
+	}
+}
+
+func TestZeroValueModelIsClosed(t *testing.T) {
+	var m Model
+	if _, err := m.GenerateText(`"hello"`, ""); !errors.Is(err, ErrClosed) {
+		t.Fatalf("zero-value Model: expected ErrClosed, got %v", err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatalf("zero-value Close: %v", err)
+	}
+}
+
+func TestModelConcurrentCloseIsIdempotent(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
+	tasks := make([]func(), 64)
+	for i := range tasks {
+		tasks[i] = func() {
+			if err := m.Close(); err != nil {
+				t.Errorf("Close: %v", err)
+			}
+		}
+	}
+	runConcurrent(t, "concurrent Model.Close", tasks...)
+	if got := m.id.Load(); got != 0 {
+		t.Fatalf("handle after Close = %d, want 0", got)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatalf("repeated Close: %v", err)
+	}
+}
+
+func TestCompositeConstructorsRejectNilModels(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
+	defer m.Close()
+
+	cases := []struct {
+		name string
+		want string
+		call func() (*Model, error)
+	}{
+		{"router nil child", "aimux: router: models[1] is nil",
+			func() (*Model, error) { return NewRouter([]*Model{m, nil, m}, "") }},
+		{"router only child nil", "aimux: router: models[0] is nil",
+			func() (*Model, error) { return NewRouter([]*Model{nil}, "") }},
+		{"moa nil aggregator", "aimux: moa: aggregator is nil",
+			func() (*Model, error) { return NewMoa([]*Model{m}, nil, "") }},
+		{"moa nil reference", "aimux: moa: references[1] is nil",
+			func() (*Model, error) { return NewMoa([]*Model{m, nil}, m, "") }},
+		{"moa nil aggregator, no references", "aimux: moa: aggregator is nil",
+			func() (*Model, error) { return NewMoa(nil, nil, "") }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("panicked instead of returning an error: %v", r)
+				}
+			}()
+			got, err := tc.call()
+			if got != nil {
+				got.Close()
+				t.Fatal("expected a nil model alongside the error")
+			}
+			if err == nil {
+				t.Fatal("expected an error for a nil element")
+			}
+			if err.Error() != tc.want {
+				t.Fatalf("error = %q, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func newBlockedHTTPServer(t *testing.T, contentType, body string) (*httptest.Server, <-chan struct{}, func()) {
+	t.Helper()
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	var startedOnce sync.Once
+	var releaseOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		startedOnce.Do(func() { close(requestStarted) })
+		<-releaseRequest
+		if contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+		_, _ = fmt.Fprint(w, body)
+	}))
+	release := func() { releaseOnce.Do(func() { close(releaseRequest) }) }
+	t.Cleanup(func() {
+		release()
+		server.Close()
+	})
+	return server, requestStarted, release
+}
+
+func TestGenerateTextAfterClose(t *testing.T) {
+	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
+	m.Close()
+
+	if _, err := m.GenerateText(`"hello"`, ""); !errors.Is(err, ErrClosed) {
+		t.Fatalf("expected ErrClosed after close, got %v", err)
+	}
+}
+
 func TestProviderCloseDoesNotWaitForInFlightListModels(t *testing.T) {
 	server, requestStarted, releaseRequest := newBlockedHTTPServer(
 		t, "application/json", `{"data":[]}`,
@@ -309,258 +610,7 @@ func TestProviderCloseDoesNotWaitForInFlightListModels(t *testing.T) {
 		t.Fatal("in-flight ListModels did not finish after releasing the response")
 	}
 
-	_, err = provider.ListModels()
-	var aimuxErr *Error
-	if !errors.As(err, &aimuxErr) || aimuxErr.Code != CodeInvalidArgument {
-		t.Fatalf("ListModels after Close: expected flat InvalidArgument, got %v", err)
-	}
-}
-
-// TestInitRecordingRingRejectsZeroCap verifies D7: cap == 0 is rejected with
-// an error instead of being silently rewritten to 2048. The check happens in
-// Go before any FFI call, so this does not touch the global recorder state.
-func TestInitRecordingRingRejectsZeroCap(t *testing.T) {
-	err := InitRecordingRing(0)
-	if err == nil {
-		t.Fatal("expected error for cap == 0, got nil")
-	}
-	if !strings.Contains(err.Error(), "cap > 0") {
-		t.Fatalf("expected cap error message, got: %v", err)
-	}
-}
-
-// TestInitRecordingRingAcceptsPositiveCap verifies a positive cap does not
-// return an error (the C ABI accepts it and returns 0).
-func TestInitRecordingRingAcceptsPositiveCap(t *testing.T) {
-	if err := InitRecordingRing(8); err != nil {
-		t.Fatalf("expected success for cap=8, got: %v", err)
-	}
-	// Reset global recorder state so this doesn't leak into other tests.
-	RecordingStop()
-}
-
-// TestInitRecordingRingDefaultNoArg verifies the no-arg form uses the library
-// default capacity (FFI aimux_init_recording_ring_default) and returns nil.
-func TestInitRecordingRingDefaultNoArg(t *testing.T) {
-	if err := InitRecordingRing(); err != nil {
-		t.Fatalf("expected success for no-arg default, got: %v", err)
-	}
-	// Reset global recorder state so this doesn't leak into other tests.
-	RecordingStop()
-}
-
-// runConcurrent starts every task at one barrier and requires every task,
-// including Close, to return. Atomic handle snapshots create no Go lock order
-// or wait edge between these operations.
-func runConcurrent(t *testing.T, what string, tasks ...func()) {
-	t.Helper()
-	start := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(len(tasks))
-	for _, task := range tasks {
-		go func() {
-			defer wg.Done()
-			<-start
-			task()
-		}()
-	}
-	close(start)
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatalf("%s did not return within 10s; possible deadlock", what)
-	}
-}
-
-// newBlockedHTTPServer starts handling a request, then withholds its response
-// until release is called. It makes an in-flight native call observable
-// without adding a production test seam. release is idempotent.
-func newBlockedHTTPServer(t *testing.T, contentType, body string) (*httptest.Server, <-chan struct{}, func()) {
-	t.Helper()
-	requestStarted := make(chan struct{})
-	releaseRequest := make(chan struct{})
-	var startedOnce sync.Once
-	var releaseOnce sync.Once
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		startedOnce.Do(func() { close(requestStarted) })
-		<-releaseRequest
-		if contentType != "" {
-			w.Header().Set("Content-Type", contentType)
-		}
-		_, _ = fmt.Fprint(w, body)
-	}))
-	release := func() { releaseOnce.Do(func() { close(releaseRequest) }) }
-	t.Cleanup(func() {
-		release()
-		server.Close()
-	})
-	return server, requestStarted, release
-}
-
-func duplicateModel(m *Model, n int) []*Model {
-	models := make([]*Model, n)
-	for i := range models {
-		models[i] = m
-	}
-	return models
-}
-
-func TestNewRouterRepeatedModelRacingClose(t *testing.T) {
-	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
-	if router, err := NewRouter(duplicateModel(m, 8), ""); err != nil {
-		t.Fatalf("duplicate router input: %v", err)
-	} else {
-		router.Close()
-	}
-	m.Close()
-
-	for i := 0; i < 25; i++ {
-		m = OpenAI("sk-test-fake-key", "gpt-4o-mini")
-		tasks := []func(){func() { m.Close() }}
-		for j := 0; j < 16; j++ {
-			tasks = append(tasks, func() {
-				if router, err := NewRouter(duplicateModel(m, 8), ""); err == nil {
-					router.Close()
-				}
-			})
-		}
-		runConcurrent(t, "NewRouter over a repeated model", tasks...)
-	}
-}
-
-func TestNewMoaAggregatorAlsoReferenceRacingClose(t *testing.T) {
-	m := OpenAI("sk-test-fake-key", "gpt-4o-mini")
-	if moa, err := NewMoa(duplicateModel(m, 7), m, ""); err != nil {
-		t.Fatalf("duplicate MoA input: %v", err)
-	} else {
-		moa.Close()
-	}
-	m.Close()
-
-	for i := 0; i < 25; i++ {
-		m = OpenAI("sk-test-fake-key", "gpt-4o-mini")
-		tasks := []func(){func() { m.Close() }}
-		for j := 0; j < 16; j++ {
-			tasks = append(tasks, func() {
-				if moa, err := NewMoa(duplicateModel(m, 7), m, ""); err == nil {
-					moa.Close()
-				}
-			})
-		}
-		runConcurrent(t, "NewMoa with the aggregator also in references", tasks...)
-	}
-}
-
-func TestCompositeConstructorsOppositeOrdersRacingClose(t *testing.T) {
-	const (
-		iterations = 30
-		fanout     = 8
-		pairs      = 8
-	)
-	for i := 0; i < iterations; i++ {
-		models := make([]*Model, fanout)
-		for j := range models {
-			models[j] = OpenAI("sk-test-fake-key", "gpt-4o-mini")
-		}
-		reversed := make([]*Model, fanout)
-		for j, model := range models {
-			reversed[fanout-1-j] = model
-		}
-
-		tasks := make([]func(), 0, pairs*2+fanout)
-		build := func(order []*Model) func() {
-			return func() {
-				if router, err := NewRouter(order, ""); err == nil {
-					router.Close()
-				}
-			}
-		}
-		for j := 0; j < pairs; j++ {
-			tasks = append(tasks, build(models), build(reversed))
-		}
-		for _, model := range models {
-			model := model
-			tasks = append(tasks, func() { model.Close() })
-		}
-		runConcurrent(t, fmt.Sprintf("opposite-order iteration %d", i), tasks...)
-	}
-}
-
-func TestZeroValueModelIsClosed(t *testing.T) {
-	var model Model
-	_, err := model.GenerateText(`"hello"`, "")
-	var aimuxErr *Error
-	if !errors.As(err, &aimuxErr) || aimuxErr.Code != CodeInvalidArgument {
-		t.Fatalf("zero-value Model: expected InvalidArgument, got %v", err)
-	}
-	if err := model.Close(); err != nil {
-		t.Fatalf("zero-value Close: %v", err)
-	}
-}
-
-func TestModelConcurrentCloseIsIdempotent(t *testing.T) {
-	model := OpenAI("sk-test-fake-key", "gpt-4o-mini")
-	tasks := make([]func(), 64)
-	for i := range tasks {
-		tasks[i] = func() {
-			if err := model.Close(); err != nil {
-				t.Errorf("Close: %v", err)
-			}
-		}
-	}
-	runConcurrent(t, "concurrent Model.Close", tasks...)
-	if got := model.id.Load(); got != 0 {
-		t.Fatalf("handle after Close = %d, want 0", got)
-	}
-	if err := model.Close(); err != nil {
-		t.Fatalf("repeated Close: %v", err)
-	}
-}
-
-func TestCompositeConstructorsRejectNilModels(t *testing.T) {
-	model := OpenAI("sk-test-fake-key", "gpt-4o-mini")
-	defer model.Close()
-
-	cases := []struct {
-		name string
-		want string
-		call func() (*Model, error)
-	}{
-		{"router nil child", "aimux: models[1] is nil",
-			func() (*Model, error) { return NewRouter([]*Model{model, nil, model}, "") }},
-		{"router only child nil", "aimux: models[0] is nil",
-			func() (*Model, error) { return NewRouter([]*Model{nil}, "") }},
-		{"moa nil aggregator", "aimux: aggregator is nil",
-			func() (*Model, error) { return NewMoa([]*Model{model}, nil, "") }},
-		{"moa nil reference", "aimux: models[1] is nil",
-			func() (*Model, error) { return NewMoa([]*Model{model, nil}, model, "") }},
-		{"moa nil aggregator, no references", "aimux: aggregator is nil",
-			func() (*Model, error) { return NewMoa(nil, nil, "") }},
-	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			defer func() {
-				if recovered := recover(); recovered != nil {
-					t.Fatalf("panicked instead of returning an error: %v", recovered)
-				}
-			}()
-			got, err := test.call()
-			if got != nil {
-				got.Close()
-				t.Fatal("expected a nil model alongside the error")
-			}
-			if err == nil {
-				t.Fatal("expected an error for a nil model")
-			}
-			if err.Error() != test.want {
-				t.Fatalf("error = %q, want %q", err, test.want)
-			}
-		})
+	if _, err = provider.ListModels(); !errors.Is(err, ErrClosed) {
+		t.Fatalf("ListModels after Close: expected ErrClosed, got %v", err)
 	}
 }

@@ -14,5 +14,5 @@ package ai.arcships.aimux
  */
 fun initLogging(level: String = "warn") {
     val effective = level.ifEmpty { "warn" }
-    FFI.lib.aimux_init_logging(effective)
+    FFI.lib.aimux_init_logging(effective)?.let { throw expectFfiError(it, "initLogging") }
 }

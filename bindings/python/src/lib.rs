@@ -13,7 +13,9 @@ pub use multimodal::*;
 
 use std::sync::Arc;
 
-use crate::error::to_py_err;
+use crate::error::{
+    AiMuxBindingError, BindingError, binding_py_err, serialize_result, to_py_err, wire_json,
+};
 use aimux_core::AiMuxError;
 use aimux_core::generate::{
     GenerateTextOptions, generate_object, generate_text, generate_text_as_openai, stream_text,
@@ -82,13 +84,10 @@ impl Model {
             )));
         };
         let filter = match filter_json {
-            Some(f) => serde_json::from_str(f).map_err(|e| {
-                to_py_err(&AiMuxError::InvalidArgument(format!("invalid filter: {e}")))
-            })?,
+            Some(f) => wire_json("filter_json", f)?,
             None => Default::default(),
         };
-        serde_json::to_string(&store.aggregate(&filter))
-            .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+        serialize_result(&store.aggregate(&filter))
     }
 
     /// One session's chain view. Returns a JSON `SessionChainView` string.
@@ -100,9 +99,8 @@ impl Model {
         };
         let view = store
             .session_chain(session_id)
-            .ok_or_else(|| to_py_err(&AiMuxError::Other("unknown session".into())))?;
-        serde_json::to_string(&view)
-            .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+            .ok_or_else(|| to_py_err(&AiMuxError::InvalidArgument("unknown session".into())))?;
+        serialize_result(&view)
     }
 
     /// Export all probe records as JSONL (one `TraceRecord` per line).
@@ -113,10 +111,16 @@ impl Model {
             )));
         };
         let mut buf = Vec::new();
-        store
-            .export_jsonl(&mut buf)
-            .map_err(|e| to_py_err(&AiMuxError::Other(format!("export: {e}"))))?;
-        String::from_utf8(buf).map_err(|e| to_py_err(&AiMuxError::Other(format!("utf8: {e}"))))
+        store.export_jsonl(&mut buf).map_err(|e| {
+            binding_py_err(&BindingError::ResultSerialization {
+                message: format!("export: {e}"),
+            })
+        })?;
+        String::from_utf8(buf).map_err(|e| {
+            binding_py_err(&BindingError::ResultSerialization {
+                message: format!("utf8: {e}"),
+            })
+        })
     }
 
     /// Clear all probe records of this traced model.
@@ -140,8 +144,7 @@ impl Model {
         let result = rt.block_on(async move { generate_text(&*self.inner, prompt, opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -162,8 +165,7 @@ impl Model {
         let result = rt.block_on(async move { generate_object(&*self.inner, prompt, opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -186,8 +188,7 @@ impl Model {
         });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -201,7 +202,8 @@ impl Model {
         let opts = parse_opts(opts_json)?;
         let model = self.inner.clone();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, AiMuxError>>(64);
+        let (tx, rx) =
+            tokio::sync::mpsc::channel::<Result<String, crate::error::AiMuxBindingError>>(64);
 
         rt_spawn(async move {
             match stream_text(&*model, prompt, opts).await {
@@ -211,21 +213,35 @@ impl Model {
                     while let Some(item) = stream.next().await {
                         match item {
                             Ok(part) => {
-                                let json = serde_json::to_string(&part)
-                                    .unwrap_or_else(|_| "{}".to_string());
+                                // A part that cannot be serialized ends the stream with the
+                                // binding's ResultSerialization — never a silent "{}".
+                                let json = match serde_json::to_string(&part) {
+                                    Ok(j) => j,
+                                    Err(e) => {
+                                        let _ = tx
+                                            .send(Err(
+                                                crate::error::BindingError::ResultSerialization {
+                                                    message: format!("stream part: {e}"),
+                                                }
+                                                .into(),
+                                            ))
+                                            .await;
+                                        break;
+                                    }
+                                };
                                 if tx.send(Ok(json)).await.is_err() {
                                     break;
                                 }
                             }
                             Err(e) => {
-                                let _ = tx.send(Err(e)).await;
+                                let _ = tx.send(Err(e.into())).await;
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(e)).await;
+                    let _ = tx.send(Err(e.into())).await;
                 }
             }
         });
@@ -252,8 +268,7 @@ impl Model {
             rt.block_on(async move { generate_text_as_openai(&*self.inner, prompt, opts).await });
 
         match result {
-            Ok(r) => serde_json::to_string(&r)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize result: {e}")))),
+            Ok(r) => serialize_result(&r),
             Err(e) => Err(to_py_err(&e)),
         }
     }
@@ -293,7 +308,8 @@ impl Model {
             })
             .unwrap_or_default();
 
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, AiMuxError>>(64);
+        let (tx, rx) =
+            tokio::sync::mpsc::channel::<Result<String, crate::error::AiMuxBindingError>>(64);
 
         rt_spawn(async move {
             match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
@@ -303,21 +319,33 @@ impl Model {
                     while let Some(item) = stream.next().await {
                         match item {
                             Ok(chunk) => {
-                                let json = serde_json::to_string(&chunk)
-                                    .unwrap_or_else(|_| "{}".to_string());
+                                let json = match serde_json::to_string(&chunk) {
+                                    Ok(j) => j,
+                                    Err(e) => {
+                                        let _ = tx
+                                            .send(Err(
+                                                crate::error::BindingError::ResultSerialization {
+                                                    message: format!("stream chunk: {e}"),
+                                                }
+                                                .into(),
+                                            ))
+                                            .await;
+                                        break;
+                                    }
+                                };
                                 if tx.send(Ok(json)).await.is_err() {
                                     break;
                                 }
                             }
                             Err(e) => {
-                                let _ = tx.send(Err(e)).await;
+                                let _ = tx.send(Err(e.into())).await;
                                 break;
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(e)).await;
+                    let _ = tx.send(Err(e.into())).await;
                 }
             }
         });
@@ -329,7 +357,7 @@ impl Model {
 /// Python iterator that yields StreamPart JSON strings from a tokio channel.
 #[pyclass]
 struct StreamIterator {
-    rx: tokio::sync::mpsc::Receiver<Result<String, AiMuxError>>,
+    rx: tokio::sync::mpsc::Receiver<Result<String, crate::error::AiMuxBindingError>>,
 }
 
 #[pymethods]
@@ -344,7 +372,7 @@ impl StreamIterator {
 
         match item {
             Some(Ok(json)) => Ok(Some(json.to_object(py).into())),
-            Some(Err(e)) => Err(to_py_err(&e)),
+            Some(Err(f)) => Err(f.to_py_err()),
             None => Ok(None), // stream finished
         }
     }
@@ -629,10 +657,7 @@ fn provider(
     config_json: Option<&str>,
 ) -> PyResult<Model> {
     let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(
-            serde_json::from_str(s)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid config: {e}"))))?,
-        ),
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
         _ => None,
     };
     if let Some(url) = base_url {
@@ -666,8 +691,7 @@ impl ProviderHandle {
         let models = rt
             .block_on(async { self.inner.list_models().await })
             .map_err(|e| to_py_err(&e))?;
-        serde_json::to_string(&models)
-            .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize list_models: {e}"))))
+        serialize_result(&models)
     }
 
     /// Build a language model from a discovered model id.
@@ -696,10 +720,7 @@ fn create_provider(
     config_json: Option<&str>,
 ) -> PyResult<ProviderHandle> {
     let mut options: Option<aimux_providers::ProviderOptions> = match config_json {
-        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(
-            serde_json::from_str(s)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid config: {e}"))))?,
-        ),
+        Some(s) if !s.trim().is_empty() && s.trim() != "null" => Some(wire_json("config_json", s)?),
         _ => None,
     };
     if let Some(url) = base_url {
@@ -719,8 +740,7 @@ fn get_model_specs(source_url: Option<&str>) -> PyResult<String> {
     let catalogue = runtime()
         .block_on(async { aimux_providers::get_model_specs(source_url).await })
         .map_err(|e| to_py_err(&e))?;
-    serde_json::to_string(&catalogue)
-        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize catalogue: {e}"))))
+    serialize_result(&catalogue)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -745,10 +765,18 @@ fn init_logging(level: &str) {
 /// (RFC-0020). Entries override same-named built-ins or add new ones.
 ///
 /// `config_json` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
-/// Raises `AimuxError` on invalid JSON or validation failure.
+/// Malformed JSON text raises `ValueError`; a well-formed document the
+/// registry rejects (bad base_url scheme, empty name, unsupported protocol,
+/// wrong shape) raises `InvalidArgumentError`.
 #[pyfunction]
 fn register_providers(config_json: &str) -> PyResult<()> {
-    aimux_providers::load_providers_from_json(config_json).map_err(|e| to_py_err(&e))
+    let _: serde_json::Value = wire_json("config_json", config_json)?;
+    aimux_providers::load_providers_from_json(config_json).map_err(|e| match e {
+        AiMuxError::JsonParse(m) => {
+            to_py_err(&AiMuxError::InvalidArgument(format!("config_json: {m}")))
+        }
+        e => to_py_err(&e),
+    })
 }
 
 /// Set the global proxy configuration (M6, RFC-0016). Must be called before the
@@ -756,16 +784,11 @@ fn register_providers(config_json: &str) -> PyResult<()> {
 /// client is already initialised.
 ///
 /// `config_json` shape: `{ "http_url": "...", "https_url": "...", "all_url":
-/// "...", "no_proxy": "..." }` (all fields optional). Raises `AimuxError` on
-/// invalid JSON.
+/// "...", "no_proxy": "..." }` (all fields optional). Raises `ValueError` on
+/// malformed JSON, `AimuxError` on a bad value.
 #[pyfunction]
 fn init_proxy(config: &str) -> PyResult<()> {
-    let proxy_config: aimux_provider_utils::ProxyConfig =
-        serde_json::from_str(config).map_err(|e| {
-            to_py_err(&AiMuxError::InvalidArgument(format!(
-                "invalid proxy config JSON: {e}"
-            )))
-        })?;
+    let proxy_config: aimux_provider_utils::ProxyConfig = wire_json("config", config)?;
     // `init_proxy` returns false when the shared client is already up; treat
     // that as success (idempotent).
     let _ = aimux_provider_utils::init_proxy(proxy_config);
@@ -793,15 +816,13 @@ fn init_session_infer(enabled: bool) {
 /// `SessionCall[]` (ordered by step). Empty array if unknown / no store.
 #[pyfunction]
 fn session_calls(session_id: &str) -> PyResult<String> {
-    serde_json::to_string(&aimux_core::session::session_calls(session_id))
-        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+    serialize_result(&aimux_core::session::session_calls(session_id))
 }
 
 /// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
 #[pyfunction]
 fn list_sessions() -> PyResult<String> {
-    serde_json::to_string(&aimux_core::session::list_sessions())
-        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("serialize: {e}"))))
+    serialize_result(&aimux_core::session::list_sessions())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -810,11 +831,14 @@ fn list_sessions() -> PyResult<String> {
 
 /// 启动录制(RFC-0023):把完整 `Recording` 写 JSONL 到 `{dir}/recordings.jsonl`
 /// (目录自动创建)。录制 opt-in;再次调用(不同 dir)替换 recorder。
+/// Raises `RecordingError` (``code`` "Init" / "OpenFile" / "Spawn") when the
+/// recorder cannot be set up; the previous recorder, if any, stays in place.
 #[pyfunction]
-fn init_recording(dir: &str) {
-    aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-        aimux_core::recording::JsonlRecorder::new(dir.to_string()),
-    )));
+fn init_recording(dir: &str) -> PyResult<()> {
+    let rec = aimux_core::recording::JsonlRecorder::try_new(dir.to_string())
+        .map_err(|e| AiMuxBindingError::from(e).to_py_err())?;
+    aimux_core::recording::init_recording(Some(std::sync::Arc::new(rec)));
+    Ok(())
 }
 
 /// 启动内存有界录制(RFC-0023 P6):FIFO ring,丢弃计数可查。
@@ -834,7 +858,7 @@ fn init_recording_ring(cap: Option<u64>) -> PyResult<()> {
         Some(0) => {
             return Err(to_py_err(&AiMuxError::InvalidArgument(
                 "init_recording_ring: cap must be > 0".into(),
-            )))
+            )));
         }
         // 显式 cap > 0:指定容量的有界 ring。
         Some(c) => aimux_core::recording::init_recording(Some(std::sync::Arc::new(
@@ -858,6 +882,20 @@ fn recording_flush() {
     }
 }
 
+/// Flush the global recorder and **report write failures**: raises
+/// `RecordingError` (``code`` is "WriterGone" / "FlushTimeout" / "Write") when
+/// the data could not be confirmed on disk. `RecordingError` is its own
+/// exception type, not an `AimuxError`. Returns normally when nothing is
+/// recording. The legacy `recording_flush` stays and never reports.
+#[pyfunction]
+fn recording_try_flush() -> PyResult<()> {
+    let Some(rec) = aimux_core::recording::recorder() else {
+        return Ok(());
+    };
+    rec.try_flush()
+        .map_err(|e| AiMuxBindingError::from(e).to_py_err())
+}
+
 /// 从录制 JSONL 创建 mock 回放 model(RFC-0023 P3):按输入匹配录制响应,
 /// 不发真实 API。返回的 Model 可用于 generate_text / stream_text。
 #[pyfunction]
@@ -868,11 +906,18 @@ fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
         if line.is_empty() {
             continue;
         }
-        let rec = serde_json::from_str(line).map_err(|e| {
-            to_py_err(&AiMuxError::InvalidArgument(format!(
-                "recordings line {}: {e}",
-                idx + 1
-            )))
+        // Same split as everywhere else: text that does not parse is the
+        // binding's (ValueError); a parsed line with the wrong shape is core's
+        // InvalidArgument. Both name the line.
+        let rec: aimux_core::recording::Recording = serde_json::from_str(line).map_err(|e| {
+            let msg = format!("recordings line {}: {e}", idx + 1);
+            match e.classify() {
+                serde_json::error::Category::Data => to_py_err(&AiMuxError::InvalidArgument(msg)),
+                _ => binding_py_err(&BindingError::InvalidWireJson {
+                    argument: "recordings_jsonl",
+                    message: msg,
+                }),
+            }
         })?;
         recordings.push(rec);
     }
@@ -908,9 +953,7 @@ fn router(models: Vec<PyRef<Model>>, config_json: Option<&str>) -> PyResult<Mode
     }
     let children: Vec<Arc<dyn LanguageModel>> = models.iter().map(|m| m.inner.clone()).collect();
     let cfg: RouterFfiConfig = match config_json {
-        Some(json) => serde_json::from_str(json).map_err(|e| {
-            to_py_err(&AiMuxError::JsonParse(format!("router config_json: {e}")))
-        })?,
+        Some(json) => wire_json("config_json", json)?,
         None => RouterFfiConfig::default(),
     };
     let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
@@ -948,12 +991,9 @@ fn moa(
     aggregator: PyRef<Model>,
     config_json: Option<&str>,
 ) -> PyResult<Model> {
-    let refs: Vec<Arc<dyn LanguageModel>> =
-        references.iter().map(|m| m.inner.clone()).collect();
+    let refs: Vec<Arc<dyn LanguageModel>> = references.iter().map(|m| m.inner.clone()).collect();
     let cfg: aimux_core::moa::MoaConfig = match config_json {
-        Some(json) => serde_json::from_str(json).map_err(|e| {
-            to_py_err(&AiMuxError::JsonParse(format!("moa config_json: {e}")))
-        })?,
+        Some(json) => wire_json("config_json", json)?,
         None => aimux_core::moa::MoaConfig::default(),
     };
     let model = aimux_core::moa::MoaModel::new(refs, aggregator.inner.clone(), cfg);
@@ -987,6 +1027,7 @@ fn aimux(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(init_recording_ring, m)?)?;
     m.add_function(wrap_pyfunction!(recording_stop, m)?)?;
     m.add_function(wrap_pyfunction!(recording_flush, m)?)?;
+    m.add_function(wrap_pyfunction!(recording_try_flush, m)?)?;
     m.add_function(wrap_pyfunction!(mock_replay, m)?)?;
     m.add_function(wrap_pyfunction!(router, m)?)?;
     {
@@ -1050,8 +1091,9 @@ where
 }
 
 fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
-    let value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid prompt JSON: {e}"))))?;
+    // Malformed text is the binding's failure; a well-formed prompt the core
+    // would reject is core-owned.
+    let value: serde_json::Value = wire_json("prompt_json", json)?;
     let inner = match &value {
         serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
             obj.get("prompt").expect("checked by guard")
@@ -1059,7 +1101,7 @@ fn parse_prompt(json: &str) -> PyResult<ModelPrompt> {
         _ => &value,
     };
     serde_json::from_value(inner.clone())
-        .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid prompt: {e}"))))
+        .map_err(|e| to_py_err(&AiMuxError::InvalidArgument(format!("invalid prompt: {e}"))))
 }
 
 fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
@@ -1070,8 +1112,7 @@ fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
             if trimmed.is_empty() || trimmed == "null" {
                 return Ok(GenerateTextOptions::default());
             }
-            serde_json::from_str(s)
-                .map_err(|e| to_py_err(&AiMuxError::JsonParse(format!("invalid options JSON: {e}"))))
+            wire_json("opts_json", s)
         }
     }
 }

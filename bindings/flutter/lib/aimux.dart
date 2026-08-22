@@ -6,9 +6,16 @@
 //
 // This is the C ABI path (RFC §3.2) — same as Swift and Kotlin.
 //
-// Error transport: fallible calls take a trailing AimuxError *err (see
-// errors.dart). Success returns handle > 0 / non-null char* / stream != 0.
-// Failure returns 0 / NULL / 0 and fills *err → AimuxException.fromC.
+// Error transport (aimux-error.h): every fallible call returns
+// `aimux_error_t *` (NULL = success, result in the trailing out-param).
+// Call sites hand the pointer to the decoder in errors.dart — expectAimuxError
+// (model calls) / expectRecordingError (recorder) / expectFfiError ([C ABI] calls) —
+// which throws AimuxException / RecordingException, or StateError('aimux ffi:
+// …') for a C ABI failure. Raw JSON string parameters are pre-validated
+// with checkJson; JSON this binding builds itself goes through encodeJson;
+// every string crossing the ABI goes through toCString / toCStringOrNull. All
+// three reject what the Rust side cannot represent (unpaired surrogates,
+// interior NULs) as a FormatException here rather than a StateError there.
 
 // The Flutter tool resolves `dartPluginClass` from the package's main
 // library, so the plugin registration class must be visible here.
@@ -17,9 +24,18 @@ export 'errors.dart'
     hide
         openAimuxLibrary,
         aimuxFreeString,
+        aimuxDropHandle,
         withUtf8,
+        toCString,
+        toCStringOrNull,
         takeHandle,
         takeString,
+        expectAimuxError,
+        expectRecordingError,
+        expectFfiError,
+        checkJson,
+        checkPortable,
+        encodeJson,
         construct2;
 
 import 'dart:async';
@@ -30,136 +46,132 @@ import 'package:ffi/ffi.dart';
 import 'errors.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FFI type aliases (AimuxError *err trailing out-param)
+// FFI type aliases. `_Err` is `aimux_error_t *` (opaque; NULL = success);
+// results come back through the trailing out-param (`uint64_t *out_handle` /
+// `char **out_json`). Pointer types are spelled the same in the C and Dart
+// signatures, so a single alias serves both.
 // ─────────────────────────────────────────────────────────────────────────────
 
-typedef _NewC = Uint64 Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
-typedef _NewDart = int Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
+typedef _Err = Pointer<Void>;
+
+typedef _NewC = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
+typedef _NewDart = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
 
 // Constructors with a custom base URL (aimux_*_new_with_base).
-typedef _NewWithBaseC = Uint64 Function(Pointer<Utf8> apiKey,
-    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
-typedef _NewWithBaseDart = int Function(Pointer<Utf8> apiKey,
-    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
+typedef _NewWithBaseC = _Err Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
+typedef _NewWithBaseDart = _Err Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
 
 // Registry provider constructor (aimux_provider_new, RFC-0017 phase 4).
-typedef _ProviderNewC = Uint64 Function(
+typedef _ProviderNewC = _Err Function(
     Pointer<Utf8> name,
     Pointer<Utf8>? apiKey,
     Pointer<Utf8> modelId,
     Pointer<Utf8>? configJson,
-    Pointer<AimuxCError> err);
-typedef _ProviderNewDart = int Function(
+    Pointer<Uint64> outHandle);
+typedef _ProviderNewDart = _Err Function(
     Pointer<Utf8> name,
     Pointer<Utf8>? apiKey,
     Pointer<Utf8> modelId,
     Pointer<Utf8>? configJson,
-    Pointer<AimuxCError> err);
+    Pointer<Uint64> outHandle);
 
 // Provider handle constructor (aimux_provider_handle_new, RFC-0027).
-typedef _ProviderHandleNewC = Uint64 Function(Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<AimuxCError> err);
-typedef _ProviderHandleNewDart = int Function(Pointer<Utf8> name,
-    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<AimuxCError> err);
+typedef _ProviderHandleNewC = _Err Function(Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<Uint64> outHandle);
+typedef _ProviderHandleNewDart = _Err Function(Pointer<Utf8> name,
+    Pointer<Utf8>? apiKey, Pointer<Utf8>? configJson, Pointer<Uint64> outHandle);
 
 // Provider handle list_models / model (RFC-0027).
-typedef _ProviderListModelsC = Pointer<Utf8> Function(
-    Uint64 handle, Pointer<AimuxCError> err);
-typedef _ProviderListModelsDart = Pointer<Utf8> Function(
-    int handle, Pointer<AimuxCError> err);
+typedef _ProviderListModelsC = _Err Function(
+    Uint64 handle, Pointer<Pointer<Utf8>> outModelsJson);
+typedef _ProviderListModelsDart = _Err Function(
+    int handle, Pointer<Pointer<Utf8>> outModelsJson);
 
-typedef _ProviderModelC = Uint64 Function(
-    Uint64 handle, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
-typedef _ProviderModelDart = int Function(
-    int handle, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
+typedef _ProviderModelC = _Err Function(
+    Uint64 handle, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
+typedef _ProviderModelDart = _Err Function(
+    int handle, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
 
-typedef _GetModelSpecsC = Pointer<Utf8> Function(
-    Pointer<Utf8>? sourceUrl, Pointer<AimuxCError> err);
-typedef _GetModelSpecsDart = Pointer<Utf8> Function(
-    Pointer<Utf8>? sourceUrl, Pointer<AimuxCError> err);
+typedef _GetModelSpecsC = _Err Function(
+    Pointer<Utf8>? sourceUrl, Pointer<Pointer<Utf8>> outSpecsJson);
+typedef _GetModelSpecsDart = _Err Function(
+    Pointer<Utf8>? sourceUrl, Pointer<Pointer<Utf8>> outSpecsJson);
 
-typedef _GenerateTextC = Pointer<Utf8> Function(Uint64 handle,
-    Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
-typedef _GenerateTextDart = Pointer<Utf8> Function(int handle,
-    Pointer<Utf8> promptJson, Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
+typedef _GenerateTextC = _Err Function(Uint64 handle, Pointer<Utf8> promptJson,
+    Pointer<Utf8>? optsJson, Pointer<Pointer<Utf8>> outJson);
+typedef _GenerateTextDart = _Err Function(int handle, Pointer<Utf8> promptJson,
+    Pointer<Utf8>? optsJson, Pointer<Pointer<Utf8>> outJson);
 
 typedef _DropHandleC = Void Function(Uint64);
 typedef _DropHandleDart = void Function(int);
 
-typedef _InitLoggingC = Void Function(Pointer<Utf8> level);
-typedef _InitLoggingDart = void Function(Pointer<Utf8> level);
+// (const char *) → error: aimux_init_logging, aimux_init_recording,
+// aimux_register_providers, aimux_init_proxy.
+typedef _StrC = _Err Function(Pointer<Utf8>);
+typedef _StrDart = _Err Function(Pointer<Utf8>);
 
-// Recording + mock replay (RFC-0023). int-returning functions return 0 on
-// success or -1 on invalid input; mock_replay_new returns uint64_t handle.
-typedef _RecordingDirC = Int32 Function(Pointer<Utf8> dir);
-typedef _RecordingDirDart = int Function(Pointer<Utf8> dir);
-typedef _RecordingRingC = Int32 Function(Uint64 cap);
-typedef _RecordingRingDart = int Function(int cap);
-typedef _RecordingNoArgC = Int32 Function();
-typedef _RecordingNoArgDart = int Function();
-typedef _MockReplayC = Uint64 Function(
-    Pointer<Utf8> recordingsJsonl, Pointer<AimuxCError> err);
-typedef _MockReplayDart = int Function(
-    Pointer<Utf8> recordingsJsonl, Pointer<AimuxCError> err);
-typedef _RegisterProvidersC = Int32 Function(
-    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
-typedef _RegisterProvidersDart = int Function(
-    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
-
-typedef _InitProxyC = Int32 Function(
-    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
-typedef _InitProxyDart = int Function(
-    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+// Recording + mock replay (RFC-0023).
+typedef _RecordingRingC = _Err Function(Uint64 cap);
+typedef _RecordingRingDart = _Err Function(int cap);
+typedef _VoidNoArgC = Void Function();
+typedef _VoidNoArgDart = void Function();
+typedef _RecordingTryFlushC = _Err Function();
+typedef _RecordingTryFlushDart = _Err Function();
+typedef _MockReplayC = _Err Function(
+    Pointer<Utf8> recordingsJsonl, Pointer<Uint64> outHandle);
+typedef _MockReplayDart = _Err Function(
+    Pointer<Utf8> recordingsJsonl, Pointer<Uint64> outHandle);
 
 // Composite models (RFC-0021 / RFC-0022). Take a pointer to an array of
 // handles + a length, plus an optional JSON config (nullptr = defaults).
-typedef _RouterNewC = Uint64 Function(Pointer<Uint64> handles, IntPtr len,
-    Pointer<Utf8> configJson, Pointer<AimuxCError> err);
-typedef _RouterNewDart = int Function(
-    Pointer<Uint64> handles, int len, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
-typedef _MoaNewC = Uint64 Function(Pointer<Uint64> referenceHandles, IntPtr refLen,
-    Uint64 aggregator, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
-typedef _MoaNewDart = int Function(Pointer<Uint64> referenceHandles, int refLen,
-    int aggregator, Pointer<Utf8> configJson, Pointer<AimuxCError> err);
+typedef _RouterNewC = _Err Function(Pointer<Uint64> handles, IntPtr len,
+    Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
+typedef _RouterNewDart = _Err Function(Pointer<Uint64> handles, int len,
+    Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
+typedef _MoaNewC = _Err Function(Pointer<Uint64> referenceHandles, IntPtr refLen,
+    Uint64 aggregator, Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
+typedef _MoaNewDart = _Err Function(Pointer<Uint64> referenceHandles, int refLen,
+    int aggregator, Pointer<Utf8> configJson, Pointer<Uint64> outHandle);
 
 // Multi-arg constructor C signatures (bedrock/vertex/azure).
-typedef _FourStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<AimuxCError>);
-typedef _FourStrDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<AimuxCError>);
-typedef _FiveStrC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<AimuxCError>);
-typedef _FiveStrDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<AimuxCError>);
-// Azure: 3 required strings + nullable api_version + err.
-typedef _FourStrOptC = Uint64 Function(Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>?, Pointer<AimuxCError>);
-typedef _FourStrOptDart = int Function(Pointer<Utf8>, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<Utf8>?, Pointer<AimuxCError>);
+typedef _FourStrC = _Err Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Uint64>);
+typedef _FourStrDart = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
+typedef _FiveStrC = _Err Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
+typedef _FiveStrDart = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Uint64>);
+// Azure: 3 required strings + nullable api_version + out_handle.
+typedef _FourStrOptC = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>?, Pointer<Uint64>);
+typedef _FourStrOptDart = _Err Function(Pointer<Utf8>, Pointer<Utf8>,
+    Pointer<Utf8>, Pointer<Utf8>?, Pointer<Uint64>);
 
 // Stream callbacks: on_part(json, stream_ctx) / on_done(stream_ctx).
-// No on_error — terminal failures return 0 and fill AimuxError *err.
+// No on_error — a terminal failure returns a non-NULL error (no on_done);
+// NULL after on_done is the clean end.
 typedef _OnPartC = Void Function(Pointer<Utf8> json, Pointer<Void> streamCtx);
 typedef _OnDoneC = Void Function(Pointer<Void> streamCtx);
 
-typedef _StreamTextC = Int32 Function(
+typedef _StreamTextC = _Err Function(
     Uint64,
     Pointer<Utf8>,
     Pointer<Utf8>?,
     Pointer<NativeFunction<_OnPartC>>,
     Pointer<NativeFunction<_OnDoneC>>,
-    Pointer<Void>,
-    Pointer<AimuxCError>);
-typedef _StreamTextDart = int Function(
+    Pointer<Void>);
+typedef _StreamTextDart = _Err Function(
     int,
     Pointer<Utf8>,
     Pointer<Utf8>?,
     Pointer<NativeFunction<_OnPartC>>,
     Pointer<NativeFunction<_OnDoneC>>,
-    Pointer<Void>,
-    Pointer<AimuxCError>);
+    Pointer<Void>);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FFI library wrapper (process-wide singleton — dlopen + symbol lookups
@@ -250,28 +262,29 @@ final class _AimuxFFI {
   // so it is looked up directly (no extra NativeFunction wrapper).
   late final dropHandlePtr =
       _lib.lookup<NativeFinalizerFunction>('aimux_drop_handle');
-  late final initLogging = _lib
-      .lookupFunction<_InitLoggingC, _InitLoggingDart>('aimux_init_logging');
-  late final initRecording = _lib
-      .lookupFunction<_RecordingDirC, _RecordingDirDart>('aimux_init_recording');
+  late final initLogging =
+      _lib.lookupFunction<_StrC, _StrDart>('aimux_init_logging');
+  late final initRecording =
+      _lib.lookupFunction<_StrC, _StrDart>('aimux_init_recording');
   late final initRecordingRing = _lib
       .lookupFunction<_RecordingRingC, _RecordingRingDart>(
           'aimux_init_recording_ring');
   late final initRecordingRingDefault = _lib
-      .lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
+      .lookupFunction<_VoidNoArgC, _VoidNoArgDart>(
           'aimux_init_recording_ring_default');
   late final recordingStop = _lib
-      .lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
-          'aimux_recording_stop');
+      .lookupFunction<_VoidNoArgC, _VoidNoArgDart>('aimux_recording_stop');
   late final recordingFlush = _lib
-      .lookupFunction<_RecordingNoArgC, _RecordingNoArgDart>(
-          'aimux_recording_flush');
+      .lookupFunction<_VoidNoArgC, _VoidNoArgDart>('aimux_recording_flush');
+  late final recordingTryFlush = _lib
+      .lookupFunction<_RecordingTryFlushC, _RecordingTryFlushDart>(
+          'aimux_recording_try_flush');
   late final mockReplayNew = _lib
       .lookupFunction<_MockReplayC, _MockReplayDart>('aimux_mock_replay_new');
-  late final registerProviders = _lib.lookupFunction<_RegisterProvidersC,
-      _RegisterProvidersDart>('aimux_register_providers');
-  late final initProxy = _lib
-      .lookupFunction<_InitProxyC, _InitProxyDart>('aimux_init_proxy');
+  late final registerProviders =
+      _lib.lookupFunction<_StrC, _StrDart>('aimux_register_providers');
+  late final initProxy =
+      _lib.lookupFunction<_StrC, _StrDart>('aimux_init_proxy');
   late final routerNew = _lib
       .lookupFunction<_RouterNewC, _RouterNewDart>('aimux_router_new');
   late final moaNew =
@@ -299,7 +312,7 @@ StreamController<Map<String, dynamic>>? _currentController;
 void _onPart(Pointer<Utf8> jsonPtr, Pointer<Void> streamCtx) {
   final controller = _currentController;
   if (controller == null || jsonPtr == nullptr) return;
-  // Never let an exception escape into the FFI boundary (undefined behavior);
+  // Never let an exception escape into the C ABI (undefined behavior);
   // surface decode failures on the stream instead.
   try {
     controller.add(
@@ -327,18 +340,18 @@ int _construct4(
   _FourStrDart plain,
   _FiveStrDart withBase,
 ) {
-  return withAimuxCError((err) {
-    return withUtf8(a, (aPtr) {
-      return withUtf8(b, (bPtr) {
-        return withUtf8(c, (cPtr) {
-          return withUtf8(modelId, (idPtr) {
-            if (baseUrl == null) {
-              return takeHandle(plain(aPtr, bPtr, cPtr, idPtr, err), err);
-            }
-            return withUtf8(baseUrl, (basePtr) {
-              return takeHandle(
-                  withBase(aPtr, bPtr, cPtr, idPtr, basePtr, err), err);
-            });
+  return withUtf8(a, (aPtr) {
+    return withUtf8(b, (bPtr) {
+      return withUtf8(c, (cPtr) {
+        return withUtf8(modelId, (idPtr) {
+          if (baseUrl == null) {
+            return takeHandle(
+                (out) => plain(aPtr, bPtr, cPtr, idPtr, out), 'new');
+          }
+          return withUtf8(baseUrl, (basePtr) {
+            return takeHandle(
+                (out) => withBase(aPtr, bPtr, cPtr, idPtr, basePtr, out),
+                'new_with_base');
           });
         });
       });
@@ -352,8 +365,9 @@ int _construct4(
 
 /// A model instance backed by a Rust `Arc<dyn LanguageModel>`.
 ///
-/// Call [close] to release the native handle. Engine failures throw
-/// [AimuxException] (or a subclass); using a closed handle throws [StateError].
+/// Call [close] to release the native handle. AiMuxError values throw
+/// [AimuxException] (or a subclass); using a closed handle throws
+/// [StateError].
 /// Implements [Finalizable] so a [NativeFinalizer] can release the handle if
 /// [close] is forgotten (T9).
 class Model implements Finalizable {
@@ -368,9 +382,7 @@ class Model implements Finalizable {
 
   /// Handle read for composite-model factories (router/moa). Throws if closed.
   int _requireHandle() {
-    if (_closed) {
-      throw StateError('Model is closed');
-    }
+    if (_closed) throw StateError('Model is closed');
     return _handle;
   }
 
@@ -424,20 +436,19 @@ class Model implements Finalizable {
   /// Create an Anthropic-on-AWS model instance (API key + region).
   factory Model.anthropicAws(String apiKey, String region, String modelId,
       {String? baseUrl}) {
-    final handle = withAimuxCError((err) {
-      return withUtf8(apiKey, (keyPtr) {
-        return withUtf8(region, (rPtr) {
-          return withUtf8(modelId, (idPtr) {
-            if (baseUrl == null) {
-              return takeHandle(
-                  _ffi.anthropicAwsNew(keyPtr, rPtr, idPtr, err), err);
-            }
-            return withUtf8(baseUrl, (basePtr) {
-              return takeHandle(
-                  _ffi.anthropicAwsNewWithBase(
-                      keyPtr, rPtr, idPtr, basePtr, err),
-                  err);
-            });
+    final handle = withUtf8(apiKey, (keyPtr) {
+      return withUtf8(region, (rPtr) {
+        return withUtf8(modelId, (idPtr) {
+          if (baseUrl == null) {
+            return takeHandle(
+                (out) => _ffi.anthropicAwsNew(keyPtr, rPtr, idPtr, out),
+                'anthropic_aws_new');
+          }
+          return withUtf8(baseUrl, (basePtr) {
+            return takeHandle(
+                (out) => _ffi.anthropicAwsNewWithBase(
+                    keyPtr, rPtr, idPtr, basePtr, out),
+                'anthropic_aws_new_with_base');
           });
         });
       });
@@ -449,26 +460,25 @@ class Model implements Finalizable {
   /// The deployment name is passed as [deployment]; [apiVersion] is optional.
   factory Model.azure(String apiKey, String resourceName, String deployment,
       {String? apiVersion, String? baseUrl}) {
-    final handle = withAimuxCError((err) {
-      return withUtf8(apiKey, (keyPtr) {
-        return withUtf8(deployment, (dPtr) {
-          final vPtr =
-              apiVersion != null ? apiVersion.toNativeUtf8() : nullptr;
-          try {
-            if (baseUrl == null) {
-              return withUtf8(resourceName, (rPtr) {
-                return takeHandle(
-                    _ffi.azureNew(keyPtr, rPtr, dPtr, vPtr, err), err);
-              });
-            }
-            return withUtf8(baseUrl, (bPtr) {
+    final handle = withUtf8(apiKey, (keyPtr) {
+      return withUtf8(deployment, (dPtr) {
+        final vPtr = toCStringOrNull(apiVersion);
+        try {
+          if (baseUrl == null) {
+            return withUtf8(resourceName, (rPtr) {
               return takeHandle(
-                  _ffi.azureNewWithBase(keyPtr, bPtr, dPtr, vPtr, err), err);
+                  (out) => _ffi.azureNew(keyPtr, rPtr, dPtr, vPtr, out),
+                  'azure_new');
             });
-          } finally {
-            if (vPtr != nullptr) calloc.free(vPtr);
           }
-        });
+          return withUtf8(baseUrl, (bPtr) {
+            return takeHandle(
+                (out) => _ffi.azureNewWithBase(keyPtr, bPtr, dPtr, vPtr, out),
+                'azure_new_with_base');
+          });
+        } finally {
+          if (vPtr != nullptr) calloc.free(vPtr);
+        }
       });
     });
     return Model._(handle);
@@ -481,20 +491,19 @@ class Model implements Finalizable {
   /// (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`).
   factory Model.provider(String name, String modelId,
       {String? apiKey, String? configJson}) {
-    final handle = withAimuxCError((err) {
-      return withUtf8(name, (namePtr) {
-        return withUtf8(modelId, (idPtr) {
-          final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
-          final cfgPtr =
-              configJson != null ? configJson.toNativeUtf8() : nullptr;
-          try {
-            return takeHandle(
-                _ffi.providerNew(namePtr, keyPtr, idPtr, cfgPtr, err), err);
-          } finally {
-            if (keyPtr != nullptr) calloc.free(keyPtr);
-            if (cfgPtr != nullptr) calloc.free(cfgPtr);
-          }
-        });
+    checkJson(configJson, 'config_json', emptyIsDefault: true);
+    final handle = withUtf8(name, (namePtr) {
+      return withUtf8(modelId, (idPtr) {
+        final keyPtr = toCStringOrNull(apiKey);
+        final cfgPtr = toCStringOrNull(configJson);
+        try {
+          return takeHandle(
+              (out) => _ffi.providerNew(namePtr, keyPtr, idPtr, cfgPtr, out),
+              'provider_new');
+        } finally {
+          if (keyPtr != nullptr) calloc.free(keyPtr);
+          if (cfgPtr != nullptr) calloc.free(cfgPtr);
+        }
       });
     });
     return Model._(handle);
@@ -505,64 +514,28 @@ class Model implements Finalizable {
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.
   /// Returns the parsed GenerateTextResult as a Map.
-  /// Throws [AimuxException] on engine failure.
+  /// Throws [AimuxException] on AiMuxError failure.
   Map<String, dynamic> generateText(
     Object prompt, [
     Map<String, dynamic>? options,
-  ]) {
-    _checkOpen();
-    final promptJson = _promptToJson(prompt);
-    final optsJson = options != null ? jsonEncode(options) : null;
-
-    final resultStr = withAimuxCError((err) {
-      return withUtf8(promptJson, (promptPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-        try {
-          final resultPtr =
-              _ffi.generateText(_handle, promptPtr, optsPtr, err);
-          return takeString(resultPtr, err);
-        } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
-        }
-      });
-    });
-
-    return jsonDecode(resultStr) as Map<String, dynamic>;
-  }
+  ]) =>
+      _callJson(_ffi.generateText, 'generate_text', prompt, options);
 
   /// Generate a structured JSON object (M12, RFC-0016).
   ///
   /// Same signature as [generateText]; returns the parsed
   /// GenerateObjectResult as a Map. Pass `response_format: { "Json": { ... } }`
-  /// via [options] for schema control; the engine applies JSON repair before
+  /// via [options] for schema control; aimux-core applies JSON repair before
   /// parsing.
   ///
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.
-  /// Throws [AimuxException] on engine failure.
+  /// Throws [AimuxException] on AiMuxError failure.
   Map<String, dynamic> generateObject(
     Object prompt, [
     Map<String, dynamic>? options,
-  ]) {
-    _checkOpen();
-    final promptJson = _promptToJson(prompt);
-    final optsJson = options != null ? jsonEncode(options) : null;
-
-    final resultStr = withAimuxCError((err) {
-      return withUtf8(promptJson, (promptPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-        try {
-          final resultPtr =
-              _ffi.generateObject(_handle, promptPtr, optsPtr, err);
-          return takeString(resultPtr, err);
-        } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
-        }
-      });
-    });
-
-    return jsonDecode(resultStr) as Map<String, dynamic>;
-  }
+  ]) =>
+      _callJson(_ffi.generateObject, 'generate_object', prompt, options);
 
   /// Consume a stream to completion and return the aggregated result
   /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
@@ -572,26 +545,46 @@ class Model implements Finalizable {
   ///
   /// [prompt] — a string or a list of message maps.
   /// [options] — optional generation options map.
-  /// Throws [AimuxException] on engine failure.
+  /// Throws [AimuxException] on AiMuxError failure.
   Map<String, dynamic> consumeStreamText(
     Object prompt, [
     Map<String, dynamic>? options,
-  ]) {
+  ]) =>
+      _callJson(
+          _ffi.consumeStreamText, 'consume_stream_text', prompt, options);
+
+  /// Generate text (non-streaming) with OpenAI Chat Completions output
+  /// (RFC-0026).
+  ///
+  /// Same as [generateText], but returns a parsed ChatCompletion map (OpenAI
+  /// `chat.completion` object). Works with any provider.
+  Map<String, dynamic> generateTextAsOpenAI(
+    Object prompt, [
+    Map<String, dynamic>? options,
+  ]) =>
+      _callJson(_ffi.generateTextAsOpenAI, 'generate_text_as_openai', prompt,
+          options);
+
+  /// Shared body of the four `(handle, prompt_json, opts_json, out_json)`
+  /// calls: encode, call, [expectAimuxError] (via [takeString]), decode.
+  Map<String, dynamic> _callJson(
+    _GenerateTextDart fn,
+    String context,
+    Object prompt,
+    Map<String, dynamic>? options,
+  ) {
     _checkOpen();
     final promptJson = _promptToJson(prompt);
-    final optsJson = options != null ? jsonEncode(options) : null;
+    final optsJson = options != null ? encodeJson(options, 'options') : null;
 
-    final resultStr = withAimuxCError((err) {
-      return withUtf8(promptJson, (promptPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-        try {
-          final resultPtr =
-              _ffi.consumeStreamText(_handle, promptPtr, optsPtr, err);
-          return takeString(resultPtr, err);
-        } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
-        }
-      });
+    final resultStr = withUtf8(promptJson, (promptPtr) {
+      final optsPtr = toCStringOrNull(optsJson);
+      try {
+        return takeString(
+            (out) => fn(_handle, promptPtr, optsPtr, out), context);
+      } finally {
+        if (optsPtr != nullptr) calloc.free(optsPtr);
+      }
     });
 
     return jsonDecode(resultStr) as Map<String, dynamic>;
@@ -612,7 +605,7 @@ class Model implements Finalizable {
     Map<String, dynamic>? options,
   ]) {
     _checkOpen();
-    return _stream(_ffi.streamText, prompt, options);
+    return _stream(_ffi.streamText, 'stream_text', prompt, options);
   }
 
   /// Stream text from the model with OpenAI Chat Completions output
@@ -630,86 +623,55 @@ class Model implements Finalizable {
     Map<String, dynamic>? options,
   ]) {
     _checkOpen();
-    return _stream(_ffi.streamTextAsOpenAI, prompt, options);
+    return _stream(
+        _ffi.streamTextAsOpenAI, 'stream_text_as_openai', prompt, options);
   }
 
   Stream<Map<String, dynamic>> _stream(
     _StreamTextDart streamFn,
+    String context,
     Object prompt,
     Map<String, dynamic>? options,
   ) {
     final promptJson = _promptToJson(prompt);
-    final optsJson = options != null ? jsonEncode(options) : null;
+    final optsJson = options != null ? encodeJson(options, 'options') : null;
 
     final controller = StreamController<Map<String, dynamic>>();
 
-    withAimuxCError((err) {
-      withUtf8(promptJson, (promptPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
+    withUtf8(promptJson, (promptPtr) {
+      final optsPtr = toCStringOrNull(optsJson);
+      try {
+        final partCb = Pointer.fromFunction<_OnPartC>(_onPart);
+        final doneCb = Pointer.fromFunction<_OnDoneC>(_onDone);
+
+        final Pointer<Void> e;
+        _currentController = controller;
         try {
-          final partCb = Pointer.fromFunction<_OnPartC>(_onPart);
-          final doneCb = Pointer.fromFunction<_OnDoneC>(_onDone);
-
-          final int ok;
-          _currentController = controller;
-          try {
-            ok = streamFn(
-              _handle,
-              promptPtr,
-              optsPtr,
-              partCb,
-              doneCb,
-              nullptr,
-              err,
-            );
-          } finally {
-            _currentController = null;
-          }
-
-          if (ok == 0) {
-            // Terminal failure: on_done was not called.
-            if (!controller.isClosed) {
-              controller.addError(AimuxException.fromC(err.ref));
-              controller.close();
-            }
-          }
+          e = streamFn(_handle, promptPtr, optsPtr, partCb, doneCb, nullptr);
         } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
+          _currentController = null;
         }
-      });
+
+        // NULL after on_done = clean end. Non-NULL = terminal failure, on_done
+        // was not called: expectAimuxError throws AimuxException or the native
+        // StateError for a C ABI failure; either way the error must not be
+        // swallowed and the controller must not stay open.
+        try {
+          expectAimuxError(e, context);
+        } catch (failure) {
+          if (controller.isClosed) rethrow;
+          controller
+            ..addError(failure)
+            ..close();
+        }
+      } finally {
+        if (optsPtr != nullptr) calloc.free(optsPtr);
+      }
     });
 
     return controller.stream;
   }
 
-  /// Generate text (non-streaming) with OpenAI Chat Completions output
-  /// (RFC-0026).
-  ///
-  /// Same as [generateText], but returns a parsed ChatCompletion map (OpenAI
-  /// `chat.completion` object). Works with any provider.
-  Map<String, dynamic> generateTextAsOpenAI(
-    Object prompt, [
-    Map<String, dynamic>? options,
-  ]) {
-    _checkOpen();
-    final promptJson = _promptToJson(prompt);
-    final optsJson = options != null ? jsonEncode(options) : null;
-
-    final resultStr = withAimuxCError((err) {
-      return withUtf8(promptJson, (promptPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-        try {
-          final resultPtr =
-              _ffi.generateTextAsOpenAI(_handle, promptPtr, optsPtr, err);
-          return takeString(resultPtr, err);
-        } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
-        }
-      });
-    });
-
-    return jsonDecode(resultStr) as Map<String, dynamic>;
-  }
 
   /// Release the native handle. Safe to call multiple times.
   ///
@@ -723,7 +685,7 @@ class Model implements Finalizable {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('Model has been closed');
+    if (_closed) throw StateError('Model is closed');
   }
 }
 
@@ -778,7 +740,7 @@ class ProviderConfig {
     if (maxRetries != null) map['max_retries'] = maxRetries;
     if (bodyOverrides != null) map['body_overrides'] = bodyOverrides;
     if (map.isEmpty) return null;
-    return jsonEncode(map);
+    return encodeJson(map, 'config_json');
   }
 }
 
@@ -827,10 +789,8 @@ class ProviderHandle implements Finalizable {
   /// Synchronous: blocks the calling isolate until the network call completes.
   String listModels() {
     _checkOpen();
-    return withAimuxCError((err) {
-      final ptr = _ffi.providerListModels(_handle, err);
-      return takeString(ptr, err);
-    });
+    return takeString(
+        (out) => _ffi.providerListModels(_handle, out), 'provider_list_models');
   }
 
   /// Build a language [Model] from a discovered [modelId].
@@ -840,10 +800,9 @@ class ProviderHandle implements Finalizable {
   /// The caller owns the returned [Model] and must [Model.close] it.
   Model model(String modelId) {
     _checkOpen();
-    final handle = withAimuxCError((err) {
-      return withUtf8(modelId, (idPtr) {
-        return takeHandle(_ffi.providerModel(_handle, idPtr, err), err);
-      });
+    final handle = withUtf8(modelId, (idPtr) {
+      return takeHandle(
+          (out) => _ffi.providerModel(_handle, idPtr, out), 'provider_model');
     });
     return Model._(handle);
   }
@@ -860,7 +819,7 @@ class ProviderHandle implements Finalizable {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('ProviderHandle has been closed');
+    if (_closed) throw StateError('ProviderHandle is closed');
   }
 }
 
@@ -877,18 +836,17 @@ class ProviderHandle implements Finalizable {
 ProviderHandle createProvider(
     String name, String? apiKey, ProviderConfig? config) {
   final configJson = config?.toJson();
-  final handle = withAimuxCError((err) {
-    return withUtf8(name, (namePtr) {
-      final keyPtr = apiKey != null ? apiKey.toNativeUtf8() : nullptr;
-      final cfgPtr = configJson != null ? configJson.toNativeUtf8() : nullptr;
-      try {
-        return takeHandle(
-            _ffi.providerHandleNew(namePtr, keyPtr, cfgPtr, err), err);
-      } finally {
-        if (keyPtr != nullptr) calloc.free(keyPtr);
-        if (cfgPtr != nullptr) calloc.free(cfgPtr);
-      }
-    });
+  final handle = withUtf8(name, (namePtr) {
+    final keyPtr = toCStringOrNull(apiKey);
+    final cfgPtr = toCStringOrNull(configJson);
+    try {
+      return takeHandle(
+          (out) => _ffi.providerHandleNew(namePtr, keyPtr, cfgPtr, out),
+          'provider_handle_new');
+    } finally {
+      if (keyPtr != nullptr) calloc.free(keyPtr);
+      if (cfgPtr != nullptr) calloc.free(cfgPtr);
+    }
   });
   return ProviderHandle._(handle);
 }
@@ -900,15 +858,13 @@ ProviderHandle createProvider(
 /// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
 /// Catalogue string. Thin fetch — no caching.
 String getModelSpecs(String? sourceUrl) {
-  return withAimuxCError((err) {
-    final urlPtr = sourceUrl != null ? sourceUrl.toNativeUtf8() : nullptr;
-    try {
-      final ptr = _ffi.getModelSpecs(urlPtr, err);
-      return takeString(ptr, err);
-    } finally {
-      if (urlPtr != nullptr) calloc.free(urlPtr);
-    }
-  });
+  final urlPtr = toCStringOrNull(sourceUrl);
+  try {
+    return takeString(
+        (out) => _ffi.getModelSpecs(urlPtr, out), 'get_model_specs');
+  } finally {
+    if (urlPtr != nullptr) calloc.free(urlPtr);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -916,8 +872,8 @@ String getModelSpecs(String? sourceUrl) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 String _promptToJson(Object prompt) {
-  if (prompt is String) return jsonEncode(prompt);
-  return jsonEncode({'prompt': prompt});
+  if (prompt is String) return encodeJson(prompt, 'prompt');
+  return encodeJson({'prompt': prompt}, 'prompt');
 }
 
 /// Initialize the global logger (RFC-0014).
@@ -931,46 +887,62 @@ String _promptToJson(Object prompt) {
 /// defaults to "warn". The `AIMUX_LOG` / `AIMUX_LOG_LEVEL` environment
 /// variables take precedence when set. Logs go to stderr.
 void initLogging(String level) {
-  withUtf8(level.isEmpty ? 'warn' : level, _ffi.initLogging);
+  withUtf8(level.isEmpty ? 'warn' : level,
+      (p) => expectFfiError(_ffi.initLogging(p), 'init_logging'));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Recording + mock replay (RFC-0023)
 //
-// Recording is opt-in and global (not tied to a Model instance). All
-// int-returning functions return 0 on success, or -1 on invalid input.
+// Recording is opt-in and global (not tied to a Model instance).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Start recording: complete Recording JSONL is written to
 /// `{dir}/recordings.jsonl` (dir is auto-created). Calling again replaces the
-/// recorder. Returns 0, or -1 when [dir] is null/empty.
-int initRecording(String dir) => withUtf8(dir, _ffi.initRecording);
+/// recorder. Throws [RecordingException] with [RecordingException.code] one of
+/// [RecordingErrorCode.init] (dir could not be created, also for an empty
+/// [dir]), [RecordingErrorCode.openFile] or [RecordingErrorCode.spawn] when
+/// the recorder cannot be constructed; on failure the previous recorder (if
+/// any) stays in place.
+void initRecording(String dir) {
+  withUtf8(dir, (p) => expectRecordingError(_ffi.initRecording(p), 'init_recording'));
+}
 
 /// Start in-memory bounded recording (ring recorder, FIFO eviction, dropped
 /// count queryable).
 ///
 /// [cap] is optional: omit it (or pass null) to use the library default
 /// capacity (FFI `aimux_init_recording_ring_default`). When provided, [cap]
-/// must be positive: the C ABI rejects `0` (returns -1), and a negative Dart
-/// int would be reinterpreted as a huge u64 by the FFI. This binding validates
-/// up front and throws [ArgumentError] for `cap <= 0`, matching Kotlin/Java.
-/// Returns 0 on success.
-int initRecordingRing([int? cap]) {
+/// must be positive: the C ABI rejects `0`, and a negative Dart int would be
+/// reinterpreted as a huge u64 by the FFI. This binding validates up front and
+/// throws [ArgumentError] for `cap <= 0`, matching Kotlin/Java.
+void initRecordingRing([int? cap]) {
   if (cap == null) {
-    return _ffi.initRecordingRingDefault();
+    _ffi.initRecordingRingDefault();
+    return;
   }
   if (cap <= 0) {
     throw ArgumentError.value(cap, 'cap', 'must be positive');
   }
-  return _ffi.initRecordingRing(cap);
+  expectAimuxError(_ffi.initRecordingRing(cap), 'init_recording_ring');
 }
 
-/// Stop recording: the global recorder becomes None. Returns 0.
-int recordingStop() => _ffi.recordingStop();
+/// Stop recording: the global recorder becomes None.
+void recordingStop() => _ffi.recordingStop();
 
 /// Flush the global recorder (blocks until JSONL is on disk; no-op for the
-/// ring recorder). Returns 0.
-int recordingFlush() => _ffi.recordingFlush();
+/// ring recorder). Never reports — see [recordingTryFlush].
+void recordingFlush() => _ffi.recordingFlush();
+
+/// Flush the global recorder and report failure: throws [RecordingException]
+/// with [RecordingException.code] one of [RecordingErrorCode.writerGone],
+/// [RecordingErrorCode.flushTimeout] or [RecordingErrorCode.write] (not an
+/// [AimuxException] — recording errors are a separate type). Returns normally
+/// when data is on disk or nothing is recording. The legacy [recordingFlush]
+/// stays and never reports.
+void recordingTryFlush() {
+  expectRecordingError(_ffi.recordingTryFlush(), 'recording_try_flush');
+}
 
 /// Create a mock replay model from recorded JSONL (one `Recording` per line).
 ///
@@ -978,10 +950,13 @@ int recordingFlush() => _ffi.recordingFlush();
 /// is sent. The returned [Model] works with [Model.generateText] /
 /// [Model.streamText]. Call [Model.close] to release the native handle.
 Model mockReplay(String recordingsJsonl) {
-  final handle = withAimuxCError((err) {
-    return withUtf8(recordingsJsonl, (jsonlPtr) {
-      return takeHandle(_ffi.mockReplayNew(jsonlPtr, err), err);
-    });
+  // Mirror the FFI: blank lines are skipped, every other line is one JSON doc.
+  for (final line in LineSplitter.split(recordingsJsonl)) {
+    if (line.trim().isNotEmpty) checkJson(line, 'recordings_jsonl');
+  }
+  final handle = withUtf8(recordingsJsonl, (jsonlPtr) {
+    return takeHandle(
+        (out) => _ffi.mockReplayNew(jsonlPtr, out), 'mock_replay_new');
   });
   return Model._(handle);
 }
@@ -991,35 +966,23 @@ Model mockReplay(String recordingsJsonl) {
 ///
 /// `configJSON` is `{ "providers": [ { "name", "base_url", ... } ] }`. Entries
 /// override same-named built-ins or add new ones. Like `initRecording`, this
-/// mutates process-global registry state.
-///
-/// The C entry point returns an `int` (1 = success, 0 = failure) rather than a
-/// handle. `takeHandle` throws on 0 and passes non-zero through unchanged, so
-/// it doubles as the rc check here (rc=1 → no throw; rc=0 → throw from `err`).
+/// mutates process-global registry state. A well-formed document the registry
+/// rejects throws [InvalidArgumentError].
 void registerProviders(String configJSON) {
-  withAimuxCError((err) {
-    return withUtf8(configJSON, (ptr) {
-      return takeHandle(_ffi.registerProviders(ptr, err), err);
-    });
-  });
+  checkJson(configJSON, 'config_json');
+  withUtf8(configJSON,
+      (p) => expectAimuxError(_ffi.registerProviders(p), 'register_providers'));
 }
 
 /// Set the global proxy configuration (M6, RFC-0016). Must be called before
 /// the first `generateText` / `streamText` call; a no-op if the shared HTTP
 /// client is already initialised.
 ///
-/// The C entry point returns an `int` (1 = success, 0 = failure). `takeHandle`
-/// throws on 0 and passes non-zero through unchanged, so it doubles as the rc
-/// check here (rc=1 → no throw; rc=0 → throw from `err`).
-///
 /// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
-/// (all fields optional).
+/// (all fields optional). Wrong shape throws [InvalidArgumentError].
 void initProxy(String configJSON) {
-  withAimuxCError((err) {
-    return withUtf8(configJSON, (ptr) {
-      return takeHandle(_ffi.initProxy(ptr, err), err);
-    });
-  });
+  checkJson(configJSON, 'config_json');
+  withUtf8(configJSON, (p) => expectAimuxError(_ffi.initProxy(p), 'init_proxy'));
 }
 
 /// Create a RouterModel (RFC-0021) over the given child models. The returned
@@ -1032,26 +995,28 @@ Model router(List<Model> models, {String? configJson}) {
   if (models.isEmpty) {
     throw ArgumentError('router: models must be non-empty');
   }
+  checkJson(configJson, 'config_json', emptyIsDefault: true);
   final handles = models.map((m) => m._requireHandle()).toList();
-  final handle = withAimuxCError((err) {
-    final ptr = calloc<Uint64>(handles.length);
-    try {
-      ptr.asTypedList(handles.length).setAll(0, handles);
-      Pointer<Utf8> cfgPtr = nullptr;
-      if (configJson != null) {
-        cfgPtr = configJson.toNativeUtf8();
-      }
-      try {
-        return takeHandle(_ffi.routerNew(ptr, handles.length, cfgPtr, err), err);
-      } finally {
-        if (cfgPtr != nullptr) {
-          calloc.free(cfgPtr);
-        }
-      }
-    } finally {
-      calloc.free(ptr);
+  final ptr = calloc<Uint64>(handles.length);
+  final int handle;
+  try {
+    ptr.asTypedList(handles.length).setAll(0, handles);
+    Pointer<Utf8> cfgPtr = nullptr;
+    if (configJson != null) {
+      cfgPtr = toCString(configJson);
     }
-  });
+    try {
+      handle = takeHandle(
+          (out) => _ffi.routerNew(ptr, handles.length, cfgPtr, out),
+          'router_new');
+    } finally {
+      if (cfgPtr != nullptr) {
+        calloc.free(cfgPtr);
+      }
+    }
+  } finally {
+    calloc.free(ptr);
+  }
   return Model._(handle);
 }
 
@@ -1062,36 +1027,37 @@ Model router(List<Model> models, {String? configJson}) {
 /// `references` may be empty (runs aggregator only). `configJson` (optional) is
 /// a serialized MoaConfig.
 Model moa(List<Model> references, Model aggregator, {String? configJson}) {
+  checkJson(configJson, 'config_json', emptyIsDefault: true);
   final aggregatorHandle = aggregator._requireHandle();
-  final handle = withAimuxCError((err) {
-    // Allocate the reference-handle array (NULL when there are no references).
-    final refPtr = references.isEmpty
-        ? Pointer<Uint64>.fromAddress(0)
-        : calloc<Uint64>(references.length);
-    final shouldFree = !references.isEmpty;
+  // Allocate the reference-handle array (NULL when there are no references).
+  final refPtr = references.isEmpty
+      ? Pointer<Uint64>.fromAddress(0)
+      : calloc<Uint64>(references.length);
+  final shouldFree = !references.isEmpty;
+  final int handle;
+  try {
+    if (shouldFree) {
+      final handles = references.map((m) => m._requireHandle()).toList();
+      refPtr.asTypedList(references.length).setAll(0, handles);
+    }
+    Pointer<Utf8> cfgPtr = nullptr;
+    if (configJson != null) {
+      cfgPtr = toCString(configJson);
+    }
     try {
-      if (shouldFree) {
-        final handles = references.map((m) => m._requireHandle()).toList();
-        refPtr.asTypedList(references.length).setAll(0, handles);
-      }
-      Pointer<Utf8> cfgPtr = nullptr;
-      if (configJson != null) {
-        cfgPtr = configJson.toNativeUtf8();
-      }
-      try {
-        return takeHandle(
-            _ffi.moaNew(refPtr, references.length, aggregatorHandle, cfgPtr, err),
-            err);
-      } finally {
-        if (cfgPtr != nullptr) {
-          calloc.free(cfgPtr);
-        }
-      }
+      handle = takeHandle(
+          (out) => _ffi.moaNew(
+              refPtr, references.length, aggregatorHandle, cfgPtr, out),
+          'moa_new');
     } finally {
-      if (shouldFree) {
-        calloc.free(refPtr);
+      if (cfgPtr != nullptr) {
+        calloc.free(cfgPtr);
       }
     }
-  });
+  } finally {
+    if (shouldFree) {
+      calloc.free(refPtr);
+    }
+  }
   return Model._(handle);
 }

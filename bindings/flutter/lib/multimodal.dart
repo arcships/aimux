@@ -4,7 +4,7 @@
 // Mirrors the Go binding's multimodal.go: 8 modality model types
 // (Embedding, Speech, Transcription, Image, Video, Reranking, Search, Files),
 // each wrapping a native handle acquired via a provider-specific constructor
-// and released via [close]. All cross-boundary data uses JSON strings (base64
+// and released via [close]. All C ABI data uses JSON strings (base64
 // for binary), matching the C ABI wire format.
 //
 // This is the C ABI path (RFC §3.2) — same pattern as `aimux.dart`. The native
@@ -12,7 +12,7 @@
 // bundled in the Flutter app. All calls are synchronous (the C ABI blocks until
 // completion).
 //
-// Engine failures throw [AimuxException] (see errors.dart).
+// AiMuxError values throw [AimuxException] (see errors.dart).
 
 import 'dart:ffi';
 import 'dart:typed_data';
@@ -21,78 +21,87 @@ import 'package:ffi/ffi.dart';
 import 'errors.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FFI type aliases (AimuxError *err trailing out-param)
+// FFI type aliases. `_Err` is `aimux_error_t *` (opaque; NULL = success);
+// results come back through the trailing out-param. Pointer types are spelled
+// the same in the C and Dart signatures, so a single alias serves both.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Constructors taking (api_key, model_id, err) → uint64_t handle.
-typedef _NewC = Uint64 Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
-typedef _NewDart = int Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<AimuxCError> err);
+typedef _Err = Pointer<Void>;
 
-// Constructors taking (api_key, model_id, base_url, err) → handle.
-typedef _NewWithBaseC = Uint64 Function(Pointer<Utf8> apiKey,
-    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
-typedef _NewWithBaseDart = int Function(Pointer<Utf8> apiKey,
-    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
+// Constructors taking (api_key, model_id, out_handle).
+typedef _NewC = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
+typedef _NewDart = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> modelId, Pointer<Uint64> outHandle);
 
-// Files constructors take only (api_key, err) — no model_id.
-typedef _FilesNewC = Uint64 Function(
-    Pointer<Utf8> apiKey, Pointer<AimuxCError> err);
-typedef _FilesNewDart = int Function(
-    Pointer<Utf8> apiKey, Pointer<AimuxCError> err);
+// Constructors taking (api_key, model_id, base_url, out_handle).
+typedef _NewWithBaseC = _Err Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
+typedef _NewWithBaseDart = _Err Function(Pointer<Utf8> apiKey,
+    Pointer<Utf8> modelId, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
 
-// Files constructors with a custom base URL: (api_key, base_url, err).
-typedef _FilesNewWithBaseC = Uint64 Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
-typedef _FilesNewWithBaseDart = int Function(
-    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl, Pointer<AimuxCError> err);
+// Files constructors take only (api_key, out_handle) — no model_id.
+typedef _FilesNewC = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Uint64> outHandle);
+typedef _FilesNewDart = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Uint64> outHandle);
 
-// aimux_embed(handle, values_json, opts_json, err) — opts nullable.
-typedef _EmbedC = Pointer<Utf8> Function(Uint64 handle, Pointer<Utf8> valuesJson,
-    Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
-typedef _EmbedDart = Pointer<Utf8> Function(int handle, Pointer<Utf8> valuesJson,
-    Pointer<Utf8>? optsJson, Pointer<AimuxCError> err);
+// Files constructors with a custom base URL: (api_key, base_url, out_handle).
+typedef _FilesNewWithBaseC = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
+typedef _FilesNewWithBaseDart = _Err Function(
+    Pointer<Utf8> apiKey, Pointer<Utf8> baseUrl, Pointer<Uint64> outHandle);
 
-// Single-arg generate functions: (handle, opts_json, err) → string.
-typedef _GenerateOpts1C = Pointer<Utf8> Function(
-    Uint64 handle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
-typedef _GenerateOpts1Dart = Pointer<Utf8> Function(
-    int handle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
+// aimux_embed(handle, values_json, opts_json, out_json) — opts nullable.
+typedef _EmbedC = _Err Function(Uint64 handle, Pointer<Utf8> valuesJson,
+    Pointer<Utf8>? optsJson, Pointer<Pointer<Utf8>> outJson);
+typedef _EmbedDart = _Err Function(int handle, Pointer<Utf8> valuesJson,
+    Pointer<Utf8>? optsJson, Pointer<Pointer<Utf8>> outJson);
 
-// Three-arg generate functions: (handle, a, b, opts_json, err) → string.
-typedef _GenerateOpts3C = Pointer<Utf8> Function(
+// Single-arg generate functions: (handle, opts_json, out_json).
+typedef _GenerateOpts1C = _Err Function(
+    Uint64 handle, Pointer<Utf8> optsJson, Pointer<Pointer<Utf8>> outJson);
+typedef _GenerateOpts1Dart = _Err Function(
+    int handle, Pointer<Utf8> optsJson, Pointer<Pointer<Utf8>> outJson);
+
+// Three-arg generate functions: (handle, a, b, opts_json, out_json).
+typedef _GenerateOpts3C = _Err Function(
     Uint64 handle,
     Pointer<Utf8> a,
     Pointer<Utf8> b,
     Pointer<Utf8>? optsJson,
-    Pointer<AimuxCError> err);
-typedef _GenerateOpts3Dart = Pointer<Utf8> Function(
+    Pointer<Pointer<Utf8>> outJson);
+typedef _GenerateOpts3Dart = _Err Function(
     int handle,
     Pointer<Utf8> a,
     Pointer<Utf8> b,
     Pointer<Utf8>? optsJson,
-    Pointer<AimuxCError> err);
+    Pointer<Pointer<Utf8>> outJson);
 
 // Transcription streaming sessions (RFC-0028).
-typedef _TranscriptionSessionNewC = Uint64 Function(
-    Uint64 modelHandle, Uint64 abortHandle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
-typedef _TranscriptionSessionNewDart = int Function(
-    int modelHandle, int abortHandle, Pointer<Utf8> optsJson, Pointer<AimuxCError> err);
-typedef _TranscriptionPushAudioC = Int32 Function(
-    Uint64 session, Pointer<Uint8> data, IntPtr len, Pointer<AimuxCError> err);
-typedef _TranscriptionPushAudioDart = int Function(
-    int session, Pointer<Uint8> data, int len, Pointer<AimuxCError> err);
-typedef _TranscriptionInputDoneC = Int32 Function(
-    Uint64 session, Pointer<AimuxCError> err);
-typedef _TranscriptionInputDoneDart = int Function(
-    int session, Pointer<AimuxCError> err);
-typedef _TranscriptionNextPartC = Pointer<Utf8> Function(
-    Uint64 session, Int64 timeoutMs, Pointer<AimuxCError> err);
-typedef _TranscriptionNextPartDart = Pointer<Utf8> Function(
-    int session, int timeoutMs, Pointer<AimuxCError> err);
+typedef _TranscriptionSessionNewC = _Err Function(Uint64 modelHandle,
+    Uint64 abortHandle, Pointer<Utf8> optsJson, Pointer<Uint64> outHandle);
+typedef _TranscriptionSessionNewDart = _Err Function(int modelHandle,
+    int abortHandle, Pointer<Utf8> optsJson, Pointer<Uint64> outHandle);
+typedef _TranscriptionPushAudioC = _Err Function(
+    Uint64 session, Pointer<Uint8> data, IntPtr len);
+typedef _TranscriptionPushAudioDart = _Err Function(
+    int session, Pointer<Uint8> data, int len);
+typedef _TranscriptionInputDoneC = _Err Function(Uint64 session);
+typedef _TranscriptionInputDoneDart = _Err Function(int session);
+// out_state is `int32_t *` in the header (holds an
+// aimux_transcription_next_part_state_t value), hence Pointer<Int32>.
+typedef _TranscriptionNextPartC = _Err Function(Uint64 session,
+    Int64 timeoutMs, Pointer<Pointer<Utf8>> outPart, Pointer<Int32> outState);
+typedef _TranscriptionNextPartDart = _Err Function(int session,
+    int timeoutMs, Pointer<Pointer<Utf8>> outPart, Pointer<Int32> outState);
 typedef _VoidU64C = Void Function(Uint64);
 typedef _VoidU64Dart = void Function(int);
+
+// aimux_transcription_next_part_state_t values.
+const int _nextPartStatePart = 1;
+const int _nextPartStateEnded = 2;
+const int _nextPartStateTimeout = 3;
 
 // Resource management (same as aimux.dart).
 typedef _DropHandleC = Void Function(Uint64);
@@ -106,7 +115,7 @@ typedef _DropHandleDart = void Function(int);
 final class _MultimodalFFI {
   final DynamicLibrary _lib = openAimuxLibrary();
 
-  // Constructors — (api_key, model_id, err)
+  // Constructors — (api_key, model_id, out_handle)
   late final openaiEmbeddingNew =
       _lib.lookupFunction<_NewC, _NewDart>('aimux_openai_embedding_new');
   late final cohereEmbeddingNew =
@@ -128,7 +137,7 @@ final class _MultimodalFFI {
   late final tavilySearchNew =
       _lib.lookupFunction<_NewC, _NewDart>('aimux_tavily_search_new');
 
-  // Constructors — (api_key, model_id, base_url, err)
+  // Constructors — (api_key, model_id, base_url, out_handle)
   late final openaiEmbeddingNewWithBase = _lib
       .lookupFunction<_NewWithBaseC, _NewWithBaseDart>(
           'aimux_openai_embedding_new_with_base');
@@ -254,16 +263,16 @@ class EmbeddingModel {
   /// Returns the JSON-serialized EmbeddingResult, or throws [AimuxException].
   String embed(String valuesJson, [String? optsJson]) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(valuesJson, (valuesPtr) {
-        final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-        try {
-          final resultPtr = _ffi.embed(_handle, valuesPtr, optsPtr, err);
-          return takeString(resultPtr, err);
-        } finally {
-          if (optsPtr != nullptr) calloc.free(optsPtr);
-        }
-      });
+    checkJson(valuesJson, 'values_json');
+    checkJson(optsJson, 'opts_json', emptyIsDefault: true);
+    return withUtf8(valuesJson, (valuesPtr) {
+      final optsPtr = toCStringOrNull(optsJson);
+      try {
+        return takeString(
+            (out) => _ffi.embed(_handle, valuesPtr, optsPtr, out), 'embed');
+      } finally {
+        if (optsPtr != nullptr) calloc.free(optsPtr);
+      }
     });
   }
 
@@ -276,7 +285,7 @@ class EmbeddingModel {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('EmbeddingModel has been closed');
+    if (_closed) throw StateError('EmbeddingModel is closed');
   }
 }
 
@@ -304,11 +313,10 @@ class SpeechModel {
   /// Returns the JSON-serialized SpeechResult, or throws [AimuxException].
   String generate(String optsJson) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(optsJson, (optsPtr) {
-        final resultPtr = _ffi.speechGenerate(_handle, optsPtr, err);
-        return takeString(resultPtr, err);
-      });
+    checkJson(optsJson, 'opts_json');
+    return withUtf8(optsJson, (optsPtr) {
+      return takeString(
+          (out) => _ffi.speechGenerate(_handle, optsPtr, out), 'speech_generate');
     });
   }
 
@@ -321,7 +329,7 @@ class SpeechModel {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('SpeechModel has been closed');
+    if (_closed) throw StateError('SpeechModel is closed');
   }
 }
 
@@ -352,18 +360,18 @@ class TranscriptionModel {
   /// Returns the JSON-serialized TranscriptionResult, or throws [AimuxException].
   String generate(String audioBase64, String mediaType, [String? optsJson]) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(audioBase64, (audioPtr) {
-        return withUtf8(mediaType, (mediaPtr) {
-          final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-          try {
-            final resultPtr = _ffi.transcriptionGenerate(
-                _handle, audioPtr, mediaPtr, optsPtr, err);
-            return takeString(resultPtr, err);
-          } finally {
-            if (optsPtr != nullptr) calloc.free(optsPtr);
-          }
-        });
+    checkJson(optsJson, 'opts_json', emptyIsDefault: true);
+    return withUtf8(audioBase64, (audioPtr) {
+      return withUtf8(mediaType, (mediaPtr) {
+        final optsPtr = toCStringOrNull(optsJson);
+        try {
+          return takeString(
+              (out) => _ffi.transcriptionGenerate(
+                  _handle, audioPtr, mediaPtr, optsPtr, out),
+              'transcription_generate');
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
       });
     });
   }
@@ -378,16 +386,17 @@ class TranscriptionModel {
   /// [abortHandle] — optional abort handle; firing it aborts the session.
   TranscriptionSession startStream({String? optsJson, int abortHandle = 0}) {
     _checkOpen();
-    final handle = withAimuxCError((err) {
-      final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-      try {
-        return takeHandle(
-            _ffi.transcriptionSessionNew(_handle, abortHandle, optsPtr, err),
-            err);
-      } finally {
-        if (optsPtr != nullptr) calloc.free(optsPtr);
-      }
-    });
+    checkJson(optsJson, 'opts_json', emptyIsDefault: true);
+    final optsPtr = toCStringOrNull(optsJson);
+    final int handle;
+    try {
+      handle = takeHandle(
+          (out) =>
+              _ffi.transcriptionSessionNew(_handle, abortHandle, optsPtr, out),
+          'transcription_session_new');
+    } finally {
+      if (optsPtr != nullptr) calloc.free(optsPtr);
+    }
     return TranscriptionSession._(handle);
   }
 
@@ -400,7 +409,7 @@ class TranscriptionModel {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('TranscriptionModel has been closed');
+    if (_closed) throw StateError('TranscriptionModel is closed');
   }
 }
 
@@ -432,11 +441,10 @@ class ImageModel {
   /// Returns the JSON-serialized ImageResult, or throws [AimuxException].
   String generate(String optsJson) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(optsJson, (optsPtr) {
-        final resultPtr = _ffi.imageGenerate(_handle, optsPtr, err);
-        return takeString(resultPtr, err);
-      });
+    checkJson(optsJson, 'opts_json');
+    return withUtf8(optsJson, (optsPtr) {
+      return takeString(
+          (out) => _ffi.imageGenerate(_handle, optsPtr, out), 'image_generate');
     });
   }
 
@@ -449,7 +457,7 @@ class ImageModel {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('ImageModel has been closed');
+    if (_closed) throw StateError('ImageModel is closed');
   }
 }
 
@@ -476,11 +484,10 @@ class VideoModel {
   /// Returns the JSON-serialized VideoResult, or throws [AimuxException].
   String generate(String optsJson) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(optsJson, (optsPtr) {
-        final resultPtr = _ffi.videoGenerate(_handle, optsPtr, err);
-        return takeString(resultPtr, err);
-      });
+    checkJson(optsJson, 'opts_json');
+    return withUtf8(optsJson, (optsPtr) {
+      return takeString(
+          (out) => _ffi.videoGenerate(_handle, optsPtr, out), 'video_generate');
     });
   }
 
@@ -493,7 +500,7 @@ class VideoModel {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('VideoModel has been closed');
+    if (_closed) throw StateError('VideoModel is closed');
   }
 }
 
@@ -522,11 +529,10 @@ class RerankingModel {
   /// Returns the JSON-serialized RerankingResult, or throws [AimuxException].
   String rerank(String optsJson) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(optsJson, (optsPtr) {
-        final resultPtr = _ffi.rerank(_handle, optsPtr, err);
-        return takeString(resultPtr, err);
-      });
+    checkJson(optsJson, 'opts_json');
+    return withUtf8(optsJson, (optsPtr) {
+      return takeString(
+          (out) => _ffi.rerank(_handle, optsPtr, out), 'rerank');
     });
   }
 
@@ -539,7 +545,7 @@ class RerankingModel {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('RerankingModel has been closed');
+    if (_closed) throw StateError('RerankingModel is closed');
   }
 }
 
@@ -568,11 +574,10 @@ class SearchModel {
   /// Returns the JSON-serialized SearchResult, or throws [AimuxException].
   String search(String optsJson) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(optsJson, (optsPtr) {
-        final resultPtr = _ffi.search(_handle, optsPtr, err);
-        return takeString(resultPtr, err);
-      });
+    checkJson(optsJson, 'opts_json');
+    return withUtf8(optsJson, (optsPtr) {
+      return takeString(
+          (out) => _ffi.search(_handle, optsPtr, out), 'search');
     });
   }
 
@@ -585,7 +590,7 @@ class SearchModel {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('SearchModel has been closed');
+    if (_closed) throw StateError('SearchModel is closed');
   }
 }
 
@@ -604,15 +609,15 @@ class Files {
 
   /// Create an OpenAI files manager. Files take only an API key (no model ID).
   factory Files.openai(String apiKey, {String? baseUrl}) {
-    final handle = withAimuxCError((err) {
-      return withUtf8(apiKey, (keyPtr) {
-        if (baseUrl == null) {
-          return takeHandle(_ffi.openaiFilesNew(keyPtr, err), err);
-        }
-        return withUtf8(baseUrl, (basePtr) {
-          return takeHandle(
-              _ffi.openaiFilesNewWithBase(keyPtr, basePtr, err), err);
-        });
+    final handle = withUtf8(apiKey, (keyPtr) {
+      if (baseUrl == null) {
+        return takeHandle(
+            (out) => _ffi.openaiFilesNew(keyPtr, out), 'openai_files_new');
+      }
+      return withUtf8(baseUrl, (basePtr) {
+        return takeHandle(
+            (out) => _ffi.openaiFilesNewWithBase(keyPtr, basePtr, out),
+            'openai_files_new_with_base');
       });
     });
     return Files._(handle);
@@ -626,18 +631,18 @@ class Files {
   /// Returns the JSON-serialized UploadFileResult, or throws [AimuxException].
   String uploadFile(String dataBase64, String mediaType, [String? optsJson]) {
     _checkOpen();
-    return withAimuxCError((err) {
-      return withUtf8(dataBase64, (dataPtr) {
-        return withUtf8(mediaType, (mediaPtr) {
-          final optsPtr = optsJson != null ? optsJson.toNativeUtf8() : nullptr;
-          try {
-            final resultPtr =
-                _ffi.fileUpload(_handle, dataPtr, mediaPtr, optsPtr, err);
-            return takeString(resultPtr, err);
-          } finally {
-            if (optsPtr != nullptr) calloc.free(optsPtr);
-          }
-        });
+    checkJson(optsJson, 'opts_json', emptyIsDefault: true);
+    return withUtf8(dataBase64, (dataPtr) {
+      return withUtf8(mediaType, (mediaPtr) {
+        final optsPtr = toCStringOrNull(optsJson);
+        try {
+          return takeString(
+              (out) =>
+                  _ffi.fileUpload(_handle, dataPtr, mediaPtr, optsPtr, out),
+              'file_upload');
+        } finally {
+          if (optsPtr != nullptr) calloc.free(optsPtr);
+        }
       });
     });
   }
@@ -651,7 +656,7 @@ class Files {
   }
 
   void _checkOpen() {
-    if (_closed) throw StateError('Files has been closed');
+    if (_closed) throw StateError('Files is closed');
   }
 }
 
@@ -685,7 +690,7 @@ class TranscriptionSession {
   TranscriptionSession._(this._handle);
 
   void _checkOpen() {
-    if (_closed) throw StateError('TranscriptionSession has been closed');
+    if (_closed) throw StateError('TranscriptionSession is closed');
   }
 
   /// Push one binary audio chunk. Blocks while the internal channel is full
@@ -700,17 +705,8 @@ class TranscriptionSession {
       if (allocated) {
         ptr.asTypedList(audio.length).setAll(0, audio);
       }
-      withAimuxCError((err) {
-        final rc = _ffi.transcriptionPushAudio(
-            _handle, ptr, audio.length, err);
-        if (rc == 0) {
-          // Build the exception FIRST (it reads the message), then free.
-          final ex = AimuxException.fromC(err.ref);
-          _freeCError(err);
-          throw ex;
-        }
-        return 0;
-      });
+      expectAimuxError(_ffi.transcriptionPushAudio(_handle, ptr, audio.length),
+          'transcription_push_audio');
     } finally {
       if (allocated) calloc.free(ptr);
     }
@@ -719,49 +715,48 @@ class TranscriptionSession {
   /// Signal end-of-audio (idempotent).
   void inputDone() {
     _checkOpen();
-    withAimuxCError((err) {
-      final rc = _ffi.transcriptionInputDone(_handle, err);
-      if (rc == 0) {
-        final ex = AimuxException.fromC(err.ref);
-        _freeCError(err);
-        throw ex;
-      }
-      return 0;
-    });
+    expectFfiError(
+        _ffi.transcriptionInputDone(_handle), 'transcription_input_done');
   }
 
   /// Pull the next transcription part (JSON string).
   ///
   /// Throws [AimuxTranscriptionEndedException] when the stream finished
   /// normally, [AimuxTranscriptionTimeoutException] when no part arrived in
-  /// time (retryable). `timeoutMs`: >0 wait at most; 0 immediate poll;
-  /// negative = wait indefinitely.
+  /// time (a poll state, not an error — the session stays live; call again).
+  /// `timeoutMs`: >0 wait at most; 0 immediate poll; negative = wait
+  /// indefinitely.
   String nextPart(int timeoutMs) {
     _checkOpen();
-    return withAimuxCError((err) {
-      final ptr = _ffi.transcriptionNextPart(_handle, timeoutMs, err);
-      if (ptr != nullptr) {
-        try {
-          return ptr.toDartString();
-        } finally {
-          aimuxFreeString(ptr);
-        }
+    final outPart = calloc<Pointer<Utf8>>();
+    final outState = calloc<Int32>();
+    try {
+      expectAimuxError(
+          _ffi.transcriptionNextPart(_handle, timeoutMs, outPart, outState),
+          'transcription_next_part');
+      switch (outState.value) {
+        case _nextPartStatePart:
+          final p = outPart.value;
+          if (p == nullptr) {
+            throw StateError('aimux ffi: transcription_next_part: NULL part');
+          }
+          try {
+            return p.toDartString();
+          } finally {
+            aimuxFreeString(p);
+          }
+        case _nextPartStateEnded:
+          throw AimuxTranscriptionEndedException();
+        case _nextPartStateTimeout:
+          throw AimuxTranscriptionTimeoutException();
+        default:
+          throw StateError(
+              'aimux ffi: transcription_next_part: unknown state ${outState.value}');
       }
-      // NULL: disambiguate via err.code. Build the failure exception FIRST
-      // (it reads the message), then free before the sentinel checks.
-      final failure = err.ref.code == AimuxErrorCode.timeout ||
-              err.ref.code == AimuxErrorCode.ok
-          ? null
-          : AimuxException.fromC(err.ref);
-      _freeCError(err);
-      if (err.ref.code == AimuxErrorCode.timeout) {
-        throw AimuxTranscriptionTimeoutException();
-      }
-      if (err.ref.code == AimuxErrorCode.ok) {
-        throw AimuxTranscriptionEndedException();
-      }
-      throw failure!;
-    });
+    } finally {
+      calloc.free(outPart);
+      calloc.free(outState);
+    }
   }
 
   /// Terminate and release the session (aborts the driver; idempotent).
@@ -769,19 +764,6 @@ class TranscriptionSession {
     if (!_closed) {
       _ffi.transcriptionSessionDrop(_handle);
       _closed = true;
-    }
-  }
-
-  /// Free a filled error's message/errorValue strings (they leak otherwise
-  /// when we swallow the error and use sentinel exceptions instead).
-  void _freeCError(Pointer<AimuxCError> err) {
-    if (err.ref.message != nullptr) {
-      aimuxFreeString(err.ref.message);
-      err.ref.message = nullptr;
-    }
-    if (err.ref.errorValue != nullptr) {
-      aimuxFreeString(err.ref.errorValue);
-      err.ref.errorValue = nullptr;
     }
   }
 }

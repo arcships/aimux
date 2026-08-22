@@ -3,7 +3,7 @@
 //
 // Each modality is a Go struct wrapping a native handle (uint64). The handle
 // is acquired via a provider-specific constructor (e.g. NewOpenAIEmbedding)
-// and released via Close. All cross-boundary data uses JSON strings (base64
+// and released via Close. All C ABI data uses JSON strings (base64
 // for binary), matching the C ABI wire format.
 
 package aimux
@@ -34,8 +34,7 @@ import (
 // multimodalHandle is the common state for all multimodal model types. The
 // atomic swap makes Close non-blocking: a call that already loaded the handle
 // may finish (the Rust registry clones its Arc at entry), while later calls see
-// zero and return the existing closed-handle error. No Go lock is held across
-// a blocking C call.
+// zero and return ErrClosed. No Go lock is held across a blocking C call.
 //
 // A multimodalHandle must not be copied after first use. Public model wrappers
 // embed it so atomic.noCopy also lets go vet flag accidental value copies.
@@ -46,7 +45,7 @@ type multimodalHandle struct {
 func (h *multimodalHandle) load() (uint64, error) {
 	handle := h.handle.Load()
 	if handle == 0 {
-		return 0, newError(CodeInvalidArgument, "aimux: model already closed")
+		return 0, fmt.Errorf("%w: model", ErrClosed)
 	}
 	return handle, nil
 }
@@ -63,30 +62,33 @@ func closeMultimodal(owner any, h *multimodalHandle) {
 	runtime.KeepAlive(owner)
 }
 
-// callFFIString is the common pattern for a multimodal call returning an
-// aimux-allocated char*. owner is kept alive until after C returns so its
+// callFFIString is the common pattern for a multimodal call that writes a
+// char* out-parameter. owner is kept alive until after C returns so its
 // finalizer cannot close the handle while the call is entering the Rust
 // registry. Explicit concurrent Close is allowed and may make the call fail;
 // it cannot cause use-after-free.
-func callFFIString(owner any, h *multimodalHandle, fn func(handle C.uint64_t, err *C.AimuxError) *C.char) (string, error) {
+func callFFIString(owner any, h *multimodalHandle, fn func(handle C.uint64_t, out **C.char) *C.aimux_error_t) (string, error) {
 	handle, err := h.load()
 	if err != nil {
 		return "", err
 	}
 
-	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
-		return fn(C.uint64_t(handle), cerr)
+	result, callErr := ffiString(func(out **C.char) *C.aimux_error_t {
+		return fn(C.uint64_t(handle), out)
 	})
 	runtime.KeepAlive(owner)
 	return result, callErr
 }
 
-// newMultimodalHandleU64 wraps a constructor handle + AimuxError.
-func newMultimodalHandleU64(h C.uint64_t, cerr *C.AimuxError) (uint64, error) {
-	if h == 0 {
-		return 0, errorFromC(cerr)
+// newMultimodalHandle wraps a [C ABI] multimodal constructor's out-handle +
+// error (these constructors only store config, so the only failure they can
+// carry is a C ABI failure — returned, not panicked). Takes the out-handle by
+// pointer so it can be written in the same expression.
+func newMultimodalHandle(h *C.uint64_t, e *C.aimux_error_t) (uint64, error) {
+	if err := expectFfiError(e); err != nil {
+		return 0, err
 	}
-	return uint64(h), nil
+	return uint64(*h), nil
 }
 
 // cstringPair creates two C strings and returns them with a cleanup func.
@@ -116,38 +118,42 @@ func cstringTriple(a, b, c string) (*C.char, *C.char, *C.char, func()) {
 // empty, the no-base C constructor is used; otherwise the _with_base variant.
 func newMultimodalModelWithBase(
 	apiKey, modelID, baseURL string,
-	plain func(ca, cb *C.char, err *C.AimuxError) C.uint64_t,
-	withBase func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t,
+	plain func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t,
+	withBase func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t,
 ) (uint64, error) {
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
+	if err := checkUTF8("api_key", apiKey, "model_id", modelID, "base_url", baseURL); err != nil {
+		return 0, err
+	}
+	var h C.uint64_t
 	if baseURL == "" {
 		ca, cb, cleanup := cstringPair(apiKey, modelID)
 		defer cleanup()
-		return newMultimodalHandleU64(plain(ca, cb, &cerr), &cerr)
+		return newMultimodalHandle(&h, plain(ca, cb, &h))
 	}
 	ca, cb, cbase, cleanup := cstringTriple(apiKey, modelID, baseURL)
 	defer cleanup()
-	return newMultimodalHandleU64(withBase(ca, cb, cbase, &cerr), &cerr)
+	return newMultimodalHandle(&h, withBase(ca, cb, cbase, &h))
 }
 
 // newMultimodalModelFiles is the constructor for the Files manager, which
 // takes only an api_key (no model_id) and optionally a base_url.
 func newMultimodalModelFiles(
 	apiKey, baseURL string,
-	plain func(ca *C.char, err *C.AimuxError) C.uint64_t,
-	withBase func(ca, cbase *C.char, err *C.AimuxError) C.uint64_t,
+	plain func(ca *C.char, out *C.uint64_t) *C.aimux_error_t,
+	withBase func(ca, cbase *C.char, out *C.uint64_t) *C.aimux_error_t,
 ) (uint64, error) {
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
+	if err := checkUTF8("api_key", apiKey, "base_url", baseURL); err != nil {
+		return 0, err
+	}
+	var h C.uint64_t
 	ca := C.CString(apiKey)
 	defer C.free(unsafe.Pointer(ca))
 	if baseURL == "" {
-		return newMultimodalHandleU64(plain(ca, &cerr), &cerr)
+		return newMultimodalHandle(&h, plain(ca, &h))
 	}
 	cbase := C.CString(baseURL)
 	defer C.free(unsafe.Pointer(cbase))
-	return newMultimodalHandleU64(withBase(ca, cbase, &cerr), &cerr)
+	return newMultimodalHandle(&h, withBase(ca, cbase, &h))
 }
 
 // ── EmbeddingModel ──────────────────────────────────────────────────────────
@@ -167,17 +173,15 @@ func (m *EmbeddingModel) Close() error {
 // Embed generates embeddings for the given text values.
 // Returns the JSON-serialized EmbeddingResult.
 func (m *EmbeddingModel) Embed(values []string, opts *EmbeddingCallOptions) (string, error) {
-	valuesJSON, err := json.Marshal(values)
+	valuesJSON, err := marshalJSON("values", values)
 	if err != nil {
-		return "", fmt.Errorf("aimux: failed to marshal values: %w", err)
+		return "", err
 	}
 	optsJSON := ""
 	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
+		if optsJSON, err = marshalJSON("opts", opts); err != nil {
+			return "", err
 		}
-		optsJSON = string(b)
 	}
 
 	handle, err := m.h.load()
@@ -185,7 +189,7 @@ func (m *EmbeddingModel) Embed(values []string, opts *EmbeddingCallOptions) (str
 		return "", err
 	}
 
-	cVals := C.CString(string(valuesJSON))
+	cVals := C.CString(valuesJSON)
 	defer C.free(unsafe.Pointer(cVals))
 	var cOpts *C.char
 	if optsJSON != "" {
@@ -193,8 +197,8 @@ func (m *EmbeddingModel) Embed(values []string, opts *EmbeddingCallOptions) (str
 		defer C.free(unsafe.Pointer(cOpts))
 	}
 
-	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_embed(C.uint64_t(handle), cVals, cOpts, cerr)
+	result, callErr := ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_embed(C.uint64_t(handle), cVals, cOpts, out)
 	})
 	runtime.KeepAlive(m)
 	return result, callErr
@@ -219,9 +223,11 @@ func NewOpenAIEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
 // NewOpenAIEmbeddingWithBase creates an OpenAI embedding model with a custom base URL.
 func NewOpenAIEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_embedding_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_openai_embedding_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_embedding_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_embedding_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -241,9 +247,11 @@ func NewCohereEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
 // NewCohereEmbeddingWithBase creates a Cohere embedding model with a custom base URL.
 func NewCohereEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_cohere_embedding_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_cohere_embedding_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_cohere_embedding_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_cohere_embedding_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -263,9 +271,11 @@ func NewGoogleEmbedding(apiKey, modelID string) (*EmbeddingModel, error) {
 // NewGoogleEmbeddingWithBase creates a Google embedding model with a custom base URL.
 func NewGoogleEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_google_embedding_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_google_embedding_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_google_embedding_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_google_embedding_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -275,6 +285,17 @@ func NewGoogleEmbeddingWithBase(apiKey, modelID, baseURL string) (*EmbeddingMode
 	m.h.handle.Store(mh)
 	runtime.SetFinalizer(m, func(m *EmbeddingModel) { m.Close() })
 	return m, nil
+}
+
+// requiredOptsJSON marshals opts for the FFI entry points whose opts_json is
+// REQUIRED (it carries the input): speech / image / rerank / video / search.
+// A nil opts is rejected here as a plain error instead of crossing the C
+// C ABI as "" (which the header documents as a caller bug → panic).
+func requiredOptsJSON[T any](method string, opts *T) (string, error) {
+	if opts == nil {
+		return "", fmt.Errorf("aimux: %s: opts is required", method)
+	}
+	return marshalJSON("opts", opts)
 }
 
 // ── SpeechModel (TTS) ────────────────────────────────────────────────────────
@@ -289,18 +310,14 @@ func (m *SpeechModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 // Generate generates speech audio from the given options.
 func (m *SpeechModel) Generate(opts *SpeechCallOptions) (string, error) {
-	optsJSON := ""
-	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
-		}
-		optsJSON = string(b)
+	optsJSON, err := requiredOptsJSON("SpeechModel.Generate", opts)
+	if err != nil {
+		return "", err
 	}
-	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, out **C.char) *C.aimux_error_t {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_speech_generate(handle, cOpts, err)
+		return C.aimux_speech_generate(handle, cOpts, out)
 	})
 }
 
@@ -320,9 +337,11 @@ func NewOpenAISpeech(apiKey, modelID string) (*SpeechModel, error) {
 // NewOpenAISpeechWithBase creates an OpenAI speech model with a custom base URL.
 func NewOpenAISpeechWithBase(apiKey, modelID, baseURL string) (*SpeechModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_speech_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_openai_speech_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_speech_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_speech_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -345,18 +364,14 @@ type ImageModel struct {
 func (m *ImageModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 func (m *ImageModel) Generate(opts *ImageCallOptions) (string, error) {
-	optsJSON := ""
-	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
-		}
-		optsJSON = string(b)
+	optsJSON, err := requiredOptsJSON("ImageModel.Generate", opts)
+	if err != nil {
+		return "", err
 	}
-	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, out **C.char) *C.aimux_error_t {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_image_generate(handle, cOpts, err)
+		return C.aimux_image_generate(handle, cOpts, out)
 	})
 }
 
@@ -376,9 +391,11 @@ func NewOpenAIImage(apiKey, modelID string) (*ImageModel, error) {
 // NewOpenAIImageWithBase creates an OpenAI image model with a custom base URL.
 func NewOpenAIImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_image_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_openai_image_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_image_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_image_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -398,9 +415,11 @@ func NewGoogleImage(apiKey, modelID string) (*ImageModel, error) {
 // NewGoogleImageWithBase creates a Google image model with a custom base URL.
 func NewGoogleImageWithBase(apiKey, modelID, baseURL string) (*ImageModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_google_image_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_google_image_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_google_image_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_google_image_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -424,13 +443,15 @@ func (m *TranscriptionModel) Close() error { closeMultimodal(m, &m.h); return ni
 
 // Generate transcribes audio (base64-encoded) to text.
 func (m *TranscriptionModel) Generate(audioBase64, mediaType string, opts *TranscriptionCallOptions) (string, error) {
+	if err := checkUTF8("audio_base64", audioBase64, "media_type", mediaType); err != nil {
+		return "", err
+	}
 	optsJSON := ""
 	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
+		var err error
+		if optsJSON, err = marshalJSON("opts", opts); err != nil {
+			return "", err
 		}
-		optsJSON = string(b)
 	}
 
 	handle, err := m.h.load()
@@ -445,8 +466,8 @@ func (m *TranscriptionModel) Generate(audioBase64, mediaType string, opts *Trans
 		cOpts = cc
 	}
 
-	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_transcription_generate(C.uint64_t(handle), ca, cb, cOpts, cerr)
+	result, callErr := ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_transcription_generate(C.uint64_t(handle), ca, cb, cOpts, out)
 	})
 	runtime.KeepAlive(m)
 	return result, callErr
@@ -468,11 +489,11 @@ func NewOpenAITranscription(apiKey, modelID string) (*TranscriptionModel, error)
 // NewOpenAITranscriptionWithBase creates an OpenAI transcription model with a custom base URL.
 func NewOpenAITranscriptionWithBase(apiKey, modelID, baseURL string) (*TranscriptionModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_openai_transcription_new(ca, cb, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_transcription_new(ca, cb, out)
 		},
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_openai_transcription_new_with_base(ca, cb, cbase, err)
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_transcription_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -496,13 +517,15 @@ func (f *Files) Close() error { closeMultimodal(f, &f.h); return nil }
 
 // Upload uploads a file (base64-encoded) to the provider.
 func (f *Files) Upload(dataBase64, mediaType string, opts *UploadFileCallOptions) (string, error) {
+	if err := checkUTF8("data_base64", dataBase64, "media_type", mediaType); err != nil {
+		return "", err
+	}
 	optsJSON := ""
 	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
+		var err error
+		if optsJSON, err = marshalJSON("opts", opts); err != nil {
+			return "", err
 		}
-		optsJSON = string(b)
 	}
 
 	handle, err := f.h.load()
@@ -517,8 +540,8 @@ func (f *Files) Upload(dataBase64, mediaType string, opts *UploadFileCallOptions
 		cOpts = cc
 	}
 
-	result, callErr := ffiString(func(cerr *C.AimuxError) *C.char {
-		return C.aimux_file_upload(C.uint64_t(handle), ca, cb, cOpts, cerr)
+	result, callErr := ffiString(func(out **C.char) *C.aimux_error_t {
+		return C.aimux_file_upload(C.uint64_t(handle), ca, cb, cOpts, out)
 	})
 	runtime.KeepAlive(f)
 	return result, callErr
@@ -540,9 +563,9 @@ func NewOpenAIFiles(apiKey string) (*Files, error) {
 // NewOpenAIFilesWithBase creates an OpenAI files manager with a custom base URL.
 func NewOpenAIFilesWithBase(apiKey, baseURL string) (*Files, error) {
 	mh, err := newMultimodalModelFiles(apiKey, baseURL,
-		func(ca *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_openai_files_new(ca, err) },
-		func(ca, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_openai_files_new_with_base(ca, cbase, err)
+		func(ca *C.char, out *C.uint64_t) *C.aimux_error_t { return C.aimux_openai_files_new(ca, out) },
+		func(ca, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_openai_files_new_with_base(ca, cbase, out)
 		},
 	)
 	if err != nil {
@@ -566,18 +589,14 @@ func (m *RerankingModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 // Rerank reranks documents against a query.
 func (m *RerankingModel) Rerank(opts *RerankingCallOptions) (string, error) {
-	optsJSON := ""
-	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
-		}
-		optsJSON = string(b)
+	optsJSON, err := requiredOptsJSON("RerankingModel.Rerank", opts)
+	if err != nil {
+		return "", err
 	}
-	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, out **C.char) *C.aimux_error_t {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_rerank(handle, cOpts, err)
+		return C.aimux_rerank(handle, cOpts, out)
 	})
 }
 
@@ -597,9 +616,11 @@ func NewCohereReranking(apiKey, modelID string) (*RerankingModel, error) {
 // NewCohereRerankingWithBase creates a Cohere reranking model with a custom base URL.
 func NewCohereRerankingWithBase(apiKey, modelID, baseURL string) (*RerankingModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_cohere_reranking_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_cohere_reranking_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_cohere_reranking_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_cohere_reranking_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -622,18 +643,14 @@ type VideoModel struct {
 func (m *VideoModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 func (m *VideoModel) Generate(opts *VideoCallOptions) (string, error) {
-	optsJSON := ""
-	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
-		}
-		optsJSON = string(b)
+	optsJSON, err := requiredOptsJSON("VideoModel.Generate", opts)
+	if err != nil {
+		return "", err
 	}
-	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, out **C.char) *C.aimux_error_t {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_video_generate(handle, cOpts, err)
+		return C.aimux_video_generate(handle, cOpts, out)
 	})
 }
 
@@ -653,9 +670,11 @@ func NewGoogleVideo(apiKey, modelID string) (*VideoModel, error) {
 // NewGoogleVideoWithBase creates a Google video model with a custom base URL.
 func NewGoogleVideoWithBase(apiKey, modelID, baseURL string) (*VideoModel, error) {
 	mh, err := newMultimodalModelWithBase(apiKey, modelID, baseURL,
-		func(ca, cb *C.char, err *C.AimuxError) C.uint64_t { return C.aimux_google_video_new(ca, cb, err) },
-		func(ca, cb, cbase *C.char, err *C.AimuxError) C.uint64_t {
-			return C.aimux_google_video_new_with_base(ca, cb, cbase, err)
+		func(ca, cb *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_google_video_new(ca, cb, out)
+		},
+		func(ca, cb, cbase *C.char, out *C.uint64_t) *C.aimux_error_t {
+			return C.aimux_google_video_new_with_base(ca, cb, cbase, out)
 		},
 	)
 	if err != nil {
@@ -678,18 +697,14 @@ type SearchModel struct {
 func (m *SearchModel) Close() error { closeMultimodal(m, &m.h); return nil }
 
 func (m *SearchModel) Search(opts *SearchCallOptions) (string, error) {
-	optsJSON := ""
-	if opts != nil {
-		b, err := json.Marshal(opts)
-		if err != nil {
-			return "", fmt.Errorf("aimux: failed to marshal opts: %w", err)
-		}
-		optsJSON = string(b)
+	optsJSON, err := requiredOptsJSON("SearchModel.Search", opts)
+	if err != nil {
+		return "", err
 	}
-	return callFFIString(m, &m.h, func(handle C.uint64_t, err *C.AimuxError) *C.char {
+	return callFFIString(m, &m.h, func(handle C.uint64_t, out **C.char) *C.aimux_error_t {
 		cOpts := C.CString(optsJSON)
 		defer C.free(unsafe.Pointer(cOpts))
-		return C.aimux_search(handle, cOpts, err)
+		return C.aimux_search(handle, cOpts, out)
 	})
 }
 
@@ -710,19 +725,21 @@ func NewTavilySearch(apiKey string) (*SearchModel, error) {
 // NewTavilySearchWithBase creates a Tavily search model with a custom base URL
 // (for testing against a mock server).
 func NewTavilySearchWithBase(apiKey, baseURL string) (*SearchModel, error) {
+	if err := checkUTF8("api_key", apiKey, "base_url", baseURL); err != nil {
+		return nil, err
+	}
 	ca := C.CString(apiKey)
 	defer C.free(unsafe.Pointer(ca))
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
 	var h C.uint64_t
+	var mh uint64
+	var err error
 	if baseURL == "" {
-		h = C.aimux_tavily_search_new(ca, nil, &cerr)
+		mh, err = newMultimodalHandle(&h, C.aimux_tavily_search_new(ca, nil, &h))
 	} else {
 		cbase := C.CString(baseURL)
 		defer C.free(unsafe.Pointer(cbase))
-		h = C.aimux_tavily_search_new_with_base(ca, nil, cbase, &cerr)
+		mh, err = newMultimodalHandle(&h, C.aimux_tavily_search_new_with_base(ca, nil, cbase, &h))
 	}
-	mh, err := newMultimodalHandleU64(h, &cerr)
 	if err != nil {
 		return nil, err
 	}
@@ -735,6 +752,8 @@ func NewTavilySearchWithBase(apiKey, baseURL string) (*SearchModel, error) {
 // ── DeepSeek convenience constructor (registry-backed, RFC-0017 phase 4) ────
 
 // DeepSeek is a convenience constructor for DeepSeek (OpenAI-compatible API).
+// Must-style: it PANICS on any failure, including an apiKey / modelID that is
+// not valid UTF-8 or contains a NUL. Use NewDeepSeek to get an error instead.
 func DeepSeek(apiKey, modelID string) *Model {
 	return mustNew(NewDeepSeek(apiKey, modelID))
 }
@@ -793,28 +812,32 @@ func StartTranscriptionSession(model *TranscriptionModel, opts *TranscriptionSes
 // abort handle (from AbortSignalNew); firing it aborts the session.
 func StartTranscriptionSessionWithAbort(model *TranscriptionModel, opts *TranscriptionSessionOpts, abortHandle uint64) (*TranscriptionSession, error) {
 	if model == nil {
-		return nil, newError(CodeInvalidArgument, "aimux: transcription model is nil")
+		return nil, errors.New("aimux: transcription model is nil")
 	}
 	modelHandle, err := model.h.load()
 	if err != nil {
 		return nil, err
 	}
 
-	optsJSON := cNullOrEmpty(opts)
+	// nil opts marshals to "null" (the FFI's "use defaults"); a typed nil
+	// pointer in an `any` is not == nil, which is why this is not special-cased.
+	optsJSON, err := marshalJSON("opts", opts)
+	if err != nil {
+		return nil, err
+	}
 	ca, cleanup := cstring1(optsJSON)
 	defer cleanup()
 
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	h := C.aimux_transcription_session_new(
+	var h C.uint64_t
+	callErr := expectAimuxError(C.aimux_transcription_session_new(
 		C.uint64_t(modelHandle),
 		C.uint64_t(abortHandle),
 		ca,
-		&cerr,
-	)
+		&h,
+	))
 	runtime.KeepAlive(model)
-	if h == 0 {
-		return nil, errorFromC(&cerr)
+	if callErr != nil {
+		return nil, callErr
 	}
 	s := &TranscriptionSession{}
 	s.session.Store(uint64(h))
@@ -833,20 +856,14 @@ func (s *TranscriptionSession) PushAudio(audio []byte) error {
 	if len(audio) > 0 {
 		ptr = (*C.uint8_t)(unsafe.Pointer(&audio[0]))
 	}
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	rc := C.aimux_transcription_push_audio(
+	callErr := expectAimuxError(C.aimux_transcription_push_audio(
 		C.uint64_t(handle),
 		ptr,
 		C.size_t(len(audio)),
-		&cerr,
-	)
+	))
 	runtime.KeepAlive(audio)
 	runtime.KeepAlive(s)
-	if rc == 0 {
-		return errorFromC(&cerr)
-	}
-	return nil
+	return callErr
 }
 
 // InputDone signals end-of-audio (idempotent).
@@ -855,14 +872,9 @@ func (s *TranscriptionSession) InputDone() error {
 	if err != nil {
 		return err
 	}
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	rc := C.aimux_transcription_input_done(C.uint64_t(handle), &cerr)
+	callErr := expectFfiError(C.aimux_transcription_input_done(C.uint64_t(handle)))
 	runtime.KeepAlive(s)
-	if rc == 0 {
-		return errorFromC(&cerr)
-	}
-	return nil
+	return callErr
 }
 
 // NextPart pulls the next transcription part (JSON TranscriptionStreamPart).
@@ -874,28 +886,29 @@ func (s *TranscriptionSession) NextPart(timeoutMs int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var cerr C.AimuxError
-	C.aimux_error_clear(&cerr)
-	ptr := C.aimux_transcription_next_part(
+	var out *C.char
+	var state C.int32_t
+	callErr := expectAimuxError(C.aimux_transcription_next_part(
 		C.uint64_t(handle),
 		C.int64_t(timeoutMs),
-		&cerr,
-	)
+		&out,
+		&state,
+	))
 	runtime.KeepAlive(s)
-	if ptr != nil {
-		defer C.aimux_free_string(ptr)
-		return C.GoString(ptr), nil
+	if callErr != nil {
+		return "", callErr
 	}
-	// ptr == nil: disambiguate via err code.
-	if cerr.code == C.AIMUX_OK {
+	// Timeout is a poll state, not an error.
+	switch state {
+	case C.AIMUX_TRANSCRIPTION_NEXT_PART_PART:
+		return cstr(out), nil
+	case C.AIMUX_TRANSCRIPTION_NEXT_PART_ENDED:
 		return "", ErrTranscriptionEnded
-	}
-	if cerr.code == C.AIMUX_E_TIMEOUT {
-		// Free any message then map to the retryable sentinel.
-		_ = errorFromC(&cerr)
+	case C.AIMUX_TRANSCRIPTION_NEXT_PART_TIMEOUT:
 		return "", ErrTranscriptionTimeout
+	default:
+		panic(fmt.Sprintf("aimux ffi: unknown aimux_transcription_next_part state: %d", int32(state)))
 	}
-	return "", errorFromC(&cerr)
 }
 
 // Close terminates and releases the session (aborts the driver; idempotent).
@@ -910,7 +923,7 @@ func (s *TranscriptionSession) Close() {
 func (s *TranscriptionSession) load() (uint64, error) {
 	handle := s.session.Load()
 	if handle == 0 {
-		return 0, newError(CodeInvalidArgument, "aimux: transcription session already closed")
+		return 0, fmt.Errorf("%w: transcription session", ErrClosed)
 	}
 	return handle, nil
 }
@@ -918,16 +931,4 @@ func (s *TranscriptionSession) load() (uint64, error) {
 func cstring1(a string) (*C.char, func()) {
 	ca := C.CString(a)
 	return ca, func() { C.free(unsafe.Pointer(ca)) }
-}
-
-// cNullOrEmpty marshals optional opts to JSON, with "" for nil (defaults).
-func cNullOrEmpty(v any) string {
-	if v == nil {
-		return ""
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return ""
-	}
-	return string(b)
 }

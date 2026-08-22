@@ -13,6 +13,7 @@ _ENTRIES = [
     "init_recording_ring",
     "recording_stop",
     "recording_flush",
+    "recording_try_flush",
     "mock_replay",
 ]
 
@@ -38,3 +39,29 @@ def test_init_recording_ring_no_arg_uses_default():
     """
     aimux.init_recording_ring()
     aimux.recording_stop()
+
+
+def test_recorder_init_failure_raises_recording_error(tmp_path):
+    """A failed recorder initialization is a separate, typed error.
+
+    A parent path that is a regular file fails during initialization with
+    ``Init``; no recorder is installed, so a checked flush remains a no-op.
+    """
+    import pytest
+
+    aimux.recording_stop()
+    aimux.recording_try_flush()  # nothing recording: nothing to flush
+
+    # Parent path is a regular file: init itself raises (code "Init"); the
+    # recorder is not silently degraded and discovered at the first flush.
+    blocker = tmp_path / "occupied"
+    blocker.write_text("x")
+    try:
+        with pytest.raises(aimux.RecordingError) as ei:
+            aimux.init_recording(str(blocker / "sub"))
+        assert ei.value.code == "Init"
+        # A recorder failure is not an AiMuxError failure: separate type.
+        assert not isinstance(ei.value, aimux.AimuxError)
+        aimux.recording_try_flush()  # nothing installed: still a success
+    finally:
+        aimux.recording_stop()

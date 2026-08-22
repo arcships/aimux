@@ -3,7 +3,7 @@
 > Unified LLM service access layer — one API to access 325 AI providers
 
 The Java binding goes through the `aimux-ffi` C ABI via JNA — no native
-toolchain is needed at build time. Artifact: `ai.arcships:aimux-java:0.2.1`,
+toolchain is needed at build time. Artifact: `ai.arcships:aimux-java:0.3.0`,
 Java 8+ (compiled with `--release 8`). See [RFC-0013](../../rfc/0013-java-bindings.md)
 for the design.
 
@@ -12,7 +12,7 @@ for the design.
 Maven Central (publishing):
 
 ```groovy
-implementation("ai.arcships:aimux-java:0.2.1")
+implementation("ai.arcships:aimux-java:0.3.0")
 ```
 
 JNA loads `aimux_ffi` by name — provide the native library
@@ -33,10 +33,10 @@ try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:30
 
 ## Providers
 
-All 250 registry-backed OpenAI-compatible providers are reachable by name;
+All 251 registry-backed OpenAI-compatible providers are reachable by name;
 `ProviderName` holds the constants:
 
-> **Scope:** `provider(name)` covers only the 250 registry OpenAI-compatible
+> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
 > (`Model.anthropic(apiKey, modelId)`); custom endpoints → base-URL variant.
 > Full list: [providers.md](providers.md).
@@ -62,7 +62,7 @@ Unknown names throw `NoSuchProviderError` naming the requested provider
 
 ## Errors
 
-Engine and binding failures throw an **`AimuxException` subclass hierarchy**
+`AiMuxError` values throw an **`AimuxException` subclass hierarchy**
 (OpenAI Java / Vercel AI SDK style — `instanceof`, not stringly `code` checks):
 
 ```text
@@ -84,14 +84,63 @@ Every instance has:
 | Field | Meaning |
 |-------|---------|
 | `getMessage()` | human-readable text from C |
-| `getCode()` | `AimuxErrorCode` value 0–14 (matches `aimux-error.h`) |
+| `getCode()` | `aimux_error_code_t` value 1–13 (matches `aimux-error.h`) |
 | `getStatusCode()` | HTTP status, or `-1` |
 | `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
+| `isRetryable()` | the `AiMuxError` retry verdict (not derivable from status) |
 
-Transport: fallible C calls take a trailing `AimuxError *err` and return
-`0` / `NULL` on failure. The Java binding maps that into the hierarchy via
-`AimuxException.fromC(AimuxCError)` — **not** JSON error envelopes on the
-main path. Subclasses are nested under `AimuxException` (e.g.
+A code outside the enum is a header/library mismatch and fails with
+`IllegalStateException`, not an error type.
+
+Three subclasses carry the C payload of their variant (nullable `String`s,
+`null` when unavailable): `APICallError` —
+`getProviderCode()`, `getProviderMessage()`, `getRequestId()`, `getResponseBody()`;
+`NoSuchModelError` — `getModelId()`, `getModelType()`;
+`NoSuchProviderError` — `getProviderId()`.
+
+Recording failures are a **separate type**, mirroring the two unrelated
+Rust error types: `Aimux.initRecording(dir)` and `Aimux.recordingTryFlush()`
+throw `RecordingException` (a plain `RuntimeException`, *not* an
+`AimuxException`) whose `getCode()` is a `RecordingErrorCode` — `INIT`,
+`OPEN_FILE`, `SPAWN`, `WRITER_GONE`, `FLUSH_TIMEOUT`, `WRITE` (C
+`aimux_error_code_t` 100–105). `initRecording` reports `INIT` / `OPEN_FILE` /
+`SPAWN` (the previous recorder, if any, stays in place); a flush reports the
+last three. The legacy `recordingFlush()` never reports.
+
+**C ABI failures** are codes 200–206, not an aimux type. The binding catches what a
+caller can trigger *before* the C call and throws the native Java exception;
+anything in that C code range is a binding/library invariant:
+
+| Situation | Java |
+| --- | --- |
+| `null` for a required `String` (`apiKey`, `modelId`, `promptJson`, `configJson`, `valuesJson`, `dir` …) | `NullPointerException("<param>")`, thrown before the C call |
+| Malformed raw JSON (`promptJson`, `optsJson`, `configJson`, `valuesJson`, `recordingsJsonl` …), including trailing garbage or `""` for a required param | `IllegalArgumentException("<param>: invalid JSON: …")`, thrown before the C call |
+| Use-after-close of any handle (`Model`, `EmbeddingModel`, `TranscriptionSession`, …) | `IllegalStateException("<Type> is closed")`, thrown before the C call |
+| C code 200–206 (null pointer, invalid UTF-8, malformed wire JSON, dead handle, re-entrant call, result serialization, callback failure) | `IllegalStateException("aimux ffi: …")` — a binding/library invariant, never a caller error |
+
+`TypedModel` failing to decode what the library returned is likewise a
+binding/library invariant: `IllegalStateException("aimux: failed to decode
+<Type>: …")`.
+
+Known and accepted: the multimodal classes (`EmbeddingModel`, `SpeechModel`, …)
+guard `close()` with an `AtomicLong` rather than a lock, so a `close()` racing an
+in-flight call can surface as `IllegalStateException("aimux ffi: invalid or
+expired … handle")` instead of `"<Type> is closed"` — still an
+`IllegalStateException`.
+
+`AimuxException` and `RecordingException` mirror the two unrelated Rust error
+types and share no base beyond `RuntimeException`.
+
+Transport: every fallible C call returns an opaque `aimux_error_t *`
+(JNA `Pointer`) — `null` on success with the result in a trailing out-parameter
+(`LongByReference` handle / `PointerByReference` JSON), non-null on failure.
+`AimuxResult` reads one unified code: 1–13 restores the matching
+`AimuxException` subclass, 100–105 restores `RecordingException`, and 200–206
+becomes `IllegalStateException("aimux ffi: …")`. Payload getters are read only
+under their owning AiMuxError code. Every returned string is freed and the
+returned error is released with
+`aimux_error_free` exactly once (errors are never handles). No JSON error
+envelopes on the main path. Subclasses are nested under `AimuxException` (e.g.
 `AimuxException.APICallError`).
 
 ```java
@@ -106,26 +155,28 @@ try (Model model = Model.openai("sk-...", "gpt-4o")) {
     // 401 — refresh the token and retry
 } catch (APICallError e) {
     // Classify on status: 429 → rate limited (e.getRetryMs()),
-    // 401 → auth, 404 → model; -1 → transport failure
+    // 401 → auth, 404 → model; -1 → no HTTP response observed
 } catch (AimuxException e) {
-    // any engine / binding failure
+    // any AiMuxError failure
 }
 ```
 
 Stream terminal failures also throw (there is no C `on_error` callback). The
-raw `streamText` `onError` parameter is retained for API compatibility (e.g.
-typed decode issues) but is not used for C-level failures.
+raw `streamText` has no `onError` parameter; only `TypedModel.streamText` takes
+one, and it reports local decode failures only, never C-level failures.
 
 ## Architecture
 
 Two layers, mirroring the Kotlin binding:
 
 - **Raw layer** (`Model`, `EmbeddingModel`, `SpeechModel`, …) — JNA → C ABI,
-  JSON strings in and out. Failures throw typed `AimuxException` subclasses
-  from the C `AimuxError` out-param (handle `0` / pointer `NULL`).
+  JSON strings in and out. `AiMuxError` values throw typed `AimuxException`
+  subclasses, decoded from the `aimux_error_t *` a failed call returns;
+  C ABI misuse throws plain `IllegalArgumentException` /
+  `IllegalStateException` (see Errors).
 - **Typed layer** (`TypedModel`, `Types`, `MultimodalTypes`) — Jackson POJOs
   with the same wire format as all other bindings. `TypedModel` decodes results
-  into typed objects; engine errors propagate as `AimuxException`.
+  into typed objects; `AiMuxError` values propagate as `AimuxException`.
 
 Serialization uses `JsonInclude.Include.NON_NULL` (null fields omitted on
 encode; zero values and empty collections are retained).
@@ -159,10 +210,10 @@ try (TypedModel model = TypedModel.openai("sk-...", "gpt-4o")) {
 ```java
 // raw layer — callback-based (JSON parts), blocks the calling thread
 try (Model model = Model.openai("sk-...", "gpt-4o")) {
+    // No onError: stream failures throw AimuxException from streamText.
     model.streamText("\"Write a haiku\"", null,
         part -> System.out.println(part),   // onPart (String JSON)
-        () -> {},                           // onDone
-        err -> System.err.println(err));    // onError
+        () -> {});                          // onDone
 }
 
 // raw layer — pull-based (lazy Stream<String>)
@@ -193,7 +244,7 @@ and `(List<ModelMessage> messages, options)` overloads.
 | `streamTextStream` | `Stream<StreamPart> streamTextStream(...)` — 4 overloads, pull-based |
 
 `TypedModel` is `Closeable` (owning factories must be closed with
-try-with-resources); engine errors surface as `AimuxException`.
+try-with-resources); `AiMuxError` values surface as `AimuxException`.
 
 ## Vector Embedding
 
@@ -317,18 +368,19 @@ the `aimux-core` `.ts` wire definitions exactly (`{headers, body, ...}`).
 
 ## Error Handling
 
-- **All fallible raw APIs** (`Model.generateText`, multimodal, …): C sentinel
-  failure fills `AimuxError *`; Java throws `AimuxException.fromC` (typed
-  subclasses — see [Errors](#errors) above). Success payloads are plain result
-  JSON strings, not error envelopes.
-- **Typed text layer** (`TypedModel`): engine failures throw the same hierarchy;
-  local decode failures throw `AimuxException` / `InvalidArgumentError`.
+- **All fallible raw APIs** (`Model.generateText`, multimodal, …): a failed C
+  call returns an `aimux_error_t *`; Java decodes it and throws the typed
+  `AimuxException` subclass (see [Errors](#errors) above). Success payloads
+  are plain result JSON strings, not error envelopes.
+- **Typed text layer** (`TypedModel`): AiMuxError failures throw the same hierarchy;
+  failing to decode the library's own output is a binding invariant and throws
+  `IllegalStateException("aimux: failed to decode <Type>: …")`.
 
 ## Coverage
 
 Full multimodal surface — text generation, streaming, embedding, TTS, STT,
-image, video, reranking, search, and file upload. Verified by 58 tests across
-7 suites (mock-server E2E + contract wire-format round-trips, no real network).
+image, video, reranking, search, and file upload. Verified by the JUnit suite
+(mock-server E2E + contract wire-format round-trips, no real network).
 See the [coverage matrix](../API.md#feature-coverage).
 
 ## Build & Test

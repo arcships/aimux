@@ -195,6 +195,7 @@ imager = openai_image("sk-...", "dall-e-3")
 result = json.loads(imager.generate(json.dumps({
     "prompt": "A cute baby sea otter",
     "n": 1,
+    "provider_options": {},
 })))
 
 if "Base64" in result["images"]:
@@ -214,6 +215,7 @@ videor = google_video("sk-...", "veo-3.0")
 result = json.loads(videor.generate(json.dumps({
     "prompt": "A cat playing piano",
     "n": 1,
+    "provider_options": {},
 })))
 
 # result["videos"] is usually [{"Url": {"url": "...", "media_type": "..."}}]
@@ -230,13 +232,18 @@ from aimux import cohere_reranking
 import json
 
 reranker = cohere_reranking("sk-...", "rerank-v3.0")
+# docs_json is the externally-tagged `RerankingDocuments` enum —
+# {"Object": {"values": [...]}} for JSON documents, {"Text": {"values": [...]}} for strings
+docs = {"Object": {"values": [
+    {"text": "Rust is a systems programming language."},
+    {"text": "Rust is a chemical element."},
+]}}
 result = json.loads(reranker.rerank(
     "What is Rust?",
-    json.dumps([
-        {"text": "Rust is a systems programming language."},
-        {"text": "Rust is a chemical element."},
-    ]),
-    json.dumps({"top_n": 3}),
+    json.dumps(docs),
+    # opts_json is a whole RerankingCallOptions: only top_n and provider_options
+    # are read from it, but query and documents must be present to deserialize
+    json.dumps({"query": "What is Rust?", "documents": docs, "top_n": 3}),
 ))
 
 # result["ranking"] sorted by relevance_score
@@ -247,8 +254,14 @@ for rank in result["ranking"]:
 ## Search
 
 ```python
-# Same as Node: the SearchModel class is exposed, but there is no factory
-# function yet — use via the Rust core, the Go binding, or the C ABI
+from aimux import tavily_search
+import json
+
+searcher = tavily_search("tvly-...")
+result = json.loads(searcher.search("What is Rust?"))
+
+print(result["results"][0]["title"])  # ordered result list
+print(result["answer"])               # provider's summary, if any
 ```
 
 ## File Upload
@@ -286,14 +299,16 @@ The `aimux` package has two layers:
 | `ImageModel` | `openai_image` / `google_image` | `generate(opts_json)` |
 | `VideoModel` | `google_video` | `generate(opts_json)` |
 | `RerankingModel` | `cohere_reranking` | `rerank(query, docs_json, opts_json=None)` |
-| `SearchModel` | — (no factory yet) | `search(query, opts_json=None)` |
+| `SearchModel` | `tavily_search(api_key, base_url=None)` | `search(query, opts_json=None)` |
 | `Files` | `openai_files(api_key, base_url=None)` | `upload_file(data_base64, media_type, opts_json=None)` |
 | `StreamIterator` | returned by `Model.stream_text` | `__iter__` / `__next__` of `StreamPart` JSON strings |
 
 All factories accept an optional `base_url` and return instances synchronously
-(no `await`). The typed wrapper adds three functions: `generate_text` (returns a
+(no `await`). The typed wrapper adds five functions: `generate_text` (returns a
 pydantic `GenerateTextResult`), `stream_text` (yields parsed `StreamPart`
-dicts), and `parse_stream_part` (validates a dict into a typed `StreamPart`).
+dicts), and `parse_stream_part` (validates a dict into a typed `StreamPart`),
+plus `generate_text_as_openai` / `stream_text_as_openai`, which return OpenAI
+`ChatCompletion` / `ChatCompletionChunk` models.
 
 ## Types
 
@@ -314,13 +329,13 @@ from aimux.wrapper import (
 )
 ```
 
-Engine and binding failures raise an **exception hierarchy** (explicit types —
+`AiMuxError` and recorder failures raise an **exception hierarchy** (explicit types —
 OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
 
 ```text
 Exception
  └── AimuxError
-      ├── APICallError              # every HTTP-shaped failure; classify on status
+      ├── APICallError              # provider call/transport failure; status when observed
       ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError
@@ -329,12 +344,35 @@ Exception
       ├── APITimeoutError
       ├── RequestAbortedError
       └── OtherError
+
+Exception                          # the recorder's own failure type — not an AimuxError
+ └── RecordingError                # init_recording(): code "Init" | "OpenFile" | "Spawn"; recording_try_flush(): "WriterGone" | "FlushTimeout" | "Write"
 ```
 
-Instances carry `status` (HTTP status or `None`), `retry_ms` (hint or `None`),
-and `error_value: str | None` — the raw externally-tagged AiMuxError JSON
-(e.g. `'{"ApiCall":{"status_code":429,"retry_after_ms":1500,...}}'`), the
-machine-readable companion to `str(e)`.
+`AimuxError` subclasses carry only their own payload. There is no common string
+discriminator and no JSON companion.
+`RecordingError` mirrors the core's separate `RecordingError` type: it carries
+its own `code`, and is not caught by `except AimuxError`.
+Failures of the pyo3 bridge itself are not aimux types — they surface the way
+pyo3 does, as Python builtins, never disguised as an `AimuxError`:
+
+| scenario | raises |
+|---|---|
+| a JSON *text* you passed (`prompt_json` / `opts_json` / `config_json` / …) does not parse | `ValueError("prompt_json: invalid JSON: …")` — the message names the argument |
+| closed / ended session handed back to the binding | `ValueError("… is closed")` |
+| binding could not serialize a result | `RuntimeError("serialize result: …")` |
+| a bridge invariant broke | `RuntimeError` |
+| argument *type* errors | pyo3's own `TypeError` |
+| panic in native code | `pyo3_runtime.PanicException` |
+
+JSON that parses but has a bad value is still `InvalidArgumentError`.
+
+Payload attributes belong to the class that carries them and are absent on the
+others. `APICallError` has `status` / `retryable` / `retry_ms` /
+`provider_code` / `provider_message` / `response_body` / `request_id`;
+optional values use Python's normal `None`. `TokenExpiredError` has
+`status == 401`, `NoSuchModelError` has `model_id` / `model_type`, and
+`NoSuchProviderError` has `provider_id`.
 
 ```python
 from aimux import (
@@ -354,7 +392,7 @@ except APICallError as e:
     elif e.status == 404:
         ...  # model not found
 except AimuxError:
-    ...  # any engine / binding failure
+    ...  # any AiMuxError failure
 ```
 
 (The pydantic wire type named `AiMuxErrorValue` in `aimux.wrapper` is only for

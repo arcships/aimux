@@ -8,7 +8,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { openai, anthropic } from '../index.js'
+import { openai, anthropic } from '../src/native.ts'
 
 // ── Mock server helpers ─────────────────────────────────────────────────────
 

@@ -12,20 +12,30 @@
 //!     elif e.status == 401:
 //!         ...
 //! except AimuxError:
-//!     ...  # any engine / binding failure
+//!     ...  # any AiMuxError failure
 //! ```
+//!
+//! Failures of the pyo3 binding itself are not aimux types: they surface as
+//! Python's own `ValueError` (bad wire input / closed object) or
+//! `RuntimeError` (result serialization / broken invariant).
 
-use aimux_core::AiMuxError;
+use aimux_core::{AiMuxError, recording::RecordingError as CoreRecordingError};
 use pyo3::create_exception;
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyAnyMethods;
 
-// Base — catch-all for any aimux failure.
-create_exception!(aimux, AimuxError, PyException, "Engine or binding failure");
+// Base — catch-all for AiMuxError failures only. Recording and binding failures
+// have independent public exception types below.
+create_exception!(aimux, AimuxError, PyException, "AiMux failure");
 
 create_exception!(aimux, APICallError, AimuxError, "API call failure");
-create_exception!(aimux, JSONParseError, AimuxError, "JSON parse/serialize failure");
+create_exception!(
+    aimux,
+    JSONParseError,
+    AimuxError,
+    "Provider response JSON parse failure"
+);
 create_exception!(
     aimux,
     InvalidResponseDataError,
@@ -57,6 +67,140 @@ create_exception!(
 create_exception!(aimux, APITimeoutError, AimuxError, "Request timed out");
 create_exception!(aimux, RequestAbortedError, AimuxError, "Request aborted");
 create_exception!(aimux, OtherError, AimuxError, "Unclassified failure");
+// The recorder's failure type. A second, unrelated error type in the core
+// (`aimux_core::recording::RecordingError`), so a second, unrelated exception
+// here: it derives from Python's `Exception`, not from `AimuxError`.
+create_exception!(
+    aimux,
+    RecordingError,
+    pyo3::exceptions::PyException,
+    "Recorder could not confirm data on disk"
+);
+
+/// What the binding itself can get wrong. Internal routing only — projected
+/// onto Python's builtin `ValueError` / `RuntimeError` by [`binding_py_err`].
+#[derive(Debug, Clone)]
+pub(crate) enum BindingError {
+    /// A JSON *text* the binding transports did not parse.
+    InvalidWireJson {
+        argument: &'static str,
+        message: String,
+    },
+    /// A closed session / dropped handle handed to the binding.
+    InvalidHandle { expected: &'static str },
+    /// The binding could not serialize a result to JSON.
+    ResultSerialization { message: String },
+    /// A binding invariant broke.
+    InvariantViolation { message: String },
+}
+
+pub(crate) fn binding_py_err(e: &BindingError) -> PyErr {
+    match e {
+        BindingError::InvalidWireJson { argument, message } => {
+            PyValueError::new_err(format!("{argument}: invalid JSON: {message}"))
+        }
+        BindingError::InvalidHandle { expected } => {
+            PyValueError::new_err(format!("{expected} is closed"))
+        }
+        BindingError::ResultSerialization { message } => {
+            PyRuntimeError::new_err(format!("serialize result: {message}"))
+        }
+        BindingError::InvariantViolation { message } => PyRuntimeError::new_err(message.clone()),
+    }
+}
+
+/// Parse a JSON text the binding transports (`prompt_json` / `opts_json` /
+/// `config_json` / …). Malformed text → binding `InvalidWireJson`; text that
+/// parses but violates the schema → `AiMuxError::InvalidArgument` (what the
+/// core would say about the value).
+pub(crate) fn wire_json<T: serde::de::DeserializeOwned>(
+    argument: &'static str,
+    s: &str,
+) -> PyResult<T> {
+    serde_json::from_str(s).map_err(|e| match e.classify() {
+        serde_json::error::Category::Data => to_py_err(&AiMuxError::InvalidArgument(format!(
+            "invalid {argument}: {e}"
+        ))),
+        _ => binding_py_err(&BindingError::InvalidWireJson {
+            argument,
+            message: e.to_string(),
+        }),
+    })
+}
+
+/// Serialize a result for the wire; failure is the binding's, not an AiMuxError.
+pub(crate) fn serialize_result<T: serde::Serialize>(v: &T) -> PyResult<String> {
+    serde_json::to_string(v).map_err(|e| {
+        binding_py_err(&BindingError::ResultSerialization {
+            message: e.to_string(),
+        })
+    })
+}
+
+/// One internal error carrier for failures crossing the Python binding.
+///
+/// The variants remain separate through the conversion point: `AiMux` becomes
+/// an `AimuxError` subclass, `Recording` becomes `RecordingError`, and
+/// `Binding` becomes Python's builtin `ValueError` / `RuntimeError`.
+#[derive(Debug)]
+pub(crate) enum AiMuxBindingError {
+    AiMux(AiMuxError),
+    Recording(CoreRecordingError),
+    Binding(BindingError),
+}
+
+impl From<AiMuxError> for AiMuxBindingError {
+    fn from(e: AiMuxError) -> Self {
+        Self::AiMux(e)
+    }
+}
+
+impl From<CoreRecordingError> for AiMuxBindingError {
+    fn from(e: CoreRecordingError) -> Self {
+        Self::Recording(e)
+    }
+}
+
+impl From<BindingError> for AiMuxBindingError {
+    fn from(e: BindingError) -> Self {
+        Self::Binding(e)
+    }
+}
+
+impl AiMuxBindingError {
+    pub(crate) fn to_py_err(&self) -> PyErr {
+        match self {
+            Self::AiMux(e) => crate::error::to_py_err(e),
+            Self::Recording(e) => recording_py_err(e),
+            Self::Binding(e) => binding_py_err(e),
+        }
+    }
+}
+
+/// Raise `RecordingError` for a core recording failure. `code` mirrors the
+/// Rust variant name: "Init" / "OpenFile" / "Spawn" / "WriterGone" /
+/// "FlushTimeout" / "Write".
+fn recording_py_err(e: &CoreRecordingError) -> PyErr {
+    use CoreRecordingError as R;
+    let code = match e {
+        R::Init { .. } => "Init",
+        R::OpenFile { .. } => "OpenFile",
+        R::Spawn { .. } => "Spawn",
+        R::WriterGone => "WriterGone",
+        R::FlushTimeout => "FlushTimeout",
+        R::Write(_) => "Write",
+    };
+    Python::with_gil(|py| {
+        let build = || -> PyResult<PyErr> {
+            let inst = py
+                .get_type_bound::<RecordingError>()
+                .call1((e.to_string(),))?;
+            inst.setattr("code", code)?;
+            Ok(PyErr::from_value_bound(inst))
+        };
+        build().unwrap_or_else(|err| err)
+    })
+}
 
 pub(crate) fn to_py_err(e: &AiMuxError) -> PyErr {
     Python::with_gil(|py| match raise_variant(py, e) {
@@ -83,30 +227,44 @@ fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
         AiMuxError::Aborted => py.get_type_bound::<RequestAbortedError>(),
         AiMuxError::Other(_) => py.get_type_bound::<OtherError>(),
     };
-    let detail = match e {
-        AiMuxError::ApiCall(d) => Some(d),
-        _ => None,
-    };
     let inst = typ.call1((e.to_string(),))?;
-    // None when the core has no value (openai/anthropic convention: int | None).
-    inst.setattr("status", e.status_code().map(i32::from))?;
-    inst.setattr("retry_ms", e.retry_after_hint())?;
-    inst.setattr("retryable", e.is_retryable())?;
-    // Structured fields from `ApiCallError` (AI SDK `APICallError` analogues).
-    inst.setattr(
-        "provider_code",
-        detail.and_then(|d| d.provider_code.as_deref()),
-    )?;
-    inst.setattr(
-        "response_body",
-        detail.and_then(|d| d.response_body.as_deref()),
-    )?;
-    inst.setattr(
-        "request_id",
-        detail.and_then(|d| d.request_id.as_deref()),
-    )?;
-    // Lossless externally-tagged JSON of the source error (parity with C ABI).
-    inst.setattr("error_value", serde_json::to_string(e).ok())?;
+    match e {
+        AiMuxError::ApiCall(d) => {
+            // Optional API-call fields use None, following normal Python SDK
+            // conventions; unrelated exception classes do not expose them.
+            inst.setattr("status", e.status_code().map(i32::from))?;
+            inst.setattr("retryable", e.is_retryable())?;
+            inst.setattr("retry_ms", e.retry_after_hint())?;
+            inst.setattr("provider_code", d.provider_code.as_deref())?;
+            // str(e) is the composed "API call error: HTTP 429: …"; this is
+            // the failure's own text. Usually the provider's words — ours on
+            // a transport failure or an unreadable body (response_body is
+            // the evidence either way).
+            inst.setattr(
+                "provider_message",
+                (!d.message.is_empty()).then_some(d.message.as_str()),
+            )?;
+            inst.setattr("response_body", d.response_body.as_deref())?;
+            inst.setattr("request_id", d.request_id.as_deref())?;
+        }
+        AiMuxError::TokenExpired(_) => {
+            inst.setattr("status", 401)?;
+        }
+        AiMuxError::NoSuchModel {
+            model_id,
+            model_type,
+        } => {
+            inst.setattr("model_id", model_id.as_str())?;
+            inst.setattr(
+                "model_type",
+                (!model_type.is_empty()).then_some(model_type.as_str()),
+            )?;
+        }
+        AiMuxError::NoSuchProvider { provider_id } => {
+            inst.setattr("provider_id", provider_id.as_str())?;
+        }
+        _ => {}
+    }
     Ok(PyErr::from_value_bound(inst))
 }
 
@@ -148,5 +306,6 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         py.get_type_bound::<RequestAbortedError>(),
     )?;
     m.add("OtherError", py.get_type_bound::<OtherError>())?;
+    m.add("RecordingError", py.get_type_bound::<RecordingError>())?;
     Ok(())
 }

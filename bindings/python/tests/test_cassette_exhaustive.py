@@ -2,7 +2,7 @@
 
 Iterates over EVERY chat/completions cassette file across all provider
 directories, mounts each one individually, and verifies the full chain:
-  Python → PyO3 → Rust engine → single cassette → parse → result
+  Python → PyO3 → aimux-core → single cassette → parse → result
 """
 
 import json

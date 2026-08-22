@@ -1,7 +1,7 @@
 """End-to-end multimodal tests with a mock HTTP server.
 
 Verifies the FULL chain for each of the 8 multimodal features:
-Python → PyO3 → Rust engine → HTTP mock → response parsing → typed result.
+Python → PyO3 → aimux-core → HTTP mock → response parsing → typed result.
 
 The mock server runs in a separate process (multiprocessing) because PyO3's
 block_on blocks the calling thread — a threading-based server would deadlock.
