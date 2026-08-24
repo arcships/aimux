@@ -22,7 +22,8 @@ use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
+    without_trailing_slash,
 };
 
 const DEFAULT_BASE_URL: &str = "https://external.api.recraft.ai/v1";
@@ -211,6 +212,7 @@ fn build_generation_body(
 async fn extract_images(
     response: &Value,
     abort_signal: Option<aimux_core::shared::AbortSignal>,
+    base_url: &str,
 ) -> Result<ImageOutputs, AiMuxError> {
     let items = response.get("data").and_then(|d| d.as_array());
 
@@ -240,7 +242,8 @@ async fn extract_images(
 
     let mut binaries = Vec::with_capacity(urls.len());
     for url in &urls {
-        let resp = send(
+        // data[].url is a generated-image URL from the response body.
+        let resp = send_validated(
             HttpRequest {
                 method: HttpMethod::Get,
                 url: url.clone(),
@@ -251,6 +254,8 @@ async fn extract_images(
                 call_id: None,
                 recording_context: None,
             },
+            Some(base_url),
+            Some(base_url),
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
         )
@@ -312,7 +317,8 @@ impl ImageModel for RecraftImageModel {
         let response_headers = resp.headers;
         let value: Value = serde_json::from_slice(&resp.body)?;
 
-        let images = extract_images(&value, options.abort_signal.clone()).await?;
+        let images =
+            extract_images(&value, options.abort_signal.clone(), &self.config.base_url).await?;
 
         Ok(ImageResult {
             images,

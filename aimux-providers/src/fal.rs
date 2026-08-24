@@ -20,8 +20,8 @@ use aimux_core::transcription_model::{
 };
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
+    sleep_or_abort, without_trailing_slash,
 };
 
 // ── Config ──────────────────────────────────────────────────────────────────
@@ -551,7 +551,8 @@ impl ImageModel for FalImageModel {
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for img in &target_images {
             if let Some(url) = img.get("url").and_then(|v| v.as_str()) {
-                let ir = send(
+                // images[].url comes from the queue result response body.
+                let ir = send_validated(
                     HttpRequest {
                         method: HttpMethod::Get,
                         url: url.to_string(),
@@ -562,6 +563,8 @@ impl ImageModel for FalImageModel {
                         call_id: None,
                         recording_context: None,
                     },
+                    Some(&self.config.base_url),
+                    Some(&self.config.base_url),
                     RetryConfig::default(),
                     &DEFAULT_ERROR_STRUCTURE,
                 )

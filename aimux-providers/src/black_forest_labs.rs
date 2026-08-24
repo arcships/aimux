@@ -20,8 +20,8 @@ use aimux_core::image_model::{
 use aimux_core::shared::Warning;
 use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
+    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, send_validated,
+    sleep_or_abort, without_trailing_slash,
 };
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
@@ -138,6 +138,23 @@ impl BlackForestLabsImageModel {
 
 fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
+/// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL
+/// serves polling and asset URLs from regional clusters. Allowlisted hosts
+/// still get full URL/DNS validation; this gates only the headers.
+fn bfl_trusted_url(url: &str, base_url: &str) -> bool {
+    if aimux_provider_utils::same_origin(url, base_url) {
+        return true;
+    }
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    parsed.scheme() == "https"
+        && parsed
+            .host_str()
+            .is_some_and(|host| host == "bfl.ai" || host.ends_with(".bfl.ai"))
 }
 
 #[async_trait]
@@ -285,6 +302,15 @@ impl ImageModel for BlackForestLabsImageModel {
 
         let headers = self.build_headers(options.headers.as_ref());
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        // AI SDK gates headers per URL via isTrustedUrl; response-supplied
+        // targets outside the BFL allowlist get none.
+        let gated_headers = |url: &str| -> Vec<(String, String)> {
+            if bfl_trusted_url(url, &self.config.base_url) {
+                header_list.clone()
+            } else {
+                vec![]
+            }
+        };
 
         // Submit
         let resp = send(
@@ -343,17 +369,23 @@ impl ImageModel for BlackForestLabsImageModel {
         let mut result_duration = None;
 
         for _ in 0..max_attempts {
-            let pr = send(
+            // AI SDK polls polling_url with validateUrl: true and gates the
+            // headers itself via isTrustedUrl (base_url origin or HTTPS
+            // *.bfl.ai), so credentialed_origin is None here.
+            let poll_url = poll_url_with_id.to_string();
+            let pr = send_validated(
                 HttpRequest {
                     method: HttpMethod::Get,
-                    url: poll_url_with_id.to_string(),
-                    headers: header_list.clone(),
+                    headers: gated_headers(&poll_url),
+                    url: poll_url,
                     body: HttpBody::Empty,
 
                     abort_signal: options.abort_signal.clone(),
                     call_id: None,
                     recording_context: None,
                 },
+                Some(&self.config.base_url),
+                None,
                 RetryConfig::default(),
                 &DEFAULT_ERROR_STRUCTURE,
             )
@@ -405,18 +437,22 @@ impl ImageModel for BlackForestLabsImageModel {
             ))
         })?;
 
-        // Download image
-        let ir = send(
+        // Download image; result.sample is a URL from the poll response body.
+        // AI SDK sends its headers to trusted BFL hosts on the download too
+        // (isTrustedUrl-gated), so mirror the poll's header policy.
+        let ir = send_validated(
             HttpRequest {
                 method: HttpMethod::Get,
+                headers: gated_headers(&image_url),
                 url: image_url,
-                headers: vec![],
                 body: HttpBody::Empty,
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
+            Some(&self.config.base_url),
+            None,
             RetryConfig::default(),
             &DEFAULT_ERROR_STRUCTURE,
         )
@@ -463,5 +499,24 @@ impl ImageModel for BlackForestLabsImageModel {
             },
             usage: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bfl_trusted_url;
+
+    #[test]
+    fn credentials_go_to_the_base_url_and_bfl_hosts_only() {
+        let base = "https://api.bfl.ai";
+        assert!(bfl_trusted_url("https://api.bfl.ai/v1/get_result", base));
+        assert!(bfl_trusted_url(
+            "https://api.us1.bfl.ai/v1/get_result",
+            base
+        ));
+        assert!(bfl_trusted_url("https://bfl.ai/x", base));
+        assert!(!bfl_trusted_url("http://api.us1.bfl.ai/x", base));
+        assert!(!bfl_trusted_url("https://evil-bfl.ai/x", base));
+        assert!(!bfl_trusted_url("https://attacker.example/x", base));
     }
 }
