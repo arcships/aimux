@@ -23,13 +23,14 @@ use aimux_core::{AiMuxError, recording::RecordingError as CoreRecordingError};
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyAnyMethods;
+use pyo3::types::{PyAnyMethods, PyList};
 
 // Base — catch-all for AiMuxError failures only. Recording and binding failures
 // have independent public exception types below.
 create_exception!(aimux, AimuxError, PyException, "AiMux failure");
 
 create_exception!(aimux, APICallError, AimuxError, "API call failure");
+create_exception!(aimux, RetryError, AimuxError, "Operation retry failure");
 create_exception!(
     aimux,
     JSONParseError,
@@ -203,15 +204,19 @@ fn recording_py_err(e: &CoreRecordingError) -> PyErr {
 }
 
 pub(crate) fn to_py_err(e: &AiMuxError) -> PyErr {
-    Python::with_gil(|py| match raise_variant(py, e) {
-        Ok(err) => err,
+    Python::with_gil(|py| match exception_instance(py, e) {
+        Ok(instance) => PyErr::from_value_bound(instance),
         Err(e) => e,
     })
 }
 
-fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
+fn exception_instance<'py>(
+    py: Python<'py>,
+    e: &AiMuxError,
+) -> PyResult<Bound<'py, PyAny>> {
     let typ = match e {
         AiMuxError::ApiCall(_) => py.get_type_bound::<APICallError>(),
+        AiMuxError::Retry(_) => py.get_type_bound::<RetryError>(),
         AiMuxError::JsonParse(_) => py.get_type_bound::<JSONParseError>(),
         AiMuxError::InvalidResponseData(_) => py.get_type_bound::<InvalidResponseDataError>(),
         AiMuxError::Tool(_) => py.get_type_bound::<ToolError>(),
@@ -224,7 +229,7 @@ fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
         AiMuxError::NoSuchModel { .. } => py.get_type_bound::<NoSuchModelError>(),
         AiMuxError::NoSuchProvider { .. } => py.get_type_bound::<NoSuchProviderError>(),
         AiMuxError::Timeout(_) => py.get_type_bound::<APITimeoutError>(),
-        AiMuxError::Aborted => py.get_type_bound::<RequestAbortedError>(),
+        AiMuxError::Aborted(_) => py.get_type_bound::<RequestAbortedError>(),
         AiMuxError::Other(_) => py.get_type_bound::<OtherError>(),
     };
     let inst = typ.call1((e.to_string(),))?;
@@ -245,7 +250,42 @@ fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
                 (!d.message.is_empty()).then_some(d.message.as_str()),
             )?;
             inst.setattr("response_body", d.response_body.as_deref())?;
-            inst.setattr("request_id", d.request_id.as_deref())?;
+            inst.setattr("url", (!d.url.is_empty()).then_some(d.url.as_str()))?;
+            // JSON null projects to Python None, so no separate absent case.
+            inst.setattr(
+                "request_body_values",
+                json_value_to_python(py, &d.request_body_values)?,
+            )?;
+            inst.setattr("response_headers", d.response_headers.clone())?;
+            inst.setattr(
+                "data",
+                match &d.data {
+                    Some(data) => Some(json_value_to_python(py, data)?),
+                    None => None,
+                },
+            )?;
+        }
+        AiMuxError::Retry(retry) => {
+            // Attempt history, oldest first; each entry is itself a full
+            // exception instance (recursing through this same projection).
+            let errors = PyList::empty_bound(py);
+            for error in &retry.errors {
+                errors.append(exception_instance(py, error)?)?;
+            }
+            inst.setattr(
+                "reason",
+                match retry.reason {
+                    aimux_core::RetryErrorReason::MaxRetriesExceeded => "maxRetriesExceeded",
+                    aimux_core::RetryErrorReason::ErrorNotRetryable => "errorNotRetryable",
+                },
+            )?;
+            // A deserialized history may be empty; last_error is None then.
+            let last_error = match errors.len() {
+                0 => None,
+                n => Some(errors.get_item(n - 1)?),
+            };
+            inst.setattr("errors", &errors)?;
+            inst.setattr("last_error", last_error)?;
         }
         AiMuxError::TokenExpired(_) => {
             inst.setattr("status", 401)?;
@@ -265,7 +305,17 @@ fn raise_variant(py: Python<'_>, e: &AiMuxError) -> PyResult<PyErr> {
         }
         _ => {}
     }
-    Ok(PyErr::from_value_bound(inst))
+    Ok(inst)
+}
+
+fn json_value_to_python<'py>(
+    py: Python<'py>,
+    value: &serde_json::Value,
+) -> PyResult<Bound<'py, PyAny>> {
+    py.import_bound("json")?.call_method1(
+        "loads",
+        (serde_json::to_string(value).expect("serde_json::Value is always serializable"),),
+    )
 }
 
 /// Register the exception hierarchy on the Python module.
@@ -273,6 +323,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
     m.add("AimuxError", py.get_type_bound::<AimuxError>())?;
     m.add("APICallError", py.get_type_bound::<APICallError>())?;
+    m.add("RetryError", py.get_type_bound::<RetryError>())?;
     m.add("JSONParseError", py.get_type_bound::<JSONParseError>())?;
     m.add(
         "InvalidResponseDataError",

@@ -4,7 +4,7 @@
 // Transport (aimux-error.h): every fallible C call returns
 // `aimux_error_t *` — NULL on success (the result is in the trailing
 // out-param), non-NULL on failure (out-param at its sentinel: 0 / NULL). The
-// unified code selects AiMuxError (1..13), RecordingError (100..105), or a
+// unified code selects AiMuxError (1..14), RecordingError (100..105), or a
 // C ABI failure (200..206). The last range maps to
 // StateError('aimux ffi: …'); Dart does not expose seven additional classes.
 // Every field is copied before the error is released with `aimux_error_free`
@@ -22,8 +22,9 @@ import 'package:ffi/ffi.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Machine-readable codes. Values match C `aimux_error_code_t` / Go `Code`.
-/// 13 variant codes numbered consecutively 1–13 (1 is the catch-all). A code outside
-/// that range is a header/library mismatch and fails with [StateError], not an
+/// 14 live variant codes: 1–14 (1 is the catch-all, [retry] at 14 reclaims
+/// the slot the pre-unification `Other` vacated). A code outside that
+/// set is a header/library mismatch and fails with [StateError], not an
 /// error type. Every HTTP-shaped failure
 /// arrives as [apiCall], classified
 /// by [AimuxException.status] (401 auth, 404 model, 429 rate limit;
@@ -44,6 +45,7 @@ abstract final class AimuxErrorCode {
   static const int timeout = 12;
   static const int aborted = 13;
   static const int other = 1;
+  static const int retry = 14;
 
   static const Map<int, String> _text = {
     ok: 'OK',
@@ -60,6 +62,7 @@ abstract final class AimuxErrorCode {
     timeout: 'Timeout',
     aborted: 'Aborted',
     other: 'Other',
+    retry: 'Retry',
   };
 
   /// Core `error_type()` name.
@@ -72,7 +75,7 @@ abstract final class AimuxErrorCode {
 
 /// Decode the `aimux_error_t *` [e] returned by a call that can fail in
 /// `AiMuxError` (`[AiMuxError]` in aimux-ffi.h). NULL → returns (success).
-/// Codes 1..13 become [AimuxException]; 200..206 become [StateError].
+/// Codes 1..14 become [AimuxException]; 200..206 become [StateError].
 /// The returned error is always freed.
 void expectAimuxError(Pointer<Void> e, String context) {
   if (e == nullptr) return;
@@ -289,11 +292,22 @@ final _StrOfPtr _errorMessage = _strGetter('aimux_error_message');
 final _StrOfPtr _errorProviderCode = _strGetter('aimux_error_provider_code');
 final _StrOfPtr _errorProviderMessage =
     _strGetter('aimux_error_provider_message');
-final _StrOfPtr _errorRequestId = _strGetter('aimux_error_request_id');
 final _StrOfPtr _errorResponseBody = _strGetter('aimux_error_response_body');
+final _StrOfPtr _errorUrl = _strGetter('aimux_error_url');
+final _StrOfPtr _errorRequestBodyValues =
+    _strGetter('aimux_error_request_body_values');
+final _StrOfPtr _errorResponseHeaders =
+    _strGetter('aimux_error_response_headers');
+final _StrOfPtr _errorProviderData = _strGetter('aimux_error_provider_data');
 final _StrOfPtr _errorModelId = _strGetter('aimux_error_model_id');
 final _StrOfPtr _errorModelType = _strGetter('aimux_error_model_type');
 final _StrOfPtr _errorProviderId = _strGetter('aimux_error_provider_id');
+final _StrOfPtr _errorRetryReason = _strGetter('aimux_error_retry_reason');
+final _IntOfPtr _errorRetryCount = _i32Getter('aimux_error_retry_count');
+final Pointer<Void> Function(Pointer<Void>, int) _errorRetryErrorAt =
+    _errLib.lookupFunction<Pointer<Void> Function(Pointer<Void>, Int32),
+        Pointer<Void> Function(Pointer<Void>, int)>(
+        'aimux_error_retry_error_at');
 
 /// Read an owned getter string for [error]; frees it; null when absent.
 String? _errStr(_StrOfPtr getter, Pointer<Void> error) {
@@ -304,6 +318,42 @@ String? _errStr(_StrOfPtr getter, Pointer<Void> error) {
   } finally {
     aimuxFreeString(p);
   }
+}
+
+/// Decode a JSON-string getter value; null when absent or malformed.
+Object? _jsonValue(String? json) {
+  if (json == null) return null;
+  try {
+    return jsonDecode(json);
+  } on FormatException {
+    return null;
+  }
+}
+
+/// `aimux_error_response_headers` JSON object → string→string map.
+Map<String, String>? _headerMap(String? json) {
+  final decoded = _jsonValue(json);
+  return decoded is Map ? Map<String, String>.from(decoded) : null;
+}
+
+/// Copy the per-attempt history of an `AIMUX_E_RETRY` error. Each child from
+/// `aimux_error_retry_error_at` is a NEW owned error (deep copy, oldest
+/// first): decoded with the same getters and freed independently of the
+/// parent. Padded so [RetryError.errors] is never empty even for a
+/// deserialized value with no recorded attempts.
+List<AimuxException> _decodeRetryErrors(Pointer<Void> error, String context) {
+  final count = _errorRetryCount(error);
+  final errors = <AimuxException>[];
+  for (var i = 0; i < count; i++) {
+    final child = _errorRetryErrorAt(error, i);
+    if (child == nullptr) continue;
+    try {
+      errors.add(AimuxException._decode(child, context));
+    } finally {
+      _errorFree(child);
+    }
+  }
+  return errors.isEmpty ? [OtherError('unknown retry error')] : errors;
 }
 
 /// Run [fn] with a temporary native UTF-8 copy of [s]; always frees it.
@@ -420,8 +470,10 @@ int construct2(
 /// - [message]: human-readable text
 ///
 /// Per-code payload lives on the carrying subclass only: [APICallError]
-/// (`providerCode`/`providerMessage`/`requestId`/`responseBody`), [NoSuchModelError]
-/// (`modelId`/`modelType`), [NoSuchProviderError] (`providerId`).
+/// (`providerCode`/`providerMessage`/`url`/`requestBodyValues`/
+/// `responseHeaders`/`responseBody`/`data`), [RetryError] (`reason`/`errors`),
+/// [NoSuchModelError] (`modelId`/`modelType`), [NoSuchProviderError]
+/// (`providerId`).
 class AimuxException implements Exception {
   /// Human-readable failure text.
   final String message;
@@ -452,7 +504,7 @@ class AimuxException implements Exception {
   /// Build the typed subclass from a returned `const aimux_error_t *` [error]
   /// via the `aimux_error_*` getters (payload getters only under the owning
   /// code; getter strings freed here). The caller ([expectAimuxError])
-  /// frees it. A code outside 1..13 is a
+  /// frees it. A code outside the published set (1..14) is a
   /// contract violation and throws [StateError].
   factory AimuxException._decode(Pointer<Void> error, String context) {
     final code = _errorCode(error);
@@ -468,8 +520,17 @@ class AimuxException implements Exception {
             retryable: retryable,
             providerCode: _errStr(_errorProviderCode, error),
             providerMessage: _errStr(_errorProviderMessage, error),
-            requestId: _errStr(_errorRequestId, error),
-            responseBody: _errStr(_errorResponseBody, error));
+            url: _errStr(_errorUrl, error),
+            requestBodyValues:
+                _jsonValue(_errStr(_errorRequestBodyValues, error)),
+            responseHeaders: _headerMap(_errStr(_errorResponseHeaders, error)),
+            responseBody: _errStr(_errorResponseBody, error),
+            data: _jsonValue(_errStr(_errorProviderData, error)));
+      case AimuxErrorCode.retry:
+        return RetryError(message,
+            reason:
+                RetryErrorReason.fromWire(_errStr(_errorRetryReason, error)),
+            errors: _decodeRetryErrors(error, context));
       case AimuxErrorCode.noSuchModel:
         return NoSuchModelError(message,
             retryable: retryable,
@@ -522,6 +583,14 @@ class AimuxException implements Exception {
         return NoSuchProviderError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.apiCall:
         return APICallError(message, status: status, retryMs: retryMs, retryable: retryable);
+      case AimuxErrorCode.retry:
+        // The real decode path ([_decode]) rebuilds the attempt history via
+        // the retry getters; a bare code carries only its message.
+        return RetryError(
+          message,
+          reason: RetryErrorReason.maxRetriesExceeded,
+          errors: [OtherError(message)],
+        );
       case AimuxErrorCode.timeout:
         return AimuxTimeoutError(message, status: status, retryMs: retryMs, retryable: retryable);
       case AimuxErrorCode.aborted:
@@ -623,11 +692,22 @@ class APICallError extends AimuxException {
   /// e.g. `slow down`.
   final String? providerMessage;
 
-  /// Provider request id, for support tickets.
-  final String? requestId;
+  /// Sanitized request URL.
+  final String? url;
+
+  /// Sanitized request body values (decoded JSON; any JSON type).
+  final dynamic requestBodyValues;
+
+  /// Sanitized response headers. (Request ids live here, not on a field:
+  /// the core no longer captures a distinct one.)
+  final Map<String, String>? responseHeaders;
 
   /// Raw response body.
   final String? responseBody;
+
+  /// Parsed provider error data (the AI SDK's `APICallError.data`),
+  /// decoded JSON.
+  final dynamic data;
 
   APICallError(super.message,
       {super.status,
@@ -635,9 +715,50 @@ class APICallError extends AimuxException {
       super.retryable,
       this.providerCode,
       this.providerMessage,
-      this.requestId,
-      this.responseBody})
+      this.url,
+      this.requestBodyValues,
+      this.responseHeaders,
+      this.responseBody,
+      this.data})
       : super(code: AimuxErrorCode.apiCall);
+}
+
+/// Why a [RetryError] stopped retrying (core serde camelCase wire names).
+enum RetryErrorReason {
+  /// Every permitted attempt failed with a retryable error.
+  maxRetriesExceeded('maxRetriesExceeded'),
+
+  /// A later attempt failed with a non-retryable error.
+  errorNotRetryable('errorNotRetryable');
+
+  const RetryErrorReason(this.wireValue);
+  final String wireValue;
+
+  static RetryErrorReason fromWire(String? value) =>
+      value == errorNotRetryable.wireValue
+          ? errorNotRetryable
+          : maxRetriesExceeded;
+}
+
+/// Retrying stopped (`AIMUX_E_RETRY`): [reason] says why, [message] carries
+/// the composed summary ("Failed after N attempts…"), and [errors] keeps the
+/// per-attempt history, oldest first — each entry is itself a fully decoded
+/// [AimuxException] (an [APICallError] keeps its whole detail set; a nested
+/// [RetryError] recurses).
+class RetryError extends AimuxException {
+  final RetryErrorReason reason;
+
+  /// Per-attempt errors, oldest first; never empty.
+  final List<AimuxException> errors;
+
+  RetryError(super.message,
+      {required this.reason, required List<AimuxException> errors})
+      : assert(errors.isNotEmpty),
+        errors = List.unmodifiable(errors),
+        super(code: AimuxErrorCode.retry);
+
+  /// The final attempt.
+  AimuxException get lastError => errors.last;
 }
 
 /// Request timed out. (Prefixed to avoid shadowing dart:async

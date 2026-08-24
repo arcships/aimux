@@ -736,21 +736,25 @@ class StreamTextResultAggregated {
 class TimeoutConfiguration {
   @JsonKey(name: 'total_ms')
   final int? totalMs;
+  @JsonKey(name: 'step_ms')
+  final int? stepMs;
   @JsonKey(name: 'first_chunk_ms')
   final int? firstChunkMs;
   @JsonKey(name: 'chunk_ms')
   final int? chunkMs;
 
-  TimeoutConfiguration({this.totalMs, this.firstChunkMs, this.chunkMs});
+  TimeoutConfiguration({this.totalMs, this.stepMs, this.firstChunkMs, this.chunkMs});
 
   factory TimeoutConfiguration.fromJson(Map<String, dynamic> json) =>
       TimeoutConfiguration(
         totalMs: json['total_ms'] as int?,
+        stepMs: json['step_ms'] as int?,
         firstChunkMs: json['first_chunk_ms'] as int?,
         chunkMs: json['chunk_ms'] as int?,
       );
   Map<String, dynamic> toJson() => {
         if (totalMs != null) 'total_ms': totalMs,
+        if (stepMs != null) 'step_ms': stepMs,
         if (firstChunkMs != null) 'first_chunk_ms': firstChunkMs,
         if (chunkMs != null) 'chunk_ms': chunkMs,
       };

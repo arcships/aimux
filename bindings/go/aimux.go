@@ -53,6 +53,7 @@ import "C"
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1124,7 +1125,7 @@ func cstr(p *C.char) string {
 // ── Error decoding ───────────────────────────────────────────────────────────
 //
 // Every fallible C call returns *C.aimux_error_t: nil = success, non-nil
-// = failure. The unified code space distinguishes AiMuxError (1..13),
+// = failure. The unified code space distinguishes AiMuxError (1..14),
 // RecordingError (100..105), and failures detected by the C ABI (200..206).
 // The latter collapse to a plain error in Go; no public Go error type is added
 // for those implementation failures. Every helper frees the pointer once.
@@ -1149,8 +1150,9 @@ func expectFfiError(e *C.aimux_error_t) error {
 	return ffiError(e)
 }
 
-// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..13 → *Error;
-// 200..206 → plain C ABI error. Any other code is an ABI contract violation.
+// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..14 →
+// *Error; 200..206 → plain C ABI error. Any other code is an ABI contract
+// violation.
 func expectAimuxError(e *C.aimux_error_t) error {
 	if e == nil {
 		return nil
@@ -1160,7 +1162,16 @@ func expectAimuxError(e *C.aimux_error_t) error {
 	if ffiCodeFromC(codeValue) {
 		return ffiError(e)
 	}
+	return aimuxErrorFromC(e)
+}
+
+// aimuxErrorFromC reads a non-nil AiMuxError-coded error into *Error via the
+// per-variant getters. It does not free e — the caller owns the pointer — so
+// it can recurse into the owned children aimux_error_retry_error_at returns.
+// A non-AiMuxError code is an ABI contract violation and panics.
+func aimuxErrorFromC(e *C.aimux_error_t) *Error {
 	str := cstr
+	codeValue := int(C.aimux_error_code(e))
 	code, ok := codeFromC(codeValue)
 	if !ok {
 		panic(fmt.Sprintf("aimux: unknown aimux_error_code_t: %d", codeValue))
@@ -1182,13 +1193,39 @@ func expectAimuxError(e *C.aimux_error_t) error {
 		err.RetryMs = int64(C.aimux_error_retry_ms(e))
 		err.ProviderCode = str(C.aimux_error_provider_code(e))
 		err.ProviderMessage = str(C.aimux_error_provider_message(e))
-		err.RequestID = str(C.aimux_error_request_id(e))
 		err.ResponseBody = str(C.aimux_error_response_body(e))
+		err.URL = str(C.aimux_error_url(e))
+		// The JSON-string getters carry serde-produced JSON; an absent
+		// payload is NULL ("" here), never invalid JSON, so a failed
+		// Unmarshal just leaves the field at its zero value.
+		if s := str(C.aimux_error_request_body_values(e)); s != "" {
+			_ = json.Unmarshal([]byte(s), &err.RequestBodyValues)
+		}
+		if s := str(C.aimux_error_response_headers(e)); s != "" {
+			_ = json.Unmarshal([]byte(s), &err.ResponseHeaders)
+		}
+		if s := str(C.aimux_error_provider_data(e)); s != "" {
+			_ = json.Unmarshal([]byte(s), &err.Data)
+		}
 	case CodeNoSuchModel:
 		err.ModelID = str(C.aimux_error_model_id(e))
 		err.ModelType = str(C.aimux_error_model_type(e))
 	case CodeNoSuchProvider:
 		err.ProviderID = str(C.aimux_error_provider_id(e))
+	case CodeRetry:
+		err.Reason = RetryErrorReason(str(C.aimux_error_retry_reason(e)))
+		// Each attempt is a NEW owned error (deep copy) read with the same
+		// getters — recursion also covers a nested Retry — and freed
+		// independently of the parent, right after decoding.
+		count := int(C.aimux_error_retry_count(e))
+		for i := 0; i < count; i++ {
+			child := C.aimux_error_retry_error_at(e, C.int32_t(i))
+			if child == nil {
+				continue
+			}
+			err.Errors = append(err.Errors, aimuxErrorFromC(child))
+			C.aimux_error_free(child)
+		}
 	}
 	// TokenExpired carries a 401 by contract even if C reports -1; every
 	// other status is the observed one (ApiCall without a status = no HTTP

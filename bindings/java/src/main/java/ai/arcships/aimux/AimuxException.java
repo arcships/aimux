@@ -1,11 +1,17 @@
 package ai.arcships.aimux;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.jna.Pointer;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * AiMuxError hierarchy (OpenAI Java / Vercel AI SDK style).
  *
- * <p>Raised when a fallible C ABI call returns an AiMuxError code (1–13).
+ * <p>Raised when a fallible C ABI call returns an AiMuxError code (1–14).
  * Recording failures use the
  * independent {@link RecordingException} type; C ABI failures (bad raw
  * wire JSON, use-after-close, re-entrant call) surface as plain
@@ -23,7 +29,8 @@ import com.sun.jna.Pointer;
  * }
  * }</pre>
  *
- * <p>Every instance carries {@link #getCode()} (C {@code aimux_error_code_t} 1–13),
+ * <p>Every instance carries {@link #getCode()} (C {@code aimux_error_code_t}
+ * 1–14, where {@link #AIMUX_E_RETRY} = 14),
  * {@link #getStatusCode()} (HTTP or {@code -1}), {@link #getRetryMs()} (hint
  * or {@code -1}; {@code 0} = retry now) and {@link #isRetryable()}. Message
  * text comes from the C layer.
@@ -36,8 +43,9 @@ public class AimuxException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
     // ── aimux_error_code_t (aimux-error.h) ──────────────────────────────────
-    // 13 variant codes (1–13; 1 is the catch-all OTHER); every HTTP-shaped failure
-    // arrives as AIMUX_E_API_CALL. A code outside that range is a header/library
+    // 14 variant codes (1–14; 1 is the catch-all OTHER, 14 = RETRY reclaiming
+    // the slot the pre-unification Other vacated); every HTTP-shaped failure
+    // arrives as AIMUX_E_API_CALL. A code outside that set is a header/library
     // mismatch and fails with IllegalStateException, never an AimuxException.
     // Recording failures are a different type: see RecordingException.
 
@@ -55,13 +63,14 @@ public class AimuxException extends RuntimeException {
     public static final int AIMUX_E_TIMEOUT = 12;
     public static final int AIMUX_E_ABORTED = 13;
     public static final int AIMUX_E_OTHER = 1;
+    public static final int AIMUX_E_RETRY = 14;
 
     private final int code;
     private final int status;
     private final long retryMs;
 
     // Set once by the fromC construction path; false for local / synthesized
-    // failures. Not a constructor param so the 13 subclass constructors keep
+    // failures. Not a constructor param so the subclass constructors keep
     // their public signatures.
     private boolean retryable;
 
@@ -93,7 +102,7 @@ public class AimuxException extends RuntimeException {
 
     // ── Accessors ───────────────────────────────────────────────────────────
 
-    /** C {@code aimux_error_code_t} value (1–13). */
+    /** C {@code aimux_error_code_t} value (1–14). */
     public int getCode() {
         return code;
     }
@@ -128,8 +137,9 @@ public class AimuxException extends RuntimeException {
      * prefixing {@code prefix} to the message. Reads the code, message,
      * retryable, status and the payload getters for that code only, freeing
      * every returned string. Does not own the pointer: the caller
-     * ({@link AimuxResult#expectAimuxError}) frees the returned error afterwards.
-     * A code outside 1–13 is a header/library mismatch →
+     * ({@link AimuxResult#expectAimuxError}) frees the returned error afterwards
+     * (retry attempt errors are new owned copies and are freed here).
+     * A code outside 1–14 is a header/library mismatch →
      * {@link IllegalStateException}.
      */
     static AimuxException fromC(Pointer error, String prefix) {
@@ -149,8 +159,16 @@ public class AimuxException extends RuntimeException {
                 ex = new APICallError(msg, ffi.aimux_error_status(error), ffi.aimux_error_retry_ms(error),
                     AimuxResult.takeString(ffi.aimux_error_provider_code(error)),
                     AimuxResult.takeString(ffi.aimux_error_provider_message(error)),
-                    AimuxResult.takeString(ffi.aimux_error_request_id(error)),
-                    AimuxResult.takeString(ffi.aimux_error_response_body(error)));
+                    AimuxResult.takeString(ffi.aimux_error_response_body(error)),
+                    AimuxResult.takeString(ffi.aimux_error_url(error)),
+                    parseJson(AimuxResult.takeString(ffi.aimux_error_request_body_values(error))),
+                    headerMap(AimuxResult.takeString(ffi.aimux_error_response_headers(error))),
+                    parseJson(AimuxResult.takeString(ffi.aimux_error_provider_data(error))));
+                break;
+            case AIMUX_E_RETRY:
+                ex = new RetryError(msg,
+                    RetryErrorReason.fromWire(AimuxResult.takeString(ffi.aimux_error_retry_reason(error))),
+                    retryHistory(ffi, error, msg));
                 break;
             case AIMUX_E_NO_SUCH_MODEL:
                 ex = new NoSuchModelError(msg, -1, -1L,
@@ -166,6 +184,56 @@ public class AimuxException extends RuntimeException {
         }
         ex.retryable = ffi.aimux_error_retryable(error) != 0;
         return ex;
+    }
+
+    /**
+     * Decode the per-attempt history of an {@link #AIMUX_E_RETRY} error.
+     * Each attempt is a new owned {@code aimux_error_t *} (index 0 = oldest)
+     * that can itself be any AiMuxError — including a nested Retry — and is
+     * freed here, independently of the parent.
+     */
+    private static List<AimuxException> retryHistory(AimuxFFI ffi, Pointer error, String fallbackMessage) {
+        int count = ffi.aimux_error_retry_count(error);
+        List<AimuxException> errors = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            Pointer attempt = ffi.aimux_error_retry_error_at(error, i);
+            if (attempt == null) {
+                continue;
+            }
+            try {
+                errors.add(fromC(attempt, ""));
+            } finally {
+                ffi.aimux_error_free(attempt);
+            }
+        }
+        if (errors.isEmpty()) {
+            // A deserialized Retry may carry no attempts; keep RetryError total.
+            errors.add(new OtherError(fallbackMessage, -1, -1L));
+        }
+        return errors;
+    }
+
+    /** Parse a getter-returned JSON string; {@code null} (absent) stays {@code null}. */
+    private static JsonNode parseJson(String json) {
+        if (json == null) {
+            return null;
+        }
+        try {
+            return Types.AimuxJson.MAPPER.readTree(json);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Response headers arrive as one JSON object string of string→string pairs. */
+    private static Map<String, String> headerMap(String json) {
+        JsonNode node = parseJson(json);
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        Map<String, String> headers = new LinkedHashMap<>();
+        node.fields().forEachRemaining(f -> headers.put(f.getKey(), f.getValue().asText()));
+        return headers;
     }
 
     /**
@@ -205,6 +273,9 @@ public class AimuxException extends RuntimeException {
                 return new NoSuchProviderError(message, status, retryMs);
             case AIMUX_E_API_CALL:
                 return new APICallError(message, status, retryMs);
+            case AIMUX_E_RETRY:
+                return new RetryError(message, RetryErrorReason.MAX_RETRIES_EXCEEDED,
+                    Collections.singletonList(new OtherError(message, -1, -1L)));
             case AIMUX_E_TIMEOUT:
                 return new TimeoutError(message, status, retryMs);
             case AIMUX_E_ABORTED:
@@ -247,6 +318,8 @@ public class AimuxException extends RuntimeException {
                 return "Aborted";
             case AIMUX_E_OTHER:
                 return "Other";
+            case AIMUX_E_RETRY:
+                return "Retry";
             default:
                 return "Code(" + code + ")";
         }
@@ -351,20 +424,28 @@ public class AimuxException extends RuntimeException {
     public static class APICallError extends AimuxException {
         private final String providerCode;
         private final String providerMessage;
-        private final String requestId;
         private final String responseBody;
+        private final String url;
+        private final JsonNode requestBodyValues;
+        private final Map<String, String> responseHeaders;
+        private final JsonNode data;
 
         public APICallError(String message, int status, long retryMs) {
-            this(message, status, retryMs, null, null, null, null);
+            this(message, status, retryMs, null, null, null, null, null, null, null);
         }
 
         public APICallError(String message, int status, long retryMs,
-                            String providerCode, String providerMessage, String requestId, String responseBody) {
+                            String providerCode, String providerMessage, String responseBody,
+                            String url, JsonNode requestBodyValues,
+                            Map<String, String> responseHeaders, JsonNode data) {
             super(message, AIMUX_E_API_CALL, status, retryMs);
             this.providerCode = providerCode;
             this.providerMessage = providerMessage;
-            this.requestId = requestId;
             this.responseBody = responseBody;
+            this.url = url;
+            this.requestBodyValues = requestBodyValues;
+            this.responseHeaders = responseHeaders;
+            this.data = data;
         }
 
         /** The provider's own error code (e.g. {@code "insufficient_quota"}), or {@code null}. */
@@ -377,15 +458,68 @@ public class AimuxException extends RuntimeException {
             return providerMessage;
         }
 
-        /** Provider request id (for support tickets), or {@code null}. */
-        public String getRequestId() {
-            return requestId;
-        }
-
         /** Raw response body, or {@code null}. */
         public String getResponseBody() {
             return responseBody;
         }
+
+        /** Sanitized request URL, or {@code null}. */
+        public String getUrl() {
+            return url;
+        }
+
+        /** Sanitized request body values (any JSON type), or {@code null}. */
+        public JsonNode getRequestBodyValues() {
+            return requestBodyValues;
+        }
+
+        /** Sanitized response headers (also carry provider request ids), or {@code null}. */
+        public Map<String, String> getResponseHeaders() {
+            return responseHeaders;
+        }
+
+        /** Parsed provider error data (AI SDK {@code APICallError.data}), or {@code null}. */
+        public JsonNode getData() {
+            return data;
+        }
+    }
+
+    /** Why the retry loop gave up; wire names are the core's serde camelCase. */
+    public enum RetryErrorReason {
+        /** Every permitted attempt failed with a retryable error. */
+        MAX_RETRIES_EXCEEDED,
+        /** A later attempt failed with a non-retryable error. */
+        ERROR_NOT_RETRYABLE;
+
+        static RetryErrorReason fromWire(String value) {
+            return "errorNotRetryable".equals(value)
+                ? ERROR_NOT_RETRYABLE : MAX_RETRIES_EXCEEDED;
+        }
+    }
+
+    /**
+     * The retry loop gave up (AI SDK {@code RetryError} analogue):
+     * {@link #getReason()} says why, {@link #getErrors()} is the per-attempt
+     * history (oldest first), {@link #getLastError()} the final attempt.
+     */
+    public static class RetryError extends AimuxException {
+        private final RetryErrorReason reason;
+        private final List<AimuxException> errors;
+        private final AimuxException lastError;
+
+        public RetryError(String message, RetryErrorReason reason, List<AimuxException> errors) {
+            super(message, AIMUX_E_RETRY, -1, -1L);
+            if (errors == null || errors.isEmpty()) {
+                throw new IllegalArgumentException("RetryError requires at least one error");
+            }
+            this.reason = reason;
+            this.errors = Collections.unmodifiableList(new ArrayList<>(errors));
+            this.lastError = this.errors.get(this.errors.size() - 1);
+        }
+
+        public RetryErrorReason getReason() { return reason; }
+        public List<AimuxException> getErrors() { return errors; }
+        public AimuxException getLastError() { return lastError; }
     }
 
     public static class TimeoutError extends AimuxException {
@@ -394,7 +528,7 @@ public class AimuxException extends RuntimeException {
         }
     }
 
-    /** Request aborted (not a DOM {@code AbortError}). */
+    /** Request aborted (not a DOM {@code AbortError}); the message is the abort payload. */
     public static class RequestAbortedError extends AimuxException {
         public RequestAbortedError(String message, int status, long retryMs) {
             super(message, AIMUX_E_ABORTED, status, retryMs);

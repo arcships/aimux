@@ -8,16 +8,25 @@
  * corresponding limit. A `total` timeout also covers retry backoff and the
  * whole streamed response.
  */
-export type TimeoutConfiguration = { 
+export type TimeoutConfiguration = {
 /**
  * Overall timeout for the entire call (including retries and, for
  * streaming, the whole stream), in milliseconds.
  */
-total_ms: number | null, 
+total_ms: number | null,
+/**
+ * Timeout for one generation step, including that step's attempts and
+ * retry backoff, in milliseconds. Aimux currently has one step.
+ */
+step_ms: number | null,
 /**
  * Timeout waiting for the first stream chunk (streaming only).
+ *
+ * Counted from operation start, so it also bounds stream establishment
+ * and any retries before the first semantic output: it is the
+ * user-perceived time-to-first-output budget, not a per-attempt timer.
  */
-first_chunk_ms: number | null, 
+first_chunk_ms: number | null,
 /**
  * Maximum idle time between consecutive stream chunks (streaming only).
  */

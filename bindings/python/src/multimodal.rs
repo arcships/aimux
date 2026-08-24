@@ -54,7 +54,9 @@ impl EmbeddingModel {
         let values: Vec<String> = wire_json("values_json", values_json)?;
         opts.values = values;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_embed(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::embedding_model::embed(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -79,7 +81,9 @@ impl SpeechModel {
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: SpeechCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::speech_model::generate_speech(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -104,7 +108,9 @@ impl ImageModel {
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: ImageCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::image_model::generate_image(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -140,15 +146,18 @@ impl TranscriptionModel {
         );
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: TranscriptionCallOptions = wire_json("opts_json", s)?;
-                // Keep audio and media_type from our explicit args.
-                if let Some(p) = &parsed.provider_options {
-                    opts.provider_options = Some(p.clone());
-                }
+                // Take every caller option; audio and media_type always come
+                // from the explicit args.
+                let mut parsed: TranscriptionCallOptions = wire_json("opts_json", s)?;
+                parsed.audio = opts.audio;
+                parsed.media_type = opts.media_type;
+                opts = parsed;
             }
         }
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -184,13 +193,18 @@ impl RerankingModel {
         let mut opts = RerankingCallOptions::new(query.to_string(), docs);
         if let Some(s) = opts_json {
             if !s.trim().is_empty() && s.trim() != "null" {
-                let parsed: RerankingCallOptions = wire_json("opts_json", s)?;
-                opts.provider_options = parsed.provider_options;
-                opts.top_n = parsed.top_n;
+                // Take every caller option; query and documents always come
+                // from the explicit args.
+                let mut parsed: RerankingCallOptions = wire_json("opts_json", s)?;
+                parsed.query = opts.query;
+                parsed.documents = opts.documents;
+                opts = parsed;
             }
         }
 
-        let result = crate::runtime().block_on(async move { self.inner.do_rerank(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::reranking_model::rerank(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -215,7 +229,9 @@ impl VideoModel {
     pub fn generate(&self, opts_json: &str) -> PyResult<String> {
         let opts: VideoCallOptions = wire_json("opts_json", opts_json)?;
 
-        let result = crate::runtime().block_on(async move { self.inner.do_generate(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::video_model::generate_video(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -247,7 +263,9 @@ impl SearchModel {
             }
         }
 
-        let result = crate::runtime().block_on(async move { self.inner.do_search(&opts).await });
+        let result = crate::runtime().block_on(async move {
+            aimux_core::search_model::search(self.inner.as_ref(), opts).await
+        });
 
         match result {
             Ok(r) => serialize_result(&r),
@@ -528,7 +546,7 @@ pub struct TranscriptionSession {
     parts_rx: tokio::sync::Mutex<
         tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>,
     >,
-    token: aimux_core::shared::AbortSignal,
+    token: aimux_core::AbortSignal,
 }
 
 /// Start a streaming transcription session. `opts_json` (optional):
@@ -554,8 +572,8 @@ pub fn start_transcription_session(
         _ => SessionOpts::default(),
     };
 
-    let token = aimux_core::shared::AbortSignal::new();
-    let effective = aimux_core::shared::AbortSignal::new();
+    let token = aimux_core::AbortSignal::new();
+    let effective = aimux_core::AbortSignal::new();
     {
         let linked = effective.clone();
         let source = token.clone();
@@ -585,7 +603,8 @@ pub fn start_transcription_session(
             include_raw_chunks: opts.include_raw_chunks.unwrap_or(false),
             timeout: opts.timeout,
         };
-        let result = model.do_stream(options).await;
+        let result = aimux_core::transcription_model::stream_transcribe(model.as_ref(), options)
+            .await;
         match result {
             Ok(stream_result) => {
                 use futures::StreamExt;

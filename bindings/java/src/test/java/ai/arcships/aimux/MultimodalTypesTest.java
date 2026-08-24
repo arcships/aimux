@@ -233,6 +233,26 @@ class MultimodalTypesTest {
             + "\"media_type\":\"video/mp4\"}}],\"warnings\":[],\"response\":{}}"));
     }
 
+    @Test
+    void videoPollOptionsRoundTrip() throws Exception {
+        MultimodalTypes.VideoCallOptions options = MultimodalTypes.VideoCallOptions.builder()
+            .prompt("a cat")
+            .poll(MultimodalTypes.VideoPollOptions.builder()
+                .intervalMs(1_000L)
+                .timeoutMs(120_000L)
+                .build())
+            .build();
+
+        String json = M.writeValueAsString(options);
+        assertThat(M.readTree(json).path("poll").path("interval_ms").asLong()).isEqualTo(1_000L);
+        assertThat(M.readTree(json).path("poll").path("timeout_ms").asLong()).isEqualTo(120_000L);
+
+        MultimodalTypes.VideoCallOptions decoded =
+            M.readValue(json, MultimodalTypes.VideoCallOptions.class);
+        assertThat(decoded.getPoll()).isEqualTo(options.getPoll());
+        assertThat(decoded).isEqualTo(options);
+    }
+
     // ── Search ─────────────────────────────────────────────────────────────
 
     @Test

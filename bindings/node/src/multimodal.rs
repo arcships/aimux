@@ -51,9 +51,7 @@ impl EmbeddingModel {
                 let values: Vec<String> = parse_wire_json("values_json", &values_json)?;
                 opts.values = values;
 
-                let result = self
-                    .inner
-                    .do_embed(&opts)
+                let result = aimux_core::embedding_model::embed(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -89,9 +87,7 @@ impl SpeechModel {
                 let mut opts: SpeechCallOptions = parse_wire_json("opts_json", &opts_json)?;
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result = self
-                    .inner
-                    .do_generate(&opts)
+                let result = aimux_core::speech_model::generate_speech(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -127,9 +123,7 @@ impl ImageModel {
                 let mut opts: ImageCallOptions = parse_wire_json("opts_json", &opts_json)?;
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result = self
-                    .inner
-                    .do_generate(&opts)
+                let result = aimux_core::image_model::generate_image(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -169,18 +163,19 @@ impl TranscriptionModel {
                     TranscriptionCallOptions::new(AudioInput::Base64(audio_base64), media_type);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: TranscriptionCallOptions = parse_wire_json("opts_json", s)?;
-                        // Keep audio and media_type from our explicit args
-                        parsed
-                            .provider_options
-                            .inspect(|p| opts.provider_options = Some(p.clone()));
+                        let mut parsed: TranscriptionCallOptions =
+                            parse_wire_json("opts_json", s)?;
+                        // Required data comes from the explicit arguments; all
+                        // operation policy and optional fields come from JSON.
+                        parsed.audio = opts.audio;
+                        parsed.media_type = opts.media_type;
+                        opts = parsed;
                     }
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result = self
-                    .inner
-                    .do_generate(&opts)
+                let result =
+                    aimux_core::transcription_model::transcribe(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -222,16 +217,17 @@ impl RerankingModel {
                 let mut opts = RerankingCallOptions::new(query, docs);
                 if let Some(s) = opts_json.as_deref() {
                     if !s.trim().is_empty() && s.trim() != "null" {
-                        let parsed: RerankingCallOptions = parse_wire_json("opts_json", s)?;
-                        opts.provider_options = parsed.provider_options;
-                        opts.top_n = parsed.top_n;
+                        let mut parsed: RerankingCallOptions = parse_wire_json("opts_json", s)?;
+                        // Required data comes from the explicit arguments; all
+                        // operation policy and optional fields come from JSON.
+                        parsed.query = opts.query;
+                        parsed.documents = opts.documents;
+                        opts = parsed;
                     }
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result = self
-                    .inner
-                    .do_rerank(&opts)
+                let result = aimux_core::reranking_model::rerank(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -267,9 +263,7 @@ impl VideoModel {
                 let mut opts: VideoCallOptions = parse_wire_json("opts_json", &opts_json)?;
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result = self
-                    .inner
-                    .do_generate(&opts)
+                let result = aimux_core::video_model::generate_video(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -313,9 +307,7 @@ impl SearchModel {
                 }
                 opts.abort_signal = bridge.map(|b| b.core_signal());
 
-                let result = self
-                    .inner
-                    .do_search(&opts)
+                let result = aimux_core::search_model::search(self.inner.as_ref(), opts)
                     .await
                     .map_err(|e| AiMuxBindingError::from(&e))?;
                 serialize_result(&result)
@@ -662,7 +654,7 @@ pub struct TranscriptionSession {
     audio_tx: std::sync::Mutex<Option<futures::channel::mpsc::Sender<AudioChunk>>>,
     parts_rx:
         tokio::sync::Mutex<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
-    token: aimux_core::shared::AbortSignal,
+    token: aimux_core::AbortSignal,
 }
 
 /// Start a streaming transcription session. `opts_json` (optional):
@@ -695,8 +687,8 @@ pub async fn start_transcription_session(
             };
 
             // Effective abort = user bridge OR close token (linked).
-            let token = aimux_core::shared::AbortSignal::new();
-            let effective = aimux_core::shared::AbortSignal::new();
+            let token = aimux_core::AbortSignal::new();
+            let effective = aimux_core::AbortSignal::new();
             let mut sources = vec![token.clone()];
             if let Some(b) = bridge {
                 sources.push(b.core_signal());
@@ -730,7 +722,11 @@ pub async fn start_transcription_session(
                     include_raw_chunks: opts.include_raw_chunks.unwrap_or(false),
                     timeout: opts.timeout,
                 };
-                let result = model.do_stream(options).await;
+                let result = aimux_core::transcription_model::stream_transcribe(
+                    model.as_ref(),
+                    options,
+                )
+                .await;
                 match result {
                     Ok(stream_result) => {
                         use futures::StreamExt;

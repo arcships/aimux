@@ -592,8 +592,10 @@ class Model implements Finalizable {
 
   /// Stream text from the model.
   ///
-  /// Returns a Stream of StreamPart maps. Terminal failures throw
-  /// [AimuxException] via [Stream.addError] (and do not call on_done).
+  /// Returns a Stream of StreamPart maps. Recoverable frame errors arrive
+  /// as `Error` stream-part maps and the stream continues; only
+  /// transport/Core failures throw [AimuxException] via [Stream.addError]
+  /// (and do not call on_done).
   ///
   /// NOTE: the underlying `aimux_stream_text` call is synchronous — this
   /// method blocks the calling isolate until the stream completes, so all

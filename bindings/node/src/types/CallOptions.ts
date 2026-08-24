@@ -14,84 +14,84 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * `GenerateTextOptions` (user-facing) which is converted to `CallOptions`
  * by the `generate_text` / `stream_text` functions.
  */
-export type CallOptions = { 
+export type CallOptions = {
 /**
  * The standardized prompt (message array). Required.
  */
-prompt: Array<LanguageModelPromptMessage>, 
+prompt: Array<LanguageModelPromptMessage>,
 /**
  * Maximum tokens to generate.
  */
-max_output_tokens: number | null, 
+max_output_tokens: number | null,
 /**
  * Sampling temperature.
  */
-temperature: number | null, 
+temperature: number | null,
 /**
  * Stop sequences.
  */
-stop_sequences: Array<string> | null, 
+stop_sequences: Array<string> | null,
 /**
  * Nucleus sampling `top_p`.
  */
-top_p: number | null, 
+top_p: number | null,
 /**
  * Top-k sampling.
  */
-top_k: number | null, 
+top_k: number | null,
 /**
  * Presence penalty.
  */
-presence_penalty: number | null, 
+presence_penalty: number | null,
 /**
  * Frequency penalty.
  */
-frequency_penalty: number | null, 
+frequency_penalty: number | null,
 /**
  * Response format (text or JSON).
  */
-response_format: ResponseFormat | null, 
+response_format: ResponseFormat | null,
 /**
  * Seed for reproducibility.
  */
-seed: number | null, 
+seed: number | null,
 /**
  * Tools available to the model (function tools and/or provider-defined tools).
  */
-tools: Array<Tool> | null, 
+tools: Array<Tool> | null,
 /**
  * How the model should choose tools.
  */
-tool_choice: ToolChoice, 
+tool_choice: ToolChoice,
 /**
  * Extra HTTP headers.
  */
-headers: { [key in string]: string } | null, 
+headers: { [key in string]: string } | null,
 /**
  * Provider-specific options (keyed by provider name).
  */
-provider_options: { [key in string]: JsonValue } | null, 
+provider_options: { [key in string]: JsonValue } | null,
 /**
  * Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
  * Anthropic `thinking` config.
  */
-reasoning: ReasoningEffort | null, 
+reasoning: ReasoningEffort | null,
 /**
  * Per-call request body overrides. Deep-merged into the provider-built
  * request body (after any built-in vendor override) before sending.
  * `null` values delete the corresponding key. See RFC-0017.
  */
-body_overrides: JsonValue | null, 
+body_overrides: JsonValue | null,
 /**
  * Per-call retry count override. `None` uses the provider's configured
- * `RetryConfig.max_retries`. `Some(0)` disables retries.
+ * Core operation retry. `Some(0)` disables retries.
  */
-max_retries: number | null, 
+max_retries: number | null,
 /**
  * Per-call timeout configuration (total / first-chunk / chunk idle).
  * `None` = no timeouts (provider defaults still apply at the HTTP layer).
  */
-timeout: TimeoutConfiguration | null, 
+timeout: TimeoutConfiguration | null,
 /**
  * Session identifier, for grouping consecutive calls into a session
  * (observability, see RFC-0024). Explicit values take precedence; when
@@ -100,7 +100,7 @@ timeout: TimeoutConfiguration | null,
  * local grouping, while session headers in `headers` are for upstream
  * routing — both may share an id value but travel different paths.
  */
-session_id: string | null, 
+session_id: string | null,
 /**
  * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
  * When `Some(true)`, streaming providers yield one `Raw` part per JSON

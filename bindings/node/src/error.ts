@@ -7,6 +7,8 @@
  * } catch (e) {
  *   if (e instanceof APICallError) {
  *     // e.status === 429 → rate limited (e.retryMs), 401 → auth, 404 → model
+ *   } else if (e instanceof RetryError) {
+ *     // every retry attempt failed — e.errors is the per-attempt history
  *   } else if (e instanceof AimuxError) {
  *     // any AiMuxError
  *   } else if (e instanceof Error && (e as { code?: string }).code === 'InvalidArg') {
@@ -38,15 +40,42 @@ export class APICallError extends AimuxError {
   declare readonly status?: number
   /** Rate-limit hint in ms; absent if none; `0` means retry immediately. */
   declare readonly retryMs?: number
+  /** Sanitized request URL; absent when unknown. */
+  declare readonly url?: string
+  /** Sanitized request body values sent to the provider. */
+  declare readonly requestBodyValues?: unknown
   /** Provider's machine-readable error code (e.g. `'rate_limit_exceeded'`). */
   declare readonly providerCode?: string
   /** Provider's failure text without Aimux's composed prefix. */
   declare readonly providerMessage?: string
   /** Raw error response body, verbatim. */
   declare readonly responseBody?: string
-  /** Provider-assigned request id (`x-request-id` / `request-id` header). */
-  declare readonly requestId?: string
+  /** Sanitized response headers. */
+  declare readonly responseHeaders?: Record<string, string>
+  /** Parsed provider error data (AI SDK `APICallError.data`). */
+  declare readonly data?: unknown
 }
+
+/** Why a {@link RetryError} stopped retrying (core serde wire names). */
+export type RetryErrorReason = 'maxRetriesExceeded' | 'errorNotRetryable'
+
+/**
+ * A retried model operation gave up. `errors` is the complete per-attempt
+ * history, oldest first; each entry is itself a full member of this hierarchy
+ * (typically {@link APICallError} with its provider detail).
+ */
+export class RetryError extends AimuxError {
+  /** Why retrying stopped. */
+  declare readonly reason: RetryErrorReason
+  /** Per-attempt errors, oldest first. */
+  declare readonly errors: AimuxError[]
+
+  /** The final attempt's error (`undefined` only for a deserialized empty history). */
+  get lastError(): AimuxError | undefined {
+    return this.errors[this.errors.length - 1]
+  }
+}
+
 export class JSONParseError extends AimuxError {}
 export class InvalidResponseDataError extends AimuxError {}
 export class ToolError extends AimuxError {}
@@ -70,7 +99,7 @@ export class NoSuchProviderError extends AimuxError {
   declare readonly providerId: string
 }
 export class TimeoutError extends AimuxError {}
-/** Request aborted (not DOM `AbortError`). */
+/** Request aborted (not DOM `AbortError`); `message` is the abort payload. */
 export class RequestAbortedError extends AimuxError {}
 export class OtherError extends AimuxError {}
 

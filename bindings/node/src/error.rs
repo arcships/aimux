@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use aimux_core::{AiMuxError, recording::RecordingError};
+use aimux_core::{AiMuxError, RetryErrorReason, recording::RecordingError};
 use napi::bindgen_prelude::{
     Function, FunctionRef, JsValue, Object, Result as NapiResult, ToNapiValue, TypeName, ValueType,
 };
@@ -16,6 +16,7 @@ use napi_derive::napi;
 
 const ERROR_CLASS_NAMES: &[&str] = &[
     "APICallError",
+    "RetryError",
     "JSONParseError",
     "InvalidResponseDataError",
     "ToolError",
@@ -166,6 +167,7 @@ pub(crate) fn serialize_result<T: serde::Serialize>(value: &T) -> MResult<String
 fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
     match error {
         AiMuxError::ApiCall(_) => "APICallError",
+        AiMuxError::Retry(_) => "RetryError",
         AiMuxError::JsonParse(_) => "JSONParseError",
         AiMuxError::InvalidResponseData(_) => "InvalidResponseDataError",
         AiMuxError::Tool(_) => "ToolError",
@@ -176,7 +178,7 @@ fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
         AiMuxError::NoSuchModel { .. } => "NoSuchModelError",
         AiMuxError::NoSuchProvider { .. } => "NoSuchProviderError",
         AiMuxError::Timeout(_) => "TimeoutError",
-        AiMuxError::Aborted => "RequestAbortedError",
+        AiMuxError::Aborted(_) => "RequestAbortedError",
         AiMuxError::Other(_) => "OtherError",
     }
 }
@@ -217,30 +219,57 @@ fn new_registered_error<'env>(
 
 /// Build the exact JS subclass registered for this core variant.
 fn create_aimux_throwable(env: &Env, error: &AiMuxError) -> NapiResult<Error> {
+    Ok(Error::from(create_aimux_error_object(env, error)?.to_unknown()))
+}
+
+/// Instantiate the registered subclass and fill its variant-owned fields.
+/// Recursive: a `Retry` error carries its attempt history as full instances.
+fn create_aimux_error_object<'env>(env: &'env Env, error: &AiMuxError) -> NapiResult<Object<'env>> {
     let message = error.to_string();
     let mut obj = new_registered_error(env, aimux_error_class_name(error), &message)?;
     if let Some(status) = error.status_code() {
         obj.set("status", i32::from(status))?;
     }
-    if let AiMuxError::ApiCall(detail) = error {
-        obj.set("retryable", error.is_retryable())?;
-        if let Some(retry_ms) = error.retry_after_hint() {
-            obj.set("retryMs", retry_ms)?;
-        }
-        if let Some(provider_code) = &detail.provider_code {
-            obj.set("providerCode", provider_code.as_str())?;
-        }
-        if !detail.message.is_empty() {
-            obj.set("providerMessage", detail.message.as_str())?;
-        }
-        if let Some(request_id) = &detail.request_id {
-            obj.set("requestId", request_id.as_str())?;
-        }
-        if let Some(response_body) = &detail.response_body {
-            obj.set("responseBody", response_body.as_str())?;
-        }
-    }
     match error {
+        AiMuxError::ApiCall(detail) => {
+            obj.set("retryable", detail.is_retryable)?;
+            if let Some(retry_ms) = error.retry_after_hint() {
+                obj.set("retryMs", retry_ms)?;
+            }
+            if !detail.url.is_empty() {
+                obj.set("url", detail.url.as_str())?;
+            }
+            if !detail.request_body_values.is_null() {
+                obj.set("requestBodyValues", detail.request_body_values.clone())?;
+            }
+            if let Some(provider_code) = &detail.provider_code {
+                obj.set("providerCode", provider_code.as_str())?;
+            }
+            if !detail.message.is_empty() {
+                obj.set("providerMessage", detail.message.as_str())?;
+            }
+            if let Some(response_body) = &detail.response_body {
+                obj.set("responseBody", response_body.as_str())?;
+            }
+            if let Some(headers) = &detail.response_headers {
+                obj.set("responseHeaders", headers.clone())?;
+            }
+            if let Some(data) = &detail.data {
+                obj.set("data", data.clone())?;
+            }
+        }
+        AiMuxError::Retry(retry) => {
+            let reason = match retry.reason {
+                RetryErrorReason::MaxRetriesExceeded => "maxRetriesExceeded",
+                RetryErrorReason::ErrorNotRetryable => "errorNotRetryable",
+            };
+            obj.set("reason", reason)?;
+            let mut attempts = Vec::with_capacity(retry.errors.len());
+            for attempt in &retry.errors {
+                attempts.push(create_aimux_error_object(env, attempt)?);
+            }
+            obj.set("errors", attempts)?;
+        }
         AiMuxError::NoSuchModel {
             model_id,
             model_type,
@@ -255,7 +284,7 @@ fn create_aimux_throwable(env: &Env, error: &AiMuxError) -> NapiResult<Error> {
         }
         _ => {}
     }
-    Ok(Error::from(obj.to_unknown()))
+    Ok(obj)
 }
 
 /// A [`BindingError`] as napi-rs's own plain `Error`: caller-side faults

@@ -56,14 +56,14 @@ pub struct Model {
 /// ```
 #[napi]
 pub struct AbortBridge {
-    signal: Arc<aimux_core::shared::AbortSignal>,
+    signal: Arc<aimux_core::AbortSignal>,
 }
 
 #[napi]
 impl AbortBridge {
     #[napi(constructor)]
     pub fn new(signal: napi::bindgen_prelude::AbortSignal) -> Self {
-        let core = aimux_core::shared::AbortSignal::new();
+        let core = aimux_core::AbortSignal::new();
         let watcher = core.clone();
         signal.on_abort(move || watcher.abort());
         Self {
@@ -79,7 +79,7 @@ impl AbortBridge {
 }
 
 impl AbortBridge {
-    fn core_signal(&self) -> aimux_core::shared::AbortSignal {
+    fn core_signal(&self) -> aimux_core::AbortSignal {
         (*self.signal).clone()
     }
 }
@@ -356,6 +356,21 @@ impl Model {
                                             break; // receiver dropped (JS stopped iterating)
                                         }
                                     }
+                                    Err(e) if e.is_recoverable_stream_error() => {
+                                        // Core keeps the stream alive across a malformed
+                                        // frame; deliver it as a StreamPart::Error data item
+                                        // and keep pumping.
+                                        match serde_json::to_string(
+                                            &aimux_core::stream_part::StreamPart::Error { error: e },
+                                        ) {
+                                            Ok(json) => {
+                                                if tx.send(Ok(json)).await.is_err() {
+                                                    break;
+                                                }
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
                                     Err(e) => {
                                         let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
                                         break;
@@ -487,6 +502,11 @@ impl Model {
                                             break;
                                         }
                                     }
+                                    Err(e) if e.is_recoverable_stream_error() => {
+                                        // Consumers type this path as ChatCompletionChunk;
+                                        // the error cannot ride it — skip and keep pumping
+                                        // (full fidelity lives on the StreamPart path).
+                                    }
                                     Err(e) => {
                                         let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
                                         break;
@@ -603,10 +623,7 @@ fn apply_provider_config_openai(
         config = config.with_project(proj);
     }
     if let Some(max) = cfg.max_retries {
-        config = config.with_retry_config(aimux_provider_utils::RetryConfig {
-            max_retries: max,
-            ..aimux_provider_utils::RetryConfig::default()
-        });
+        config.retry_config.max_retries = max;
     }
     if let Some(ref json_str) = cfg.body_overrides {
         let overrides: serde_json::Value = parse_wire_json("config.bodyOverrides", json_str)?;
@@ -971,10 +988,7 @@ pub async fn anthropic(
                         cfg = cfg.with_headers(h);
                     }
                     if let Some(max) = opts.max_retries {
-                        cfg = cfg.with_retry_config(aimux_provider_utils::RetryConfig {
-                            max_retries: max,
-                            ..aimux_provider_utils::RetryConfig::default()
-                        });
+                        cfg.retry_config.max_retries = max;
                     }
                     if let Some(ref json_str) = opts.body_overrides {
                         let overrides: serde_json::Value =

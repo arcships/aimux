@@ -67,7 +67,9 @@ fn recording(
             provider_options: None,
         },
         exchanges: vec![HttpExchange {
+            step: None,
             attempt: 0,
+            exchange_index: 0,
             request: HttpRecord {
                 method: "POST".into(),
                 url: "https://api.example.com/v1/chat/completions".to_string(),
@@ -96,6 +98,7 @@ fn recording(
             } else {
                 None
             },
+            error_value: None,
             usage: Some(usage),
         },
         complete: true,
