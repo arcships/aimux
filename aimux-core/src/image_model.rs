@@ -1,4 +1,4 @@
-﻿//! The `ImageModel` trait — the provider-facing interface for image generation.
+//! The `ImageModel` trait — the provider-facing interface for image generation.
 //!
 //! Aligned with Vercel AI SDK `ImageModelV4`
 //! (`reference/ai/packages/provider/src/image-model/v4/`).
@@ -9,9 +9,9 @@ use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{
-    AbortSignal, AspectRatio, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Size,
-    Warning,
+    AspectRatio, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Size, Warning,
 };
+use crate::{AbortSignal, retry, timeout};
 
 /// An image file used for image editing or variation generation.
 ///
@@ -112,6 +112,12 @@ pub struct ImageCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
+    /// Per-call retry override. `None` uses the model default.
+    pub max_retries: Option<u32>,
+
+    /// Per-call operation timeout.
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+
     /// Additional HTTP headers to send with the request.
     pub headers: Option<SharedHeaders>,
 }
@@ -129,6 +135,8 @@ impl ImageCallOptions {
             mask: None,
             provider_options: SharedProviderOptions::new(),
             abort_signal: None,
+            max_retries: None,
+            timeout: None,
             headers: None,
         }
     }
@@ -184,6 +192,10 @@ pub trait ImageModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"dall-e-3"`.
     fn model_id(&self) -> &str;
 
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        crate::retry::RetryConfig::default()
+    }
+
     /// Limit of how many images can be generated in a single API call.
     ///
     /// `None` means there is no fixed limit. The TS spec allows this to be a
@@ -195,4 +207,28 @@ pub trait ImageModel: Send + Sync {
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError>;
+}
+
+/// User-facing image generation with Core-owned retry and timeout.
+///
+/// # Errors
+///
+/// Returns the provider failure, retry exhaustion, timeout, or caller abort.
+pub async fn generate_image(
+    model: &dyn ImageModel,
+    options: ImageCallOptions,
+) -> Result<ImageResult, AiMuxError> {
+    let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
+    let abort_signal = options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
+    timeout::run(
+        retries.retry(|| model.do_generate(&options)),
+        abort_signal.as_ref(),
+        timeout,
+    )
+    .await
 }

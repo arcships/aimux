@@ -1,4 +1,4 @@
-﻿//! The `EmbeddingModel` trait — the provider-facing interface for text embeddings.
+//! The `EmbeddingModel` trait — the provider-facing interface for text embeddings.
 //!
 //! Aligned with Vercel AI SDK `EmbeddingModelV4`
 //! (`reference/ai/packages/provider/src/embedding-model/v4/`).
@@ -11,9 +11,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{
-    AbortSignal, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
-};
+use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
+use crate::{AbortSignal, retry, timeout};
 
 /// A single embedding vector.
 ///
@@ -36,6 +35,12 @@ pub struct EmbeddingCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
+    /// Per-call retry override. `None` uses the model default.
+    pub max_retries: Option<u32>,
+
+    /// Per-call operation timeout.
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+
     /// Additional provider-specific options, keyed by provider name.
     pub provider_options: Option<SharedProviderOptions>,
 
@@ -49,6 +54,8 @@ impl EmbeddingCallOptions {
         Self {
             values: vec![value.into()],
             abort_signal: None,
+            max_retries: None,
+            timeout: None,
             provider_options: None,
             headers: None,
         }
@@ -121,6 +128,10 @@ pub trait EmbeddingModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"text-embedding-3-small"`.
     fn model_id(&self) -> &str;
 
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        crate::retry::RetryConfig::default()
+    }
+
     /// Limit of how many embeddings can be generated in a single API call.
     ///
     /// `None` means the model has no fixed limit. The TS spec allows this to
@@ -135,4 +146,28 @@ pub trait EmbeddingModel: Send + Sync {
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
     async fn do_embed(&self, options: &EmbeddingCallOptions)
     -> Result<EmbeddingResult, AiMuxError>;
+}
+
+/// User-facing embedding operation with Core-owned retry and timeout.
+///
+/// # Errors
+///
+/// Returns the provider failure, retry exhaustion, timeout, or caller abort.
+pub async fn embed(
+    model: &dyn EmbeddingModel,
+    options: EmbeddingCallOptions,
+) -> Result<EmbeddingResult, AiMuxError> {
+    let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
+    let abort_signal = options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
+    timeout::run(
+        retries.retry(|| model.do_embed(&options)),
+        abort_signal.as_ref(),
+        timeout,
+    )
+    .await
 }

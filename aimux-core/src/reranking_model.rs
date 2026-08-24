@@ -1,4 +1,4 @@
-﻿//! The `RerankingModel` trait — the provider-facing interface for reranking.
+//! The `RerankingModel` trait — the provider-facing interface for reranking.
 //!
 //! Aligned with Vercel AI SDK `RerankingModelV4`
 //! (`reference/ai/packages/provider/src/reranking-model/v4/`).
@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{
-    AbortSignal, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
-};
+use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
+use crate::{AbortSignal, retry, timeout};
 
 /// Documents to rerank: either a list of texts or a list of JSON objects.
 ///
@@ -44,6 +43,12 @@ pub struct RerankingCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
+    /// Per-call retry override. `None` uses the model default.
+    pub max_retries: Option<u32>,
+
+    /// Per-call operation timeout.
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+
     /// Additional provider-specific options, keyed by provider name.
     pub provider_options: Option<SharedProviderOptions>,
 
@@ -59,6 +64,8 @@ impl RerankingCallOptions {
             query: query.into(),
             top_n: None,
             abort_signal: None,
+            max_retries: None,
+            timeout: None,
             provider_options: None,
             headers: None,
         }
@@ -128,6 +135,10 @@ pub trait RerankingModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"rerank-english-v3.0"`.
     fn model_id(&self) -> &str;
 
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        crate::retry::RetryConfig::default()
+    }
+
     /// Rerank a list of documents using the query.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
@@ -135,4 +146,28 @@ pub trait RerankingModel: Send + Sync {
         &self,
         options: &RerankingCallOptions,
     ) -> Result<RerankingResult, AiMuxError>;
+}
+
+/// User-facing reranking with Core-owned retry and timeout.
+///
+/// # Errors
+///
+/// Returns the provider failure, retry exhaustion, timeout, or caller abort.
+pub async fn rerank(
+    model: &dyn RerankingModel,
+    options: RerankingCallOptions,
+) -> Result<RerankingResult, AiMuxError> {
+    let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
+    let abort_signal = options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
+    timeout::run(
+        retries.retry(|| model.do_rerank(&options)),
+        abort_signal.as_ref(),
+        timeout,
+    )
+    .await
 }

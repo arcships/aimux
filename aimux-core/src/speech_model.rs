@@ -1,4 +1,4 @@
-﻿//! The `SpeechModel` trait — the provider-facing interface for text-to-speech.
+//! The `SpeechModel` trait — the provider-facing interface for text-to-speech.
 //!
 //! Aligned with Vercel AI SDK `SpeechModelV4`
 //! (`reference/ai/packages/provider/src/speech-model/v4/`).
@@ -8,9 +8,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::shared::{
-    AbortSignal, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning,
-};
+use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
+use crate::{AbortSignal, retry, timeout};
 
 /// Generated audio: a base64-encoded string or raw binary bytes.
 ///
@@ -60,6 +59,12 @@ pub struct SpeechCallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
+    /// Per-call retry override. `None` uses the model default.
+    pub max_retries: Option<u32>,
+
+    /// Per-call operation timeout.
+    pub timeout: Option<crate::options::TimeoutConfiguration>,
+
     /// Additional HTTP headers to send with the request.
     pub headers: Option<SharedHeaders>,
 }
@@ -76,6 +81,8 @@ impl SpeechCallOptions {
             language: None,
             provider_options: None,
             abort_signal: None,
+            max_retries: None,
+            timeout: None,
             headers: None,
         }
     }
@@ -141,8 +148,36 @@ pub trait SpeechModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"tts-1"`.
     fn model_id(&self) -> &str;
 
+    fn retry_config(&self) -> crate::retry::RetryConfig {
+        crate::retry::RetryConfig::default()
+    }
+
     /// Generate speech audio from text.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError>;
+}
+
+/// User-facing speech generation with Core-owned retry and timeout.
+///
+/// # Errors
+///
+/// Returns the provider failure, retry exhaustion, timeout, or caller abort.
+pub async fn generate_speech(
+    model: &dyn SpeechModel,
+    options: SpeechCallOptions,
+) -> Result<SpeechResult, AiMuxError> {
+    let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
+    let abort_signal = options.abort_signal.clone();
+    let retries = retry::prepare_retries(
+        options.max_retries,
+        model.retry_config(),
+        abort_signal.clone(),
+    );
+    timeout::run(
+        retries.retry(|| model.do_generate(&options)),
+        abort_signal.as_ref(),
+        timeout,
+    )
+    .await
 }

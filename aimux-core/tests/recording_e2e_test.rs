@@ -39,12 +39,13 @@ impl LanguageModel for EchoModel {
         _options: &CallOptions,
     ) -> Result<GenerateResult, aimux_core::error::AiMuxError> {
         if self.gen_fails {
-            return Err(aimux_core::error::AiMuxError::ApiCall(
-                aimux_core::error::ApiCallError {
-                    message: "gen boom".into(),
-                    ..Default::default()
-                },
-            ));
+            return Err(aimux_core::error::AiMuxError::ApiCall(Box::new(
+                aimux_core::error::ApiCallError::new(
+                    "gen boom",
+                    "https://example.test/v1",
+                    serde_json::json!({}),
+                ),
+            )));
         }
         Ok(GenerateResult {
             content: vec![GenerateContent::Text {

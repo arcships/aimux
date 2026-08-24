@@ -8,7 +8,7 @@
 //!   区别于 HTTP 请求级 ID 与跨服务 trace)。
 //! - **默认关闭**:不调 `init_recording`,热路径 = 1 读锁 + clone(次 ns 级)。
 //! - **隐私受控**:api_key / Authorization / cookie 系恒脱敏(contains 式,含 `x-goog-api-key`);
-//!   token 不再 contains(曾误伤 `max_output_tokens` 等用量字段),仅精确脱敏 `x-amz-security-token`;
+//!   token 不再 contains(曾误伤 `max_output_tokens` 等用量字段),仅精确脱敏凭据字段;
 //!   `InputRecord.options` 序列化前递归脱敏。
 //! - **completion barrier**:outcome 与全部 exchange(流式含终结)齐才写行。
 //! - **专用 writer thread + oneshot flush**:同步 `flush()` 阻塞至落盘,不依赖运行时。
@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -29,7 +29,7 @@ use ts_rs::TS;
 // ── 数据模型(三层 + call_id 关联;schema 版本)────────────────────────────
 
 /// 录制格式版本(用于未来字段迁移与绑定层兼容)。
-pub const RECORDING_SCHEMA: u32 = 1;
+pub const RECORDING_SCHEMA: u32 = 2;
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -168,8 +168,17 @@ impl ProviderRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct HttpExchange {
-    /// 第几次重试(0=首次);per-attempt 递增。
+    /// Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
+    /// or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+    /// Core operation attempt, starting at 1. Attempt numbers are unique
+    /// across the whole call, including composite child steps, so
+    /// `(attempt, exchange_index)` alone still identifies an exchange.
     pub attempt: u32,
+    /// HTTP exchange within the operation attempt, starting at 1.
+    #[serde(default)]
+    pub exchange_index: u32,
     pub request: HttpRecord,
     /// None = 请求失败未获响应。
     pub response: Option<ResponseRecord>,
@@ -243,6 +252,10 @@ pub struct OutcomeRecord {
     pub status: OutcomeStatus,
     pub finish_reason: Option<String>,
     pub error: Option<String>,
+    /// Lossless structured domain error. In particular, `RetryError.errors`
+    /// keeps the complete attempt history rather than only its display text.
+    #[serde(default)]
+    pub error_value: Option<serde_json::Value>,
     /// 序列化的 Usage。
     pub usage: Option<serde_json::Value>,
 }
@@ -257,6 +270,7 @@ impl OutcomeRecord {
                 .ok()
                 .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
             error: None,
+            error_value: None,
             usage: serde_json::to_value(&r.usage).ok(),
         }
     }
@@ -268,6 +282,7 @@ impl OutcomeRecord {
             status: OutcomeStatus::Error,
             finish_reason: None,
             error: Some(e.to_string()),
+            error_value: serde_json::to_value(e).ok(),
             usage: None,
         }
     }
@@ -332,6 +347,7 @@ pub trait Recorder: Send + Sync {
         &self,
         call_id: &str,
         attempt: u32,
+        exchange_index: u32,
         response: &ResponseRecord,
         error: Option<String>,
     );
@@ -369,6 +385,65 @@ static RECORDER: RwLock<Option<Arc<dyn Recorder>>> = RwLock::new(None);
 pub struct RecordingContext {
     pub call_id: String,
     pub recorder: Arc<dyn Recorder>,
+    attempt_allocator: Arc<AtomicU32>,
+    current_attempt: Arc<AtomicU32>,
+    exchange_index: Arc<AtomicU32>,
+    step: Option<Arc<str>>,
+}
+
+impl RecordingContext {
+    #[must_use]
+    pub fn new(call_id: impl Into<String>, recorder: Arc<dyn Recorder>) -> Self {
+        Self {
+            call_id: call_id.into(),
+            recorder,
+            attempt_allocator: Arc::new(AtomicU32::new(0)),
+            current_attempt: Arc::new(AtomicU32::new(0)),
+            exchange_index: Arc::new(AtomicU32::new(0)),
+            step: None,
+        }
+    }
+
+    /// Derive a context for one composite child step (Router child, MoA
+    /// reference, or aggregator). The allocator stays shared with the parent
+    /// so attempt numbers are unique across the whole call, while the current
+    /// attempt and exchange counter are local to the child. An interleaved
+    /// sibling cannot relabel an exchange that belongs to an in-flight attempt.
+    #[must_use]
+    pub fn child(&self, step: impl Into<String>) -> Self {
+        Self {
+            call_id: self.call_id.clone(),
+            recorder: self.recorder.clone(),
+            attempt_allocator: self.attempt_allocator.clone(),
+            current_attempt: Arc::new(AtomicU32::new(0)),
+            exchange_index: Arc::new(AtomicU32::new(0)),
+            step: Some(Arc::from(step.into())),
+        }
+    }
+
+    /// The composite step label for exchanges recorded through this context.
+    #[must_use]
+    pub fn step(&self) -> Option<String> {
+        self.step.as_deref().map(str::to_owned)
+    }
+
+    /// Begin the next Core operation attempt and reset its exchange counter.
+    #[must_use]
+    pub fn start_attempt(&self) -> u32 {
+        let attempt = self.attempt_allocator.fetch_add(1, Ordering::AcqRel) + 1;
+        self.current_attempt.store(attempt, Ordering::Release);
+        self.exchange_index.store(0, Ordering::Release);
+        attempt
+    }
+
+    /// Allocate the next exchange identity for the current attempt.
+    /// Direct provider-SPI calls that bypass Core are recorded as attempt 1.
+    #[must_use]
+    pub fn next_exchange(&self) -> (u32, u32) {
+        let attempt = self.current_attempt.load(Ordering::Acquire).max(1);
+        let exchange_index = self.exchange_index.fetch_add(1, Ordering::AcqRel) + 1;
+        (attempt, exchange_index)
+    }
 }
 
 impl std::fmt::Debug for RecordingContext {
@@ -402,10 +477,7 @@ pub fn init_recording_from_env() -> bool {
 /// 从当前全局 recorder 生成一次调用的 context(关闭时 None)。
 /// 层 A 入口:先读一次,再用 `context && ctx.start()` 记录 ①+②。
 pub fn context(call_id: impl Into<String>) -> Option<RecordingContext> {
-    recorder().map(|recorder| RecordingContext {
-        call_id: call_id.into(),
-        recorder,
-    })
+    recorder().map(|recorder| RecordingContext::new(call_id, recorder))
 }
 
 /// 热路径检查(关闭时 None,≈1 读锁 + 1 次 Arc clone)。
@@ -429,33 +501,36 @@ pub fn new_call_id() -> String {
     format!("call-{ns}-{}", CALL_SEQ.fetch_add(1, Ordering::Relaxed))
 }
 
-// ── 脱敏(contains 式;与 logging.rs 同规则)──────────────────────────────
+// ── 脱敏（recording / logging / public error context 共用）─────────────
 
 /// 敏感键判断:受保护头/参数名(值将恒脱敏)。
 ///
-/// needle 集合与 `aimux_provider_utils::logging::is_sensitive_key` 对齐
-/// (`authorization`/`api-key`/`apikey`/`key`),录制侧额外覆盖
-/// `cookie`/`set-cookie`(logging 不脱敏 cookie)。其中 `key` 取 **exact** 匹配
+/// 这是 recording、logging 和 public error context 的唯一敏感键策略。
+/// 覆盖 `authorization`/`api-key`/`apikey`/`key`/`cookie`/`set-cookie`。
+/// 其中 `key` 取 **exact** 匹配
 /// 而非 contains——避免误伤 `X-Key`/`monkey`/`keyboard`/`keyword` 等含 "key"
 /// 子串的非凭据名(既有 `redact_json` 测试即要求 `X-Key` 值保留)。
 ///
 /// **token 不再用 contains**——教训:`contains("token")` 会误伤
 /// `max_output_tokens`/`prompt_tokens`/`completion_tokens` 这类正常用量字段名
-/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。改为只
-/// 精确匹配 AWS Bedrock sigv4 真实写入的凭据头 `x-amz-security-token`(name 已
-/// lowercase 归一化,直接 `==` 比较即可)。其余 needle 维持 contains,以覆盖
+/// (LLM 用量统计,非凭据),导致录制里这些值被无端替换成 `[REDACTED]`。改为
+/// 精确匹配常见 bearer-token 字段和 AWS Bedrock sigv4 的
+/// `x-amz-security-token`(name 已 lowercase 归一化)。其余 needle 维持 contains,以覆盖
 /// `x-goog-api-key`/`proxy-authorization` 等变体。
 #[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
+    // Separator-insensitive form so `accessToken`, `access-token`, and
+    // `x-access-token` all classify like `access_token`. A `token` SUFFIX is
+    // the credential shape; plural usage fields (`max_tokens`,
+    // `input_tokens`) end in `tokens` and stay loggable.
+    let squashed: String = n.chars().filter(|c| *c != '-' && *c != '_').collect();
     n == "cookie"
         || n == "set-cookie"
         || n == "key"
-        || n == "x-amz-security-token"
+        || squashed.ends_with("token")
         || n.contains("authorization")
-        || n.contains("api-key")
-        || n.contains("api_key")
-        || n.contains("apikey")
+        || squashed.contains("apikey")
 }
 
 /// 递归脱敏(JSON 中含敏感键的项值替换为 `[REDACTED]`)。
@@ -506,6 +581,7 @@ enum RecordEvent {
     ExchangeUpdate {
         call_id: String,
         attempt: u32,
+        exchange_index: u32,
         response: ResponseRecord,
         error: Option<String>,
     },
@@ -725,12 +801,14 @@ impl Recorder for JsonlRecorder {
         &self,
         call_id: &str,
         attempt: u32,
+        exchange_index: u32,
         response: &ResponseRecord,
         error: Option<String>,
     ) {
         self.send_ev(RecordEvent::ExchangeUpdate {
             call_id: call_id.to_string(),
             attempt,
+            exchange_index,
             response: response.clone(),
             error,
         });
@@ -833,6 +911,7 @@ fn writer_loop(
             RecordEvent::ExchangeUpdate {
                 call_id,
                 attempt,
+                exchange_index,
                 response,
                 error,
             } => {
@@ -840,7 +919,7 @@ fn writer_loop(
                 // 不静默 patch 第一条。
                 let rec = entry_or_init(&mut pending, &call_id);
                 if !matches!(
-                    apply_exchange_update(rec, attempt, response, error),
+                    apply_exchange_update(rec, attempt, exchange_index, response, error),
                     UpdateMatch::Patched
                 ) {
                     mark_inconsistent(&inconsistent, &call_id);
@@ -961,7 +1040,7 @@ fn insert_exchange(rec: &mut Recording, exchange: HttpExchange) -> bool {
     if let Some(existing) = rec
         .exchanges
         .iter_mut()
-        .find(|e| e.attempt == exchange.attempt)
+        .find(|e| e.attempt == exchange.attempt && e.exchange_index == exchange.exchange_index)
     {
         merge_exchange(existing, &exchange);
         true
@@ -991,6 +1070,7 @@ fn merge_exchange(existing: &mut HttpExchange, new: &HttpExchange) {
 fn apply_exchange_update(
     rec: &mut Recording,
     attempt: u32,
+    exchange_index: u32,
     response: ResponseRecord,
     error: Option<String>,
 ) -> UpdateMatch {
@@ -998,7 +1078,7 @@ fn apply_exchange_update(
         .exchanges
         .iter()
         .enumerate()
-        .filter(|(_, e)| e.attempt == attempt)
+        .filter(|(_, e)| e.attempt == attempt && e.exchange_index == exchange_index)
         .map(|(i, _)| i)
         .collect();
     match matches.len() {
@@ -1352,6 +1432,7 @@ impl Recorder for RingRecorder {
         &self,
         call_id: &str,
         attempt: u32,
+        exchange_index: u32,
         response: &ResponseRecord,
         error: Option<String>,
     ) {
@@ -1359,7 +1440,7 @@ impl Recorder for RingRecorder {
         // C4-7:要求恰好一个匹配;0 或 >1 → 标记 inconsistent,不静默 patch 第一条。
         let rec = inner.entry_or_init_bounded(call_id);
         if !matches!(
-            apply_exchange_update(rec, attempt, response.clone(), error),
+            apply_exchange_update(rec, attempt, exchange_index, response.clone(), error),
             UpdateMatch::Patched
         ) {
             inner.mark_inconsistent(call_id);
@@ -1422,6 +1503,9 @@ pub struct RecordingOutcomeStream<S> {
     call_id: String,
     /// 已记录终结。
     recorded: bool,
+    /// Provider error 事件先到时挂起的 outcome:尾随的 Finish 仍携带 usage
+    /// (计费证据),在终结时合并写入,而不是在 error 事件处立即定稿丢掉它。
+    pending: Option<OutcomeRecord>,
 }
 
 impl<S> RecordingOutcomeStream<S> {
@@ -1432,6 +1516,17 @@ impl<S> RecordingOutcomeStream<S> {
             recorder,
             call_id: call_id.into(),
             recorded: false,
+            pending: None,
+        }
+    }
+
+    /// 写出挂起的 provider error outcome(若有);首个错误定性不变。
+    fn flush_pending(&mut self) -> bool {
+        if let Some(pending) = self.pending.take() {
+            self.record(&pending);
+            true
+        } else {
+            false
         }
     }
 
@@ -1447,12 +1542,11 @@ impl<S> RecordingOutcomeStream<S> {
     }
 }
 
-impl<S, E> futures::Stream for RecordingOutcomeStream<S>
+impl<S> futures::Stream for RecordingOutcomeStream<S>
 where
-    S: futures::Stream<Item = Result<crate::stream_part::StreamPart, E>> + Unpin,
-    E: std::fmt::Display,
+    S: futures::Stream<Item = Result<crate::stream_part::StreamPart, crate::AiMuxError>> + Unpin,
 {
-    type Item = Result<crate::stream_part::StreamPart, E>;
+    type Item = Result<crate::stream_part::StreamPart, crate::AiMuxError>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -1468,47 +1562,77 @@ where
                         usage,
                         ..
                     } => {
-                        let outcome = OutcomeRecord {
-                            status: OutcomeStatus::Success,
-                            finish_reason: serde_json::to_value(finish_reason.unified)
-                                .ok()
-                                .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
-                            error: None,
-                            usage: serde_json::to_value(usage).ok(),
-                        };
-                        self.as_mut().get_mut().record(&outcome);
+                        let this = self.as_mut().get_mut();
+                        if let Some(mut pending) = this.pending.take() {
+                            // Provider error 已定性;尾随 Finish 补上 usage。
+                            pending.usage = serde_json::to_value(usage).ok();
+                            this.record(&pending);
+                        } else {
+                            let outcome = OutcomeRecord {
+                                status: OutcomeStatus::Success,
+                                finish_reason: serde_json::to_value(finish_reason.unified)
+                                    .ok()
+                                    .and_then(|v| v.as_str().map(std::string::ToString::to_string)),
+                                error: None,
+                                error_value: None,
+                                usage: serde_json::to_value(usage).ok(),
+                            };
+                            this.record(&outcome);
+                        }
                     }
                     crate::stream_part::StreamPart::Error { error } => {
-                        let outcome = OutcomeRecord {
-                            status: OutcomeStatus::Error,
-                            finish_reason: None,
-                            error: Some(error.to_string()),
-                            usage: None,
-                        };
-                        self.as_mut().get_mut().record(&outcome);
+                        let this = self.as_mut().get_mut();
+                        if !this.recorded && this.pending.is_none() {
+                            this.pending = Some(OutcomeRecord {
+                                status: OutcomeStatus::Error,
+                                finish_reason: None,
+                                error: Some(error.to_string()),
+                                error_value: serde_json::to_value(error).ok(),
+                                usage: None,
+                            });
+                        }
                     }
                     _ => {}
                 }
                 std::task::Poll::Ready(Some(Ok(part)))
             }
             std::task::Poll::Ready(Some(Err(e))) => {
-                let outcome = OutcomeRecord {
-                    status: OutcomeStatus::Error,
-                    finish_reason: None,
-                    error: Some(e.to_string()),
-                    usage: None,
-                };
-                this.record(&outcome);
+                if e.is_recoverable_stream_error() {
+                    if !this.recorded && this.pending.is_none() {
+                        this.pending = Some(OutcomeRecord {
+                            status: OutcomeStatus::Error,
+                            finish_reason: None,
+                            error: Some(e.to_string()),
+                            error_value: serde_json::to_value(&e).ok(),
+                            usage: None,
+                        });
+                    }
+                    return std::task::Poll::Ready(Some(Err(e)));
+                }
+                // 挂起的 provider error 先定性(首个错误胜出,与旧行为一致)。
+                if !this.flush_pending() {
+                    let outcome = OutcomeRecord {
+                        status: OutcomeStatus::Error,
+                        finish_reason: None,
+                        error: Some(e.to_string()),
+                        error_value: serde_json::to_value(&e).ok(),
+                        usage: None,
+                    };
+                    this.record(&outcome);
+                }
                 std::task::Poll::Ready(Some(Err(e)))
             }
             std::task::Poll::Ready(None) => {
-                let outcome = OutcomeRecord {
-                    status: OutcomeStatus::Incomplete,
-                    finish_reason: None,
-                    error: None,
-                    usage: None,
-                };
-                this.record(&outcome);
+                if !this.flush_pending() {
+                    let outcome = OutcomeRecord {
+                        status: OutcomeStatus::Incomplete,
+                        finish_reason: None,
+                        error: None,
+                        error_value: None,
+                        usage: None,
+                    };
+                    this.record(&outcome);
+                }
                 std::task::Poll::Ready(None)
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
@@ -1518,11 +1642,12 @@ where
 
 impl<S> Drop for RecordingOutcomeStream<S> {
     fn drop(&mut self) {
-        if !self.recorded {
+        if !self.recorded && !self.flush_pending() {
             let outcome = OutcomeRecord {
                 status: OutcomeStatus::Cancelled,
                 finish_reason: None,
                 error: None,
+                error_value: None,
                 usage: None,
             };
             self.record(&outcome);
@@ -1536,6 +1661,128 @@ impl<S> Drop for RecordingOutcomeStream<S> {
 mod tests {
     use super::*;
     use crate::generate::GenerateTextOptions;
+
+    struct CaptureRecorder(std::sync::Mutex<Vec<OutcomeRecord>>);
+
+    impl Recorder for CaptureRecorder {
+        fn record_input(&self, _: &str, _: &CallOptions, _: &str, _: &str) {}
+        fn record_provider(&self, _: &str, _: &ProviderRecord) {}
+        fn record_exchange(&self, _: &str, _: &HttpExchange) {}
+        fn record_exchange_update(
+            &self,
+            _: &str,
+            _: u32,
+            _: u32,
+            _: &ResponseRecord,
+            _: Option<String>,
+        ) {
+        }
+        fn record_outcome(&self, _: &str, outcome: &OutcomeRecord) {
+            self.0.lock().unwrap().push(outcome.clone());
+        }
+        fn flush(&self) {}
+    }
+
+    type PartResult = Result<crate::stream_part::StreamPart, crate::AiMuxError>;
+    type CapturedStream = RecordingOutcomeStream<
+        futures::stream::Chain<
+            futures::stream::Iter<std::vec::IntoIter<PartResult>>,
+            futures::stream::Pending<PartResult>,
+        >,
+    >;
+
+    fn capture_stream(parts: Vec<PartResult>, recorder: &Arc<CaptureRecorder>) -> CapturedStream {
+        use futures::StreamExt as _;
+        let dyn_recorder: Arc<dyn Recorder> = recorder.clone();
+        RecordingOutcomeStream::new(
+            futures::stream::iter(parts).chain(futures::stream::pending()),
+            Some(dyn_recorder),
+            "call-1",
+        )
+    }
+
+    fn provider_error_part() -> Result<crate::stream_part::StreamPart, crate::AiMuxError> {
+        Ok(crate::stream_part::StreamPart::Error {
+            error: crate::AiMuxError::Other("provider error".into()),
+        })
+    }
+
+    #[tokio::test]
+    async fn provider_error_outcome_keeps_usage_from_trailing_finish() {
+        use futures::StreamExt as _;
+
+        let recorder = Arc::new(CaptureRecorder(std::sync::Mutex::new(Vec::new())));
+        let finish = Ok(crate::stream_part::StreamPart::Finish {
+            finish_reason: crate::types::FinishReason {
+                unified: crate::types::FinishReasonUnified::Error,
+                raw: None,
+            },
+            usage: crate::types::Usage::default(),
+            provider_metadata: None,
+        });
+        let mut stream = capture_stream(vec![provider_error_part(), finish], &recorder);
+        let _ = stream.next().await;
+        let _ = stream.next().await;
+        drop(stream);
+
+        let outcomes = recorder.0.lock().unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].status, OutcomeStatus::Error);
+        assert_eq!(outcomes[0].error.as_deref(), Some("provider error"));
+        assert!(outcomes[0].usage.is_some(), "trailing Finish usage kept");
+    }
+
+    #[tokio::test]
+    async fn provider_error_outcome_is_flushed_when_the_stream_is_dropped_early() {
+        use futures::StreamExt as _;
+
+        let recorder = Arc::new(CaptureRecorder(std::sync::Mutex::new(Vec::new())));
+        let mut stream = capture_stream(vec![provider_error_part()], &recorder);
+        let _ = stream.next().await;
+        drop(stream);
+
+        let outcomes = recorder.0.lock().unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].status, OutcomeStatus::Error);
+        assert_eq!(outcomes[0].error.as_deref(), Some("provider error"));
+    }
+
+    #[tokio::test]
+    async fn recoverable_frame_error_waits_for_the_trailing_finish() {
+        use futures::StreamExt as _;
+
+        let recorder = Arc::new(CaptureRecorder(std::sync::Mutex::new(Vec::new())));
+        let finish = Ok(crate::stream_part::StreamPart::Finish {
+            finish_reason: crate::types::FinishReason {
+                unified: crate::types::FinishReasonUnified::Stop,
+                raw: Some("stop".into()),
+            },
+            usage: crate::types::Usage::default(),
+            provider_metadata: None,
+        });
+        let mut stream = capture_stream(
+            vec![
+                Err(crate::AiMuxError::JsonParse("bad frame".into())),
+                finish,
+            ],
+            &recorder,
+        );
+
+        assert!(matches!(
+            stream.next().await,
+            Some(Err(crate::AiMuxError::JsonParse(_)))
+        ));
+        assert!(recorder.0.lock().unwrap().is_empty());
+        assert!(matches!(
+            stream.next().await,
+            Some(Ok(crate::stream_part::StreamPart::Finish { .. }))
+        ));
+
+        let outcomes = recorder.0.lock().unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].status, OutcomeStatus::Error);
+        assert!(outcomes[0].usage.is_some());
+    }
 
     fn sample_options() -> CallOptions {
         GenerateTextOptions {
@@ -1575,6 +1822,29 @@ mod tests {
     }
 
     #[test]
+    fn sensitive_key_matching_is_separator_and_case_insensitive() {
+        for key in [
+            "token",
+            "access_token",
+            "accessToken",
+            "access-token",
+            "x-access-token",
+            "refreshToken",
+            "id_token",
+            "x-amz-security-token",
+            "Authorization",
+            "x-api-key",
+            "apiKey",
+        ] {
+            assert!(is_sensitive_key(key), "{key} must be redacted");
+        }
+        // Usage counters carry no credentials and must stay loggable.
+        for key in ["max_tokens", "input_tokens", "output_tokens", "model"] {
+            assert!(!is_sensitive_key(key), "{key} must stay visible");
+        }
+    }
+
+    #[test]
     fn redact_json_hides_sensitive_values_everywhere() {
         let v = serde_json::json!({
             "headers": {
@@ -1584,7 +1854,11 @@ mod tests {
                 "x-amz-security-token": "sts-tok"
             },
             "provider_options": { "headers": { "Cookie": "s=1" } },
-            "body_overrides": { "api_key": "sk-secret" },
+            "body_overrides": {
+                "api_key": "sk-secret",
+                "token": "bearer-secret",
+                "access_token": "oauth-secret"
+            },
             // 用量字段名含 "token" 子串,但非凭据——contains("token") 曾误伤。
             "usage": {
                 "max_output_tokens": 4096,
@@ -1600,6 +1874,8 @@ mod tests {
         assert_eq!(r["headers"]["X-Key"], "ok");
         assert_eq!(r["provider_options"]["headers"]["Cookie"], "[REDACTED]");
         assert_eq!(r["body_overrides"]["api_key"], "[REDACTED]");
+        assert_eq!(r["body_overrides"]["token"], "[REDACTED]");
+        assert_eq!(r["body_overrides"]["access_token"], "[REDACTED]");
         // 含 "token" 子串的用量字段不再被误脱敏(回归 contains("token"))。
         assert_eq!(r["usage"]["max_output_tokens"], 4096);
         assert_eq!(r["usage"]["prompt_tokens"], 10);
@@ -1634,6 +1910,7 @@ mod tests {
                 status: OutcomeStatus::Success,
                 finish_reason: Some("stop".into()),
                 error: None,
+                error_value: None,
                 usage: None,
             },
         );
@@ -1669,6 +1946,7 @@ mod tests {
             status: OutcomeStatus::Success,
             finish_reason: Some("stop".into()),
             error: None,
+            error_value: None,
             usage: None,
         };
         assert!(!rec.ready(), "empty-prompt placeholder must not finalize");
@@ -1689,6 +1967,7 @@ mod tests {
                 status: OutcomeStatus::Success,
                 finish_reason: Some("stop".into()),
                 error: None,
+                error_value: None,
                 usage: None,
             },
         );
@@ -1746,6 +2025,7 @@ mod tests {
                 status: OutcomeStatus::Success,
                 finish_reason: Some("stop".into()),
                 error: None,
+                error_value: None,
                 usage: None,
             },
         })
@@ -1784,6 +2064,7 @@ mod tests {
                 status: OutcomeStatus::Success,
                 finish_reason: Some("stop".into()),
                 error: None,
+                error_value: None,
                 usage: None,
             },
         );
@@ -1836,7 +2117,9 @@ mod tests {
         rec.record_exchange(
             "call-x2",
             &HttpExchange {
+                step: None,
                 attempt: 0,
+                exchange_index: 0,
                 request: HttpRecord {
                     method: "post".into(),
                     url: "u".into(),
@@ -1855,6 +2138,7 @@ mod tests {
         rec.record_exchange_update(
             "call-x2",
             0,
+            0,
             &ResponseRecord {
                 status: 200,
                 headers: vec![],
@@ -1870,6 +2154,7 @@ mod tests {
                 status: OutcomeStatus::Success,
                 finish_reason: None,
                 error: None,
+                error_value: None,
                 usage: None,
             },
         );
@@ -1894,7 +2179,9 @@ mod tests {
         rec.record_exchange(
             "call-errp",
             &HttpExchange {
+                step: None,
                 attempt: 3,
+                exchange_index: 0,
                 request: HttpRecord {
                     method: "post".into(),
                     url: "u".into(),
@@ -1920,6 +2207,7 @@ mod tests {
         rec.record_exchange_update(
             "call-errp",
             3,
+            0,
             &ResponseRecord {
                 status: 200,
                 headers: vec![],
@@ -1936,6 +2224,7 @@ mod tests {
                 status: OutcomeStatus::Error,
                 finish_reason: None,
                 error: Some("mid-stream".into()),
+                error_value: None,
                 usage: None,
             },
         );
@@ -1981,6 +2270,7 @@ mod tests {
                 status: OutcomeStatus::Success,
                 finish_reason: None,
                 error: None,
+                error_value: None,
                 usage: None,
             },
         );
@@ -2030,7 +2320,9 @@ mod tests {
 
     fn sample_exchange() -> HttpExchange {
         HttpExchange {
+            step: None,
             attempt: 0,
+            exchange_index: 0,
             request: HttpRecord {
                 method: "post".into(),
                 url: "https://api.openai.com/v1/chat/completions".into(),
@@ -2058,6 +2350,7 @@ mod tests {
             status: OutcomeStatus::Success,
             finish_reason: Some("stop".into()),
             error: None,
+            error_value: None,
             usage: None,
         }
     }
@@ -2396,7 +2689,9 @@ mod tests {
 
     fn skeleton_at(attempt: u32) -> HttpExchange {
         HttpExchange {
+            step: None,
             attempt,
+            exchange_index: 1,
             request: HttpRecord {
                 method: "post".into(),
                 url: "u".into(),
@@ -2425,6 +2720,40 @@ mod tests {
     }
 
     #[test]
+    fn interleaved_child_attempts_keep_local_attempt_and_exchange_counters() {
+        let recorder: Arc<dyn Recorder> =
+            Arc::new(CaptureRecorder(std::sync::Mutex::new(Vec::new())));
+        let root = RecordingContext::new("call-1", recorder);
+        let _ = root.start_attempt(); // root operation attempt = 1
+
+        let a = root.child("router[0]:mock/a");
+        let b = root.child("router[1]:mock/b");
+        assert_eq!(a.step().as_deref(), Some("router[0]:mock/a"));
+        assert_eq!(root.step(), None);
+
+        // Attempt numbers stay unique across the whole call (shared counter),
+        // so (attempt, exchange_index) still identifies an exchange without
+        // keying on step.
+        let a1 = a.start_attempt();
+        let b1 = b.start_attempt();
+        let mut attempts = vec![a1, b1];
+        attempts.sort_unstable();
+        attempts.dedup();
+        assert_eq!(attempts.len(), 2);
+
+        // Starting b after a must not relabel a's in-flight exchange.
+        assert_eq!(a.next_exchange(), (a1, 1));
+        assert_eq!(b.next_exchange(), (b1, 1));
+        assert_eq!(root.next_exchange(), (1, 1));
+
+        // Each child owns its exchange counter: one child's start_attempt
+        // reset cannot race another child's in-flight attempt.
+        let a2 = a.start_attempt(); // resets only a's local exchange counter
+        assert_eq!(a.next_exchange(), (a2, 1));
+        assert_eq!(b.next_exchange(), (b1, 2));
+    }
+
+    #[test]
     fn insert_exchange_and_apply_update_match_semantics() {
         let mut rec = empty_recording("c");
 
@@ -2447,7 +2776,7 @@ mod tests {
 
         // apply:1 匹配 → Patched。
         assert_eq!(
-            apply_exchange_update(&mut rec, 1, resp_status(200), None),
+            apply_exchange_update(&mut rec, 1, 1, resp_status(200), None),
             UpdateMatch::Patched
         );
         assert_eq!(
@@ -2464,14 +2793,14 @@ mod tests {
 
         // apply:0 匹配 → NotFound。
         assert_eq!(
-            apply_exchange_update(&mut rec, 9, resp_status(200), None),
+            apply_exchange_update(&mut rec, 9, 0, resp_status(200), None),
             UpdateMatch::NotFound
         );
 
         // apply:2 匹配(手动塞重复)→ Ambiguous,不 patch 任何一条。
         rec.exchanges.push(skeleton_at(1));
         assert_eq!(
-            apply_exchange_update(&mut rec, 1, resp_status(503), Some("amb".into())),
+            apply_exchange_update(&mut rec, 1, 1, resp_status(503), Some("amb".into())),
             UpdateMatch::Ambiguous
         );
         assert!(
@@ -2506,7 +2835,7 @@ mod tests {
         let ring = RingRecorder::new();
         ring.record_input("c", &sample_options(), "openai", "gpt-4o");
         // 无骨架直接 update → 0 匹配 → 标记 inconsistent,不静默丢弃。
-        ring.record_exchange_update("c", 0, &resp_status(200), None);
+        ring.record_exchange_update("c", 0, 0, &resp_status(200), None);
         assert!(ring.inconsistent_call_ids().contains(&"c".to_string()));
         assert_eq!(
             ring.pending_count(),

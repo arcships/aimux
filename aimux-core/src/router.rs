@@ -15,6 +15,7 @@ use crate::language_model::LanguageModel;
 use crate::language_model_message::LanguageModelPrompt;
 use crate::options::CallOptions;
 use crate::result::{GenerateResult, StreamResult};
+use crate::retry;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Router trait
@@ -135,10 +136,9 @@ impl Default for RouterConfig {
 /// A composite model that routes each call to one child and (optionally) falls
 /// back across the rest on error.
 ///
-/// Streaming does not fall back: by the time `do_stream` returns, `StreamStart`
-/// has been emitted to the user and a retry would duplicate tokens. This
-/// matches Hermes / LiteLLM (route first, delegate second, no mid-stream
-/// fallback). See RFC-0021 §3.3.
+/// Streaming retries setup on the routed child, but does not fall back or retry
+/// after setup: once stream parts are visible to the user, either would risk
+/// duplicating tokens. See RFC-0021 §3.3.
 pub struct RouterModel {
     models: Vec<ChildModel>,
     router: Box<dyn Router>,
@@ -177,12 +177,31 @@ impl RouterModel {
             if i == exclude {
                 continue;
             }
-            match m.do_generate(options).await {
+            let retries = retry::prepare_retries(
+                options.max_retries,
+                m.retry_config(),
+                options.abort_signal.clone(),
+            );
+            let child_options = options.for_step(self.step_label(i));
+            match retries
+                .retry(|| {
+                    if let Some(context) = &child_options.recording_context {
+                        let _ = context.start_attempt();
+                    }
+                    m.do_generate(&child_options)
+                })
+                .await
+            {
                 Ok(r) => return Ok(r),
                 Err(e) => last_err = Some(e),
             }
         }
         Err(last_err.expect("seeded primary_err makes last_err always Some"))
+    }
+
+    fn step_label(&self, idx: usize) -> String {
+        let m = &self.models[idx];
+        format!("router[{idx}]:{}/{}", m.provider(), m.model_id())
     }
 
     /// Validate a `Router`-returned index before indexing `self.models`. A
@@ -210,10 +229,34 @@ impl LanguageModel for RouterModel {
         &self.config.model_id
     }
 
+    fn retry_config(&self) -> retry::RetryConfig {
+        // Retrying the composite would rerun routing and previously attempted
+        // children; each child is retried at its own execution boundary.
+        retry::RetryConfig {
+            max_retries: 0,
+            ..retry::RetryConfig::default()
+        }
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let raw = self.router.route(&options.prompt, &self.models)?;
         let idx = self.check_index(raw, "router")?;
-        match self.models[idx].do_generate(options).await {
+        let model = &self.models[idx];
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            model.retry_config(),
+            options.abort_signal.clone(),
+        );
+        let child_options = options.for_step(self.step_label(idx));
+        match retries
+            .retry(|| {
+                if let Some(context) = &child_options.recording_context {
+                    let _ = context.start_attempt();
+                }
+                model.do_generate(&child_options)
+            })
+            .await
+        {
             Ok(r) => Ok(r),
             Err(e) => {
                 if self.fallback == FallbackPolicy::OnError {
@@ -228,27 +271,47 @@ impl LanguageModel for RouterModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let raw = self.router.route(&options.prompt, &self.models)?;
         let idx = self.check_index(raw, "router")?;
-        // Route first, delegate second. No mid-stream fallback (StreamStart is
-        // already emitted by the time we'd want to retry).
-        self.models[idx].do_stream(options).await
+        let model = &self.models[idx];
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            model.retry_config(),
+            options.abort_signal.clone(),
+        );
+        let child_options = options.for_step(self.step_label(idx));
+        // Only setup can be retried. The returned stream is passed through, so
+        // failures after setup never invoke another child or duplicate output.
+        retries
+            .retry(|| {
+                if let Some(context) = &child_options.recording_context {
+                    let _ = context.start_attempt();
+                }
+                model.do_stream(&child_options)
+            })
+            .await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recording::{
+        HttpExchange, OutcomeRecord, ProviderRecord, Recorder, RecordingContext, ResponseRecord,
+    };
     use crate::result::GenerateResult;
     use crate::stream_part::StreamPart;
     use crate::types::{FinishReason, FinishReasonUnified, Usage};
     use async_trait::async_trait;
     use futures::stream;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// A mock child that either succeeds with `text` or always fails.
     struct MockChild {
         name: &'static str,
         text: String,
         fail: bool,
+        retry_failures: usize,
+        calls: Arc<AtomicUsize>,
     }
 
     #[async_trait]
@@ -260,8 +323,12 @@ mod tests {
             self.name
         }
         async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
                 return Err(AiMuxError::Other(format!("{} always fails", self.name)));
+            }
+            if attempt <= self.retry_failures {
+                return Err(retryable_error(self.name));
             }
             Ok(GenerateResult {
                 content: vec![crate::result::GenerateContent::Text {
@@ -281,8 +348,12 @@ mod tests {
             })
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
                 return Err(AiMuxError::Other(format!("{} always fails", self.name)));
+            }
+            if attempt <= self.retry_failures {
+                return Err(retryable_error(self.name));
             }
             let parts: Vec<Result<StreamPart, AiMuxError>> = vec![
                 Ok(StreamPart::StreamStart { warnings: vec![] }),
@@ -308,11 +379,60 @@ mod tests {
         }
     }
 
+    fn retryable_error(name: &str) -> AiMuxError {
+        AiMuxError::ApiCall(Box::new(crate::ApiCallError {
+            status_code: Some(503),
+            response_headers: Some(std::collections::HashMap::from([(
+                "retry-after-ms".into(),
+                "0".into(),
+            )])),
+            is_retryable: true,
+            ..crate::ApiCallError::new(
+                format!("{name} retryable failure"),
+                "https://example.test",
+                serde_json::json!({}),
+            )
+        }))
+    }
+
+    fn retry_child(
+        name: &'static str,
+        text: &str,
+        retry_failures: usize,
+    ) -> (ChildModel, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        (
+            Arc::new(MockChild {
+                name,
+                text: text.into(),
+                fail: false,
+                retry_failures,
+                calls: calls.clone(),
+            }),
+            calls,
+        )
+    }
+
+    struct CountingRuleRouter(Arc<AtomicUsize>);
+
+    impl Router for CountingRuleRouter {
+        fn route(
+            &self,
+            prompt: &LanguageModelPrompt,
+            models: &[ChildModel],
+        ) -> Result<usize, AiMuxError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            RuleRouter.route(prompt, models)
+        }
+    }
+
     fn child(name: &'static str, text: &str, fail: bool) -> ChildModel {
         Arc::new(MockChild {
             name,
             text: text.into(),
             fail,
+            retry_failures: 0,
+            calls: Arc::new(AtomicUsize::new(0)),
         })
     }
 
@@ -533,5 +653,168 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(r.text, "works through trait object");
+    }
+
+    #[tokio::test]
+    async fn retries_each_child_before_falling_back_without_rerouting() {
+        let (primary, primary_calls) = retry_child("primary", "primary", usize::MAX);
+        let (backup, backup_calls) = retry_child("backup", "backup", 1);
+        let route_calls = Arc::new(AtomicUsize::new(0));
+        let router = RouterModel::new(
+            vec![primary, backup],
+            Box::new(CountingRuleRouter(route_calls.clone())),
+            FallbackPolicy::OnError,
+            RouterConfig::default(),
+        );
+        assert_eq!(router.retry_config().max_retries, 0);
+
+        let result = crate::generate::generate_text(
+            &router,
+            "hello",
+            crate::generate::GenerateTextOptions {
+                max_retries: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.text, "backup");
+        assert_eq!(route_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(primary_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(backup_calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// Children must receive a step-labeled child recording context so their
+    /// exchanges and retry attempts are recorded as nested steps.
+    #[tokio::test]
+    async fn children_receive_step_labeled_recording_contexts() {
+        struct StepProbe {
+            seen: std::sync::Mutex<Vec<Option<String>>>,
+        }
+
+        #[async_trait]
+        impl LanguageModel for StepProbe {
+            fn provider(&self) -> &str {
+                "mock"
+            }
+            fn model_id(&self) -> &str {
+                "probe"
+            }
+            async fn do_generate(
+                &self,
+                options: &CallOptions,
+            ) -> Result<GenerateResult, AiMuxError> {
+                self.seen.lock().unwrap().push(
+                    options
+                        .recording_context
+                        .as_ref()
+                        .and_then(RecordingContext::step),
+                );
+                Err(AiMuxError::Other("probe fails".into()))
+            }
+            async fn do_stream(&self, _: &CallOptions) -> Result<StreamResult, AiMuxError> {
+                unreachable!()
+            }
+        }
+
+        struct NoopRecorder;
+        impl Recorder for NoopRecorder {
+            fn record_input(&self, _: &str, _: &CallOptions, _: &str, _: &str) {}
+            fn record_provider(&self, _: &str, _: &ProviderRecord) {}
+            fn record_exchange(&self, _: &str, _: &HttpExchange) {}
+            fn record_exchange_update(
+                &self,
+                _: &str,
+                _: u32,
+                _: u32,
+                _: &ResponseRecord,
+                _: Option<String>,
+            ) {
+            }
+            fn record_outcome(&self, _: &str, _: &OutcomeRecord) {}
+            fn flush(&self) {}
+        }
+
+        let probe = Arc::new(StepProbe {
+            seen: std::sync::Mutex::new(Vec::new()),
+        });
+        let router = RouterModel::new(
+            vec![probe.clone()],
+            Box::new(CountingRuleRouter(Arc::new(AtomicUsize::new(0)))),
+            FallbackPolicy::OnError,
+            RouterConfig::default(),
+        );
+
+        let options = CallOptions {
+            recording_context: Some(RecordingContext::new("call-1", Arc::new(NoopRecorder))),
+            ..CallOptions::default()
+        };
+        let _ = router.do_generate(&options).await;
+
+        let seen = probe.seen.lock().unwrap();
+        assert!(!seen.is_empty());
+        assert_eq!(seen[0].as_deref(), Some("router[0]:mock/probe"));
+    }
+
+    /// Even when every child fails and the caller asked for per-call retries,
+    /// the composite operation must run exactly once: the exhausted child's
+    /// `Retry` error passes through the outer retry loop instead of replaying
+    /// routing and fallback.
+    #[tokio::test]
+    async fn all_children_failing_does_not_replay_the_composite() {
+        let (primary, primary_calls) = retry_child("primary", "primary", usize::MAX);
+        let (backup, backup_calls) = retry_child("backup", "backup", usize::MAX);
+        let route_calls = Arc::new(AtomicUsize::new(0));
+        let router = RouterModel::new(
+            vec![primary, backup],
+            Box::new(CountingRuleRouter(route_calls.clone())),
+            FallbackPolicy::OnError,
+            RouterConfig::default(),
+        );
+
+        let error = crate::generate::generate_text(
+            &router,
+            "hello",
+            crate::generate::GenerateTextOptions {
+                max_retries: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, crate::AiMuxError::Retry(_)), "{error:?}");
+        assert_eq!(route_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(primary_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(backup_calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn retries_stream_setup_on_selected_child_without_fallback_or_rerouting() {
+        let (primary, primary_stream_calls) = retry_child("primary", "primary", 1);
+        let (backup, backup_stream_calls) = retry_child("backup", "backup", 0);
+        let route_calls = Arc::new(AtomicUsize::new(0));
+        let router = RouterModel::new(
+            vec![primary, backup],
+            Box::new(CountingRuleRouter(route_calls.clone())),
+            FallbackPolicy::OnError,
+            RouterConfig::default(),
+        );
+
+        let _result = crate::generate::stream_text(
+            &router,
+            "hello",
+            crate::generate::GenerateTextOptions {
+                max_retries: Some(2),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(route_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(primary_stream_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(backup_stream_calls.load(Ordering::SeqCst), 0);
     }
 }
