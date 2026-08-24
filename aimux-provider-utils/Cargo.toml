@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Shared utilities for aimux provider implementations"
-keywords = ["llm", "http", "retry", "backoff"]
+keywords = ["llm", "http", "ai", "api"]
 categories = ["api-bindings", "asynchronous"]
 documentation = "https://docs.rs/aimux-provider-utils"
 
@@ -13,18 +13,17 @@ aimux-core = { workspace = true }
 aimux-stream = { workspace = true }
 
 reqwest = { workspace = true }
+http = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+async-stream = { workspace = true }
 url = { workspace = true }
-httpdate = { workspace = true }
 chrono = "0.4"
-rand = { workspace = true }
 
 # WebSocket client (RFC-0028 realtime transcription). Optional: enabled via
 # the `ws` feature so consumers without realtime needs compile it out.
@@ -37,7 +36,6 @@ ws = ["dep:tokio-tungstenite"]
 aimux-core = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt", "time"] }
 serial_test = { workspace = true }
-httpdate = { workspace = true }
 wiremock = "0.6"
 
 [lints]
