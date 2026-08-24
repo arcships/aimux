@@ -52,31 +52,31 @@ use aimux_ffi::{
     aimux_cohere_reranking_new_with_base, aimux_consume_stream_text, aimux_drop_handle,
     aimux_embed, aimux_error_code, aimux_error_free, aimux_error_message, aimux_error_model_id,
     aimux_error_model_type, aimux_error_provider_code, aimux_error_provider_id,
-    aimux_error_provider_message, aimux_error_request_id, aimux_error_response_body,
-    aimux_error_retry_ms, aimux_error_retryable, aimux_error_status, aimux_error_t,
-    aimux_file_upload, aimux_free_string, aimux_generate_object, aimux_generate_text,
-    aimux_generate_text_as_openai, aimux_get_model_specs, aimux_google_embedding_new,
-    aimux_google_embedding_new_with_base, aimux_google_image_new, aimux_google_image_new_with_base,
-    aimux_google_video_new, aimux_google_video_new_with_base, aimux_image_generate,
-    aimux_init_logging, aimux_init_proxy, aimux_init_recording, aimux_init_recording_ring,
-    aimux_init_recording_ring_default, aimux_list_sessions, aimux_mistral_new,
-    aimux_mistral_new_with_base, aimux_moa_new, aimux_mock_replay_new, aimux_openai_embedding_new,
-    aimux_openai_embedding_new_with_base, aimux_openai_files_new, aimux_openai_files_new_with_base,
-    aimux_openai_image_new, aimux_openai_image_new_with_base, aimux_openai_new,
-    aimux_openai_new_with_base, aimux_openai_speech_new, aimux_openai_speech_new_with_base,
-    aimux_openai_transcription_new, aimux_openai_transcription_new_with_base,
-    aimux_provider_from_env, aimux_provider_handle_new, aimux_provider_list_models,
-    aimux_provider_model, aimux_provider_new, aimux_recording_flush, aimux_recording_stop,
-    aimux_recording_try_flush, aimux_register_providers, aimux_rerank, aimux_router_new,
-    aimux_search, aimux_session_calls, aimux_session_infer_init, aimux_session_store_init,
-    aimux_speech_generate, aimux_stream_text, aimux_stream_text_as_openai,
-    aimux_stream_text_as_openai_with_abort, aimux_stream_text_with_abort, aimux_tavily_search_new,
-    aimux_tavily_search_new_with_base, aimux_trace_aggregate, aimux_trace_clear,
-    aimux_trace_export_jsonl, aimux_trace_new, aimux_trace_new_audited, aimux_trace_session_chain,
-    aimux_trace_session_trajectory, aimux_transcription_generate, aimux_transcription_input_done,
-    aimux_transcription_next_part, aimux_transcription_push_audio,
-    aimux_transcription_session_drop, aimux_transcription_session_new, aimux_vertex_new,
-    aimux_vertex_new_with_base, aimux_video_generate, aimux_xai_new, aimux_xai_new_with_base,
+    aimux_error_provider_message, aimux_error_response_body, aimux_error_retry_ms,
+    aimux_error_retryable, aimux_error_status, aimux_error_t, aimux_file_upload, aimux_free_string,
+    aimux_generate_object, aimux_generate_text, aimux_generate_text_as_openai,
+    aimux_get_model_specs, aimux_google_embedding_new, aimux_google_embedding_new_with_base,
+    aimux_google_image_new, aimux_google_image_new_with_base, aimux_google_video_new,
+    aimux_google_video_new_with_base, aimux_image_generate, aimux_init_logging, aimux_init_proxy,
+    aimux_init_recording, aimux_init_recording_ring, aimux_init_recording_ring_default,
+    aimux_list_sessions, aimux_mistral_new, aimux_mistral_new_with_base, aimux_moa_new,
+    aimux_mock_replay_new, aimux_openai_embedding_new, aimux_openai_embedding_new_with_base,
+    aimux_openai_files_new, aimux_openai_files_new_with_base, aimux_openai_image_new,
+    aimux_openai_image_new_with_base, aimux_openai_new, aimux_openai_new_with_base,
+    aimux_openai_speech_new, aimux_openai_speech_new_with_base, aimux_openai_transcription_new,
+    aimux_openai_transcription_new_with_base, aimux_provider_from_env, aimux_provider_handle_new,
+    aimux_provider_list_models, aimux_provider_model, aimux_provider_new, aimux_recording_flush,
+    aimux_recording_stop, aimux_recording_try_flush, aimux_register_providers, aimux_rerank,
+    aimux_router_new, aimux_search, aimux_session_calls, aimux_session_infer_init,
+    aimux_session_store_init, aimux_speech_generate, aimux_stream_text,
+    aimux_stream_text_as_openai, aimux_stream_text_as_openai_with_abort,
+    aimux_stream_text_with_abort, aimux_tavily_search_new, aimux_tavily_search_new_with_base,
+    aimux_trace_aggregate, aimux_trace_clear, aimux_trace_export_jsonl, aimux_trace_new,
+    aimux_trace_new_audited, aimux_trace_session_chain, aimux_trace_session_trajectory,
+    aimux_transcription_generate, aimux_transcription_input_done, aimux_transcription_next_part,
+    aimux_transcription_push_audio, aimux_transcription_session_drop,
+    aimux_transcription_session_new, aimux_vertex_new, aimux_vertex_new_with_base,
+    aimux_video_generate, aimux_xai_new, aimux_xai_new_with_base,
 };
 use common::{c, expect_aimux_error, expect_failure, expect_ffi_error, msg, ok, take};
 
@@ -155,7 +155,7 @@ fn header_and_exports_agree() {
     exports.sort();
     assert_eq!(
         exports.len(),
-        109,
+        115,
         "export count changed; update the headers"
     );
 
@@ -791,10 +791,19 @@ fn video_generate_fails_cleanly_on_unreachable_host() {
         &mut h,
     );
     expect_handle(e, h, "video handle");
-    let opts = c(r#"{"prompt":"waves","n":1,"provider_options":{}}"#);
+    // `n` and `provider_options` are omitted and `poll` is supplied: this
+    // pins the serde defaults and the poll wire keys at the ABI boundary —
+    // typed binding structs omit unset fields, so a strict parse here would
+    // regress every C-ABI language at once.
+    let opts = c(r#"{"prompt":"waves","poll":{"interval_ms":1,"timeout_ms":1}}"#);
     let mut out: *mut c_char = ptr::null_mut();
     let e = aimux_video_generate(h, opts.as_ptr(), &mut out);
-    expect_ptr_aimux_failure(e, out, "video_generate");
+    assert!(out.is_null(), "video_generate: expected NULL out-param");
+    let (code, message) = expect_aimux_error(e, "video_generate");
+    assert_ne!(
+        code, AIMUX_E_INVALID_ARGUMENT,
+        "options with defaults omitted must parse; got: {message}"
+    );
     aimux_drop_handle(h);
 }
 
@@ -978,7 +987,6 @@ fn utility_exports_return_clean_values() {
     for get in [
         aimux_error_provider_code,
         aimux_error_provider_message,
-        aimux_error_request_id,
         aimux_error_response_body,
         aimux_error_model_id,
         aimux_error_model_type,

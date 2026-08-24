@@ -6,10 +6,11 @@
  * trailing out-parameter, which remains at its documented sentinel on failure.
  *
  * Every non-NULL error has one non-zero `aimux_error_code_t` and one message.
- * Codes 1..13 come from `AiMuxError`, 100..105 from `RecordingError`, and
- * 200..206 identify failures detected while crossing the C ABI. Higher-level
- * bindings reconstruct their native error types from that code; they map all
- * 200..206 codes to the language's existing argument/state/invariant error.
+ * Codes 1..14 come from `AiMuxError`, 100..105 from
+ * `RecordingError`, and 200..206 identify failures detected while crossing
+ * the C ABI. Higher-level bindings reconstruct their native error types from
+ * that code; they map all 200..206 codes to the language's existing
+ * argument/state/invariant error.
  *
  * Strings returned by getters are owned by the caller and must be released
  * with `aimux_free_string()`. Release the error itself exactly once with
@@ -39,7 +40,7 @@ typedef struct aimux_error aimux_error_t;
 typedef enum aimux_error_code {
     AIMUX_OK = 0,
 
-    /* AiMuxError: 1..13. */
+    /* AiMuxError: 1..14. */
     AIMUX_E_OTHER = 1,
     AIMUX_E_JSON_PARSE = 2,
     AIMUX_E_INVALID_RESPONSE_DATA = 3,
@@ -53,6 +54,10 @@ typedef enum aimux_error_code {
     AIMUX_E_API_CALL = 11,
     AIMUX_E_TIMEOUT = 12,
     AIMUX_E_ABORTED = 13,
+    /* Reclaims the slot the pre-unification `Other` vacated: the opaque-pointer
+     * ABI break means no pre-unification caller can link, so nothing can
+     * misread it. */
+    AIMUX_E_RETRY = 14,
 
     /* RecordingError: 100..105. */
     AIMUX_E_RECORDING_INIT = 100,
@@ -104,10 +109,17 @@ int64_t aimux_error_retry_ms(const aimux_error_t *error);
 char *aimux_error_provider_code(const aimux_error_t *error);
 /** Failure text without Aimux's composed prefix. */
 char *aimux_error_provider_message(const aimux_error_t *error);
-/** Provider request id. */
-char *aimux_error_request_id(const aimux_error_t *error);
 /** Raw provider response body. */
 char *aimux_error_response_body(const aimux_error_t *error);
+/** Sanitized request URL of the failed call. */
+char *aimux_error_url(const aimux_error_t *error);
+/** Sanitized request body values, as a JSON string. */
+char *aimux_error_request_body_values(const aimux_error_t *error);
+/** Sanitized response headers, as one JSON object string of
+ *  name → value pairs, e.g. {"retry-after-ms":"1500"}. */
+char *aimux_error_response_headers(const aimux_error_t *error);
+/** Parsed provider error data, as a JSON string. */
+char *aimux_error_provider_data(const aimux_error_t *error);
 
 /* AIMUX_E_NO_SUCH_MODEL — returned strings are caller-owned. */
 
@@ -117,6 +129,24 @@ char *aimux_error_model_type(const aimux_error_t *error);
 /* AIMUX_E_NO_SUCH_PROVIDER — returned string is caller-owned. */
 
 char *aimux_error_provider_id(const aimux_error_t *error);
+
+/*
+ * AIMUX_E_RETRY — retrying stopped; the error keeps the per-attempt history.
+ * `aimux_error_message()` composes the summary ("Failed after N attempts…").
+ */
+
+/** Why retrying stopped: "maxRetriesExceeded" (every permitted attempt
+ *  failed with a retryable error) or "errorNotRetryable" (a later attempt
+ *  failed with a non-retryable error). Caller-owned string. */
+char *aimux_error_retry_reason(const aimux_error_t *error);
+/** Number of recorded attempt errors; 0 under any other code or for NULL. */
+int32_t aimux_error_retry_count(const aimux_error_t *error);
+/** The attempt error at `index` (0-based, oldest first; the last entry is
+ *  the final attempt) as a NEW owned error — read it with these same getters
+ *  and release it with aimux_error_free(), independently of the parent.
+ *  NULL when `index` is out of range or under any other code. */
+aimux_error_t *aimux_error_retry_error_at(const aimux_error_t *error,
+                                          int32_t index);
 
 #ifdef __cplusplus
 }

@@ -72,7 +72,6 @@ static int report(const char *what, aimux_error_t *e) {
         // Payload strings are NULL when the provider did not send them.
         print_owned("provider code", aimux_error_provider_code(e));
         print_owned("provider message", aimux_error_provider_message(e));
-        print_owned("request id", aimux_error_request_id(e));
         break;
     }
     case AIMUX_E_TOKEN_EXPIRED:

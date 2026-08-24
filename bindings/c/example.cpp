@@ -32,7 +32,6 @@ public:
           retryable_(aimux_error_retryable(e) != 0),
           provider_code_(take(aimux_error_provider_code(e))),
           provider_message_(take(aimux_error_provider_message(e))),
-          request_id_(take(aimux_error_request_id(e))),
           response_body_(take(aimux_error_response_body(e))),
           model_id_(take(aimux_error_model_id(e))), model_type_(take(aimux_error_model_type(e))),
           provider_id_(take(aimux_error_provider_id(e))) {
@@ -49,7 +48,6 @@ public:
     // Per-code payload; "" when the code does not carry the field.
     const std::string &providerCode() const { return provider_code_; }   // API_CALL
     const std::string &providerMessage() const { return provider_message_; } // API_CALL
-    const std::string &requestId() const { return request_id_; }         // API_CALL
     const std::string &responseBody() const { return response_body_; }   // API_CALL
     const std::string &modelId() const { return model_id_; }             // NO_SUCH_MODEL
     const std::string &modelType() const { return model_type_; }         // NO_SUCH_MODEL
@@ -60,16 +58,16 @@ private:
     int status_ = -1;
     int64_t retry_ms_ = -1;
     bool retryable_ = false;
-    std::string provider_code_, provider_message_, request_id_, response_body_, model_id_,
+    std::string provider_code_, provider_message_, response_body_, model_id_,
         model_type_, provider_id_;
 };
 
-// An AiMuxError code (1..13) becomes AimuxException. Codes 200..206 mean this
+// An AiMuxError code (1..14) becomes AimuxException. Codes 200..206 mean this
 // program made a bad call (NULL argument, malformed JSON, dead handle).
 static void throw_if_failed(aimux_error_t *err, const std::string &what) {
     if (!err) return;
     int32_t code = aimux_error_code(err);
-    if (code >= AIMUX_E_OTHER && code <= AIMUX_E_ABORTED) {
+    if (code >= AIMUX_E_OTHER && code <= AIMUX_E_RETRY) {
         throw AimuxException(what, err);
     }
     std::string msg = take(aimux_error_message(err));
