@@ -40,11 +40,10 @@ typedef struct aimux_error aimux_error_t;
 typedef enum aimux_error_code {
     AIMUX_OK = 0,
 
-    /* AiMuxError: 1..14. */
+    /* AiMuxError: 1..17, except retired code 4. */
     AIMUX_E_OTHER = 1,
     AIMUX_E_JSON_PARSE = 2,
     AIMUX_E_INVALID_RESPONSE_DATA = 3,
-    AIMUX_E_TOOL = 4,
     AIMUX_E_INVALID_ARGUMENT = 5,
     AIMUX_E_INVALID_PROMPT = 6,
     AIMUX_E_TOKEN_EXPIRED = 7,
@@ -58,6 +57,9 @@ typedef enum aimux_error_code {
      * ABI break means no pre-unification caller can link, so nothing can
      * misread it. */
     AIMUX_E_RETRY = 14,
+    AIMUX_E_NO_SUCH_TOOL = 15,
+    AIMUX_E_INVALID_TOOL_INPUT = 16,
+    AIMUX_E_TOOL_CALL_REPAIR = 17,
 
     /* RecordingError: 100..105. */
     AIMUX_E_RECORDING_INIT = 100,
@@ -147,6 +149,22 @@ int32_t aimux_error_retry_count(const aimux_error_t *error);
  *  NULL when `index` is out of range or under any other code. */
 aimux_error_t *aimux_error_retry_error_at(const aimux_error_t *error,
                                           int32_t index);
+/* Tool-contract errors — returned strings are caller-owned. */
+
+/** AIMUX_E_NO_SUCH_TOOL / AIMUX_E_INVALID_TOOL_INPUT: the tool name called. */
+char *aimux_error_tool_name(const aimux_error_t *error);
+/**
+ * AIMUX_E_NO_SUCH_TOOL: the available tool names as a JSON string array,
+ * or NULL when no tool set was supplied.
+ */
+char *aimux_error_available_tools(const aimux_error_t *error);
+/** AIMUX_E_INVALID_TOOL_INPUT: the raw argument text the model produced. */
+char *aimux_error_tool_input(const aimux_error_t *error);
+/**
+ * AIMUX_E_TOOL_CALL_REPAIR: the original lookup/parse/validation error as
+ * externally-tagged wire JSON (the same encoding as `ToolCall.error`).
+ */
+char *aimux_error_original_error(const aimux_error_t *error);
 
 #ifdef __cplusplus
 }

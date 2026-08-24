@@ -5,18 +5,19 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 
 /**
  * Machine-readable codes matching aimux-ffi `aimux_error_code_t` (aimux-error.h).
- * 1..14 mirror the 14 core variants (1 is the catch-all `Other`, 14 is `Retry`).
- * The per-status codes (Provider, Http, RateLimited, Auth,
- * ModelNotFound) are gone, every HTTP-shaped failure arrives as
- * [AIMUX_E_API_CALL].
+ * 1..13 and 15..17 mirror the 15 core variants (1 is the catch-all `Other`;
+ * 4 is retired — the legacy `Tool` variant — and 14 is reserved). The
+ * per-status codes (Provider, Http, RateLimited, Auth, ModelNotFound) are
+ * gone, every HTTP-shaped failure arrives as [AIMUX_E_API_CALL].
  */
 const val AIMUX_OK: Int = 0
 const val AIMUX_E_JSON_PARSE: Int = 2
 const val AIMUX_E_INVALID_RESPONSE_DATA: Int = 3
-const val AIMUX_E_TOOL: Int = 4
 const val AIMUX_E_INVALID_ARGUMENT: Int = 5
 const val AIMUX_E_INVALID_PROMPT: Int = 6
 const val AIMUX_E_TOKEN_EXPIRED: Int = 7
@@ -26,6 +27,9 @@ const val AIMUX_E_NO_SUCH_PROVIDER: Int = 10
 const val AIMUX_E_API_CALL: Int = 11
 const val AIMUX_E_TIMEOUT: Int = 12
 const val AIMUX_E_ABORTED: Int = 13
+const val AIMUX_E_NO_SUCH_TOOL: Int = 15
+const val AIMUX_E_INVALID_TOOL_INPUT: Int = 16
+const val AIMUX_E_TOOL_CALL_REPAIR: Int = 17
 const val AIMUX_E_OTHER: Int = 1
 const val AIMUX_E_RETRY: Int = 14
 
@@ -52,6 +56,7 @@ const val AIMUX_E_RETRY: Int = 14
  * ```
  *
  * Transport: Rust → C `aimux_error_t *` with code 1..14 → [fromC].
+ * Transport: Rust → C `aimux_error_t *` with code 1..13 / 15..17 → [fromC].
  * Primary path is not a JSON
  * error envelope.
  */
@@ -83,6 +88,9 @@ sealed class AimuxException(
          * the returned error afterwards (retry attempt errors are new owned
          * copies and are freed here). Code [AIMUX_OK] or a code outside
          * 1..14 is a header/library mismatch and throws [IllegalStateException].
+         * the returned error afterwards. Code [AIMUX_OK] or a code outside
+         * 1..13 / 15..17 is a header/library mismatch and throws
+         * [IllegalStateException].
          */
         @JvmStatic
         internal fun fromC(error: Pointer, prefix: String = ""): AimuxException {
@@ -126,6 +134,28 @@ sealed class AimuxException(
                     retryable = retryable,
                     providerId = takeString(lib.aimux_error_provider_id(error)) ?: "",
                 )
+                AIMUX_E_NO_SUCH_TOOL -> createByCode(
+                    code,
+                    msg,
+                    retryable = retryable,
+                    toolName = takeString(lib.aimux_error_tool_name(error)) ?: "",
+                    availableTools = takeString(lib.aimux_error_available_tools(error))
+                        ?.let { AimuxJson.decodeFromString(ListSerializer(String.serializer()), it) },
+                )
+                AIMUX_E_INVALID_TOOL_INPUT -> createByCode(
+                    code,
+                    msg,
+                    retryable = retryable,
+                    toolName = takeString(lib.aimux_error_tool_name(error)) ?: "",
+                    toolInput = takeString(lib.aimux_error_tool_input(error)) ?: "",
+                )
+                AIMUX_E_TOOL_CALL_REPAIR -> createByCode(
+                    code,
+                    msg,
+                    retryable = retryable,
+                    originalError = takeString(lib.aimux_error_original_error(error))
+                        ?.let(AimuxJson::parseToJsonElement),
+                )
                 else -> createByCode(code, msg, retryable = retryable)
             }
         }
@@ -154,16 +184,13 @@ sealed class AimuxException(
             json?.let(Json::parseToJsonElement)
         } catch (_: Exception) {
             null
-        }
-
         /** Response headers arrive as one JSON object string of string→string pairs. */
         private fun headerMap(json: String?): Map<String, String>? =
             (parseJson(json) as? JsonObject)?.mapValues { (_, value) ->
                 (value as? JsonPrimitive)?.content ?: value.toString()
-            }
-
         /**
          * Build the subclass for a core / C error code (1..14).
+         * Build the subclass for a core / C error code (1..13 / 15..17).
          *
          * Any other code — [AIMUX_OK] on a failure path or a code this binding
          * does not know — is a header/library mismatch and throws
@@ -189,10 +216,13 @@ sealed class AimuxException(
             providerId: String = "",
             retryReason: RetryErrorReason = RetryErrorReason.MAX_RETRIES_EXCEEDED,
             retryErrors: List<AimuxException> = emptyList(),
+            toolName: String = "",
+            availableTools: List<String>? = null,
+            toolInput: String = "",
+            originalError: JsonElement? = null,
         ): AimuxException = when (code) {
             AIMUX_E_JSON_PARSE -> JSONParseError(message, status, retryMs, cause, retryable)
             AIMUX_E_INVALID_RESPONSE_DATA -> InvalidResponseDataError(message, status, retryMs, cause, retryable)
-            AIMUX_E_TOOL -> ToolError(message, status, retryMs, cause, retryable)
             AIMUX_E_INVALID_ARGUMENT -> InvalidArgumentError(message, status, retryMs, cause, retryable)
             AIMUX_E_INVALID_PROMPT -> InvalidPromptError(message, status, retryMs, cause, retryable)
             AIMUX_E_TOKEN_EXPIRED -> TokenExpiredError(
@@ -219,6 +249,9 @@ sealed class AimuxException(
             )
             AIMUX_E_TIMEOUT -> TimeoutError(message, status, retryMs, cause, retryable)
             AIMUX_E_ABORTED -> RequestAbortedError(message, status, retryMs, cause, retryable)
+            AIMUX_E_NO_SUCH_TOOL -> NoSuchToolError(message, status, retryMs, cause, retryable, toolName, availableTools)
+            AIMUX_E_INVALID_TOOL_INPUT -> InvalidToolInputError(message, status, retryMs, cause, retryable, toolName, toolInput)
+            AIMUX_E_TOOL_CALL_REPAIR -> ToolCallRepairError(message, status, retryMs, cause, retryable, originalError)
             AIMUX_E_OTHER -> OtherError(message, status, retryMs, cause, retryable)
             else -> throw IllegalStateException("Unknown aimux_error_code_t: $code")
         }
@@ -229,7 +262,6 @@ sealed class AimuxException(
             AIMUX_OK -> "OK"
             AIMUX_E_JSON_PARSE -> "JsonParse"
             AIMUX_E_INVALID_RESPONSE_DATA -> "InvalidResponseData"
-            AIMUX_E_TOOL -> "Tool"
             AIMUX_E_INVALID_ARGUMENT -> "InvalidArgument"
             AIMUX_E_INVALID_PROMPT -> "InvalidPrompt"
             AIMUX_E_TOKEN_EXPIRED -> "TokenExpired"
@@ -239,6 +271,9 @@ sealed class AimuxException(
             AIMUX_E_API_CALL -> "ApiCall"
             AIMUX_E_TIMEOUT -> "Timeout"
             AIMUX_E_ABORTED -> "Aborted"
+            AIMUX_E_NO_SUCH_TOOL -> "NoSuchTool"
+            AIMUX_E_INVALID_TOOL_INPUT -> "InvalidToolInput"
+            AIMUX_E_TOOL_CALL_REPAIR -> "ToolCallRepair"
             AIMUX_E_OTHER -> "Other"
             AIMUX_E_RETRY -> "Retry"
             else -> "Code($code)"
@@ -261,14 +296,6 @@ class InvalidResponseDataError(
     cause: Throwable? = null,
     retryable: Boolean = false,
 ) : AimuxException(message, AIMUX_E_INVALID_RESPONSE_DATA, status, retryMs, cause, retryable)
-
-class ToolError(
-    message: String,
-    status: Int = -1,
-    retryMs: Long = -1,
-    cause: Throwable? = null,
-    retryable: Boolean = false,
-) : AimuxException(message, AIMUX_E_TOOL, status, retryMs, cause, retryable)
 
 class InvalidArgumentError(
     message: String,
@@ -407,6 +434,47 @@ class RequestAbortedError(
     cause: Throwable? = null,
     retryable: Boolean = false,
 ) : AimuxException(message, AIMUX_E_ABORTED, status, retryMs, cause, retryable)
+
+/** The model called a tool that is not in the supplied tool set. */
+class NoSuchToolError(
+    message: String,
+    status: Int = -1,
+    retryMs: Long = -1,
+    cause: Throwable? = null,
+    retryable: Boolean = false,
+    /** The tool name the model called ("" when synthesized locally). */
+    val toolName: String = "",
+    /** The available tool names, or null when no tool set was supplied. */
+    val availableTools: List<String>? = null,
+) : AimuxException(message, AIMUX_E_NO_SUCH_TOOL, status, retryMs, cause, retryable)
+
+/** The model's tool arguments failed to parse or validate against the schema. */
+class InvalidToolInputError(
+    message: String,
+    status: Int = -1,
+    retryMs: Long = -1,
+    cause: Throwable? = null,
+    retryable: Boolean = false,
+    /** The tool name the model called ("" when synthesized locally). */
+    val toolName: String = "",
+    /** The raw argument text the model produced ("" when synthesized locally). */
+    val toolInput: String = "",
+) : AimuxException(message, AIMUX_E_INVALID_TOOL_INPUT, status, retryMs, cause, retryable)
+
+/** Tool-call repair itself failed. */
+class ToolCallRepairError(
+    message: String,
+    status: Int = -1,
+    retryMs: Long = -1,
+    cause: Throwable? = null,
+    retryable: Boolean = false,
+    /**
+     * The original lookup/parse/validation error as externally-tagged wire
+     * JSON (the same encoding as [ToolCall.error]); null when synthesized
+     * locally.
+     */
+    val originalError: JsonElement? = null,
+) : AimuxException(message, AIMUX_E_TOOL_CALL_REPAIR, status, retryMs, cause, retryable)
 
 class OtherError(
     message: String,

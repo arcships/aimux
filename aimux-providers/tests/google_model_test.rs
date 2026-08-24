@@ -426,7 +426,7 @@ mod do_generate {
             } => {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!({ "location": "San Francisco" }));
+                assert_eq!(input, &json!(r#"{"location":"San Francisco"}"#));
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -482,7 +482,7 @@ mod do_generate {
             } => {
                 assert_eq!(tool_call_id, "call-1");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!({ "location": "San Francisco" }));
+                assert_eq!(input, &json!(r#"{"location":"San Francisco"}"#));
                 assert_eq!(
                     thought_signature.as_deref(),
                     Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
@@ -878,7 +878,7 @@ mod do_generate {
             } => {
                 assert_eq!(tool_call_id, "");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!({ "location": "SF" }));
+                assert_eq!(input, &json!(r#"{"location":"SF"}"#));
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -938,7 +938,7 @@ mod do_generate {
             } => {
                 assert_eq!(tool_call_id, "call-2");
                 assert_eq!(tool_name, "calendar");
-                assert_eq!(input, &json!({ "date": "2024-01-01" }));
+                assert_eq!(input, &json!(r#"{"date":"2024-01-01"}"#));
             }
             other => panic!("expected second ToolCall, got {other:?}"),
         }
@@ -1174,7 +1174,7 @@ mod do_stream {
             matches!(p, StreamPart::ToolCall { tool_call_id, tool_name, input, .. }
                 if tool_call_id == "call-1"
                 && tool_name == "weather"
-                && input == &json!({"location": "San Francisco"}))
+                && input == &json!(r#"{"location":"San Francisco"}"#))
         });
         assert!(
             tool_call.is_some(),

@@ -256,6 +256,25 @@ class TypedModelTest {
 // ─────────────────────────────────────────────────────────────────────────────
 class TypedModelRoundTripTest {
 
+    @Test
+    fun `top-level ToolCall provider metadata round-trips`() {
+        val metadata = JsonObject(
+            mapOf("google" to JsonObject(mapOf("cache_id" to JsonPrimitive("cache-1"))))
+        )
+        val original = ToolCall(
+            toolCallId = "call_1",
+            toolName = "get_weather",
+            providerMetadata = metadata,
+        )
+
+        val json = AimuxJson.encodeToString(ToolCall.serializer(), original)
+        val decoded = AimuxJson.decodeFromString(ToolCall.serializer(), json)
+
+        assertThat(json).contains("\"provider_metadata\"")
+        assertThat(decoded.providerMetadata).isEqualTo(metadata)
+        assertThat(decoded).isEqualTo(original)
+    }
+
     // ── GenerateContent (externally tagged) ──────────────────────────────
 
     @Test

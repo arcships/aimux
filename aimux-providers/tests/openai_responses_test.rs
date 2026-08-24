@@ -869,7 +869,10 @@ mod do_generate_response {
             } => {
                 assert_eq!(tool_call_id, "call_abc");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input["location"], "San Francisco");
+                assert_eq!(
+                    input,
+                    &Value::String(r#"{"location":"San Francisco"}"#.into())
+                );
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -1144,7 +1147,7 @@ mod do_stream {
             } => {
                 assert_eq!(tool_call_id, "call_done");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input["location"], "Rome");
+                assert_eq!(input, &Value::String(r#"{"location":"Rome"}"#.into()));
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }

@@ -1509,7 +1509,7 @@ mod tools {
             } => {
                 assert_eq!(tool_call_id, "call_123");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!({ "location": "sf" }));
+                assert_eq!(input, &Value::String(r#"{"location":"sf"}"#.into()));
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -2003,7 +2003,7 @@ mod do_stream {
         {
             assert_eq!(tool_call_id, "call_123");
             assert_eq!(tool_name, "weather");
-            assert_eq!(input, &json!({ "location": "sf" }));
+            assert_eq!(input, &Value::String(r#"{"location":"sf"}"#.into()));
         }
 
         // Finish reason should be tool-calls.

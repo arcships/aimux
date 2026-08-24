@@ -471,8 +471,8 @@ func TestEmbedRejectsRawPassThroughOpts(t *testing.T) {
 }
 
 func TestCodeFromCRejectsOutOfRange(t *testing.T) {
-	// 15 is the first unassigned value.
-	for _, bad := range []int{0, 15, 16, 999} {
+	// 4 is retired; 14 is Retry; 15..17 are tool-call errors.
+	for _, bad := range []int{0, 4, 18, 999} {
 		if _, ok := codeFromC(bad); ok {
 			t.Fatalf("%d is not an AiMuxError variant", bad)
 		}
@@ -513,5 +513,8 @@ func TestRetryErrorHistory(t *testing.T) {
 	}
 	if e.Reason != "errorNotRetryable" || RetryMaxRetriesExceeded != "maxRetriesExceeded" {
 		t.Fatalf("reason wire names changed: %q", e.Reason)
+	}
+	if c, ok := codeFromC(17); !ok || c != CodeToolCallRepair {
+		t.Fatalf("17 → %v, %v", c, ok)
 	}
 }

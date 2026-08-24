@@ -1151,6 +1151,7 @@ func expectFfiError(e *C.aimux_error_t) error {
 }
 
 // expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..14 →
+// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..13, 15..17 →
 // *Error; 200..206 → plain C ABI error. Any other code is an ABI contract
 // violation.
 func expectAimuxError(e *C.aimux_error_t) error {
@@ -1225,6 +1226,20 @@ func aimuxErrorFromC(e *C.aimux_error_t) *Error {
 			}
 			err.Errors = append(err.Errors, aimuxErrorFromC(child))
 			C.aimux_error_free(child)
+		}
+	case CodeNoSuchTool:
+		err.ToolName = str(C.aimux_error_tool_name(e))
+		// NULL (→ "") means the core did not report the list; the string
+		// itself is serde-serialized JSON, so Unmarshal cannot fail short
+		// of an ABI mismatch, and nil is the right fallback either way.
+		if tools := str(C.aimux_error_available_tools(e)); tools != "" {
+			_ = json.Unmarshal([]byte(tools), &err.AvailableTools)
+		}
+	case CodeInvalidToolInput:
+		err.ToolInput = str(C.aimux_error_tool_input(e))
+	case CodeToolCallRepair:
+		if orig := str(C.aimux_error_original_error(e)); orig != "" {
+			err.OriginalError = json.RawMessage(orig)
 		}
 	}
 	// TokenExpired carries a 401 by contract even if C reports -1; every

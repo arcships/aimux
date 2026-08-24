@@ -170,8 +170,7 @@ impl LanguageModel for XaiModel {
         // Extract tool calls
         if let Some(tool_calls) = choice.message.tool_calls {
             for tc in tool_calls {
-                let input: Value = serde_json::from_str(&tc.function.arguments)
-                    .unwrap_or_else(|_| Value::String(tc.function.arguments.clone()));
+                let input = Value::String(tc.function.arguments);
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: tc.id,
                     tool_name: tc.function.name,
@@ -504,8 +503,7 @@ impl LanguageModel for XaiModel {
                                             id: id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input: Value = serde_json::from_str(args)
-                                            .unwrap_or_else(|_| Value::String(args.clone()));
+                                        let input = Value::String(args.clone());
                                         yield Ok(StreamPart::ToolCall {
                                             tool_call_id: id.clone(),
                                             tool_name: name.clone(),
@@ -513,6 +511,8 @@ impl LanguageModel for XaiModel {
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
+                                            invalid: None,
+                                            error: None,
                                             provider_metadata: None,
                                         });
                                     }
@@ -557,8 +557,7 @@ impl LanguageModel for XaiModel {
                         id: id.clone(),
                         provider_metadata: None,
                     });
-                    let input: Value = serde_json::from_str(args)
-                        .unwrap_or_else(|_| Value::String(args.clone()));
+                    let input = Value::String(args.clone());
                     yield Ok(StreamPart::ToolCall {
                         tool_call_id: id.clone(),
                         tool_name: name.clone(),
@@ -566,6 +565,8 @@ impl LanguageModel for XaiModel {
                         provider_executed: None,
                         dynamic: None,
                         thought_signature: None,
+                        invalid: None,
+                        error: None,
                         provider_metadata: None,
                     });
                 }

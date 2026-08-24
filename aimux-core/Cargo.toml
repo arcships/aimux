@@ -27,6 +27,7 @@ tokio-util = "0.7"
 httpdate = { workspace = true }
 rand = { workspace = true }
 base64 = "0.22"
+jsonschema = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

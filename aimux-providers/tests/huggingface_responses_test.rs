@@ -1,4 +1,4 @@
-﻿//! Hugging Face Responses API tests, translated from the Vercel AI SDK
+//! Hugging Face Responses API tests, translated from the Vercel AI SDK
 //! TypeScript suite.
 //!
 //! Translation source:
@@ -543,7 +543,10 @@ async fn should_handle_mcp_tools_with_annotations() {
         } => {
             assert_eq!(tool_call_id, "mcp_search_test");
             assert_eq!(tool_name, "search");
-            assert_eq!(input, &json!({ "query": "San Francisco tech events" }));
+            assert_eq!(
+                input,
+                &Value::String(r#"{"query": "San Francisco tech events"}"#.into())
+            );
         }
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
@@ -1104,7 +1107,7 @@ async fn should_handle_function_call_tool_responses() {
         } => {
             assert_eq!(tool_call_id, "call_123");
             assert_eq!(tool_name, "getWeather");
-            assert_eq!(input, &json!({ "location": "New York" }));
+            assert_eq!(input, &Value::String(r#"{"location": "New York"}"#.into()));
         }
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
@@ -1186,7 +1189,10 @@ async fn should_stream_tool_calls() {
         } => {
             assert_eq!(tool_call_id, "call_456");
             assert_eq!(tool_name, "calculator");
-            assert_eq!(input, &json!({ "operation": "add", "a": 5, "b": 3 }));
+            assert_eq!(
+                input,
+                &Value::String(r#"{"operation": "add", "a": 5, "b": 3}"#.into())
+            );
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }

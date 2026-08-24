@@ -1,4 +1,4 @@
-﻿//! Tests for Google provider-defined tools (`google_search`, `code_execution`,
+//! Tests for Google provider-defined tools (`google_search`, `code_execution`,
 //! `url_context`, `google_maps`) and their response metadata (`groundingMetadata`,
 //! `urlContextMetadata`).
 //!
@@ -1140,7 +1140,7 @@ mod do_generate {
         let calls = gen_tool_calls(&result.content);
         let has_call = calls.iter().any(|(_, name, input)| {
             name == "code_execution"
-                && *input == json!({ "language": "PYTHON", "code": "print(1+1)" })
+                && *input == json!(r#"{"language":"PYTHON","code":"print(1+1)"}"#)
         });
         assert!(
             has_call,
@@ -1191,7 +1191,7 @@ mod do_generate {
         assert_eq!(calls[0].1, "code_execution");
         assert_eq!(
             calls[0].2,
-            json!({ "language": "PYTHON", "code": "print(1+1)" })
+            json!(r#"{"language":"PYTHON","code":"print(1+1)"}"#)
         );
 
         let results = gen_tool_results(&result.content);
@@ -1478,7 +1478,7 @@ mod do_generate {
         assert_eq!(calls.len(), 1, "one toolCall part → one tool-call");
         assert_eq!(calls[0].0, "server-call-1", "the server-assigned id");
         assert_eq!(calls[0].1, "server:GOOGLE_SEARCH_WEB");
-        assert_eq!(calls[0].2, json!({ "query": "San Francisco weather" }));
+        assert_eq!(calls[0].2, json!(r#"{"query":"San Francisco weather"}"#));
 
         // The matching toolResponse part.
         let results = gen_tool_results(&result.content);
@@ -1830,7 +1830,7 @@ mod do_stream {
         let calls = stream_tool_calls(&parts);
         let has_call = calls.iter().any(|(_, name, input)| {
             name == "code_execution"
-                && *input == json!({ "language": "PYTHON", "code": "print(\"hello\")" })
+                && *input == json!(r#"{"language":"PYTHON","code":"print(\"hello\")"}"#)
         });
         assert!(
             has_call,
@@ -2024,7 +2024,7 @@ mod do_stream {
         assert_eq!(calls.len(), 1, "one toolCall part → one streamed tool-call");
         assert_eq!(calls[0].0, "server-call-1");
         assert_eq!(calls[0].1, "server:GOOGLE_SEARCH_WEB");
-        assert_eq!(calls[0].2, json!({ "query": "San Francisco weather" }));
+        assert_eq!(calls[0].2, json!(r#"{"query":"San Francisco weather"}"#));
 
         let results = stream_tool_results(&parts);
         assert_eq!(

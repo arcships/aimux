@@ -946,8 +946,7 @@ async fn stream_tool_call_empty_input() {
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "tool_1");
     assert_eq!(tool_calls[0].1, "updateIssueList");
-    // TS expects input == {} (empty object), not null.
-    assert_eq!(tool_calls[0].2, json!({}));
+    assert_eq!(tool_calls[0].2, Value::String("{}".into()));
 }
 
 // ── omit toolConfig ──────────────────────────────────────────────────────────
@@ -1138,7 +1137,7 @@ async fn generate_tool_call_empty_input() {
     assert_eq!(id, "tool_1");
     assert_eq!(name, "updateIssueList");
     // TS expects input == {} (empty object), not null.
-    assert_eq!(input, &json!({}));
+    assert_eq!(input, &json!("{}"));
 }
 
 // ── doGenerate: basic text + finish reason (sanity, already covered but

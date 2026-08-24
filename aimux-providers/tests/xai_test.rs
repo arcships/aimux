@@ -1412,7 +1412,10 @@ mod do_generate {
         let (id, name, input) = tool_call.expect("should have ToolCall");
         assert_eq!(id, "call_93562515");
         assert_eq!(name, "weather");
-        assert_eq!(input, json!({"location": "San Francisco"}));
+        assert_eq!(
+            input,
+            Value::String(r#"{"location":"San Francisco"}"#.into())
+        );
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
@@ -2008,7 +2011,10 @@ mod do_stream {
         let (id, name, input) = tool_call.expect("should have ToolCall");
         assert_eq!(id, "call_55117580");
         assert_eq!(name, "weather");
-        assert_eq!(input, json!({"location": "San Francisco"}));
+        assert_eq!(
+            input,
+            Value::String(r#"{"location":"San Francisco"}"#.into())
+        );
     }
 
     /// TS: should pass the messages (stream request body)

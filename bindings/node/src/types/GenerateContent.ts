@@ -5,7 +5,12 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A content item in the generation result.
  */
-export type GenerateContent = { "Text": { text: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
+export type GenerateContent = { "Text": { text: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, 
+/**
+ * Raw provider input. Providers put serialized argument text in a
+ * `Value::String`; `generate_text` parses and validates it.
+ */
+input: JsonValue, 
 /**
  * Whether the tool call will be executed by the provider.
  * If false/unset, the tool call is executed by the client.

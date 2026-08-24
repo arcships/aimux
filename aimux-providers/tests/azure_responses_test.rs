@@ -537,7 +537,10 @@ async fn should_extract_tool_call_content() {
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0].0, "call_abc123");
     assert_eq!(tool_calls[0].1, "getWeather");
-    assert_eq!(tool_calls[0].2["location"], "San Francisco");
+    assert_eq!(
+        tool_calls[0].2,
+        Value::String(r#"{"location": "San Francisco"}"#.into())
+    );
 }
 
 /// Usage is extracted from the `usage` field.

@@ -66,6 +66,9 @@ url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Schema validation
+jsonschema = { version = "0.50.1", default-features = false }
+
 # Internal crates
 aimux-core = { path = "aimux-core", version = "0.3.0" }
 aimux-providers = { path = "aimux-providers", version = "0.3.0" }

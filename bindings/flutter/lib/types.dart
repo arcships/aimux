@@ -161,6 +161,12 @@ class ToolCall {
   final bool? isDynamic;
   @JsonKey(name: 'thought_signature')
   final String? thoughtSignature;
+  @JsonKey(name: 'provider_metadata')
+  final Map<String, dynamic>? providerMetadata;
+  /// Set by Core when the tool call stays invalid after optional repair.
+  final bool? invalid;
+  /// The typed lookup, parse, schema, or repair failure for an invalid call.
+  final dynamic error;
 
   ToolCall({
     required this.toolCallId,
@@ -169,6 +175,9 @@ class ToolCall {
     this.providerExecuted,
     this.isDynamic,
     this.thoughtSignature,
+    this.providerMetadata,
+    this.invalid,
+    this.error,
   });
 
   factory ToolCall.fromJson(Map<String, dynamic> json) =>
@@ -1251,6 +1260,10 @@ final class StreamPartToolCall extends StreamPart {
   final bool? isDynamic;
   final String? thoughtSignature;
   final Map<String, dynamic>? providerMetadata;
+  /// Set by Core when the tool call stays invalid after optional repair.
+  final bool? invalid;
+  /// The typed lookup, parse, schema, or repair failure for an invalid call.
+  final dynamic error;
 
   StreamPartToolCall({
     required this.toolCallId,
@@ -1260,6 +1273,8 @@ final class StreamPartToolCall extends StreamPart {
     this.isDynamic,
     this.thoughtSignature,
     this.providerMetadata,
+    this.invalid,
+    this.error,
   });
 
   factory StreamPartToolCall.fromJson(Map<String, dynamic> json) =>
@@ -1272,6 +1287,8 @@ final class StreamPartToolCall extends StreamPart {
         thoughtSignature: json['thought_signature'] as String?,
         providerMetadata:
             json['provider_metadata'] as Map<String, dynamic>?,
+        invalid: json['invalid'] as bool?,
+        error: json['error'],
       );
 
   @override
@@ -1284,6 +1301,8 @@ final class StreamPartToolCall extends StreamPart {
           if (isDynamic != null) 'dynamic': isDynamic,
           if (thoughtSignature != null) 'thought_signature': thoughtSignature,
           if (providerMetadata != null) 'provider_metadata': providerMetadata,
+          if (invalid != null) 'invalid': invalid,
+          if (error != null) 'error': error,
         },
       };
 }

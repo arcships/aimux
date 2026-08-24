@@ -82,6 +82,8 @@ pub enum StreamPart {
     ToolCall {
         tool_call_id: String,
         tool_name: String,
+        /// Serialized argument text in a `Value::String` from `do_stream`;
+        /// parsed input after `stream_text`.
         input: Value,
         /// Whether the tool call will be executed by the provider.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -94,6 +96,12 @@ pub enum StreamPart {
         /// turn when the tool result is sent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thought_signature: Option<String>,
+        /// Set by Core when the call remains invalid after optional repair.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        invalid: Option<bool>,
+        /// Typed lookup, parsing, schema, or repair failure.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<AiMuxError>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<ProviderMetadata>,
     },

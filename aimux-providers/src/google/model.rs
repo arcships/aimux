@@ -431,10 +431,12 @@ impl LanguageModel for GoogleModel {
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: name.to_string(),
-                                        input: args,
+                                        input: Value::String(args.to_string()),
                                         provider_executed: None,
                                         dynamic: None,
                                         thought_signature,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: thought_sig_meta.clone(),
                                     });
                                     has_tool_calls = true;
@@ -452,10 +454,12 @@ impl LanguageModel for GoogleModel {
                                         yield Ok(StreamPart::ToolCall {
                                             tool_call_id: id,
                                             tool_name: "code_execution".to_string(),
-                                            input: ec.clone(),
-                                            provider_executed: None,
+                                            input: Value::String(ec.to_string()),
+                                            provider_executed: Some(true),
                                             dynamic: None,
                                             thought_signature: None,
+                                            invalid: None,
+                                            error: None,
                                             provider_metadata: None,
                                         });
                                         // provider-executed → does NOT set has_tool_calls
@@ -506,10 +510,12 @@ impl LanguageModel for GoogleModel {
                                     yield Ok(StreamPart::ToolCall {
                                         tool_call_id: id,
                                         tool_name: format!("server:{tool_type}"),
-                                        input: args,
-                                        provider_executed: None,
-                                        dynamic: None,
+                                        input: Value::String(args.to_string()),
+                                        provider_executed: Some(true),
+                                        dynamic: Some(true),
                                         thought_signature: None,
+                                        invalid: None,
+                                        error: None,
                                         provider_metadata: Some(server_meta),
                                     });
                                     // provider-executed → does NOT set has_tool_calls
@@ -700,8 +706,8 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                     content.push(GenerateContent::ToolCall {
                         tool_call_id: id,
                         tool_name: "code_execution".to_string(),
-                        input: ec.clone(),
-                        provider_executed: None,
+                        input: Value::String(ec.to_string()),
+                        provider_executed: Some(true),
                         dynamic: None,
                         thought_signature: None,
                         provider_metadata: None,
@@ -768,7 +774,7 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: name,
-                    input,
+                    input: Value::String(input.to_string()),
                     provider_executed: None,
                     dynamic: None,
                     thought_signature,
@@ -814,9 +820,9 @@ fn extract_content_from_candidate(candidate: &Candidate) -> (Vec<GenerateContent
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id,
                     tool_name: format!("server:{tool_type}"),
-                    input,
-                    provider_executed: None,
-                    dynamic: None,
+                    input: Value::String(input.to_string()),
+                    provider_executed: Some(true),
+                    dynamic: Some(true),
                     thought_signature,
                     provider_metadata: Some(server_meta),
                 });
