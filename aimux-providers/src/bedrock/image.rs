@@ -17,8 +17,7 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use super::sigv4::sign_request;
 use super::{BedrockAuth, BedrockConfig};
@@ -34,7 +33,7 @@ fn get_max_images_per_call(model_id: &str) -> u32 {
 
 /// An Amazon Bedrock image generation model.
 ///
-/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
 /// `Client` internally (RFC-0009 §4.1).
 pub struct BedrockImageModel {
     model_id: String,
@@ -103,6 +102,9 @@ impl ImageModel for BedrockImageModel {
     }
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
     }
     fn max_images_per_call(&self) -> Option<u32> {
         Some(get_max_images_per_call(&self.model_id))
@@ -280,23 +282,23 @@ impl ImageModel for BedrockImageModel {
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url,
+                url: url.clone(),
                 headers,
-                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            aimux_provider_utils::create_json_response_handler::<Value>(),
+            super::bedrock_failed_response_handler(),
         )
         .await?;
-        let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)?;
+        let rh = resp.response_headers.unwrap_or_default();
+        let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+        let rb = resp.value;
 
         // Handle moderated/blocked requests
         if let Some(s) = rb.get("status").and_then(|v| v.as_str())
@@ -314,13 +316,16 @@ impl ImageModel for BedrockImageModel {
                         .join(", ")
                 })
                 .unwrap_or_else(|| "Unknown".into());
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                status_code: Some(resp.status),
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(200),
                 provider_code: Some(s.to_string()),
-                message: format!("Amazon Bedrock request was moderated: {reasons_str}"),
-                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                ..Default::default()
-            }));
+                response_body,
+                ..ApiCallError::new(
+                    format!("Amazon Bedrock request was moderated: {reasons_str}"),
+                    url,
+                    serde_json::json!({}),
+                )
+            })));
         }
 
         let images: Vec<String> = rb

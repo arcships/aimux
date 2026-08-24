@@ -16,12 +16,26 @@ use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
+use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, sleep_or_abort, without_trailing_slash};
+
+fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let message = data
+            .get("detail")
+            .and_then(Value::as_array)
+            .and_then(|items| items.first())
+            .and_then(|item| item.get("msg"))
+            .and_then(Value::as_str)
+            .unwrap_or("Unknown Luma error")
+            .to_string();
+        aimux_provider_utils::ProviderErrorParts {
+            message,
+            provider_code: None,
+        }
+    })
+}
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
 const DEFAULT_MAX_POLL_ATTEMPTS: u64 = 120;
@@ -303,23 +317,22 @@ impl ImageModel for LumaImageModel {
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.generations_url(None),
                 headers: header_list.clone(),
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            luma_failed_response_handler(),
         )
         .await?;
-        let rh = resp.headers;
-        let submit_body: Value = serde_json::from_slice(&resp.body)?;
+        let rh = resp.response_headers.unwrap_or_default();
+        let submit_body: Value = resp.value;
 
         let generation_id = submit_body
             .get("id")
@@ -328,26 +341,33 @@ impl ImageModel for LumaImageModel {
                 AiMuxError::InvalidResponseData("missing id in Luma response".to_string())
             })?
             .to_string();
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
         // Poll for completion
         let mut image_url = None;
         for _ in 0..max_poll_attempts {
-            let pr = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: self.generations_url(Some(&generation_id)),
-                    headers: header_list.clone(),
-                    body: HttpBody::Empty,
+            let pr = retries
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: self.generations_url(Some(&generation_id)),
+                            headers: header_list.clone(),
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
-            let pv: Value = serde_json::from_slice(&pr.body)?;
+                            abort_signal: options.abort_signal.clone(),
+                            call_id: None,
+                            recording_context: None,
+                        },
+                        aimux_provider_utils::create_json_response_handler::<Value>(),
+                        luma_failed_response_handler(),
+                    )
+                })
+                .await?;
+            let response_body = pr.raw_value.as_ref().map(ToString::to_string);
+            let pv = pr.value;
 
             let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
             if state == "completed" {
@@ -364,13 +384,17 @@ impl ImageModel for LumaImageModel {
                 break;
             }
             if state == "failed" {
-                return Err(AiMuxError::ApiCall(ApiCallError {
-                    status_code: Some(pr.status),
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(200),
                     provider_code: Some(state.to_string()),
                     message: "Image generation failed.".into(),
-                    response_body: Some(String::from_utf8_lossy(&pr.body).into_owned()),
-                    ..Default::default()
-                }));
+                    response_body,
+                    ..ApiCallError::new(
+                        "Image generation failed.",
+                        self.generations_url(Some(&generation_id)),
+                        serde_json::json!({}),
+                    )
+                })));
             }
             sleep_or_abort(
                 std::time::Duration::from_millis(poll_interval),
@@ -387,22 +411,23 @@ impl ImageModel for LumaImageModel {
         })?;
 
         // Download image
-        let ir = send(
-            HttpRequest {
-                method: HttpMethod::Get,
-                url: image_url,
-                headers: vec![],
-                body: HttpBody::Empty,
+        let ir = retries
+            .retry(|| {
+                aimux_provider_utils::get_from_api(
+                    HttpRequest {
+                        url: image_url.clone(),
+                        headers: vec![],
 
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-            },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
-        )
-        .await?;
-        let image_bytes = ir.body.to_vec();
+                        abort_signal: options.abort_signal.clone(),
+                        call_id: None,
+                        recording_context: None,
+                    },
+                    aimux_provider_utils::create_binary_response_handler(),
+                    aimux_provider_utils::create_status_code_error_response_handler(),
+                )
+            })
+            .await?;
+        let image_bytes = ir.value.to_vec();
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

@@ -13,12 +13,23 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
 };
+use aimux_core::retry;
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+
+fn replicate_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("detail")
+                .or_else(|| data.get("error"))
+                .and_then(Value::as_str)
+                .unwrap_or("Unknown Replicate error")
+                .to_string(),
+            provider_code: None,
+        }
+    })
+}
 
 /// Configuration for the Replicate provider.
 #[derive(Debug, Clone)]
@@ -271,24 +282,28 @@ impl ImageModel for ReplicateImageModel {
 
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: header_list,
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            replicate_failed_response_handler(),
         )
         .await?;
 
-        let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)?;
+        let rh = resp.response_headers.unwrap_or_default();
+        let rb: Value = resp.value;
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
         // Extract output (string or array of strings)
         let urls: Vec<String> = match &rb["output"] {
@@ -303,22 +318,23 @@ impl ImageModel for ReplicateImageModel {
         // Download images
         let mut downloaded: Vec<Vec<u8>> = Vec::new();
         for url in &urls {
-            let ir = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: url.clone(),
-                    headers: vec![],
-                    body: HttpBody::Empty,
+            let ir = retries
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: vec![],
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
-            downloaded.push(ir.body.to_vec());
+                            abort_signal: options.abort_signal.clone(),
+                            call_id: None,
+                            recording_context: None,
+                        },
+                        aimux_provider_utils::create_binary_response_handler(),
+                        replicate_failed_response_handler(),
+                    )
+                })
+                .await?;
+            downloaded.push(ir.value.to_vec());
         }
 
         Ok(ImageResult {
@@ -340,7 +356,8 @@ impl ImageModel for ReplicateImageModel {
 // ════════════════════════════════════════════════════════════════════════════
 
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoModel, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoModel, VideoOperationStart,
+    VideoOperationStatus, VideoResponse, VideoResult,
 };
 
 /// Replicate video generation model — implements `VideoModel`.
@@ -348,7 +365,8 @@ use aimux_core::video_model::{
 /// Aligned with Vercel AI SDK `ReplicateVideoModel`
 /// (`reference/ai/packages/replicate/src/replicate-video-model.ts`).
 ///
-/// Uses the predictions API: POST to create, GET to poll.
+/// Uses the predictions API: POST to create (`do_start`); Core drives the
+/// status polling via `do_status`.
 pub struct ReplicateVideoModel {
     model_id: String,
     config: ReplicateConfig,
@@ -405,7 +423,10 @@ impl VideoModel for ReplicateVideoModel {
         Some(1)
     }
 
-    async fn do_generate(&self, options: &VideoCallOptions) -> Result<VideoResult, AiMuxError> {
+    async fn do_start(
+        &self,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStart, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
 
         let mut input = Map::new();
@@ -428,23 +449,23 @@ impl VideoModel for ReplicateVideoModel {
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit prediction.
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: format!("{}/predictions", self.config.base_url),
-                headers: header_list.clone(),
-                body: HttpBody::Json(body),
+                headers: header_list,
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler(),
+            replicate_failed_response_handler(),
         )
         .await?;
 
-        let prediction: Value = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let prediction: Value = resp.value;
         let prediction_id = prediction
             .get("id")
             .and_then(|v| v.as_str())
@@ -453,51 +474,75 @@ impl VideoModel for ReplicateVideoModel {
             })?
             .to_string();
 
-        // Poll for completion.
-        let mut raw_body: Value;
-        let mut response_headers: HashMap<String, String>;
-        loop {
-            sleep_or_abort(
-                std::time::Duration::from_millis(100),
-                options.abort_signal.as_ref(),
-            )
-            .await?;
+        Ok(VideoOperationStart {
+            operation: json!({ "prediction_id": prediction_id }),
+            warnings,
+            provider_metadata: None,
+            response: VideoResponse {
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                model_id: Some(self.model_id.clone()),
+                headers: response_headers,
+            },
+        })
+    }
 
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: format!("{}/predictions/{}", self.config.base_url, prediction_id),
-                    headers: header_list.clone(),
-                    body: HttpBody::Empty,
+    async fn do_status(
+        &self,
+        operation: &Value,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStatus, AiMuxError> {
+        let prediction_id = operation
+            .get("prediction_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AiMuxError::InvalidArgument(
+                    "replicate operation reference is missing prediction_id".to_string(),
+                )
+            })?;
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
+        let headers = self.build_headers(options.headers.as_ref());
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let poll_url = format!("{}/predictions/{}", self.config.base_url, prediction_id);
 
-            response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body)?;
-            let status_str = raw_body
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            match status_str {
-                "succeeded" => break,
-                "failed" | "canceled" => {
-                    return Err(AiMuxError::ApiCall(ApiCallError {
-                        status_code: Some(resp.status),
-                        provider_code: Some(status_str.to_string()),
-                        message: format!("Replicate prediction {status_str}"),
-                        response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                        ..Default::default()
-                    }));
-                }
-                _ => {}
+        let resp = aimux_provider_utils::get_from_api(
+            HttpRequest {
+                url: poll_url.clone(),
+                headers: header_list,
+
+                abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
+            },
+            aimux_provider_utils::create_json_response_handler::<Value>(),
+            replicate_failed_response_handler(),
+        )
+        .await?;
+
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+        let raw_body = resp.value;
+        let status_str = raw_body
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        match status_str {
+            "succeeded" => {}
+            // A terminally failed prediction must be a non-retryable error,
+            // not Pending, so the Core poll loop stops immediately.
+            "failed" | "canceled" => {
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(200),
+                    provider_code: Some(status_str.to_string()),
+                    response_body,
+                    ..ApiCallError::new(
+                        format!("Replicate prediction {status_str}"),
+                        poll_url,
+                        serde_json::json!({}),
+                    )
+                })));
             }
+            // starting / processing / unknown — keep polling.
+            _ => return Ok(VideoOperationStatus::Pending),
         }
 
         // Extract video from output.
@@ -525,15 +570,15 @@ impl VideoModel for ReplicateVideoModel {
             ));
         }
 
-        Ok(VideoResult {
+        Ok(VideoOperationStatus::Completed(VideoResult {
             videos,
-            warnings,
+            warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
-        })
+        }))
     }
 }

@@ -35,14 +35,91 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage, Warning,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
-use aimux_stream::SseStream;
+use aimux_provider_utils::HttpRequest;
 
 use super::HuggingFaceConfig;
 use crate::openai::responses::responses_convert::build_header_list;
 
 const PROVIDER_NAME: &str = "huggingface";
+
+fn huggingface_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("Hugging Face request failed")
+                .to_string(),
+            provider_code: error
+                .and_then(|value| value.get("code").or_else(|| value.get("type")))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
+    })
+}
+
+fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
+    aimux_provider_utils::ResponseHandler::new(|input| async move {
+        let status = input.response.status().as_u16();
+        let url = input.url.clone();
+        let request_body_values = input.request_body_values.clone();
+        let output = aimux_provider_utils::create_json_response_handler::<Value>()
+            .handle(input)
+            .await?;
+        if let Some(error) = output.value.get("error").filter(|value| !value.is_null()) {
+            let message = error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("Hugging Face request failed");
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(status),
+                provider_code: error
+                    .get("code")
+                    .or_else(|| error.get("type"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                response_body: Some(output.value.to_string()),
+                response_headers: output.response_headers.clone(),
+                ..ApiCallError::new(message, url, request_body_values)
+            })));
+        }
+        Ok(output)
+    })
+}
+
+fn huggingface_stream_error(
+    event: &Value,
+    url: &str,
+    request_body_values: Value,
+    response_headers: HashMap<String, String>,
+) -> Option<AiMuxError> {
+    let error = event.get("error").filter(|value| !value.is_null())?;
+    let message = error
+        .as_str()
+        .or_else(|| error.get("message").and_then(Value::as_str))
+        .unwrap_or("Hugging Face stream failed");
+    let status_code = error
+        .get("status")
+        .or_else(|| error.get("code"))
+        .and_then(Value::as_u64)
+        .and_then(|status| u16::try_from(status).ok())
+        .filter(|status| (400..=599).contains(status));
+    let provider_code = error
+        .get("code")
+        .or_else(|| error.get("type"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    Some(aimux_provider_utils::stream_error_api_call(
+        message,
+        provider_code,
+        status_code,
+        event,
+        url,
+        request_body_values,
+        response_headers,
+    ))
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Model
@@ -91,6 +168,10 @@ impl LanguageModel for HuggingFaceResponsesModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.openai_config().retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         // M2b: HuggingFace wraps OpenAIConfig — reuse the OpenAI snapshot helper.
         crate::openai::config_snapshot_from_config(
@@ -105,49 +186,26 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let body = request.body;
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            self.config.0.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            huggingface_successful_response_handler(),
+            huggingface_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let response: Value = serde_json::from_slice(&resp.body)?;
+        let response: Value = resp.value;
 
-        // Check for an error field in the response body.
-        if let Some(error) = response.get("error")
-            && !error.is_null()
-        {
-            let message = error
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error");
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                status_code: Some(resp.status),
-                provider_code: error
-                    .get("code")
-                    .or_else(|| error.get("type"))
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string),
-                message: message.to_string(),
-                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                ..Default::default()
-            }));
-        }
-
-        let content = build_generate_content(&response);
+        let content = build_generate_content(&response)?;
         let finish_reason = parse_finish_reason(&response);
         let usage = convert_usage(response.get("usage"));
 
@@ -187,25 +245,40 @@ impl LanguageModel for HuggingFaceResponsesModel {
         let body = request.body;
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send_stream_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            self.config.0.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
+            huggingface_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let sse_stream = SseStream::new(resp.body);
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
+        if let Some(Ok(event)) = first_event.as_ref()
+            && let Some(error) = huggingface_stream_error(
+                event,
+                &self.endpoint(),
+                body.clone(),
+                response_headers.clone(),
+            )
+        {
+            return Err(error);
+        }
+        let stream_error_url = self.endpoint();
+        let stream_request_body = body.clone();
+        let stream_response_headers = response_headers.clone();
 
         let warnings = request.warnings.clone();
         let stream = async_stream::stream! {
@@ -218,30 +291,20 @@ impl LanguageModel for HuggingFaceResponsesModel {
             };
             let mut response_id: Option<String> = None;
             let mut usage_raw: Option<Value> = None;
-            let mut stream_errored = false;
-
-            let mut event_iter = sse_stream;
+            let mut event_iter = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
 
             while let Some(event) = event_iter.next().await {
-                if stream_errored {
-                    break;
-                }
-
                 match event {
-                    Ok(sse_event) => {
-                        let parsed: Value = match serde_json::from_str(&sse_event.data) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                finish_reason = FinishReason {
-                                    unified: FinishReasonUnified::Error,
-                                    raw: None,
-                                };
-                                yield Ok(StreamPart::Error { error: e.into() });
-                                stream_errored = true;
-                                continue;
-                            }
-                        };
-
+                    Ok(parsed) => {
+                        if let Some(error) = huggingface_stream_error(
+                            &parsed,
+                            &stream_error_url,
+                            stream_request_body.clone(),
+                            stream_response_headers.clone(),
+                        ) {
+                            yield Ok(StreamPart::Error { error });
+                            break;
+                        }
                         let chunk_type = parsed
                             .get("type")
                             .and_then(|v| v.as_str())
@@ -484,15 +547,12 @@ impl LanguageModel for HuggingFaceResponsesModel {
                             }
                         }
                     }
-                    Err(e) => {
-                        finish_reason = FinishReason {
-                            unified: FinishReasonUnified::Error,
-                            raw: None,
-                        };
-                        yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
-                        });
-                        stream_errored = true;
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }
@@ -1024,7 +1084,7 @@ pub fn prepare_responses_tools(
 /// Build the `GenerateContent` vector from a Responses API JSON body.
 ///
 /// Mirrors the TS `doGenerate` output-array processing.
-fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
+fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMuxError> {
     let mut content = Vec::new();
     let mut source_id_counter = 0u32;
 
@@ -1169,7 +1229,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
         }
     }
 
-    content
+    Ok(content)
 }
 
 /// Parse the finish reason from a Responses API JSON body.

@@ -17,6 +17,21 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
+use serde_json::Value;
+
+pub(crate) fn cohere_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
+{
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: None,
+        }
+    })
+}
 
 /// Configuration for the Cohere provider.
 #[derive(Debug, Clone)]
@@ -25,7 +40,7 @@ pub struct CohereConfig {
     pub base_url: String,
     /// api_key 来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
@@ -135,24 +150,23 @@ impl Provider for CohereProvider {
                 ),
                 ("Content-Type".to_string(), "application/json".to_string()),
             ];
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
-            };
-            let resp = send_timed(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-                None,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: headers.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        cohere_failed_response_handler(),
+                    )
+                })
+                .await?;
             // Cohere v2: { models: [{ name, endpoints, ... }] }
             #[derive(serde::Deserialize)]
             struct Resp {
@@ -165,7 +179,7 @@ impl Provider for CohereProvider {
                 #[serde(default)]
                 endpoints: Option<Vec<String>>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .models
                 .into_iter()

@@ -16,8 +16,8 @@ use futures::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
+use aimux_core::AbortSignal;
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::AbortSignal;
 use aimux_core::transcription_model::{
     AudioChunk, InputAudioFormat, TranscriptionModel, TranscriptionStreamOptions,
     TranscriptionStreamPart,
@@ -344,7 +344,9 @@ async fn stream_abort_mid_session() {
     });
     let parts = collect(result).await;
     assert!(
-        parts.iter().any(|p| matches!(p, Err(AiMuxError::Aborted))),
+        parts
+            .iter()
+            .any(|p| matches!(p, Err(AiMuxError::Aborted(_)))),
         "expected Aborted in parts: {parts:?}"
     );
 }
@@ -424,7 +426,7 @@ async fn stream_abort_during_connect() {
         .unwrap_err();
     // Abort semantics exactly: distinct from timeout and from IO failure.
     assert!(
-        matches!(err, AiMuxError::Aborted),
+        matches!(err, AiMuxError::Aborted(_)),
         "connect-phase abort must surface Aborted, got {err:?}"
     );
     assert!(!matches!(&err, AiMuxError::Timeout(_)));
@@ -463,6 +465,7 @@ async fn stream_connect_timeout_fires() {
         timeout: Some(aimux_core::options::TimeoutConfiguration {
             first_chunk_ms: Some(300),
             total_ms: None,
+            step_ms: None,
             chunk_ms: None,
         }),
     };
@@ -517,6 +520,7 @@ async fn stream_first_chunk_timeout_fires() {
             // loopback but far below the server's 2s hold.
             first_chunk_ms: Some(500),
             total_ms: None,
+            step_ms: None,
             chunk_ms: None,
         }),
     };
@@ -670,6 +674,7 @@ async fn stream_chunk_idle_timeout_fires() {
         timeout: Some(aimux_core::options::TimeoutConfiguration {
             first_chunk_ms: None,
             total_ms: None,
+            step_ms: None,
             chunk_ms: Some(400),
         }),
     };
@@ -733,6 +738,7 @@ async fn stream_total_timeout_fires() {
         timeout: Some(aimux_core::options::TimeoutConfiguration {
             first_chunk_ms: None,
             total_ms: Some(700),
+            step_ms: None,
             chunk_ms: Some(300),
         }),
     };

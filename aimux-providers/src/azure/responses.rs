@@ -35,12 +35,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed, with_user_agent_suffix,
-    without_trailing_slash,
-};
-use aimux_stream::SseStream;
+use aimux_provider_utils::{HttpRequest, with_user_agent_suffix, without_trailing_slash};
 
 use crate::azure::{AzureAuth, AzureConfig};
 use crate::openai::responses::convert::build_responses_request_body;
@@ -241,6 +236,10 @@ impl LanguageModel for AzureResponsesModel {
         &self.deployment
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         ProviderRecord {
@@ -271,39 +270,36 @@ impl LanguageModel for AzureResponsesModel {
         Self::apply_file_id_prefixes(&mut body);
 
         let provider_key = provider_key().to_string();
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_timed(
+        let endpoint = self.endpoint();
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
+                url: endpoint.clone(),
                 headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler::<Value>(),
+            crate::openai::openai_failed_response_handler(),
         )
         .await?;
 
-        let status = resp.status;
-        let response_headers = resp.headers;
-
-        let data: Value = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let raw_body = resp
+            .raw_value
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        let data = resp.value;
 
         build_responses_generate_result(
             &data,
-            status,
-            &String::from_utf8_lossy(&resp.body),
+            &raw_body,
             request_result.warnings,
             provider_key,
+            endpoint,
             body,
             response_headers,
         )
@@ -329,40 +325,38 @@ impl LanguageModel for AzureResponsesModel {
             .and_then(serde_json::Value::as_bool)
             == Some(true);
 
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_stream_timed(
+        let endpoint = self.endpoint();
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
+                url: endpoint.clone(),
                 headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
+            crate::openai::openai_failed_response_handler(),
         )
         .await?;
 
-        let status = resp.status;
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let mut sse_stream = SseStream::new(resp.body);
-        let first_event = sse_stream.next().await;
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
         let stream = build_responses_event_stream(
             first_event,
             sse_stream,
-            status,
             provider_key,
             warnings,
             store_flag,
+            endpoint,
+            body.clone(),
+            response_headers.clone(),
         )?;
 
         Ok(StreamResult {

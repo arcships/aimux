@@ -20,18 +20,14 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
-};
-use aimux_stream::SseStream;
+use aimux_provider_utils::{HttpRequest, RetryConfig};
 
 use crate::anthropic::convert::{build_request_body_with_warnings, parse_stop_reason};
 use crate::anthropic::stream::stream_parts_for_result_block;
@@ -46,13 +42,6 @@ const ANTHROPIC_VERTEX_VERSION: &str = "vertex-2023-10-16";
 
 /// Google/Vertex error structure: `{ "error": { "message": "...", "status": "..." } }`.
 ///
-/// `rawPredict` HTTP-level errors come back in the Vertex AI error shape; the
-/// success body is Anthropic-shaped and is parsed separately.
-const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "status"],
-};
-
 /// Configuration for an Anthropic-on-Vertex model instance.
 ///
 /// `base_url` is the Vertex AI base URL *without* a `/publishers/{publisher}`
@@ -67,13 +56,13 @@ pub struct VertexAnthropicConfig {
     pub auth: VertexAuth,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
 /// An Anthropic Claude language model served via Vertex AI `rawPredict`.
 ///
-/// Does **not** hold an HTTP client — `http::send` / `http::send_stream` use the
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct VertexAnthropicModel {
     model_id: String,
@@ -153,6 +142,10 @@ impl LanguageModel for VertexAnthropicModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         // M2b: record identity + credential source + auth kind. Never serialize
@@ -183,30 +176,22 @@ impl LanguageModel for VertexAnthropicModel {
         let body = self.wrap_raw_predict_body(req.body);
         let url = self.generate_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url,
+                url: url.clone(),
                 headers,
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            retry_config,
-            &GOOGLE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
 
-        let data: AnthropicResponse =
-            serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
+        let data: AnthropicResponse = resp.value;
 
         let content = crate::anthropic::stream::parse_anthropic_content(
             &data.content,
@@ -248,36 +233,43 @@ impl LanguageModel for VertexAnthropicModel {
         let tool_names = ToolNameMapping::new(options.tools.as_deref());
         let url = self.stream_endpoint();
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_stream_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url,
+                url: url.clone(),
                 headers,
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            retry_config,
-            &GOOGLE_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<StreamEvent>(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-
-        let sse_stream = SseStream::new(resp.body);
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
+        if let Some(Ok(StreamEvent::Error { error })) = first_event.as_ref() {
+            return Err(crate::anthropic::stream::anthropic_stream_error(
+                error,
+                &url,
+                body.clone(),
+                response_headers,
+            ));
+        }
+        let stream_error_url = url;
+        let stream_request_body = body.clone();
+        let stream_response_headers = response_headers.clone();
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings });
 
-            let mut sse = sse_stream;
+            let mut sse = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
             let mut blocks: HashMap<usize, BlockState> = HashMap::new();
             let mut final_usage = Usage::default();
             let mut final_finish_reason: Option<FinishReason> = None;
@@ -286,9 +278,9 @@ impl LanguageModel for VertexAnthropicModel {
 
             while let Some(event) = sse.next().await {
                 match event {
-                    Ok(sse_event) => {
-                        match serde_json::from_str::<StreamEvent>(&sse_event.data) {
-                            Ok(StreamEvent::MessageStart { message }) => {
+                    Ok(stream_event) => {
+                        match stream_event {
+                            StreamEvent::MessageStart { message } => {
                                 if let Some(usage) = &message.usage {
                                     // RFC-0015 P0-2: full input side incl.
                                     // cache fields + raw (same as Anthropic).
@@ -304,7 +296,7 @@ impl LanguageModel for VertexAnthropicModel {
                                     response_meta_emitted = true;
                                 }
                             }
-                            Ok(StreamEvent::ContentBlockStart { index, content_block }) => {
+                            StreamEvent::ContentBlockStart { index, content_block } => {
                                 match content_block {
                                     ContentBlock::Text { .. } => {
                                         blocks.insert(index, BlockState::Text { started: false });
@@ -378,7 +370,7 @@ impl LanguageModel for VertexAnthropicModel {
                                     }
                                 }
                             }
-                            Ok(StreamEvent::ContentBlockDelta { index, delta }) => {
+                            StreamEvent::ContentBlockDelta { index, delta } => {
                                 if let Some(text) = delta.text {
                                     let start_id: Option<String> = match blocks.get_mut(&index) {
                                         Some(BlockState::Text { started: false }) => {
@@ -445,7 +437,7 @@ impl LanguageModel for VertexAnthropicModel {
                                     });
                                 }
                             }
-                            Ok(StreamEvent::ContentBlockStop { index }) => {
+                            StreamEvent::ContentBlockStop { index } => {
                                 if let Some(state) = blocks.remove(&index) {
                                     match state {
                                         BlockState::Text { started: true } => {
@@ -489,7 +481,7 @@ impl LanguageModel for VertexAnthropicModel {
                                     }
                                 }
                             }
-                            Ok(StreamEvent::MessageDelta { delta, usage }) => {
+                            StreamEvent::MessageDelta { delta, usage } => {
                                 if let Some(reason) = delta.stop_reason {
                                     final_finish_reason = Some(parse_stop_reason(&reason));
                                 }
@@ -506,26 +498,27 @@ impl LanguageModel for VertexAnthropicModel {
                                             .output_tokens;
                                 }
                             }
-                            Ok(StreamEvent::MessageStop) => break,
-                            Ok(StreamEvent::Error { error }) => {
+                            StreamEvent::MessageStop => break,
+                            StreamEvent::Error { error } => {
                                 yield Ok(StreamPart::Error {
-                                    error: AiMuxError::ApiCall(ApiCallError {
-                                        provider_code: error.error_type,
-                                        message: error.message,
-                                        response_body: Some(sse_event.data.clone()),
-                                        ..Default::default()
-                                    }),
+                                    error: crate::anthropic::stream::anthropic_stream_error(
+                                        &error,
+                                        &stream_error_url,
+                                        stream_request_body.clone(),
+                                        stream_response_headers.clone(),
+                                    ),
                                 });
                                 return;
                             }
-                            Ok(_) | Err(_) => {}
+                            _ => {}
                         }
                     }
-                    Err(e) => {
-                        yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
-                        });
-                        return;
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }

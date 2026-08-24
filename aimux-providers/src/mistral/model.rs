@@ -23,20 +23,11 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::response::{ErrorStructure, parse_stream_error};
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send_stream_timed, send_timed};
-use aimux_stream::SseStream;
+use aimux_provider_utils::HttpRequest;
 
 use super::MistralConfig;
 use super::convert::{build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
-
-/// Mistral error structure: `{ "message": "...", "type": "..." }` (flat, no
-/// `error` wrapper).
-const MISTRAL_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["message"],
-    type_path: &["type"],
-};
 
 /// An Mistral language model.
 pub struct MistralModel {
@@ -210,6 +201,10 @@ impl LanguageModel for MistralModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         ProviderRecord {
@@ -229,33 +224,26 @@ impl LanguageModel for MistralModel {
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options, false);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            retry_config,
-            &MISTRAL_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler(),
+            super::mistral_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let data: ChatCompletionResponse = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let data: ChatCompletionResponse = resp.value;
 
         let choice =
             data.choices.into_iter().next().ok_or_else(|| {
@@ -336,42 +324,46 @@ impl LanguageModel for MistralModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let body = build_request_body(&self.model_id, options, true);
         let headers = self.build_headers(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
-
-        let resp = send_stream_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            retry_config,
-            &MISTRAL_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
+            super::mistral_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
-        let mut sse_stream = SseStream::new(resp.body);
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let mut sse_stream = resp.value;
 
         // Peek at the first SSE event to detect early errors.
-        let first_event = sse_stream.next().await;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
         if let Some(Ok(ref event)) = first_event
-            && let Ok(val) = serde_json::from_str::<Value>(&event.data)
-            && let Some(err_obj) = val.get("error")
+            && let Some(err_obj) = event.get("error")
         {
-            return Err(parse_stream_error(err_obj));
+            return Err(super::mistral_stream_error(
+                err_obj,
+                &self.endpoint(),
+                body.clone(),
+                response_headers.clone(),
+            ));
         }
+
+        let stream_error_url = self.endpoint();
+        let stream_error_body = body.clone();
+        let stream_response_headers = response_headers.clone();
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: vec![] });
@@ -395,23 +387,16 @@ impl LanguageModel for MistralModel {
                 }
 
                 match event {
-                    Ok(sse_event) => {
-                        if sse_event.data == "[DONE]" {
-                            break;
-                        }
-
-                        let parsed: Value = match serde_json::from_str(&sse_event.data) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                yield Ok(StreamPart::Error { error: e.into() });
-                                stream_errored = true;
-                                break;
-                            }
-                        };
+                    Ok(parsed) => {
 
                         if let Some(err_obj) = parsed.get("error") {
                             yield Ok(StreamPart::Error {
-                                error: parse_stream_error(err_obj),
+                                error: super::mistral_stream_error(
+                                    err_obj,
+                                    &stream_error_url,
+                                    stream_error_body.clone(),
+                                    stream_response_headers.clone(),
+                                ),
                             });
                             stream_errored = true;
                             break;
@@ -420,9 +405,8 @@ impl LanguageModel for MistralModel {
                         let chunk: StreamChunk = match serde_json::from_value(parsed) {
                             Ok(c) => c,
                             Err(e) => {
-                                yield Ok(StreamPart::Error { error: e.into() });
-                                stream_errored = true;
-                                break;
+                                yield Err(e.into());
+                                continue;
                             }
                         };
 
@@ -580,12 +564,12 @@ impl LanguageModel for MistralModel {
                             }
                         }
                     }
-                    Err(e) => {
-                        yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
-                        });
-                        stream_errored = true;
-                        break;
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }

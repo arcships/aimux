@@ -16,11 +16,36 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+
+fn prodia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let detail = data.get("detail");
+        let message = detail
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                detail
+                    .filter(|value| !value.is_null())
+                    .map(Value::to_string)
+            })
+            .or_else(|| {
+                data.get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                data.get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "Unknown Prodia error".to_string());
+        aimux_provider_utils::ProviderErrorParts {
+            message,
+            provider_code: None,
+        }
+    })
+}
 
 /// Configuration for the Prodia provider.
 #[derive(Debug, Clone)]
@@ -232,23 +257,22 @@ impl ImageModel for ProdiaImageModel {
         let headers = self.build_headers(options.headers.as_ref());
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: header_list,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_binary_response_handler(),
+            prodia_failed_response_handler(),
         )
         .await?;
 
-        let rh = resp.headers;
+        let rh = resp.response_headers.unwrap_or_default();
         let content_type = rh.get("content-type").cloned().unwrap_or_default();
 
         // Extract boundary
@@ -264,7 +288,7 @@ impl ImageModel for ProdiaImageModel {
                 ))
             })?;
 
-        let body_bytes = resp.body.to_vec();
+        let body_bytes = resp.value.to_vec();
 
         // Parse multipart
         let parts = parse_multipart(&body_bytes, &boundary);
@@ -314,7 +338,8 @@ impl ImageModel for ProdiaImageModel {
 // ════════════════════════════════════════════════════════════════════════════
 
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoModel, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus,
+    VideoResponse, VideoResult,
 };
 
 /// Prodia video generation model — implements `VideoModel`.
@@ -361,7 +386,10 @@ impl VideoModel for ProdiaVideoModel {
         Some(1)
     }
 
-    async fn do_generate(&self, options: &VideoCallOptions) -> Result<VideoResult, AiMuxError> {
+    async fn do_start(
+        &self,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStart, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
 
         let mut config_obj = Map::new();
@@ -378,23 +406,23 @@ impl VideoModel for ProdiaVideoModel {
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit job.
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: format!("{}/job", self.config.base_url),
-                headers: header_list.clone(),
-                body: HttpBody::Json(body),
+                headers: header_list,
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler(),
+            prodia_failed_response_handler(),
         )
         .await?;
 
-        let job: Value = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let job: Value = resp.value;
         let job_id = job
             .get("job")
             .and_then(|v| v.as_str())
@@ -405,50 +433,75 @@ impl VideoModel for ProdiaVideoModel {
             })?
             .to_string();
 
-        // Poll for completion.
-        let mut raw_body: Value;
-        let mut response_headers: HashMap<String, String>;
-        loop {
-            sleep_or_abort(
-                std::time::Duration::from_millis(100),
-                options.abort_signal.as_ref(),
-            )
-            .await?;
+        Ok(VideoOperationStart {
+            operation: json!({ "job_id": job_id }),
+            warnings,
+            provider_metadata: None,
+            response: VideoResponse {
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                model_id: Some(self.model_id.clone()),
+                headers: response_headers,
+            },
+        })
+    }
 
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: format!("{}/job/{}", self.config.base_url, job_id),
-                    headers: header_list.clone(),
-                    body: HttpBody::Empty,
+    async fn do_status(
+        &self,
+        operation: &Value,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStatus, AiMuxError> {
+        let job_id = operation
+            .get("job_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                AiMuxError::InvalidArgument(
+                    "prodia operation reference is missing job_id".to_string(),
+                )
+            })?;
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
+        let headers = self.build_headers(options.headers.as_ref());
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
+        let poll_url = format!("{}/job/{}", self.config.base_url, job_id);
 
-            response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body)?;
-            let status_str = raw_body
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if status_str == "done" || status_str == "failed" {
-                if status_str == "failed" {
-                    return Err(AiMuxError::ApiCall(ApiCallError {
-                        status_code: Some(resp.status),
-                        provider_code: Some(status_str.to_string()),
-                        message: "Prodia video generation failed".to_string(),
-                        response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                        ..Default::default()
-                    }));
-                }
-                break;
+        let resp = aimux_provider_utils::get_from_api(
+            HttpRequest {
+                url: poll_url.clone(),
+                headers: header_list,
+
+                abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
+            },
+            aimux_provider_utils::create_json_response_handler::<Value>(),
+            prodia_failed_response_handler(),
+        )
+        .await?;
+
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+        let raw_body = resp.value;
+        let status_str = raw_body
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        match status_str {
+            "done" => {}
+            // A terminally failed job must be a non-retryable error, not
+            // Pending, so the Core poll loop stops immediately.
+            "failed" => {
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(200),
+                    provider_code: Some(status_str.to_string()),
+                    response_body,
+                    ..ApiCallError::new(
+                        "Prodia video generation failed",
+                        poll_url,
+                        serde_json::json!({}),
+                    )
+                })));
             }
+            // queued / running / unknown — keep polling.
+            _ => return Ok(VideoOperationStatus::Pending),
         }
 
         // Extract video URL.
@@ -464,15 +517,15 @@ impl VideoModel for ProdiaVideoModel {
             media_type: "video/mp4".to_string(),
         }];
 
-        Ok(VideoResult {
+        Ok(VideoOperationStatus::Completed(VideoResult {
             videos,
-            warnings,
+            warnings: Vec::new(),
             provider_metadata: None,
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),
                 headers: Some(response_headers),
             },
-        })
+        }))
     }
 }

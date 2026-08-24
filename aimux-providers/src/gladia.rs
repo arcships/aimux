@@ -15,16 +15,36 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::retry;
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
 use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, MultipartForm, RetryConfig, load_api_key,
-    media_type_to_extension, send, sleep_or_abort, without_trailing_slash,
+    HttpBody, HttpRequest, MultipartForm, load_api_key, media_type_to_extension, sleep_or_abort,
+    without_trailing_slash,
 };
+
+fn gladia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("Gladia request failed")
+                .to_string(),
+            provider_code: error.and_then(|value| value.get("code")).and_then(
+                |value| match value {
+                    Value::String(s) => Some(s.clone()),
+                    Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                },
+            ),
+        }
+    })
+}
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -206,26 +226,25 @@ impl TranscriptionModel for GladiaTranscriptionModel {
         form.file("audio", &filename, &options.media_type, &audio_bytes)?;
         let (body_bytes, content_type) = form.finish();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.upload_url(),
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Bytes(body_bytes, content_type),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            HttpBody::Bytes(body_bytes, content_type),
+            aimux_provider_utils::create_json_response_handler(),
+            gladia_failed_response_handler(),
         )
         .await?;
 
-        let upload: GladiaUploadResponse = serde_json::from_slice(&resp.body)?;
+        let upload: GladiaUploadResponse = resp.value;
 
         // Step 2: Initiate transcription.
         let mut body = Map::new();
@@ -243,26 +262,30 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             }
         }
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.initiate_url(),
                 headers: headers
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect(),
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            gladia_failed_response_handler(),
         )
         .await?;
 
-        let init: GladiaInitResponse = serde_json::from_slice(&resp.body)?;
+        let init: GladiaInitResponse = resp.value;
+        let retries = retry::prepare_retries(
+            options.max_retries,
+            self.retry_config(),
+            options.abort_signal.clone(),
+        );
 
         // Step 3: Poll for result.
         let mut raw_body: Value;
@@ -274,28 +297,30 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             )
             .await?;
 
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: init.result_url.clone(),
-                    headers: headers
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    body: HttpBody::Empty,
+            let resp = retries
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: init.result_url.clone(),
+                            headers: headers
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect(),
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
+                            abort_signal: options.abort_signal.clone(),
+                            call_id: None,
+                            recording_context: None,
+                        },
+                        aimux_provider_utils::create_json_response_handler::<GladiaResultResponse>(
+                        ),
+                        gladia_failed_response_handler(),
+                    )
+                })
+                .await?;
 
-            response_headers = resp.headers;
-            raw_body = serde_json::from_slice(&resp.body)?;
-            let parsed: GladiaResultResponse = serde_json::from_value(raw_body.clone())?;
+            response_headers = resp.response_headers.unwrap_or_default();
+            raw_body = resp.raw_value.unwrap_or(Value::Null);
+            let parsed = resp.value;
 
             if parsed.status == "done" {
                 let result = parsed.result.ok_or_else(|| {
@@ -343,13 +368,16 @@ impl TranscriptionModel for GladiaTranscriptionModel {
             }
 
             if parsed.status == "error" {
-                return Err(AiMuxError::ApiCall(ApiCallError {
-                    status_code: Some(resp.status),
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(200),
                     provider_code: Some(parsed.status.clone()),
-                    message: "Transcription job failed".to_string(),
-                    response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                    ..Default::default()
-                }));
+                    response_body: Some(raw_body.to_string()),
+                    ..ApiCallError::new(
+                        "Transcription job failed",
+                        init.result_url.clone(),
+                        serde_json::json!({}),
+                    )
+                })));
             }
         }
     }

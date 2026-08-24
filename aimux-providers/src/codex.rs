@@ -30,18 +30,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::Provider;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send, send_stream_timed,
-};
-use aimux_stream::SseStream;
+use aimux_provider_utils::{HttpRequest, RetryConfig};
 
 use crate::openai::responses::responses_convert::{
     build_header_list, build_responses_event_stream, build_responses_generate_result,
@@ -149,7 +144,7 @@ impl CodexConfig {
         self
     }
 
-    /// Override the retry configuration.
+    /// Override the retry settings used by Core model operations.
     #[must_use]
     pub fn with_retry_config(mut self, config: RetryConfig) -> Self {
         self.openai = self.openai.with_retry_config(config);
@@ -214,7 +209,7 @@ impl Provider for CodexProvider {
             let runtime = crate::openai::model::execute_list_models(
                 &config.base_url,
                 &headers,
-                &config.retry_config,
+                config.retry_config,
             )
             .await?;
             Ok(runtime)
@@ -297,39 +292,31 @@ impl CodexModel {
         let headers = self.inner().build_headers(opts.headers.as_ref());
         let (body, warnings) = self.body(&opts, true)?;
 
-        let resp = send_stream_timed(
+        let endpoint = self.endpoint();
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
+                url: endpoint.clone(),
                 headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
                 abort_signal: opts.abort_signal.clone(),
                 call_id: opts.call_id.clone(),
                 recording_context: opts.recording_context.clone(),
             },
-            self.config.openai.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            opts.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
+            crate::openai::openai_failed_response_handler(),
         )
         .await
         .map_err(|e| self.map_subscription_401(e))?;
 
-        let response_headers = resp.headers;
-        let mut sse = SseStream::new(resp.body);
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let mut sse = resp.value;
         // (parsed response object, raw event payload) of the terminal event.
         let mut completed: Option<(Value, String)> = None;
         let mut failure: Option<AiMuxError> = None;
 
         while let Some(event) = sse.next().await {
             match event {
-                Ok(ev) => {
-                    let data: Value = match serde_json::from_str(&ev.data) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            failure = Some(e.into());
-                            break;
-                        }
-                    };
+                Ok(data) => {
                     // The endpoint emits `data:`-only SSE frames — the event
                     // type lives in the JSON payload, not the SSE event field.
                     let etype = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
@@ -338,8 +325,9 @@ impl CodexModel {
                             // The completed event nests the full response
                             // object under `response` — the generate-result
                             // parser expects the response object itself.
+                            let raw = data.to_string();
                             let obj = data.get("response").cloned().unwrap_or(data);
-                            completed = Some((obj, ev.data));
+                            completed = Some((obj, raw));
                             break;
                         }
                         "response.failed" | "error" => {
@@ -350,25 +338,34 @@ impl CodexModel {
                                 .and_then(|e| e.get("message"))
                                 .and_then(|m| m.as_str())
                                 .unwrap_or("subscription response failed");
-                            failure = Some(AiMuxError::ApiCall(ApiCallError {
-                                // Provider-declared in-band failure: keep the
-                                // observed 2xx envelope status (§2.2).
-                                status_code: Some(resp.status),
-                                provider_code: err_obj
+                            // Provider-declared in-band failure: keep the
+                            // observed 2xx envelope status (§2.2). The shared
+                            // helper redacts the raw request context.
+                            failure = Some(aimux_provider_utils::stream_error_api_call(
+                                message,
+                                err_obj
                                     .and_then(|e| e.get("code").or_else(|| e.get("type")))
                                     .and_then(|c| c.as_str())
                                     .map(std::string::ToString::to_string),
-                                message: message.to_string(),
-                                response_body: Some(ev.data.clone()),
-                                ..Default::default()
-                            }));
+                                Some(200),
+                                &data,
+                                endpoint.clone(),
+                                body.clone(),
+                                response_headers.clone(),
+                            ));
                             break;
                         }
                         _ => {}
                     }
                 }
+                Err(e) if e.is_recoverable_stream_error() => {
+                    // A malformed event does not invalidate later SSE frames.
+                    // Retain the first parse error in case the stream ends
+                    // without a terminal response object.
+                    failure.get_or_insert(e);
+                }
                 Err(e) => {
-                    failure = Some(AiMuxError::InvalidResponseData(e.to_string()));
+                    failure = Some(e);
                     break;
                 }
             }
@@ -377,10 +374,10 @@ impl CodexModel {
         match completed {
             Some((data, raw)) => build_responses_generate_result(
                 &data,
-                resp.status,
                 &raw,
                 warnings,
                 "openai".to_string(),
+                endpoint,
                 body,
                 response_headers,
             ),
@@ -398,34 +395,37 @@ impl CodexModel {
         let headers = self.inner().build_headers(opts.headers.as_ref());
         let (body, warnings) = self.body(&opts, true)?;
 
-        let resp = send_stream_timed(
+        let endpoint = self.endpoint();
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url: self.endpoint(),
+                url: endpoint.clone(),
                 headers: build_header_list(&headers),
-                body: HttpBody::Json(body.clone()),
                 abort_signal: opts.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            self.config.openai.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
-            opts.timeout.map(Into::into),
+            body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
+            crate::openai::openai_failed_response_handler(),
         )
         .await
         .map_err(|e| self.map_subscription_401(e))?;
 
-        let status = resp.status;
-        let response_headers = resp.headers;
-        let mut sse_stream = SseStream::new(resp.body);
-        let first_event = sse_stream.next().await;
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let mut sse_stream = resp.value;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
         let stream = build_responses_event_stream(
             first_event,
             sse_stream,
-            status,
             "openai".to_string(),
             warnings,
             false,
+            endpoint,
+            body.clone(),
+            response_headers.clone(),
         )?;
 
         Ok(StreamResult {
@@ -444,6 +444,10 @@ impl LanguageModel for CodexModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.openai.retry_config
     }
 
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
@@ -530,25 +534,21 @@ pub async fn codex_refresh_at(
         "client_id": client_id,
     });
 
-    let resp = send(
+    let resp = aimux_provider_utils::post_json_to_api(
         HttpRequest {
-            method: HttpMethod::Post,
             url: token_url.to_string(),
             headers: vec![("content-type".to_string(), "application/json".to_string())],
-            body: HttpBody::Json(body),
             abort_signal: None,
             call_id: None,
             recording_context: None,
         },
-        RetryConfig {
-            max_retries: 0,
-            ..RetryConfig::default()
-        },
-        &DEFAULT_ERROR_STRUCTURE,
+        body,
+        aimux_provider_utils::create_json_response_handler(),
+        crate::openai::openai_failed_response_handler(),
     )
     .await?;
 
-    let data: Value = serde_json::from_slice(&resp.body)?;
+    let data: Value = resp.value;
     let access_token = data
         .get("access_token")
         .and_then(|v| v.as_str())

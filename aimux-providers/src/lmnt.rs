@@ -24,8 +24,27 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
+use aimux_provider_utils::{HttpRequest, load_api_key};
+
+fn lmnt_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("LMNT request failed")
+                .to_string(),
+            provider_code: error.and_then(|value| value.get("code")).and_then(
+                |value| match value {
+                    Value::String(s) => Some(s.clone()),
+                    Value::Number(n) => Some(n.to_string()),
+                    _ => None,
+                },
+            ),
+        }
+    })
+}
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -151,25 +170,24 @@ impl SpeechModel for LMNTSpeechModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: headers.into_iter().collect(),
-                body: HttpBody::Json(Value::Object(body.clone())),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body.clone()),
+            aimux_provider_utils::create_binary_response_handler(),
+            lmnt_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let audio_bytes = resp.body.to_vec();
+        let audio_bytes = resp.value.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 

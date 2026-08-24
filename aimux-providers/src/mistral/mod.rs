@@ -17,6 +17,63 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key, without_trailing_slash};
+use serde_json::Value;
+
+pub(crate) fn mistral_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
+{
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: data
+                .get("code")
+                .or_else(|| data.get("type"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
+
+pub(crate) fn mistral_stream_error(
+    error: &Value,
+    url: &str,
+    request_body_values: Value,
+    response_headers: std::collections::HashMap<String, String>,
+) -> AiMuxError {
+    let status_code = error
+        .get("status_code")
+        .or_else(|| error.get("status"))
+        .or_else(|| error.get("code"))
+        .and_then(Value::as_u64)
+        .and_then(|status| u16::try_from(status).ok())
+        .filter(|status| (400..=599).contains(status));
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("Mistral stream failed before any output was generated")
+        .to_owned();
+    let provider_code =
+        error
+            .get("code")
+            .or_else(|| error.get("type"))
+            .and_then(|value| match value {
+                Value::String(code) => Some(code.clone()),
+                Value::Number(code) => Some(code.to_string()),
+                _ => None,
+            });
+    aimux_provider_utils::stream_error_api_call(
+        message,
+        provider_code,
+        status_code,
+        error,
+        url,
+        request_body_values,
+        response_headers,
+    )
+}
 
 /// Configuration for the Mistral provider.
 #[derive(Debug, Clone)]
@@ -25,7 +82,7 @@ pub struct MistralConfig {
     pub base_url: String,
     /// api_key 来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
@@ -128,24 +185,23 @@ impl Provider for MistralProvider {
                 ),
                 ("Content-Type".to_string(), "application/json".to_string()),
             ];
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
-            };
-            let resp = send_timed(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-                None,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: headers.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        mistral_failed_response_handler(),
+                    )
+                })
+                .await?;
             #[derive(serde::Deserialize)]
             struct Resp {
                 #[serde(default)]
@@ -157,7 +213,7 @@ impl Provider for MistralProvider {
                 #[serde(default)]
                 owned_by: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()

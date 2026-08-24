@@ -7,6 +7,7 @@
 //! (`google_model_test.rs` / `mistral_model_test.rs` / `cohere_model_test.rs`).
 
 use aimux_core::content::ContentPart;
+use aimux_core::error::AiMuxError;
 use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::stream_part::StreamPart;
@@ -305,8 +306,13 @@ async fn e2e_anthropic_error_429() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
-        matches!(err, ref e if e.status_code() == Some(429)),
-        "expected RateLimited error, got {err:?}"
+        matches!(
+            err,
+            AiMuxError::Retry(ref retry)
+                if retry.errors.len() == 3
+                    && retry.errors.iter().all(|attempt| attempt.status_code() == Some(429))
+        ),
+        "expected RetryError with three 429 attempts, got {err:?}"
     );
 }
 

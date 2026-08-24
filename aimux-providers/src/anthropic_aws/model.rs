@@ -33,7 +33,7 @@ pub struct AnthropicAwsConfig {
     pub workspace_id: Option<String>,
     /// 凭证来源(RFC-0023):`None` = explicit;`Some("env:VAR")` = 环境变量。
     pub api_key_source: Option<String>,
-    /// 重试配置(M1b)。默认 `RetryConfig::default()`（max_retries=2）。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
 }
 
@@ -129,6 +129,10 @@ impl LanguageModel for AnthropicAwsModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
         use aimux_core::recording::ProviderRecord;
         // M2b: record identity + credential source + endpoint config. Only the
@@ -160,19 +164,13 @@ impl LanguageModel for AnthropicAwsModel {
         let req = build_request_body_with_warnings(&self.model_id, options, false)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
         anthropic_generate_core(
             &endpoint,
-            retry_config,
             req.body,
             req.warnings,
             build_headers,
             BodyEncoding::Bytes,
             options.abort_signal.clone(),
-            options.timeout.map(Into::into),
             options.recording_context.clone(),
             &ToolNameMapping::new(options.tools.as_deref()),
         )
@@ -183,19 +181,13 @@ impl LanguageModel for AnthropicAwsModel {
         let req = build_request_body_with_warnings(&self.model_id, options, true)?;
         let endpoint = self.endpoint();
         let build_headers = self.make_header_builder(options.headers.as_ref());
-        let retry_config = crate::openai::model::resolve_retry_config(
-            &self.config.retry_config,
-            options.max_retries,
-        );
         anthropic_stream_core(
             &endpoint,
-            retry_config,
             req.body,
             req.warnings,
             build_headers,
             BodyEncoding::Bytes,
             options.abort_signal.clone(),
-            options.timeout.map(Into::into),
             options.recording_context.clone(),
             ToolNameMapping::new(options.tools.as_deref()),
         )

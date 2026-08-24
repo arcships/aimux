@@ -43,6 +43,8 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
         abort_signal: None,
         provider_options: None,
         headers: None,
+        max_retries: None,
+        timeout: None,
     }
 }
 
@@ -191,6 +193,8 @@ async fn should_pass_headers() {
         abort_signal: None,
         provider_options: None,
         headers: Some(request_headers),
+        max_retries: None,
+        timeout: None,
     };
 
     let _ = model.do_embed(&options).await.expect("should succeed");

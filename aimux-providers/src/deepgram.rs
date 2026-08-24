@@ -22,10 +22,40 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, without_trailing_slash,
-};
+use aimux_provider_utils::{HttpBody, HttpRequest, load_api_key, without_trailing_slash};
+
+/// Deepgram errors: `{"err_code": "...", "err_msg": "...", "request_id": ...}`
+/// on most endpoints; some return `{"category": "...", "message": "...",
+/// "details": ...}` instead (https://developers.deepgram.com/docs/errors).
+fn deepgram_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
+    let message = data
+        .get("err_msg")
+        .and_then(Value::as_str)
+        .or_else(|| data.get("message").and_then(Value::as_str))
+        .or_else(|| {
+            data.get("error")
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| data.get("error").and_then(Value::as_str))
+        .unwrap_or("Deepgram request failed")
+        .to_string();
+    aimux_provider_utils::ProviderErrorParts {
+        message,
+        provider_code: data
+            .get("err_code")
+            .or_else(|| data.get("category"))
+            .and_then(|value| match value {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            }),
+    }
+}
+
+fn deepgram_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(deepgram_error_parts)
+}
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -294,27 +324,25 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers: headers.into_iter().collect(),
-                body: HttpBody::Bytes(audio_bytes, options.media_type.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            HttpBody::Bytes(audio_bytes, options.media_type.clone()),
+            aimux_provider_utils::create_json_response_handler::<DeepgramResponse>(),
+            deepgram_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-
-        let parsed: DeepgramResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let parsed = resp.value;
 
         let channel = parsed
             .results

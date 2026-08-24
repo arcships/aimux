@@ -9,17 +9,17 @@
 //!   cases: 529 status, first-chunk overloaded, mid-stream overloaded).
 //! - `packages/provider-utils/src/response-handler.test.ts`
 //!   (status-code → error-variant mapping exercised end-to-end through the
-//!   providers' `do_generate` / `do_stream`, which call
-//!   `parse_provider_error` under the hood).
+//!   providers' `do_generate` / `do_stream`, which select explicit
+//!   failed-response handlers).
 //! - `packages/openai/src/openai-error.test.ts` &
-//!   `packages/anthropic/src/anthropic-error.test.ts` (error-structure
-//!   message extraction for both providers' JSON shapes).
+//!   `packages/anthropic/src/anthropic-error.test.ts` (provider-specific
+//!   failed-response message extraction for both JSON shapes).
 //!
 //! Each test stands up a `wiremock` server returning an error status code +
 //! error JSON body (or, for the stream cases, an SSE body whose first/mid
 //! chunk is an error JSON) and asserts the resulting `AiMuxError` variant.
 //!
-//! Status → error mapping (mirrors `parse_provider_error`): every status
+//! Status → error mapping: every status
 //! yields `AiMuxError::ApiCall` with the observed code in `status_code`;
 //! 408/409/429/5xx are stored retryable (`is_retryable`), other 4xx are not.
 
@@ -187,7 +187,7 @@ mod openai_generate_errors {
     }
 
     /// TS openai-error.test.ts: OpenRouter nests a stringified JSON error
-    /// inside `error.message`. `parse_provider_error` must keep that string
+    /// inside `error.message`. The OpenAI failed-response handler must keep that string
     /// verbatim (it is the message, not a nested structure to drill into).
     #[tokio::test]
     async fn openrouter_resource_exhausted_message_kept_verbatim() {
@@ -205,11 +205,10 @@ mod openai_generate_errors {
             .await;
 
         let result = model(&server).do_generate(&options()).await;
-        // 429 → RateLimited; the nested message is carried but RateLimited
-        // only exposes retry_after_ms, so we just assert the variant.
+        // The provider message is retained inside the ApiCall detail.
         assert!(
-            matches!(result, Err(ref e) if e.status_code() == Some(429)),
-            "expected RateLimited for OpenRouter 429, got {result:?}"
+            matches!(result, Err(AiMuxError::ApiCall(ref e)) if e.status_code == Some(429) && e.message == nested),
+            "expected ApiCall for OpenRouter 429, got {result:?}"
         );
     }
 }
@@ -233,7 +232,7 @@ mod openai_stream_errors {
     }
 
     /// A non-success HTTP status on the stream endpoint makes `do_stream`
-    /// itself return `Err` via `parse_provider_error` (the stream is never
+    /// itself return `Err` via the failed-response handler (the stream is never
     /// started). 500 → Provider.
     #[tokio::test]
     async fn http_500_status_rejects_do_stream() {
@@ -469,20 +468,6 @@ mod anthropic_generate_errors {
             "expected ApiCall error carrying 'Overloaded', got {result:?}"
         );
     }
-
-    /// TS anthropic-error.test.ts: the overloaded error structure
-    /// `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
-    /// is parsed and `error.message` is extracted.
-    #[tokio::test]
-    async fn overloaded_error_structure_message_extracted() {
-        use aimux_provider_utils::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-        let body = r#"{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"}}"#;
-        let err = parse_provider_error(529, body, &DEFAULT_ERROR_STRUCTURE);
-        assert!(
-            matches!(err, AiMuxError::ApiCall(ref m) if m.message.contains("Overloaded")),
-            "expected Provider carrying 'Overloaded', got {err:?}"
-        );
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -505,7 +490,7 @@ mod anthropic_stream_errors {
 
     /// TS: "should throw an api error when the server is returning a 529
     /// overloaded error" (doStream). A non-success HTTP status makes
-    /// `do_stream` return `Err` via `parse_provider_error`.
+    /// `do_stream` return `Err` via the failed-response handler.
     #[tokio::test]
     async fn http_529_status_rejects_do_stream() {
         let server = MockServer::start().await;
@@ -527,8 +512,8 @@ mod anthropic_stream_errors {
     /// overloaded error" (doStream).
     ///
     /// The stream returns 200 + SSE whose first event is an `error` event.
-    /// In the Rust model the error surfaces as a `StreamPart::Error` early in
-    /// the stream.
+    /// The provider peeks that event before returning the stream so the Core
+    /// operation retry can treat it as an attempt failure.
     #[tokio::test]
     async fn first_stream_chunk_is_overloaded_error() {
         let server = MockServer::start().await;
@@ -547,21 +532,16 @@ mod anthropic_stream_errors {
             .mount(&server)
             .await;
 
-        let stream = model(&server).do_stream(&options()).await.unwrap();
-        let parts = collect_stream(stream).await;
+        let error = model(&server)
+            .do_stream(&options())
+            .await
+            .expect_err("first error event must reject do_stream");
         assert!(
-            parts.iter().any(|p| matches!(p,
-                StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")),
-            "expected a StreamPart::Error carrying 'Overloaded', got {parts:?}"
-        );
-        // Finish is the final-chunk contract: the stream must terminate with
-        // an error-finish even when the very first event is an error.
-        assert!(
-            matches!(parts.last(),
-                Some(StreamPart::Finish { finish_reason, .. })
-                    if matches!(finish_reason.unified,
-                        aimux_core::prelude::FinishReasonUnified::Error)),
-            "expected the last part to be Finish with unified=Error, got {parts:?}"
+            matches!(error, AiMuxError::ApiCall(ref detail)
+                if detail.status_code == Some(529)
+                    && detail.message == "Overloaded"
+                    && detail.is_retryable),
+            "expected retryable 529 ApiCall error, got {error:?}"
         );
     }
 
@@ -661,58 +641,6 @@ mod anthropic_stream_errors {
                     if matches!(finish_reason.unified,
                         aimux_core::prelude::FinishReasonUnified::Error)),
             "expected the last part to be Finish with unified=Error, got {parts:?}"
-        );
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Error-structure parsing (openai-error.test.ts + anthropic-error.test.ts)
-// ════════════════════════════════════════════════════════════════════════════
-
-mod error_structure_parsing {
-    use super::*;
-    use aimux_provider_utils::{DEFAULT_ERROR_STRUCTURE, parse_provider_error};
-
-    /// TS openai-error.test.ts: the OpenAI error schema parses
-    /// `{"error":{"message":"...","code":429}}` and `error.message` is the
-    /// surfaced message.
-    #[test]
-    fn openai_error_message_extracted_from_default_structure() {
-        let body = r#"{"error":{"message":"Resource has been exhausted","type":"requests","param":null,"code":429}}"#;
-        let err = parse_provider_error(429, body, &DEFAULT_ERROR_STRUCTURE);
-        // 429 → RateLimited (variant only; message is not carried on the
-        // RateLimited variant in the Rust error model).
-        assert!(matches!(err, ref e if e.status_code() == Some(429)));
-    }
-
-    /// TS openai-error.test.ts: OpenRouter nests a stringified JSON object
-    /// inside `error.message`. `parse_provider_error` must keep that string
-    /// verbatim rather than trying to drill into it.
-    #[test]
-    fn openrouter_nested_message_kept_verbatim() {
-        let nested = "{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"Resource has been exhausted (e.g. check quota).\",\n    \"status\": \"RESOURCE_EXHAUSTED\"\n  }\n}\n";
-        let body = format!(
-            r#"{{"error":{{"message":{msg},"code":429}}}}"#,
-            msg = serde_json::to_string(nested).unwrap()
-        );
-        let err = parse_provider_error(500, &body, &DEFAULT_ERROR_STRUCTURE);
-        // 500 → Provider; the (stringified) nested JSON is the message.
-        assert!(
-            matches!(err, AiMuxError::ApiCall(ref m) if m.message.contains("RESOURCE_EXHAUSTED")),
-            "expected Provider carrying the OpenRouter nested message, got {err:?}"
-        );
-    }
-
-    /// TS anthropic-error.test.ts: the overloaded error structure
-    /// `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
-    /// parses with `error.message` = "Overloaded".
-    #[test]
-    fn anthropic_overloaded_error_message_extracted() {
-        let body = r#"{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"}}"#;
-        let err = parse_provider_error(529, body, &DEFAULT_ERROR_STRUCTURE);
-        assert!(
-            matches!(err, AiMuxError::ApiCall(ref m) if m.message.contains("Overloaded")),
-            "expected Provider carrying 'Overloaded', got {err:?}"
         );
     }
 }

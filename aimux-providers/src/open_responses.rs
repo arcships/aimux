@@ -28,11 +28,58 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Usage, Warning,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, send_stream_timed, send_timed,
-};
-use aimux_stream::SseStream;
+use aimux_provider_utils::HttpRequest;
+
+fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error");
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .and_then(|value| value.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("Open Responses request failed")
+                .to_string(),
+            provider_code: error
+                .and_then(|value| value.get("code").or_else(|| value.get("type")))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
+    })
+}
+
+fn open_responses_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
+    aimux_provider_utils::ResponseHandler::new(|input| async move {
+        let status = input.response.status().as_u16();
+        let url = input.url.clone();
+        let request_body_values = input.request_body_values.clone();
+        let output = aimux_provider_utils::create_json_response_handler::<Value>()
+            .handle(input)
+            .await?;
+        if let Some(error) = output
+            .value
+            .get("error")
+            .and_then(Value::as_object)
+            .filter(|error| !error.is_empty())
+        {
+            let message = error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("Open Responses request failed");
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(status),
+                provider_code: error
+                    .get("code")
+                    .or_else(|| error.get("type"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                response_body: Some(output.value.to_string()),
+                response_headers: output.response_headers.clone(),
+                ..ApiCallError::new(message, url, request_body_values)
+            })));
+        }
+        Ok(output)
+    })
+}
 
 // == Config ==
 
@@ -267,47 +314,24 @@ impl LanguageModel for OpenResponsesModel {
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.config.provider_options_name);
 
-        let resp = send_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.config.url.clone(),
                 headers: headers.into_iter().collect(),
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            body.clone(),
+            open_responses_successful_response_handler(),
+            open_responses_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let raw: Value = serde_json::from_slice(&resp.body)?;
-
-        // Check for response.error first (surfaces before the no-output fallback).
-        if let Some(error) = raw.get("error").and_then(|e| e.as_object())
-            && !error.is_empty()
-        {
-            let message = error
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("unknown error");
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                status_code: Some(resp.status),
-                provider_code: error
-                    .get("code")
-                    .or_else(|| error.get("type"))
-                    .and_then(|c| c.as_str())
-                    .map(std::string::ToString::to_string),
-                message: message.to_string(),
-                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                ..Default::default()
-            }));
-        }
+        let raw: Value = resp.value;
 
         // Check for null/missing output.
         let output = raw.get("output");
@@ -442,48 +466,57 @@ impl LanguageModel for OpenResponsesModel {
             b
         };
 
-        let resp = send_stream_timed(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.config.url.clone(),
                 headers: headers.into_iter().collect(),
-                body: HttpBody::Json(stream_body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: options.call_id.clone(),
                 recording_context: options.recording_context.clone(),
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
-            options.timeout.map(Into::into),
+            stream_body.clone(),
+            aimux_provider_utils::create_event_source_response_handler::<Value>(),
+            open_responses_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let mut sse_stream = SseStream::new(resp.body);
+        let mut sse_stream = resp.value;
 
         // Peek at the first SSE event to detect early errors.
-        let first_event = sse_stream.next().await;
+        let first_event = match sse_stream.next().await {
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            first_event => first_event,
+        };
         if let Some(Ok(ref event)) = first_event
-            && let Ok(val) = serde_json::from_str::<Value>(&event.data)
-            && let Some(err_obj) = val.get("error")
+            && let Some(err_obj) = event.get("error")
         {
             let message = err_obj
                 .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("stream error");
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                status_code: Some(resp.status),
-                provider_code: err_obj
-                    .get("code")
-                    .or_else(|| err_obj.get("type"))
-                    .and_then(|c| c.as_str())
-                    .map(std::string::ToString::to_string),
-                message: message.to_string(),
-                response_body: Some(event.data.clone()),
-                ..Default::default()
-            }));
+            let status_code = err_obj
+                .get("status")
+                .or_else(|| err_obj.get("code"))
+                .and_then(Value::as_u64)
+                .and_then(|status| u16::try_from(status).ok())
+                .filter(|status| (400..=599).contains(status));
+            let provider_code = err_obj
+                .get("code")
+                .or_else(|| err_obj.get("type"))
+                .and_then(|c| c.as_str())
+                .map(std::string::ToString::to_string);
+            return Err(aimux_provider_utils::stream_error_api_call(
+                message,
+                provider_code,
+                status_code,
+                event,
+                self.config.url.clone(),
+                stream_body,
+                response_headers.clone(),
+            ));
         }
 
         let stream = async_stream::stream! {
@@ -506,19 +539,7 @@ impl LanguageModel for OpenResponsesModel {
 
             while let Some(event) = event_iter.next().await {
                 match event {
-                    Ok(sse_event) => {
-                        if sse_event.data == "[DONE]" {
-                            break;
-                        }
-
-                        let chunk: Value = match serde_json::from_str(&sse_event.data) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                yield Ok(StreamPart::Error { error: e.into() });
-                                break;
-                            }
-                        };
-
+                    Ok(chunk) => {
                         let chunk_type = chunk
                             .get("type")
                             .and_then(|t| t.as_str())
@@ -782,11 +803,12 @@ impl LanguageModel for OpenResponsesModel {
                             }
                         }
                     }
-                    Err(e) => {
-                        yield Ok(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(e.to_string()),
-                        });
-                        break;
+                    Err(error) => {
+                        let recoverable = error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if !recoverable {
+                            return;
+                        }
                     }
                 }
             }

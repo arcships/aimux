@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use crate::google::google_failed_response_handler;
+
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
@@ -19,15 +21,9 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::HttpRequest;
 
 use super::{VertexAuth, VertexConfig};
-
-const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "status"],
-};
 
 fn is_gemini_model(model_id: &str) -> bool {
     model_id.starts_with("gemini-")
@@ -35,7 +31,7 @@ fn is_gemini_model(model_id: &str) -> bool {
 
 /// A Google Vertex AI image generation model.
 ///
-/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
 /// `Client` internally (RFC-0009 §4.1).
 pub struct VertexImageModel {
     model_id: String,
@@ -197,23 +193,22 @@ impl VertexImageModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.predict_endpoint(),
                 headers,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &GOOGLE_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
-        let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)?;
+        let rh = resp.response_headers.unwrap_or_default();
+        let rb: Value = resp.value;
 
         let images: Vec<String> = rb
             .get("predictions")
@@ -342,23 +337,22 @@ impl VertexImageModel {
         let body = json!({ "contents": [{ "role": "user", "parts": parts }], "generationConfig": Value::Object(gc) });
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.generate_content_endpoint(),
                 headers,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &GOOGLE_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler(),
+            google_failed_response_handler(),
         )
         .await?;
-        let rh = resp.headers;
-        let rb: Value = serde_json::from_slice(&resp.body)?;
+        let rh = resp.response_headers.unwrap_or_default();
+        let rb: Value = resp.value;
 
         let mut images: Vec<String> = Vec::new();
         if let Some(candidates) = rb.get("candidates").and_then(|c| c.as_array()) {
@@ -427,6 +421,9 @@ impl ImageModel for VertexImageModel {
     }
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
     }
     fn max_images_per_call(&self) -> Option<u32> {
         if is_gemini_model(&self.model_id) {

@@ -29,8 +29,27 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send};
+use aimux_provider_utils::{HttpBody, HttpRequest, load_api_key};
+
+fn cartesia_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let title = data
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("Cartesia error");
+        let message = data
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("request failed");
+        aimux_provider_utils::ProviderErrorParts {
+            message: format!("{title}: {message}"),
+            provider_code: data
+                .get("error_code")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
+    })
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -180,25 +199,24 @@ impl SpeechModel for CartesiaSpeechModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: headers.into_iter().collect(),
-                body: HttpBody::Json(Value::Object(body.clone())),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            Value::Object(body.clone()),
+            aimux_provider_utils::create_binary_response_handler(),
+            cartesia_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let audio_bytes = resp.body.to_vec();
+        let audio_bytes = resp.value.to_vec();
 
         let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -756,27 +774,25 @@ impl TranscriptionModel for CartesiaTranscriptionModel {
 
         let headers = self.build_headers(options.headers.as_ref());
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: headers.into_iter().collect(),
-                body: HttpBody::Bytes(body_bytes, content_type),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            HttpBody::Bytes(body_bytes, content_type),
+            aimux_provider_utils::create_json_response_handler::<CartesiaTranscriptionResponse>(),
+            cartesia_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-
-        let parsed: CartesiaTranscriptionResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let parsed = resp.value;
 
         let segments: Vec<TranscriptionSegment> = parsed
             .words

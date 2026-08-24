@@ -19,6 +19,21 @@ use aimux_core::provider::Provider;
 use aimux_provider_utils::{RetryConfig, load_api_key};
 use serde_json::Value;
 
+pub(crate) fn anthropic_failed_response_handler()
+-> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error.get("type").and_then(Value::as_str).map(str::to_owned),
+        }
+    })
+}
+
 /// The bare (unversioned) Anthropic API URL.
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com";
 
@@ -41,7 +56,7 @@ pub struct AnthropicConfig {
     pub name: String,
     /// Extra headers merged into every request.
     pub headers: Option<HashMap<String, String>>,
-    /// 重试配置。默认 `RetryConfig::default()`（max_retries=2）。
+    /// Retry settings used by Core model operations.
     pub retry_config: RetryConfig,
     /// Provider 级请求体覆盖（RFC-0017）。在标准请求体之后 deep-merge。
     pub body_overrides: Option<Value>,
@@ -315,24 +330,23 @@ impl Provider for AnthropicProvider {
             let mut header_list: Vec<(String, String)> = headers.into_iter().collect();
             header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-            use aimux_provider_utils::{
-                DEFAULT_ERROR_STRUCTURE, HttpBody, HttpMethod, HttpRequest, send_timed,
-            };
-            let resp = send_timed(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url,
-                    headers: header_list,
-                    body: HttpBody::Empty,
-                    abort_signal: None,
-                    call_id: None,
-                    recording_context: None,
-                },
-                config.retry_config,
-                &DEFAULT_ERROR_STRUCTURE,
-                None,
-            )
-            .await?;
+            use aimux_provider_utils::HttpRequest;
+            // Retry rationale: see `openai::model::execute_list_models`.
+            let resp = aimux_core::retry::prepare_retries(None, config.retry_config, None)
+                .retry(|| {
+                    aimux_provider_utils::get_from_api(
+                        HttpRequest {
+                            url: url.clone(),
+                            headers: header_list.clone(),
+                            abort_signal: None,
+                            call_id: None,
+                            recording_context: None,
+                        },
+                        aimux_provider_utils::create_json_response_handler(),
+                        anthropic_failed_response_handler(),
+                    )
+                })
+                .await?;
 
             #[derive(serde::Deserialize)]
             struct Resp {
@@ -345,7 +359,7 @@ impl Provider for AnthropicProvider {
                 #[serde(default)]
                 display_name: Option<String>,
             }
-            let parsed: Resp = serde_json::from_slice(&resp.body)?;
+            let parsed: Resp = resp.value;
             let runtime: Vec<aimux_core::model_catalogue::RuntimeModel> = parsed
                 .data
                 .into_iter()

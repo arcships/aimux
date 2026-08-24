@@ -4,7 +4,8 @@
 //! - `packages/openai/src/chat/openai-chat-language-model.test.ts`
 //!   `describe('doGenerate')` response-parsing cases → `do_generate` tests
 //! - `packages/openai/src/chat/openai-chat-language-model.test.ts`
-//!   `describe('doStream')` streaming cases → `do_stream` tests
+//!   `describe('doStream')` streaming cases → `do_stream` tests, plus
+//!   Aimux's intentional first-event retry deviation from RFC-0031 §8.3.
 //!
 //! Tests that depend on features absent from the Rust data model
 //! (`providerOptions`, reasoning/text token breakdown, annotations/sources,
@@ -16,13 +17,17 @@
 //! or SSE response, creates an `OpenAIModel` pointing at the mock, calls
 //! `do_generate` / `do_stream`, and asserts on the result.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use futures::StreamExt;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
@@ -1384,6 +1389,164 @@ mod do_stream {
         }
     }
 
+    /// RFC-0031 §13.19b/c: a retryable error in the first SSE event is an
+    /// attempt failure, and the first normal event from the retry is put back
+    /// at the head of the returned stream rather than being swallowed.
+    #[tokio::test]
+    async fn first_sse_429_retries_and_preserves_the_retry_first_event() {
+        let server = MockServer::start().await;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let responder_attempts = Arc::clone(&attempts);
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(move |_request: &Request| {
+                let body = if responder_attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                    sse_body(&[&sse_event(
+                        r#"{"error":{"message":"slow down","type":"rate_limit_error","code":429}}"#,
+                    )])
+                } else {
+                    sse_body(&[&sse_event(
+                        r#"{"id":"chatcmpl-retry","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":"stop"}]}"#,
+                    )])
+                };
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .insert_header("retry-after-ms", "0")
+                    .set_body_string(body)
+            })
+            .mount(&server)
+            .await;
+
+        let provider =
+            OpenAIProvider::new(OpenAIConfig::new("test-api-key").with_base_url(server.uri()));
+        let model = provider.model("gpt-3.5-turbo");
+        let result = stream_text(
+            &model,
+            "Hello",
+            GenerateTextOptions {
+                max_retries: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("the second stream attempt should succeed");
+        let parts = collect_stream(StreamResult {
+            stream: result.stream,
+            request_body: result.request_body,
+            response_headers: result.response_headers,
+        })
+        .await;
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(text_deltas(&parts), vec!["hello"]);
+    }
+
+    #[tokio::test]
+    async fn first_sse_body_transport_error_enters_core_retry() {
+        use std::time::Duration;
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        async fn read_request(socket: &mut tokio::net::TcpStream) {
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            let header_end = loop {
+                let count = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "client closed before sending request headers");
+                request.extend_from_slice(&buffer[..count]);
+                if let Some(offset) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                    break offset + 4;
+                }
+            };
+            let headers = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            while request.len() - header_end < content_length {
+                let count = socket.read(&mut buffer).await.unwrap();
+                if count == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..count]);
+            }
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let observed_attempts = Arc::clone(&attempts);
+        let server = tokio::spawn(async move {
+            for attempt in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                observed_attempts.fetch_add(1, Ordering::SeqCst);
+                read_request(&mut socket).await;
+                if attempt == 0 {
+                    socket
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: 10000\r\nconnection: close\r\n\r\ndata: {\"id\":\"partial",
+                        )
+                        .await
+                        .unwrap();
+                } else {
+                    let body = sse_body(&[&sse_event(
+                        r#"{"id":"chatcmpl-retry","object":"chat.completion.chunk","created":1702657020,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"retried"},"finish_reason":"stop"}]}"#,
+                    )]);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                }
+                socket.shutdown().await.unwrap();
+            }
+        });
+
+        let provider = OpenAIProvider::new(
+            OpenAIConfig::new("test-api-key")
+                .with_base_url(base_url)
+                .with_retry_config(aimux_core::retry::RetryConfig {
+                    max_retries: 1,
+                    initial_delay: Duration::ZERO,
+                    backoff_factor: 2,
+                }),
+        );
+        let result = stream_text(
+            &provider.model("gpt-3.5-turbo"),
+            "Hello",
+            GenerateTextOptions {
+                max_retries: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("the body transport failure should be retried");
+
+        let attempt_count = attempts.load(Ordering::SeqCst);
+        if attempt_count == 2 {
+            server.await.unwrap();
+        } else {
+            server.abort();
+        }
+        assert_eq!(
+            attempt_count, 2,
+            "first body transport error was not retried"
+        );
+        let parts = collect_stream(StreamResult {
+            stream: result.stream,
+            request_body: result.request_body,
+            response_headers: result.response_headers,
+        })
+        .await;
+        assert_eq!(text_deltas(&parts), vec!["retried"]);
+    }
+
     // ── should forward error stream parts after output has started ────────────
 
     /// TS: "should forward error stream parts after output has started"
@@ -1440,7 +1603,15 @@ mod do_stream {
     #[tokio::test]
     async fn should_handle_unparsable_stream_parts() {
         let server = MockServer::start().await;
-        let body = format!("{}{}", sse_event("{unparsable}"), "data: [DONE]\n\n");
+        let body = sse_body(&[
+            &sse_event("{unparsable}"),
+            &sse_event(
+                r#"{"id":"chatcmpl-after-error","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"after-error"},"finish_reason":null}]}"#,
+            ),
+            &sse_event(
+                r#"{"id":"chatcmpl-after-error","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            ),
+        ]);
         mock_sse_response(&server, &body).await;
 
         let config = OpenAIConfig::new("test-api-key").with_base_url(server.uri());
@@ -1451,23 +1622,30 @@ mod do_stream {
             .do_stream(&default_options(test_prompt()))
             .await
             .expect("do_stream should succeed");
-        let parts = collect_stream(result).await;
+        let outcomes: Vec<_> = result.stream.collect().await;
 
-        // Should have: stream-start, Error, Finish (with error finish reason)
-        assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
-
-        let error_part = parts.iter().find(|p| matches!(p, StreamPart::Error { .. }));
-        assert!(error_part.is_some(), "should have Error part");
-
-        let finish = parts
+        assert!(matches!(
+            outcomes.first(),
+            Some(Ok(StreamPart::StreamStart { .. }))
+        ));
+        let error_index = outcomes
             .iter()
-            .find(|p| matches!(p, StreamPart::Finish { .. }));
-        match finish {
-            Some(StreamPart::Finish { finish_reason, .. }) => {
-                assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
-            }
-            other => panic!("expected Finish, got {other:?}"),
-        }
+            .position(|outcome| {
+                matches!(
+                    outcome,
+                    Err(AiMuxError::JsonParse(_) | AiMuxError::InvalidResponseData(_))
+                )
+            })
+            .expect("malformed frame should surface as a parse error item");
+        assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(
+            outcome,
+            Ok(StreamPart::TextDelta { delta, .. }) if delta == "after-error"
+        )));
+        assert!(outcomes.iter().any(|outcome| matches!(
+            outcome,
+            Ok(StreamPart::Finish { finish_reason, .. })
+                if finish_reason.unified == FinishReasonUnified::Stop
+        )));
     }
 
     // ── should expose the raw response headers ────────────────────────────────
@@ -1696,18 +1874,17 @@ mod do_stream {
         );
     }
 
-    /// RFC-0016 M2: an unparsable chunk emits only `Error` (no `Raw`), and
-    /// the stream breaks there.
+    /// RFC-0016 M2: an unparsable chunk emits an error item (no `Raw`) without
+    /// preventing later independently framed SSE data from being reduced.
     #[tokio::test]
-    async fn raw_chunks_unparsable_chunk_emits_error_only() {
+    async fn raw_chunks_unparsable_chunk_emits_error_and_continues() {
         let server = MockServer::start().await;
         let body = sse_body(&[
             &sse_event(
                 r#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}"#,
             ),
-            // Unparsable chunk: no Raw for it, Error only, stream breaks.
+            // Unparsable chunk: no Raw for it, but the stream remains usable.
             "data: not-json\n\n",
-            // Never reached (stream broke at the unparsable chunk).
             &sse_event(
                 r#"{"id":"c2","object":"chat.completion.chunk","created":1,"model":"gpt-3.5-turbo","choices":[{"index":0,"delta":{"content":"late"},"finish_reason":null}]}"#,
             ),
@@ -1726,28 +1903,33 @@ mod do_stream {
             .do_stream(&options)
             .await
             .expect("do_stream should succeed");
-        let parts = collect_stream(result).await;
+        let outcomes: Vec<_> = result.stream.collect().await;
 
-        // Only the content chunk emitted Raw; the unparsable chunk did not,
-        // and the stream broke before the late chunk.
-        let raw: Vec<&Value> = parts
+        // Each valid JSON chunk emits Raw; the unparsable chunk does not.
+        let raw: Vec<&Value> = outcomes
             .iter()
-            .filter_map(|p| match p {
-                StreamPart::Raw { raw_value } => Some(raw_value),
-                _ => None,
+            .filter_map(|outcome| match outcome {
+                Ok(p) => match p {
+                    StreamPart::Raw { raw_value } => Some(raw_value),
+                    _ => None,
+                },
+                Err(_) => None,
             })
             .collect();
-        assert_eq!(raw.len(), 1, "no Raw for the unparsable chunk");
+        assert_eq!(raw.len(), 2, "no Raw for the unparsable chunk");
         assert_eq!(raw[0]["choices"][0]["delta"]["content"], json!("Hi"));
+        assert_eq!(raw[1]["choices"][0]["delta"]["content"], json!("late"));
 
-        // The unparsable chunk surfaces as Error.
-        let err_pos = parts
+        let err_pos = outcomes
             .iter()
-            .position(|p| matches!(p, StreamPart::Error { .. }))
-            .expect("unparsable chunk must surface as Error part");
+            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse(_))))
+            .expect("unparsable chunk must surface as a JSON parse error item");
         assert!(
-            !matches!(&parts[err_pos - 1], StreamPart::Raw { .. }),
-            "no Raw may precede the Error of an unparsable chunk"
+            outcomes[err_pos + 1..].iter().any(|outcome| matches!(
+                outcome,
+                Ok(StreamPart::TextDelta { delta, .. }) if delta == "late"
+            )),
+            "a later valid event must still be reduced"
         );
     }
 
@@ -1817,8 +1999,8 @@ mod do_stream {
 // RFC-0016 H1/H3: abort + per-call timeout (provider-level)
 // ════════════════════════════════════════════════════════════════════════════
 
+use aimux_core::AbortSignal;
 use aimux_core::options::TimeoutConfiguration;
-use aimux_core::shared::AbortSignal;
 use std::time::Duration;
 
 /// TS: timeout — total_ms bounds the whole call.
@@ -1847,14 +2029,15 @@ async fn total_timeout_aborts_slow_generate() {
     let provider = OpenAIProvider::new(config);
     let model = provider.model("gpt-3.5-turbo");
 
-    let mut options = default_options(test_prompt());
-    options.timeout = Some(TimeoutConfiguration {
-        total_ms: Some(100),
+    let options = GenerateTextOptions {
+        timeout: Some(TimeoutConfiguration {
+            total_ms: Some(100),
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
 
-    let err = model
-        .do_generate(&options)
+    let err = generate_text(&model, "Hello", options)
         .await
         .expect_err("slow response must be cut by total timeout");
     assert!(matches!(err, AiMuxError::Timeout(_)), "got {err:?}");
@@ -1898,7 +2081,7 @@ async fn abort_signal_cancels_in_flight_generate() {
 
     let result = handle.await.expect("task must finish");
     assert!(
-        matches!(result, Err(AiMuxError::Aborted)),
+        matches!(result, Err(AiMuxError::Aborted(_))),
         "aborted call must fail with Aborted, got {result:?}"
     );
 }
@@ -1937,7 +2120,7 @@ async fn abort_before_send_fails_fast() {
         .do_generate(&options)
         .await
         .expect_err("pre-aborted signal must fail fast");
-    assert!(matches!(err, AiMuxError::Aborted), "got {err:?}");
+    assert!(matches!(err, AiMuxError::Aborted(_)), "got {err:?}");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

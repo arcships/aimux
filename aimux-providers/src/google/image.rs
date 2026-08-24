@@ -19,17 +19,11 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::{SharedProviderMetadata, Warning};
 
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::HttpRequest;
 
 use super::GoogleConfig;
 
 /// Google error structure: `{ "error": { "message": "...", "status": "..." } }`.
-const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "status"],
-};
-
 /// Returns `true` if the model ID is a Gemini image model.
 fn is_gemini_model(model_id: &str) -> bool {
     model_id.starts_with("gemini-")
@@ -44,7 +38,7 @@ pub struct GoogleImageSettings {
 
 /// A Google image generation model (Imagen or Gemini).
 ///
-/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
 /// `Client` internally (RFC-0009 §4.1).
 pub struct GoogleImageModel {
     model_id: String,
@@ -174,25 +168,24 @@ impl GoogleImageModel {
         let headers = self.build_headers(options.headers.as_ref());
         let header_list = build_header_list(&headers);
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.predict_endpoint(),
                 headers: header_list,
-                body: HttpBody::Json(body),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &GOOGLE_ERROR_STRUCTURE,
+            body,
+            aimux_provider_utils::create_json_response_handler(),
+            super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let response_body: Value = serde_json::from_slice(&resp.body)?;
+        let response_body: Value = resp.value;
 
         let images = extract_imagen_images(&response_body);
         let provider_metadata = extract_imagen_metadata(&response_body);
@@ -326,25 +319,24 @@ impl GoogleImageModel {
         let headers = self.build_headers(options.headers.as_ref());
         let header_list = build_header_list(&headers);
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.generate_content_endpoint(),
                 headers: header_list,
-                body: HttpBody::Json(Value::Object(body)),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &GOOGLE_ERROR_STRUCTURE,
+            Value::Object(body),
+            aimux_provider_utils::create_json_response_handler(),
+            super::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let response_body: Value = serde_json::from_slice(&resp.body)?;
+        let response_body: Value = resp.value;
 
         let (images, provider_metadata, usage) = extract_gemini_result(&response_body);
 
@@ -370,6 +362,10 @@ impl ImageModel for GoogleImageModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
     }
 
     fn max_images_per_call(&self) -> Option<u32> {

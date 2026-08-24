@@ -22,16 +22,9 @@ use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
-use aimux_provider_utils::response::ErrorStructure;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::{HttpRequest, RetryConfig};
 
 use super::VertexAuth;
-
-/// Google-specific error structure: `{ "error": { "message": "..." } }`.
-const GOOGLE_ERROR_STRUCTURE: ErrorStructure = ErrorStructure {
-    message_path: &["error", "message"],
-    type_path: &["error", "status"],
-};
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
@@ -112,6 +105,7 @@ pub struct VertexTranscriptionModel {
     location: String,
     auth: VertexAuth,
     base_url: String,
+    retry_config: RetryConfig,
 }
 
 impl VertexTranscriptionModel {
@@ -129,7 +123,13 @@ impl VertexTranscriptionModel {
             location,
             auth,
             base_url,
+            retry_config: RetryConfig::default(),
         }
+    }
+
+    pub(crate) fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
+        self.retry_config = retry_config;
+        self
     }
 
     fn auth_header(&self) -> HashMap<String, String> {
@@ -186,6 +186,10 @@ impl TranscriptionModel for VertexTranscriptionModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.retry_config
     }
 
     async fn do_generate(
@@ -252,27 +256,25 @@ impl TranscriptionModel for VertexTranscriptionModel {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers: header_list,
-                body: HttpBody::Json(request_body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &GOOGLE_ERROR_STRUCTURE,
+            request_body.clone(),
+            aimux_provider_utils::create_json_response_handler::<GoogleVertexResponse>(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
 
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let raw_body: Value = serde_json::from_slice(&resp.body).unwrap_or(Value::Null);
-
-        let parsed: GoogleVertexResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let parsed = resp.value;
 
         let results = parsed.results.unwrap_or_default();
 

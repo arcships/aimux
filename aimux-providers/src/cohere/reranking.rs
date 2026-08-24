@@ -16,8 +16,7 @@ use aimux_core::reranking_model::{
 };
 use aimux_core::types::Warning;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::HttpRequest;
 
 use super::CohereConfig;
 
@@ -103,6 +102,10 @@ impl RerankingModel for CohereRerankingModel {
         &self.model_id
     }
 
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
+    }
+
     async fn do_rerank(
         &self,
         options: &RerankingCallOptions,
@@ -147,28 +150,26 @@ impl RerankingModel for CohereRerankingModel {
             .collect();
         header_list.push(("Content-Type".to_string(), "application/json".to_string()));
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: header_list,
-                body: HttpBody::Json(body.clone()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            body.clone(),
+            aimux_provider_utils::create_json_response_handler::<CohereRerankingResponse>(),
+            super::cohere_failed_response_handler(),
         )
         .await?;
 
         // Capture response headers.
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let raw_body: Value = serde_json::from_slice(&resp.body)?;
-
-        let data: CohereRerankingResponse = serde_json::from_value(raw_body.clone())?;
+        let raw_body = resp.raw_value.unwrap_or(Value::Null);
+        let data = resp.value;
 
         let ranking: Vec<RerankingRank> = data
             .results

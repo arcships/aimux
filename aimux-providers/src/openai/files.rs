@@ -14,8 +14,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
 use aimux_core::shared::FileBytes;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, send};
+use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use super::OpenAIConfig;
 
@@ -87,7 +86,7 @@ struct OpenAIFilesResponse {
 
 /// An OpenAI Files interface for uploading files.
 ///
-/// Aligned with TS `OpenAIFiles`. Does **not** hold an HTTP client — `http::send`
+/// Aligned with TS `OpenAIFiles`. Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers
 /// uses the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct OpenAIFiles {
     config: OpenAIConfig,
@@ -168,23 +167,22 @@ impl Files for OpenAIFiles {
         // and its content-type are carried by `HttpBody::Bytes` — the HTTP layer
         // sets `Content-Type` from it, so it is intentionally not added to the
         // header list above.
-        let resp = send(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url: self.endpoint(),
                 headers: header_list,
-                body: HttpBody::Bytes(body, content_type),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            self.config.retry_config,
-            &DEFAULT_ERROR_STRUCTURE,
+            HttpBody::Bytes(body, content_type),
+            aimux_provider_utils::create_json_response_handler(),
+            super::openai_failed_response_handler(),
         )
         .await?;
 
-        let data: OpenAIFilesResponse = serde_json::from_slice::<OpenAIFilesResponse>(&resp.body)?;
+        let data: OpenAIFilesResponse = resp.value;
 
         // Build provider metadata.
         let mut metadata = serde_json::Map::new();

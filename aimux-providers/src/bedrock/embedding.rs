@@ -20,8 +20,7 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{HttpBody, HttpMethod, HttpRequest, RetryConfig, send};
+use aimux_provider_utils::{HttpBody, HttpRequest};
 
 use super::BedrockAuth;
 use super::model::BedrockConfig;
@@ -29,7 +28,7 @@ use super::sigv4::sign_request;
 
 /// An Amazon Bedrock embedding model (e.g. `"amazon.titan-embed-text-v2:0"`).
 ///
-/// Does **not** hold an HTTP client — `http::send` uses the process-wide shared
+/// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
 /// `Client` internally (RFC-0009 §4.1).
 pub struct BedrockEmbeddingModel {
     model_id: String,
@@ -101,6 +100,10 @@ impl EmbeddingModel for BedrockEmbeddingModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
+        self.config.retry_config
     }
 
     fn max_embeddings_per_call(&self) -> Option<u32> {
@@ -196,26 +199,25 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         let url = self.endpoint();
         let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
 
-        let resp = send(
+        let resp = aimux_provider_utils::post_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
                 url,
                 headers,
-                body: HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
+            aimux_provider_utils::create_json_response_handler(),
+            super::bedrock_failed_response_handler(),
         )
         .await?;
 
         // Capture response headers (needed for token count extraction).
-        let response_headers = resp.headers;
+        let response_headers = resp.response_headers.unwrap_or_default();
 
-        let raw_value: Value = serde_json::from_slice(&resp.body).map_err(AiMuxError::from)?;
+        let raw_value: Value = resp.value;
 
         // Extract embeddings based on response format.
         let embeddings: Vec<Vec<f32>> = if raw_value.get("embedding").is_some() {

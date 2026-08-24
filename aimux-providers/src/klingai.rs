@@ -5,7 +5,8 @@
 //!
 //! KlingAI uses an async task pattern:
 //! 1. POST to `/v1/videos/text2video` (or `image2video`) → returns task `id` + `task_id`
-//! 2. GET `/v1/videos/text2video/{id}/{task_id}` to poll until `succeeded`
+//! 2. GET `/v1/videos/text2video/{id}/{task_id}` — polled by Core via `do_status`
+//!    until `succeeded`
 //! 3. Return the video URL from the result
 
 use std::collections::HashMap;
@@ -15,16 +16,29 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
-use aimux_core::shared::Warning;
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoModel, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus,
+    VideoResponse, VideoResult,
 };
 
-use aimux_provider_utils::response::DEFAULT_ERROR_STRUCTURE;
-use aimux_provider_utils::{
-    HttpBody, HttpMethod, HttpRequest, RetryConfig, load_api_key, send, sleep_or_abort,
-    without_trailing_slash,
-};
+use aimux_provider_utils::{HttpRequest, load_api_key, without_trailing_slash};
+
+fn klingai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        aimux_provider_utils::ProviderErrorParts {
+            message: data
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("Kling AI request failed")
+                .to_string(),
+            provider_code: data.get("code").and_then(|value| match value {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            }),
+        }
+    })
+}
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -222,8 +236,10 @@ impl VideoModel for KlingAIVideoModel {
         Some(1)
     }
 
-    async fn do_generate(&self, options: &VideoCallOptions) -> Result<VideoResult, AiMuxError> {
-        let warnings: Vec<Warning> = Vec::new();
+    async fn do_start(
+        &self,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStart, AiMuxError> {
         let mode = detect_mode(&self.model_id).to_string();
         let model_name = get_api_model_name(&self.model_id, &mode);
 
@@ -274,34 +290,42 @@ impl VideoModel for KlingAIVideoModel {
         let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
         // Submit task.
-        let resp = send(
+        let submit_url = self.submit_endpoint(&mode);
+        let request_body = Value::Object(body);
+        let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest {
-                method: HttpMethod::Post,
-                url: self.submit_endpoint(&mode),
-                headers: header_list.clone(),
-                body: HttpBody::Json(Value::Object(body)),
+                url: submit_url.clone(),
+                headers: header_list,
 
                 abort_signal: options.abort_signal.clone(),
                 call_id: None,
                 recording_context: None,
             },
-            RetryConfig::default(),
-            &DEFAULT_ERROR_STRUCTURE,
+            request_body.clone(),
+            aimux_provider_utils::create_json_response_handler::<KlingAITaskResponse>(),
+            klingai_failed_response_handler(),
         )
         .await?;
 
-        let task: KlingAITaskResponse = serde_json::from_slice(&resp.body)?;
+        let response_headers = resp.response_headers;
+        let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+        let task: KlingAITaskResponse = resp.value;
 
         if task.code != 0 {
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                status_code: Some(resp.status),
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(200),
                 provider_code: Some(task.code.to_string()),
-                message: task
-                    .message
-                    .unwrap_or_else(|| format!("KlingAI error code: {}", task.code)),
-                response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                ..Default::default()
-            }));
+                response_body,
+                ..ApiCallError::new(
+                    task.message
+                        .unwrap_or_else(|| format!("KlingAI error code: {}", task.code)),
+                    submit_url,
+                    // In-band failure inside a 2xx envelope: the body is still
+                    // raw here (i2v mode embeds base64 image data), so redact
+                    // before it lands in the public error.
+                    aimux_provider_utils::redact_error_context(request_body),
+                )
+            })));
         }
 
         let task_data = task.data.ok_or_else(|| {
@@ -317,96 +341,121 @@ impl VideoModel for KlingAIVideoModel {
             )
         })?;
 
-        // Poll for completion.
-        let videos: Vec<VideoData>;
-        let mut response_headers: HashMap<String, String>;
-        loop {
-            sleep_or_abort(
-                std::time::Duration::from_millis(100),
-                options.abort_signal.as_ref(),
-            )
-            .await?;
+        Ok(VideoOperationStart {
+            // `mode` and `id` are needed alongside `task_id` to rebuild the
+            // poll endpoint in `do_status`.
+            operation: json!({ "mode": mode, "id": id, "task_id": task_id }),
+            warnings: Vec::new(),
+            provider_metadata: None,
+            response: VideoResponse {
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                model_id: Some(self.model_id.clone()),
+                headers: response_headers,
+            },
+        })
+    }
 
-            let resp = send(
-                HttpRequest {
-                    method: HttpMethod::Get,
-                    url: self.poll_endpoint(&mode, &id, &task_id),
-                    headers: header_list.clone(),
-                    body: HttpBody::Empty,
+    async fn do_status(
+        &self,
+        operation: &Value,
+        options: &VideoCallOptions,
+    ) -> Result<VideoOperationStatus, AiMuxError> {
+        let field = |name: &str| {
+            operation.get(name).and_then(Value::as_str).ok_or_else(|| {
+                AiMuxError::InvalidArgument(format!(
+                    "klingai operation reference is missing {name}"
+                ))
+            })
+        };
+        let mode = field("mode")?;
+        let id = field("id")?;
+        let task_id = field("task_id")?;
 
-                    abort_signal: options.abort_signal.clone(),
-                    call_id: None,
-                    recording_context: None,
-                },
-                RetryConfig::default(),
-                &DEFAULT_ERROR_STRUCTURE,
-            )
-            .await?;
+        let headers = self.build_headers(options.headers.as_ref());
+        let header_list: Vec<(String, String)> = headers.into_iter().collect();
 
-            response_headers = resp.headers;
+        let poll_url = self.poll_endpoint(mode, id, task_id);
+        let resp = aimux_provider_utils::get_from_api(
+            HttpRequest {
+                url: poll_url.clone(),
+                headers: header_list,
 
-            let result: KlingAITaskResult = serde_json::from_slice(&resp.body)?;
+                abort_signal: options.abort_signal.clone(),
+                call_id: None,
+                recording_context: None,
+            },
+            aimux_provider_utils::create_json_response_handler::<KlingAITaskResult>(),
+            klingai_failed_response_handler(),
+        )
+        .await?;
 
-            if result.code != 0 {
-                return Err(AiMuxError::ApiCall(ApiCallError {
-                    status_code: Some(resp.status),
-                    provider_code: Some(result.code.to_string()),
-                    message: result
+        let response_headers = resp.response_headers.unwrap_or_default();
+        let response_body = resp.raw_value.as_ref().map(ToString::to_string);
+        let result: KlingAITaskResult = resp.value;
+
+        if result.code != 0 {
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(200),
+                provider_code: Some(result.code.to_string()),
+                response_body: response_body.clone(),
+                ..ApiCallError::new(
+                    result
                         .message
                         .unwrap_or_else(|| format!("KlingAI error code: {}", result.code)),
-                    response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                    ..Default::default()
+                    poll_url.clone(),
+                    serde_json::json!({}),
+                )
+            })));
+        }
+
+        if let Some(data) = result.data
+            && let Some(task_status) = data.task_status.as_deref()
+        {
+            if task_status == "succeeded" {
+                let videos: Vec<VideoData> = data
+                    .task_result
+                    .and_then(|r| r.videos)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|v| {
+                        v.get("url")
+                            .and_then(|u| u.as_str())
+                            .map(|url| VideoData::Url {
+                                url: url.to_string(),
+                                media_type: "video/mp4".to_string(),
+                            })
+                    })
+                    .collect();
+                if videos.is_empty() {
+                    return Err(AiMuxError::InvalidResponseData(format!(
+                        "KlingAI task {task_id} succeeded without video URLs"
+                    )));
+                }
+                return Ok(VideoOperationStatus::Completed(VideoResult {
+                    videos,
+                    warnings: Vec::new(),
+                    provider_metadata: None,
+                    response: VideoResponse {
+                        timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                        model_id: Some(self.model_id.clone()),
+                        headers: Some(response_headers),
+                    },
                 }));
             }
-
-            if let Some(data) = result.data
-                && let Some(task_status) = data.task_status.as_deref()
-            {
-                if task_status == "succeeded" {
-                    videos = data
-                        .task_result
-                        .and_then(|r| r.videos)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|v| {
-                            v.get("url")
-                                .and_then(|u| u.as_str())
-                                .map(|url| VideoData::Url {
-                                    url: url.to_string(),
-                                    media_type: "video/mp4".to_string(),
-                                })
-                        })
-                        .collect();
-                    if videos.is_empty() {
-                        return Err(AiMuxError::InvalidResponseData(format!(
-                            "KlingAI task {task_id} succeeded without video URLs"
-                        )));
-                    }
-                    break;
-                }
-                if task_status == "failed" {
-                    return Err(AiMuxError::ApiCall(ApiCallError {
-                        status_code: Some(resp.status),
-                        provider_code: Some("failed".to_string()),
-                        message: "KlingAI video generation failed".to_string(),
-                        response_body: Some(String::from_utf8_lossy(&resp.body).into_owned()),
-                        ..Default::default()
-                    }));
-                }
+            if task_status == "failed" {
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: Some(200),
+                    provider_code: Some("failed".to_string()),
+                    response_body,
+                    ..ApiCallError::new(
+                        "KlingAI video generation failed",
+                        poll_url,
+                        serde_json::json!({}),
+                    )
+                })));
             }
         }
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
-
-        Ok(VideoResult {
-            videos,
-            warnings,
-            provider_metadata: None,
-            response: VideoResponse {
-                timestamp: Some(timestamp),
-                model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
-            },
-        })
+        Ok(VideoOperationStatus::Pending)
     }
 }

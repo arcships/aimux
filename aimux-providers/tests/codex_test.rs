@@ -19,7 +19,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
 use aimux_core::message::Role;
 use aimux_core::options::{CallOptions, Tool, ToolChoice};
-use aimux_core::result::StreamResult;
+use aimux_core::result::{GenerateContent, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::FinishReasonUnified;
@@ -348,6 +348,43 @@ async fn subscription_generate_forces_stream_and_assembles_result() {
 }
 
 #[tokio::test]
+async fn subscription_generate_continues_after_a_malformed_sse_frame() {
+    let server = MockServer::start().await;
+    let events = vec![
+        "data: {unparsable}\n\n".to_string(),
+        subscription_completed_event(),
+    ];
+    mock_sse_response(&server, &sse_body_strings(&events)).await;
+
+    let config = CodexConfig::subscription("account-token").with_base_url(server.uri());
+    let result = CodexProvider::new(config)
+        .model("gpt-5.2-codex")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("a later response.completed event should still be assembled");
+
+    assert!(matches!(
+        result.content.first(),
+        Some(GenerateContent::Text { text, .. }) if text == "answer text"
+    ));
+}
+
+#[tokio::test]
+async fn subscription_generate_returns_parse_error_without_a_completed_event() {
+    let server = MockServer::start().await;
+    mock_sse_response(&server, "data: {unparsable}\n\n").await;
+
+    let config = CodexConfig::subscription("account-token").with_base_url(server.uri());
+    let error = CodexProvider::new(config)
+        .model("gpt-5.2-codex")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, AiMuxError::JsonParse(_)));
+}
+
+#[tokio::test]
 async fn subscription_stream_forces_store_false() {
     let server = MockServer::start().await;
     mock_sse_response(&server, &sse_body(TEXT_STREAM_EVENTS)).await;
@@ -509,7 +546,7 @@ async fn codex_refresh_rejects_bad_grant() {
     )
     .await
     .expect_err("400 must fail");
-    // parse_provider_error maps non-401/403 4xx to Provider (not retryable).
+    // The endpoint-specific failed-response handler keeps this 4xx non-retryable.
     assert!(matches!(err, AiMuxError::ApiCall(_)));
     assert!(!err.is_retryable());
 }

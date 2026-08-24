@@ -24,7 +24,6 @@ use aimux_core::error::ApiCallError;
 use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
-use aimux_stream::{SseError, SseEvent};
 
 use super::convert::{convert_responses_usage, map_responses_finish_reason, parse_usage};
 use super::types::ResponsesUsage;
@@ -71,10 +70,10 @@ pub fn build_header_list(headers: &HashMap<String, String>) -> Vec<(String, Stri
 /// fields such as `output` are missing.
 pub fn build_responses_generate_result(
     data: &Value,
-    status: u16,
     raw_body: &str,
     request_warnings: Vec<Warning>,
     provider_key: String,
+    request_url: String,
     body: Value,
     response_headers: HashMap<String, String>,
 ) -> Result<GenerateResult, AiMuxError> {
@@ -91,15 +90,21 @@ pub fn build_responses_generate_result(
             .or_else(|| err_obj.get("code"))
             .and_then(|v| v.as_str())
             .map(std::string::ToString::to_string);
-        return Err(AiMuxError::ApiCall(ApiCallError {
+        return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
             // Provider-declared in-band failure: keep the observed 2xx
-            // envelope status and the full raw body (§2.2).
-            status_code: Some(status),
+            // envelope status and the full raw body (§2.2). The request body
+            // is raw here (the exchange-path redaction ran on its own copy),
+            // so redact before it lands in the public error.
+            status_code: Some(200),
             provider_code,
-            message: message.to_string(),
             response_body: Some(raw_body.to_string()),
-            ..Default::default()
-        }));
+            response_headers: Some(response_headers.clone()),
+            ..ApiCallError::new(
+                message,
+                request_url,
+                aimux_provider_utils::redact_error_context(body.clone()),
+            )
+        })));
     }
 
     let output = data.get("output").and_then(|v| v.as_array());
@@ -318,9 +323,7 @@ pub fn build_responses_generate_result(
 // -- Streaming SSE event reducer ---------------------------------------------
 
 /// A tool call being streamed (tracked by `output_index`).
-#[allow(dead_code)]
 struct OngoingToolCall {
-    tool_name: String,
     tool_call_id: String,
 }
 
@@ -375,31 +378,39 @@ fn generate_source_id() -> String {
 /// `function_call_arguments.delta`, `custom_tool_call_input.delta`,
 /// `reasoning_summary_part.added/done` and `reasoning_summary_text.delta`).
 ///
-/// The caller performs the HTTP send (`send_stream`) and hands the peeked
+/// The caller performs the API call and hands the peeked
 /// `first_event` plus the remainder `sse_stream` to this reducer; an early
 /// `error` / `response.failed` surfaces as a clean `Err` here.
 ///
 /// # Errors
 ///
-/// An early `error` / `response.failed` event yields an `ApiCall` error item
-/// in the returned stream; malformed events yield parse-error items.
+/// An early `error` / `response.failed` event returns an `ApiCall` setup error;
+/// malformed events yield parse-error items and do not end the stream.
+// This reducer is shared by OpenAI, Azure, and Codex. Keeping the wire inputs
+// explicit is clearer than introducing a second context object used nowhere
+// else.
+#[allow(clippy::too_many_arguments)]
 pub fn build_responses_event_stream<S>(
-    first_event: Option<Result<SseEvent, SseError>>,
+    first_event: Option<Result<Value, AiMuxError>>,
     sse_stream: S,
-    status: u16,
     provider_key: String,
     warnings: Vec<Warning>,
     store_flag: bool,
+    request_url: String,
+    request_body: Value,
+    response_headers: HashMap<String, String>,
 ) -> Result<ResponsesEventStream, AiMuxError>
 where
-    S: Stream<Item = Result<SseEvent, SseError>> + Unpin + Send + 'static,
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin + Send + 'static,
 {
     // Peek at the first SSE event to detect early errors (before any output).
-    if let Some(Ok(ref event)) = first_event
-        && let Ok(val) = serde_json::from_str::<Value>(&event.data)
-    {
+    if let Some(Ok(ref val)) = first_event {
         let etype = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
         if etype == "error" || etype == "response.failed" {
+            let error_value = val
+                .get("response")
+                .and_then(|response| response.get("error"))
+                .or_else(|| val.get("error"));
             let message = val
                 .get("response")
                 .and_then(|r| r.get("error"))
@@ -411,21 +422,30 @@ where
                         .and_then(|v| v.as_str())
                 })
                 .unwrap_or("Responses API stream error");
-            return Err(AiMuxError::ApiCall(ApiCallError {
-                // Mid-stream provider failure arrives on a successful HTTP
-                // response: keep the observed 2xx status (§2.2).
-                status_code: Some(status),
-                provider_code: val
-                    .get("response")
-                    .and_then(|r| r.get("error"))
-                    .or_else(|| val.get("error"))
-                    .and_then(|e| e.get("type").or_else(|| e.get("code")))
-                    .and_then(|v| v.as_str())
-                    .map(std::string::ToString::to_string),
-                message: message.to_string(),
-                response_body: Some(event.data.clone()),
-                ..Default::default()
-            }));
+            let status_code = val
+                .get("status")
+                .or_else(|| val.get("status_code"))
+                .or_else(|| error_value.and_then(|error| error.get("status")))
+                .or_else(|| error_value.and_then(|error| error.get("code")))
+                .and_then(Value::as_u64)
+                .and_then(|status| u16::try_from(status).ok())
+                .filter(|status| (400..=599).contains(status));
+            let provider_code = val
+                .get("response")
+                .and_then(|r| r.get("error"))
+                .or_else(|| val.get("error"))
+                .and_then(|e| e.get("type").or_else(|| e.get("code")))
+                .and_then(|v| v.as_str())
+                .map(std::string::ToString::to_string);
+            return Err(aimux_provider_utils::stream_error_api_call(
+                message,
+                provider_code,
+                status_code,
+                val,
+                request_url.clone(),
+                request_body.clone(),
+                response_headers.clone(),
+            ));
         }
     }
 
@@ -451,27 +471,8 @@ where
             futures::stream::iter(first_event.into_iter()).chain(sse_stream);
 
         while let Some(event) = event_iter.next().await {
-            if stream_errored {
-                break;
-            }
-
             match event {
-                Ok(sse_event) => {
-                    if sse_event.data == "[DONE]" {
-                        break;
-                    }
-
-                    let parsed: Value = match serde_json::from_str(&sse_event.data) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            yield Ok(StreamPart::Error {
-                                error: AiMuxError::JsonParse(e.to_string()),
-                            });
-                            stream_errored = true;
-                            break;
-                        }
-                    };
-
+                Ok(parsed) => {
                     let etype = parsed
                         .get("type")
                         .and_then(|v| v.as_str())
@@ -539,7 +540,6 @@ where
                                         ongoing_tool_calls.insert(
                                             output_index,
                                             OngoingToolCall {
-                                                tool_name: name.clone(),
                                                 tool_call_id: call_id.clone(),
                                             },
                                         );
@@ -566,7 +566,6 @@ where
                                         ongoing_tool_calls.insert(
                                             output_index,
                                             OngoingToolCall {
-                                                tool_name: name.clone(),
                                                 tool_call_id: call_id.clone(),
                                             },
                                         );
@@ -972,19 +971,27 @@ where
                                         .and_then(|e| e.get("message"))
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("Responses API stream failed");
+                                    // In-band failure inside the SSE stream: the shared
+                                    // helper redacts the raw request context.
                                     yield Ok(StreamPart::Error {
-                                        error: AiMuxError::ApiCall(ApiCallError {
-                                            status_code: Some(status),
-                                            provider_code: resp_obj
+                                        error: aimux_provider_utils::stream_error_api_call(
+                                            message,
+                                            resp_obj
                                                 .get("error")
                                                 .and_then(|e| e.get("type").or_else(|| e.get("code")))
                                                 .and_then(|v| v.as_str())
                                                 .map(std::string::ToString::to_string),
-                                            message: message.to_string(),
-                                            response_body: Some(sse_event.data.clone()),
-                                            ..Default::default()
-                                        }),
+                                            Some(200),
+                                            &parsed,
+                                            request_url.clone(),
+                                            request_body.clone(),
+                                            response_headers.clone(),
+                                        ),
                                     });
+                                    // A terminal error ends this stream; waiting
+                                    // for more events can hang on a source that
+                                    // keeps the connection open.
+                                    break;
                                 }
                             }
                         }
@@ -1002,18 +1009,21 @@ where
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("Responses API stream error");
                             yield Ok(StreamPart::Error {
-                                error: AiMuxError::ApiCall(ApiCallError {
-                                    status_code: Some(status),
-                                    provider_code: parsed
+                                error: aimux_provider_utils::stream_error_api_call(
+                                    message,
+                                    parsed
                                         .get("error")
                                         .and_then(|e| e.get("type").or_else(|| e.get("code")))
                                         .and_then(|v| v.as_str())
                                         .map(std::string::ToString::to_string),
-                                    message: message.to_string(),
-                                    response_body: Some(sse_event.data.clone()),
-                                    ..Default::default()
-                                }),
+                                    Some(200),
+                                    &parsed,
+                                    request_url.clone(),
+                                    request_body.clone(),
+                                    response_headers.clone(),
+                                ),
                             });
+                            break;
                         }
 
                         _ => {
@@ -1024,12 +1034,12 @@ where
                         }
                     }
                 }
-                Err(e) => {
-                    yield Ok(StreamPart::Error {
-                        error: AiMuxError::InvalidResponseData(e.to_string()),
-                    });
-                    stream_errored = true;
-                    break;
+                Err(error) => {
+                    let recoverable = error.is_recoverable_stream_error();
+                    yield Err(error);
+                    if !recoverable {
+                        return;
+                    }
                 }
             }
         }
