@@ -83,7 +83,7 @@ Cancellation — set the runtime `abort_signal` handle (never crosses the JSON
 boundary; FFI bindings cannot set it):
 
 ```rust
-let signal = aimux_core::shared::AbortSignal::new();
+let signal = aimux_core::AbortSignal::new();
 let opts = GenerateTextOptions {
     abort_signal: Some(signal.clone()),
     ..Default::default()
@@ -115,9 +115,10 @@ while let Some(part) = stream.next().await {
 ```
 
 Streaming honors the same `timeout` / `abort_signal` options as
-[text generation](#text-generation); streamed timeouts surface as
-`StreamPart::Error { error: AiMuxError::Timeout(..) }` and aborting the
-signal ends the stream with `StreamPart::Error { error: AiMuxError::Aborted }`.
+[text generation](#text-generation); streamed timeouts surface as an
+`Err(AiMuxError::Timeout(..))` stream item, and aborting the signal ends the
+stream with `Err(AiMuxError::Aborted(..))`. Provider-reported error events
+remain `Ok(StreamPart::Error { .. })` data.
 
 > Stream part variants are documented in the [API overview](../API.md#streaming-generation).
 
@@ -174,11 +175,11 @@ let result = generate_text(&model, messages, opts).await?;
 Converts text into a vector representation.
 
 ```rust
-use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+use aimux_core::embedding_model::{EmbeddingCallOptions, embed};
 
 let model = provider.embedding_model("text-embedding-3-small");
 let opts = EmbeddingCallOptions::new("hello");
-let result = model.do_embed(&opts).await?;
+let result = embed(&model, opts).await?;
 // result.embeddings[0] is Vec<f32>
 ```
 
@@ -187,11 +188,11 @@ let result = model.do_embed(&opts).await?;
 Converts text into speech audio.
 
 ```rust
-use aimux_core::speech_model::{SpeechCallOptions, SpeechModel};
+use aimux_core::speech_model::{SpeechCallOptions, generate_speech};
 
 let model = provider.speech("tts-1");
 let opts = SpeechCallOptions::new("Hello world!");
-let result = model.do_generate(&opts).await?;
+let result = generate_speech(&model, opts).await?;
 // result.audio is AudioData::Base64(String) or AudioData::Binary(Vec<u8>)
 ```
 
@@ -200,25 +201,25 @@ let result = model.do_generate(&opts).await?;
 Converts audio into text (non-streaming).
 
 ```rust
-use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
+use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, transcribe};
 
 let model = provider.transcription("whisper-1");
 let opts = TranscriptionCallOptions::new(
     AudioInput::Base64(audio_base64),
     "audio/mp3",
 );
-let result = model.do_generate(&opts).await?;
+let result = transcribe(&model, opts).await?;
 // result.text, result.segments, result.language
 ```
 
 ## Image Generation
 
 ```rust
-use aimux_core::image_model::{ImageCallOptions, ImageModel};
+use aimux_core::image_model::{ImageCallOptions, generate_image};
 
 let model = provider.image("dall-e-3");
 let opts = ImageCallOptions { prompt: Some("A cute sea otter".into()), n: 1, .. };
-let result = model.do_generate(&opts).await?;
+let result = generate_image(&model, opts).await?;
 // result.images is ImageOutputs::Base64(Vec<String>) or Binary(Vec<Vec<u8>>)
 ```
 
@@ -227,11 +228,11 @@ let result = model.do_generate(&opts).await?;
 Video generation typically returns a URL (not binary).
 
 ```rust
-use aimux_core::video_model::{VideoCallOptions, VideoModel};
+use aimux_core::video_model::{VideoCallOptions, generate_video};
 
 let model = provider.video("veo-3.0");
 let opts = VideoCallOptions { prompt: Some("A cat".into()), n: 1, .. };
-let result = model.do_generate(&opts).await?;
+let result = generate_video(&model, opts).await?;
 // result.videos[0] is VideoData::Url { url, media_type }
 ```
 
@@ -240,11 +241,11 @@ let result = model.do_generate(&opts).await?;
 Reorders a document list by relevance.
 
 ```rust
-use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
+use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, rerank};
 
 let model = provider.reranking_model("rerank-v3.0");
 let opts = RerankingCallOptions::new("What is Rust?", docs);
-let result = model.do_rerank(&opts).await?;
+let result = rerank(&model, opts).await?;
 // result.ranking sorted by score
 ```
 
@@ -253,11 +254,11 @@ let result = model.do_rerank(&opts).await?;
 Calls a search provider to obtain results.
 
 ```rust
-use aimux_core::search_model::{SearchCallOptions, SearchModel};
+use aimux_core::search_model::{SearchCallOptions, search};
 
 let model = provider.search_model("tavily-search");
 let opts = SearchCallOptions::new("What is Rust?");
-let result = model.do_search(&opts).await?;
+let result = search(&model, opts).await?;
 // result.results is Vec<SearchResultItem>
 ```
 
@@ -291,7 +292,7 @@ The Rust core provides 10 traits/interfaces, implemented by each provider as nee
 | `TranscriptionModel` | `do_generate`, `do_stream` | Speech to text |
 | `ImageModel` | `do_generate` | Image generation |
 | `RerankingModel` | `do_rerank` | Reranking |
-| `VideoModel` | `do_generate` | Video generation |
+| `VideoModel` | `do_start`, `do_status` | Video generation (Core-driven start/poll flow) |
 | `SearchModel` | `do_search` | Search |
 | `Files` | `upload_file` | File upload |
 
@@ -321,7 +322,8 @@ Rust types are the canonical definitions — one module per feature in
 | `content` | `ContentPart` (Text / Image / File / Reasoning / ToolCall / ToolResult) |
 | `tool` | `Tool`, `FunctionTool`, `ProviderTool`, `ToolCall`, `ToolResult` |
 | `types` | `Usage`, `TokenUsage`, `FinishReason`, `ResponseMetadata`, `Warning` |
-| `shared` | `FileBytes`, `FileData`, `Size`, `AspectRatio`, `ResponseInfo`, `AbortSignal` |
+| `shared` | `FileBytes`, `FileData`, `Size`, `AspectRatio`, `ResponseInfo` |
+| `abort_signal` | `AbortSignal` |
 | `embedding_model` | `EmbeddingModel`, `EmbeddingCallOptions`, `EmbeddingResult` |
 | `speech_model` | `SpeechModel`, `SpeechCallOptions`, `SpeechResult` |
 | `transcription_model` | `TranscriptionModel`, `TranscriptionCallOptions`, `TranscriptionResult`, `AudioInput` |

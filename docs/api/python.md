@@ -336,6 +336,7 @@ OpenAI/Anthropic SDK style, same idea as Vercel AI SDK on JS):
 Exception
  └── AimuxError
       ├── APICallError              # provider call/transport failure; status when observed
+      ├── RetryError                # the retry loop gave up; reason, errors (oldest first), last_error
       ├── JSONParseError / InvalidResponseDataError / ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError
@@ -368,11 +369,15 @@ pyo3 does, as Python builtins, never disguised as an `AimuxError`:
 JSON that parses but has a bad value is still `InvalidArgumentError`.
 
 Payload attributes belong to the class that carries them and are absent on the
-others. `APICallError` has `status` / `retryable` / `retry_ms` /
-`provider_code` / `provider_message` / `response_body` / `request_id`;
-optional values use Python's normal `None`. `TokenExpiredError` has
-`status == 401`, `NoSuchModelError` has `model_id` / `model_type`, and
-`NoSuchProviderError` has `provider_id`.
+others. `APICallError` has `status` / `retryable` / `retry_ms` / `url` /
+`request_body_values` / `response_headers` / `provider_code` /
+`provider_message` / `response_body` / `data`; optional values use Python's
+normal `None`. `RetryError` has `reason` (`"maxRetriesExceeded"` — every
+permitted attempt failed with a retryable error — or `"errorNotRetryable"` —
+a later attempt failed non-retryably), `errors` — the per-attempt history,
+oldest first, each itself an exception from this hierarchy — and
+`last_error`. `TokenExpiredError` has `status == 401`, `NoSuchModelError` has
+`model_id` / `model_type`, and `NoSuchProviderError` has `provider_id`.
 
 ```python
 from aimux import (

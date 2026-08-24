@@ -56,7 +56,7 @@ Two aimux exception types, each mirroring its own Rust type — **AiMux**
 (`AimuxException`) and **recorder** (`RecordingException`). They share no base
 beyond `RuntimeException`; catch each on its own. Every fallible C call returns
 an `aimux_error_t *` (null = success, result in the out-parameter). The
-binding reads one unified code: 1..13 restores an `AimuxException` subclass,
+binding reads one unified code: 1..14 restores an `AimuxException` subclass,
 100..105 restores `RecordingException`, and 200..206 becomes
 `IllegalStateException("aimux ffi: …")`. Payload getters are read only under
 their owning AiMuxError code.
@@ -80,7 +80,8 @@ RuntimeException
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError   // modelId + modelType / providerId
       ├── APICallError               // every HTTP-shaped failure; classify on status
-      │                              // + providerCode, providerMessage, requestId, responseBody (null when absent)
+      │                              // + providerCode, providerMessage, responseBody, url, requestBodyValues, responseHeaders, data (null when absent)
+      ├── RetryError                 // the retry loop gave up; reason, errors (oldest first), lastError
       ├── TimeoutError / RequestAbortedError
       └── OtherError
 ```
@@ -104,9 +105,15 @@ try {
 
 | Field | Meaning |
 |-------|---------|
-| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..13; 1 is the catch-all `Other`) |
+| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..14, where 14 = `Retry`; 1 is the catch-all `Other`) |
 | `status` | HTTP status when known; otherwise `-1` |
 | `retryMs` | Rate-limit hint in ms; `-1` if none; `0` = retry immediately |
+
+`RetryError` preserves the per-attempt history: `reason`
+(`RetryErrorReason.MAX_RETRIES_EXCEEDED` — every permitted attempt failed
+with a retryable error — or `ERROR_NOT_RETRYABLE` — a later attempt failed
+non-retryably), `errors` (oldest first, each itself an `AimuxException` —
+typically `APICallError` with its full detail), and `lastError`.
 
 Recording errors are a separate type, mirroring Rust's `recording::RecordingError`
 (C codes 100..105): `initRecording()` and `recordingTryFlush()` throw
@@ -236,6 +243,10 @@ typed model surface: `Role`, `FinishReasonUnified`, `ReasoningEffort`,
 (sealed), `MessageContent` (sealed), `ModelMessage`, `GenerateTextOptions`,
 `FileBytes` / `FileData` (sealed), `GenerateContent` (sealed),
 `GenerateResult`, `GenerateTextResult`, `StreamPart` (sealed).
+
+`MultimodalTypes.kt` includes `VideoCallOptions.poll: VideoPollOptions?`;
+`intervalMs` and `timeoutMs` serialize as `interval_ms` / `timeout_ms` for the
+Core-owned video status loop.
 
 ## Coverage
 
