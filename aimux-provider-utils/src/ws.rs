@@ -86,6 +86,9 @@ enum ConnectError {
     Tungstenite(tokio_tungstenite::tungstenite::Error),
 }
 
+// Clippy 1.98 flags the 136-byte tungstenite error variant; this internal
+// error is consumed immediately by the one caller, so boxing buys nothing.
+#[allow(clippy::result_large_err)]
 async fn connect_with_timeout(
     request: tokio_tungstenite::tungstenite::http::Request<()>,
     timeout: Option<std::time::Duration>,

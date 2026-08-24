@@ -220,6 +220,10 @@ fn decode_base64_embedding(s: &str) -> Option<Vec<f32>> {
     if bytes.len() % 4 != 0 {
         return None;
     }
+    // Clippy 1.98 suggests `as_chunks::<4>()`, which is stable only since
+    // Rust 1.88; the workspace MSRV is 1.85. `unknown_lints` keeps this
+    // buildable on toolchains older than the lint itself.
+    #[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
     Some(
         bytes
             .chunks_exact(4)
