@@ -397,7 +397,8 @@ public final class Types {
      * A tool call requested by the model.
      *
      * Mirrors `ToolCall.ts`: `{ tool_call_id, tool_name, input: JsonValue,
-     * provider_executed?: bool | null, dynamic?: bool | null }`.
+     * provider_executed?: bool | null, dynamic?: bool | null,
+     * provider_metadata?: JsonValue | null }`.
      *
      * `input` is a {@link JsonNode} because it is usually an arbitrary JSON object
      * (the tool arguments) whose shape is tool-specific.
@@ -408,16 +409,23 @@ public final class Types {
         @JsonProperty("input") private JsonNode input = emptyObject();
         @JsonProperty("provider_executed") private Boolean providerExecuted;
         @JsonProperty("dynamic") private Boolean dynamic;
+        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("invalid") private Boolean invalid;
+        @JsonProperty("error") private JsonNode error;
 
         @JsonCreator
         ToolCall() {}
 
-        private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted, Boolean dynamic) {
+        private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted, Boolean dynamic,
+                         JsonNode providerMetadata, Boolean invalid, JsonNode error) {
             this.toolCallId = toolCallId;
             this.toolName = toolName;
             this.input = input;
             this.providerExecuted = providerExecuted;
             this.dynamic = dynamic;
+            this.providerMetadata = providerMetadata;
+            this.invalid = invalid;
+            this.error = error;
         }
 
         public String getToolCallId() { return toolCallId; }
@@ -425,6 +433,11 @@ public final class Types {
         public JsonNode getInput() { return input; }
         public Boolean getProviderExecuted() { return providerExecuted; }
         public Boolean getDynamic() { return dynamic; }
+        public JsonNode getProviderMetadata() { return providerMetadata; }
+        /** Set by Core when the tool call stays invalid after optional repair. */
+        public Boolean getInvalid() { return invalid; }
+        /** The typed lookup, parse, schema, or repair failure for an invalid call. */
+        public JsonNode getError() { return error; }
 
         public static Builder builder() { return new Builder(); }
 
@@ -434,14 +447,23 @@ public final class Types {
             private JsonNode input = emptyObject();
             private Boolean providerExecuted;
             private Boolean dynamic;
+            private JsonNode providerMetadata;
+            private Boolean invalid;
+            private JsonNode error;
 
             public Builder toolCallId(String v) { this.toolCallId = v; return this; }
             public Builder toolName(String v) { this.toolName = v; return this; }
             public Builder input(JsonNode v) { this.input = v; return this; }
             public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
             public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
+            public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+            public Builder invalid(Boolean v) { this.invalid = v; return this; }
+            public Builder error(JsonNode v) { this.error = v; return this; }
 
-            public ToolCall build() { return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic); }
+            public ToolCall build() {
+                return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid,
+                    error);
+            }
         }
 
         @Override
@@ -453,12 +475,16 @@ public final class Types {
                 && Objects.equals(toolName, that.toolName)
                 && Objects.equals(input, that.input)
                 && Objects.equals(providerExecuted, that.providerExecuted)
-                && Objects.equals(dynamic, that.dynamic);
+                && Objects.equals(dynamic, that.dynamic)
+                && Objects.equals(providerMetadata, that.providerMetadata)
+                && Objects.equals(invalid, that.invalid)
+                && Objects.equals(error, that.error);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic);
+            return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid,
+                error);
         }
     }
 
@@ -3355,18 +3381,22 @@ public final class Types {
             @JsonProperty("provider_executed") private Boolean providerExecuted;
             @JsonProperty("dynamic") private Boolean dynamic;
             @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+            @JsonProperty("invalid") private Boolean invalid;
+            @JsonProperty("error") private JsonNode error;
 
             @JsonCreator
             ToolCall() {}
 
             private ToolCall(String toolCallId, String toolName, JsonNode input, Boolean providerExecuted,
-                             Boolean dynamic, JsonNode providerMetadata) {
+                             Boolean dynamic, JsonNode providerMetadata, Boolean invalid, JsonNode error) {
                 this.toolCallId = toolCallId;
                 this.toolName = toolName;
                 this.input = input;
                 this.providerExecuted = providerExecuted;
                 this.dynamic = dynamic;
                 this.providerMetadata = providerMetadata;
+                this.invalid = invalid;
+                this.error = error;
             }
 
             public String getToolCallId() { return toolCallId; }
@@ -3375,6 +3405,10 @@ public final class Types {
             public Boolean getProviderExecuted() { return providerExecuted; }
             public Boolean getDynamic() { return dynamic; }
             public JsonNode getProviderMetadata() { return providerMetadata; }
+            /** Set by Core when the tool call stays invalid after optional repair. */
+            public Boolean getInvalid() { return invalid; }
+            /** The typed lookup, parse, schema, or repair failure for an invalid call. */
+            public JsonNode getError() { return error; }
 
             public static Builder builder() { return new Builder(); }
 
@@ -3385,6 +3419,8 @@ public final class Types {
                 private Boolean providerExecuted;
                 private Boolean dynamic;
                 private JsonNode providerMetadata;
+                private Boolean invalid;
+                private JsonNode error;
 
                 public Builder toolCallId(String v) { this.toolCallId = v; return this; }
                 public Builder toolName(String v) { this.toolName = v; return this; }
@@ -3392,9 +3428,12 @@ public final class Types {
                 public Builder providerExecuted(Boolean v) { this.providerExecuted = v; return this; }
                 public Builder dynamic(Boolean v) { this.dynamic = v; return this; }
                 public Builder providerMetadata(JsonNode v) { this.providerMetadata = v; return this; }
+                public Builder invalid(Boolean v) { this.invalid = v; return this; }
+                public Builder error(JsonNode v) { this.error = v; return this; }
 
                 public ToolCall build() {
-                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata);
+                    return new ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata,
+                        invalid, error);
                 }
             }
 
@@ -3408,12 +3447,15 @@ public final class Types {
                     && Objects.equals(input, that.input)
                     && Objects.equals(providerExecuted, that.providerExecuted)
                     && Objects.equals(dynamic, that.dynamic)
-                    && Objects.equals(providerMetadata, that.providerMetadata);
+                    && Objects.equals(providerMetadata, that.providerMetadata)
+                    && Objects.equals(invalid, that.invalid)
+                    && Objects.equals(error, that.error);
             }
 
             @Override
             public int hashCode() {
-                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata);
+                return Objects.hash(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata,
+                    invalid, error);
             }
         }
 

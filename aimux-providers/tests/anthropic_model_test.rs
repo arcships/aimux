@@ -298,7 +298,7 @@ mod do_generate {
         let (id, name, input) = as_tool_call(&result.content[1]);
         assert_eq!(id, "toolu_1");
         assert_eq!(name, "test-tool");
-        assert_eq!(input, &json!({ "value": "example value" }));
+        assert_eq!(input, &json!(r#"{"value":"example value"}"#));
 
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
         assert_eq!(result.finish_reason.raw.as_deref(), Some("tool_use"));
@@ -459,11 +459,11 @@ mod do_generate {
         let (id_a, name_a, input_a) = as_tool_call(&result.content[0]);
         assert_eq!(id_a, "toolu_a");
         assert_eq!(name_a, "tool-a");
-        assert_eq!(input_a, &json!({ "x": 1 }));
+        assert_eq!(input_a, &json!(r#"{"x":1}"#));
         let (id_b, name_b, input_b) = as_tool_call(&result.content[1]);
         assert_eq!(id_b, "toolu_b");
         assert_eq!(name_b, "tool-b");
-        assert_eq!(input_b, &json!({ "y": 2 }));
+        assert_eq!(input_b, &json!(r#"{"y":2}"#));
     }
 
     /// Tool input may be a nested object.
@@ -502,10 +502,7 @@ mod do_generate {
         let (_, _, input) = as_tool_call(&result.content[0]);
         assert_eq!(
             input,
-            &json!({
-                "nested": { "arr": [1, 2, 3], "flag": true },
-                "items": ["a", "b"],
-            })
+            &json!(r#"{"nested":{"arr":[1,2,3],"flag":true},"items":["a","b"]}"#)
         );
     }
 
@@ -1113,7 +1110,7 @@ mod do_stream {
                 if id == "toolu_01DBsB4vvYLnBDzZ5rBSxSLs"
         )));
 
-        // Final ToolCall carries the parsed accumulated JSON object.
+        // Provider output stays raw until the Core stream wrapper parses it.
         let tool_call = parts
             .iter()
             .find_map(|p| match p {
@@ -1128,7 +1125,10 @@ mod do_stream {
             .expect("a ToolCall part");
         assert_eq!(tool_call.0, "toolu_01DBsB4vvYLnBDzZ5rBSxSLs");
         assert_eq!(tool_call.1, "test-tool");
-        assert_eq!(tool_call.2, &json!({ "value": "Sparkle Day" }));
+        assert_eq!(
+            tool_call.2,
+            &Value::String(r#"{"value":"Sparkle Day"}"#.into())
+        );
 
         // Finish reason reflects tool_use.
         let finish = parts
@@ -1192,7 +1192,7 @@ mod do_stream {
                 _ => None,
             })
             .expect("a ToolCall part");
-        assert_eq!(tool_call, json!({}));
+        assert_eq!(tool_call, Value::String("{}".into()));
     }
 
     // ── misc SSE scenarios ──────────────────────────────────────────────────
@@ -1347,7 +1347,7 @@ mod do_stream {
             .unwrap();
         assert_eq!(tool_call.0, "toolu_1");
         assert_eq!(tool_call.1, "test-tool");
-        assert_eq!(tool_call.2, &json!({ "value": "x" }));
+        assert_eq!(tool_call.2, &Value::String(r#"{"value":"x"}"#.into()));
     }
 
     /// Two parallel tool_use blocks (index 0 and index 1) each produce their
@@ -1396,9 +1396,9 @@ mod do_stream {
             .collect();
         assert_eq!(tool_calls.len(), 2);
         assert_eq!(tool_calls[0].0, "toolu_a");
-        assert_eq!(tool_calls[0].1, json!({ "a": 1 }));
+        assert_eq!(tool_calls[0].1, Value::String(r#"{"a":1}"#.into()));
         assert_eq!(tool_calls[1].0, "toolu_b");
-        assert_eq!(tool_calls[1].1, json!({ "b": 2 }));
+        assert_eq!(tool_calls[1].1, Value::String(r#"{"b":2}"#.into()));
     }
 
     // ── pre-stream HTTP errors ──────────────────────────────────────────────

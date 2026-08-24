@@ -42,6 +42,23 @@ final class WrapperTests: XCTestCase {
 
     // MARK: - generateText: tool calls
 
+    func testToolCallProviderMetadataRoundTrip() throws {
+        let original = ToolCall(
+            toolCallId: "call_1",
+            toolName: "get_weather",
+            input: jv(#"{"location":"Tokyo"}"#),
+            providerMetadata: jv(#"{"openai":{"item_id":"item_1"}}"#)
+        )
+
+        let encoded = try JSONEncoder().encode(original)
+        let wire = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        let metadata = wire?["provider_metadata"] as? [String: Any]
+        XCTAssertNotNil(metadata?["openai"])
+
+        let decoded = try JSONDecoder().decode(ToolCall.self, from: encoded)
+        XCTAssertEqual(decoded.providerMetadata, original.providerMetadata)
+    }
+
     /// Passing a typed `tools` option yields a typed `ToolCall` in the result:
     /// `.toolCalls[0].toolName`, `.toolCallId`, and the structured
     /// `.raw.content` `.toolCall` variant.
@@ -80,7 +97,9 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(toolContents.count, 1)
         XCTAssertEqual(toolContents[0].toolName, "get_weather")
         XCTAssertEqual(toolContents[0].toolCallId, "call_abc")
-        XCTAssertEqual(toolContents[0].input["location"]?.stringValue, "Tokyo")
+        // Raw content keeps the provider's argument text; the parsed object
+        // lives on the top-level toolCalls (asserted above).
+        XCTAssertEqual(toolContents[0].input.stringValue, "{\"location\":\"Tokyo\"}")
     }
 
     // MARK: - generateText: multi-role messages
@@ -235,7 +254,7 @@ final class WrapperTests: XCTestCase {
 
         // The complete ToolCall part carries the tool name and structured input.
         let toolCall = parts.compactMap { part -> (String, JSONValue)? in
-            if case .toolCall(_, let name, let input, _, _, _) = part { return (name, input) }
+            if case .toolCall(_, let name, let input, _, _, _, _, _) = part { return (name, input) }
             return nil
         }.first
         XCTAssertEqual(toolCall?.0, "get_weather")

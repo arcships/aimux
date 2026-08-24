@@ -69,13 +69,15 @@ Unknown names throw `NoSuchProviderError` naming the requested provider
 RuntimeException
  └── AimuxException
       ├── JSONParseError / InvalidResponseDataError
-      ├── ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError          // 401, refresh and retry
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError
       ├── APICallError               // every HTTP-shaped failure; classify on getStatusCode()
       ├── TimeoutError / RequestAbortedError
+      ├── NoSuchToolError            // code 15: the tool the model called is not in the tool set
+      ├── InvalidToolInputError      // code 16: the tool arguments failed to parse or validate
+      ├── ToolCallRepairError        // code 17: tool-call repair itself failed
       └── OtherError
 ```
 
@@ -84,7 +86,7 @@ Every instance has:
 | Field | Meaning |
 |-------|---------|
 | `getMessage()` | human-readable text from C |
-| `getCode()` | `aimux_error_code_t` value 1–13 (matches `aimux-error.h`) |
+| `getCode()` | `aimux_error_code_t` value 1–13 or 15–17 (4 retired, 14 reserved; matches `aimux-error.h`) |
 | `getStatusCode()` | HTTP status, or `-1` |
 | `getRetryMs()` | rate-limit hint, or `-1` (`0` = retry now) |
 | `isRetryable()` | the `AiMuxError` retry verdict (not derivable from status) |
@@ -92,11 +94,17 @@ Every instance has:
 A code outside the enum is a header/library mismatch and fails with
 `IllegalStateException`, not an error type.
 
-Three subclasses carry the C payload of their variant (nullable `String`s,
-`null` when unavailable): `APICallError` —
+Six subclasses carry the C payload of their variant (`null` when unavailable):
+`APICallError` —
 `getProviderCode()`, `getProviderMessage()`, `getRequestId()`, `getResponseBody()`;
 `NoSuchModelError` — `getModelId()`, `getModelType()`;
-`NoSuchProviderError` — `getProviderId()`.
+`NoSuchProviderError` — `getProviderId()`;
+`NoSuchToolError` — `getToolName()`, `getAvailableTools()` (a `List<String>`,
+`null` when no tool set was supplied);
+`InvalidToolInputError` — `getToolName()`, `getToolInput()` (the raw argument
+text the model produced);
+`ToolCallRepairError` — `getOriginalError()` (the original lookup/parse/validation
+error as a Jackson `JsonNode`, the same wire encoding as `ToolCall.error`).
 
 Recording failures are a **separate type**, mirroring the two unrelated
 Rust error types: `Aimux.initRecording(dir)` and `Aimux.recordingTryFlush()`
@@ -134,7 +142,7 @@ types and share no base beyond `RuntimeException`.
 Transport: every fallible C call returns an opaque `aimux_error_t *`
 (JNA `Pointer`) — `null` on success with the result in a trailing out-parameter
 (`LongByReference` handle / `PointerByReference` JSON), non-null on failure.
-`AimuxResult` reads one unified code: 1–13 restores the matching
+`AimuxResult` reads one unified code: 1–13 / 15–17 restores the matching
 `AimuxException` subclass, 100–105 restores `RecordingException`, and 200–206
 becomes `IllegalStateException("aimux ffi: …")`. Payload getters are read only
 under their owning AiMuxError code. Every returned string is freed and the
@@ -355,6 +363,11 @@ custom serializer for the scalar-or-object wire form), `ContentPart` (sealed),
 `FileBytes` / `FileData`, `GenerateContent`, `GenerateResult`,
 `GenerateTextResult`, `StreamPart` (sealed). All sealed hierarchies serialize
 in the wrapper-object wire form (e.g. `{"TextDelta":{...}}`).
+
+`ToolCall` (top-level and `StreamPart.ToolCall`) carries `getProviderMetadata()`
+plus `getInvalid()` (set by Core when tool lookup, input parse, or schema
+validation fails, even after repair) and `getError()` (the serialized
+`AiMuxError` for that failure).
 
 `MultimodalTypes.java` declares the typed multimodal surface:
 `EmbeddingCallOptions` / `EmbeddingResult`, `SpeechCallOptions` / `SpeechResult`,

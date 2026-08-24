@@ -200,7 +200,7 @@ fn reasonings(content: &[GenerateContent]) -> Vec<(&str, Option<&Value>)> {
 type ToolCallView<'a> = (
     &'a str,
     &'a str,
-    &'a Value,
+    Value,
     Option<bool>,
     Option<bool>,
     Option<&'a str>,
@@ -219,15 +219,24 @@ fn tool_calls(content: &[GenerateContent]) -> Vec<ToolCallView<'_>> {
                 dynamic,
                 thought_signature,
                 provider_metadata,
-            } => Some((
-                tool_call_id.as_str(),
-                tool_name.as_str(),
-                input,
-                *provider_executed,
-                *dynamic,
-                thought_signature.as_deref(),
-                provider_metadata.as_ref(),
-            )),
+            } => {
+                // Provider results intentionally carry the exact wire string;
+                // parse only in this assertion helper so nested data-loss
+                // checks remain readable without weakening that boundary.
+                let parsed_input = input
+                    .as_str()
+                    .and_then(|raw| serde_json::from_str(raw).ok())
+                    .unwrap_or_else(|| input.clone());
+                Some((
+                    tool_call_id.as_str(),
+                    tool_name.as_str(),
+                    parsed_input,
+                    *provider_executed,
+                    *dynamic,
+                    thought_signature.as_deref(),
+                    provider_metadata.as_ref(),
+                ))
+            }
             _ => None,
         })
         .collect()
@@ -555,7 +564,7 @@ async fn finding_5_gemini_function_call_thought_signature_round_trips() {
     let calls = tool_calls(&result.content);
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].1, "add");
-    assert_eq!(calls[0].2, &json!({ "x": 1, "y": 1 }));
+    assert_eq!(calls[0].2, json!({ "x": 1, "y": 1 }));
     assert_eq!(
         calls[0].5,
         Some("signature_REDACTED_1"),
@@ -878,7 +887,7 @@ async fn finding_2_anthropic_web_fetch_result_mapped() {
     let calls = tool_calls(&result.content);
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].0, "srvtoolu_01So85wNUocinTvFfgKCfQeb");
-    assert_eq!(calls[0].2, &json!({ "url": "https://ai.pydantic.dev" }));
+    assert_eq!(calls[0].2, json!({ "url": "https://ai.pydantic.dev" }));
 
     // The thinking block on the same response keeps its signature.
     let r = reasonings(&result.content);
@@ -1023,7 +1032,7 @@ async fn finding_2_anthropic_mcp_tool_use_and_result_are_dynamic_and_named() {
     // mcp_tool_use → provider-executed + dynamic + serverName metadata.
     let calls = tool_calls(&result.content);
     assert_eq!(calls.len(), 1);
-    let (id, name, input, provider_executed, dynamic, _, meta) = calls[0];
+    let (id, name, ref input, provider_executed, dynamic, _, meta) = calls[0];
     assert_eq!(id, "mcptoolu_01SAss3KEwASziHZoMR6HcZU");
     assert_eq!(name, "ask_question");
     assert_eq!(input["repoName"], json!("pydantic/pydantic-ai"));

@@ -374,8 +374,7 @@ impl LanguageModel for OpenResponsesModel {
                             .get("arguments")
                             .and_then(|a| a.as_str())
                             .unwrap_or("{}");
-                        let input: Value = serde_json::from_str(arguments)
-                            .unwrap_or_else(|_| Value::String(arguments.to_string()));
+                        let input = Value::String(arguments.to_string());
                         content.push(GenerateContent::ToolCall {
                             tool_call_id: call_id,
                             tool_name: name,
@@ -667,9 +666,7 @@ impl LanguageModel for OpenResponsesModel {
                                                         .map(std::string::ToString::to_string)
                                                 })
                                                 .unwrap_or_default();
-                                            let input: Value =
-                                                serde_json::from_str(&arguments)
-                                                    .unwrap_or_else(|_| Value::String(arguments));
+                                            let input = Value::String(arguments);
                                             yield Ok(StreamPart::ToolCall {
                                                 tool_call_id,
                                                 tool_name,
@@ -677,6 +674,8 @@ impl LanguageModel for OpenResponsesModel {
                                                 provider_executed: None,
                                                 dynamic: None,
                                                 thought_signature: None,
+                                                invalid: None,
+                                                error: None,
                                                 provider_metadata: None,
                                             });
                                             has_tool_calls = true;

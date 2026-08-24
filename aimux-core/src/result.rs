@@ -28,6 +28,8 @@ pub enum GenerateContent {
     ToolCall {
         tool_call_id: String,
         tool_name: String,
+        /// Raw provider input. Providers put serialized argument text in a
+        /// `Value::String`; `generate_text` parses and validates it.
         input: serde_json::Value,
         /// Whether the tool call will be executed by the provider.
         /// If false/unset, the tool call is executed by the client.

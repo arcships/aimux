@@ -333,10 +333,12 @@ impl LanguageModel for VertexAnthropicModel {
                                             tool_name: tool_names
                                                 .to_custom_tool_name(&name)
                                                 .to_string(),
-                                            input: input.clone(),
+                                            input: Value::String(input.to_string()),
                                             provider_executed: Some(true),
                                             dynamic: None,
                                             thought_signature: None,
+                                            invalid: None,
+                                            error: None,
                                             provider_metadata: None,
                                         });
                                     }
@@ -346,10 +348,12 @@ impl LanguageModel for VertexAnthropicModel {
                                         yield Ok(StreamPart::ToolCall {
                                             tool_call_id: id.clone(),
                                             tool_name: name.clone(),
-                                            input: input.clone(),
+                                            input: Value::String(input.to_string()),
                                             provider_executed: Some(true),
                                             dynamic: Some(true),
                                             thought_signature: None,
+                                            invalid: None,
+                                            error: None,
                                             provider_metadata: Some(json!({
                                                 "anthropic": {
                                                     "type": "mcp-tool-use",
@@ -468,14 +472,14 @@ impl LanguageModel for VertexAnthropicModel {
                                             accumulated_json,
                                         } => {
                                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                            let input: serde_json::Value = if accumulated_json
-                                                .is_empty()
-                                            {
-                                                serde_json::json!({})
-                                            } else {
-                                                serde_json::from_str(&accumulated_json)
-                                                    .unwrap_or(serde_json::json!({}))
-                                            };
+                                            // Empty input normalizes to "{}"
+                                            // per the upstream provider.
+                                            let input =
+                                                Value::String(if accumulated_json.is_empty() {
+                                                    "{}".to_string()
+                                                } else {
+                                                    accumulated_json
+                                                });
                                             yield Ok(StreamPart::ToolCall {
                                                 tool_call_id: id,
                                                 tool_name: name,
@@ -483,6 +487,8 @@ impl LanguageModel for VertexAnthropicModel {
                                                 provider_executed: None,
                                                 dynamic: None,
                                                 thought_signature: None,
+                                                invalid: None,
+                                                error: None,
                                                 provider_metadata: None,
                                             });
                                         }

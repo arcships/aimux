@@ -199,7 +199,7 @@ async fn vertex_generate_tool_call() {
     let (id, name, input) = as_tool_call(&result.content[0]);
     assert_eq!(id, "call_1");
     assert_eq!(name, "getWeather");
-    assert_eq!(input["location"], "Tokyo");
+    assert_eq!(input, &json!(r#"{"location":"Tokyo"}"#));
     // STOP with tool calls → ToolCalls
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
 }
@@ -251,7 +251,7 @@ async fn vertex_generate_tool_call_with_thought_signature() {
         } => {
             assert_eq!(tool_call_id, "call_1");
             assert_eq!(tool_name, "getWeather");
-            assert_eq!(input["location"], "Tokyo");
+            assert_eq!(input, &json!(r#"{"location":"Tokyo"}"#));
             assert_eq!(
                 thought_signature.as_deref(),
                 Some("EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH")
@@ -569,7 +569,7 @@ async fn vertex_stream_tool_call() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "call_1");
     assert_eq!(name, "getWeather");
-    assert_eq!(input["location"], "Tokyo");
+    assert_eq!(input, json!(r#"{"location":"Tokyo"}"#));
 }
 
 /// TS: response headers are exposed on the stream result.
@@ -749,7 +749,7 @@ async fn vertex_stream_code_execution_tool_calls_and_results() {
     let calls = stream_tool_calls(&parts);
     let has_call = calls.iter().any(|(_, name, input)| {
         name == "code_execution"
-            && *input == json!({ "language": "PYTHON", "code": "print(\"hello\")" })
+            && *input == json!(r#"{"language":"PYTHON","code":"print(\"hello\")"}"#)
     });
     assert!(
         has_call,

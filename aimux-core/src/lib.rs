@@ -96,7 +96,10 @@ pub mod prelude {
     };
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult};
     pub use crate::stream_part::StreamPart;
-    pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolCall, ToolResult};
+    pub use crate::tool::{
+        FunctionTool, ProviderTool, RawToolCall, Tool, ToolCall, ToolCallRepair,
+        ToolCallRepairContext, ToolResult,
+    };
     pub use crate::transcription_model::{
         TranscriptionCallOptions, TranscriptionModel, TranscriptionResult,
     };

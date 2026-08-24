@@ -184,8 +184,7 @@ pub fn build_responses_generate_result(
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}")
                     .to_string();
-                let input: Value = serde_json::from_str(&arguments)
-                    .unwrap_or_else(|_| Value::String(arguments.clone()));
+                let input = Value::String(arguments);
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: call_id,
                     tool_name: name,
@@ -213,8 +212,10 @@ pub fn build_responses_generate_result(
                     .unwrap_or("")
                     .to_string();
                 let input_str = part.get("input").and_then(|v| v.as_str()).unwrap_or("{}");
-                let input: Value = serde_json::from_str(input_str)
-                    .unwrap_or_else(|_| Value::String(input_str.to_string()));
+                let input = Value::String(
+                    serde_json::to_string(input_str)
+                        .expect("serializing a custom-tool input string cannot fail"),
+                );
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: call_id,
                     tool_name: name,
@@ -795,10 +796,7 @@ where
                                             id: call_id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input: Value = serde_json::from_str(&arguments)
-                                            .unwrap_or_else(|_| {
-                                                Value::String(arguments.clone())
-                                            });
+                                        let input = Value::String(arguments);
                                         yield Ok(StreamPart::ToolCall {
                                             tool_call_id: call_id,
                                             tool_name: name,
@@ -806,6 +804,8 @@ where
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
+                                            invalid: None,
+                                            error: None,
                                             provider_metadata: None,
                                         });
                                     }
@@ -830,10 +830,11 @@ where
                                             id: call_id.clone(),
                                             provider_metadata: None,
                                         });
-                                        let input: Value = serde_json::from_str(input_str)
-                                            .unwrap_or_else(|_| {
-                                                Value::String(input_str.to_string())
-                                            });
+                                        let input = Value::String(
+                                            serde_json::to_string(input_str).expect(
+                                                "serializing a custom-tool input string cannot fail",
+                                            ),
+                                        );
                                         yield Ok(StreamPart::ToolCall {
                                             tool_call_id: call_id,
                                             tool_name: name,
@@ -841,6 +842,8 @@ where
                                             provider_executed: None,
                                             dynamic: None,
                                             thought_signature: None,
+                                            invalid: None,
+                                            error: None,
                                             provider_metadata: None,
                                         });
                                     }

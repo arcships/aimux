@@ -275,7 +275,7 @@ async fn api_key_streams_tool_calls() {
         } => {
             assert_eq!(tool_call_id, "call_done");
             assert_eq!(tool_name, "weather");
-            assert_eq!(input["location"], "Rome");
+            assert_eq!(input, &Value::String(r#"{"location":"Rome"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }

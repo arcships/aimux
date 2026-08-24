@@ -58,7 +58,9 @@ export {
   APICallError,
   JSONParseError,
   InvalidResponseDataError,
-  ToolError,
+  NoSuchToolError,
+  InvalidToolInputError,
+  ToolCallRepairError,
   InvalidArgumentError,
   InvalidPromptError,
   TokenExpiredError,
@@ -164,7 +166,10 @@ export type RawModel = Model
  * @param model   - A raw model instance from `openai()`, `anthropic()`, etc.
  * @param prompt  - A plain string or an array of typed chat messages.
  * @param options - Optional typed generation options (tools, tool_choice,
- *                  temperature, response_format, …).
+ *                  temperature, response_format, …). The Rust `repair_tool_call`
+ *                  callback is core-only (it cannot cross the FFI boundary);
+ *                  invalid tool calls arrive with `invalid`/`error` set on the
+ *                  tool call.
  * @param signal  - Optional `AbortSignal`; aborting it cancels the call.
  *
  * Internally calls the raw

@@ -151,6 +151,9 @@ class ToolCall(BaseModel):
     provider_executed: Optional[bool] = None
     dynamic: Optional[bool] = None
     thought_signature: Optional[str] = None
+    provider_metadata: Optional[Any] = None
+    invalid: Optional[bool] = None
+    error: Optional[AiMuxErrorValue] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -489,6 +492,8 @@ class _SPToolCall(BaseModel):
     dynamic: Optional[bool] = None
     thought_signature: Optional[str] = None
     provider_metadata: Optional[Dict[str, Any]] = None
+    invalid: Optional[bool] = None
+    error: Optional[AiMuxErrorValue] = None
 
 
 class _SPToolResult(BaseModel):
@@ -826,6 +831,10 @@ class GenerateTextOptions(BaseModel):
 
     Mirrors Rust ``GenerateTextOptions``. All fields are optional; unset fields
     default to ``None`` (Rust treats absent / ``null`` as ``None``).
+
+    The Rust ``repair_tool_call`` callback is core-only (it cannot cross the
+    FFI boundary); invalid tool calls arrive with ``invalid``/``error`` set on
+    the tool call.
     """
 
     max_output_tokens: Optional[int] = None

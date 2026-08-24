@@ -21,7 +21,12 @@ dynamic?: boolean | null,
 /**
  * Optional title for the tool call.
  */
-title?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, input: JsonValue, 
+title?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolInputDelta": { id: string, delta: string, provider_metadata?: JsonValue | null, } } | { "ToolInputEnd": { id: string, provider_metadata?: JsonValue | null, } } | { "ToolCall": { tool_call_id: string, tool_name: string, 
+/**
+ * Serialized argument text in a `Value::String` from `do_stream`;
+ * parsed input after `stream_text`.
+ */
+input: JsonValue, 
 /**
  * Whether the tool call will be executed by the provider.
  */
@@ -35,7 +40,15 @@ dynamic?: boolean | null,
  * `thoughtSignature`). Must be echoed back verbatim on the follow-up
  * turn when the tool result is sent.
  */
-thought_signature?: string | null, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
+thought_signature?: string | null, 
+/**
+ * Set by Core when the call remains invalid after optional repair.
+ */
+invalid?: boolean | null, 
+/**
+ * Typed lookup, parsing, schema, or repair failure.
+ */
+error?: AiMuxError | null, provider_metadata?: JsonValue | null, } } | { "ToolResult": { tool_call_id: string, tool_name: string, result: JsonValue, 
 /**
  * Whether the result is an error or error message.
  */

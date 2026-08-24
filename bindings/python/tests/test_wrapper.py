@@ -85,7 +85,8 @@ class TestGenerateText:
         assert tool_call_parts, "raw.content must contain a ToolCall variant"
         assert tool_call_parts[0].root.tool_name == "get_weather"
         assert tool_call_parts[0].root.tool_call_id == "call_abc"
-        assert tool_call_parts[0].root.input == {"location": "Tokyo"}
+        # raw content keeps the provider's argument text (see test_e2e).
+        assert tool_call_parts[0].root.input == '{"location":"Tokyo"}'
 
     def test_raw_content_is_text_variant(self):
         with MockServer(OPENAI_CHAT) as mock:

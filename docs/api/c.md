@@ -116,12 +116,21 @@ response header nor a `retry_after_ms` / `retry_after` member in the JSON
 error payload), including on a retryable status, so fall back to your own
 exponential backoff when it is negative.
 
-The unified `aimux_error_code_t` keeps the existing AiMuxError values 1–13,
-adds RecordingError values 100–105, and assigns C ABI failures 200–206:
-`NULL_POINTER`, `INVALID_UTF8`, `INVALID_WIRE_JSON`, `INVALID_HANDLE`,
-`REENTRANT_CALL`, `RESULT_SERIALIZATION`, and `CALLBACK_FAILURE`. Values are
-never renumbered or reused. A code outside the enum is a header/library
-mismatch.
+The unified `aimux_error_code_t` maps AiMuxError variants to values 1–13 and
+15–17 (`AIMUX_E_NO_SUCH_TOOL` 15, `AIMUX_E_INVALID_TOOL_INPUT` 16,
+`AIMUX_E_TOOL_CALL_REPAIR` 17; 4 is retired — the legacy catch-all `Tool`
+variant, never produced — and 14 is reserved), adds RecordingError values
+100–105, and assigns C ABI failures 200–206: `NULL_POINTER`, `INVALID_UTF8`,
+`INVALID_WIRE_JSON`, `INVALID_HANDLE`, `REENTRANT_CALL`,
+`RESULT_SERIALIZATION`, and `CALLBACK_FAILURE`. Values are never renumbered
+or reused. A code outside the enum is a header/library mismatch.
+
+Tool-contract payloads have their own getters, mirroring the `NoSuchModel`
+ones: `aimux_error_tool_name` (codes 15/16), `aimux_error_available_tools`
+(15; a JSON string array, NULL when no tool set was supplied),
+`aimux_error_tool_input` (16), and `aimux_error_original_error` (17; the
+original failure as the same externally-tagged JSON used by
+`ToolCall.error`). All returned strings are caller-owned.
 
 Internal panics abort the process in this workspace's **release** profile
 (`panic = "abort"`); in a `panic=unwind` build a Rust callback's panic is

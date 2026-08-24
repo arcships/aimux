@@ -149,10 +149,14 @@ data class ResponseMetadata(
  * A tool call requested by the model.
  *
  * Mirrors `ToolCall.ts`: `{ tool_call_id, tool_name, input: JsonValue,
- * provider_executed?: bool | null, dynamic?: bool | null }`.
+ * provider_executed?: bool | null, dynamic?: bool | null,
+ * provider_metadata?: JsonValue | null }`.
  *
  * `input` is a [JsonElement] because it is usually an arbitrary JSON object
  * (the tool arguments) whose shape is tool-specific.
+ *
+ * `invalid` is set by Core when the tool call stays invalid after optional
+ * repair; `error` is the typed lookup, parse, schema, or repair failure.
  */
 @Serializable
 data class ToolCall(
@@ -162,6 +166,9 @@ data class ToolCall(
     @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     @SerialName("dynamic") val dynamic: Boolean? = null,
     @SerialName("thought_signature") val thoughtSignature: String? = null,
+    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    val invalid: Boolean? = null,
+    val error: JsonElement? = null,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1051,6 +1058,10 @@ sealed interface StreamPart {
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : StreamPart
 
+    /**
+     * `invalid` is set by Core when the tool call stays invalid after optional
+     * repair; `error` is the typed lookup, parse, schema, or repair failure.
+     */
     @Serializable
     data class ToolCall(
         @SerialName("tool_call_id") val toolCallId: String = "",
@@ -1060,6 +1071,8 @@ sealed interface StreamPart {
         @SerialName("dynamic") val dynamic: Boolean? = null,
         @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val invalid: Boolean? = null,
+        val error: JsonElement? = null,
     ) : StreamPart
 
     @Serializable

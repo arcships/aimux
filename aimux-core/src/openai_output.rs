@@ -245,10 +245,12 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 input,
                 ..
             } => {
-                let arguments = if input.is_null() {
-                    "{}".to_string()
-                } else {
-                    input.to_string()
+                let arguments = match input {
+                    // Provider results carry string-native arguments verbatim;
+                    // serializing the Value again would add an extra JSON layer.
+                    serde_json::Value::String(input) => input.clone(),
+                    serde_json::Value::Null => "{}".to_string(),
+                    input => input.to_string(),
                 };
                 tool_calls.push(ChatCompletionToolCall {
                     id: tool_call_id.clone(),
@@ -1072,6 +1074,27 @@ mod tests {
         assert_eq!(
             completion.choices[0].finish_reason.as_deref(),
             Some("tool_calls")
+        );
+    }
+
+    #[test]
+    fn test_raw_tool_call_arguments_are_not_double_encoded() {
+        let result = make_result(vec![GenerateContent::ToolCall {
+            tool_call_id: "call_raw".to_string(),
+            tool_name: "get_weather".to_string(),
+            input: json!(r#"{"city":"Tokyo"}"#),
+            provider_executed: None,
+            dynamic: None,
+            thought_signature: None,
+            provider_metadata: None,
+        }]);
+
+        let completion = to_chat_completion(&result, "gpt-4o");
+        assert_eq!(
+            completion.choices[0].message.tool_calls.as_ref().unwrap()[0]
+                .function
+                .arguments,
+            r#"{"city":"Tokyo"}"#
         );
     }
 

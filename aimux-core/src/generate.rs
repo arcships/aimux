@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Instant;
 
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::Instrument;
@@ -27,7 +27,7 @@ use crate::result::{
     StreamTextResultAggregated,
 };
 use crate::stream_part::StreamPart;
-use crate::tool::Tool;
+use crate::tool::{RawToolCall, Tool, ToolCallRepair, parse_tool_call};
 use crate::types::{FinishReason, ReasoningEffort, Usage, Warning};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +80,11 @@ pub struct GenerateTextOptions {
     pub abort_signal: Option<crate::shared::AbortSignal>,
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     pub include_raw_chunks: Option<bool>,
+    /// Optional one-shot repair callback for unknown, malformed, or
+    /// schema-invalid tool calls.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub repair_tool_call: Option<ToolCallRepair>,
 }
 
 impl GenerateTextOptions {
@@ -315,16 +320,24 @@ impl StreamTextResult {
                     tool_call_id,
                     tool_name,
                     input,
+                    provider_executed,
+                    dynamic,
                     thought_signature,
+                    provider_metadata,
+                    invalid,
+                    error,
                     ..
                 } => {
                     tool_calls.push(crate::tool::ToolCall {
                         tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
                         input: input.clone(),
-                        provider_executed: None,
-                        dynamic: None,
+                        provider_executed,
+                        dynamic,
                         thought_signature: thought_signature.clone(),
+                        provider_metadata,
+                        invalid,
+                        error,
                     });
                     // Defer adding to response_content_parts — order is rebuilt
                     // after the loop (reasoning → text → tool_calls).
@@ -402,9 +415,9 @@ impl StreamTextResult {
             response_content_parts.push(ContentPart::ToolCall {
                 tool_call_id: tc.tool_call_id.clone(),
                 tool_name: tc.tool_name.clone(),
-                input: tc.input.clone(),
+                input: crate::tool::response_message_input(tc),
                 thought_signature: tc.thought_signature.clone(),
-                provider_options: None,
+                provider_options: tc.provider_metadata.clone(),
             });
         }
         let response_messages = if response_content_parts.is_empty() {
@@ -474,7 +487,10 @@ pub async fn generate_text(
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
     // 1. Convert user prompt to provider-facing prompt.
-    let (messages, instructions) = split_prompt(prompt.into(), options.instructions.as_deref());
+    let repair_tool_call = options.repair_tool_call.clone();
+    let tools = options.tools.clone();
+    let operation_instructions = options.instructions.clone();
+    let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
@@ -576,24 +592,36 @@ pub async fn generate_text(
                 tool_call_id,
                 tool_name,
                 input,
+                provider_executed,
+                dynamic,
                 thought_signature,
+                provider_metadata,
                 ..
             } => {
-                tool_calls.push(crate::tool::ToolCall {
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    input: input.clone(),
-                    provider_executed: None,
-                    dynamic: None,
-                    thought_signature: thought_signature.clone(),
-                });
+                let parsed = parse_tool_call(
+                    RawToolCall {
+                        tool_call_id: tool_call_id.clone(),
+                        tool_name: tool_name.clone(),
+                        input: raw_tool_input(input),
+                        provider_executed: *provider_executed,
+                        dynamic: *dynamic,
+                        thought_signature: thought_signature.clone(),
+                        provider_metadata: provider_metadata.clone(),
+                    },
+                    tools.as_deref(),
+                    repair_tool_call.as_ref(),
+                    &messages,
+                    operation_instructions.as_deref(),
+                )
+                .await;
                 response_content_parts.push(ContentPart::ToolCall {
-                    tool_call_id: tool_call_id.clone(),
-                    tool_name: tool_name.clone(),
-                    input: input.clone(),
-                    thought_signature: thought_signature.clone(),
-                    provider_options: None,
+                    tool_call_id: parsed.tool_call_id.clone(),
+                    tool_name: parsed.tool_name.clone(),
+                    input: crate::tool::response_message_input(&parsed),
+                    thought_signature: parsed.thought_signature.clone(),
+                    provider_options: parsed.provider_metadata.clone(),
                 });
+                tool_calls.push(parsed);
             }
             GenerateContent::Reasoning {
                 text: rtext,
@@ -805,7 +833,10 @@ pub async fn stream_text(
     options: GenerateTextOptions,
 ) -> Result<StreamTextResult, AiMuxError> {
     // 1. Convert user prompt to provider-facing prompt.
-    let (messages, instructions) = split_prompt(prompt.into(), options.instructions.as_deref());
+    let repair_tool_call = options.repair_tool_call.clone();
+    let tools = options.tools.clone();
+    let operation_instructions = options.instructions.clone();
+    let (messages, instructions) = split_prompt(prompt.into(), operation_instructions.as_deref());
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions);
 
     // 2. Build CallOptions.
@@ -883,6 +914,52 @@ pub async fn stream_text(
         request_body,
         response_headers,
     } = result;
+    let mut stream = stream;
+    let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> =
+        Box::pin(async_stream::stream! {
+            while let Some(item) = stream.next().await {
+                match item {
+                    Ok(StreamPart::ToolCall {
+                        tool_call_id,
+                        tool_name,
+                        input,
+                        provider_executed,
+                        dynamic,
+                        thought_signature,
+                        provider_metadata,
+                        ..
+                    }) => {
+                        let parsed = parse_tool_call(
+                            RawToolCall {
+                                tool_call_id,
+                                tool_name,
+                                input: raw_tool_input(&input),
+                                provider_executed,
+                                dynamic,
+                                thought_signature,
+                                provider_metadata,
+                            },
+                            tools.as_deref(),
+                            repair_tool_call.as_ref(),
+                            &messages,
+                            operation_instructions.as_deref(),
+                        ).await;
+                        yield Ok(StreamPart::ToolCall {
+                            tool_call_id: parsed.tool_call_id,
+                            tool_name: parsed.tool_name,
+                            input: parsed.input,
+                            provider_executed: parsed.provider_executed,
+                            dynamic: parsed.dynamic,
+                            thought_signature: parsed.thought_signature,
+                            invalid: parsed.invalid,
+                            error: parsed.error,
+                            provider_metadata: parsed.provider_metadata,
+                        });
+                    }
+                    item => yield item,
+                }
+            }
+        });
     // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
     let stream = crate::recording::RecordingOutcomeStream::new(
         stream,
@@ -897,6 +974,13 @@ pub async fn stream_text(
         request_body,
         response_headers,
     })
+}
+
+fn raw_tool_input(input: &Value) -> String {
+    match input {
+        Value::String(input) => input.clone(),
+        input => serde_json::to_string(input).expect("serializing serde_json::Value cannot fail"),
+    }
 }
 
 /// Run `do_generate` inside the RFC-0014 `generate` span and emit the

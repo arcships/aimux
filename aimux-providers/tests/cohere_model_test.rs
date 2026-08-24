@@ -1,4 +1,4 @@
-﻿//! Wiremock tests for the Cohere provider.
+//! Wiremock tests for the Cohere provider.
 //!
 //! Translated from `packages/cohere/src/cohere-chat-language-model.test.ts`,
 //! focusing on the cases that the Rust data model can express:
@@ -263,7 +263,10 @@ async fn should_extract_tool_calls() {
             tool_name, input, ..
         } => {
             assert_eq!(tool_name, "weather");
-            assert_eq!(input, &json!({"location": "San Francisco"}));
+            assert_eq!(
+                input,
+                &Value::String(r#"{"location":"San Francisco"}"#.into())
+            );
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -272,7 +275,7 @@ async fn should_extract_tool_calls() {
             tool_name, input, ..
         } => {
             assert_eq!(tool_name, "cityAttractions");
-            assert_eq!(input, &json!({"city": "San Francisco"}));
+            assert_eq!(input, &Value::String(r#"{"city":"San Francisco"}"#.into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -320,7 +323,7 @@ async fn should_handle_null_tool_call_arguments() {
     match &result.content[0] {
         GenerateContent::ToolCall { input, .. } => {
             // "null" should be replaced with "{}".
-            assert_eq!(input, &json!({}));
+            assert_eq!(input, &Value::String("{}".into()));
         }
         other => panic!("expected ToolCall, got {other:?}"),
     }
@@ -547,7 +550,12 @@ async fn should_stream_tool_call_deltas() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "weather_e8p4pn45zt0t");
     assert_eq!(name, "weather");
-    assert_eq!(input, &json!({"location": "San Francisco"}));
+    // The flush parses and re-serializes compactly, so interior whitespace
+    // from the deltas is dropped.
+    assert_eq!(
+        input,
+        &Value::String(r#"{"location":"San Francisco"}"#.into())
+    );
 
     // Verify the accumulated deltas.
     let deltas: Vec<String> = parts
@@ -1456,8 +1464,7 @@ async fn should_stream_empty_tool_call_arguments() {
     let (id, name, input) = tool_call.expect("should have ToolCall");
     assert_eq!(id, "tc_empty");
     assert_eq!(name, "doThing");
-    // Empty arguments → empty object.
-    assert_eq!(input, json!({}));
+    assert_eq!(input, Value::String("{}".into()));
 
     let finish = parts.last().expect("should have finish");
     match finish {

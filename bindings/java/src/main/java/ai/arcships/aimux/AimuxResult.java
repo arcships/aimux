@@ -9,7 +9,7 @@ import com.sun.jna.ptr.PointerByReference;
  *
  * <p>Every fallible C call returns an {@code aimux_error_t *} ({@code null}
  * = success, result in the out-parameter). Its code identifies an AiMuxError
- * (1–13), RecordingError (100–105), or a failure detected by the C ABI
+ * (1–13, 15–17), RecordingError (100–105), or a failure detected by the C ABI
  * (200–206). The last range collapses to {@link IllegalStateException}
  * ({@code "aimux ffi: "} + message); Java does not expose seven additional
  * exception types. Each helper frees the pointer exactly once. User-triggerable
@@ -64,8 +64,8 @@ final class AimuxResult {
     }
 
     /**
-     * Decode an error from a call that may return {@code AiMuxError}: 1–13 →
-     * {@link AimuxException}; 200–206 → {@link IllegalStateException}.
+     * Decode an error from a call that may return {@code AiMuxError}: 1–13 /
+     * 15–17 → {@link AimuxException}; 200–206 → {@link IllegalStateException}.
      * Frees {@code e}.
      */
     static RuntimeException expectAimuxError(Pointer e, String context) {
@@ -79,7 +79,8 @@ final class AimuxResult {
             if (isFfiCode(code)) {
                 return ffiError(e, prefix);
             }
-            if (code < AimuxException.AIMUX_E_OTHER || code > AimuxException.AIMUX_E_ABORTED) {
+            // Retired 4 / reserved 14 slip this range check; createByCode rejects them.
+            if (code < AimuxException.AIMUX_E_OTHER || code > AimuxException.AIMUX_E_TOOL_CALL_REPAIR) {
                 return codeMismatch(code, prefix, "AiMuxError");
             }
             return AimuxException.fromC(e, prefix);

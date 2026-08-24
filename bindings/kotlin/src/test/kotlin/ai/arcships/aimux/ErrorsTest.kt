@@ -175,7 +175,7 @@ class ErrorsTest {
         assertThat(noKey.retryable).isFalse()
     }
 
-    /** A code outside 1..13 is a header/library mismatch, not an error type. */
+    /** A code outside the enum is a header/library mismatch, not an error type. */
     @Test
     fun `createByCode rejects codes outside the enum`() {
         assertThatThrownBy { AimuxException.createByCode(999, "?") }

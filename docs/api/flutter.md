@@ -76,7 +76,7 @@ shares a base with the other (both just `implements Exception`):
 
 | Source | Rust | Dart | C code |
 |---|---|---|---|
-| AiMux | `AiMuxError` | `AimuxException` hierarchy | 1..13 |
+| AiMux | `AiMuxError` | `AimuxException` hierarchy | 1..13, 15..17 (4 retired, 14 reserved) |
 | recorder | `RecordingError` | `RecordingException` | 100..105 |
 
 Every fallible C call returns an opaque `aimux_error_t *` (`NULL` =
@@ -84,7 +84,7 @@ success, result in the trailing out-parameter). The binding has one decoder
 (`errors.dart`): `expectAimuxError(e, context)` for model calls,
 `expectRecordingError(e, context)` for `initRecording` / `recordingTryFlush`,
 `expectFfiError(e, context)` for utilities that can only fail in the C ABI.
-One unified code selects 1..13, 100..105, or 200..206; each decoder copies the
+One unified code selects 1..13 / 15..17, 100..105, or 200..206; each decoder copies the
 relevant fields, releases the error with `aimux_error_free` exactly once, and
 throws the matching `AimuxException` subclass / `RecordingException`. Codes
 200..206 throw the native
@@ -97,7 +97,6 @@ throws the matching `AimuxException` subclass / `RecordingException`. Codes
 Exception (implements)
  └── AimuxException
       ├── JSONParseError / InvalidResponseDataError
-      ├── ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError         // status 401
       ├── UnsupportedFunctionalityError
@@ -105,6 +104,9 @@ Exception (implements)
       ├── APICallError              // every HTTP-shaped failure; branch on status
       ├── AimuxTimeoutError
       ├── RequestAbortedError
+      ├── NoSuchToolError           // code 15; tool not in the supplied tool set
+      ├── InvalidToolInputError     // code 16; tool arguments failed to parse/validate
+      ├── ToolCallRepairError       // code 17; a repairToolCall hook itself failed
       └── OtherError
 ```
 
@@ -112,9 +114,13 @@ Every instance has `message`, `code` (`AimuxErrorCode` constants matching C
 `aimux_error_code_t`), `status` (HTTP or `-1`), `retryMs` (hint or `-1`;
 `0` = retry now) and `retryable`. Per-code payload lives on the carrying
 subclass only: `APICallError.providerCode` / `.providerMessage` / `.requestId` / `.responseBody`
-(`String?`), `NoSuchModelError.modelId` / `.modelType`, and
-`NoSuchProviderError.providerId`. A code outside the enum is a header/library
-mismatch and fails with `StateError`, not an error type.
+(`String?`), `NoSuchModelError.modelId` / `.modelType`,
+`NoSuchProviderError.providerId`, `NoSuchToolError.toolName` /
+`.availableTools` (`List<String>?`, null when no tool set was supplied),
+`InvalidToolInputError.toolName` / `.toolInput` (the raw argument text), and
+`ToolCallRepairError.originalError` (the repaired-over error decoded from its
+wire JSON — the same shape as `ToolCall.error`). A code outside the enum is a
+header/library mismatch and fails with `StateError`, not an error type.
 
 ```dart
 import 'package:aimux/aimux.dart'; // exports errors.dart
@@ -252,6 +258,10 @@ model.close();
 `FunctionTool`, `Tool`, `ToolChoice`, `ResponseMetadata`, `GenerateContent`
 (sealed), `GenerateResult`, `GenerateTextResult`, `GenerateTextOptions`,
 `ModelMessage`, `StreamPart` (sealed), `FileBytes`, `FileData`, `ContentPart`.
+
+`ToolCall` carries `providerMetadata` plus `invalid` (set by Core when tool
+lookup, input parse, or schema validation fails, even after repair) and `error`
+(the serialized `AiMuxError` for that failure).
 
 ## Coverage
 

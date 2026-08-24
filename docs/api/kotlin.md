@@ -56,7 +56,7 @@ Two aimux exception types, each mirroring its own Rust type — **AiMux**
 (`AimuxException`) and **recorder** (`RecordingException`). They share no base
 beyond `RuntimeException`; catch each on its own. Every fallible C call returns
 an `aimux_error_t *` (null = success, result in the out-parameter). The
-binding reads one unified code: 1..13 restores an `AimuxException` subclass,
+binding reads one unified code: 1..13 / 15..17 restores an `AimuxException` subclass,
 100..105 restores `RecordingException`, and 200..206 becomes
 `IllegalStateException("aimux ffi: …")`. Payload getters are read only under
 their owning AiMuxError code.
@@ -74,7 +74,6 @@ their owning code.
 RuntimeException
  └── AimuxException          // code, status, retryMs, retryable
       ├── JSONParseError / InvalidResponseDataError
-      ├── ToolError
       ├── InvalidArgumentError / InvalidPromptError
       ├── TokenExpiredError          // 401, refresh and retry
       ├── UnsupportedFunctionalityError
@@ -82,6 +81,9 @@ RuntimeException
       ├── APICallError               // every HTTP-shaped failure; classify on status
       │                              // + providerCode, providerMessage, requestId, responseBody (null when absent)
       ├── TimeoutError / RequestAbortedError
+      ├── NoSuchToolError            // toolName + availableTools (null = no tool set supplied)
+      ├── InvalidToolInputError      // toolName + toolInput (the raw argument text)
+      ├── ToolCallRepairError        // originalError (wire JSON, same encoding as ToolCall.error)
       └── OtherError
 ```
 
@@ -104,7 +106,7 @@ try {
 
 | Field | Meaning |
 |-------|---------|
-| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..13; 1 is the catch-all `Other`) |
+| `code` | `AIMUX_E_*` matching C `aimux_error_code_t` (1..13 and 15..17; 1 is the catch-all `Other`; 4 is retired — the legacy `Tool` variant — and 14 is reserved) |
 | `status` | HTTP status when known; otherwise `-1` |
 | `retryMs` | Rate-limit hint in ms; `-1` if none; `0` = retry immediately |
 
@@ -236,6 +238,11 @@ typed model surface: `Role`, `FinishReasonUnified`, `ReasoningEffort`,
 (sealed), `MessageContent` (sealed), `ModelMessage`, `GenerateTextOptions`,
 `FileBytes` / `FileData` (sealed), `GenerateContent` (sealed),
 `GenerateResult`, `GenerateTextResult`, `StreamPart` (sealed).
+
+`ToolCall` (top-level and `StreamPart.ToolCall`) carries `providerMetadata`
+plus `invalid` (set by Core when tool lookup, input parse, or schema validation
+fails, even after repair) and `error` (the serialized `AiMuxError` for that
+failure).
 
 ## Coverage
 

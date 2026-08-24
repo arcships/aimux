@@ -198,8 +198,12 @@ class AimuxExceptionTest {
             .isInstanceOf(AimuxException.JSONParseError.class);
         assertThat(AimuxException.of(AimuxException.AIMUX_E_INVALID_RESPONSE_DATA, "m"))
             .isInstanceOf(AimuxException.InvalidResponseDataError.class);
-        assertThat(AimuxException.of(AimuxException.AIMUX_E_TOOL, "m"))
-            .isInstanceOf(AimuxException.ToolError.class);
+        assertThat(AimuxException.of(AimuxException.AIMUX_E_NO_SUCH_TOOL, "m"))
+            .isInstanceOf(AimuxException.NoSuchToolError.class);
+        assertThat(AimuxException.of(AimuxException.AIMUX_E_INVALID_TOOL_INPUT, "m"))
+            .isInstanceOf(AimuxException.InvalidToolInputError.class);
+        assertThat(AimuxException.of(AimuxException.AIMUX_E_TOOL_CALL_REPAIR, "m"))
+            .isInstanceOf(AimuxException.ToolCallRepairError.class);
         assertThat(AimuxException.of(AimuxException.AIMUX_E_INVALID_ARGUMENT, "m"))
             .isInstanceOf(AimuxException.InvalidArgumentError.class);
         assertThat(AimuxException.of(AimuxException.AIMUX_E_INVALID_PROMPT, "m"))
@@ -224,8 +228,11 @@ class AimuxExceptionTest {
 
     @Test
     void codesOutsideTheRustEnumAreRejected() {
-        // Out-of-range (the old recording slot 15) is a header/library mismatch.
-        assertThatThrownBy(() -> AimuxException.of(15, ""))
+        // Retired (4, the legacy Tool slot) and reserved (14) codes are a
+        // header/library mismatch, like anything out of range.
+        assertThatThrownBy(() -> AimuxException.of(4, ""))
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> AimuxException.of(14, ""))
             .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> AimuxException.of(999, "m"))
             .isInstanceOf(IllegalStateException.class);

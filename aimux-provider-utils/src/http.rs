@@ -1593,7 +1593,9 @@ fn error_variant(e: &AiMuxError) -> &'static str {
         AiMuxError::ApiCall(_) => "api_call",
         AiMuxError::JsonParse(_) => "json_parse",
         AiMuxError::InvalidResponseData(_) => "invalid_response_data",
-        AiMuxError::Tool(_) => "tool",
+        AiMuxError::NoSuchTool { .. } => "no_such_tool",
+        AiMuxError::InvalidToolInput { .. } => "invalid_tool_input",
+        AiMuxError::ToolCallRepair { .. } => "tool_call_repair",
         AiMuxError::InvalidArgument(_) => "invalid_argument",
         AiMuxError::InvalidPrompt(_) => "invalid_prompt",
         AiMuxError::TokenExpired(_) => "token_expired",
@@ -1609,6 +1611,41 @@ fn error_variant(e: &AiMuxError) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_contract_errors_have_distinct_log_reasons() {
+        let cases = [
+            (
+                AiMuxError::NoSuchTool {
+                    tool_name: "weather".into(),
+                    available_tools: None,
+                },
+                "no_such_tool",
+            ),
+            (
+                AiMuxError::InvalidToolInput {
+                    tool_name: "weather".into(),
+                    tool_input: "{}".into(),
+                    cause: "schema mismatch".into(),
+                },
+                "invalid_tool_input",
+            ),
+            (
+                AiMuxError::ToolCallRepair {
+                    original_error: Box::new(AiMuxError::NoSuchTool {
+                        tool_name: "weather".into(),
+                        available_tools: None,
+                    }),
+                    cause: Box::new(AiMuxError::Other("repair failed".into())),
+                },
+                "tool_call_repair",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error_variant(&error), expected);
+        }
+    }
 
     #[test]
     fn shared_client_is_stable_handle() {

@@ -198,6 +198,18 @@ public interface AimuxFFI extends Library {
     /** AIMUX_E_NO_SUCH_PROVIDER: owned string or NULL. */
     Pointer aimux_error_provider_id(Pointer err);
 
+    /** AIMUX_E_NO_SUCH_TOOL / AIMUX_E_INVALID_TOOL_INPUT: owned string or NULL. */
+    Pointer aimux_error_tool_name(Pointer err);
+
+    /** AIMUX_E_NO_SUCH_TOOL: owned JSON string array, or NULL when no tool set was supplied. */
+    Pointer aimux_error_available_tools(Pointer err);
+
+    /** AIMUX_E_INVALID_TOOL_INPUT: owned string or NULL. */
+    Pointer aimux_error_tool_input(Pointer err);
+
+    /** AIMUX_E_TOOL_CALL_REPAIR: owned externally-tagged wire JSON, or NULL. */
+    Pointer aimux_error_original_error(Pointer err);
+
     // ── Embedding ───────────────────────────────────────────────────────────
 
     Pointer aimux_openai_embedding_new(String apiKey, String modelId, LongByReference outHandle);

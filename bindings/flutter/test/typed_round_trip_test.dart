@@ -33,6 +33,27 @@ Map<String, dynamic> deepFlatten(Map<String, dynamic> json) =>
     jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
 
 void main() {
+  test('ToolCall preserves provider_metadata', () {
+    final original = ToolCall(
+      toolCallId: 'call_1',
+      toolName: 'get_weather',
+      input: {'location': 'Tokyo'},
+      providerMetadata: {
+        'openai': {'item_id': 'item_1'},
+      },
+    );
+
+    final json = original.toJson();
+    expect(json['provider_metadata'], {
+      'openai': {'item_id': 'item_1'},
+    });
+
+    final decoded = ToolCall.fromJson(json);
+    expect(decoded.providerMetadata, {
+      'openai': {'item_id': 'item_1'},
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // GenerateContent (6 variants + Unknown)
   // ─────────────────────────────────────────────────────────────────────────

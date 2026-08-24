@@ -53,6 +53,7 @@ import "C"
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1149,8 +1150,9 @@ func expectFfiError(e *C.aimux_error_t) error {
 	return ffiError(e)
 }
 
-// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..13 → *Error;
-// 200..206 → plain C ABI error. Any other code is an ABI contract violation.
+// expectAimuxError decodes an [AiMuxError] call: nil → nil; 1..13, 15..17 →
+// *Error; 200..206 → plain C ABI error. Any other code is an ABI contract
+// violation.
 func expectAimuxError(e *C.aimux_error_t) error {
 	if e == nil {
 		return nil
@@ -1189,6 +1191,21 @@ func expectAimuxError(e *C.aimux_error_t) error {
 		err.ModelType = str(C.aimux_error_model_type(e))
 	case CodeNoSuchProvider:
 		err.ProviderID = str(C.aimux_error_provider_id(e))
+	case CodeNoSuchTool:
+		err.ToolName = str(C.aimux_error_tool_name(e))
+		// NULL (→ "") means the core did not report the list; the string
+		// itself is serde-serialized JSON, so Unmarshal cannot fail short
+		// of an ABI mismatch, and nil is the right fallback either way.
+		if tools := str(C.aimux_error_available_tools(e)); tools != "" {
+			_ = json.Unmarshal([]byte(tools), &err.AvailableTools)
+		}
+	case CodeInvalidToolInput:
+		err.ToolName = str(C.aimux_error_tool_name(e))
+		err.ToolInput = str(C.aimux_error_tool_input(e))
+	case CodeToolCallRepair:
+		if orig := str(C.aimux_error_original_error(e)); orig != "" {
+			err.OriginalError = json.RawMessage(orig)
+		}
 	}
 	// TokenExpired carries a 401 by contract even if C reports -1; every
 	// other status is the observed one (ApiCall without a status = no HTTP

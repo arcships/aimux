@@ -50,10 +50,11 @@ use aimux_ffi::{
     aimux_codex_refresh, aimux_cohere_embedding_new, aimux_cohere_embedding_new_with_base,
     aimux_cohere_new, aimux_cohere_new_with_base, aimux_cohere_reranking_new,
     aimux_cohere_reranking_new_with_base, aimux_consume_stream_text, aimux_drop_handle,
-    aimux_embed, aimux_error_code, aimux_error_free, aimux_error_message, aimux_error_model_id,
-    aimux_error_model_type, aimux_error_provider_code, aimux_error_provider_id,
-    aimux_error_provider_message, aimux_error_request_id, aimux_error_response_body,
-    aimux_error_retry_ms, aimux_error_retryable, aimux_error_status, aimux_error_t,
+    aimux_embed, aimux_error_available_tools, aimux_error_code, aimux_error_free,
+    aimux_error_message, aimux_error_model_id, aimux_error_model_type, aimux_error_original_error,
+    aimux_error_provider_code, aimux_error_provider_id, aimux_error_provider_message,
+    aimux_error_request_id, aimux_error_response_body, aimux_error_retry_ms, aimux_error_retryable,
+    aimux_error_status, aimux_error_t, aimux_error_tool_input, aimux_error_tool_name,
     aimux_file_upload, aimux_free_string, aimux_generate_object, aimux_generate_text,
     aimux_generate_text_as_openai, aimux_get_model_specs, aimux_google_embedding_new,
     aimux_google_embedding_new_with_base, aimux_google_image_new, aimux_google_image_new_with_base,
@@ -155,7 +156,7 @@ fn header_and_exports_agree() {
     exports.sort();
     assert_eq!(
         exports.len(),
-        109,
+        113,
         "export count changed; update the headers"
     );
 
@@ -983,6 +984,10 @@ fn utility_exports_return_clean_values() {
         aimux_error_model_id,
         aimux_error_model_type,
         aimux_error_provider_id,
+        aimux_error_tool_name,
+        aimux_error_available_tools,
+        aimux_error_tool_input,
+        aimux_error_original_error,
     ] {
         assert!(get(e).is_null(), "AiMuxError payload getter must be NULL");
     }

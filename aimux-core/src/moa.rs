@@ -692,6 +692,8 @@ mod tests {
                     provider_executed: None,
                     dynamic: None,
                     thought_signature: None,
+                    invalid: None,
+                    error: None,
                     provider_metadata: None,
                 }),
                 Ok(StreamPart::Source {

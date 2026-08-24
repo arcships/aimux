@@ -370,10 +370,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .get("arguments")
                                                 .and_then(|v| v.as_str())
                                                 .unwrap_or("{}");
-                                            let input: Value = serde_json::from_str(arguments)
-                                                .unwrap_or_else(|_| {
-                                                    Value::String(arguments.to_string())
-                                                });
+                                            let input = Value::String(arguments.to_string());
 
                                             yield Ok(StreamPart::ToolInputEnd {
                                                 id: call_id.clone(),
@@ -386,6 +383,8 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 provider_executed: None,
                                                 dynamic: None,
                                                 thought_signature: None,
+                                                invalid: None,
+                                                error: None,
                                                 provider_metadata: None,
                                             });
 
@@ -1094,8 +1093,7 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     .get("arguments")
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
-                let input: Value = serde_json::from_str(arguments)
-                    .unwrap_or_else(|_| Value::String(arguments.to_string()));
+                let input = Value::String(arguments.to_string());
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: call_id.to_string(),
                     tool_name: name.to_string(),
@@ -1114,13 +1112,12 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                     .get("arguments")
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
-                let input: Value = serde_json::from_str(arguments)
-                    .unwrap_or_else(|_| Value::String(arguments.to_string()));
+                let input = Value::String(arguments.to_string());
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: name.to_string(),
                     input,
-                    provider_executed: None,
+                    provider_executed: Some(true),
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,
@@ -1145,8 +1142,8 @@ fn build_generate_content(response: &Value) -> Vec<GenerateContent> {
                 content.push(GenerateContent::ToolCall {
                     tool_call_id: id.to_string(),
                     tool_name: "list_tools".to_string(),
-                    input: json!({ "server_label": server_label }),
-                    provider_executed: None,
+                    input: Value::String(json!({ "server_label": server_label }).to_string()),
+                    provider_executed: Some(true),
                     dynamic: None,
                     thought_signature: None,
                     provider_metadata: None,

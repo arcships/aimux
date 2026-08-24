@@ -1447,7 +1447,10 @@ mod do_generate_tests {
             } => {
                 assert_eq!(tool_call_id, "call_2866856768160095");
                 assert_eq!(tool_name, "weather");
-                assert_eq!(input, &json!({"location": "San Francisco"}));
+                assert_eq!(
+                    input,
+                    &Value::String(r#"{"location":"San Francisco"}"#.into())
+                );
             }
             other => panic!("expected ToolCall, got {other:?}"),
         }
@@ -2018,7 +2021,7 @@ mod do_stream_tests {
         let (tc_id, tc_name, tc_input) = tool_call.unwrap();
         assert_eq!(tc_id, "call_1");
         assert_eq!(tc_name, "weather");
-        assert_eq!(tc_input, &json!({"location": "SF"}));
+        assert_eq!(tc_input, &Value::String(r#"{"location":"SF"}"#.into()));
 
         // Finish with tool-calls reason
         let finish = parts.iter().find_map(|p| match p {

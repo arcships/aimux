@@ -107,7 +107,8 @@ have no Swift type — see "C ABI failures" below.
 Every fallible C function returns an opaque `aimux_error_t *`
 (`OpaquePointer?`): `NULL` = success (the result is in the trailing
 out-parameter), non-`NULL` = failure. One unified code selects `AimuxError`
-(1...13), `RecordingError` (100...105), or a C ABI failure (200...206).
+(1...13 and 15...17; 4 retired, 14 reserved), `RecordingError` (100...105),
+or a C ABI failure (200...206).
 The three decoders enforce the range expected by each call and restore the
 Swift error type; 200...206 collapses to `DecodingError.dataCorrupted`.
 Every path copies its strings (freed with
@@ -123,7 +124,6 @@ and yields the invariant `DecodingError.dataCorrupted("aimux ffi: <context>:
 |------|--------|--------|
 | `.jsonParse` | `AIMUX_E_JSON_PARSE` (2) | JSON parse/serialize |
 | `.invalidResponseData` | `AIMUX_E_INVALID_RESPONSE_DATA` (3) | Malformed response / stream data |
-| `.tool` | `AIMUX_E_TOOL` (4) | Tool-related failure |
 | `.invalidArgument` | `AIMUX_E_INVALID_ARGUMENT` (5) | Bad argument |
 | `.invalidPrompt` | `AIMUX_E_INVALID_PROMPT` (6) | Bad prompt JSON |
 | `.tokenExpired` | `AIMUX_E_TOKEN_EXPIRED` (7) | Expired token; `status` 401 |
@@ -133,6 +133,9 @@ and yields the invariant `DecodingError.dataCorrupted("aimux ffi: <context>:
 | `.apiCall` | `AIMUX_E_API_CALL` (11) | Every HTTP-shaped failure; branch on `status` (401 auth, 404 model, 429 rate limit) |
 | `.timeout` | `AIMUX_E_TIMEOUT` (12) | Request timed out |
 | `.aborted` | `AIMUX_E_ABORTED` (13) | Request aborted |
+| `.noSuchTool` | `AIMUX_E_NO_SUCH_TOOL` (15) | The model called a tool outside the supplied tool set; carries `toolName` and `availableTools` (`[String]?`, `nil` when no tool set was supplied) |
+| `.invalidToolInput` | `AIMUX_E_INVALID_TOOL_INPUT` (16) | Tool arguments failed to parse/validate; carries `toolName` and `toolInput` (the raw argument text) |
+| `.toolCallRepair` | `AIMUX_E_TOOL_CALL_REPAIR` (17) | A `repairToolCall` hook itself failed; carries `originalError` (the repaired-over error as wire JSON, the `ToolCall.error` encoding) |
 | `.other` | `AIMUX_E_OTHER` (1) | Unclassified core error |
 
 There are no binding-local cases: only aimux-core produces an `AimuxError`.
@@ -144,11 +147,14 @@ with `DecodingError.dataCorrupted` from the decoder, not an error type.
 
 Every case carries `message`, `status` (`Int?` — `nil` when C reports no
 status), `retryMs` (`Int64?` — `nil` if none; `0` = retry now) and
-`retryable`. Three cases carry a
+`retryable`. Six cases carry a
 typed payload as extra associated values: `.apiCall(providerCode:providerMessage:requestId:responseBody:)`
-(all optional), `.noSuchModel(modelId:modelType:)` and
-`.noSuchProvider(providerId:)`; the same-named computed properties return
-`nil` on every other case. `e.code` returns the mapped `aimux_error_code_t`
+(all optional), `.noSuchModel(modelId:modelType:)`,
+`.noSuchProvider(providerId:)`, `.noSuchTool(toolName:availableTools:)`,
+`.invalidToolInput(toolName:toolInput:)` and
+`.toolCallRepair(originalError:)`; the same-named computed properties return
+`nil` on every other case (`toolName` answers for both `.noSuchTool` and
+`.invalidToolInput`). `e.code` returns the mapped `aimux_error_code_t`
 constant as `Int32`.
 
 **Recording errors are a separate type.** `Model.initRecording(dir:)` and
@@ -211,6 +217,11 @@ mirroring the shared JSON shape — usable with the JSON-string APIs:
 `ModelMessage`, `ModelPrompt`, `ToolCall`, `FileBytes`, `FileData`,
 `GenerateContent`, `GenerateResult`, `GenerateTextResult`,
 `GenerateTextOptions`, `StreamPart` (all `Codable, Equatable`).
+
+`ToolCall` (top-level and `StreamPart.toolCall`) carries `providerMetadata`
+plus `invalid` (set by Core when tool lookup, input parse, or schema validation
+fails, even after repair) and `error` (the serialized `AiMuxError` for that
+failure).
 
 Example:
 
