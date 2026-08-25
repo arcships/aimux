@@ -279,10 +279,11 @@ pub(crate) fn finalize_streamed_tool_input(
     if provider_tool_name == Some("code_execution")
         && let Ok(parsed) = serde_json::from_str::<Value>(&accumulated_json)
     {
-        let wire_name = match provider_tool_input_type {
-            Some(name @ ("text_editor_code_execution" | "bash_code_execution")) => name,
-            _ => "code_execution",
-        };
+        // Only the two known operation names ride through; anything else
+        // collapses to the caller's single code_execution tool.
+        let wire_name = provider_tool_input_type
+            .filter(|name| matches!(*name, "text_editor_code_execution" | "bash_code_execution"))
+            .unwrap_or("code_execution");
         accumulated_json = normalized_server_tool_input(wire_name, &parsed).to_string();
     }
     accumulated_json
