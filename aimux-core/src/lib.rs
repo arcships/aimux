@@ -32,6 +32,7 @@ pub mod model_catalogue;
 pub mod model_id;
 pub mod openai_output;
 pub mod options;
+pub mod parse_tool_call;
 pub mod provider;
 pub mod recording;
 pub mod replay;
@@ -78,6 +79,7 @@ pub mod prelude {
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
     };
     pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+    pub use crate::parse_tool_call::{RawToolCall, ToolCallRepair, ToolCallRepairContext};
     pub use crate::provider::Provider;
     pub use crate::reranking_model::{RerankingCallOptions, RerankingModel, RerankingResult};
     pub use crate::result::{GenerateResult, StreamResult};
@@ -97,10 +99,7 @@ pub mod prelude {
     };
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult};
     pub use crate::stream_part::StreamPart;
-    pub use crate::tool::{
-        FunctionTool, ProviderTool, RawToolCall, Tool, ToolCall, ToolCallRepair,
-        ToolCallRepairContext, ToolResult,
-    };
+    pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolCall, ToolResult};
     pub use crate::transcription_model::{
         TranscriptionCallOptions, TranscriptionModel, TranscriptionResult,
     };

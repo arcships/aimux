@@ -21,12 +21,13 @@ use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
 use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+use crate::parse_tool_call::{RawToolCall, ToolCallRepair, parse_tool_call};
 use crate::result::{
     FilePart, GenerateContent, GenerateResult, ReasoningPart, SourcePart, StreamResult,
     StreamTextResultAggregated,
 };
 use crate::stream_part::StreamPart;
-use crate::tool::{RawToolCall, Tool, ToolCallRepair, parse_tool_call};
+use crate::tool::Tool;
 use crate::types::{FinishReason, ReasoningEffort, Usage, Warning};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -565,7 +566,7 @@ pub async fn generate_text(
                     RawToolCall {
                         tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
-                        input: crate::tool::raw_tool_input(input),
+                        input: crate::parse_tool_call::raw_tool_input(input),
                         provider_executed: *provider_executed,
                         dynamic: *dynamic,
                         thought_signature: thought_signature.clone(),
@@ -890,7 +891,7 @@ pub async fn stream_text(
                             RawToolCall {
                                 tool_call_id,
                                 tool_name,
-                                input: crate::tool::raw_tool_input(&input),
+                                input: crate::parse_tool_call::raw_tool_input(&input),
                                 provider_executed,
                                 dynamic,
                                 thought_signature,

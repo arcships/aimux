@@ -24,7 +24,6 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
-use aimux_core::error::AiMuxError;
 use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
