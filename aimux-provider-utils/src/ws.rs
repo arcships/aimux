@@ -86,6 +86,10 @@ enum ConnectError {
     Tungstenite(tokio_tungstenite::tungstenite::Error),
 }
 
+// Rust 1.98 clippy: tungstenite::Error makes the Err variant ~136 bytes.
+// Private single-use helper on a cold path (one connect per stream); boxing
+// would only move bytes nobody pays for in a loop.
+#[allow(clippy::result_large_err)]
 async fn connect_with_timeout(
     request: tokio_tungstenite::tungstenite::http::Request<()>,
     timeout: Option<std::time::Duration>,

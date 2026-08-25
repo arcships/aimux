@@ -7,8 +7,9 @@
  */
 
 import { createRequire } from 'node:module'
+import { nativeBinaryPath } from './native.ts'
 const require = createRequire(import.meta.url)
-const napi = require('../aimux.linux-x64-gnu.node') as {
+const napi = require(nativeBinaryPath()) as {
   openai: (apiKey: string, modelId: string, baseUrl?: string) => Promise<{
     generateText: (prompt: string, opts?: string) => Promise<string>
   }>
@@ -24,8 +25,8 @@ async function main() {
   const prompt = 'Explain Rust ownership in one sentence.'
 
   // OpenAI 官方 Node SDK
-  const openaiPath = '/media/eric8810/fast-deliver/code/aimux/reference/ai/node_modules/.pnpm/openai@6.38.0_ws@8.21.1_zod@3.25.76/node_modules/openai/index.js'
-  const OpenAI = require(openaiPath).default || require(openaiPath).OpenAI
+  const openaiModule = await import('openai')
+  const OpenAI = openaiModule.default ?? (openaiModule as { OpenAI?: unknown }).OpenAI
   const client = new OpenAI({ apiKey: 'test-key', baseURL: `${uri}/v1` })
 
   // aimux

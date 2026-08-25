@@ -21,6 +21,9 @@ pub fn mix(mut x: u64) -> u64 {
 
 /// Keyed 64-bit hash: 8-byte word folding + rotation + finalization (length
 /// prefix included).
+// Rust 1.98 clippy suggests `as_chunks::<8>()`, which stabilized in 1.88;
+// the workspace MSRV is 1.85. Drop this allow when the MSRV moves past 1.88.
+#[allow(clippy::chunks_exact_to_as_chunks)]
 #[must_use]
 pub fn hash64(key: u64, data: &[u8]) -> u64 {
     let mut h = key ^ 0x9e37_79b9_7f4a_7c15;

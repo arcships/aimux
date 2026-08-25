@@ -3,8 +3,9 @@
  */
 
 import { createRequire } from 'node:module'
+import { nativeBinaryPath } from './native.ts'
 const require = createRequire(import.meta.url)
-const napi = require('../aimux.linux-x64-gnu.node') as {
+const napi = require(nativeBinaryPath()) as {
   openai: (apiKey: string, modelId: string, baseUrl?: string) => Promise<{
     generateText: (prompt: string, opts?: string) => Promise<string>
   }>
