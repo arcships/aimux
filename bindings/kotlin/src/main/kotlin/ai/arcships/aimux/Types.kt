@@ -169,7 +169,6 @@ data class ToolCall(
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     val invalid: Boolean? = null,
     val error: JsonElement? = null,
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
