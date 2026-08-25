@@ -16,11 +16,10 @@ use serde_json::Value;
 use tracing::Instrument;
 use ts_rs::TS;
 
-use crate::content::ContentPart;
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
-use crate::message::{MessageContent, ModelMessage, ModelPrompt, Role};
+use crate::message::{ModelMessage, ModelPrompt};
 use crate::options::{CallOptions, ResponseFormat, ToolChoice};
 use crate::result::{
     FilePart, GenerateContent, GenerateResult, ReasoningPart, SourcePart, StreamResult,
@@ -41,56 +40,6 @@ fn is_output_chunk(part: &StreamPart) -> bool {
         StreamPart::ToolCall { .. } | StreamPart::File { .. } => true,
         _ => false,
     }
-}
-
-/// Match the AI SDK's response-message safety rule for invalid tool calls:
-/// malformed primitive input must not be replayed as a prompt tool-call input.
-/// JavaScript's `typeof value === "object"` includes arrays and null, so those
-/// values are intentionally retained here as well.
-fn response_tool_call_input(input: &Value, invalid: Option<bool>) -> Value {
-    if invalid == Some(true) && !matches!(input, Value::Object(_) | Value::Array(_) | Value::Null) {
-        Value::Object(serde_json::Map::new())
-    } else {
-        input.clone()
-    }
-}
-
-fn flush_response_text(
-    parts: &mut Vec<ContentPart>,
-    text: &mut String,
-    provider_options: &mut Option<Value>,
-) {
-    if !text.is_empty() {
-        parts.push(ContentPart::Text {
-            text: std::mem::take(text),
-            provider_options: provider_options.take(),
-        });
-    } else {
-        *provider_options = None;
-    }
-}
-
-fn flush_response_reasoning(
-    parts: &mut Vec<ContentPart>,
-    reasoning: &mut Vec<ReasoningPart>,
-    text: &mut String,
-    provider_options: &mut Option<Value>,
-) {
-    if text.is_empty() && provider_options.is_none() {
-        return;
-    }
-
-    let text = std::mem::take(text);
-    if !text.is_empty() {
-        reasoning.push(ReasoningPart { text: text.clone() });
-    }
-    let provider_options = provider_options.take();
-    let signature = extract_reasoning_signature(provider_options.as_ref());
-    parts.push(ContentPart::Reasoning {
-        text,
-        signature,
-        provider_options,
-    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,8 +310,6 @@ impl StreamTextResult {
     /// underlying model stream.
     pub async fn consume(self) -> Result<StreamTextResultAggregated, AiMuxError> {
         let mut text = String::new();
-        let mut reasoning: Vec<ReasoningPart> = Vec::new();
-        let mut reasoning_text_buf = String::new();
         let mut tool_calls: Vec<crate::tool::ToolCall> = Vec::new();
         let mut sources: Vec<SourcePart> = Vec::new();
         let mut files: Vec<FilePart> = Vec::new();
@@ -375,10 +322,7 @@ impl StreamTextResult {
         let mut usage = Usage::default();
         let mut finish_provider_metadata: Option<Value> = None;
         let mut response: Option<crate::types::ResponseMetadata> = None;
-        let mut response_content_parts: Vec<ContentPart> = Vec::new();
-        let mut response_text_buf = String::new();
-        let mut response_text_provider_options: Option<Value> = None;
-        let mut response_reasoning_provider_options: Option<Value> = None;
+        let mut rm = crate::response_messages::ResponseMessageBuilder::new();
 
         let mut saw_output = false;
         let mut saw_finish = false;
@@ -405,100 +349,29 @@ impl StreamTextResult {
             match part {
                 StreamPart::TextStart {
                     provider_metadata, ..
-                } => {
-                    flush_response_reasoning(
-                        &mut response_content_parts,
-                        &mut reasoning,
-                        &mut reasoning_text_buf,
-                        &mut response_reasoning_provider_options,
-                    );
-                    // A new text segment establishes its position immediately;
-                    // flush a preceding implicit segment before starting it.
-                    flush_response_text(
-                        &mut response_content_parts,
-                        &mut response_text_buf,
-                        &mut response_text_provider_options,
-                    );
-                    response_text_provider_options = provider_metadata;
-                }
+                } => rm.text_start(provider_metadata),
                 StreamPart::TextDelta {
                     delta,
                     provider_metadata,
                     ..
                 } => {
-                    flush_response_reasoning(
-                        &mut response_content_parts,
-                        &mut reasoning,
-                        &mut reasoning_text_buf,
-                        &mut response_reasoning_provider_options,
-                    );
                     text.push_str(&delta);
-                    response_text_buf.push_str(&delta);
-                    if provider_metadata.is_some() {
-                        response_text_provider_options = provider_metadata;
-                    }
+                    rm.text_delta(&delta, provider_metadata);
                 }
                 StreamPart::TextEnd {
                     provider_metadata, ..
-                } => {
-                    if provider_metadata.is_some() {
-                        response_text_provider_options = provider_metadata;
-                    }
-                    flush_response_text(
-                        &mut response_content_parts,
-                        &mut response_text_buf,
-                        &mut response_text_provider_options,
-                    );
-                }
+                } => rm.text_end(provider_metadata),
                 StreamPart::ReasoningStart {
                     provider_metadata, ..
-                } => {
-                    flush_response_text(
-                        &mut response_content_parts,
-                        &mut response_text_buf,
-                        &mut response_text_provider_options,
-                    );
-                    flush_response_reasoning(
-                        &mut response_content_parts,
-                        &mut reasoning,
-                        &mut reasoning_text_buf,
-                        &mut response_reasoning_provider_options,
-                    );
-                    response_reasoning_provider_options = provider_metadata;
-                }
+                } => rm.reasoning_start(provider_metadata),
                 StreamPart::ReasoningDelta {
                     delta,
                     provider_metadata,
                     ..
-                } => {
-                    flush_response_text(
-                        &mut response_content_parts,
-                        &mut response_text_buf,
-                        &mut response_text_provider_options,
-                    );
-                    reasoning_text_buf.push_str(&delta);
-                    if provider_metadata.is_some() {
-                        response_reasoning_provider_options = provider_metadata;
-                    }
-                }
+                } => rm.reasoning_delta(&delta, provider_metadata),
                 StreamPart::ReasoningEnd {
                     provider_metadata, ..
-                } => {
-                    flush_response_text(
-                        &mut response_content_parts,
-                        &mut response_text_buf,
-                        &mut response_text_provider_options,
-                    );
-                    if provider_metadata.is_some() {
-                        response_reasoning_provider_options = provider_metadata;
-                    }
-                    flush_response_reasoning(
-                        &mut response_content_parts,
-                        &mut reasoning,
-                        &mut reasoning_text_buf,
-                        &mut response_reasoning_provider_options,
-                    );
-                }
+                } => rm.reasoning_end(provider_metadata),
                 StreamPart::ToolCall {
                     tool_call_id,
                     tool_name,
@@ -511,38 +384,19 @@ impl StreamTextResult {
                     error,
                     ..
                 } => {
-                    flush_response_text(
-                        &mut response_content_parts,
-                        &mut response_text_buf,
-                        &mut response_text_provider_options,
-                    );
-                    flush_response_reasoning(
-                        &mut response_content_parts,
-                        &mut reasoning,
-                        &mut reasoning_text_buf,
-                        &mut response_reasoning_provider_options,
-                    );
-                    let response_input = response_tool_call_input(&input, invalid);
-                    let response_provider_options = provider_metadata.clone();
-                    tool_calls.push(crate::tool::ToolCall {
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: tool_name.clone(),
-                        input: input.clone(),
+                    let call = crate::tool::ToolCall {
+                        tool_call_id,
+                        tool_name,
+                        input,
                         provider_executed,
                         dynamic,
-                        thought_signature: thought_signature.clone(),
+                        thought_signature,
                         provider_metadata,
                         invalid,
                         error,
-                    });
-                    response_content_parts.push(ContentPart::ToolCall {
-                        tool_call_id,
-                        tool_name,
-                        input: response_input,
-                        provider_executed,
-                        thought_signature,
-                        provider_options: response_provider_options,
-                    });
+                    };
+                    rm.tool_call(&call);
+                    tool_calls.push(call);
                 }
                 StreamPart::ToolResult {
                     tool_call_id,
@@ -552,34 +406,15 @@ impl StreamTextResult {
                     preliminary,
                     dynamic,
                     provider_metadata,
-                } => {
-                    // Preliminary server-tool results are transient stream
-                    // updates. The provider contract requires a later final
-                    // result, and only that final value belongs in the replay
-                    // transcript for the next model turn.
-                    if preliminary != Some(true) {
-                        flush_response_text(
-                            &mut response_content_parts,
-                            &mut response_text_buf,
-                            &mut response_text_provider_options,
-                        );
-                        flush_response_reasoning(
-                            &mut response_content_parts,
-                            &mut reasoning,
-                            &mut reasoning_text_buf,
-                            &mut response_reasoning_provider_options,
-                        );
-                        response_content_parts.push(ContentPart::ToolResult {
-                            tool_call_id,
-                            tool_name: Some(tool_name),
-                            result,
-                            is_error,
-                            preliminary,
-                            dynamic,
-                            provider_options: provider_metadata,
-                        });
-                    }
-                }
+                } => rm.tool_result(
+                    tool_call_id,
+                    tool_name,
+                    result,
+                    is_error,
+                    preliminary,
+                    dynamic,
+                    provider_metadata,
+                ),
                 StreamPart::Source {
                     id,
                     source_type,
@@ -607,17 +442,6 @@ impl StreamTextResult {
                     usage: u,
                     provider_metadata: pm,
                 } => {
-                    flush_response_text(
-                        &mut response_content_parts,
-                        &mut response_text_buf,
-                        &mut response_text_provider_options,
-                    );
-                    flush_response_reasoning(
-                        &mut response_content_parts,
-                        &mut reasoning,
-                        &mut reasoning_text_buf,
-                        &mut response_reasoning_provider_options,
-                    );
                     raw_finish_reason = fr.raw.clone();
                     finish_reason = fr;
                     usage = u.clone();
@@ -664,25 +488,10 @@ impl StreamTextResult {
             };
         }
 
-        flush_response_text(
-            &mut response_content_parts,
-            &mut response_text_buf,
-            &mut response_text_provider_options,
-        );
-        flush_response_reasoning(
-            &mut response_content_parts,
-            &mut reasoning,
-            &mut reasoning_text_buf,
-            &mut response_reasoning_provider_options,
-        );
-        let response_messages = if response_content_parts.is_empty() {
-            Vec::new()
-        } else {
-            vec![ModelMessage {
-                role: Role::Assistant,
-                content: MessageContent::Parts(response_content_parts),
-            }]
-        };
+        let crate::response_messages::ResponseMessages {
+            messages: response_messages,
+            reasoning,
+        } = rm.finish();
 
         let reasoning_text = reasoning
             .iter()
@@ -833,11 +642,10 @@ pub async fn generate_text(
     // 4. Extract text, tool calls, reasoning, sources, files from content.
     let mut text = String::new();
     let mut tool_calls = Vec::new();
-    let mut reasoning = Vec::new();
     let mut sources = Vec::new();
     let mut files = Vec::new();
     // Build the assistant response message content parts in parallel.
-    let mut response_content_parts: Vec<ContentPart> = Vec::new();
+    let mut rm = crate::response_messages::ResponseMessageBuilder::new();
     for content in &result.content {
         match content {
             GenerateContent::Text {
@@ -845,12 +653,7 @@ pub async fn generate_text(
                 provider_metadata,
             } => {
                 text.push_str(t);
-                if !t.is_empty() {
-                    response_content_parts.push(ContentPart::Text {
-                        text: t.clone(),
-                        provider_options: provider_metadata.clone(),
-                    });
-                }
+                rm.text(t, provider_metadata.as_ref());
             }
             GenerateContent::ToolCall {
                 tool_call_id,
@@ -866,7 +669,7 @@ pub async fn generate_text(
                     RawToolCall {
                         tool_call_id: tool_call_id.clone(),
                         tool_name: tool_name.clone(),
-                        input: raw_tool_input(input),
+                        input: crate::tool::raw_tool_input(input),
                         provider_executed: *provider_executed,
                         dynamic: *dynamic,
                         thought_signature: thought_signature.clone(),
@@ -878,35 +681,14 @@ pub async fn generate_text(
                     operation_instructions.as_deref(),
                 )
                 .await;
-                response_content_parts.push(ContentPart::ToolCall {
-                    tool_call_id: parsed.tool_call_id.clone(),
-                    tool_name: parsed.tool_name.clone(),
-                    input: response_tool_call_input(&parsed.input, parsed.invalid),
-                    provider_executed: parsed.provider_executed,
-                    thought_signature: parsed.thought_signature.clone(),
-                    provider_options: parsed.provider_metadata.clone(),
-                });
+                rm.tool_call(&parsed);
                 tool_calls.push(parsed);
             }
             GenerateContent::Reasoning {
                 text: rtext,
                 provider_metadata,
             } => {
-                reasoning.push(ReasoningPart {
-                    text: rtext.clone(),
-                });
-                // Reasoning MUST go into responseMessages — it carries the
-                // thinking-block signature (Anthropic: provider_metadata
-                // .anthropic.signature; Bedrock: .bedrock.signature /
-                // .amazonBedrock.signature) which must be echoed back
-                // verbatim on the next turn for extended-thinking models.
-                // Consistent with AI SDK's toResponseMessages.
-                let signature = extract_reasoning_signature(provider_metadata.as_ref());
-                response_content_parts.push(ContentPart::Reasoning {
-                    text: rtext.clone(),
-                    signature,
-                    provider_options: provider_metadata.clone(),
-                });
+                rm.reasoning(rtext, provider_metadata.as_ref());
             }
             GenerateContent::Source {
                 id,
@@ -941,21 +723,23 @@ pub async fn generate_text(
                 dynamic,
                 provider_metadata,
             } => {
-                if *preliminary != Some(true) {
-                    response_content_parts.push(ContentPart::ToolResult {
-                        tool_call_id: tool_call_id.clone(),
-                        tool_name: Some(tool_name.clone()),
-                        result: result.clone(),
-                        is_error: *is_error,
-                        preliminary: *preliminary,
-                        dynamic: *dynamic,
-                        provider_options: provider_metadata.clone(),
-                    });
-                }
+                rm.tool_result(
+                    tool_call_id.clone(),
+                    tool_name.clone(),
+                    result.clone(),
+                    *is_error,
+                    *preliminary,
+                    *dynamic,
+                    provider_metadata.clone(),
+                );
             }
         }
     }
 
+    let crate::response_messages::ResponseMessages {
+        messages: response_messages,
+        reasoning,
+    } = rm.finish();
     let reasoning_text = reasoning
         .iter()
         .map(|r| r.text.as_str())
@@ -971,15 +755,6 @@ pub async fn generate_text(
             &crate::recording::OutcomeRecord::from_generate_result(&result),
         );
     }
-
-    let response_messages = if response_content_parts.is_empty() {
-        Vec::new()
-    } else {
-        vec![ModelMessage {
-            role: Role::Assistant,
-            content: MessageContent::Parts(response_content_parts),
-        }]
-    };
 
     // Extract fields before moving `result` into `raw`.
     let raw_finish_reason = result.finish_reason.raw.clone();
@@ -1083,20 +858,6 @@ pub async fn generate_object(
 
 /// Extract the reasoning signature from provider metadata, checking all known
 /// provider keys (Anthropic, Bedrock).
-fn extract_reasoning_signature(provider_metadata: Option<&Value>) -> Option<String> {
-    let m = provider_metadata?;
-    for key in &["anthropic", "bedrock", "amazonBedrock"] {
-        if let Some(sig) = m
-            .get(key)
-            .and_then(|p| p.get("signature"))
-            .and_then(|s| s.as_str())
-        {
-            return Some(sig.to_string());
-        }
-    }
-    None
-}
-
 /// Stream text from the model.
 ///
 /// # Example
@@ -1353,7 +1114,7 @@ pub async fn stream_text(
                             RawToolCall {
                                 tool_call_id,
                                 tool_name,
-                                input: raw_tool_input(&input),
+                                input: crate::tool::raw_tool_input(&input),
                                 provider_executed,
                                 dynamic,
                                 thought_signature,
@@ -1413,14 +1174,6 @@ impl Drop for AbortOnDrop {
         self.0.abort();
     }
 }
-
-fn raw_tool_input(input: &Value) -> String {
-    match input {
-        Value::String(input) => input.clone(),
-        input => serde_json::to_string(input).expect("serializing serde_json::Value cannot fail"),
-    }
-}
-
 /// Run `do_generate` inside the RFC-0014 `generate` span and emit the
 /// `generate_end` event. A plain async fn (rather than an inline async block)
 /// so the `?` error type is pinned by the declared return type.

@@ -31,7 +31,7 @@ use aimux_provider_utils::{HttpRequest, RetryConfig};
 
 use crate::anthropic::convert::{build_request_body_with_warnings, parse_stop_reason};
 use crate::anthropic::stream::{
-    initial_tool_input, normalized_server_tool_input, server_tool_provider_name,
+    finalize_streamed_tool_input, initial_tool_input, server_tool_provider_name,
     stream_parts_for_result_block, tool_call_caller_metadata,
 };
 use crate::anthropic::tool_name_mapping::ToolNameMapping;
@@ -526,7 +526,7 @@ impl LanguageModel for VertexAnthropicModel {
                                         BlockState::ToolUse {
                                             id,
                                             name,
-                                            mut accumulated_json,
+                                            accumulated_json,
                                             provider_executed,
                                             dynamic,
                                             provider_tool_name,
@@ -535,23 +535,12 @@ impl LanguageModel for VertexAnthropicModel {
                                             ..
                                         } => {
                                             yield Ok(StreamPart::ToolInputEnd { id: id.clone(), provider_metadata: None});
-                                            if accumulated_json.is_empty() {
-                                                accumulated_json = "{}".to_string();
-                                            }
-                                            if provider_tool_name.as_deref() == Some("code_execution")
-                                                && let Ok(parsed) = serde_json::from_str::<Value>(&accumulated_json)
-                                            {
-                                                let wire_name = match provider_tool_input_type.as_deref() {
-                                                    Some(name @ ("text_editor_code_execution" | "bash_code_execution")) => name,
-                                                    _ => "code_execution",
-                                                };
-                                                accumulated_json = normalized_server_tool_input(
-                                                    wire_name,
-                                                    &parsed,
-                                                )
-                                                .to_string();
-                                            }
-                                            let input = Value::String(accumulated_json);
+                                            let input =
+                                                Value::String(finalize_streamed_tool_input(
+                                                    accumulated_json,
+                                                    provider_tool_name.as_deref(),
+                                                    provider_tool_input_type.as_deref(),
+                                                ));
                                             yield Ok(StreamPart::ToolCall {
                                                 tool_call_id: id,
                                                 tool_name: name,
