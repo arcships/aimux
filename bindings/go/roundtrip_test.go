@@ -116,7 +116,7 @@ func TestToolCallRoundTrip(t *testing.T) {
 		Input:            json.RawMessage(`{"location":"Tokyo"}`),
 		ProviderExecuted: &pe,
 		Dynamic:          &dyn,
-		ProviderMetadata: json.RawMessage(`{"openai":{"item_id":"item_1"}}`),
+		ProviderMetadata: json.RawMessage(`{"openai":{"itemId":"item_1"}}`),
 	}
 	b, err := json.Marshal(original)
 	if err != nil {

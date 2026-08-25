@@ -1,4 +1,4 @@
-﻿//! Rust translations of the AI SDK xAI Responses API tests.
+//! Rust translations of the AI SDK xAI Responses API tests.
 //!
 //! Sources (TS → Rust):
 //! - `xai-responses-language-model.test.ts` → `do_generate` / `do_stream` mods
@@ -18,6 +18,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::content::ContentPart;
+use aimux_core::generate::{GenerateTextOptions, generate_text, stream_text};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelPromptMessage;
 use aimux_core::message::Role;
@@ -1034,6 +1035,87 @@ mod settings {
 mod tools {
     use super::*;
 
+    #[tokio::test]
+    async fn renamed_view_tools_pass_core_validation() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "resp_123",
+                "object": "response",
+                "status": "completed",
+                "model": "grok-4-fast-non-reasoning",
+                "output": [
+                    {
+                        "type": "view_image_call",
+                        "id": "image_1",
+                        "name": "view_image",
+                        "arguments": "{\"image_url\":\"https://example.com/image.png\"}",
+                        "status": "completed"
+                    },
+                    {
+                        "type": "view_x_video_call",
+                        "id": "video_1",
+                        "name": "view_x_video",
+                        "arguments": "{\"video_url\":\"https://x.com/i/status/1\"}",
+                        "status": "completed"
+                    }
+                ],
+                "usage": { "input_tokens": 10, "output_tokens": 5 }
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = make_provider(&server);
+        let model = provider.responses_model("grok-4-fast-non-reasoning");
+        let result = generate_text(
+            &model,
+            "Inspect the media",
+            GenerateTextOptions {
+                tools: Some(vec![
+                    Tool::Provider(ProviderTool {
+                        id: "xai.view_image".to_string(),
+                        name: "inspectImage".to_string(),
+                        args: json!({}),
+                    }),
+                    Tool::Provider(ProviderTool {
+                        id: "xai.view_x_video".to_string(),
+                        name: "inspectVideo".to_string(),
+                        args: json!({}),
+                    }),
+                ]),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("renamed xAI view tools should pass Core validation");
+
+        assert_eq!(result.tool_calls.len(), 2);
+        assert_eq!(result.tool_calls[0].tool_name, "inspectImage");
+        assert_eq!(result.tool_calls[1].tool_name, "inspectVideo");
+        assert!(
+            result
+                .tool_calls
+                .iter()
+                .all(|call| { call.provider_executed == Some(true) && call.invalid.is_none() })
+        );
+
+        let next_turn_prompt = aimux_core::language_model_message::convert_to_language_model_prompt(
+            &result.response_messages,
+            None,
+        );
+        let (next_turn_input, warnings) =
+            aimux_providers::xai::responses::convert::convert_to_xai_responses_input(
+                &next_turn_prompt,
+            )
+            .expect("Core response messages should convert for the next xAI turn");
+        assert!(warnings.is_empty());
+        assert!(
+            next_turn_input.is_empty(),
+            "provider-executed calls must not be replayed as client function calls"
+        );
+    }
+
     /// TS: should send web_search tool with args in request
     #[tokio::test]
     async fn web_search_tool_request() {
@@ -1905,7 +1987,7 @@ mod do_stream {
         let options = CallOptions {
             tools: Some(vec![Tool::Provider(ProviderTool {
                 id: "xai.web_search".to_string(),
-                name: "web_search".to_string(),
+                name: "mySearch".to_string(),
                 args: json!({}),
             })]),
             ..default_options(test_prompt())
@@ -1925,9 +2007,36 @@ mod do_stream {
         }) = tool_call
         {
             assert_eq!(tool_call_id, "ws_123");
-            assert_eq!(tool_name, "web_search");
+            assert_eq!(tool_name, "mySearch");
             assert_eq!(input, "{\"query\":\"test\"}");
         }
+
+        assert!(parts.iter().any(|part| matches!(
+            part,
+            StreamPart::ToolInputStart {
+                tool_name,
+                provider_executed: Some(true),
+                ..
+            } if tool_name == "mySearch"
+        )));
+
+        let result = stream_text(
+            &model,
+            "Search",
+            GenerateTextOptions {
+                tools: options.tools.clone(),
+                ..GenerateTextOptions::default()
+            },
+        )
+        .await
+        .expect("stream_text should start")
+        .consume()
+        .await
+        .expect("renamed provider tool should pass Core validation");
+        let call = result.tool_calls.first().expect("web search call");
+        assert_eq!(call.tool_name, "mySearch");
+        assert_eq!(call.provider_executed, Some(true));
+        assert_eq!(call.invalid, None);
     }
 
     /// TS: should stream function tool call arguments
@@ -2841,6 +2950,52 @@ mod convert_input {
             input[1],
             json!({ "role": "assistant", "content": "hello back" })
         );
+    }
+
+    /// AI SDK: provider-executed calls are not replayed as client function calls.
+    #[test]
+    fn skips_provider_executed_tool_call_without_provider_options() {
+        let prompt = vec![LanguageModelPromptMessage {
+            role: Role::Assistant,
+            content: vec![ContentPart::ToolCall {
+                tool_call_id: "server_call_123".to_string(),
+                tool_name: "web_search".to_string(),
+                input: json!({ "query": "weather" }),
+                provider_executed: Some(true),
+                thought_signature: None,
+                provider_options: None,
+            }],
+            ..Default::default()
+        }];
+
+        let (input, warnings) = convert_to_xai_responses_input(&prompt).unwrap();
+        assert!(warnings.is_empty());
+        assert!(input.is_empty());
+    }
+
+    /// An explicit false value must override stale legacy provider metadata.
+    #[test]
+    fn explicit_client_execution_overrides_legacy_provider_metadata() {
+        let prompt = vec![LanguageModelPromptMessage {
+            role: Role::Assistant,
+            content: vec![ContentPart::ToolCall {
+                tool_call_id: "call_123".to_string(),
+                tool_name: "weather".to_string(),
+                input: json!({ "city": "Singapore" }),
+                provider_executed: Some(false),
+                thought_signature: None,
+                provider_options: Some(json!({
+                    "xai": { "providerExecuted": true }
+                })),
+            }],
+            ..Default::default()
+        }];
+
+        let (input, warnings) = convert_to_xai_responses_input(&prompt).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["type"], "function_call");
+        assert_eq!(input[0]["call_id"], "call_123");
     }
 
     /// TS: should convert tool results

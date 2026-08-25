@@ -33,24 +33,42 @@ Map<String, dynamic> deepFlatten(Map<String, dynamic> json) =>
     jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
 
 void main() {
-  test('ToolCall preserves provider_metadata', () {
-    final original = ToolCall(
-      toolCallId: 'call_1',
-      toolName: 'get_weather',
-      input: {'location': 'Tokyo'},
-      providerMetadata: {
-        'openai': {'item_id': 'item_1'},
-      },
-    );
+  group('ToolCall round-trip', () {
+    test('preserves provider_metadata', () {
+      final original = ToolCall(
+        toolCallId: 'call_1',
+        toolName: 'get_weather',
+        input: {'city': 'Paris'},
+        providerMetadata: {
+          'openai': {'itemId': 'item_1'},
+        },
+      );
+      final json = original.toJson();
+      expect(json['provider_metadata'], {
+        'openai': {'itemId': 'item_1'},
+      });
 
-    final json = original.toJson();
-    expect(json['provider_metadata'], {
-      'openai': {'item_id': 'item_1'},
+      final decoded = ToolCall.fromJson(json);
+      expect(decoded.providerMetadata, original.providerMetadata);
     });
 
-    final decoded = ToolCall.fromJson(json);
-    expect(decoded.providerMetadata, {
-      'openai': {'item_id': 'item_1'},
+    test('provider_metadata accepts arbitrary JSON and omits null', () {
+      final scalar = ToolCall(
+        toolCallId: 'call_scalar',
+        toolName: 'tool',
+        input: const {},
+        providerMetadata: 'opaque-provider-token',
+      );
+      expect(scalar.toJson()['provider_metadata'], 'opaque-provider-token');
+      expect(ToolCall.fromJson(scalar.toJson()).providerMetadata,
+          'opaque-provider-token');
+
+      final absent = ToolCall(
+        toolCallId: 'call_absent',
+        toolName: 'tool',
+        input: const {},
+      );
+      expect(absent.toJson(), isNot(contains('provider_metadata')));
     });
   });
 

@@ -134,5 +134,23 @@ void main() {
       expect(opts.seed, 42);
       expect(opts.maxRetries, 3);
     });
+
+    test('provider-executed transcript uses typed content parts', () {
+      final fixture = _loadFixtures().firstWhere(
+        (f) => f['name'] == 'model_message_provider_executed_tool_transcript',
+      );
+      final message = jsonDecode(fixture['json'] as String) as Map<String, dynamic>;
+      final content = (message['content'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      final call = ContentPart.fromJson(content[0]) as ContentPartToolCall;
+      final result = ContentPart.fromJson(content[1]) as ContentPartToolResult;
+
+      expect(call.providerExecuted, true);
+      expect(call.toolName, 'search');
+      expect(result.toolName, 'search');
+      expect(result.isError, false);
+      expect(result.preliminary, true);
+      expect(result.isDynamic, true);
+    });
   });
 }

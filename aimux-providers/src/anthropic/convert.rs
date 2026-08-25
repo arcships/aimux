@@ -199,6 +199,7 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                     if let Some(block) = convert_part_to_anthropic(
                         p,
                         send_reasoning,
+                        tool_names,
                         &mut betas,
                         &mut warnings,
                         &mut validator,
@@ -237,6 +238,7 @@ pub fn convert_prompt_to_anthropic_full_with_tools(
                         convert_part_to_anthropic(
                             p,
                             send_reasoning,
+                            tool_names,
                             &mut betas,
                             &mut warnings,
                             &mut validator,
@@ -350,6 +352,7 @@ fn top_level_media_type(media_type: &str) -> &str {
 fn convert_part_to_anthropic(
     part: &ContentPart,
     send_reasoning: bool,
+    tool_names: &ToolNameMapping,
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
@@ -505,9 +508,91 @@ fn convert_part_to_anthropic(
             tool_call_id,
             tool_name,
             input,
+            provider_executed,
             provider_options,
             ..
         } => {
+            let cc = resolve_cc(validator, provider_options.as_ref());
+
+            if *provider_executed == Some(true) {
+                let provider_name = tool_names.to_provider_tool_name(tool_name);
+                let anthropic_options = provider_options
+                    .as_ref()
+                    .and_then(|options| options.get("anthropic"));
+
+                if anthropic_options
+                    .and_then(|options| options.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("mcp-tool-use")
+                {
+                    let Some(server_name) = anthropic_options
+                        .and_then(|options| options.get("serverName"))
+                        .and_then(Value::as_str)
+                    else {
+                        warnings.push(Warning::Other {
+                            message: "mcp tool use server name is required and must be a string"
+                                .to_string(),
+                        });
+                        return Ok(None);
+                    };
+                    return Ok(Some(apply_cc(
+                        json!({
+                            "type": "mcp_tool_use",
+                            "id": tool_call_id,
+                            "name": tool_name,
+                            "input": input,
+                            "server_name": server_name,
+                        }),
+                        cc,
+                    )));
+                }
+
+                let (server_name, server_input) = if provider_name == "code_execution" {
+                    let input_type = input.get("type").and_then(Value::as_str);
+                    match input_type {
+                        Some("bash_code_execution" | "text_editor_code_execution") => {
+                            let mut value = input.clone();
+                            if let Some(object) = value.as_object_mut() {
+                                object.remove("type");
+                            }
+                            (input_type.unwrap().to_string(), value)
+                        }
+                        Some("programmatic-tool-call") => {
+                            let mut value = input.clone();
+                            if let Some(object) = value.as_object_mut() {
+                                object.remove("type");
+                            }
+                            ("code_execution".to_string(), value)
+                        }
+                        _ => ("code_execution".to_string(), input.clone()),
+                    }
+                } else if matches!(
+                    provider_name,
+                    "web_fetch" | "web_search" | "tool_search_tool_regex" | "tool_search_tool_bm25"
+                ) {
+                    (provider_name.to_string(), input.clone())
+                } else if provider_name == "advisor" {
+                    ("advisor".to_string(), json!({}))
+                } else {
+                    warnings.push(Warning::Other {
+                        message: format!(
+                            "provider executed tool call for tool {tool_name} is not supported"
+                        ),
+                    });
+                    return Ok(None);
+                };
+
+                return Ok(Some(apply_cc(
+                    json!({
+                        "type": "server_tool_use",
+                        "id": tool_call_id,
+                        "name": server_name,
+                        "input": server_input,
+                    }),
+                    cc,
+                )));
+            }
+
             // Anthropic requires `input` to be a JSON object. The SDK wraps any
             // non-object (e.g. malformed JSON the model produced) in
             // `{ "rawInvalidInput": <input> }`.
@@ -516,16 +601,31 @@ fn convert_part_to_anthropic(
             } else {
                 json!({ "rawInvalidInput": input })
             };
-            let cc = resolve_cc(validator, provider_options.as_ref());
-            apply_cc(
-                json!({
-                    "type": "tool_use",
-                    "id": tool_call_id,
-                    "name": tool_name,
-                    "input": input_val,
-                }),
-                cc,
-            )
+            let caller = provider_options
+                .as_ref()
+                .and_then(|options| options.get("anthropic"))
+                .and_then(|anthropic| anthropic.get("caller"))
+                .and_then(|caller| {
+                    let caller_type = caller.get("type")?.as_str()?;
+                    match caller_type {
+                        "code_execution_20250825" | "code_execution_20260120" => {
+                            let tool_id = caller.get("toolId")?.as_str()?;
+                            Some(json!({ "type": caller_type, "tool_id": tool_id }))
+                        }
+                        "direct" => Some(json!({ "type": "direct" })),
+                        _ => None,
+                    }
+                });
+            let mut block = json!({
+                "type": "tool_use",
+                "id": tool_call_id,
+                "name": tool_names.to_provider_tool_name(tool_name),
+                "input": input_val,
+            });
+            if let Some(caller) = caller {
+                block["caller"] = caller;
+            }
+            apply_cc(block, cc)
         }
 
         ContentPart::ToolResult {

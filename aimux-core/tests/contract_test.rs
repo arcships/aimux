@@ -4,8 +4,9 @@
 //! matches the expected wire format. The same fixtures are used by Node/Python
 //! tests to ensure cross-language consistency.
 
+use aimux_core::content::ContentPart;
 use aimux_core::generate::GenerateTextOptions;
-use aimux_core::message::{ModelMessage, Role};
+use aimux_core::message::{MessageContent, ModelMessage, Role};
 use aimux_core::options::{TimeoutConfiguration, ToolChoice};
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
@@ -98,6 +99,36 @@ fn tool_choice_wire_format() {
 fn role_wire_format() {
     assert_serialize(&Role::User, "\"user\"", "role_user");
     assert_serialize(&Role::System, "\"system\"", "role_system");
+}
+
+#[test]
+fn provider_executed_tool_transcript_message_wire_format() {
+    let expected = fixture_json("model_message_provider_executed_tool_transcript");
+    let message: ModelMessage = serde_json::from_str(&expected).unwrap();
+    let MessageContent::Parts(parts) = &message.content else {
+        panic!("expected multipart assistant message");
+    };
+    assert!(matches!(
+        &parts[0],
+        ContentPart::ToolCall {
+            provider_executed: Some(true),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &parts[1],
+        ContentPart::ToolResult {
+            is_error: Some(false),
+            preliminary: Some(true),
+            dynamic: Some(true),
+            ..
+        }
+    ));
+    assert_serialize(
+        &message,
+        &expected,
+        "model_message_provider_executed_tool_transcript",
+    );
 }
 
 #[test]

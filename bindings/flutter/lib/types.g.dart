@@ -58,8 +58,7 @@ ToolCall _$ToolCallFromJson(Map<String, dynamic> json) => ToolCall(
       providerExecuted: json['provider_executed'] as bool?,
       isDynamic: json['dynamic'] as bool?,
       thoughtSignature: json['thought_signature'] as String?,
-      providerMetadata:
-          json['provider_metadata'] as Map<String, dynamic>?,
+      providerMetadata: json['provider_metadata'],
       invalid: json['invalid'] as bool?,
       error: json['error'],
     );
@@ -71,7 +70,8 @@ Map<String, dynamic> _$ToolCallToJson(ToolCall instance) => <String, dynamic>{
       'provider_executed': instance.providerExecuted,
       'dynamic': instance.isDynamic,
       'thought_signature': instance.thoughtSignature,
-      'provider_metadata': instance.providerMetadata,
+      if (instance.providerMetadata != null)
+        'provider_metadata': instance.providerMetadata,
       'invalid': instance.invalid,
       'error': instance.error,
     };

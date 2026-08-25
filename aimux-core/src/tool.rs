@@ -354,20 +354,6 @@ fn contains_forbidden_prototype(value: &Value) -> bool {
     }
 }
 
-/// The input echoed back in the assistant response message. Mirrors the AI
-/// SDK's `toResponseMessages`: an invalid call whose retained input is not an
-/// object becomes `{}` so the follow-up turn stays provider-acceptable. JSON
-/// null survives, as upstream's `typeof part.input !== 'object'` keeps it.
-pub(crate) fn response_message_input(tool_call: &ToolCall) -> Value {
-    if tool_call.invalid == Some(true)
-        && !(tool_call.input.is_object() || tool_call.input.is_null())
-    {
-        Value::Object(serde_json::Map::new())
-    } else {
-        tool_call.input.clone()
-    }
-}
-
 fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
     ToolCall {
         tool_call_id: tool_call.tool_call_id,

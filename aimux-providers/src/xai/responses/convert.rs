@@ -421,16 +421,21 @@ pub fn convert_to_xai_responses_input(
                             tool_call_id,
                             tool_name,
                             input: tool_input,
+                            provider_executed,
                             provider_options,
                             ..
                         } => {
                             // Skip provider-executed tool calls.
-                            let is_provider_executed = provider_options
-                                .as_ref()
-                                .and_then(|po| po.get("xai"))
-                                .and_then(|x| x.get("providerExecuted"))
-                                .and_then(serde_json::Value::as_bool)
-                                .unwrap_or(false);
+                            // The standardized field is authoritative. Fall back
+                            // to the legacy provider option only when it is absent.
+                            let is_provider_executed = provider_executed.unwrap_or_else(|| {
+                                provider_options
+                                    .as_ref()
+                                    .and_then(|po| po.get("xai"))
+                                    .and_then(|x| x.get("providerExecuted"))
+                                    .and_then(serde_json::Value::as_bool)
+                                    .unwrap_or(false)
+                            });
                             if is_provider_executed {
                                 continue;
                             }
@@ -787,6 +792,14 @@ pub fn resolve_tool_name(
         .get("xai.code_execution")
         .cloned()
         .unwrap_or_else(|| "code_execution".to_string());
+    let default_view_image = provider_tool_names
+        .get("xai.view_image")
+        .cloned()
+        .unwrap_or_else(|| "view_image".to_string());
+    let default_view_x_video = provider_tool_names
+        .get("xai.view_x_video")
+        .cloned()
+        .unwrap_or_else(|| "view_x_video".to_string());
     let default_mcp = provider_tool_names
         .get("xai.mcp")
         .cloned()
@@ -805,6 +818,10 @@ pub fn resolve_tool_name(
         || part_type == "code_execution_call"
     {
         default_code
+    } else if name == "view_image" || part_type == "view_image_call" {
+        default_view_image
+    } else if name == "view_x_video" || part_type == "view_x_video_call" {
+        default_view_x_video
     } else if part_type == "mcp_call" {
         default_mcp
     } else if part_type == "file_search_call" {

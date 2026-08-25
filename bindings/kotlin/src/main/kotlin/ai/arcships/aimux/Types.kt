@@ -169,6 +169,7 @@ data class ToolCall(
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     val invalid: Boolean? = null,
     val error: JsonElement? = null,
+    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -392,6 +393,7 @@ sealed interface ContentPart {
         val input: JsonElement = JsonObject(emptyMap()),
         @SerialName("thought_signature") val thoughtSignature: String? = null,
         @SerialName("provider_options") val providerOptions: JsonElement? = null,
+        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     ) : ContentPart
 
     @Serializable

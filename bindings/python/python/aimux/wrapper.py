@@ -731,6 +731,7 @@ class _ToolCallContentPart(BaseModel):
     tool_call_id: str
     tool_name: str
     input: Any
+    provider_executed: Optional[bool] = None
     thought_signature: Optional[str] = None
     provider_options: Optional[Any] = None
 

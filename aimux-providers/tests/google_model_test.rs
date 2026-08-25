@@ -1886,6 +1886,7 @@ mod request_body {
                     tool_call_id: "call-1".to_string(),
                     tool_name: "weather".to_string(),
                     input: json!({ "location": "SF" }),
+                    provider_executed: None,
                     thought_signature: Some(
                         "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH".to_string(),
                     ),
@@ -1904,6 +1905,75 @@ mod request_body {
             "EuIDCt8DARFNMg/aRDRK3THWhBjzltCEy5/VM6ImWLJU8oHmnC75abdcZBMH"
         );
         assert!(part["functionCall"].get("thoughtSignature").is_none());
+    }
+
+    #[test]
+    fn assistant_server_tool_round_trips_with_shared_google_vertex_wire_shape() {
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelPromptMessage {
+                role: Role::User,
+                content: vec![ContentPart::text("Search the web")],
+                ..Default::default()
+            },
+            LanguageModelPromptMessage {
+                role: Role::Assistant,
+                content: vec![
+                    ContentPart::ToolCall {
+                        tool_call_id: "logical-call-id".to_string(),
+                        tool_name: "server:GOOGLE_SEARCH_WEB".to_string(),
+                        input: json!(r#"{"query":"Singapore weather"}"#),
+                        provider_executed: Some(true),
+                        thought_signature: None,
+                        provider_options: Some(json!({
+                            "google": {
+                                "serverToolCallId": "server-call-1",
+                                "serverToolType": "GOOGLE_SEARCH_WEB",
+                                "thoughtSignature": "call-signature"
+                            }
+                        })),
+                    },
+                    ContentPart::ToolResult {
+                        tool_call_id: "logical-call-id".to_string(),
+                        tool_name: Some("server:GOOGLE_SEARCH_WEB".to_string()),
+                        result: json!({ "results": [{ "title": "Sunny" }] }),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_options: Some(json!({
+                            "google": {
+                                "serverToolCallId": "server-call-1",
+                                "serverToolType": "GOOGLE_SEARCH_WEB",
+                                "thoughtSignature": "result-signature"
+                            }
+                        })),
+                    },
+                ],
+                ..Default::default()
+            },
+        ];
+
+        let body = build_request_body("gemini-3-pro-preview", &default_options(prompt));
+        assert_eq!(
+            body["contents"][1]["parts"],
+            json!([
+                {
+                    "toolCall": {
+                        "toolType": "GOOGLE_SEARCH_WEB",
+                        "args": { "query": "Singapore weather" },
+                        "id": "server-call-1"
+                    },
+                    "thoughtSignature": "call-signature"
+                },
+                {
+                    "toolResponse": {
+                        "toolType": "GOOGLE_SEARCH_WEB",
+                        "response": { "results": [{ "title": "Sunny" }] },
+                        "id": "server-call-1"
+                    },
+                    "thoughtSignature": "result-signature"
+                }
+            ])
+        );
     }
 
     // ── tool result → functionResponse part in a user message ─────────────────

@@ -935,7 +935,10 @@ async fn finding_2_anthropic_bash_code_execution_result_passed_through() {
     let calls = tool_calls(&result.content);
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].0, id, "call and result share the tool_use_id");
-    assert_eq!(calls[0].1, "bash_code_execution");
+    // The bash variant collapses into the caller's single code_execution
+    // tool; the wire name survives in the normalized input's `type`.
+    assert_eq!(calls[0].1, "code_execution");
+    assert_eq!(calls[0].2["type"], json!("bash_code_execution"));
 }
 
 #[tokio::test]

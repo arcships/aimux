@@ -79,6 +79,48 @@ class ContractTest {
         return Types.AimuxJson.MAPPER.readTree(a).equals(Types.AimuxJson.MAPPER.readTree(b));
     }
 
+    @Test
+    void topLevelToolCallProviderMetadataRoundTrips() throws Exception {
+        String json = "{\"tool_call_id\":\"call_1\",\"tool_name\":\"get_weather\","
+            + "\"input\":{\"city\":\"Paris\"},"
+            + "\"thought_signature\":\"sig_top\","
+            + "\"provider_metadata\":{\"openai\":{\"itemId\":\"item_1\"}}}";
+
+        Types.ToolCall call = Types.AimuxJson.MAPPER.readValue(json, Types.ToolCall.class);
+        assertThat(call.getProviderMetadata().path("openai").path("itemId").asText())
+            .isEqualTo("item_1");
+        assertThat(call.getThoughtSignature()).isEqualTo("sig_top");
+        assertThat(jsonEquals(Types.AimuxJson.MAPPER.writeValueAsString(call), json)).isTrue();
+
+        JsonNode metadata = Types.AimuxJson.MAPPER.readTree("{\"openai\":{\"itemId\":\"item_2\"}}");
+        assertThat(Types.ToolCall.builder().providerMetadata(metadata).build().getProviderMetadata())
+            .isEqualTo(metadata);
+    }
+
+    @Test
+    void providerExecutedToolTranscriptMessageRoundTrips() throws Exception {
+        String json = fixtureJson(
+            loadFixtures(), "model_message_provider_executed_tool_transcript");
+        Types.ModelMessage message =
+            Types.AimuxJson.MAPPER.readValue(json, Types.ModelMessage.class);
+
+        assertThat(message.getRole()).isEqualTo(Types.Role.ASSISTANT);
+        assertThat(message.getContentParts()).hasSize(2);
+        Types.ContentPart.ToolCall call =
+            (Types.ContentPart.ToolCall) message.getContentParts().get(0);
+        assertThat(call.getProviderExecuted()).isTrue();
+        assertThat(call.getThoughtSignature()).isEqualTo("sig_provider");
+        Types.ContentPart.ToolResult result =
+            (Types.ContentPart.ToolResult) message.getContentParts().get(1);
+        assertThat(result.getToolName()).isEqualTo("search");
+        assertThat(result.getIsError()).isFalse();
+        assertThat(result.getPreliminary()).isTrue();
+        assertThat(result.getDynamic()).isTrue();
+
+        String reencoded = Types.AimuxJson.MAPPER.writeValueAsString(message);
+        assertThat(jsonEquals(reencoded, json)).isTrue();
+    }
+
     // ── ToolChoice: round-trip + semantic type assertions ───────────────────
 
     @Test
@@ -164,6 +206,18 @@ class ContractTest {
         assertThat(Types.AimuxJson.MAPPER.writeValueAsString(part)).isEqualTo(json);
     }
 
+    @Test
+    void streamPartToolCallThoughtSignatureRoundTrips() throws Exception {
+        String json = "{\"ToolCall\":{\"tool_call_id\":\"stream_1\",\"tool_name\":\"search\","
+            + "\"input\":{\"query\":\"Rust\"},\"thought_signature\":\"sig_stream\"}}";
+
+        Types.StreamPart part = Types.AimuxJson.MAPPER.readValue(json, Types.StreamPart.class);
+        assertThat(part).isInstanceOf(Types.StreamPart.ToolCall.class);
+        Types.StreamPart.ToolCall call = (Types.StreamPart.ToolCall) part;
+        assertThat(call.getThoughtSignature()).isEqualTo("sig_stream");
+        assertThat(jsonEquals(Types.AimuxJson.MAPPER.writeValueAsString(call), json)).isTrue();
+    }
+
     /// RFC-0016 M10: `Usage.raw` with a vendor-specific field survives a
     /// Java round-trip (NON_NULL omits a null raw, keeps a non-null one).
     @Test
@@ -239,8 +293,11 @@ class ContractTest {
         Types.GenerateContent.ToolCall toolCall =
             (Types.GenerateContent.ToolCall) byName.get("generate_content_tool_call");
         assertThat(toolCall.getToolCallId()).isEqualTo("call_1");
-        assertThat(toolCall.getInput().path("city").asText()).isEqualTo("Paris");
+        assertThat(toolCall.getInput().asText()).isEqualTo("{\"city\":\"Paris\"}");
         assertThat(toolCall.getProviderExecuted()).isTrue();
+        assertThat(toolCall.getThoughtSignature()).isEqualTo("sig_abc");
+        String toolCallJson = fixtureJson(fixtures, "generate_content_tool_call");
+        assertThat(jsonEquals(Types.AimuxJson.MAPPER.writeValueAsString(toolCall), toolCallJson)).isTrue();
 
         Types.GenerateContent.File file =
             (Types.GenerateContent.File) byName.get("generate_content_file");

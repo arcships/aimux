@@ -89,7 +89,7 @@ final class WrapperTests: XCTestCase {
 
         // Structured raw.content contains a ToolCall variant mirroring the call.
         let toolContents = result.raw.content.compactMap { part -> ToolCall? in
-            if case .toolCall(let id, let name, let input, _, _, _) = part {
+            if case .toolCall(let id, let name, let input, _, _, _, _) = part {
                 return ToolCall(toolCallId: id, toolName: name, input: input)
             }
             return nil
@@ -254,7 +254,7 @@ final class WrapperTests: XCTestCase {
 
         // The complete ToolCall part carries the tool name and structured input.
         let toolCall = parts.compactMap { part -> (String, JSONValue)? in
-            if case .toolCall(_, let name, let input, _, _, _, _, _) = part { return (name, input) }
+            if case .toolCall(_, let name, let input, _, _, _, _, _, _) = part { return (name, input) }
             return nil
         }.first
         XCTAssertEqual(toolCall?.0, "get_weather")
