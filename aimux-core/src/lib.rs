@@ -36,6 +36,7 @@ pub mod provider;
 pub mod recording;
 pub mod replay;
 pub mod reranking_model;
+pub(crate) mod response_messages;
 pub mod result;
 pub mod router;
 pub mod search_model;

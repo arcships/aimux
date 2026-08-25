@@ -354,6 +354,16 @@ fn contains_forbidden_prototype(value: &Value) -> bool {
     }
 }
 
+/// Recover the provider's raw argument text: string inputs pass through
+/// verbatim (possibly malformed JSON awaiting parse/repair); anything already
+/// structured re-serializes.
+pub(crate) fn raw_tool_input(input: &Value) -> String {
+    match input {
+        Value::String(input) => input.clone(),
+        input => serde_json::to_string(input).expect("serializing serde_json::Value cannot fail"),
+    }
+}
+
 fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
     ToolCall {
         tool_call_id: tool_call.tool_call_id,

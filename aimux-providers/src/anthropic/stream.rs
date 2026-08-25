@@ -264,6 +264,30 @@ pub(crate) fn server_tool_provider_name(name: &str) -> &str {
     }
 }
 
+/// Finalize a streamed tool-call input accumulated from `input_json_delta`s:
+/// empty input normalizes to `"{}"` per the upstream provider, and 2025
+/// code-execution variants re-wrap under their wire name so the transcript
+/// replays verbatim.
+pub(crate) fn finalize_streamed_tool_input(
+    mut accumulated_json: String,
+    provider_tool_name: Option<&str>,
+    provider_tool_input_type: Option<&str>,
+) -> String {
+    if accumulated_json.is_empty() {
+        accumulated_json = "{}".to_string();
+    }
+    if provider_tool_name == Some("code_execution")
+        && let Ok(parsed) = serde_json::from_str::<Value>(&accumulated_json)
+    {
+        let wire_name = match provider_tool_input_type {
+            Some(name @ ("text_editor_code_execution" | "bash_code_execution")) => name,
+            _ => "code_execution",
+        };
+        accumulated_json = normalized_server_tool_input(wire_name, &parsed).to_string();
+    }
+    accumulated_json
+}
+
 pub(crate) fn normalized_server_tool_input(name: &str, input: &Value) -> Value {
     let input_type = if matches!(name, "text_editor_code_execution" | "bash_code_execution") {
         Some(name)
@@ -1209,7 +1233,7 @@ pub(crate) async fn anthropic_stream_core(
                                     BlockState::ToolUse {
                                         id,
                                         name,
-                                        mut accumulated_json,
+                                        accumulated_json,
                                         provider_executed,
                                         dynamic,
                                         provider_tool_name,
@@ -1221,23 +1245,12 @@ pub(crate) async fn anthropic_stream_core(
                                             id: id.clone(),
                                             provider_metadata: None,
                                         });
-                                        if accumulated_json.is_empty() {
-                                            accumulated_json = "{}".to_string();
-                                        }
-                                        if provider_tool_name.as_deref() == Some("code_execution")
-                                            && let Ok(parsed) = serde_json::from_str::<Value>(&accumulated_json)
-                                        {
-                                            let wire_name = match provider_tool_input_type.as_deref() {
-                                                Some(name @ ("text_editor_code_execution" | "bash_code_execution")) => name,
-                                                _ => "code_execution",
-                                            };
-                                            accumulated_json = normalized_server_tool_input(
-                                                wire_name,
-                                                &parsed,
-                                            )
-                                            .to_string();
-                                        }
-                                        let input = Value::String(accumulated_json);
+                                        let input =
+                                            Value::String(finalize_streamed_tool_input(
+                                                accumulated_json,
+                                                provider_tool_name.as_deref(),
+                                                provider_tool_input_type.as_deref(),
+                                            ));
                                         yield Ok(StreamPart::ToolCall {
                                             tool_call_id: id,
                                             tool_name: name,
